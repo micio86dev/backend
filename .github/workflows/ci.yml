@@ -15,7 +15,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg17-alpine
+        image: pgvector/pgvector:0.8.0-pg17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
