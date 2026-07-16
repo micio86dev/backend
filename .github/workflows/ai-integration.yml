@@ -1,0 +1,81 @@
+---
+# BEAI — AI Integration Tests (D36)
+#
+# Runs only @ai-tagged Pest tests that call a REAL LLM API.
+# These tests use real AI API credits — the cheap haiku model is used (AI_TEST_MODEL).
+#
+# NEVER triggered automatically on PR or develop push.
+# Triggers: manual dispatch (operators) or release/* branches (pre-release gate).
+#
+# Required secrets: ANTHROPIC_API_KEY, AI_TEST_MODEL (default: claude-haiku-4-5-20251001)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - 'release/**'
+
+jobs:
+  ai-integration:
+    name: AI Integration Tests (@ai group)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: beai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d beai_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP 8.5 with PCOV and pdo_pgsql
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_pgsql, pcov
+          tools: composer:v2
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Generate app key
+        run: php artisan key:generate
+
+      - name: Run migrations (beai_test database)
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: beai_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+        run: php artisan migrate --force
+
+      - name: Run @ai group tests (real LLM API — uses AI credits)
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: beai_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_TEST_MODEL: ${{ secrets.AI_TEST_MODEL || 'claude-haiku-4-5-20251001' }}
+          APP_ENV: testing
+        run: php artisan test --group ai
+        # NOTE: no --parallel here — AI tests must be sequential to avoid
+        # concurrent API calls that inflate costs.

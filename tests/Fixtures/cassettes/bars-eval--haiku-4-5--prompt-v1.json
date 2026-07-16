@@ -1,0 +1,16 @@
+{
+  "cassette": {
+    "purpose": "bars-eval",
+    "model": "claude-haiku-4-5-20251001",
+    "prompt_version": "v1",
+    "recorded_at": "2026-07-16T00:00:00Z",
+    "note": "Fake cassette for testing only. Content is illustrative — does not reflect real model output."
+  },
+  "response": {
+    "content": "Based on the candidate's response, I evaluate the COM (Communication) competency as follows:\n\n**Indicator 1 — Clarity of expression**: Score 4/5. The candidate articulated ideas clearly with good structure, though occasionally used jargon without explanation.\n\n**Indicator 2 — Active listening**: Score 3/5. Demonstrated adequate listening but did not always reflect back what was said.\n\n**Indicator 3 — Adaptation to audience**: Score 4/5. Adjusted communication style appropriately for different stakeholders.\n\n**Competency score**: 3.67 (mean of indicators 4, 3, 4).\n\n**Reliability**: 0.85 (high — candidate provided detailed, consistent examples).\n\n**Excerpts**:\n- \"I always try to tailor my message to who I'm speaking with\"\n- \"In that project, I held weekly updates for the engineering team and monthly summaries for leadership\"",
+    "model": "claude-haiku-4-5-20251001",
+    "input_tokens": 1247,
+    "output_tokens": 198,
+    "finish_reason": "stop"
+  }
+}

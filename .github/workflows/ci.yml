@@ -1,0 +1,101 @@
+name: API CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  test:
+    name: Lint · Analyse · Test · OpenAPI · Docker
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: beai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:placeholder==
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: beai_test
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_HOST: 127.0.0.1
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.5 + PCOV + pdo_pgsql
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: pdo, pdo_pgsql, pcov, zip, opcache
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      # ── Security audit ────────────────────────────────────────────────────
+      - name: Security audit
+        run: composer audit --no-dev
+
+      # ── Lint (Pint) ───────────────────────────────────────────────────────
+      - name: Lint (Pint)
+        run: ./vendor/bin/pint --test
+
+      # ── Static analysis (PHPStan level 8) ─────────────────────────────────
+      - name: Static analysis (PHPStan)
+        run: ./vendor/bin/phpstan analyse --no-progress
+
+      # ── Run migrations against beai_test ──────────────────────────────────
+      - name: Run migrations
+        run: php artisan migrate --force --env=testing
+
+      # ── Pest test suite (all tiers, required) ─────────────────────────────
+      - name: Run tests
+        run: php artisan test --parallel
+
+      # ── Coverage gate (85% minimum) ───────────────────────────────────────
+      - name: Test coverage (≥85%)
+        run: php artisan test --coverage --min=85
+
+      # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
+      - name: Generate OpenAPI spec
+        run: php artisan scramble:export
+
+      - name: Assert openapi.json produced
+        run: test -f openapi.json && echo "openapi.json OK"
+
+      # ── Assert OpenAPI version matches VERSION file ────────────────────────
+      - name: Assert openapi.json version matches VERSION
+        run: |
+          API_VERSION=$(cat VERSION | tr -d '[:space:]')
+          OAS_VERSION=$(php -r "echo json_decode(file_get_contents('openapi.json'), true)['info']['version'] ?? '';")
+          echo "VERSION file: $API_VERSION | openapi.json info.version: $OAS_VERSION"
+          [ "$OAS_VERSION" = "$API_VERSION" ] || (echo "Version mismatch!" && exit 1)
+
+      # ── Docker image build (no push) ──────────────────────────────────────
+      - name: Build Docker image
+        run: docker build -t beai-api:ci .

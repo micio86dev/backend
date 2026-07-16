@@ -1,0 +1,138 @@
+---
+# BEAI — K6 Load Tests (D35)
+#
+# MANUAL TRIGGER ONLY — never run automatically on PR or develop push.
+# Triggers: workflow_dispatch (operators choose scenario) or workflow_call.
+#
+# Runs K6 load tests against a local Docker Compose stack (started by this workflow).
+# NEVER runs against Railway stage/prod — local Docker only (D35 cost policy).
+#
+# Required: no external secrets — all tests hit localhost.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'K6 scenario to run'
+        required: true
+        type: choice
+        options:
+          - baseline
+          - stress
+          - spike
+          - all
+        default: baseline
+
+jobs:
+  load-test:
+    name: K6 Load Test (${{ github.event.inputs.scenario }})
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: beai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d beai"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:8.0-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP 8.5
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_pgsql, pcov
+          tools: composer:v2
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Generate app key
+        run: php artisan key:generate
+
+      - name: Run migrations
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: beai
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+        run: php artisan migrate --force
+
+      - name: Start API server
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: beai
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: php artisan serve --host=0.0.0.0 --port=8000 &
+        # Wait for the server to start
+      - name: Wait for API server
+        run: |
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:8000/api/health && break || sleep 2
+          done
+
+      - name: Install k6
+        run: |
+          curl https://github.com/grafana/k6/releases/download/v0.55.0/k6-v0.55.0-linux-amd64.tar.gz -L -o k6.tar.gz
+          tar -xzf k6.tar.gz
+          sudo mv k6-v0.55.0-linux-amd64/k6 /usr/local/bin/k6
+          k6 version
+
+      - name: Run baseline scenario
+        if: ${{ github.event.inputs.scenario == 'baseline' || github.event.inputs.scenario == 'all' }}
+        env:
+          K6_API_BASE_URL: http://localhost:8000
+        run: k6 run --summary-export=baseline-report.json tests/k6/scenarios/baseline.js
+
+      - name: Run stress scenario
+        if: ${{ github.event.inputs.scenario == 'stress' || github.event.inputs.scenario == 'all' }}
+        env:
+          K6_API_BASE_URL: http://localhost:8000
+        run: k6 run --summary-export=stress-report.json tests/k6/scenarios/stress.js
+
+      - name: Run spike scenario
+        if: ${{ github.event.inputs.scenario == 'spike' || github.event.inputs.scenario == 'all' }}
+        env:
+          K6_API_BASE_URL: http://localhost:8000
+        run: k6 run --summary-export=spike-report.json tests/k6/scenarios/spike.js
+
+      - name: Upload load test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-load-test-reports-${{ github.event.inputs.scenario }}
+          path: |
+            baseline-report.json
+            stress-report.json
+            spike-report.json
+          retention-days: 30

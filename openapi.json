@@ -1,0 +1,45 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Laravel",
+        "version": "0.1.0"
+    },
+    "servers": [
+        {
+            "url": "http://localhost/api"
+        }
+    ],
+    "paths": {
+        "/health": {
+            "get": {
+                "operationId": "health",
+                "description": "This endpoint is NOT localized \u2014 it returns the literal string \"ok\" in every locale.\nMachine-readable status payloads are exempt from the i18n mandate (D31).",
+                "summary": "Return a machine-readable health status",
+                "tags": [
+                    "Health"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "ok"
+                                        }
+                                    },
+                                    "required": [
+                                        "status"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
