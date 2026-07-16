@@ -18,10 +18,20 @@ pest()->extend(TestCase::class)
  // ->use(RefreshDatabase::class)
     ->in('Feature');
 
+// C2 feature tests use RefreshDatabase scoped to this directory only.
+// HealthTest lives under Feature/ (not Feature/C2/) and remains DB-free.
+// Uses ->use() (not ->extend()) to avoid re-declaring TestCase for a sub-directory.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C2');
+
 // Wire the base TestCase to Unit/Testing so withCassette() and other
 // helpers are available in unit tests that need them (D36 cassette pattern).
 pest()->extend(TestCase::class)
     ->in('Unit/Testing');
+
+// Wire the base TestCase to Unit/C2 so service providers boot and app() helpers work.
+pest()->extend(TestCase::class)
+    ->in('Unit/C2');
 
 /*
 |--------------------------------------------------------------------------
