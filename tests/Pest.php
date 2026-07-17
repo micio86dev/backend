@@ -62,6 +62,17 @@ pest()->extend(TestCase::class)
 pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature/Api');
 
+// ─── C4 Project Configuration ─────────────────────────────────────────────────
+
+// Feature/C4 — RefreshDatabase for schema, seeder-guard, CRUD, RBAC, and invariant tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/C4');
+
+// Unit/C4 — needs TestCase + RefreshDatabase for model guard tests (model events require DB).
+pest()->extend(TestCase::class)
+    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Unit/C4');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
