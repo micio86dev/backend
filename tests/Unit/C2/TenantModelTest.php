@@ -22,7 +22,8 @@ it('TenantModel uses TenantScoped trait', function (): void {
 });
 
 it('TenantModel subclass has TenantScoped global scope active', function (): void {
-    $concrete = new class extends TenantModel {
+    $concrete = new class extends TenantModel
+    {
         protected $table = 'organizations';
     };
 

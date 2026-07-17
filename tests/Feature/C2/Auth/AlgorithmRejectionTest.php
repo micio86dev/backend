@@ -8,11 +8,10 @@
  */
 
 use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
 
 test('token signed with alg:none is rejected with 401', function (): void {
     // Craft a JWT with alg:none — no signature
-    $header  = base64_encode(json_encode(['typ' => 'JWT', 'alg' => 'none']));
+    $header = base64_encode(json_encode(['typ' => 'JWT', 'alg' => 'none']));
     $payload = base64_encode(json_encode([
         'sub' => 1,
         'iat' => time(),

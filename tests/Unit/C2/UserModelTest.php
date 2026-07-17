@@ -13,23 +13,24 @@
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Permission\Traits\HasRoles;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
 test('User implements JWTSubject', function (): void {
-    $user = new User();
+    $user = new User;
 
     expect($user)->toBeInstanceOf(JWTSubject::class);
 });
 
 test('getJWTIdentifier returns the user id', function (): void {
-    $user = new User();
+    $user = new User;
     $user->id = 42;
 
     expect($user->getJWTIdentifier())->toBe(42);
 });
 
 test('getJWTCustomClaims includes organization_id key', function (): void {
-    $user = new User();
+    $user = new User;
     $user->organization_id = 7;
 
     $claims = $user->getJWTCustomClaims();
@@ -39,21 +40,21 @@ test('getJWTCustomClaims includes organization_id key', function (): void {
 });
 
 test('organization_id is NOT in fillable', function (): void {
-    $user = new User();
+    $user = new User;
     $fillable = $user->getFillable();
 
     expect($fillable)->not->toContain('organization_id');
 });
 
 test('is_superadmin is NOT in fillable', function (): void {
-    $user = new User();
+    $user = new User;
     $fillable = $user->getFillable();
 
     expect($fillable)->not->toContain('is_superadmin');
 });
 
 test('organization() returns a BelongsTo relation', function (): void {
-    $user = new User();
+    $user = new User;
     $relation = $user->organization();
 
     expect($relation)->toBeInstanceOf(BelongsTo::class);
@@ -63,5 +64,5 @@ test('organization() returns a BelongsTo relation', function (): void {
 test('User uses HasRoles trait', function (): void {
     $traits = class_uses_recursive(User::class);
 
-    expect($traits)->toContain(\Spatie\Permission\Traits\HasRoles::class);
+    expect($traits)->toContain(HasRoles::class);
 });

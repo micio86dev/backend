@@ -12,9 +12,9 @@ use App\Models\User;
 test('is_superadmin cannot be mass-assigned via User::create', function (): void {
     // Attempt to create a user with is_superadmin=true via mass-assignment
     $user = User::create([
-        'name'          => 'Attacker',
-        'email'         => 'attacker@example.com',
-        'password'      => bcrypt('password'),
+        'name' => 'Attacker',
+        'email' => 'attacker@example.com',
+        'password' => bcrypt('password'),
         'is_superadmin' => true,  // should be silently ignored
     ]);
 

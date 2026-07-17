@@ -33,6 +33,10 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/C2');
 
+// Wire the base TestCase to Arch tests so app() helpers and class resolution work.
+pest()->extend(TestCase::class)
+    ->in('Arch');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

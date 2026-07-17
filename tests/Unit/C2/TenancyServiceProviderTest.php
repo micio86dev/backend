@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\Jobs\SyncJob;
 use Spatie\Permission\PermissionRegistrar;
 
 it('TenantResolver binding exists in container', function (): void {
@@ -37,8 +39,8 @@ it('Queue::before hook resets TenantResolver and Spatie team context before each
     // Directly fire the JobProcessing event to trigger the registered Queue::before hook.
     // TenancyServiceProvider registers Queue::before which listens to this event.
     $payload = json_encode(['displayName' => 'TestJob', 'job' => 'TestJob', 'data' => []]);
-    $job = new \Illuminate\Queue\Jobs\SyncJob(app(), $payload, 'sync', 'default');
-    event(new \Illuminate\Queue\Events\JobProcessing('sync', $job));
+    $job = new SyncJob(app(), $payload, 'sync', 'default');
+    event(new JobProcessing('sync', $job));
 
     expect($resolver->getOrgId())->toBeNull('Queue::before must reset orgId to null');
     expect($resolver->isBypass())->toBeFalse('Queue::before must reset bypass to false');

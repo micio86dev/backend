@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Schema;
 
 it('organizations table exists with required columns', function (): void {
@@ -20,6 +21,6 @@ it('organizations.slug has a unique index', function (): void {
     $pdo = DB::connection()->getPdo();
     $pdo->exec("INSERT INTO organizations (name, slug) VALUES ('Org Alpha', 'org-alpha')");
 
-    $this->expectException(\Illuminate\Database\QueryException::class);
+    $this->expectException(QueryException::class);
     DB::table('organizations')->insert(['name' => 'Org Alpha 2', 'slug' => 'org-alpha']);
-})->throws(\Illuminate\Database\QueryException::class);
+})->throws(QueryException::class);

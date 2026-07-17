@@ -40,8 +40,8 @@ final class CreateSuperadmin extends Command
      */
     public function handle(): int
     {
-        $email    = $this->ask('Email');
-        $name     = $this->ask('Name');
+        $email = $this->ask('Email');
+        $name = $this->ask('Name');
         $password = $this->ask('Password');
 
         if (empty($email) || empty($name) || empty($password)) {
@@ -51,12 +51,12 @@ final class CreateSuperadmin extends Command
         }
 
         // Mass-assignment is intentionally bypassed for these privileged columns.
-        $user                  = new User();
-        $user->name            = $name;
-        $user->email           = $email;
-        $user->password        = Hash::make($password);
+        $user = new User;
+        $user->name = $name;
+        $user->email = $email;
+        $user->password = Hash::make($password);
         $user->organization_id = null;
-        $user->is_superadmin   = true;
+        $user->is_superadmin = true;
         $user->save();
 
         $this->info("Platform superadmin created: {$email} (id={$user->id})");

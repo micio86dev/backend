@@ -53,7 +53,9 @@ trait TenantScoped
         static::creating(function (Model $model): void {
             /** @var TenantResolver $resolver */
             $resolver = app(TenantResolver::class);
-            $model->organization_id = $resolver->getOrgId();
+            // Use setAttribute() so PHPStan knows we are setting a dynamic property
+            // via Eloquent's magic setter, not a typed class property.
+            $model->setAttribute('organization_id', $resolver->getOrgId());
         });
     }
 }

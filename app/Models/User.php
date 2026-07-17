@@ -56,6 +56,8 @@ class User extends Authenticatable implements JWTSubject
 
     /**
      * The organization this user belongs to (nullable for platform superadmins).
+     *
+     * @return BelongsTo<Organization, $this>
      */
     public function organization(): BelongsTo
     {

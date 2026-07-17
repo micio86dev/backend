@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use Closure;
 use Illuminate\Http\Request;
@@ -38,7 +39,7 @@ final class TenantContext
             return $next($request);
         }
 
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         // Resolve org from the DB record — NOT from the JWT claim (D3).
         $orgId = $user->organization_id;
 

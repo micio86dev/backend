@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * A Pest architecture test asserts this invariant at CI time.
  *
- * @see \App\Models\Concerns\TenantScoped
+ * @see TenantScoped
  */
 abstract class TenantModel extends Model
 {

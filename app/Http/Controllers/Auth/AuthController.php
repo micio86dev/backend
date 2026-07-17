@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
@@ -8,7 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\PermissionRegistrar;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\Exceptions\JWTException;
+use Tymon\JWTAuth\JWTGuard;
 
 /**
  * AuthController (C2).
@@ -35,11 +38,19 @@ final class AuthController extends Controller
      *
      * POST /api/auth/login
      * Public — no auth middleware.
+     *
+     * Token model (D4 — jwt-auth rotation):
+     * - Access token: standard TTL (30 min), used for all API requests.
+     * - Refresh token: re-issues a new access token via POST /api/auth/refresh.
+     *   jwt-auth rotation: the SAME bearer token is posted to /refresh; the old
+     *   token's jti is denylisted and a new token is returned. There is no separate
+     *   long-lived opaque refresh token — the "refresh_token" field carries the
+     *   same access token string returned at login.
      */
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
@@ -49,11 +60,16 @@ final class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials.'], 401);
         }
 
-        $accessToken  = auth('api')->login($user);
-        $refreshToken = JWTAuth::fromUser($user, [
-            'token_type' => 'refresh',
-            'exp'        => now()->addMinutes(config('jwt.refresh_ttl', 20160))->timestamp,
-        ]);
+        $guard = $this->jwtGuard();
+
+        // Issue the access token via the jwt guard — sets guard's current token.
+        $accessToken = (string) $guard->login($user);
+
+        // Per D4 spec: jwt-auth uses ROTATION (no separate refresh-token table).
+        // The "refresh_token" field carries the same access token string — the client
+        // presents it to POST /refresh to rotate it. Issuing a separate token with
+        // extended TTL is deferred to C5/C6 if product requires it.
+        $refreshToken = $accessToken;
 
         return $this->tokenResponse($accessToken, $refreshToken);
     }
@@ -63,18 +79,21 @@ final class AuthController extends Controller
      *
      * POST /api/auth/refresh
      * Protected: auth:api
+     *
+     * Uses jwt-auth's native token ROTATION: the current bearer access token is
+     * presented and a new access token is returned; the old token's jti is denylisted.
      */
     public function refresh(): JsonResponse
     {
         try {
-            $newToken = auth('api')->refresh();
-        } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+            $newToken = $this->jwtGuard()->refresh();
+        } catch (JWTException $e) {
             return response()->json(['message' => 'Token could not be refreshed.'], 401);
         }
 
         return response()->json([
-            'access_token' => $newToken,
-            'token_type'   => 'bearer',
+            'access_token' => (string) $newToken,
+            'token_type' => 'bearer',
         ]);
     }
 
@@ -90,7 +109,7 @@ final class AuthController extends Controller
         // This ensures a subsequent check with a fresh token starts cache-clean.
         $this->forgetPermissionCache();
 
-        auth('api')->logout();
+        $this->jwtGuard()->logout();
 
         return response()->json(['message' => 'Successfully logged out.']);
     }
@@ -103,27 +122,44 @@ final class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = $request->user();
         $user->load('organization');
 
+        $org = $user->organization;
+
         return response()->json([
-            'user'         => [
-                'id'    => $user->id,
-                'name'  => $user->name,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
                 'email' => $user->email,
             ],
-            'organization' => $user->organization ? [
-                'id'   => $user->organization->id,
-                'name' => $user->organization->name,
+            'organization' => $org !== null ? [
+                'id' => $org->id,
+                'name' => $org->name,
             ] : null,
-            'roles'        => $user->getRoleNames(),
+            'roles' => $user->getRoleNames(),
         ]);
     }
 
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Resolve the JWTGuard for the api guard.
+     *
+     * Using the concrete JWTGuard type (not the StatefulGuard contract) so that
+     * PHPStan can resolve JWT-specific methods (refresh, claims, invalidate, etc.)
+     * which are not part of the base AuthGuard/StatefulGuard interface.
+     */
+    private function jwtGuard(): JWTGuard
+    {
+        /** @var JWTGuard $guard */
+        $guard = auth('api');
+
+        return $guard;
+    }
 
     /**
      * Forget the Spatie permission cache.
@@ -139,16 +175,13 @@ final class AuthController extends Controller
 
     /**
      * Build the standard token-pair response.
-     *
-     * @param  string  $accessToken
-     * @param  string  $refreshToken
      */
     private function tokenResponse(string $accessToken, string $refreshToken): JsonResponse
     {
         return response()->json([
-            'access_token'  => $accessToken,
+            'access_token' => $accessToken,
             'refresh_token' => $refreshToken,
-            'token_type'    => 'bearer',
+            'token_type' => 'bearer',
         ]);
     }
 }

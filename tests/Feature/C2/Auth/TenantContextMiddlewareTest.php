@@ -16,7 +16,7 @@ use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 
 test('valid JWT with DB org sets resolver orgId', function (): void {
-    $org  = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $user = User::factory()->create(['organization_id' => $org->id]);
 
     $token = auth('api')->login($user);

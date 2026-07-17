@@ -26,7 +26,7 @@ test('valid credentials → 200 with access_token, refresh_token, token_type bea
     $user = makeUser(['organization_id' => $org->id]);
 
     $response = $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'secret-password',
     ]);
 
@@ -40,14 +40,14 @@ test('invalid password → 401', function (): void {
     $user = makeUser(['organization_id' => $org->id]);
 
     $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'wrong-password',
     ])->assertUnauthorized();
 });
 
 test('unknown email → 401', function (): void {
     $this->postJson('/api/auth/login', [
-        'email'    => 'nobody@example.com',
+        'email' => 'nobody@example.com',
         'password' => 'secret-password',
     ])->assertUnauthorized();
 });
@@ -60,7 +60,7 @@ test('valid refresh token → 200 with new access_token', function (): void {
 
     // Log in first to get a token pair
     $loginResponse = $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'secret-password',
     ])->assertOk();
 
@@ -80,7 +80,7 @@ test('logout → 200 and subsequent me returns 401', function (): void {
     $user = makeUser(['organization_id' => $org->id]);
 
     $loginResponse = $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'secret-password',
     ])->assertOk();
 
@@ -105,7 +105,7 @@ test('logout triggers forgetCachedPermissions', function (): void {
     // is not served from a stale cache. As a proxy, just confirm the call goes through.
     // The actual cache invalidation is tested via RoleService / events in isolation tests.
     $loginResponse = $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'secret-password',
     ])->assertOk();
 
@@ -140,7 +140,7 @@ test('me with denylisted token → 401', function (): void {
     $user = makeUser(['organization_id' => $org->id]);
 
     $loginResponse = $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'secret-password',
     ])->assertOk();
 
@@ -164,7 +164,7 @@ test('superadmin login (null org, is_superadmin=true) → 200 with token', funct
     $user = makeUser(['organization_id' => null, 'is_superadmin' => true]);
 
     $response = $this->postJson('/api/auth/login', [
-        'email'    => $user->email,
+        'email' => $user->email,
         'password' => 'secret-password',
     ]);
 

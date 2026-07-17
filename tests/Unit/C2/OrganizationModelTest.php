@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Models\Organization;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 it('Organization model has hasMany relation to User', function (): void {

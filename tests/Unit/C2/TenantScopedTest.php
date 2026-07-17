@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Concerns\TenantScoped;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 // ── Structural tests ──
@@ -24,8 +25,10 @@ it('TenantScoped global scope is registered when the trait is used', function ()
     $resolver->setOrgId(1);
     $resolver->setBypass(false);
 
-    $model = new class extends Model {
+    $model = new class extends Model
+    {
         use TenantScoped;
+
         protected $table = 'organizations';
     };
 
@@ -39,7 +42,9 @@ it('TenantScoped global scope is registered when the trait is used', function ()
 class StubTenantModel extends Model
 {
     use TenantScoped;
+
     protected $table = 'stub';
+
     public $timestamps = false;
 
     public function fireCreating(): void
@@ -83,8 +88,10 @@ it('bypass=true — global scope is present but applies no WHERE filter', functi
     $resolver->setBypass(true);
     $resolver->setOrgId(null);
 
-    $model = new class extends Model {
+    $model = new class extends Model
+    {
         use TenantScoped;
+
         protected $table = 'organizations';
     };
 
@@ -96,7 +103,7 @@ it('bypass=true — global scope is present but applies no WHERE filter', functi
     // The scope closure itself handles bypass internally — it returns without filtering.
     // We can verify this by executing the scope closure against a mock builder and
     // asserting no WHERE bindings are added.
-    $mockBuilder = Mockery::mock(\Illuminate\Database\Eloquent\Builder::class);
+    $mockBuilder = Mockery::mock(Builder::class);
     // The mock should NOT receive a ->where() call when bypass=true
     $mockBuilder->shouldNotReceive('where');
 
@@ -109,8 +116,10 @@ it('bypass=false with null orgId — scope adds WHERE organization_id = null fil
     $resolver->setBypass(false);
     $resolver->setOrgId(null);
 
-    $model = new class extends Model {
+    $model = new class extends Model
+    {
         use TenantScoped;
+
         protected $table = 'organizations';
     };
 
@@ -118,7 +127,7 @@ it('bypass=false with null orgId — scope adds WHERE organization_id = null fil
     expect($scopes)->toHaveKey('tenant');
 
     // Verify the scope closure calls where() when bypass=false
-    $mockBuilder = Mockery::mock(\Illuminate\Database\Eloquent\Builder::class);
+    $mockBuilder = Mockery::mock(Builder::class);
     $mockBuilder->shouldReceive('where')
         ->once()
         ->with('organization_id', null);

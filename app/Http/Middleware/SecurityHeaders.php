@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -14,9 +15,10 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Notes:
  * - HSTS is applied only over HTTPS (checked via request->secure()).
- * - CSP frame-ancestors and connect-src are built from the BACKOFFICE_ORIGIN env.
- *   BACKOFFICE_ORIGIN must be a non-empty, non-wildcard explicit origin.
- *   If unset or set to '*', a safe block-all default is used.
+ * - CSP frame-ancestors and connect-src are built from services.backoffice_origin
+ *   (BACKOFFICE_ORIGIN env — read via config(), not env(), as required by Larastan).
+ *   The origin must be a non-empty, non-wildcard explicit HTTPS origin.
+ *   If unset or invalid, a safe block-all CSP default is used.
  */
 final class SecurityHeaders
 {
@@ -38,7 +40,7 @@ final class SecurityHeaders
             );
         }
 
-        // C2: Content-Security-Policy built from BACKOFFICE_ORIGIN env.
+        // C2: Content-Security-Policy built from the backoffice_origin config value.
         // The backoffice SPA origin is the only consumer of the API from a browser context.
         $response->headers->set('Content-Security-Policy', $this->buildCsp());
 
@@ -51,8 +53,9 @@ final class SecurityHeaders
      * frame-ancestors: prevents clickjacking — only our backoffice may embed API responses.
      * connect-src: restricts which origins JS can make XHR/fetch to from the backoffice.
      *
-     * BACKOFFICE_ORIGIN must be a non-empty, non-wildcard explicit origin
-     * (e.g. https://backoffice.example.com). If unset or invalid, safe block-all is applied.
+     * The origin is read from config('services.backoffice_origin'), which maps to
+     * the BACKOFFICE_ORIGIN env variable (set in config/services.php). Must be a
+     * non-empty, non-wildcard explicit origin (e.g. https://backoffice.example.com).
      */
     private function buildCsp(): string
     {
@@ -88,23 +91,24 @@ final class SecurityHeaders
     }
 
     /**
-     * Resolve and validate the backoffice origin from the environment.
+     * Resolve and validate the backoffice origin from the config.
      *
      * Returns the origin string if it is valid (non-empty, non-wildcard, starts with https?://).
      * Returns null and logs a warning if the value is absent or invalid.
      */
     private function resolveBackofficeOrigin(): ?string
     {
-        $raw = env('BACKOFFICE_ORIGIN', '');
+        // Use config() — not env() — so the value is available even when config is cached.
+        $raw = (string) config('services.backoffice_origin', '');
 
         // Empty — not configured.
-        if ($raw === '' || $raw === null) {
+        if ($raw === '') {
             return null;
         }
 
         // Wildcard is never a valid explicit origin.
         if ($raw === '*') {
-            \Illuminate\Support\Facades\Log::warning(
+            Log::warning(
                 'SecurityHeaders: BACKOFFICE_ORIGIN is set to wildcard "*" — using safe block-all CSP default.'
             );
 
@@ -112,8 +116,8 @@ final class SecurityHeaders
         }
 
         // Must start with http:// or https:// to be a valid origin.
-        if (! preg_match('#^https?://#', $raw)) {
-            \Illuminate\Support\Facades\Log::warning(
+        if (preg_match('#^https?://#', $raw) !== 1) {
+            Log::warning(
                 "SecurityHeaders: BACKOFFICE_ORIGIN \"{$raw}\" is not a valid origin — using safe block-all CSP default."
             );
 
