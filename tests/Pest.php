@@ -37,6 +37,31 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Arch');
 
+// ─── C3 Framework Catalog ─────────────────────────────────────────────────────
+
+// Unit tests for C3 models (schema inspection, translatable logic).
+// Uses ->use() to avoid re-declaring TestCase (already in Unit/C2 as ->extend()).
+pest()->extend(TestCase::class)
+    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Unit/Models');
+
+// Feature/Models uses ->use() (not ->extend()) to avoid re-declaring TestCase
+// (Feature/ already extends TestCase above).
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/Models');
+
+// Feature/Seeders — RefreshDatabase for seeder idempotency tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/Seeders');
+
+// Unit tests for C3 services/adapters.
+pest()->extend(TestCase::class)
+    ->in('Unit/Services');
+
+// Feature/Api — RefreshDatabase for API + tenant isolation tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/Api');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
