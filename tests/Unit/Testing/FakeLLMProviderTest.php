@@ -19,20 +19,20 @@ use App\DTOs\LLMResponse;
 use App\Testing\FakeLLMProvider;
 
 test('FakeLLMProvider implements LLMProvider contract', function (): void {
-    $fake = new FakeLLMProvider();
+    $fake = new FakeLLMProvider;
 
     expect($fake)->toBeInstanceOf(LLMProvider::class);
 });
 
 test('complete() returns an LLMResponse DTO', function (): void {
-    $fake = new FakeLLMProvider();
+    $fake = new FakeLLMProvider;
     $response = $fake->complete('Evaluate this BARS response.');
 
     expect($response)->toBeInstanceOf(LLMResponse::class);
 });
 
 test('LLMResponse carries required fields', function (): void {
-    $fake = new FakeLLMProvider();
+    $fake = new FakeLLMProvider;
     $response = $fake->complete('Rate competency COM.');
 
     expect($response->content)->toBeString()->not->toBeEmpty();
@@ -51,7 +51,7 @@ test('FakeLLMProvider returns the configured response', function (): void {
 });
 
 test('FakeLLMProvider records calls without making HTTP requests', function (): void {
-    $fake = new FakeLLMProvider();
+    $fake = new FakeLLMProvider;
     $fake->complete('First prompt');
     $fake->complete('Second prompt');
 

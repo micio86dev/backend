@@ -20,8 +20,8 @@ interface LLMProvider
     /**
      * Send a prompt to the LLM and return a structured response.
      *
-     * @param  string               $prompt  The full prompt string (system + user messages pre-composed).
-     * @param  array<string, mixed> $options Provider-specific options (temperature, max_tokens, model, etc.).
+     * @param  string  $prompt  The full prompt string (system + user messages pre-composed).
+     * @param  array<string, mixed>  $options  Provider-specific options (temperature, max_tokens, model, etc.).
      */
     public function complete(string $prompt, array $options = []): LLMResponse;
 }

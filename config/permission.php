@@ -123,7 +123,11 @@ return [
      *
      * To enable, set to true, and then create listeners to watch these events.
      */
-    'events_enabled' => false,
+    // C2: events_enabled=true + listeners for RoleAttached/RoleDetached that call
+    // app(PermissionRegistrar::class)->forgetCachedPermissions().
+    // This ensures Spatie permission cache is invalidated on every role assignment change,
+    // consistent across all horizontally-scaled instances via the shared Redis cache store.
+    'events_enabled' => true,
 
     /*
      * Teams Feature.
@@ -205,6 +209,9 @@ return [
          * file. Using 'default' here means to use the `default` set in cache.php.
          */
 
-        'store' => 'default',
+        // C2: Production MUST be 'redis' for consistent cross-instance cache invalidation.
+        // Set CACHE_STORE=redis in .env (production). Tests set CACHE_STORE=array via phpunit.xml,
+        // so this env() call uses 'array' in tests and 'redis' in production — no live Redis in CI.
+        'store' => env('CACHE_STORE', 'redis'),
     ],
 ];

@@ -29,7 +29,7 @@ abstract class TestCase extends BaseTestCase
         if (! file_exists($path)) {
             throw new \RuntimeException(
                 "Cassette not found: {$path}. "
-                . 'Create a fixture JSON in tests/Fixtures/cassettes/ with the expected LLMResponse shape.'
+                .'Create a fixture JSON in tests/Fixtures/cassettes/ with the expected LLMResponse shape.'
             );
         }
 

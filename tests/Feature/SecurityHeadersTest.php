@@ -8,7 +8,6 @@
  *
  * RED phase: these tests fail because SecurityHeaders middleware does not exist yet.
  */
-
 test('GET /api/health includes X-Frame-Options header', function (): void {
     $response = $this->getJson('/api/health');
 

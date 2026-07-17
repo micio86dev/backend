@@ -16,7 +16,7 @@ return [
     */
 
     'defaults' => [
-        'guard' => env('AUTH_GUARD', 'web'),
+        'guard' => env('AUTH_GUARD', 'api'),
         'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
     ],
 
@@ -40,6 +40,13 @@ return [
     'guards' => [
         'web' => [
             'driver' => 'session',
+            'provider' => 'users',
+        ],
+
+        // API guard — JWT driver (C2). All protected routes MUST use auth:api explicitly.
+        // Never use bare `auth` middleware which silently falls back to the web session guard.
+        'api' => [
+            'driver' => 'jwt',
             'provider' => 'users',
         ],
     ],
