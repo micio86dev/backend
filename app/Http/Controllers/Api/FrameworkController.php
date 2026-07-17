@@ -16,6 +16,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 /**
  * FrameworkController (C3 Framework Catalog).
@@ -111,21 +113,30 @@ class FrameworkController extends Controller
      *
      * Order: ?locale= param → Accept-Language header → fallback_locale (en).
      * Calls App::setLocale() once; spatie accessors use the active locale transparently.
+     *
+     * Validation:
+     *   - An explicit ?locale= that is NOT in config('app.supported_locales') → abort 422.
+     *   - Accept-Language header with an unsupported value degrades gracefully to fallback (NOT 422).
      */
     private function resolveLocale(Request $request): void
     {
         /** @var list<string> $supportedLocales */
         $supportedLocales = config('app.supported_locales', ['en']);
 
-        // 1. Explicit ?locale= param
+        // 1. Explicit ?locale= param — validated ∈ supported_locales; unsupported → 422.
         $queryLocale = $request->query('locale');
-        if ($queryLocale !== null && in_array($queryLocale, $supportedLocales, true)) {
+        if ($queryLocale !== null) {
+            Validator::make(
+                ['locale' => $queryLocale],
+                ['locale' => ['required', 'string', Rule::in($supportedLocales)]],
+            )->validate();
+
             App::setLocale($queryLocale);
 
             return;
         }
 
-        // 2. Accept-Language header
+        // 2. Accept-Language header — advisory only; unsupported value degrades to fallback.
         $acceptLanguage = $request->header('Accept-Language', '');
         if (! empty($acceptLanguage)) {
             // Parse first language tag (e.g. "it-IT,it;q=0.9,en;q=0.8" → "it")
