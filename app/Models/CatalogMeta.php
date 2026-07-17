@@ -20,6 +20,11 @@ use Illuminate\Database\Eloquent\Model;
 class CatalogMeta extends Model
 {
     /**
+     * Explicit table name — 'catalog_meta' (not the Laravel-pluralized 'catalog_metas').
+     */
+    protected $table = 'catalog_meta';
+
+    /**
      * @var list<string>
      */
     protected $fillable = ['revision'];

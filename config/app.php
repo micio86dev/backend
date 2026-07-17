@@ -86,6 +86,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Supported Locales (C3 — Framework Catalog API)
+    |--------------------------------------------------------------------------
+    |
+    | Locales accepted by the ?locale= query parameter and matched against the
+    | Accept-Language request header in the FrameworkController.
+    | Resolution order: ?locale= → Accept-Language → fallback_locale (en).
+    |
+    */
+    'supported_locales' => ['it', 'en'],
+
+    /*
+    |--------------------------------------------------------------------------
     | Encryption Key
     |--------------------------------------------------------------------------
     |
