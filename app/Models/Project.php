@@ -111,31 +111,35 @@ class Project extends TenantModel
 
         static::updating(function (self $project): void {
             // ── Immutability guard ──────────────────────────────────────────
-            // Compute effective resulting status:
-            //   - if status is being changed in this update → use the new value
-            //   - otherwise → use the persisted original value
+            // assessment_type and role_code are immutable once status ∈ {active, gone_live, archived}.
+            // framework_version_id is always immutable after creation (blocked at FormRequest layer).
+            $currentStatus  = $project->getOriginal('status');
             $resultingStatus = $project->isDirty('status')
                 ? $project->status
-                : $project->getOriginal('status');
+                : $currentStatus;
 
-            if ($resultingStatus === 'active' && $project->isDirty(['assessment_type', 'framework_version_id', 'role_code'])) {
+            $immutableStatuses = ['active', 'gone_live', 'archived'];
+            if ((in_array($currentStatus, $immutableStatuses, true) || in_array($resultingStatus, $immutableStatuses, true))
+                && $project->isDirty(['assessment_type', 'framework_version_id', 'role_code'])
+            ) {
                 throw new ImmutableProjectException(
-                    'Cannot change immutable fields on an active project.'
+                    'Cannot change immutable fields on an active/gone-live project.'
                 );
             }
 
             // ── Lifecycle guard ─────────────────────────────────────────────
+            // Allowed transitions: draft→active, active→gone_live, gone_live→archived.
             if ($project->isDirty('status')) {
                 $origStatus = $project->getOriginal('status');
                 $newStatus  = $project->status;
 
-                $forbidden = [
-                    ['active',   'draft'],
-                    ['archived', 'active'],
-                    ['archived', 'draft'],
+                $allowed = [
+                    ['draft',     'active'],
+                    ['active',    'gone_live'],
+                    ['gone_live', 'archived'],
                 ];
 
-                if (in_array([$origStatus, $newStatus], $forbidden, true)) {
+                if (! in_array([$origStatus, $newStatus], $allowed, true)) {
                     throw new ImmutableProjectException(
                         "Invalid status transition: '{$origStatus}' → '{$newStatus}' is not allowed."
                     );

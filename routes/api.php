@@ -7,8 +7,10 @@ declare(strict_types=1);
 // See docs/api-versioning.md for the full contract.
 
 use App\Http\Controllers\Api\FrameworkController;
+use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\HealthController;
+use App\Http\Middleware\TenantContext;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
@@ -33,8 +35,20 @@ Route::prefix('auth')->group(function (): void {
 // Org-scoped via auth:api + TenantContext middleware (C2).
 // FrameworkVersion is NOT required to exist — missing pin → 200 + pin_context: null.
 
-Route::middleware('auth:api')->prefix('framework')->group(function (): void {
+Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->group(function (): void {
     Route::get('/roles', [FrameworkController::class, 'index']);
     Route::get('/roles/{roleCode}/competencies', [FrameworkController::class, 'roleCompetencies']);
     Route::get('/roles/{roleCode}/competencies/{competencyCode}/indicators', [FrameworkController::class, 'competencyBars']);
+
+    // C4 — GET /api/framework/versions: list org-scoped FrameworkVersions available for pinning.
+    Route::get('/versions', [FrameworkController::class, 'versions']);
+});
+
+// ─── Project Configuration API (C4) ──────────────────────────────────────────
+// Org-scoped Project CRUD. Behind auth:api + TenantContext middleware.
+// RBAC via ProjectPolicy: admin/operator full CRUD; viewer read-only.
+// destroy → HTTP 204 No Content (soft-delete; FV lock preserved).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::apiResource('projects', ProjectController::class);
 });

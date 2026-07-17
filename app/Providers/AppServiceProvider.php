@@ -3,8 +3,11 @@
 namespace App\Providers;
 
 use App\Contracts\LLMProvider;
+use App\Models\Project;
+use App\Policies\ProjectPolicy;
 use App\Testing\FakeLLMProvider;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\Events\RoleAttached;
@@ -34,6 +37,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // C4 — Register ProjectPolicy for Gate-based authorization.
+        Gate::policy(Project::class, ProjectPolicy::class);
+
         // C3 — Task 1.3: Configure spatie/laravel-translatable fallback explicitly.
         // spatie/laravel-translatable ^6.x does not publish a config file; the
         // Translatable singleton is configured programmatically here.

@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\BarsIndicatorResource;
 use App\Http\Resources\CompetencyResource;
+use App\Http\Resources\FrameworkVersionResource;
 use App\Http\Resources\RoleResource;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
@@ -106,6 +107,22 @@ class FrameworkController extends Controller
             ->get();
 
         return BarsIndicatorResource::collection($indicators)->response();
+    }
+
+    /**
+     * GET /api/framework/versions
+     *
+     * Returns all FrameworkVersions belonging to the authenticated org.
+     * TenantScoped global scope limits results to own-org versions only.
+     * Used by clients when creating a Project to choose which FV to pin.
+     *
+     * Added by C4.
+     */
+    public function versions(): AnonymousResourceCollection
+    {
+        $versions = FrameworkVersion::all();
+
+        return FrameworkVersionResource::collection($versions);
     }
 
     /**

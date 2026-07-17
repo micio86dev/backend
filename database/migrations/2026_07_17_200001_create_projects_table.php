@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -50,14 +51,25 @@ return new class extends Migration
             $table->softDeletes();
 
             // D22 org-lead composite indexes
-            $table->unique(['organization_id', 'slug']); // slug unique per org (partial — model handles soft-delete exclusion)
+            // NOTE: The slug unique index is a PARTIAL index (excludes soft-deleted rows).
+            // We add it via raw SQL after table creation — see below.
             $table->index(['organization_id', 'status']);
             $table->index(['organization_id', 'role_code']);
         });
+
+        // Partial unique index: slug is unique per org ONLY among non-deleted projects.
+        // A slug belonging to a soft-deleted project is reusable (design decision).
+        // This cannot be expressed with $table->unique() which applies to ALL rows.
+        DB::statement(
+            'CREATE UNIQUE INDEX projects_organization_id_slug_unique
+             ON projects (organization_id, slug)
+             WHERE deleted_at IS NULL'
+        );
     }
 
     public function down(): void
     {
+        // The partial unique index is dropped automatically with the table
         Schema::dropIfExists('projects');
     }
 };

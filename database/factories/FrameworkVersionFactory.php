@@ -33,8 +33,21 @@ class FrameworkVersionFactory extends Factory
             'organization_id' => Organization::factory(),
             'version' => 'v' . $this->faker->unique()->numerify('#.#.#'),
             'label' => $this->faker->optional()->sentence(3),
-            // is_locked defaults to false in the DB — do NOT set it here.
+            // is_locked defaults to false in the DB — do NOT set it here via mass-assign.
         ];
+    }
+
+    /**
+     * Configure the model factory.
+     *
+     * Refresh after create so all DB defaults (including is_locked=false) are
+     * loaded into the in-memory model instance.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (FrameworkVersion $fv): void {
+            $fv->refresh();
+        });
     }
 
     /**
