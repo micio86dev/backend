@@ -10,6 +10,7 @@ use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\Events\RoleAttached;
 use Spatie\Permission\Events\RoleDetached;
 use Spatie\Permission\PermissionRegistrar;
+use Spatie\Translatable\Facades\Translatable;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -33,6 +34,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // C3 — Task 1.3: Configure spatie/laravel-translatable fallback explicitly.
+        // spatie/laravel-translatable ^6.x does not publish a config file; the
+        // Translatable singleton is configured programmatically here.
+        // Values are read from config/translatable.php for traceability.
+        Translatable::fallback(
+            fallbackLocale: config('translatable.fallback_locale', 'en'),
+            fallbackAny: (bool) config('translatable.fallback_any', true),
+        );
+
         // C2 — Phase 3: Register test-only isolation routes for the cross-tenant
         // isolation matrix tests. These routes are NEVER loaded in production.
         // They expose a minimal SampleTenantRecord CRUD surface guarded by auth:api.
