@@ -105,7 +105,7 @@ return [
     |
     */
 
-    'ttl' => env('JWT_TTL', 60),
+    'ttl' => env('JWT_TTL', 30),
 
     /*
     |--------------------------------------------------------------------------
@@ -135,7 +135,10 @@ return [
     |
     */
 
-    'algo' => env('JWT_ALGO', Provider::ALGO_HS256),
+    // SECURITY: Algorithm is HARDCODED to HS256 — NOT read from env.
+    // Removing env() override eliminates the alg:none and asymmetric-algo attack surface.
+    // Tokens signed with any other algorithm MUST be rejected by the jwt-auth guard.
+    'algo' => Provider::ALGO_HS256,
 
     /*
     |--------------------------------------------------------------------------
