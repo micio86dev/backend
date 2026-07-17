@@ -38,6 +38,14 @@ test('all non-excluded models with organization_id extend TenantModel', function
         User::class,
         Organization::class,
         TenantModel::class,
+        // C3 Framework Catalog — GLOBAL models (no organization_id by design).
+        // These are shared across all tenants and intentionally do NOT extend TenantModel.
+        // FrameworkVersion DOES extend TenantModel (it IS tenant-scoped).
+        \App\Models\Role::class,
+        \App\Models\Competency::class,
+        \App\Models\BarsIndicator::class,
+        \App\Models\FrameworkGap::class,
+        \App\Models\CatalogMeta::class,
     ];
 
     $violations = [];
