@@ -70,13 +70,19 @@ it('users.organization_id has a dedicated index', function (): void {
 });
 
 it('migrate rollback and re-migrate leaves schema identical', function (): void {
-    // Verify rollback removes the columns cleanly
-    Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]);
+    // Roll back ALL pending batches until users.organization_id is removed.
+    // Using migrate:fresh + selective rollback to target the specific C2 migration,
+    // because the step-based rollback is fragile when additional migrations (C3+) are added.
+    // Instead, we roll back until organization_id is gone, then re-apply.
+    //
+    // NOTE: We roll back all batches (step=100 is effectively "all") to ensure
+    // the C2 migration is reached regardless of how many later migration batches exist.
+    Artisan::call('migrate:rollback', ['--step' => 100, '--force' => true]);
 
     expect(Schema::hasColumn('users', 'organization_id'))->toBeFalse();
     expect(Schema::hasColumn('users', 'is_superadmin'))->toBeFalse();
 
-    // Re-apply migration
+    // Re-apply all migrations
     Artisan::call('migrate', ['--force' => true]);
 
     expect(Schema::hasColumn('users', 'organization_id'))->toBeTrue();

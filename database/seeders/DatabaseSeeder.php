@@ -21,5 +21,8 @@ class DatabaseSeeder extends Seeder
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
+
+        // C3 Framework Catalog — idempotent global catalog seed
+        $this->call(FrameworkCatalogSeeder::class);
     }
 }
