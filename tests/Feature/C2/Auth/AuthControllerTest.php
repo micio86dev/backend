@@ -52,6 +52,20 @@ test('unknown email → 401', function (): void {
     ])->assertUnauthorized();
 });
 
+// ─── Login — validation ───────────────────────────────────────────────────────
+
+test('login with missing email → 422 validation error', function (): void {
+    $this->postJson('/api/auth/login', [
+        'password' => 'secret-password',
+    ])->assertUnprocessable();
+});
+
+test('login with missing password → 422 validation error', function (): void {
+    $this->postJson('/api/auth/login', [
+        'email' => 'user@example.com',
+    ])->assertUnprocessable();
+});
+
 // ─── Refresh ─────────────────────────────────────────────────────────────────
 
 test('valid refresh token → 200 with new access_token', function (): void {
@@ -71,6 +85,22 @@ test('valid refresh token → 200 with new access_token', function (): void {
 
     $response->assertOk()
         ->assertJsonStructure(['access_token', 'token_type']);
+});
+
+test('refresh without bearer token → 401 token could not be refreshed', function (): void {
+    // Use actingAs to satisfy auth:api middleware without supplying an Authorization header.
+    // The guard resolves $user from the pre-set state, but jwtGuard()->refresh() calls
+    // requireToken() which looks for a Bearer token in the request — none is present, so
+    // it throws JWTException('Token could not be parsed from the request.').
+    // The controller catch block converts this to 401 + 'Token could not be refreshed.'
+    $org = Organization::factory()->create();
+    $user = makeUser(['organization_id' => $org->id]);
+
+    $response = $this->actingAs($user, 'api')
+        ->postJson('/api/auth/refresh');
+
+    $response->assertUnauthorized()
+        ->assertJsonPath('message', 'Token could not be refreshed.');
 });
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
