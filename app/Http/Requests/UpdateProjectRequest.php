@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
-use App\Models\Competency;
 use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
@@ -17,20 +15,24 @@ use Illuminate\Validation\Validator;
  * Validates PATCH /api/projects/{id} payload.
  *
  * Key invariants:
- * - framework_version_id (if present): org-scoped Rule::exists (same as Store)
+ * - framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).
+ *   Any PATCH that includes this field is rejected with 422 — even the same value, even on draft.
  * - slug: self-ignoring unique rule (->ignore) with soft-delete exclusion
- * - Immutability: changing assessment_type/framework_version_id/role_code when
- *   the resulting status is 'active' → 422
- * - Lifecycle: forbidden transitions (active→draft, archived→active, archived→draft) → 422
- * - framework_version_id comparison: BOTH sides cast to (int) to avoid false positives
+ * - Immutability: changing assessment_type or role_code when the resulting status is 'active' or
+ *   'archived' → 422
+ * - Lifecycle: allowed transitions are draft→active and active→archived only.
+ *   Forbidden (active→draft, archived→active, archived→draft) → 422.
+ *
+ * SubstituteBindings note: the route parameter 'project' is an int (no implicit model binding —
+ * SubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding
+ * would resolve Project before the tenant scope is set). Manual findOrFail() inside controller
+ * and FormRequest methods ensures the TenantScoped global scope is active at resolution time.
  */
 class UpdateProjectRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // The route parameter 'project' is an int (no implicit model binding for
-        // tenant-scoped models — see ProjectController class docblock for rationale).
-        // We resolve it manually so the TenantScoped global scope filters correctly.
+        // Resolve project manually within tenant scope (SubstituteBindings runs before TenantContext).
         $projectId = $this->route('project');
         if ($projectId === null) {
             return false;
@@ -75,7 +77,8 @@ class UpdateProjectRequest extends FormRequest
             'assessment_type'            => ['sometimes', 'string', Rule::in(['standard', 'potential'])],
             'role_code'                  => ['nullable', 'string'],
             'language'                   => ['sometimes', 'string', Rule::in($supportedLocales)],
-            'status'                     => ['sometimes', 'string', Rule::in(['draft', 'active', 'gone_live', 'archived'])],
+            // Approved status enum: draft|active|archived (no gone_live)
+            'status'                     => ['sometimes', 'string', Rule::in(['draft', 'active', 'archived'])],
             'competency_ids'             => ['sometimes', 'nullable', 'array'],
             'competency_ids.*'           => ['integer'],
             'pause_every_n_competencies' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:255'],
@@ -87,9 +90,11 @@ class UpdateProjectRequest extends FormRequest
             'goes_live_at'               => ['sometimes', 'nullable', 'date'],
         ];
 
-        // framework_version_id is always immutable after creation — reject if submitted
-        // (even when still draft, re-pinning is not allowed in PATCH)
-        // The rule 'prohibited' causes a 422 if the field is present in the request.
+        // framework_version_id is immutable from creation — prohibited in ALL PATCH requests.
+        // This rule fires regardless of project status (draft or active) and regardless of
+        // whether the submitted value matches the current pin or not.
+        // The org-scoped Rule::exists that was here previously is removed: since the field
+        // is now blanket-prohibited, existence validation is never reached.
         if ($this->has('framework_version_id')) {
             $rules['framework_version_id'] = ['prohibited'];
         }
@@ -117,9 +122,10 @@ class UpdateProjectRequest extends FormRequest
             $requestedStatus = $this->input('status', $currentStatus);
 
             // ── Immutability gate ────────────────────────────────────────────
-            // Once gone_live (or already active), assessment_type and role_code are immutable.
-            // framework_version_id is always immutable (rejected at rule level with 'prohibited').
-            $immutableStatuses = ['active', 'gone_live', 'archived'];
+            // assessment_type and role_code are immutable once the resulting status is
+            // 'active' OR 'archived'. framework_version_id is always prohibited at the
+            // rule layer (never reaches here).
+            $immutableStatuses = ['active', 'archived'];
             if (in_array($currentStatus, $immutableStatuses, true) || in_array($requestedStatus, $immutableStatuses, true)) {
                 $submittedType = $this->input('assessment_type', $project->assessment_type);
                 $submittedRole = $this->input('role_code', $project->role_code);
@@ -127,20 +133,18 @@ class UpdateProjectRequest extends FormRequest
                 if ($submittedType !== $project->assessment_type ||
                     $submittedRole !== $project->role_code
                 ) {
-                    $v->errors()->add('assessment_type', 'Cannot change immutable fields on a gone-live or active project.');
+                    $v->errors()->add('assessment_type', 'Cannot change immutable fields on an active or archived project.');
                 }
             }
 
             // ── Lifecycle guard ──────────────────────────────────────────────
-            // Allowed forward transitions only:
+            // Approved forward transitions only:
             //   draft → active
-            //   active → gone_live
-            //   gone_live → archived
+            //   active → archived
             // Everything else is forbidden.
             $allowed = [
-                ['draft',     'active'],
-                ['active',    'gone_live'],
-                ['gone_live', 'archived'],
+                ['draft',  'active'],
+                ['active', 'archived'],
             ];
 
             if ($this->has('status') && $currentStatus !== $requestedStatus) {

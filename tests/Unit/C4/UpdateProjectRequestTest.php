@@ -30,9 +30,30 @@ function makeAdminUserForUpdate(Organization $org): array
     return ['user' => $user, 'token' => $token];
 }
 
-// ─── org-scoped FV validation in PATCH ────────────────────────────────────────
+// ─── framework_version_id is blanket-prohibited in all PATCH requests ─────────
+// (immutable from creation — even same value, even on draft)
 
-test('update: framework_version_id from another org → 422', function (): void {
+test('update: framework_version_id in PATCH always → 422 (immutable from creation)', function (): void {
+    $orgA = Organization::factory()->create();
+    ['token' => $token] = makeAdminUserForUpdate($orgA);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($orgA->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $orgA->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+    ]);
+
+    // Sending framework_version_id in PATCH is always rejected — the pin is immutable after creation.
+    $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", [
+            'framework_version_id' => $fv->id, // even same value → rejected
+        ])
+        ->assertUnprocessable();
+});
+
+test('update: framework_version_id cross-org in PATCH → 422 (prohibited regardless of org)', function (): void {
     $orgA = Organization::factory()->create();
     $orgB = Organization::factory()->create();
     ['token' => $token] = makeAdminUserForUpdate($orgA);
@@ -45,21 +66,15 @@ test('update: framework_version_id from another org → 422', function (): void 
     $fvB = FrameworkVersion::factory()->create(['organization_id' => $orgB->id]);
 
     $resolver->setOrgId($orgA->id);
-
-    (new FrameworkCatalogSeeder())->run();
-    $ico = Role::where('code', 'ICO')->firstOrFail();
-    $cId = \Illuminate\Support\Facades\DB::table('framework_role_competency')
-        ->where('role_id', $ico->id)->value('competency_id');
-
-    $resolver->setOrgId($orgA->id);
     $project = Project::factory()->create([
         'framework_version_id' => $fvA->id,
         'status' => 'draft',
     ]);
 
+    // Still 422 — but now the reason is 'prohibited', not 'org-scoped exists' (FV is immutable)
     $this->withToken($token)
         ->patchJson("/api/projects/{$project->id}", [
-            'framework_version_id' => $fvB->id, // org B's FV — rejected
+            'framework_version_id' => $fvB->id,
         ])
         ->assertUnprocessable();
 });
@@ -270,7 +285,7 @@ test('update: forbidden status transition archived→draft → 422', function ()
         ->assertUnprocessable();
 });
 
-test('update: valid transitions draft→active→gone_live→archived → 200', function (): void {
+test('update: valid transitions draft→active→archived → 200', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = makeAdminUserForUpdate($org);
 
@@ -285,12 +300,7 @@ test('update: valid transitions draft→active→gone_live→archived → 200', 
         ->patchJson("/api/projects/{$project->id}", ['status' => 'active'])
         ->assertOk();
 
-    // active → gone_live
-    $this->withToken($token)
-        ->patchJson("/api/projects/{$project->id}", ['status' => 'gone_live'])
-        ->assertOk();
-
-    // gone_live → archived
+    // active → archived (approved; was wrongly forbidden in the previous apply)
     $this->withToken($token)
         ->patchJson("/api/projects/{$project->id}", ['status' => 'archived'])
         ->assertOk();

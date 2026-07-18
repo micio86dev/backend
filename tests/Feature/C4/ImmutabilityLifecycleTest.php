@@ -6,21 +6,23 @@ declare(strict_types=1);
  * RED→GREEN — 7.5: Project immutability + lifecycle gate feature tests (C4).
  *
  * Immutability:
- * - PATCH on gone_live project: cannot change assessment_type → 422
- * - PATCH on gone_live project: cannot change role_code → 422
- * - PATCH on gone_live project: non-immutable field (name) still works → 200
+ * - PATCH on active project: cannot change assessment_type → 422
+ * - PATCH on active project: cannot change role_code → 422
+ * - PATCH on archived project: cannot change assessment_type → 422
+ * - PATCH on active project: non-immutable field (name) still works → 200
  *
- * Lifecycle transitions:
+ * Lifecycle transitions (approved: draft|active|archived):
  * - draft → active → 200
- * - active → gone_live → 200
- * - active → draft (forbidden regression) → 422
- * - gone_live → active (forbidden regression) → 422
- * - gone_live → archived → 200
+ * - active → archived → 200          ← WAS WRONGLY FORBIDDEN; must be allowed
+ * - active → draft (forbidden) → 422
+ * - archived → active (forbidden) → 422
+ * - archived → draft (forbidden) → 422
  * - unknown status → 422
- * - PATCH framework_version_id on any project → 422
+ * - PATCH framework_version_id on any project (draft or active) → 422 (immutable pin)
+ * - PATCH framework_version_id with same value → 422 (prohibited regardless)
  * - Slug reuse after soft-delete: same org, same slug → 201
  *
- * Refs spec: Immutable Fields; Lifecycle Transitions.
+ * Refs spec: Immutable Fields; Lifecycle Transitions (draft→active→archived).
  */
 
 use App\Models\FrameworkVersion;
@@ -48,7 +50,7 @@ beforeEach(function (): void {
 
 // ---- Immutability tests ----
 
-test('PATCH gone_live project: cannot change assessment_type → 422', function (): void {
+test('PATCH active project: cannot change assessment_type → 422', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
@@ -57,8 +59,9 @@ test('PATCH gone_live project: cannot change assessment_type → 422', function 
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'gone_live',
+        'status'               => 'active',
         'assessment_type'      => 'standard',
+        'role_code'            => 'ICO',
     ]);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
@@ -66,7 +69,7 @@ test('PATCH gone_live project: cannot change assessment_type → 422', function 
     ])->assertUnprocessable();
 });
 
-test('PATCH gone_live project: cannot change role_code → 422', function (): void {
+test('PATCH active project: cannot change role_code → 422', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
@@ -75,7 +78,7 @@ test('PATCH gone_live project: cannot change role_code → 422', function (): vo
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'gone_live',
+        'status'               => 'active',
         'role_code'            => 'ICO',
     ]);
 
@@ -84,7 +87,7 @@ test('PATCH gone_live project: cannot change role_code → 422', function (): vo
     ])->assertUnprocessable();
 });
 
-test('PATCH gone_live project: non-immutable field (name) still works → 200', function (): void {
+test('PATCH archived project: cannot change assessment_type → 422', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
@@ -93,7 +96,25 @@ test('PATCH gone_live project: non-immutable field (name) still works → 200', 
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'gone_live',
+        'status'               => 'archived',
+        'assessment_type'      => 'standard',
+    ]);
+
+    $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
+        'assessment_type' => 'potential',
+    ])->assertUnprocessable();
+});
+
+test('PATCH active project: non-immutable field (name) still works → 200', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = lifecycleAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status'               => 'active',
     ]);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
@@ -101,7 +122,7 @@ test('PATCH gone_live project: non-immutable field (name) still works → 200', 
     ])->assertOk();
 });
 
-// ---- Lifecycle transition tests ----
+// ---- Lifecycle transition tests (approved: draft|active|archived) ----
 
 test('draft → active → 200', function (): void {
     $org = Organization::factory()->create();
@@ -116,7 +137,7 @@ test('draft → active → 200', function (): void {
     expect($project->fresh()->status)->toBe('active');
 });
 
-test('active → gone_live → 200', function (): void {
+test('active → archived → 200 (approved transition)', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
@@ -125,8 +146,8 @@ test('active → gone_live → 200', function (): void {
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create(['framework_version_id' => $fv->id, 'status' => 'active']);
 
-    $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'gone_live'])->assertOk();
-    expect($project->fresh()->status)->toBe('gone_live');
+    $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'archived'])->assertOk();
+    expect($project->fresh()->status)->toBe('archived');
 });
 
 test('active → draft (forbidden regression) → 422', function (): void {
@@ -141,29 +162,28 @@ test('active → draft (forbidden regression) → 422', function (): void {
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'draft'])->assertUnprocessable();
 });
 
-test('gone_live → active (forbidden regression) → 422', function (): void {
+test('archived → active (forbidden regression) → 422', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
-    $project = Project::factory()->create(['framework_version_id' => $fv->id, 'status' => 'gone_live']);
+    $project = Project::factory()->create(['framework_version_id' => $fv->id, 'status' => 'archived']);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'active'])->assertUnprocessable();
 });
 
-test('gone_live → archived → 200', function (): void {
+test('archived → draft (forbidden regression) → 422', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
-    $project = Project::factory()->create(['framework_version_id' => $fv->id, 'status' => 'gone_live']);
+    $project = Project::factory()->create(['framework_version_id' => $fv->id, 'status' => 'archived']);
 
-    $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'archived'])->assertOk();
-    expect($project->fresh()->status)->toBe('archived');
+    $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'draft'])->assertUnprocessable();
 });
 
 test('PATCH unknown status → 422', function (): void {
@@ -178,18 +198,47 @@ test('PATCH unknown status → 422', function (): void {
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", ['status' => 'INVALID'])->assertUnprocessable();
 });
 
-test('PATCH framework_version_id is always rejected → 422', function (): void {
+test('PATCH framework_version_id on draft project is rejected → 422 (immutable pin)', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = lifecycleAdminUser($org);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $fv1 = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
-    $fv2 = FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
+    $fv2 = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create(['framework_version_id' => $fv1->id, 'status' => 'draft']);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
         'framework_version_id' => $fv2->id,
+    ])->assertUnprocessable();
+});
+
+test('PATCH framework_version_id same value on draft project is still rejected → 422', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = lifecycleAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create(['framework_version_id' => $fv->id, 'status' => 'draft']);
+
+    // Even sending the SAME value is rejected — the field is blanket-prohibited in PATCH
+    $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
+        'framework_version_id' => $fv->id,
+    ])->assertUnprocessable();
+});
+
+test('PATCH framework_version_id on active project is rejected → 422', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = lifecycleAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv1 = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create(['framework_version_id' => $fv1->id, 'status' => 'active']);
+
+    $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
+        'framework_version_id' => $fv1->id,
     ])->assertUnprocessable();
 });
 

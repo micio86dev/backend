@@ -17,9 +17,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * Extends TenantModel — organization_id is auto-stamped by TenantScoped.creating
  * and MUST NOT be in $fillable (prevents payload manipulation).
  *
- * framework_version_id: reference-pin; immutable once status='active'.
- * assessment_type: 'standard'|'potential'; immutable once status='active'.
- * role_code: required for standard (ICO/FLL/MLL/BUL/SRX), null for potential; immutable once active.
+ * framework_version_id: reference-pin; immutable from creation (prohibited in all PATCH).
+ * assessment_type: 'standard'|'potential'; immutable once status='active' or 'archived'.
+ * role_code: required for standard (ICO/FLL/MLL/BUL/SRX), null for potential; immutable once active/archived.
  * webhook_secret: encrypted at rest via 'encrypted' cast AND hidden in serialization.
  *
  * Model guards (backstop for non-HTTP paths):
@@ -98,9 +98,11 @@ class Project extends TenantModel
      * Register model boot guards.
      *
      * Two updating guards:
-     * 1. Immutability guard: rejects changes to assessment_type, framework_version_id,
-     *    or role_code when the resulting status is 'active'.
-     * 2. Lifecycle guard: rejects forbidden status transitions.
+     * 1. Immutability guard: rejects changes to assessment_type or role_code when the
+     *    resulting status is 'active' or 'archived'. framework_version_id is always
+     *    prohibited in PATCH at the FormRequest layer (not checked here).
+     * 2. Lifecycle guard: rejects forbidden status transitions (only draft→active and
+     *    active→archived are allowed).
      *
      * These are backstops for direct (non-HTTP) writes; the FormRequest layer
      * is the primary enforcement path for HTTP requests.
@@ -111,32 +113,32 @@ class Project extends TenantModel
 
         static::updating(function (self $project): void {
             // ── Immutability guard ──────────────────────────────────────────
-            // assessment_type and role_code are immutable once status ∈ {active, gone_live, archived}.
+            // assessment_type and role_code are immutable once status ∈ {active, archived}.
             // framework_version_id is always immutable after creation (blocked at FormRequest layer).
             $currentStatus  = $project->getOriginal('status');
             $resultingStatus = $project->isDirty('status')
                 ? $project->status
                 : $currentStatus;
 
-            $immutableStatuses = ['active', 'gone_live', 'archived'];
+            $immutableStatuses = ['active', 'archived'];
             if ((in_array($currentStatus, $immutableStatuses, true) || in_array($resultingStatus, $immutableStatuses, true))
                 && $project->isDirty(['assessment_type', 'framework_version_id', 'role_code'])
             ) {
                 throw new ImmutableProjectException(
-                    'Cannot change immutable fields on an active/gone-live project.'
+                    'Cannot change immutable fields on an active or archived project.'
                 );
             }
 
             // ── Lifecycle guard ─────────────────────────────────────────────
-            // Allowed transitions: draft→active, active→gone_live, gone_live→archived.
+            // Approved transitions: draft→active, active→archived.
+            // All other transitions are forbidden.
             if ($project->isDirty('status')) {
                 $origStatus = $project->getOriginal('status');
                 $newStatus  = $project->status;
 
                 $allowed = [
-                    ['draft',     'active'],
-                    ['active',    'gone_live'],
-                    ['gone_live', 'archived'],
+                    ['draft',  'active'],
+                    ['active', 'archived'],
                 ];
 
                 if (! in_array([$origStatus, $newStatus], $allowed, true)) {

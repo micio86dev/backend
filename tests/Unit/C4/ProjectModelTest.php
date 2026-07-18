@@ -175,6 +175,24 @@ test('model guard allows valid draft→active lifecycle transition', function ()
     expect($project->fresh()->status)->toBe('active');
 });
 
+test('model guard allows valid active→archived lifecycle transition', function (): void {
+    $org = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'active',
+    ]);
+
+    // This MUST be allowed — active→archived is the approved forward transition
+    $project->status = 'archived';
+    $project->save();
+
+    expect($project->fresh()->status)->toBe('archived');
+});
+
 test('competencies() is a belongsToMany relation with position pivot', function (): void {
     $org = Organization::factory()->create();
     $resolver = app(TenantResolver::class);
