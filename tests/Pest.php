@@ -76,6 +76,7 @@ pest()->extend(TestCase::class)
 // ─── C5 M2M API Authentication ───────────────────────────────────────────────
 
 // Unit/C5 — needs TestCase so service providers boot and app() helpers work.
+// Note: model-creation tests are in Feature/C5 to avoid RefreshDatabase conflicts.
 pest()->extend(TestCase::class)
     ->in('Unit/C5');
 
