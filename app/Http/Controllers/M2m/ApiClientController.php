@@ -71,15 +71,16 @@ final class ApiClientController extends Controller
         /** @var \App\Models\User $user */
         $user = $request->user();
 
-        $client = ApiClient::create([
+        // key_hash is NOT in $fillable (security invariant: cannot be mass-assigned).
+        // Use forceFill to set it once at creation — this is the only place it is ever written.
+        $client = new ApiClient;
+        $client->forceFill([
             'organization_id' => $user->organization_id,
             'name'            => $validated['name'],
             'abilities'       => $validated['abilities'],
             'expires_at'      => $validated['expires_at'] ?? null,
+            'key_hash'        => $hash,
         ]);
-
-        // Set key_hash directly (not mass-assignable)
-        $client->key_hash = $hash;
         $client->save();
 
         return response()->json([
