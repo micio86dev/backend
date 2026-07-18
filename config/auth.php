@@ -49,6 +49,14 @@ return [
             'driver' => 'jwt',
             'provider' => 'users',
         ],
+
+        // M2M guard — opaque API-key (C5). RequestGuard registered via Auth::viaRequest
+        // in AppServiceProvider::boot(). No provider key — RequestGuard takes a null provider.
+        // This config entry is REQUIRED: AuthManager::resolve() reads config("auth.guards.api-m2m")
+        // BEFORE consulting customCreators and throws InvalidArgumentException if absent.
+        'api-m2m' => [
+            'driver' => 'api-m2m',
+        ],
     ],
 
     /*

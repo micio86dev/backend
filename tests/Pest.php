@@ -73,6 +73,20 @@ pest()->extend(TestCase::class)
     ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Unit/C4');
 
+// ─── C5 M2M API Authentication ───────────────────────────────────────────────
+
+// Unit/C5 — needs TestCase so service providers boot and app() helpers work.
+pest()->extend(TestCase::class)
+    ->in('Unit/C5');
+
+// Feature/C5 — RefreshDatabase for guard, isolation, and revocation tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/C5');
+
+// Arch/C5 — needs TestCase so class resolution works.
+pest()->extend(TestCase::class)
+    ->in('Arch/C5');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
