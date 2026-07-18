@@ -84,10 +84,6 @@ pest()->extend(TestCase::class)
 pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature/C5');
 
-// Arch/C5 — needs TestCase so class resolution works.
-pest()->extend(TestCase::class)
-    ->in('Arch/C5');
-
 /*
 |--------------------------------------------------------------------------
 | Expectations

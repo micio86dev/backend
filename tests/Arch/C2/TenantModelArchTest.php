@@ -46,6 +46,13 @@ test('all non-excluded models with organization_id extend TenantModel', function
         \App\Models\BarsIndicator::class,
         \App\Models\FrameworkGap::class,
         \App\Models\CatalogMeta::class,
+        // C5 M2M — ApiClient intentionally does NOT extend TenantModel.
+        // The api-m2m guard queries ApiClient RAW/UNSCOPED because TenantResolver
+        // is not stamped yet at guard-resolution time (TenantContextM2m runs after
+        // the guard). A TenantScoped global scope would filter by the wrong/null org
+        // and the key would never resolve. This is a deliberate design decision.
+        // See design.md §"ApiClient is NOT a TenantModel".
+        \App\Models\ApiClient::class,
     ];
 
     $violations = [];
