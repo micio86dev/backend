@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Exceptions\LockedFrameworkVersionException;
+use Database\Factories\FrameworkVersionFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use RuntimeException;
 
 /**
  * Tenant-scoped FrameworkVersion model (C3 Framework Catalog).
  *
  * Extends TenantModel (C2) — automatically scoped by organization_id.
- * In C3 this is a WORKING DRAFT label; immutability is activated by C4 (snapshot-at-pin).
- * is_locked: forward-looking guard. C4 sets it to true on pin — C3 ships the guard.
+ * is_locked: activated by C4 reference-pin. Once locked, mutation and deletion
+ * are blocked by the immutability guard in booted().
  *
- * immutabilityGuard: blocks BOTH deletion AND mutation when is_locked=true.
- * This is a model-level guard (not a DB constraint). C4 activates it.
+ * C4 changes:
+ *   - Removed is_locked from $fillable (pin-only via explicit property assignment).
+ *   - Replaced RuntimeException with LockedFrameworkVersionException (renders HTTP 422).
+ *   - Replaced projects() placeholder with real hasMany(Project::class).
  *
  * @property string $version
  * @property bool   $is_locked
@@ -23,10 +27,18 @@ use RuntimeException;
  */
 class FrameworkVersion extends TenantModel
 {
+    /** @use HasFactory<FrameworkVersionFactory> */
+    use HasFactory;
+
     /**
+     * is_locked is intentionally excluded from $fillable.
+     * Lock is controlled exclusively via the pin transaction:
+     *   $fv->is_locked = true; $fv->save()  (with lockForUpdate conditional).
+     * organization_id MUST remain fillable for factory/seeder/CLI usage.
+     *
      * @var list<string>
      */
-    protected $fillable = ['organization_id', 'version', 'is_locked', 'label'];
+    protected $fillable = ['organization_id', 'version', 'label'];
 
     /**
      * @var array<string, string>
@@ -39,7 +51,7 @@ class FrameworkVersion extends TenantModel
      * Register the immutability guard on boot.
      *
      * Blocks deletion AND mutation of any locked FrameworkVersion.
-     * C4 sets is_locked=true; before that, this guard is a no-op.
+     * Throws LockedFrameworkVersionException (renders HTTP 422) — not a bare RuntimeException.
      */
     protected static function booted(): void
     {
@@ -47,7 +59,7 @@ class FrameworkVersion extends TenantModel
 
         static::deleting(function (self $fv): void {
             if ($fv->is_locked) {
-                throw new RuntimeException(
+                throw new LockedFrameworkVersionException(
                     "FrameworkVersion [{$fv->id}] is locked and cannot be deleted."
                 );
             }
@@ -55,7 +67,7 @@ class FrameworkVersion extends TenantModel
 
         static::updating(function (self $fv): void {
             if ($fv->getOriginal('is_locked') === true) {
-                throw new RuntimeException(
+                throw new LockedFrameworkVersionException(
                     "FrameworkVersion [{$fv->id}] is locked and cannot be mutated."
                 );
             }
@@ -63,14 +75,14 @@ class FrameworkVersion extends TenantModel
     }
 
     /**
-     * Placeholder for future C4 Project relationship.
-     * C4 wires the project → framework_version_id FK.
+     * Projects that have pinned this FrameworkVersion.
      *
-     * @return HasMany<\Illuminate\Database\Eloquent\Model, $this>
+     * Wired by C4 — replaces the placeholder from C3.
+     *
+     * @return HasMany<Project, $this>
      */
     public function projects(): HasMany
     {
-        // C4 will replace this with: return $this->hasMany(Project::class);
-        return $this->hasMany(self::class, 'id', 'id')->whereRaw('1=0'); // @phpstan-ignore-line
+        return $this->hasMany(Project::class);
     }
 }

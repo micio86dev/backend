@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Database\Factories\CompetencyFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Spatie\Translatable\HasTranslations;
@@ -21,6 +23,8 @@ use Spatie\Translatable\HasTranslations;
  */
 class Competency extends Model
 {
+    /** @use HasFactory<CompetencyFactory> */
+    use HasFactory;
     use HasTranslations;
 
     /**

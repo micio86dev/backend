@@ -8,6 +8,7 @@ use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
 use App\Models\FrameworkGap;
+use App\Models\FrameworkVersion;
 use App\Models\Role;
 use App\Services\FrameworkCatalog\CompetencyNormalizer;
 use Illuminate\Database\Seeder;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * FrameworkCatalogSeeder (C3).
+ * FrameworkCatalogSeeder (C3 + C4 lock-guard).
  *
  * Seeds the global BEAI framework catalog from split-file JSON:
  *   docs/app_description/02-domain/framework/roles.json
@@ -24,13 +25,18 @@ use Illuminate\Support\Facades\Log;
  *
  * Idempotent + delete-stale (sync):
  *   - updateOrCreate() for roles and competencies (by code)
- *   - sync() for role_competency pivot (removes stale assignments)
- *   - upsert + delete-stale for bars_indicators per (role, competency)
+ *   - sync() for role_competency pivot (removes stale assignments) [when NOT locked]
+ *   - syncWithoutDetaching() for role_competency pivot [when locked]
+ *   - upsert + delete-stale for bars_indicators per (role, competency) [when NOT locked]
  *   - updateOrCreate() for all framework_gaps (NULLS NOT DISTINCT at DB layer)
  *
- * EN-only authoring: setTranslation('field', 'en', ...) per field.
- * IT translations absent → recorded as missing_translation gap.
- * Re-seeding PRESERVES manually-added translations in other locales.
+ * C4 lock-guard: when any FrameworkVersion has is_locked=true, the seeder becomes
+ * PURELY ADDITIVE:
+ *   - No existing catalog rows are mutated (setTranslation/save skipped for existing rows)
+ *   - No rows are deleted (sync → syncWithoutDetaching; BarsIndicator::delete() suppressed)
+ *   - Only genuinely new rows (not yet in DB by natural key) are inserted
+ *   - framework_gaps upserts and CatalogMeta::bump() are EXEMPT (operational tables)
+ *   - seeder_lock_guard_active signal emitted ONCE (as FrameworkGap + Log::warning)
  *
  * @param string|null $rolesFile     Override path to roles.json (for testing)
  * @param string|null $competenciesFile Override path to competencies.json (for testing)
@@ -63,6 +69,23 @@ class FrameworkCatalogSeeder extends Seeder
         $normalizer = new CompetencyNormalizer();
         $structuralChange = false;
 
+        // ─── C4 Lock-Guard ────────────────────────────────────────────────────
+        // Must use withoutGlobalScopes() — no HTTP request / tenant context during artisan seeding.
+        // This is a cross-tenant aggregate check ("does ANY locked FV exist?") — intentionally unscoped.
+        $locked = $this->hasLockedVersions();
+
+        if ($locked) {
+            // Emit the lock-guard signal ONCE, before any catalog processing begins.
+            // This is EXEMPT from mutation-suppression (it is an operational signal, not catalog content).
+            FrameworkGap::updateOrCreate(
+                ['kind' => 'seeder_lock_guard_active', 'role_code' => null, 'competency_code' => null],
+                ['note' => 'FrameworkCatalogSeeder is running in ADDITIVE mode (a locked FrameworkVersion exists). No catalog mutations or deletes will be performed.', 'status' => 'info'],
+            );
+            Log::warning('FrameworkCatalogSeeder: running in ADDITIVE mode (locked FrameworkVersion detected). No catalog mutations or deletes performed.', [
+                'locked_fv_count' => FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->count(),
+            ]);
+        }
+
         // ─── 1. Load JSON data ────────────────────────────────────────────────
         /** @var array<string, array{name: string, responsibilities: string, competencies: list<string>}> $rolesJson */
         $rolesJson = json_decode(file_get_contents($this->rolesFile), true, 512, JSON_THROW_ON_ERROR);
@@ -75,29 +98,49 @@ class FrameworkCatalogSeeder extends Seeder
         $competencyIdsByCode = [];
 
         foreach ($competenciesJson as $code => $data) {
-            // Use firstOrNew so we can set translations before the initial INSERT.
-            // This avoids NOT NULL violations on json columns during updateOrCreate.
             $competency = Competency::firstOrNew(['code' => $code]);
-            $competency->type = 'standard';
 
-            // Write EN translations via setTranslation — does NOT overwrite other locales.
-            // Per spec: re-seeding MUST preserve manually-added translations in other locales.
-            $competency->setTranslation('name', 'en', $data['name']);
-            $competency->setTranslation('definition', 'en', $data['definition']);
-            $competency->save();
+            if ($locked && $competency->exists) {
+                // Pre-existing row in locked mode: capture id only. DO NOT setTranslation or save.
+                $competencyIdsByCode[$code] = $competency->id;
+            } else {
+                // New row (or unlocked mode): insert / upsert is allowed.
+                $competency->type = 'standard';
+                $competency->setTranslation('name', 'en', $data['name']);
+                $competency->setTranslation('definition', 'en', $data['definition']);
+                $competency->save();
+                $competencyIdsByCode[$code] = $competency->id;
 
-            $competencyIdsByCode[$code] = $competency->id;
+                if ($locked && ! $competency->wasRecentlyCreated) {
+                    // Already existed — in unlocked mode we just re-saved; that's fine.
+                    // In locked mode we only reach here for new rows (exists was false above).
+                }
+
+                // Track structural change only for genuinely new rows.
+                if ($competency->wasRecentlyCreated) {
+                    $structuralChange = true;
+                }
+            }
         }
 
         // ─── 3. Seed roles + pivot + BARS ────────────────────────────────────
         foreach ($rolesJson as $roleCode => $roleData) {
             // 3a. Upsert role — use firstOrNew to set translations before initial INSERT
             $role = Role::firstOrNew(['code' => $roleCode]);
-            $role->setTranslation('name', 'en', $roleData['name']);
-            $role->setTranslation('responsibilities', 'en', $roleData['responsibilities']);
-            $role->save();
 
-            // Flag empty responsibilities
+            if ($locked && $role->exists) {
+                // Pre-existing role row in locked mode: capture only, do NOT save.
+            } else {
+                $role->setTranslation('name', 'en', $roleData['name']);
+                $role->setTranslation('responsibilities', 'en', $roleData['responsibilities']);
+                $role->save();
+
+                if ($role->wasRecentlyCreated) {
+                    $structuralChange = true;
+                }
+            }
+
+            // Flag empty responsibilities (always — operational gap, not catalog mutation)
             if ($roleData['responsibilities'] === '') {
                 FrameworkGap::updateOrCreate(
                     ['kind' => 'missing_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
@@ -105,7 +148,7 @@ class FrameworkCatalogSeeder extends Seeder
                 );
             }
 
-            // 3b. Sync pivot — remove stale assignments
+            // 3b. Sync pivot
             $assignedCodes = $roleData['competencies'];
             $assignedIds = [];
             foreach ($assignedCodes as $position => $competencyCode) {
@@ -114,21 +157,28 @@ class FrameworkCatalogSeeder extends Seeder
                 }
             }
 
-            // Before sync: capture current pivot competency IDs to detect removals
-            $previousPivotIds = DB::table('framework_role_competency')
-                ->where('role_id', $role->id)
-                ->pluck('competency_id')
-                ->toArray();
+            if ($locked) {
+                // Additive mode: only attach new pivots — NEVER detach existing ones.
+                // syncWithoutDetaching preserves DB-pivot rows for competencies removed from JSON.
+                $role->competencies()->syncWithoutDetaching($assignedIds);
+                // Stale-pivot-removal block (L126-132 in the original) is SKIPPED entirely when locked.
+            } else {
+                // Normal mode: before sync, capture current pivot IDs to detect removals
+                $previousPivotIds = DB::table('framework_role_competency')
+                    ->where('role_id', $role->id)
+                    ->pluck('competency_id')
+                    ->toArray();
 
-            $role->competencies()->sync($assignedIds);
+                $role->competencies()->sync($assignedIds);
 
-            // Delete bars_indicators for any competencies removed from this role
-            $newPivotIds = array_keys($assignedIds);
-            $removedIds = array_diff($previousPivotIds, $newPivotIds);
-            if (! empty($removedIds)) {
-                BarsIndicator::where('role_id', $role->id)
-                    ->whereIn('competency_id', $removedIds)
-                    ->delete();
+                // Delete bars_indicators for any competencies removed from this role
+                $newPivotIds = array_keys($assignedIds);
+                $removedIds = array_diff($previousPivotIds, $newPivotIds);
+                if (! empty($removedIds)) {
+                    BarsIndicator::where('role_id', $role->id)
+                        ->whereIn('competency_id', $removedIds)
+                        ->delete();
+                }
             }
 
             // 3c. Seed BARS indicators for this role
@@ -152,7 +202,9 @@ class FrameworkCatalogSeeder extends Seeder
 
             $coveredCompetencyCodes = array_keys($barsJson);
 
-            // The current assigned competency IDs (after sync) — only process bars for these
+            // The current assigned competency IDs (from the CURRENT JSON, NOT DB pivot state).
+            // In locked mode, syncWithoutDetaching preserves DB-pivot rows for JSON-removed competencies;
+            // those competencies are absent from $currentAssignedIds (JSON-derived) but their DB pivot exists.
             $currentAssignedIds = array_keys($assignedIds);
 
             foreach ($barsJson as $competencyCode => $indicatorArray) {
@@ -162,10 +214,16 @@ class FrameworkCatalogSeeder extends Seeder
 
                 $competencyId = $competencyIdsByCode[$competencyCode];
 
-                // Only seed bars for competencies actually assigned to this role
+                // Only seed bars for competencies currently in the JSON-derived assigned set
                 if (! in_array($competencyId, $currentAssignedIds, true)) {
-                    // Competency exists in bars file but is no longer assigned to this role
-                    // Delete any stale indicators for this pair
+                    // Competency is in bars file but absent from the current JSON assignment list.
+                    if ($locked) {
+                        // Locked mode: suppress BarsIndicator::delete() for JSON-removed-but-DB-preserved competency.
+                        // Keep the continue to skip bars processing for this competency.
+                        continue;
+                    }
+
+                    // Unlocked mode: delete stale indicators, then skip.
                     BarsIndicator::where('role_id', $role->id)
                         ->where('competency_id', $competencyId)
                         ->delete();
@@ -188,21 +246,34 @@ class FrameworkCatalogSeeder extends Seeder
                         'position' => $indicatorDto->position,
                     ]);
 
-                    $indicator->setTranslation('text', 'en', $indicatorDto->text);
-                    $indicator->setTranslation('anchor_5', 'en', $indicatorDto->anchor5);
-                    $indicator->setTranslation('anchor_3', 'en', $indicatorDto->anchor3);
-                    $indicator->setTranslation('anchor_1', 'en', $indicatorDto->anchor1);
-                    $indicator->save();
+                    if ($locked && $indicator->exists) {
+                        // Pre-existing indicator in locked mode: DO NOT setTranslation or save.
+                        // Track position only (needed to know what "present" means for delete-stale check,
+                        // but the delete-stale block below is skipped in locked mode anyway).
+                        $presentPositions[] = $indicatorDto->position;
+                    } else {
+                        // New row (or unlocked mode): insert / upsert.
+                        $indicator->setTranslation('text', 'en', $indicatorDto->text);
+                        $indicator->setTranslation('anchor_5', 'en', $indicatorDto->anchor5);
+                        $indicator->setTranslation('anchor_3', 'en', $indicatorDto->anchor3);
+                        $indicator->setTranslation('anchor_1', 'en', $indicatorDto->anchor1);
+                        $indicator->save();
+                        $presentPositions[] = $indicatorDto->position;
 
-                    $presentPositions[] = $indicatorDto->position;
-                    $structuralChange = true;
+                        if ($indicator->wasRecentlyCreated) {
+                            $structuralChange = true;
+                        }
+                    }
                 }
 
-                // Delete stale indicators (positions no longer in JSON)
-                BarsIndicator::where('role_id', $role->id)
-                    ->where('competency_id', $competencyId)
-                    ->whereNotIn('position', $presentPositions)
-                    ->delete();
+                if (! $locked) {
+                    // Delete stale indicators (positions no longer in JSON) — only in unlocked mode.
+                    BarsIndicator::where('role_id', $role->id)
+                        ->where('competency_id', $competencyId)
+                        ->whereNotIn('position', $presentPositions)
+                        ->delete();
+                }
+                // In locked mode: delete-stale-positions block is SKIPPED entirely.
             }
 
             // 3d. Record competency_no_bars gaps for assigned competencies absent from BARS file
@@ -231,8 +302,24 @@ class FrameworkCatalogSeeder extends Seeder
         );
 
         // ─── 6. Bump catalog_meta revision if structural changes occurred ─────
+        // CatalogMeta::bump() is EXEMPT from lock-guard suppression (operational table).
+        // It fires only when genuinely new rows were inserted — NOT when mutations are suppressed.
         if ($structuralChange) {
             CatalogMeta::bump();
         }
+    }
+
+    /**
+     * Check whether any locked FrameworkVersion exists across all tenants.
+     *
+     * MUST use withoutGlobalScopes() — the seeder runs in a CLI context with no
+     * HTTP request and no TenantContext middleware, so the TenantScoped global scope
+     * would resolve to null organization_id and return zero rows, silently missing
+     * locked FVs. This is intentional: the check is a cross-tenant aggregate,
+     * not a per-tenant data-access query.
+     */
+    private function hasLockedVersions(): bool
+    {
+        return FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->exists();
     }
 }
