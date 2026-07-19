@@ -1,11 +1,13 @@
 <?php
 
+use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -22,6 +24,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // has authenticated the bearer token and loaded the User from the DB.
         // IMPORTANT: TenantContext must never run before auth:api — it would receive null user.
         $middleware->appendToGroup('api', TenantContext::class);
+
+        // C5: Register the 'ability' middleware alias for per-route M2M ability checks.
+        // e.g. Route::middleware('ability:participants:read')
+        $middleware->alias(['ability' => CheckAbility::class]);
+
+        // C5: Insert CheckAbility IMMEDIATELY BEFORE SubstituteBindings in the priority list.
+        // Without this, per-route ability middleware could execute AFTER SubstituteBindings
+        // (which IS in the default priority list), creating a 404-vs-403 resource-existence
+        // enumeration oracle. prependToPriorityList inserts without replacing the full list.
+        // ⚠️  NOT appendToPriorityList — that would place CheckAbility AFTER SubstituteBindings.
+        $middleware->prependToPriorityList(SubstituteBindings::class, CheckAbility::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

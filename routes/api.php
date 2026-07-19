@@ -10,7 +10,11 @@ use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\M2m\ApiClientController;
+use App\Http\Controllers\M2m\WhoamiController;
 use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextM2m;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
@@ -51,4 +55,44 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::apiResource('projects', ProjectController::class);
+});
+
+// ─── M2M Machine Routes (C5) ─────────────────────────────────────────────────
+// Machine-to-machine API endpoints authenticated via opaque API-key (auth:api-m2m).
+//
+// CRITICAL route isolation:
+//   withoutMiddleware(TenantContext::class) strips the globally-appended human
+//   TenantContext (bootstrap/app.php:24) from this group — without this, the
+//   human TenantContext would silently pass through on a null User, potentially
+//   leaving the resolver in a stale/null state.
+//
+// Inline middleware stack (explicit, ordered):
+//   1. auth:api-m2m       — resolves ApiClient via bearer key
+//   2. TenantContextM2m   — stamps TenantResolver from client.organization_id
+//   3. SubstituteBindings — route-model-binding (LAST, per C4 convention)
+//
+// Admin credential-management routes are NOT here — they use auth:api + global
+// TenantContext (see admin group below).
+
+Route::prefix('m2m')
+    ->withoutMiddleware(TenantContext::class)
+    ->middleware(['auth:api-m2m', TenantContextM2m::class, SubstituteBindings::class])
+    ->group(function (): void {
+        // GET /api/m2m/whoami — identity for the authenticated M2M client.
+        // No ability required — authentication alone is sufficient.
+        Route::get('/whoami', WhoamiController::class);
+    });
+
+// ─── M2M Credential Management API (C5) ──────────────────────────────────────
+// Admin-only CRUD for managing ApiClient credentials.
+// Behind auth:api + global TenantContext (NOT inline — avoids double-execution).
+// No inline TenantContext here — the global appendToGroup('api', ...) already supplies it.
+// RBAC via ApiClientPolicy: admin-only (operator/viewer → 403).
+// NO show endpoint — GET /api/m2m/clients/{id} → 404.
+
+Route::middleware(['auth:api', TenantContext::class])->prefix('m2m')->group(function (): void {
+    Route::post('/clients', [ApiClientController::class, 'store']);
+    Route::get('/clients', [ApiClientController::class, 'index']);
+    Route::delete('/clients/{apiClient}', [ApiClientController::class, 'destroy']);
+    // Intentionally NO: Route::get('/clients/{apiClient}', ...) — returns 404 per design
 });
