@@ -9,13 +9,17 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\SessionController;
+use App\Http\Controllers\Candidate\SnapshotController;
+use App\Http\Controllers\Candidate\UtteranceController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
 use App\Http\Controllers\Sso\SsoExchangeController;
+use App\Http\Middleware\ParticipantStatusGuard;
 use App\Http\Middleware\TenantContext;
 use App\Http\Middleware\TenantContextCandidate;
 use App\Http\Middleware\TenantContextM2m;
@@ -128,6 +132,30 @@ Route::prefix('candidate')
     ->group(function (): void {
         // GET /api/candidate/session — candidate whoami + project config
         Route::get('/session', [SessionController::class, 'show']);
+
+        // ─── C7a: Interview sub-routes ────────────────────────────────────────
+        // ParticipantStatusGuard is applied ONLY to this NESTED group (FIX-7):
+        // terminal-status participants (completato/errore) are blocked here but
+        // MAY still call GET /api/candidate/session above (read-only, acceptable).
+        //
+        // Middleware order in this group (inherits parent + adds guard):
+        //   auth:api-candidate → TenantContextCandidate → SubstituteBindings (inherited)
+        //   → ParticipantStatusGuard (nested only)
+        //
+        // PR 2 routes registered here: utterance, integrity, snapshot.
+        // PR 3 will add: start, end (into this SAME nested group).
+        Route::prefix('interview')
+            ->middleware(ParticipantStatusGuard::class)
+            ->group(function (): void {
+                // POST /api/candidate/interview/utterance — live transcript ingestion
+                Route::post('/utterance', [UtteranceController::class, 'store']);
+
+                // POST /api/candidate/interview/integrity — proctoring event batch
+                Route::post('/integrity', [IntegrityController::class, 'store']);
+
+                // POST /api/candidate/interview/snapshot — JPEG snapshot to S3
+                Route::post('/snapshot', [SnapshotController::class, 'store']);
+            });
     });
 
 // ─── M2M Credential Management API (C5) ──────────────────────────────────────
