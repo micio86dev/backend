@@ -53,6 +53,14 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // and the key would never resolve. This is a deliberate design decision.
         // See design.md §"ApiClient is NOT a TenantModel".
         \App\Models\ApiClient::class,
+        // C6 Participant — intentionally does NOT extend TenantModel.
+        // Participant implements AuthenticatableContract + JWTSubject and is used as
+        // the auth principal for the api-candidate guard. TenantModel adds a global
+        // scope that would filter by org_id before TenantContextCandidate has a
+        // chance to stamp the resolver — breaking guard resolution. Tenant isolation
+        // is enforced at the controller layer (forceFill organization_id from project)
+        // and via the TenantContextCandidate middleware. See C6 design invariants.
+        \App\Models\Participant::class,
     ];
 
     $violations = [];
