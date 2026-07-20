@@ -40,4 +40,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        // C6: ParticipantTransitionException renders HTTP 422.
+        // Registered here as a backstop for direct (non-HTTP) model writes.
+        // The exception's own render() method handles the JSON response.
+        $exceptions->render(function (\App\Exceptions\ParticipantTransitionException $e, Request $request) {
+            return $e->render($request);
+        });
     })->create();

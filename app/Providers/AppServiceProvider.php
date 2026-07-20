@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Contracts\LLMProvider;
 use App\Models\ApiClient;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Policies\ApiClientPolicy;
 use App\Policies\ProjectPolicy;
@@ -20,6 +21,7 @@ use Spatie\Permission\Events\RoleAttached;
 use Spatie\Permission\Events\RoleDetached;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Translatable\Facades\Translatable;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -113,6 +115,57 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return $client;
+        });
+
+        // C6 — Register the api-candidate RequestGuard.
+        //
+        // BOTH this viaRequest call AND the 'api-candidate' entry in config/auth.php
+        // are REQUIRED in the same deploy (same dual-registration pattern as C5 api-m2m).
+        //
+        // Guard closure (5 steps — security-critical):
+        //   1. Extract Bearer token from Authorization header.
+        //   2. SINGLE decode: $payload = JWTAuth::setToken($raw)->checkOrFail()
+        //      NOT authenticate() (resolves via User provider, prv mismatch risk).
+        //      NOT two separate setToken calls (facade singleton state pollution risk).
+        //   3. Assert $payload->get('typ') === 'candidate' (PRIMARY defense).
+        //      tymon does NOT check custom claims — explicit assertion is mandatory.
+        //      Any other typ (user, m2m, sso-link, absent) → null → 401.
+        //   4. Validate sub is a positive integer (non-numeric sub = sso-link token).
+        //   5. Participant::find((int) $sub) — unscoped (not TenantModel; TenantResolver
+        //      not stamped yet; same reason as ApiClient::find in M2M guard).
+        //
+        // SECONDARY layer: candidate JWTs carry prv=hash(Participant) via fromUser.
+        // On the `api` (User) guard, prv mismatch → TokenInvalidException → null → 401.
+        Auth::viaRequest('api-candidate', function (Request $request): ?Participant {
+            $header = $request->header('Authorization', '');
+            if (! str_starts_with((string) $header, 'Bearer ')) {
+                return null;
+            }
+
+            $raw = substr((string) $header, 7);
+            if ($raw === '') {
+                return null;
+            }
+
+            try {
+                // SINGLE decode — returns validated Payload or throws.
+                $payload = JWTAuth::setToken($raw)->checkOrFail();
+            } catch (\Throwable) {
+                return null;
+            }
+
+            // PRIMARY defense: explicit typ assertion (tymon does NOT check custom claims).
+            if ($payload->get('typ') !== 'candidate') {
+                return null;
+            }
+
+            // sub must be a positive integer — sso-link tokens have a string candidate_ref as sub.
+            $sub = $payload->get('sub');
+            if (! is_numeric($sub) || (int) $sub <= 0) {
+                return null;
+            }
+
+            return Participant::find((int) $sub);
         });
 
         // C3 — Task 1.3: Configure spatie/laravel-translatable fallback explicitly.

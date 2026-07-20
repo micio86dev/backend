@@ -57,6 +57,14 @@ return [
         'api-m2m' => [
             'driver' => 'api-m2m',
         ],
+
+        // Candidate guard — BEAI-minted JWT (C6). RequestGuard registered via Auth::viaRequest
+        // in AppServiceProvider::boot(). NO provider key — same reason as api-m2m.
+        // AuthManager::resolve() reads this entry BEFORE consulting customCreators.
+        // WARNING: do NOT add a 'provider' key — it breaks AuthManager resolution.
+        'api-candidate' => [
+            'driver' => 'api-candidate',
+        ],
     ],
 
     /*

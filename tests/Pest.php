@@ -84,6 +84,19 @@ pest()->extend(TestCase::class)
 pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature/C5');
 
+// ─── C6 Participant + SSO Ingress ─────────────────────────────────────────────
+
+// Unit/C6 — needs TestCase + RefreshDatabase (model guard tests require DB).
+pest()->extend(TestCase::class)
+    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Unit/C6');
+
+// Feature/C6 — RefreshDatabase for exchange flow, guard matrix, and isolation tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/C6');
+
+// Arch/C6 — covered by the global Arch extension above (TestCase already in Arch/).
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
