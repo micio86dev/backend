@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Candidate\IntegrityController;
+use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
@@ -142,11 +143,16 @@ Route::prefix('candidate')
         //   auth:api-candidate → TenantContextCandidate → SubstituteBindings (inherited)
         //   → ParticipantStatusGuard (nested only)
         //
-        // PR 2 routes registered here: utterance, integrity, snapshot.
-        // PR 3 will add: start, end (into this SAME nested group).
+        // PR 2 + PR 3 routes registered here: start, end, utterance, integrity, snapshot.
         Route::prefix('interview')
             ->middleware(ParticipantStatusGuard::class)
             ->group(function (): void {
+                // POST /api/candidate/interview/start — create/resume provider session (PR 3)
+                Route::post('/start', [InterviewController::class, 'start']);
+
+                // POST /api/candidate/interview/end — end session, reconcile, dispatch scoring (PR 3)
+                Route::post('/end', [InterviewController::class, 'end']);
+
                 // POST /api/candidate/interview/utterance — live transcript ingestion
                 Route::post('/utterance', [UtteranceController::class, 'store']);
 
