@@ -9,10 +9,15 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\M2m\ApiClientController;
+use App\Http\Controllers\M2m\ParticipantController;
+use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
+use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextCandidate;
 use App\Http\Middleware\TenantContextM2m;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
@@ -81,6 +86,48 @@ Route::prefix('m2m')
         // GET /api/m2m/whoami — identity for the authenticated M2M client.
         // No ability required — authentication alone is sufficient.
         Route::get('/whoami', WhoamiController::class);
+
+        // ─── C6: Participant CRUD ─────────────────────────────────────────────
+        // POST /api/m2m/participants (participants:create)
+        // GET  /api/m2m/participants (participants:read)
+        // GET  /api/m2m/participants/{id} (participants:read)
+        Route::post('/participants', [ParticipantController::class, 'store'])
+            ->middleware('ability:participants:create');
+        Route::get('/participants', [ParticipantController::class, 'index'])
+            ->middleware('ability:participants:read');
+        Route::get('/participants/{id}', [ParticipantController::class, 'show'])
+            ->middleware('ability:participants:read');
+
+        // ─── C6: SSO-Link Mint ────────────────────────────────────────────────
+        // POST /api/m2m/sso-link (sso_link:generate)
+        Route::post('/sso-link', [SsoLinkController::class, 'store'])
+            ->middleware('ability:sso_link:generate');
+    });
+
+// ─── SSO Exchange (PUBLIC) (C6) ───────────────────────────────────────────────
+// PUBLIC endpoint — no guard, no TenantContext.
+// CRITICAL: withoutMiddleware(TenantContext::class) prevents the globally-appended
+// human TenantContext (bootstrap/app.php) from running on this public request.
+
+Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
+    ->withoutMiddleware(TenantContext::class);
+
+// ─── Candidate Routes (C6) ───────────────────────────────────────────────────
+// Protected by auth:api-candidate → TenantContextCandidate → SubstituteBindings.
+// withoutMiddleware(TenantContext::class) strips the globally-appended human
+// TenantContext — same isolation as M2M routes.
+//
+// Middleware stack (explicit, ordered):
+//   1. auth:api-candidate      — resolves Participant via candidate JWT
+//   2. TenantContextCandidate  — stamps TenantResolver from participant.organization_id
+//   3. SubstituteBindings      — route-model-binding (LAST)
+
+Route::prefix('candidate')
+    ->withoutMiddleware(TenantContext::class)
+    ->middleware(['auth:api-candidate', TenantContextCandidate::class, SubstituteBindings::class])
+    ->group(function (): void {
+        // GET /api/candidate/session — candidate whoami + project config
+        Route::get('/session', [SessionController::class, 'show']);
     });
 
 // ─── M2M Credential Management API (C5) ──────────────────────────────────────
