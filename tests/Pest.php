@@ -97,6 +97,17 @@ pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
 
 // Arch/C6 — covered by the global Arch extension above (TestCase already in Arch/).
 
+// ─── C7a Interview Session Mechanics ──────────────────────────────────────────
+
+// Unit/C7a — needs TestCase + RefreshDatabase (model guard tests require DB).
+pest()->extend(TestCase::class)
+    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Unit/C7a');
+
+// Feature/C7a — RefreshDatabase for schema, model, lifecycle, and isolation tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/C7a');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

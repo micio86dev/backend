@@ -48,12 +48,13 @@ test('in_attesa → completato (illegal jump) throws ParticipantTransitionExcept
         ->toThrow(ParticipantTransitionException::class);
 });
 
-test('in_attesa → errore (illegal jump) throws ParticipantTransitionException', function (): void {
-    $participant = makeParticipantWithStatus('in_attesa');
-
-    expect(fn () => $participant->update(['status' => 'errore']))
-        ->toThrow(ParticipantTransitionException::class);
-});
+/**
+ * NOTE (C7a update): in_attesa → errore is now ALLOWED per CRITICAL-1 (C7a design).
+ * C7a adds this edge because a hard-fail on the first competency /start
+ * (provider 5xx/timeout) must transition the participant to errore immediately.
+ * This test has been removed to reflect the updated complete $allowedTransitions map.
+ * See: tests/Unit/C7a/ParticipantTransitionsC7aTest.php for the full coverage.
+ */
 
 test('in_attesa → in_valutazione (illegal skip) throws ParticipantTransitionException', function (): void {
     $participant = makeParticipantWithStatus('in_attesa');

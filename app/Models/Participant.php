@@ -29,10 +29,12 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * - booted() updating guard: rejects illegal status transitions via
  *   ParticipantTransitionException (→ HTTP 422).
  *
- * Allowed transitions (C6 defines in_attesa only; C7/C9 drive the rest):
- *   in_attesa → in_corso
- *   in_corso  → in_valutazione
+ * Allowed transitions (CRITICAL-1 complete map, C6+C7a):
+ *   in_attesa → in_corso | errore
+ *   in_corso  → in_valutazione | errore
  *   in_valutazione → completato | errore
+ *   completato → [] (terminal)
+ *   errore     → [] (terminal)
  *
  * REQ: Participant Model and Schema, Participant Model Lifecycle Guard
  *
@@ -85,14 +87,31 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
     }
 
     /**
-     * Allowed status transitions (C6 lifecycle).
+     * Allowed status transitions — COMPLETE map (C7a CRITICAL-1).
+     *
+     * C6 defined: in_attesa→in_corso, in_corso→in_valutazione, in_valutazione→{completato,errore}.
+     * C7a adds:   in_attesa→errore (hard-fail on first competency /start)
+     *             in_corso→errore  (hard-fail on subsequent competency)
+     *
+     * Both terminal states ('completato', 'errore') are EXPLICIT keys with empty arrays.
+     * The ?? [] fallback exists only as a last resort for unrecognized states; known
+     * terminal states MUST appear explicitly so the intent is visible and auditable.
+     * Neither terminal key may be removed or replaced with ?? [] fallthrough.
+     *
+     * IMPORTANT: 'started_at' is NOT in $fillable — use direct property assignment:
+     *   $participant->started_at = now();
+     *   $participant->status     = 'in_corso';
+     *   $participant->save();
+     * Using $participant->update(['started_at' => now()]) silently drops it (guarded).
      *
      * @var array<string, list<string>>
      */
     private static array $allowedTransitions = [
-        'in_attesa'      => ['in_corso'],
-        'in_corso'       => ['in_valutazione'],
+        'in_attesa'      => ['in_corso', 'errore'],
+        'in_corso'       => ['in_valutazione', 'errore'],
         'in_valutazione' => ['completato', 'errore'],
+        'completato'     => [],   // terminal — no outbound transitions (FIX-5)
+        'errore'         => [],   // terminal — no outbound transitions
     ];
 
     /**
