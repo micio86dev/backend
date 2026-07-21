@@ -10,13 +10,17 @@ use App\Http\Controllers\Controller;
 use App\Jobs\FinalizeInterview;
 use App\Models\InterviewSession;
 use App\Models\Participant;
+use App\Models\Project;
+use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
+use App\Services\Provider\TavusProvider;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -75,7 +79,7 @@ class InterviewController extends Controller
         $participant = auth('api-candidate')->user();
 
         $project = $participant->project;
-        $pid     = $participant->id;
+        $pid = $participant->id;
 
         // (1) Resolve next competency — lowest position not yet in a terminal-completed state.
         $nextCompetency = $this->resolveNextCompetency($pid, $project->id);
@@ -86,14 +90,14 @@ class InterviewController extends Controller
 
         // (2) Create-or-RESUME session row.
         $providerName = $project->provider_override ?? config('interview.provider', 'heygen');
-        $session      = $this->createOrResumeSession($participant, $project, $nextCompetency, $providerName);
+        $session = $this->createOrResumeSession($participant, $project, $nextCompetency, $providerName);
 
         // Re-resolve the provider after we know the project override.
         $providerService = $this->resolveProvider($providerName);
 
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
-            questionIndex:  $session->question_index,
+            questionIndex: $session->question_index,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -134,7 +138,7 @@ class InterviewController extends Controller
     public function end(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'session_id'   => ['required', 'integer'],
+            'session_id' => ['required', 'integer'],
             'ended_reason' => ['required', 'string', 'in:completed,timeout,skipped'],
         ]);
 
@@ -142,11 +146,11 @@ class InterviewController extends Controller
         $session = $this->resolveOwnedSession((int) $validated['session_id']);
 
         $endedReason = $validated['ended_reason'];
-        $pid         = $session->participant_id;
-        $projectId   = $session->project_id;
+        $pid = $session->participant_id;
+        $projectId = $session->project_id;
 
         // Determine provider for reconcile
-        $providerName    = $session->provider;
+        $providerName = $session->provider;
         $providerService = $this->resolveProvider($providerName);
 
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
@@ -173,13 +177,13 @@ class InterviewController extends Controller
             // Tavus: no reconcile — live /utterance rows are kept as-is.
 
             // (6) UPDATE session status + ended_at
-            $locked->status     = $endedReason;
-            $locked->ended_at   = now();
+            $locked->status = $endedReason;
+            $locked->ended_at = now();
             $locked->ended_reason = $endedReason;
             $locked->save();
 
             // (7) Count ended sessions (completed, timeout, skipped) for this participant + project
-            $endedCount       = InterviewSession::where('participant_id', $pid)
+            $endedCount = InterviewSession::where('participant_id', $pid)
                 ->where('project_id', $projectId)
                 ->whereIn('status', ['completed', 'timeout', 'skipped'])
                 ->count();
@@ -238,7 +242,7 @@ class InterviewController extends Controller
                 // No session yet → this is the next one to create
                 return [
                     'competency_code' => $row->competency_code,
-                    'question_index'  => $row->position - 1, // 0-based
+                    'question_index' => $row->position - 1, // 0-based
                 ];
             }
 
@@ -246,7 +250,7 @@ class InterviewController extends Controller
             if (in_array($status, ['pending', 'in_corso'], true)) {
                 return [
                     'competency_code' => $row->competency_code,
-                    'question_index'  => $row->position - 1,
+                    'question_index' => $row->position - 1,
                 ];
             }
 
@@ -269,20 +273,20 @@ class InterviewController extends Controller
      */
     private function createOrResumeSession(
         Participant $participant,
-        \App\Models\Project $project,
+        Project $project,
         array $competency,
         string $providerName,
     ): InterviewSession {
         try {
             return DB::transaction(function () use ($participant, $project, $competency, $providerName): InterviewSession {
                 return InterviewSession::create([
-                    'participant_id'       => $participant->id,
-                    'project_id'           => $project->id,
-                    'question_index'       => $competency['question_index'],
-                    'competency_code'      => $competency['competency_code'],
+                    'participant_id' => $participant->id,
+                    'project_id' => $project->id,
+                    'question_index' => $competency['question_index'],
+                    'competency_code' => $competency['competency_code'],
                     'framework_version_id' => $project->framework_version_id,
-                    'provider'             => $providerName,
-                    'status'               => 'pending',
+                    'provider' => $providerName,
+                    'status' => 'pending',
                 ]);
             });
         } catch (UniqueConstraintViolationException) {
@@ -326,9 +330,9 @@ class InterviewController extends Controller
         } catch (\Throwable $e) {
             // Non-fatal — log and continue (candidate needs the fresh session)
             Log::warning('C7a: teardown of old provider session failed (non-fatal)', [
-                'session_id'  => $session->id,
-                'old_ref'     => $session->provider_session_ref,
-                'error'       => $e->getMessage(),
+                'session_id' => $session->id,
+                'old_ref' => $session->provider_session_ref,
+                'error' => $e->getMessage(),
             ]);
         }
 
@@ -336,7 +340,7 @@ class InterviewController extends Controller
         try {
             DB::transaction(function () use ($session, $freshToken): void {
                 $session->provider_session_ref = $freshToken->provider_session_ref;
-                $session->status               = 'in_corso';
+                $session->status = 'in_corso';
                 $session->save();
             });
         } catch (\Throwable $e) {
@@ -348,10 +352,11 @@ class InterviewController extends Controller
                     'session_id' => $session->id,
                 ]);
             }
+
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $freshToken);
+        return $this->buildSuccessResponse($session, $freshToken, $participant->language);
     }
 
     /**
@@ -380,14 +385,14 @@ class InterviewController extends Controller
             DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency): void {
                 // UPDATE session status = in_corso + new ref
                 $session->provider_session_ref = $token->provider_session_ref;
-                $session->status               = 'in_corso';
+                $session->status = 'in_corso';
                 $session->save();
 
                 // On first competency only: stamp participant.started_at + status (direct property)
                 if ($isFirstCompetency) {
                     // started_at is NOT in $fillable → direct property assignment is mandatory
                     $participant->started_at = now();
-                    $participant->status     = 'in_corso';
+                    $participant->status = 'in_corso';
                     $participant->save();
                 }
             });
@@ -400,10 +405,11 @@ class InterviewController extends Controller
                     'session_id' => $session->id,
                 ]);
             }
+
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $token);
+        return $this->buildSuccessResponse($session, $token, $participant->language);
     }
 
     /**
@@ -424,7 +430,7 @@ class InterviewController extends Controller
 
         // (4b) 5xx/timeout — update session to error + participant to errore
         try {
-            $session->status      = 'error';
+            $session->status = 'error';
             $session->ended_reason = 'error';
             $session->save();
         } catch (\Throwable) {
@@ -449,21 +455,66 @@ class InterviewController extends Controller
      *
      * SECURITY: NEVER include API key material. Only the ephemeral token/URL
      * that the client needs to connect to the provider is included.
+     *
+     * question_context.end_phrase / final_phrase are the localized avatar
+     * completion-signal phrases (C7a follow-up — interview-frontend addendum),
+     * resolved for the participant's language with a platform-default fallback.
+     * The frontend (C7b) consumes them as the SOLE completion-signal source.
+     *
+     * @param  string|null  $language  The participant's language (BCP-ish locale, may be null).
      */
-    private function buildSuccessResponse(InterviewSession $session, ProviderToken $token): JsonResponse
+    private function buildSuccessResponse(InterviewSession $session, ProviderToken $token, ?string $language): JsonResponse
     {
+        [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
+
         return response()->json([
-            'session_id'       => $session->id,
-            'provider'         => $token->provider,
+            'session_id' => $session->id,
+            'provider' => $token->provider,
             // HeyGen: token; Tavus: null
-            'provider_token'   => $token->token,
+            'provider_token' => $token->token,
             // Tavus: conversation_url; HeyGen: null
             'conversation_url' => $token->conversation_url,
             'question_context' => [
                 'competency_code' => $session->competency_code,
-                'question_index'  => $session->question_index,
+                'question_index' => $session->question_index,
+                // Machine-facing field names stay literal (snake_case); VALUES are localized.
+                'end_phrase' => $endPhrase,
+                'final_phrase' => $finalPhrase,
             ],
         ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Resolve the localized avatar completion-signal phrases for a language.
+     *
+     * Institutional UX chrome (NOT tenant/BARS content): the same phrases for every
+     * project of a given language, stored in lang/{locale}/interview.php.
+     *
+     * Resolution rule (per interview-frontend delta spec):
+     *   1. Use the participant's language when a phrase file exists for it.
+     *   2. Otherwise fall back to the platform default language
+     *      (config app.fallback_locale) — the fallback phrase is ALWAYS included
+     *      (an absent field is a contract violation).
+     *
+     * Lang::has() checks whether the key resolves for the exact locale (no implicit
+     * fallback), so a missing/unknown/null language deterministically falls back.
+     *
+     * @param  string|null  $language  The participant's language.
+     * @return array{0: string, 1: string} [end_phrase, final_phrase]
+     */
+    private function resolveCompletionPhrases(?string $language): array
+    {
+        $fallback = (string) config('app.fallback_locale');
+
+        $locale = ($language !== null && Lang::has('interview.end_phrase', $language))
+            ? $language
+            : $fallback;
+
+        // Both keys resolve to scalar strings (leaf entries in lang/{locale}/interview.php).
+        $endPhrase = (string) Lang::get('interview.end_phrase', [], $locale);
+        $finalPhrase = (string) Lang::get('interview.final_phrase', [], $locale);
+
+        return [$endPhrase, $finalPhrase];
     }
 
     /**
@@ -473,7 +524,7 @@ class InterviewController extends Controller
      * This runs INSIDE the explicit DB transaction + FOR UPDATE lock from /end,
      * preventing a concurrent /utterance from interleaving between DELETE and INSERT.
      *
-     * @param array<int, array{speaker: string, text: string, ts: string}> $transcript
+     * @param  array<int, array{speaker: string, text: string, ts: string}>  $transcript
      */
     private function replaceUtterances(InterviewSession $session, array $transcript): void
     {
@@ -487,10 +538,10 @@ class InterviewController extends Controller
         // INSERT the authoritative server transcript
         $rows = array_map(fn (array $row) => [
             'interview_session_id' => $session->id,
-            'organization_id'      => $session->organization_id,
-            'speaker'              => $row['speaker'],
-            'text'                 => $row['text'],
-            'ts'                   => $row['ts'],
+            'organization_id' => $session->organization_id,
+            'speaker' => $row['speaker'],
+            'text' => $row['text'],
+            'ts' => $row['ts'],
         ], $transcript);
 
         DB::table('utterances')->insert($rows);
@@ -505,8 +556,8 @@ class InterviewController extends Controller
     private function resolveProvider(string $providerName): ProviderSessionService
     {
         return match ($providerName) {
-            'tavus'  => app(\App\Services\Provider\TavusProvider::class),
-            default  => app(\App\Services\Provider\HeygenProvider::class),
+            'tavus' => app(TavusProvider::class),
+            default => app(HeygenProvider::class),
         };
     }
 }
