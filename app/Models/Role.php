@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Database\Factories\RoleFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Spatie\Translatable\HasTranslations;
@@ -15,11 +17,14 @@ use Spatie\Translatable\HasTranslations;
  * Extends plain Model (NOT TenantModel).
  *
  * @property string $code
- * @property string $name  (resolved via current locale)
- * @property string $responsibilities  (resolved via current locale)
+ * @property string $name (resolved via current locale)
+ * @property string $responsibilities (resolved via current locale)
  */
 class Role extends Model
 {
+    /** @use HasFactory<RoleFactory> */
+    use HasFactory;
+
     use HasTranslations;
 
     /**
