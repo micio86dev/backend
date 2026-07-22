@@ -8,6 +8,7 @@ use App\Contracts\LLMProvider;
 use App\DTOs\Scoring\IndicatorRef;
 use App\DTOs\Scoring\IndicatorScoreDTO;
 use App\Enums\EvaluationStatus;
+use App\Events\EvaluationCompleted;
 use App\Events\EvaluationFailed;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Scoring\ExcerptNotVerbatimException;
@@ -15,6 +16,7 @@ use App\Exceptions\Scoring\IndicatorCountMismatchException;
 use App\Exceptions\Scoring\InvalidIndicatorScoreException;
 use App\Exceptions\Scoring\JsonParseException;
 use App\Exceptions\Scoring\RoleNoBarsException;
+use App\Exceptions\Scoring\ZeroCompetenciesInvariantException;
 use App\Models\AiRequest;
 use App\Models\BarsIndicator;
 use App\Models\CompetencyResult;
@@ -22,6 +24,10 @@ use App\Models\Evaluation;
 use App\Models\IndicatorScore;
 use App\Models\InterviewSession;
 use App\Models\Participant;
+use App\Models\Project;
+use App\Services\Scoring\CompletionGate;
+use App\Services\Scoring\Contracts\ReliabilityStrategy;
+use App\Services\Scoring\Contracts\ValidityPredicate;
 use App\Services\Scoring\EvaluationParser;
 use App\Services\Scoring\ExcerptValidator;
 use App\Services\Scoring\IndicatorValidator;
@@ -44,10 +50,12 @@ use Illuminate\Support\Facades\Log;
  * Dispatched from FinalizeInterview (via ScoringRequested event + DispatchScoringJob
  * listener — wired in PR3). Runs on Horizon; processes all competencies sequentially.
  *
- * PR2 SCOPE: Full scoring pipeline wired into runScoringPipeline():
+ * PR3 SCOPE: ReliabilityStrategy, ValidityPredicate, CompletionGate, lifecycle resolution,
+ *   EvaluationCompleted event, ZeroCompetencies invariant guard, FinalizeInterview hook wired.
  *   CassetteLLMProvider / FakeLLMProvider (real binding blocked by D25 gap D7).
  *   TranscriptAssembler → PromptBuilder → LLMProvider.complete() → EvaluationParser
- *   → IndicatorValidator → ExcerptValidator → MeanCalculator → DB transaction persist.
+ *   → IndicatorValidator → ExcerptValidator → MeanCalculator → ReliabilityStrategy
+ *   → ValidityPredicate → CompletionGate → lifecycle in_valutazione→completato → EvaluationCompleted.
  *
  * Start-of-job guard (D2 CC4 — idempotency):
  *   Step 1: participant.status == 'errore' → no-op (log + return).
@@ -230,9 +238,7 @@ class ScoreEvaluationJob implements ShouldQueue
      * Processes all competencies assigned to the participant's project sequentially.
      * Resume-skip: competencies with an existing CompetencyResult row are skipped.
      *
-     * PR3 will add: ReliabilityStrategy, ValidityPredicate, CompletionGate, lifecycle transition.
-     *
-     * REQ: Per-competency scoring loop (C9 D2/D3/D4)
+     * REQ: Per-competency scoring loop + gate + lifecycle (C9 D2/D3/D4/D5/D9)
      */
     private function runScoringPipeline(Evaluation $evaluation, Participant $participant): void
     {
@@ -250,9 +256,15 @@ class ScoreEvaluationJob implements ShouldQueue
         $competencies = $project->competencies()->get();
 
         if ($competencies->isEmpty()) {
-            Log::warning('ScoreEvaluationJob: no competencies configured for project', [
+            // D5 CC1 invariant: 0 project_competencies → log + mark participant errore.
+            // resolveEvaluationTerminalState will catch ZeroCompetenciesInvariantException.
+            Log::error('ScoreEvaluationJob: no competencies configured for project — running gate for invariant guard', [
                 'project_id' => $project->id,
+                'participant_id' => $this->participantId,
             ]);
+
+            // Ensure an Evaluation row exists before resolving (it was created at START).
+            $this->resolveEvaluationTerminalState($evaluation, $participant, $project);
 
             return;
         }
@@ -265,6 +277,10 @@ class ScoreEvaluationJob implements ShouldQueue
         $indicatorValidator = new IndicatorValidator;
         $excerptValidator = new ExcerptValidator;
         $meanCalculator = new MeanCalculator;
+
+        // PR3: injectable strategies (bound in AppServiceProvider, overridable in tests).
+        $reliabilityStrategy = app(ReliabilityStrategy::class);
+        $validityPredicate = app(ValidityPredicate::class);
 
         foreach ($competencies as $competency) {
             $competencyCode = (string) $competency->code;
@@ -324,6 +340,8 @@ class ScoreEvaluationJob implements ShouldQueue
                     indicatorValidator: $indicatorValidator,
                     excerptValidator: $excerptValidator,
                     meanCalculator: $meanCalculator,
+                    reliabilityStrategy: $reliabilityStrategy,
+                    validityPredicate: $validityPredicate,
                 );
             } catch (UniqueConstraintViolationException $e) {
                 // CW5: CompetencyResult INSERT race → skip (already persisted by another path).
@@ -334,14 +352,141 @@ class ScoreEvaluationJob implements ShouldQueue
             }
         }
 
-        Log::info('ScoreEvaluationJob: scoring pipeline complete', [
+        Log::info('ScoreEvaluationJob: scoring pipeline complete — running gate', [
             'evaluation_id' => $evaluation->id,
         ]);
+
+        // ── PR3: CompletionGate + lifecycle resolution ────────────────────
+        $this->resolveEvaluationTerminalState(
+            evaluation: $evaluation,
+            participant: $participant,
+            project: $project,
+        );
+    }
+
+    /**
+     * Post-scoring: compute gate, persist terminal Evaluation status, transition lifecycle.
+     *
+     * D5 CC1 gate:
+     *   valid_competencies / total_competencies >= 0.90 → completed; else → pending.
+     *   Invariant guard: total_competencies == 0 → ZeroCompetenciesInvariantException.
+     *
+     * D9 lifecycle:
+     *   Both completed and pending resolve participant in_valutazione → completato.
+     *   Race guard (FIX-7): if participant is already errore (concurrent failed()),
+     *   skip the lifecycle transition but STILL persist Evaluation + emit EvaluationCompleted.
+     *
+     * D5 unscorable policy (gate.count_unscorable_against_total = true by default):
+     *   Unscorable competencies are NOT valid and ARE counted in the denominator.
+     *   They reduce the ratio. Config-flaggable: when false, they are excluded from both.
+     *
+     * REQ: D5 CC1 gate + D9 lifecycle (C9 PR3)
+     */
+    private function resolveEvaluationTerminalState(
+        Evaluation $evaluation,
+        Participant $participant,
+        Project $project,
+    ): void {
+        // ── Count competency results for gate ─────────────────────────────
+        $allResults = CompetencyResult::withoutGlobalScopes()
+            ->where('evaluation_id', $evaluation->id)
+            ->get();
+
+        $countUnscorableAgainstTotal = (bool) config('scoring.gate.count_unscorable_against_total', true);
+
+        // Compute valid count from actually-scored results using injectable strategies.
+        // For unscorable CompetencyResults (no IndicatorScores), reliability = 0.0 → invalid.
+        $validCount = 0;
+
+        foreach ($allResults as $result) {
+            // Unscorable results: valid = false (persisted inline per-competency); skip.
+            // Scored results: reliability + valid are now computed and persisted inline in
+            // scoreCompetency() (PR3). Count valid ones for the gate.
+            if ((bool) $result->valid) {
+                $validCount++;
+            }
+        }
+
+        // ── Determine totalCount from project_competencies ────────────────
+        // Fixed at project creation; not affected by unscorable policy for the denominator.
+        if ($countUnscorableAgainstTotal) {
+            // Default policy: all project competencies count in the denominator.
+            $totalCount = $project->competencies()->count();
+        } else {
+            // Alt policy: exclude unscorable competencies from both numerator and denominator.
+            $totalCount = $allResults
+                ->where('unscorable_reason', null)
+                ->count();
+        }
+
+        // ── Invariant guard: total_competencies == 0 ─────────────────────
+        $projectId = (int) $project->id;
+        $gate = new CompletionGate;
+
+        try {
+            $terminalStatus = $gate->evaluate($validCount, $totalCount);
+        } catch (ZeroCompetenciesInvariantException) {
+            Log::error('ScoreEvaluationJob: invariant — project has 0 competencies; marking participant errore', [
+                'evaluation_id' => $evaluation->id,
+                'project_id' => $projectId,
+            ]);
+
+            // Transition participant to errore (guard: only if in_valutazione).
+            $participant->refresh();
+            if ($participant->status === 'in_valutazione') {
+                $participant->status = 'errore';
+                $participant->save();
+            }
+
+            // Do NOT emit EvaluationCompleted — invariant error, no valid Evaluation.
+            return;
+        }
+
+        // ── Persist terminal Evaluation state ─────────────────────────────
+        Evaluation::withoutGlobalScopes()
+            ->where('id', $evaluation->id)
+            ->update([
+                'status' => $terminalStatus->value,
+                'evaluated_at' => now(),
+            ]);
+
+        Log::info('ScoreEvaluationJob: evaluation finalized', [
+            'evaluation_id' => $evaluation->id,
+            'status' => $terminalStatus->value,
+            'valid_count' => $validCount,
+            'total_count' => $totalCount,
+        ]);
+
+        // ── Lifecycle: in_valutazione → completato (D9 FIX-7 race guard) ──
+        $participant->refresh();
+
+        if ($participant->status === 'in_valutazione') {
+            $participant->status = 'completato';
+            $participant->save();
+
+            Log::info('ScoreEvaluationJob: participant transitioned to completato', [
+                'participant_id' => $participant->id,
+            ]);
+        } else {
+            // Race guard: participant is already errore (concurrent failed() ran).
+            // DO NOT attempt errore → completato (forbidden by C7a lifecycle map).
+            // STILL emit EvaluationCompleted below.
+            Log::warning('ScoreEvaluationJob: race guard — participant not in_valutazione; skipping completato transition', [
+                'participant_id' => $participant->id,
+                'current_status' => $participant->status,
+            ]);
+        }
+
+        // ── Emit EvaluationCompleted unconditionally (D9) ─────────────────
+        // Fired for both completed and pending. Also fired when race guard skipped lifecycle.
+        event(new EvaluationCompleted($evaluation->id));
     }
 
     /**
      * Score a single competency: assemble transcript → build prompt → call LLM
      * → parse → validate → persist in one transaction.
+     *
+     * PR3: reliability and valid are now computed inline per-competency via injectable strategies.
      *
      * Error handling:
      * - RoleNoBarsException → CompetencyResult(unscorable_reason=role_no_bars), no LLM call.
@@ -366,6 +511,8 @@ class ScoreEvaluationJob implements ShouldQueue
         IndicatorValidator $indicatorValidator,
         ExcerptValidator $excerptValidator,
         MeanCalculator $meanCalculator,
+        ReliabilityStrategy $reliabilityStrategy,
+        ValidityPredicate $validityPredicate,
     ): void {
         // ── Handle: no BARS catalog (role_no_bars) ───────────────────────
         if ($indicators->isEmpty()) {
@@ -463,13 +610,15 @@ class ScoreEvaluationJob implements ShouldQueue
             return;
         }
 
-        // ── Compute mean ─────────────────────────────────────────────────
+        // ── Compute mean + reliability + validity (PR3: real values) ─────
         $scores = array_map(static fn (IndicatorScoreDTO $dto): int => $dto->score, $dtos);
         $score = $meanCalculator->compute($scores);
+        $reliability = $reliabilityStrategy->compute($scores);
+        $valid = $validityPredicate->isValid($reliability);
 
         // ── Persist: ai_requests + CompetencyResult + IndicatorScores in ONE transaction ──
         DB::transaction(function () use (
-            $evaluation, $competencyCode, $score, $dtos,
+            $evaluation, $competencyCode, $score, $reliability, $valid, $dtos,
             $llmResponse, $latencyMs, $options
         ): void {
             // 1. Append ai_requests row (evaluation_id always known — Evaluation was created at START).
@@ -484,14 +633,13 @@ class ScoreEvaluationJob implements ShouldQueue
                 'latency_ms' => $latencyMs,
             ]);
 
-            // 2. Persist CompetencyResult (unique constraint guards CW5 at caller level).
-            // reliability = 0.0 placeholder (PR3 will compute AssessableFractionReliability).
+            // 2. Persist CompetencyResult with real reliability + valid (PR3).
             $cr = CompetencyResult::withoutGlobalScopes()->create([
                 'evaluation_id' => $evaluation->id,
                 'competency_code' => $competencyCode,
                 'score' => $score,
-                'reliability' => 0.0,
-                'valid' => false, // PR3 wires ValidityPredicate
+                'reliability' => $reliability,
+                'valid' => $valid,
                 'unscorable_reason' => null,
             ]);
 
@@ -512,6 +660,8 @@ class ScoreEvaluationJob implements ShouldQueue
             'evaluation_id' => $evaluation->id,
             'competency_code' => $competencyCode,
             'score' => $score,
+            'reliability' => $reliability,
+            'valid' => $valid,
         ]);
     }
 

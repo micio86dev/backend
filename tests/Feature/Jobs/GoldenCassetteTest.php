@@ -26,6 +26,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\Utterance;
+use App\Services\Scoring\ReliabilityRenderer;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\CassetteLLMProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -189,6 +190,14 @@ test('(a)+(b) golden cassette: COL {5,3,3} → 3.67 and SLF {5,3,-1} → 4.0', f
     expect($colResult)->not->toBeNull('COL CompetencyResult must exist.');
     expect($colResult->score)->toBe(3.67, 'COL score must be 3.67 (mean of {5,3,3}).');
 
+    // COL PR3: reliability = 3/3 = 1.0 (all 3 assessed); valid = true (1.0 >= T=0.5)
+    expect($colResult->reliability)->toBe(1.0, 'COL reliability must be 1.0 (3/3 assessed).');
+    expect($colResult->valid)->toBeTrue('COL must be valid (reliability 1.0 >= threshold 0.5).');
+
+    // COL PR3: rendered as 100% via ReliabilityRenderer
+    $renderer = new ReliabilityRenderer;
+    expect($renderer->render($colResult->reliability))->toBe(100, 'COL reliability must render as 100%.');
+
     // SLF: score should be 4.0 (mean of {5,3} — -1 excluded)
     $slfResult = CompetencyResult::withoutGlobalScopes()
         ->where('evaluation_id', $evaluation->id)
@@ -197,4 +206,18 @@ test('(a)+(b) golden cassette: COL {5,3,3} → 3.67 and SLF {5,3,-1} → 4.0', f
 
     expect($slfResult)->not->toBeNull('SLF CompetencyResult must exist.');
     expect($slfResult->score)->toBe(4.0, 'SLF score must be 4.0 (mean of {5,3}, -1 excluded).');
+
+    // SLF PR3: reliability = 2/3 ≈ 0.6667; rendered 67% (round-before-cast); valid = true (>= 0.5)
+    expect(round($slfResult->reliability, 4))->toBe(round(2 / 3, 4), 'SLF reliability must be 2/3.');
+    expect($slfResult->valid)->toBeTrue('SLF must be valid (reliability 0.6667 >= threshold 0.5).');
+    expect($renderer->render($slfResult->reliability))->toBe(67, 'SLF reliability must render as 67% (round-before-cast).');
+
+    // PR3 Gate: 2/2 valid → 100% >= 90% → Evaluation.status = completed
+    $freshEvaluation = Evaluation::withoutGlobalScopes()->find($evaluation->id);
+    expect($freshEvaluation->status->value)->toBe('completed', 'Gate: 2/2 valid → completed.');
+    expect($freshEvaluation->evaluated_at)->not->toBeNull('evaluated_at must be set on completed Evaluation.');
+
+    // PR3 Lifecycle: participant in_valutazione → completato
+    $freshParticipant = Participant::withoutGlobalScopes()->find($participant->id);
+    expect($freshParticipant->status)->toBe('completato', 'Lifecycle: participant must be completato.');
 });

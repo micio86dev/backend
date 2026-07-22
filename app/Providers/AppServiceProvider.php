@@ -8,13 +8,16 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Policies\ApiClientPolicy;
 use App\Policies\ProjectPolicy;
+use App\Services\Scoring\AssessableFractionReliability;
+use App\Services\Scoring\Contracts\ReliabilityStrategy;
+use App\Services\Scoring\Contracts\ValidityPredicate;
+use App\Services\Scoring\ThresholdValidityPredicate;
 use App\Testing\FakeLLMProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\Events\RoleAttached;
@@ -38,6 +41,13 @@ class AppServiceProvider extends ServiceProvider
             $this->app->bind(LLMProvider::class, FakeLLMProvider::class);
         }
 
+        // C9 PR3: D5 — Bind injectable ReliabilityStrategy and ValidityPredicate.
+        // Default implementations are config-swappable without code changes:
+        //   ReliabilityStrategy → AssessableFractionReliability (R-A: assessed/total)
+        //   ValidityPredicate   → ThresholdValidityPredicate (V-A: reliability >= T)
+        // Override bindings in tests by calling $this->app->instance() or rebinding.
+        $this->app->bind(ReliabilityStrategy::class, AssessableFractionReliability::class);
+        $this->app->bind(ValidityPredicate::class, ThresholdValidityPredicate::class);
     }
 
     /**
@@ -91,7 +101,7 @@ class AppServiceProvider extends ServiceProvider
             // Fail-safe: on Redis outage, fall back to a FRESH DB active() re-query.
             // NEVER fail-open — is_active is the durable authoritative revocation flag.
             try {
-                $denylistKey = 'client_revoked:' . $client->id;
+                $denylistKey = 'client_revoked:'.$client->id;
                 if (Cache::has($denylistKey)) {
                     return null;
                 }
