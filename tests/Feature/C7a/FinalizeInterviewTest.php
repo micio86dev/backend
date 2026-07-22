@@ -78,6 +78,10 @@ test('FinalizeInterview job is idempotent: participant already completato → no
 });
 
 test('FinalizeInterview job: first execution acquires lock and emits C9 trigger', function (): void {
+    // C9 PR3: Fake the queue to prevent ScoreEvaluationJob from running synchronously
+    // (QUEUE_CONNECTION=sync in tests; the ScoringRequested listener dispatches the job).
+    Queue::fake();
+
     $org         = finalizeOrg();
     $participant = finalizeParticipant($org, 'in_valutazione');
     $pid         = $participant->id;

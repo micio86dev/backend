@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Events\ScoringRequested;
 use App\Models\Participant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -74,6 +75,7 @@ class FinalizeInterview implements ShouldQueue
 
         if ($participant === null) {
             Log::warning('FinalizeInterview: participant not found', ['participant_id' => $this->participantId]);
+
             return;
         }
 
@@ -82,13 +84,14 @@ class FinalizeInterview implements ShouldQueue
         if (! in_array($participant->status, ['in_valutazione', 'in_corso'], true)) {
             Log::info('FinalizeInterview: no-op (participant past in_valutazione)', [
                 'participant_id' => $this->participantId,
-                'status'         => $participant->status,
+                'status' => $participant->status,
             ]);
+
             return;
         }
 
         // Layer 2 — Redis NX dedup lock (FIX-4, Option A)
-        $lockKey = 'finalize:' . $this->participantId;
+        $lockKey = 'finalize:'.$this->participantId;
 
         // Cache::add() is atomic: returns true if the key was SET (did not exist), false if it existed.
         $acquired = Cache::add($lockKey, true, self::DEDUP_LOCK_TTL_SECONDS);
@@ -97,8 +100,9 @@ class FinalizeInterview implements ShouldQueue
             // Lock already held → this is a duplicate execution (job retry or race condition)
             Log::info('FinalizeInterview: dedup lock already held, no-op', [
                 'participant_id' => $this->participantId,
-                'lock_key'       => $lockKey,
+                'lock_key' => $lockKey,
             ]);
+
             return;
         }
 
@@ -109,7 +113,8 @@ class FinalizeInterview implements ShouldQueue
             'participant_id' => $this->participantId,
         ]);
 
-        // TODO(C9): dispatch the scoring pipeline event here.
-        // event(new ScoringRequested($this->participantId));
+        // C9 PR3: dispatch the scoring pipeline via ScoringRequested event.
+        // DispatchScoringJob listener picks this up and enqueues ScoreEvaluationJob.
+        event(new ScoringRequested($this->participantId));
     }
 }

@@ -108,6 +108,17 @@ pest()->extend(TestCase::class)
 pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature/C7a');
 
+// ─── C9 Scoring Engine ────────────────────────────────────────────────────────
+
+// Unit/Models (C9 schema assertions) — already covered by the Unit/Models block above.
+
+// Feature/Jobs — RefreshDatabase for job guard, failed(), lifecycle, and isolation tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/Jobs');
+
+// Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.
+// Note: Feature/Models already has RefreshDatabase from the C3 block above.
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
