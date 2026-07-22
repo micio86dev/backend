@@ -8,6 +8,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Policies\ApiClientPolicy;
 use App\Policies\ProjectPolicy;
+use App\Services\LLM\AnthropicLLMProvider;
 use App\Services\Scoring\AssessableFractionReliability;
 use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
@@ -35,10 +36,14 @@ class AppServiceProvider extends ServiceProvider
     {
         // D36: Bind FakeLLMProvider for APP_ENV=testing.
         // All standard tests use this fake — zero HTTP requests to external AI APIs.
-        // Real provider implementations are bound in C8 for non-test environments.
-        // @ai-group tests (ai-integration.yml) override this binding with a real provider.
+        // @ai-group tests (ai-integration.yml) run outside the testing environment and
+        // therefore resolve AnthropicLLMProvider — the only place real API calls occur.
         if ($this->app->environment('testing')) {
             $this->app->bind(LLMProvider::class, FakeLLMProvider::class);
+        } else {
+            // C9 D7 (resolved): production binding calls the Anthropic Messages API
+            // directly via Laravel's Http client — NO third-party SDK, NO D25 blocker.
+            $this->app->bind(LLMProvider::class, AnthropicLLMProvider::class);
         }
 
         // C9 PR3: D5 — Bind injectable ReliabilityStrategy and ValidityPredicate.

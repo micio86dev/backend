@@ -9,13 +9,14 @@ declare(strict_types=1);
  *   validity_threshold        — minimum reliability [0..1] for a competency to be counted valid.
  *                               Client must ratify before IT go-live (open decision D7).
  *   model_version             — pinned LLM model identifier; change triggers a new prompt_version bump.
- *                               Real Anthropic model binding is BLOCKED on D25 gap (D7).
+ *                               Used by AnthropicLLMProvider as the default model.
  *   prompt_version            — semantic version string for the scoring prompt; bump on any prompt edit.
  *   gate.count_unscorable_against_total — when true (default), unscorable competencies are included
  *                               in the gate denominator (counted against the 90% threshold).
  *                               Set to false to exclude unscorable from denominator (client-ratifiable).
+ *   anthropic                 — Anthropic Messages API config (C9 D7 resolved — no SDK).
  *
- * REQ: Scoring config (C9 Phase 1)
+ * REQ: Scoring config (C9 Phase 1 + D7 LLM binding)
  */
 return [
 
@@ -43,11 +44,11 @@ return [
     | ai_requests row for traceability/determinism. Use the exact versioned ID,
     | never an alias (e.g. 'claude-haiku-4-5-20251001' not 'claude-haiku-4-5').
     |
-    | Real Anthropic binding is BLOCKED on D25 gap — do NOT install SDK until
-    | a human pins the exact package+version in D25.
+    | Used by AnthropicLLMProvider as the default model when $options['model']
+    | is not supplied by the caller.
     |
     */
-    'model_version' => env('SCORING_MODEL_VERSION', 'fake-llm-provider-v1'),
+    'model_version' => env('SCORING_MODEL_VERSION', 'claude-haiku-4-5-20251001'),
 
     /*
     |--------------------------------------------------------------------------
@@ -75,6 +76,30 @@ return [
     */
     'gate' => [
         'count_unscorable_against_total' => (bool) env('SCORING_GATE_COUNT_UNSCORABLE', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Anthropic API Configuration (C9 D7 — resolved, no SDK)
+    |--------------------------------------------------------------------------
+    |
+    | Production LLMProvider calls the Anthropic Messages API directly via
+    | Laravel's Http client — NO third-party SDK, NO D25 dependency to pin.
+    |
+    | api_key:         ANTHROPIC_API_KEY env var — NEVER hardcode. Must be set
+    |                  in production and the ai-integration CI environment.
+    | base_url:        Anthropic API base URL (override for staging/proxy).
+    | version:         anthropic-version header sent on every request.
+    | max_tokens:      Default max_tokens for scoring responses.
+    | timeout_seconds: Http client read timeout per request.
+    |
+    */
+    'anthropic' => [
+        'api_key' => env('ANTHROPIC_API_KEY', ''),
+        'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
+        'version' => env('ANTHROPIC_API_VERSION', '2023-06-01'),
+        'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 2048),
+        'timeout_seconds' => (int) env('ANTHROPIC_TIMEOUT', 60),
     ],
 
 ];
