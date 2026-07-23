@@ -133,8 +133,8 @@ test('(d) composed text contains budget instruction (N=2) and end_phrase advance
     $composer = makeComposer();
     $result   = $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, null);
 
-    // Budget assertion
-    expect($result->text)->toContain('2');
+    // Budget assertion — pin the instruction phrase, not a bare digit that appears incidentally
+    expect($result->text)->toContain('at most 2 follow-up');
 
     // end_phrase advance rule must be present
     expect($result->text)->toContain('end_phrase');
@@ -148,7 +148,7 @@ test('(d2) budget N=3 is injected into the prompt text', function (): void {
     $composer = makeComposer();
     $result   = $composer->compose($competency->code, $role->id, $competency->id, 'en', 3, null);
 
-    expect($result->text)->toContain('3');
+    expect($result->text)->toContain('at most 3 follow-up');
 });
 
 test('(e) nudge_min_chars=100 — prompt contains "100" and re-prompt instruction', function (): void {
@@ -159,10 +159,10 @@ test('(e) nudge_min_chars=100 — prompt contains "100" and re-prompt instructio
     $composer = makeComposer();
     $result   = $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, 100);
 
-    expect($result->text)->toContain('100');
-    // Must contain re-prompt / nudge instruction language
-    expect($result->text)->toContain('100');
-    expect($result->text)->toContain('characters');
+    // Pin the actual nudge instruction, not just the incidental number
+    expect($result->text)->toContain('shorter than 100 characters');
+    expect($result->text)->toContain('re-prompt once');
+    expect($result->text)->toContain('does NOT consume a follow-up budget slot');
 });
 
 test('(e2) nudge_min_chars=null — no nudge section present', function (): void {
@@ -173,10 +173,9 @@ test('(e2) nudge_min_chars=null — no nudge section present', function (): void
     $composer = makeComposer();
     $result   = $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, null);
 
-    // When nudge is disabled, the words "characters" / "short answer" / "re-prompt" must NOT
-    // appear in a nudge-threshold context. We assert the nudge keyword is absent.
-    // (We check the simplest signal: no specific numeric threshold like 100, 200 etc.)
+    // When nudge is disabled, no nudge-section language must leak into the prompt.
     expect($result->text)->not->toContain('re-prompt once');
+    expect($result->text)->not->toContain('characters');
 });
 
 test('(f) missing IT anchor translation → AnchorTranslationMissingException', function (): void {
@@ -218,6 +217,24 @@ test('(g) project_locale=it with IT factory translations → Italian text in out
     // English markers must NOT appear
     expect($result->text)->not->toContain('EN_TEXT_MARKER');
     expect($result->text)->not->toContain('EN_ANCH5_MARKER');
+});
+
+test('(h) unknown locale with no matching translations → hard-fails, never silently falls back', function (): void {
+    $role       = Role::factory()->create(['code' => 'UNK_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'UNK_'.uniqid()]);
+
+    // EN + IT authored, but the requested locale ('de') has none — must NOT fall back to EN/IT
+    composerMakeIndicator($role->id, $competency->id, 0, [
+        'text'     => ['en' => 'EN text', 'it' => 'IT testo'],
+        'anchor_5' => ['en' => 'EN anchor 5', 'it' => 'IT ancora 5'],
+        'anchor_3' => ['en' => 'EN anchor 3', 'it' => 'IT ancora 3'],
+        'anchor_1' => ['en' => 'EN anchor 1', 'it' => 'IT ancora 1'],
+    ]);
+
+    $composer = makeComposer();
+
+    expect(fn () => $composer->compose($competency->code, $role->id, $competency->id, 'de', 2, null))
+        ->toThrow(AnchorTranslationMissingException::class);
 });
 
 test('(h) empty indicator collection → CompositionException', function (): void {
