@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 /**
- * RED — Tasks 5.1–5.4: InterviewController::start() composition wiring (C8 Phase 5).
+ * RED — Tasks 5.1–5.4 + graceful-degradation (PR2): InterviewController::start() composition wiring (C8 Phase 5).
  *
  * Asserts:
  * (5.1) /start with valid standard competency → 201 + question_context.prompt_version non-null.
  * (5.2) Missing IT anchor translation → 422 anchor_translation_missing; no session; no provider call.
  * (5.3) Empty indicator set for the role → 422 composition_error; no provider call; session pending.
  * (5.4) Provider 5xx failure matrix unchanged after QuestionContext widening → 502 (C7a regression).
+ * (5.6) RESUME in_corso + composition fails → 201 (not 422), fresh provider session issued, NO system_prompt in provider body (degraded), warning logged.
+ * (5.7) RESUME in_corso + composition succeeds → 201, provider body CONTAINS system_prompt (adaptive resume).
+ * (5.8) NEW session + composition fails (regression guard) → still 422, no InterviewSession created, no provider call.
  *
  * Uses Http::fake for all provider calls — no live provider.
  *
@@ -17,6 +20,7 @@ declare(strict_types=1);
  *
  * Spec: REQ QuestionContext Carries Composed Prompt · REQ i18n hard-fail · REQ Provider Payload Contract.
  * REQ: InterviewController::start() wiring (C8 Phase 5 — M-3)
+ * REQ: graceful-degradation on resume in_corso (C8 PR2 resilience fix)
  */
 
 use App\Models\BarsIndicator;
@@ -30,6 +34,7 @@ use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -334,4 +339,240 @@ test('5.4 provider 5xx failure matrix unchanged after QuestionContext widening �
     $session = InterviewSession::where('participant_id', $scenario['participant']->id)->first();
     expect($session)->not->toBeNull();
     expect($session->status)->toBe('error');
+});
+
+// ─── PR2 Resilience: Graceful Degradation on RESUME in_corso ─────────────────
+
+/**
+ * Seed a RESUME in_corso scenario: project with IT locale and NO IT anchor translations
+ * so composition fails, but the participant already has an in_corso session for the competency.
+ *
+ * @return array{org: Organization, project: Project, participant: Participant, session: InterviewSession}
+ */
+function c8SeedResumeInCorsoScenario(): array
+{
+    $org = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $roleCode = 'FLL_resume_' . uniqid();
+    $role = Role::factory()->create(['code' => $roleCode]);
+
+    $competency = Competency::factory()->create(['code' => 'COL_resume_' . uniqid()]);
+
+    // Project with IT locale — composition will fail because only EN indicators exist
+    $project = Project::factory()->create([
+        'status'          => 'active',
+        'role_code'       => $roleCode,
+        'language'        => 'it',
+        'assessment_type' => 'standard',
+    ]);
+
+    DB::table('project_competencies')->insert([
+        'project_id'    => $project->id,
+        'competency_id' => $competency->id,
+        'position'      => 1,
+    ]);
+
+    // Only EN indicators — no IT translations → AnchorTranslationMissingException on compose
+    c8SeedIndicators($role->id, $competency->id, 'en', 2);
+
+    // Participant already in_corso (resume scenario)
+    $participant = c8MakeParticipant($org, $project, 'in_corso');
+
+    // Pre-existing in_corso session (this is the session we are resuming)
+    $session = InterviewSession::create([
+        'participant_id'       => $participant->id,
+        'project_id'           => $project->id,
+        'question_index'       => 0,
+        'competency_code'      => $competency->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider'             => 'heygen',
+        'provider_session_ref' => 'old-resume-ref-' . uniqid(),
+        'status'               => 'in_corso',
+    ]);
+
+    return compact('org', 'project', 'participant', 'session');
+}
+
+test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider session issued, NO system_prompt in body (degraded), warning logged', function (): void {
+    // Capture the outbound HeyGen /contexts body to verify system_prompt is absent (degraded path)
+    $capturedContextBody = null;
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            // On degraded path the contexts call should NOT happen (no system_prompt → no context)
+            // OR if called: body must NOT have system_prompt
+            $capturedContextBody = $request->data();
+            return Http::response(['data' => ['context_id' => 'ctx-resume-degrade']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-session-resume', 'access_token' => 'heygen-token-resume']], 200);
+        }
+        // teardown old session
+        return Http::response([], 200);
+    });
+    Queue::fake();
+
+    Log::spy();
+
+    $data = c8SeedResumeInCorsoScenario();
+    $bearer = CandidateTokenFactory::mintCandidateToken($data['participant']);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->postJson('/api/candidate/interview/start');
+
+    // Must NOT lock out the candidate (graceful degradation)
+    $response->assertStatus(201);
+
+    // Session must still exist and be reused (not a new row)
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($data['org']->id);
+    $resolver->setBypass(false);
+    expect(InterviewSession::where('participant_id', $data['participant']->id)->count())->toBe(1);
+
+    // Fresh provider session must have been issued (session ref updated)
+    $data['session']->refresh();
+    expect($data['session']->provider_session_ref)->toBe('heygen-session-resume');
+    expect($data['session']->status)->toBe('in_corso');
+
+    // Provider body for /contexts must NOT contain system_prompt (degraded = null systemPrompt → no contexts call, OR contexts called without system_prompt)
+    // On degraded path: QuestionContext.systemPrompt=null → HeyGen provider skips the contexts call entirely
+    // So either $capturedContextBody is null (no contexts call) OR it has no system_prompt key
+    if ($capturedContextBody !== null) {
+        expect($capturedContextBody)->not->toHaveKey('system_prompt');
+    }
+
+    // A warning must have been logged about the composition failure
+    Log::shouldHaveReceived('warning')->once();
+
+    // prompt_version in response must be null (degraded)
+    $response->assertJsonPath('question_context.prompt_version', null);
+});
+
+test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains system_prompt (adaptive resume)', function (): void {
+    $capturedContextBody = null;
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedContextBody = $request->data();
+            return Http::response(['data' => ['context_id' => 'ctx-resume-adaptive']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-session-adaptive', 'access_token' => 'heygen-token-adaptive']], 200);
+        }
+        return Http::response([], 200);
+    });
+    Queue::fake();
+
+    // Use an IT project WITH IT anchor translations so composition succeeds
+    $org = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $roleCode = 'FLL_adaptive_' . uniqid();
+    $role = Role::factory()->create(['code' => $roleCode]);
+    $competency = Competency::factory()->create(['code' => 'COL_adaptive_' . uniqid()]);
+
+    $project = Project::factory()->create([
+        'status'          => 'active',
+        'role_code'       => $roleCode,
+        'language'        => 'it',
+        'assessment_type' => 'standard',
+    ]);
+
+    DB::table('project_competencies')->insert([
+        'project_id'    => $project->id,
+        'competency_id' => $competency->id,
+        'position'      => 1,
+    ]);
+
+    // Seed both EN and IT indicators → composition succeeds
+    c8SeedIndicators($role->id, $competency->id, 'en', 2);
+    c8SeedIndicatorsLocale($role->id, $competency->id, 'it');
+
+    $participant = c8MakeParticipant($org, $project, 'in_corso');
+
+    // Pre-existing in_corso session
+    $session = InterviewSession::create([
+        'participant_id'       => $participant->id,
+        'project_id'           => $project->id,
+        'question_index'       => 0,
+        'competency_code'      => $competency->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider'             => 'heygen',
+        'provider_session_ref' => 'old-adaptive-ref-' . uniqid(),
+        'status'               => 'in_corso',
+    ]);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+
+    // Only one session row (reused)
+    expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(1);
+
+    // Session ref updated to fresh token
+    $session->refresh();
+    expect($session->provider_session_ref)->toBe('heygen-session-adaptive');
+
+    // Provider contexts call MUST carry system_prompt (adaptive path)
+    expect($capturedContextBody)->toHaveKey('system_prompt');
+    expect($capturedContextBody['system_prompt'])->not->toBeEmpty();
+
+    // prompt_version in response must be non-null (composed)
+    $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
+});
+
+test('5.8 NEW session + composition fails (regression guard) → still 422, no InterviewSession created, no provider call', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    // New participant — no existing session. Project with IT locale and NO IT translations.
+    $org = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $roleCode = 'MLL_reg_' . uniqid();
+    $role = Role::factory()->create(['code' => $roleCode]);
+    $competency = Competency::factory()->create(['code' => 'INN_reg_' . uniqid()]);
+
+    $project = Project::factory()->create([
+        'status'          => 'active',
+        'role_code'       => $roleCode,
+        'language'        => 'it',
+        'assessment_type' => 'standard',
+    ]);
+
+    DB::table('project_competencies')->insert([
+        'project_id'    => $project->id,
+        'competency_id' => $competency->id,
+        'position'      => 1,
+    ]);
+
+    // Only EN indicators — missing IT translations → composition fails
+    c8SeedIndicators($role->id, $competency->id, 'en', 2);
+
+    // Fresh participant with NO prior sessions
+    $participant = c8MakeParticipant($org, $project, 'in_attesa');
+    $bearer = CandidateTokenFactory::mintCandidateToken($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->postJson('/api/candidate/interview/start');
+
+    // Must still fail fast (no orphan session, no provider call)
+    $response->assertStatus(422);
+
+    $resolver->setOrgId($org->id);
+    expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(0);
+
+    Http::assertNothingSent();
 });

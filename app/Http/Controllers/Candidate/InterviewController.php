@@ -94,13 +94,32 @@ class InterviewController extends Controller
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // (C8 M-3) Compose system prompt BEFORE session creation and provider call.
-        // A composition failure returns 422 immediately — no InterviewSession is created
-        // and no provider call is made. This is a pre-issue() failure consistent with the
-        // C7a "provider call outside txn" invariant (design Failure modes section).
+        // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
+        //
+        // Failure semantics depend on whether this is a RESUME or a NEW session:
+        //   NEW/pending path  → fail-fast (422); no InterviewSession created; no provider call.
+        //   RESUME in_corso   → degrade gracefully; issue fresh provider session WITHOUT a system
+        //                       prompt (legacy non-adaptive body); log a warning. The candidate
+        //                       must not be locked out of an in-progress interview due to a
+        //                       transient composition failure.
+        //
+        // We peek BEFORE attempting composition so we can determine the correct failure mode
+        // without creating any row or making any provider call.
+        $isResumeInCorso = $this->hasActiveInCorsoSession($pid, $nextCompetency['competency_code']);
+
         $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
         if ($compositionResult instanceof JsonResponse) {
-            return $compositionResult;
+            if (! $isResumeInCorso) {
+                // NEW/pending path — hard fail. No session, no provider call.
+                return $compositionResult;
+            }
+
+            // RESUME in_corso — degrade: proceed with null system prompt.
+            Log::warning('C8: composition failed on resume in_corso path — degrading to legacy non-adaptive body', [
+                'participant_id'   => $pid,
+                'competency_code'  => $nextCompetency['competency_code'],
+                'composition_error' => $compositionResult->getData(assoc: true)['error'] ?? 'unknown',
+            ]);
         }
 
         // (2) Create-or-RESUME session row.
@@ -110,12 +129,18 @@ class InterviewController extends Controller
         // Re-resolve the provider after we know the project override.
         $providerService = $this->resolveProvider($providerName);
 
+        // Build QuestionContext. On the degraded RESUME path, compositionResult is a JsonResponse
+        // (composition failed), so we fall back to null system prompt and null prompt version.
+        $systemPrompt  = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->text;
+        $promptVersion = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->version;
+
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
             // C8: thread composed prompt and version into QuestionContext (M-3).
-            systemPrompt:  $compositionResult->text,
-            promptVersion: $compositionResult->version,
+            // On degraded RESUME path both are null → legacy non-adaptive provider body.
+            systemPrompt:  $systemPrompt,
+            promptVersion: $promptVersion,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -287,6 +312,24 @@ class InterviewController extends Controller
         } catch (CompositionException) {
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+    }
+
+    /**
+     * Check whether an active in_corso session already exists for this participant + competency.
+     *
+     * Used as a cheap pre-check BEFORE composition so we can decide the correct failure mode:
+     *   - true  → RESUME path → composition failure degrades gracefully (log + null prompt).
+     *   - false → NEW/pending path → composition failure returns 422 immediately.
+     *
+     * A single EXISTS-style count query scoped to (participant_id, competency_code, status=in_corso).
+     * This runs before createOrResumeSession() so it never creates any row.
+     */
+    private function hasActiveInCorsoSession(int $participantId, string $competencyCode): bool
+    {
+        return InterviewSession::where('participant_id', $participantId)
+            ->where('competency_code', $competencyCode)
+            ->where('status', 'in_corso')
+            ->exists();
     }
 
     /**
