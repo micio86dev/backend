@@ -170,6 +170,46 @@ test('5.1 /start with standard EN competency → 201 + question_context.prompt_v
     $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
 });
 
+test('5.5 /start response never leaks composed system_prompt; provider body carries it (anti-leak)', function (): void {
+    Queue::fake();
+
+    // Capture the outbound HeyGen /contexts body while faking the provider.
+    $capturedContextBody = [];
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedContextBody = $request->data();
+            return Http::response(['data' => ['context_id' => 'ctx-c8']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-session-c8', 'access_token' => 'heygen-token-c8']], 200);
+        }
+        return Http::response([], 200);
+    });
+
+    $scenario = c8SeedStandardScenario('en');
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+
+    // (a) Response exposes prompt_version for traceability...
+    $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
+
+    // (b) ...but must NEVER contain the composed system prompt or its BARS anchor content.
+    //     Leaking the scoring rubric to the candidate being assessed is a data-exposure defect.
+    $body = $response->getContent();
+    expect($body)->not->toContain('Excellent anchor');
+    expect($body)->not->toContain('Indicator text');
+    expect($body)->not->toContain('Ask at most');
+
+    // (c) The composed system_prompt MUST still reach the provider server-to-server.
+    expect($capturedContextBody)->toHaveKey('system_prompt');
+    expect($capturedContextBody['system_prompt'])->toContain('Excellent anchor');
+});
+
 test('5.2 /start missing IT anchor translation → 422 anchor_translation_missing; no session; no provider call', function (): void {
     // EN indicators only; project language = it → translation missing → 422
     Http::fake(c8HeygenFake());
