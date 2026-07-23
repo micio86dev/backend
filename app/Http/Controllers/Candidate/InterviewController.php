@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Candidate;
 
+use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ProviderException;
+use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
 use App\Jobs\FinalizeInterview;
+use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
+use App\Services\Conversation\SystemPromptComposer;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
@@ -43,6 +48,7 @@ class InterviewController extends Controller
 
     public function __construct(
         private readonly ProviderSessionService $providerService,
+        private readonly SystemPromptComposer   $composer,
     ) {}
 
     // =========================================================================
@@ -88,6 +94,15 @@ class InterviewController extends Controller
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // (C8 M-3) Compose system prompt BEFORE session creation and provider call.
+        // A composition failure returns 422 immediately — no InterviewSession is created
+        // and no provider call is made. This is a pre-issue() failure consistent with the
+        // C7a "provider call outside txn" invariant (design Failure modes section).
+        $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
+        if ($compositionResult instanceof JsonResponse) {
+            return $compositionResult;
+        }
+
         // (2) Create-or-RESUME session row.
         $providerName = $project->provider_override ?? config('interview.provider', 'heygen');
         $session = $this->createOrResumeSession($participant, $project, $nextCompetency, $providerName);
@@ -98,6 +113,9 @@ class InterviewController extends Controller
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
+            // C8: thread composed prompt and version into QuestionContext (M-3).
+            systemPrompt:  $compositionResult->text,
+            promptVersion: $compositionResult->version,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -211,6 +229,65 @@ class InterviewController extends Controller
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    /**
+     * Compose the system prompt for the next competency.
+     *
+     * Returns a ComposedPrompt on success, or a 422 JsonResponse on failure.
+     * This MUST be called BEFORE createOrResumeSession() and BEFORE issue() so that
+     * a composition failure leaves zero InterviewSession rows and makes zero provider calls.
+     *
+     * Failure codes (machine-readable, not localized per BEAI machine-facing response policy):
+     *   - 'composition_error'           → CompositionException (empty indicators / bad role)
+     *   - 'anchor_translation_missing'  → AnchorTranslationMissingException (missing locale text)
+     *
+     * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
+     * RV-3: provider field client confirmation required before live deploy.
+     *
+     * @return \App\DTOs\Conversation\ComposedPrompt|JsonResponse
+     */
+    private function composePromptForCompetency(
+        ?Project $project,
+        string $competencyCode,
+    ): \App\DTOs\Conversation\ComposedPrompt|JsonResponse {
+        if ($project === null) {
+            // Participant has no associated project — treat as composition failure.
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Resolve role_id from project.role_code.
+        // role_code is required for standard assessments; null for potential (deferred — not in C8).
+        $role = Role::where('code', $project->role_code)->first();
+
+        if ($role === null) {
+            // role_code set on project but not found in catalog → composition failure.
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Resolve competency_id from competency_code.
+        $competency = Competency::where('code', $competencyCode)->first();
+
+        if ($competency === null) {
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $budget = (int) config('conversation.followup_budget', 2);
+
+        try {
+            return $this->composer->compose(
+                competencyCode: $competencyCode,
+                roleId:         $role->id,
+                competencyId:   $competency->id,
+                projectLocale:  $project->language,
+                budget:         $budget,
+                nudgeMinChars:  $project->nudge_min_chars,
+            );
+        } catch (AnchorTranslationMissingException) {
+            return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (CompositionException) {
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
 
     /**
      * Resolve the next competency for this participant (lowest position not yet terminal-completed).
@@ -356,7 +433,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $freshToken, $participant->language);
+        return $this->buildSuccessResponse($session, $freshToken, $participant->language, $ctx->promptVersion);
     }
 
     /**
@@ -409,7 +486,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $token, $participant->language);
+        return $this->buildSuccessResponse($session, $token, $participant->language, $ctx->promptVersion);
     }
 
     /**
@@ -461,10 +538,18 @@ class InterviewController extends Controller
      * resolved for the participant's language with a platform-default fallback.
      * The frontend (C7b) consumes them as the SOLE completion-signal source.
      *
-     * @param  string|null  $language  The participant's language (BCP-ish locale, may be null).
+     * C8 (M-3): prompt_version added to question_context for audit/traceability.
+     * Machine-facing field — returned literally in every locale (not localized).
+     *
+     * @param  string|null  $language      The participant's language (BCP-ish locale, may be null).
+     * @param  string|null  $promptVersion Composed prompt template version (C8); null on null path.
      */
-    private function buildSuccessResponse(InterviewSession $session, ProviderToken $token, ?string $language): JsonResponse
-    {
+    private function buildSuccessResponse(
+        InterviewSession $session,
+        ProviderToken $token,
+        ?string $language,
+        ?string $promptVersion = null,
+    ): JsonResponse {
         [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
 
         return response()->json([
@@ -480,6 +565,9 @@ class InterviewController extends Controller
                 // Machine-facing field names stay literal (snake_case); VALUES are localized.
                 'end_phrase' => $endPhrase,
                 'final_phrase' => $finalPhrase,
+                // C8 (M-3): prompt version for audit and traceability.
+                // Machine-facing: returned literally, never localized.
+                'prompt_version' => $promptVersion,
             ],
         ], Response::HTTP_CREATED);
     }

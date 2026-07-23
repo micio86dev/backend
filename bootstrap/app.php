@@ -47,4 +47,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (\App\Exceptions\ParticipantTransitionException $e, Request $request) {
             return $e->render($request);
         });
+
+        // C8: CompositionException and AnchorTranslationMissingException → HTTP 422.
+        // Mirrors ParticipantTransitionException registration pattern.
+        // Machine-readable error codes (not localized — BEAI machine-facing response policy).
+        $exceptions->render(function (\App\Exceptions\Conversation\CompositionException $e, Request $request) {
+            return response()->json(['error' => 'composition_error'], \Symfony\Component\HttpFoundation\Response::HTTP_UNPROCESSABLE_ENTITY);
+        });
+
+        $exceptions->render(function (\App\Exceptions\Scoring\AnchorTranslationMissingException $e, Request $request) {
+            return response()->json(['error' => 'anchor_translation_missing'], \Symfony\Component\HttpFoundation\Response::HTTP_UNPROCESSABLE_ENTITY);
+        });
     })->create();
