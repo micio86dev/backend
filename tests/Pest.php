@@ -116,6 +116,10 @@ pest()->extend(TestCase::class)
     ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Unit/C8');
 
+// Feature/C8 — RefreshDatabase for controller composition wiring + provider payload tests.
+pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/C8');
+
 // ─── C9 Scoring Engine ────────────────────────────────────────────────────────
 
 // Unit/Models (C9 schema assertions) — already covered by the Unit/Models block above.
