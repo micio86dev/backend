@@ -1,6 +1,8 @@
 <?php
 
+use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ParticipantTransitionException;
+use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
@@ -9,6 +11,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -52,11 +55,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // C8: CompositionException and AnchorTranslationMissingException → HTTP 422.
         // Mirrors ParticipantTransitionException registration pattern.
         // Machine-readable error codes (not localized — BEAI machine-facing response policy).
-        $exceptions->render(function (\App\Exceptions\Conversation\CompositionException $e, Request $request) {
-            return response()->json(['error' => 'composition_error'], \Symfony\Component\HttpFoundation\Response::HTTP_UNPROCESSABLE_ENTITY);
+        $exceptions->render(function (CompositionException $e, Request $request) {
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         });
 
-        $exceptions->render(function (\App\Exceptions\Scoring\AnchorTranslationMissingException $e, Request $request) {
-            return response()->json(['error' => 'anchor_translation_missing'], \Symfony\Component\HttpFoundation\Response::HTTP_UNPROCESSABLE_ENTITY);
+        $exceptions->render(function (AnchorTranslationMissingException $e, Request $request) {
+            return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
         });
     })->create();
