@@ -8,7 +8,14 @@
  * cannot be silently broken by future authors.
  */
 
+use App\Models\ApiClient;
+use App\Models\BarsIndicator;
+use App\Models\CatalogMeta;
+use App\Models\Competency;
+use App\Models\FrameworkGap;
 use App\Models\Organization;
+use App\Models\Participant;
+use App\Models\Role;
 use App\Models\TenantModel;
 use App\Models\User;
 
@@ -41,18 +48,18 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // C3 Framework Catalog — GLOBAL models (no organization_id by design).
         // These are shared across all tenants and intentionally do NOT extend TenantModel.
         // FrameworkVersion DOES extend TenantModel (it IS tenant-scoped).
-        \App\Models\Role::class,
-        \App\Models\Competency::class,
-        \App\Models\BarsIndicator::class,
-        \App\Models\FrameworkGap::class,
-        \App\Models\CatalogMeta::class,
+        Role::class,
+        Competency::class,
+        BarsIndicator::class,
+        FrameworkGap::class,
+        CatalogMeta::class,
         // C5 M2M — ApiClient intentionally does NOT extend TenantModel.
         // The api-m2m guard queries ApiClient RAW/UNSCOPED because TenantResolver
         // is not stamped yet at guard-resolution time (TenantContextM2m runs after
         // the guard). A TenantScoped global scope would filter by the wrong/null org
         // and the key would never resolve. This is a deliberate design decision.
         // See design.md §"ApiClient is NOT a TenantModel".
-        \App\Models\ApiClient::class,
+        ApiClient::class,
         // C6 Participant — intentionally does NOT extend TenantModel.
         // Participant implements AuthenticatableContract + JWTSubject and is used as
         // the auth principal for the api-candidate guard. TenantModel adds a global
@@ -60,7 +67,7 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // chance to stamp the resolver — breaking guard resolution. Tenant isolation
         // is enforced at the controller layer (forceFill organization_id from project)
         // and via the TenantContextCandidate middleware. See C6 design invariants.
-        \App\Models\Participant::class,
+        Participant::class,
     ];
 
     $violations = [];

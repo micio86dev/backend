@@ -36,17 +36,18 @@ function heygenMockSession(): InterviewSession
 {
     $session = new InterviewSession;
     $session->forceFill([
-        'id'                   => 99,
-        'organization_id'      => 1,
-        'participant_id'       => 1,
-        'project_id'           => 1,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'id' => 99,
+        'organization_id' => 1,
+        'participant_id' => 1,
+        'project_id' => 1,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => 1,
-        'provider'             => 'heygen',
+        'provider' => 'heygen',
         'provider_session_ref' => null,
-        'status'               => 'pending',
+        'status' => 'pending',
     ]);
+
     return $session;
 }
 
@@ -58,11 +59,13 @@ test('6.1 HeygenProvider::issue() with systemPrompt → POST /contexts body CONT
     Http::fake(function ($request) use (&$capturedBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedBody = $request->data();
+
             return Http::response(['data' => ['context_id' => 'ctx-sp']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'sid-sp', 'access_token' => 'tok-sp']], 200);
         }
+
         return Http::response([], 200);
     });
 
@@ -89,11 +92,13 @@ test('6.2 HeygenProvider::issue() with null systemPrompt → POST /contexts body
     Http::fake(function ($request) use (&$capturedBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedBody = $request->data();
+
             return Http::response(['data' => ['context_id' => 'ctx-null']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'sid-null', 'access_token' => 'tok-null']], 200);
         }
+
         return Http::response([], 200);
     });
 

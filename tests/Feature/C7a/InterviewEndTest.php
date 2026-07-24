@@ -33,6 +33,7 @@ use App\Models\Utterance;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -50,6 +51,7 @@ function endProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -58,17 +60,18 @@ function endProject(Organization $org): Project
  */
 function endProjectWithCompetencies(Organization $org, int $count = 2): array
 {
-    $project      = endProject($org);
+    $project = endProject($org);
     $competencies = [];
     for ($i = 0; $i < $count; $i++) {
         $comp = Competency::factory()->create();
-        \Illuminate\Support\Facades\DB::table('project_competencies')->insert([
-            'project_id'    => $project->id,
+        DB::table('project_competencies')->insert([
+            'project_id' => $project->id,
             'competency_id' => $comp->id,
-            'position'      => $i + 1,
+            'position' => $i + 1,
         ]);
         $competencies[] = $comp;
     }
+
     return [$project, $competencies];
 }
 
@@ -77,12 +80,13 @@ function endParticipant(Organization $org, Project $project, string $status = 'i
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'end-' . uniqid(),
-        'display_name'    => 'End Test Candidate',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'end-'.uniqid(),
+        'display_name' => 'End Test Candidate',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -99,14 +103,14 @@ function endSession(
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => $provider,
-        'provider_session_ref' => 'ref-' . uniqid(),
-        'status'               => $status,
+        'provider' => $provider,
+        'provider_session_ref' => 'ref-'.uniqid(),
+        'status' => $status,
     ]);
 }
 
@@ -121,18 +125,18 @@ test('POST /end non-last question: 200; session.status=completed; participant st
     Http::fake();
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 2); // 2 competencies
     $participant = endParticipant($org, $project, 'in_corso');
 
     // Session for first competency (in_corso)
     $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
-    $token   = endBearer($participant);
+    $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'completed',
         ]);
 
@@ -157,17 +161,17 @@ test('POST /end last question: 200; participant.status=in_valutazione; FinalizeI
     ]);
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 1); // 1 competency = last
     $participant = endParticipant($org, $project, 'in_corso');
 
     $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
-    $token   = endBearer($participant);
+    $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'completed',
         ]);
 
@@ -189,7 +193,7 @@ test('POST /end already-ended session → 409; ended_at NOT re-stamped; Finalize
     Http::fake();
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 1);
     $participant = endParticipant($org, $project, 'in_valutazione');
 
@@ -197,7 +201,7 @@ test('POST /end already-ended session → 409; ended_at NOT re-stamped; Finalize
     $session = endSession($org, $participant, $project, $comps[0]->code, 'completed');
     // Use DB::update to bypass Eloquent casts and set a predictable timestamp
     $pastTimestamp = now()->subMinutes(5)->toDateTimeString();
-    \Illuminate\Support\Facades\DB::table('interview_sessions')
+    DB::table('interview_sessions')
         ->where('id', $session->id)
         ->update(['ended_at' => $pastTimestamp]);
     $session->refresh();
@@ -206,9 +210,9 @@ test('POST /end already-ended session → 409; ended_at NOT re-stamped; Finalize
     $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'completed',
         ]);
 
@@ -226,16 +230,16 @@ test('POST /end ended_reason=error → 422 (FIX-11 validation — error is serve
     Http::fake();
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 1);
     $participant = endParticipant($org, $project, 'in_corso');
-    $session     = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
-    $token       = endBearer($participant);
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
+    $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'error', // FIX-11: MUST be rejected
         ]);
 
@@ -257,11 +261,11 @@ test('POST /end with HeyGen provider: replaceUtterances — prior utterances del
     ]);
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 2);
     $participant = endParticipant($org, $project, 'in_corso');
-    $session     = endSession($org, $participant, $project, $comps[0]->code, 'in_corso', 'heygen');
-    $token       = endBearer($participant);
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso', 'heygen');
+    $token = endBearer($participant);
 
     // Create some pre-existing utterances
     $resolver = app(TenantResolver::class);
@@ -270,18 +274,18 @@ test('POST /end with HeyGen provider: replaceUtterances — prior utterances del
 
     Utterance::create([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        'speaker'              => 'candidate',
-        'text'                 => 'Old live utterance.',
-        'ts'                   => now()->subMinutes(2)->toIso8601String(),
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => 'Old live utterance.',
+        'ts' => now()->subMinutes(2)->toIso8601String(),
     ]);
 
     expect(Utterance::where('interview_session_id', $session->id)->count())->toBe(1);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'completed',
         ]);
 
@@ -300,11 +304,11 @@ test('POST /end with Tavus provider: existing utterances unchanged after /end', 
     Http::fake(); // Tavus: no transcript endpoint called
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 2);
     $participant = endParticipant($org, $project, 'in_corso');
-    $session     = endSession($org, $participant, $project, $comps[0]->code, 'in_corso', 'tavus');
-    $token       = endBearer($participant);
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso', 'tavus');
+    $token = endBearer($participant);
 
     // Pre-existing utterances from live /utterance calls
     $resolver = app(TenantResolver::class);
@@ -313,16 +317,16 @@ test('POST /end with Tavus provider: existing utterances unchanged after /end', 
 
     Utterance::create([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        'speaker'              => 'candidate',
-        'text'                 => 'Tavus live utterance.',
-        'ts'                   => now()->subMinutes(1)->toIso8601String(),
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => 'Tavus live utterance.',
+        'ts' => now()->subMinutes(1)->toIso8601String(),
     ]);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'completed',
         ]);
 
@@ -339,7 +343,7 @@ test('POST /end session_id from non-owned session → 404', function (): void {
     Http::fake();
     Queue::fake();
 
-    $org          = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 1);
     $participantX = endParticipant($org, $project, 'in_corso');
     $participantY = endParticipant($org, $project, 'in_corso');
@@ -351,9 +355,9 @@ test('POST /end session_id from non-owned session → 404', function (): void {
     $tokenY = endBearer($participantY);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $tokenY])
+        ->withHeaders(['Authorization' => 'Bearer '.$tokenY])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $sessionX->id,
+            'session_id' => $sessionX->id,
             'ended_reason' => 'completed',
         ]);
 
@@ -370,16 +374,16 @@ test('POST /end with timeout ended_reason: session.status=timeout, session.ended
     ]);
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 2);
     $participant = endParticipant($org, $project, 'in_corso');
-    $session     = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
-    $token       = endBearer($participant);
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
+    $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'timeout',
         ]);
 
@@ -396,16 +400,16 @@ test('POST /end with skipped ended_reason: session.status=skipped', function ():
     ]);
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 2);
     $participant = endParticipant($org, $project, 'in_corso');
-    $session     = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
-    $token       = endBearer($participant);
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
+    $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'skipped',
         ]);
 
@@ -421,16 +425,16 @@ test('POST /end CRITICAL-3 atomicity: session + count + CAS in one txn — last-
     ]);
     Queue::fake();
 
-    $org  = endOrg();
+    $org = endOrg();
     [$project, $comps] = endProjectWithCompetencies($org, 1); // 1 competency
     $participant = endParticipant($org, $project, 'in_corso');
-    $session     = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
-    $token       = endBearer($participant);
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
+    $token = endBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'ended_reason' => 'completed',
         ]);
 

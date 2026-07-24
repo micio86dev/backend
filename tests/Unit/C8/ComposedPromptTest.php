@@ -27,12 +27,12 @@ test('(a) ComposedPrompt holds text and version; both accessible as strings', fu
 
 test('(b) ComposedPrompt with empty text throws InvalidArgumentException', function (): void {
     expect(fn () => new ComposedPrompt(text: '', version: 'conv-2026-07-23'))
-        ->toThrow(\InvalidArgumentException::class);
+        ->toThrow(InvalidArgumentException::class);
 });
 
 test('(c) ComposedPrompt with empty version throws InvalidArgumentException', function (): void {
     expect(fn () => new ComposedPrompt(text: 'Some prompt text.', version: ''))
-        ->toThrow(\InvalidArgumentException::class);
+        ->toThrow(InvalidArgumentException::class);
 });
 
 test('(d) ComposedPrompt is readonly — mutation throws Error', function (): void {

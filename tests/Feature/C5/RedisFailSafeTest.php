@@ -31,15 +31,15 @@ test('Redis down + revoked (is_active=false) key → 401 via DB re-query', funct
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => false,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => false,
     ]);
 
     // Simulate Redis outage — any cache operation throws
-    Cache::shouldReceive('has')->andThrow(new \RuntimeException('Redis connection failed'));
-    Cache::shouldReceive('get')->andThrow(new \RuntimeException('Redis connection failed'));
+    Cache::shouldReceive('has')->andThrow(new RuntimeException('Redis connection failed'));
+    Cache::shouldReceive('get')->andThrow(new RuntimeException('Redis connection failed'));
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-failsafe')
         ->assertUnauthorized();
 });
@@ -50,16 +50,16 @@ test('Redis down + valid non-revoked key → 200 (DB fallback, no fail-open)', f
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'expires_at'      => null,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'expires_at' => null,
     ]);
 
     // Simulate Redis outage
-    Cache::shouldReceive('has')->andThrow(new \RuntimeException('Redis connection failed'));
-    Cache::shouldReceive('get')->andThrow(new \RuntimeException('Redis connection failed'));
+    Cache::shouldReceive('has')->andThrow(new RuntimeException('Redis connection failed'));
+    Cache::shouldReceive('get')->andThrow(new RuntimeException('Redis connection failed'));
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-failsafe')
         ->assertOk();
 });
@@ -70,15 +70,15 @@ test('guard never fails-open — Redis down + expired key → 401', function ():
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'expires_at'      => now()->subMinutes(5),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'expires_at' => now()->subMinutes(5),
     ]);
 
-    Cache::shouldReceive('has')->andThrow(new \RuntimeException('Redis connection failed'));
-    Cache::shouldReceive('get')->andThrow(new \RuntimeException('Redis connection failed'));
+    Cache::shouldReceive('has')->andThrow(new RuntimeException('Redis connection failed'));
+    Cache::shouldReceive('get')->andThrow(new RuntimeException('Redis connection failed'));
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-failsafe')
         ->assertUnauthorized();
 });

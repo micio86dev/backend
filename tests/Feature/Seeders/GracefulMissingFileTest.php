@@ -13,7 +13,6 @@ use App\Models\BarsIndicator;
 use App\Models\FrameworkGap;
 use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
-use Illuminate\Support\Facades\Config;
 
 test('seeder completes gracefully when bars/SRX.json is absent', function (): void {
     // Override the bars path to a temp dir that has no SRX.json

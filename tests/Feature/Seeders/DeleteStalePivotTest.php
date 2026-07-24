@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 
 test('re-seeding with one competency removed from a role deletes stale pivot and indicator rows', function (): void {
     // First seed — full data
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     // Identify a competency assigned to ICO that has bars indicators

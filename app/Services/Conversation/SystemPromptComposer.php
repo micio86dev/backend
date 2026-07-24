@@ -41,14 +41,14 @@ final class SystemPromptComposer
     /**
      * Compose a system prompt for a single competency evaluation.
      *
-     * @param  string    $competencyCode  Competency code (for error messages and section headers).
-     * @param  int       $roleId          Role primary key — MUST match the project's role.
-     * @param  int       $competencyId    Competency primary key.
-     * @param  string    $projectLocale   Project language code ('en' or 'it').
-     * @param  int       $budget          Maximum follow-up questions (OQ-1 default = 2).
-     * @param  int|null  $nudgeMinChars   Min chars for a "sufficient" answer; null = nudge disabled.
+     * @param  string  $competencyCode  Competency code (for error messages and section headers).
+     * @param  int  $roleId  Role primary key — MUST match the project's role.
+     * @param  int  $competencyId  Competency primary key.
+     * @param  string  $projectLocale  Project language code ('en' or 'it').
+     * @param  int  $budget  Maximum follow-up questions (OQ-1 default = 2).
+     * @param  int|null  $nudgeMinChars  Min chars for a "sufficient" answer; null = nudge disabled.
      *
-     * @throws CompositionException              When no indicators exist for the role+competency pair.
+     * @throws CompositionException When no indicators exist for the role+competency pair.
      * @throws AnchorTranslationMissingException When any indicator field lacks a $projectLocale translation.
      */
     public function compose(
@@ -64,14 +64,14 @@ final class SystemPromptComposer
         if ($indicators->isEmpty()) {
             throw new CompositionException(
                 "SystemPromptComposer: no BARS indicators found for role [{$roleId}] and competency [{$competencyCode}]. "
-                . 'Cannot compose a prompt without indicators — a prompt-less session would silently lose all adaptivity.',
+                .'Cannot compose a prompt without indicators — a prompt-less session would silently lose all adaptivity.',
             );
         }
 
-        $coverageSection  = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
-        $budgetSection    = $this->buildBudgetSection($budget);
-        $nudgeSection     = $this->buildNudgeSection($nudgeMinChars);
-        $advanceSection   = $this->buildAdvanceSection();
+        $coverageSection = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
+        $budgetSection = $this->buildBudgetSection($budget);
+        $nudgeSection = $this->buildNudgeSection($nudgeMinChars);
+        $advanceSection = $this->buildAdvanceSection();
 
         $text = $this->assemblePrompt(
             $competencyCode,
@@ -113,7 +113,7 @@ final class SystemPromptComposer
                 }
             }
 
-            $text    = $indicator->getTranslation('text', $locale);
+            $text = $indicator->getTranslation('text', $locale);
             $anchor5 = $indicator->getTranslation('anchor_5', $locale);
             $anchor3 = $indicator->getTranslation('anchor_3', $locale);
             $anchor1 = $indicator->getTranslation('anchor_1', $locale);
@@ -138,8 +138,8 @@ final class SystemPromptComposer
     private function buildBudgetSection(int $budget): string
     {
         return "Ask at most {$budget} follow-up questions per competency. "
-            . "Advance (speak end_phrase) only after all coverage topics are addressed OR "
-            . "the follow-up budget of {$budget} is exhausted.";
+            .'Advance (speak end_phrase) only after all coverage topics are addressed OR '
+            ."the follow-up budget of {$budget} is exhausted.";
     }
 
     /**
@@ -154,8 +154,8 @@ final class SystemPromptComposer
         }
 
         return "If a candidate's answer is shorter than {$nudgeMinChars} characters, "
-            . 're-prompt once asking them to elaborate. '
-            . 'This re-prompt does NOT consume a follow-up budget slot.';
+            .'re-prompt once asking them to elaborate. '
+            .'This re-prompt does NOT consume a follow-up budget slot.';
     }
 
     /**
@@ -166,7 +166,7 @@ final class SystemPromptComposer
     private function buildAdvanceSection(): string
     {
         return 'Speak end_phrase ONLY when all coverage topics have been addressed '
-            . 'OR the follow-up budget is exhausted. Do NOT speak end_phrase after the first answer.';
+            .'OR the follow-up budget is exhausted. Do NOT speak end_phrase after the first answer.';
     }
 
     /**
@@ -180,8 +180,8 @@ final class SystemPromptComposer
         string $advanceSection,
     ): string {
         $parts = [
-            "You are an adaptive interviewer conducting a BARS-based competency assessment "
-            . "for the [{$competencyCode}] competency.",
+            'You are an adaptive interviewer conducting a BARS-based competency assessment '
+            ."for the [{$competencyCode}] competency.",
             '',
             'COVERAGE TOPICS (evaluate these behavioral indicators — do not reveal them verbatim):',
             $coverageSection,

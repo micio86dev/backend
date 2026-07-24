@@ -37,6 +37,7 @@ function makeChildProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -45,12 +46,13 @@ function makeChildParticipant(Organization $org, Project $project): Participant
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'child-' . uniqid(),
-        'display_name'    => 'Child Test',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => 'child-'.uniqid(),
+        'display_name' => 'Child Test',
+        'status' => 'in_attesa',
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -61,13 +63,13 @@ function makeChildSession(Organization $org, Participant $participant, Project $
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'pending',
+        'provider' => 'heygen',
+        'status' => 'pending',
     ]);
 }
 
@@ -92,17 +94,17 @@ test('Utterance.ts is cast as immutable datetime', function (): void {
 });
 
 test('Utterance belongsTo InterviewSession', function (): void {
-    $org         = makeChildOrg();
-    $project     = makeChildProject($org);
+    $org = makeChildOrg();
+    $project = makeChildProject($org);
     $participant = makeChildParticipant($org, $project);
-    $session     = makeChildSession($org, $participant, $project);
+    $session = makeChildSession($org, $participant, $project);
 
     $utterance = Utterance::forceCreate([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        'speaker'              => 'candidate',
-        'text'                 => 'Test utterance',
-        'ts'                   => now(),
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => 'Test utterance',
+        'ts' => now(),
     ]);
 
     expect($utterance->interviewSession)->toBeInstanceOf(InterviewSession::class);
@@ -110,39 +112,39 @@ test('Utterance belongsTo InterviewSession', function (): void {
 });
 
 test('Utterance is scoped by organization_id (TenantScoped filters correctly)', function (): void {
-    $orgA     = makeChildOrg();
-    $orgB     = makeChildOrg();
+    $orgA = makeChildOrg();
+    $orgB = makeChildOrg();
 
     $resolver = app(TenantResolver::class);
 
     $resolver->setOrgId($orgA->id);
     $resolver->setBypass(false);
     $projectA = makeChildProject($orgA);
-    $partA    = makeChildParticipant($orgA, $projectA);
+    $partA = makeChildParticipant($orgA, $projectA);
     $sessionA = makeChildSession($orgA, $partA, $projectA);
 
     $resolver->setOrgId($orgB->id);
     $projectB = makeChildProject($orgB);
-    $partB    = makeChildParticipant($orgB, $projectB);
+    $partB = makeChildParticipant($orgB, $projectB);
     $sessionB = makeChildSession($orgB, $partB, $projectB);
 
     // Use forceCreate for utterances (skips TenantScoped.creating) and set org_id explicitly.
     $resolver->setOrgId($orgA->id);
     Utterance::forceCreate([
         'interview_session_id' => $sessionA->id,
-        'organization_id'      => $orgA->id,
-        'speaker'              => 'candidate',
-        'text'                 => 'Utterance A',
-        'ts'                   => now(),
+        'organization_id' => $orgA->id,
+        'speaker' => 'candidate',
+        'text' => 'Utterance A',
+        'ts' => now(),
     ]);
 
     $resolver->setOrgId($orgB->id);
     Utterance::forceCreate([
         'interview_session_id' => $sessionB->id,
-        'organization_id'      => $orgB->id,
-        'speaker'              => 'candidate',
-        'text'                 => 'Utterance B',
-        'ts'                   => now(),
+        'organization_id' => $orgB->id,
+        'speaker' => 'candidate',
+        'text' => 'Utterance B',
+        'ts' => now(),
     ]);
 
     // Query scoped to orgA only — must see only orgA utterance.
@@ -175,17 +177,17 @@ test('IntegrityEvent.ts is cast as immutable datetime', function (): void {
 });
 
 test('IntegrityEvent belongsTo InterviewSession', function (): void {
-    $org         = makeChildOrg();
-    $project     = makeChildProject($org);
+    $org = makeChildOrg();
+    $project = makeChildProject($org);
     $participant = makeChildParticipant($org, $project);
-    $session     = makeChildSession($org, $participant, $project);
+    $session = makeChildSession($org, $participant, $project);
 
     $event = IntegrityEvent::forceCreate([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        'kind'                 => 'tab_hidden',
-        'payload'              => '{}',
-        'ts'                   => now(),
+        'organization_id' => $org->id,
+        'kind' => 'tab_hidden',
+        'payload' => '{}',
+        'ts' => now(),
     ]);
 
     expect($event->interviewSession)->toBeInstanceOf(InterviewSession::class);
@@ -213,16 +215,16 @@ test('InterviewSnapshot.taken_at is cast as immutable datetime', function (): vo
 });
 
 test('InterviewSnapshot belongsTo InterviewSession', function (): void {
-    $org         = makeChildOrg();
-    $project     = makeChildProject($org);
+    $org = makeChildOrg();
+    $project = makeChildProject($org);
     $participant = makeChildParticipant($org, $project);
-    $session     = makeChildSession($org, $participant, $project);
+    $session = makeChildSession($org, $participant, $project);
 
     $snapshot = InterviewSnapshot::forceCreate([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        's3_key'               => 'test/path.jpg',
-        'taken_at'             => now(),
+        'organization_id' => $org->id,
+        's3_key' => 'test/path.jpg',
+        'taken_at' => now(),
     ]);
 
     expect($snapshot->interviewSession)->toBeInstanceOf(InterviewSession::class);

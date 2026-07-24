@@ -36,17 +36,18 @@ function c8TavusMockSession(): InterviewSession
 {
     $session = new InterviewSession;
     $session->forceFill([
-        'id'                   => 98,
-        'organization_id'      => 1,
-        'participant_id'       => 1,
-        'project_id'           => 1,
-        'question_index'       => 0,
-        'competency_code'      => 'COL',
+        'id' => 98,
+        'organization_id' => 1,
+        'participant_id' => 1,
+        'project_id' => 1,
+        'question_index' => 0,
+        'competency_code' => 'COL',
         'framework_version_id' => 1,
-        'provider'             => 'tavus',
+        'provider' => 'tavus',
         'provider_session_ref' => null,
-        'status'               => 'pending',
+        'status' => 'pending',
     ]);
+
     return $session;
 }
 
@@ -58,11 +59,13 @@ test('6.3 TavusProvider::issue() with systemPrompt → POST /conversations body 
     Http::fake(function ($request) use (&$capturedBody) {
         if (str_contains($request->url(), '/conversations')) {
             $capturedBody = $request->data();
+
             return Http::response([
-                'conversation_id'  => 'conv-sp',
+                'conversation_id' => 'conv-sp',
                 'conversation_url' => 'https://tavus.io/conv-sp',
             ], 200);
         }
+
         return Http::response([], 200);
     });
 
@@ -89,11 +92,13 @@ test('6.4 TavusProvider::issue() with null systemPrompt → POST /conversations 
     Http::fake(function ($request) use (&$capturedBody) {
         if (str_contains($request->url(), '/conversations')) {
             $capturedBody = $request->data();
+
             return Http::response([
-                'conversation_id'  => 'conv-null',
+                'conversation_id' => 'conv-null',
                 'conversation_url' => 'https://tavus.io/conv-null',
             ], 200);
         }
+
         return Http::response([], 200);
     });
 

@@ -33,6 +33,7 @@ function crudAdminUser(Organization $org): array
     $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
     $token = auth('api')->login($user);
+
     return ['user' => $user, 'token' => $token];
 }
 
@@ -40,17 +41,17 @@ function crudStandardPayload(int $fvId, array $competencyIds = []): array
 {
     return [
         'framework_version_id' => $fvId,
-        'slug'                 => 'test-proj-' . uniqid(),
-        'name'                 => 'Test Project',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => $competencyIds,
+        'slug' => 'test-proj-'.uniqid(),
+        'name' => 'Test Project',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => $competencyIds,
     ];
 }
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('POST /api/projects → 201; organization_id stamped from auth, not body', function (): void {

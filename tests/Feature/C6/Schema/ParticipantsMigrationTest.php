@@ -24,8 +24,8 @@ test('participants table has all required columns', function (): void {
     $columns = Schema::getColumnListing('participants');
 
     foreach (['id', 'organization_id', 'project_id', 'candidate_ref', 'display_name',
-              'role_code', 'language', 'status', 'started_at', 'completed_at',
-              'created_at', 'updated_at'] as $col) {
+        'role_code', 'language', 'status', 'started_at', 'completed_at',
+        'created_at', 'updated_at'] as $col) {
         expect(in_array($col, $columns))->toBeTrue("Column {$col} should exist");
     }
 });

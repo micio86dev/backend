@@ -20,7 +20,7 @@ namespace App\DTOs\Conversation;
 final readonly class ComposedPrompt
 {
     /**
-     * @param  string  $text     The composed system-prompt string (non-empty).
+     * @param  string  $text  The composed system-prompt string (non-empty).
      * @param  string  $version  Template version that produced this prompt (non-empty).
      *
      * @throws \InvalidArgumentException When text or version is empty.

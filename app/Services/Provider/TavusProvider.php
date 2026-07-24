@@ -51,7 +51,7 @@ class TavusProvider implements ProviderSessionService
         // TavusProviderPayloadTest.php assertion catches any rename immediately (RV-3).
         $conversationBody = [
             'competency_code' => $ctx->competencyCode,
-            'question_index'  => $ctx->questionIndex,
+            'question_index' => $ctx->questionIndex,
         ];
 
         if ($ctx->systemPrompt !== null) {
@@ -59,13 +59,13 @@ class TavusProvider implements ProviderSessionService
         }
 
         $response = Http::withHeaders(['x-api-key' => $apiKey])
-            ->post(self::BASE_URL . '/conversations', $conversationBody);
+            ->post(self::BASE_URL.'/conversations', $conversationBody);
 
         if (! $response->successful()) {
             $this->throwRedacted($apiKey, $response->status(), 'conversation creation failed');
         }
 
-        $conversationId  = $response->json('conversation_id');
+        $conversationId = $response->json('conversation_id');
         $conversationUrl = $response->json('conversation_url');
 
         if ($conversationId === null || $conversationUrl === null) {
@@ -108,11 +108,11 @@ class TavusProvider implements ProviderSessionService
 
         try {
             Http::withHeaders(['x-api-key' => $apiKey])
-                ->delete(self::BASE_URL . '/conversations/' . $token->provider_session_ref);
+                ->delete(self::BASE_URL.'/conversations/'.$token->provider_session_ref);
         } catch (\Throwable $e) {
             Log::warning('Tavus: teardown failed', [
                 'provider_session_ref' => $token->provider_session_ref,
-                'error'                => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -128,7 +128,7 @@ class TavusProvider implements ProviderSessionService
 
         Log::warning('Tavus: provider call failed', [
             'context' => $context,
-            'status'  => $status,
+            'status' => $status,
             // Deliberately NO 'response_body' — may contain TAVUS_API_KEY
         ]);
 

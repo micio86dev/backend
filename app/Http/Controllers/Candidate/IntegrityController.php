@@ -68,11 +68,11 @@ class IntegrityController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'session_id'       => ['required', 'integer'],
-            'events'           => ['required', 'array', 'min:1'],
-            'events.*.kind'    => ['required', 'string'],
+            'session_id' => ['required', 'integer'],
+            'events' => ['required', 'array', 'min:1'],
+            'events.*.kind' => ['required', 'string'],
             'events.*.payload' => ['present', 'array'],
-            'events.*.ts'      => ['required', 'string'],
+            'events.*.ts' => ['required', 'string'],
         ]);
 
         // resolveOwnedSession: enforces participant_id + org isolation → 404 if not owned.
@@ -92,16 +92,16 @@ class IntegrityController extends Controller
 
         // All kinds are valid — persist the batch.
         // All rows share the same interview_session_id and organization_id.
-        $orgId     = $session->organization_id;
+        $orgId = $session->organization_id;
         $sessionId = $session->id;
 
         $rows = array_map(static function (array $event) use ($sessionId, $orgId): array {
             return [
                 'interview_session_id' => $sessionId,
-                'organization_id'      => $orgId,
-                'kind'                 => $event['kind'],
-                'payload'              => json_encode($event['payload']),
-                'ts'                   => $event['ts'],
+                'organization_id' => $orgId,
+                'kind' => $event['kind'],
+                'payload' => json_encode($event['payload']),
+                'ts' => $event['ts'],
             ];
         }, $validated['events']);
 

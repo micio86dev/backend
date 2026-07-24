@@ -67,13 +67,13 @@ function phrasesProjectWithCompetencies(Organization $org, int $count = 1): arra
         // Seed a minimal BarsIndicator (EN) so composition succeeds for EN projects.
         $ind = new BarsIndicator;
         $ind->forceFill([
-            'role_id'       => $role->id,
+            'role_id' => $role->id,
             'competency_id' => $comp->id,
-            'text'          => ['en' => "Phrases fixture indicator {$i}"],
-            'anchor_5'      => ['en' => "Excellent {$i}"],
-            'anchor_3'      => ['en' => "Adequate {$i}"],
-            'anchor_1'      => ['en' => "Insufficient {$i}"],
-            'position'      => 0,
+            'text' => ['en' => "Phrases fixture indicator {$i}"],
+            'anchor_5' => ['en' => "Excellent {$i}"],
+            'anchor_3' => ['en' => "Adequate {$i}"],
+            'anchor_1' => ['en' => "Insufficient {$i}"],
+            'position' => 0,
         ]);
         $ind->save();
 

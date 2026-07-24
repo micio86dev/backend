@@ -8,6 +8,7 @@ use Database\Factories\CompetencyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Spatie\Translatable\HasTranslations;
 
 /**
@@ -17,14 +18,16 @@ use Spatie\Translatable\HasTranslations;
  * type: 'standard' (18 seeded competencies) | 'potential' (MTG/LAT — pending authoring).
  *
  * @property string $code
- * @property string $name  (resolved via current locale)
- * @property string $definition  (resolved via current locale)
- * @property string $type  standard|potential
+ * @property string $name (resolved via current locale)
+ * @property string $definition (resolved via current locale)
+ * @property string $type standard|potential
+ * @property-read Pivot $pivot Pivot row when hydrated via Project::competencies() (carries the `position` column)
  */
 class Competency extends Model
 {
     /** @use HasFactory<CompetencyFactory> */
     use HasFactory;
+
     use HasTranslations;
 
     /**

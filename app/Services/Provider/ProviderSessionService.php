@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Provider;
 
+use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
 
 /**
@@ -29,7 +30,7 @@ interface ProviderSessionService
      * Called OUTSIDE any DB transaction. Returns a provider-neutral ProviderToken
      * carrying either a HeyGen session token or a Tavus conversation_url.
      *
-     * @throws \App\Exceptions\ProviderException on provider HTTP failure (5xx, 429).
+     * @throws ProviderException on provider HTTP failure (5xx, 429).
      */
     public function issue(InterviewSession $session, QuestionContext $ctx): ProviderToken;
 

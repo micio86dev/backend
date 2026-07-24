@@ -55,25 +55,25 @@ function c8SeedStandardScenario(string $locale = 'en'): array
     $resolver->setBypass(false);
 
     // Create a Role with a deterministic code
-    $roleCode = 'FLL_' . uniqid();
+    $roleCode = 'FLL_'.uniqid();
     $role = Role::factory()->create(['code' => $roleCode]);
 
     // Create competency + link to project via project_competencies
-    $competency = Competency::factory()->create(['code' => 'COL_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'COL_'.uniqid()]);
 
     // Project with role_code matching the role we created
     $project = Project::factory()->create([
-        'status'      => 'active',
-        'role_code'   => $roleCode,
-        'language'    => $locale,
+        'status' => 'active',
+        'role_code' => $roleCode,
+        'language' => $locale,
         'assessment_type' => 'standard',
     ]);
 
     // Attach competency to project
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // Seed BARS indicators for this role + competency (EN translations)
@@ -98,13 +98,13 @@ function c8SeedIndicators(int $roleId, int $competencyId, string $locale = 'en',
     for ($i = 0; $i < $count; $i++) {
         $ind = new BarsIndicator;
         $ind->forceFill([
-            'role_id'       => $roleId,
+            'role_id' => $roleId,
             'competency_id' => $competencyId,
-            'text'          => [$locale => "Indicator text {$i}"],
-            'anchor_5'      => [$locale => "Excellent anchor {$i}"],
-            'anchor_3'      => [$locale => "Adequate anchor {$i}"],
-            'anchor_1'      => [$locale => "Insufficient anchor {$i}"],
-            'position'      => $i,
+            'text' => [$locale => "Indicator text {$i}"],
+            'anchor_5' => [$locale => "Excellent anchor {$i}"],
+            'anchor_3' => [$locale => "Adequate anchor {$i}"],
+            'anchor_1' => [$locale => "Insufficient anchor {$i}"],
+            'position' => $i,
         ]);
         $ind->save();
     }
@@ -133,26 +133,27 @@ function c8MakeParticipant(Organization $org, Project $project, string $status =
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'c8-' . uniqid(),
-        'display_name'    => 'C8 Test Candidate',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'c8-'.uniqid(),
+        'display_name' => 'C8 Test Candidate',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
 function c8HeygenFake(): array
 {
     return [
-        '*liveavatar*/contexts*'       => Http::response(['data' => ['context_id' => 'ctx-c8']], 200),
+        '*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-c8']], 200),
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
-                'session_id'   => 'heygen-session-c8',
+                'session_id' => 'heygen-session-c8',
                 'access_token' => 'heygen-token-c8',
             ],
         ], 200),
-        '*liveavatar*/sessions/*'      => Http::response([], 200), // teardown
+        '*liveavatar*/sessions/*' => Http::response([], 200), // teardown
     ];
 }
 
@@ -166,7 +167,7 @@ test('5.1 /start with standard EN competency → 201 + question_context.prompt_v
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -183,11 +184,13 @@ test('5.5 /start response never leaks composed system_prompt; provider body carr
     Http::fake(function ($request) use (&$capturedContextBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedContextBody = $request->data();
+
             return Http::response(['data' => ['context_id' => 'ctx-c8']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'heygen-session-c8', 'access_token' => 'heygen-token-c8']], 200);
         }
+
         return Http::response([], 200);
     });
 
@@ -195,7 +198,7 @@ test('5.5 /start response never leaks composed system_prompt; provider body carr
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -225,21 +228,21 @@ test('5.2 /start missing IT anchor translation → 422 anchor_translation_missin
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $roleCode = 'MLL_' . uniqid();
+    $roleCode = 'MLL_'.uniqid();
     $role = Role::factory()->create(['code' => $roleCode]);
-    $competency = Competency::factory()->create(['code' => 'INN_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'INN_'.uniqid()]);
 
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => $roleCode,
-        'language'        => 'it',   // IT locale
+        'status' => 'active',
+        'role_code' => $roleCode,
+        'language' => 'it',   // IT locale
         'assessment_type' => 'standard',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // Only EN indicators — NO Italian translation → AnchorTranslationMissingException
@@ -249,7 +252,7 @@ test('5.2 /start missing IT anchor translation → 422 anchor_translation_missin
     $bearer = CandidateTokenFactory::mintCandidateToken($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(422);
@@ -272,21 +275,21 @@ test('5.3 /start empty indicator set → 422 composition_error; no provider call
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $roleCode = 'BUL_' . uniqid();
+    $roleCode = 'BUL_'.uniqid();
     $role = Role::factory()->create(['code' => $roleCode]);
-    $competency = Competency::factory()->create(['code' => 'STG_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'STG_'.uniqid()]);
 
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => $roleCode,
-        'language'        => 'en',
+        'status' => 'active',
+        'role_code' => $roleCode,
+        'language' => 'en',
         'assessment_type' => 'standard',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // NO BarsIndicators for this role+competency → CompositionException
@@ -296,7 +299,7 @@ test('5.3 /start empty indicator set → 422 composition_error; no provider call
     $bearer = CandidateTokenFactory::mintCandidateToken($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(422);
@@ -322,7 +325,7 @@ test('5.4 provider 5xx failure matrix unchanged after QuestionContext widening �
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(502);
@@ -357,23 +360,23 @@ function c8SeedResumeInCorsoScenario(): array
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $roleCode = 'FLL_resume_' . uniqid();
+    $roleCode = 'FLL_resume_'.uniqid();
     $role = Role::factory()->create(['code' => $roleCode]);
 
-    $competency = Competency::factory()->create(['code' => 'COL_resume_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'COL_resume_'.uniqid()]);
 
     // Project with IT locale — composition will fail because only EN indicators exist
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => $roleCode,
-        'language'        => 'it',
+        'status' => 'active',
+        'role_code' => $roleCode,
+        'language' => 'it',
         'assessment_type' => 'standard',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // Only EN indicators — no IT translations → AnchorTranslationMissingException on compose
@@ -384,14 +387,14 @@ function c8SeedResumeInCorsoScenario(): array
 
     // Pre-existing in_corso session (this is the session we are resuming)
     $session = InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $competency->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $competency->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'provider_session_ref' => 'old-resume-ref-' . uniqid(),
-        'status'               => 'in_corso',
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-resume-ref-'.uniqid(),
+        'status' => 'in_corso',
     ]);
 
     return compact('org', 'project', 'participant', 'session');
@@ -405,11 +408,13 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
             // On degraded path the contexts call should NOT happen (no system_prompt → no context)
             // OR if called: body must NOT have system_prompt
             $capturedContextBody = $request->data();
+
             return Http::response(['data' => ['context_id' => 'ctx-resume-degrade']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'heygen-session-resume', 'access_token' => 'heygen-token-resume']], 200);
         }
+
         // teardown old session
         return Http::response([], 200);
     });
@@ -421,7 +426,7 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
     $bearer = CandidateTokenFactory::mintCandidateToken($data['participant']);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     // Must NOT lock out the candidate (graceful degradation)
@@ -459,11 +464,13 @@ test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains
     Http::fake(function ($request) use (&$capturedContextBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedContextBody = $request->data();
+
             return Http::response(['data' => ['context_id' => 'ctx-resume-adaptive']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'heygen-session-adaptive', 'access_token' => 'heygen-token-adaptive']], 200);
         }
+
         return Http::response([], 200);
     });
     Queue::fake();
@@ -474,21 +481,21 @@ test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $roleCode = 'FLL_adaptive_' . uniqid();
+    $roleCode = 'FLL_adaptive_'.uniqid();
     $role = Role::factory()->create(['code' => $roleCode]);
-    $competency = Competency::factory()->create(['code' => 'COL_adaptive_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'COL_adaptive_'.uniqid()]);
 
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => $roleCode,
-        'language'        => 'it',
+        'status' => 'active',
+        'role_code' => $roleCode,
+        'language' => 'it',
         'assessment_type' => 'standard',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // Seed both EN and IT indicators → composition succeeds
@@ -499,20 +506,20 @@ test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains
 
     // Pre-existing in_corso session
     $session = InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $competency->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $competency->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'provider_session_ref' => 'old-adaptive-ref-' . uniqid(),
-        'status'               => 'in_corso',
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-adaptive-ref-'.uniqid(),
+        'status' => 'in_corso',
     ]);
 
     $bearer = CandidateTokenFactory::mintCandidateToken($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -542,21 +549,21 @@ test('5.8 NEW session + composition fails (regression guard) → still 422, no I
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $roleCode = 'MLL_reg_' . uniqid();
+    $roleCode = 'MLL_reg_'.uniqid();
     $role = Role::factory()->create(['code' => $roleCode]);
-    $competency = Competency::factory()->create(['code' => 'INN_reg_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'INN_reg_'.uniqid()]);
 
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => $roleCode,
-        'language'        => 'it',
+        'status' => 'active',
+        'role_code' => $roleCode,
+        'language' => 'it',
         'assessment_type' => 'standard',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // Only EN indicators — missing IT translations → composition fails
@@ -567,7 +574,7 @@ test('5.8 NEW session + composition fails (regression guard) → still 422, no I
     $bearer = CandidateTokenFactory::mintCandidateToken($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     // Must still fail fast (no orphan session, no provider call)
@@ -591,26 +598,26 @@ test('W1 potential-type project → 422 assessment_type_not_supported, no sessio
     $resolver->setBypass(false);
 
     // potential type: role_code is null (domain constraint); assessment_type = 'potential'
-    $competency = Competency::factory()->create(['code' => 'MTG_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'MTG_'.uniqid()]);
 
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => null,
-        'language'        => 'en',
+        'status' => 'active',
+        'role_code' => null,
+        'language' => 'en',
         'assessment_type' => 'potential',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     $participant = c8MakeParticipant($org, $project, 'in_attesa');
     $bearer = CandidateTokenFactory::mintCandidateToken($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(422);
@@ -633,39 +640,39 @@ test('W1 potential-type project on RESUME in_corso path → 422 assessment_type_
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $competency = Competency::factory()->create(['code' => 'LAT_' . uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'LAT_'.uniqid()]);
 
     $project = Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => null,
-        'language'        => 'en',
+        'status' => 'active',
+        'role_code' => null,
+        'language' => 'en',
         'assessment_type' => 'potential',
     ]);
 
     DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+        'project_id' => $project->id,
         'competency_id' => $competency->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // Participant already in_corso with a pre-existing in_corso session (resume scenario)
     $participant = c8MakeParticipant($org, $project, 'in_corso');
 
     InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $competency->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $competency->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'provider_session_ref' => 'old-potential-ref-' . uniqid(),
-        'status'               => 'in_corso',
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-potential-ref-'.uniqid(),
+        'status' => 'in_corso',
     ]);
 
     $bearer = CandidateTokenFactory::mintCandidateToken($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
     // Must hard-fail even on resume path — non-standard type never reaches degraded bypass

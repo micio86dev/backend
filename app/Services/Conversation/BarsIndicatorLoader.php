@@ -30,9 +30,8 @@ final class BarsIndicatorLoader
     /**
      * Return all BARS indicators for the given role AND competency, ordered by position.
      *
-     * @param  int  $roleId        Role primary key (from project.role_code → Role.id).
+     * @param  int  $roleId  Role primary key (from project.role_code → Role.id).
      * @param  int  $competencyId  Competency primary key.
-     *
      * @return Collection<int, BarsIndicator> Ordered by position ascending; may be empty.
      */
     public function forRoleCompetency(int $roleId, int $competencyId): Collection

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Tenant-scoped InterviewSnapshot model (C7a — Interview Session Mechanics).
@@ -28,7 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $interview_session_id
  * @property int $organization_id
  * @property string $s3_key
- * @property \Illuminate\Support\Carbon $taken_at
+ * @property Carbon $taken_at
  */
 class InterviewSnapshot extends TenantModel
 {

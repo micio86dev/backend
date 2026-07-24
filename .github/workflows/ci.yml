@@ -30,7 +30,10 @@ jobs:
 
     env:
       APP_ENV: testing
-      APP_KEY: base64:placeholder==
+      # Throwaway 32-byte key for CI only (aes-256-cbc); NOT a production secret.
+      # The placeholder previously here was an invalid cipher length and broke
+      # any test that encrypts a field (e.g. webhook_secret encrypted cast).
+      APP_KEY: base64:/RbDHF9zcNfJtZX1fRWXfBOPQnh1f2vpFpTNs8URgOY=
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
@@ -45,6 +48,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ── Framework catalog (binding JSON owned by the wrapper superproject) ─
+      # The seeder and catalog tests resolve dirname(base_path())/docs/app_description/…
+      # (the wrapper root, one level above the api submodule). In standalone CI
+      # only the api repo is checked out, so fetch the catalog from the public
+      # wrapper repo and place it one level above the workspace where the code
+      # expects it. Sparse + blobless keeps it to just the docs tree.
+      - name: Fetch framework catalog from wrapper
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/micio86dev/avatar-test.git "$RUNNER_TEMP/wrapper"
+          git -C "$RUNNER_TEMP/wrapper" sparse-checkout set docs/app_description
+          mkdir -p "$RUNNER_WORKSPACE/docs"
+          cp -r "$RUNNER_TEMP/wrapper/docs/app_description" "$RUNNER_WORKSPACE/docs/"
+          test -f "$RUNNER_WORKSPACE/docs/app_description/02-domain/framework/roles.json" \
+            && echo "framework catalog in place"
 
       - name: Setup PHP 8.5 + PCOV + pdo_pgsql
         uses: shivammathur/setup-php@v2

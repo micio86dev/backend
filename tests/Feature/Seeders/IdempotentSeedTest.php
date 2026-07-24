@@ -17,7 +17,7 @@ use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\DB;
 
 test('seeder is idempotent — second run produces no new rows', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $roleCount = Role::count();

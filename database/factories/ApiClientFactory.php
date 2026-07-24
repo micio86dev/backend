@@ -23,12 +23,12 @@ class ApiClientFactory extends Factory
     {
         return [
             'organization_id' => Organization::factory(),
-            'name'            => fake()->words(3, true) . ' client',
-            'key_hash'        => ApiKeyGenerator::hash(ApiKeyGenerator::generate()),
-            'abilities'       => ['participants:read'],
-            'is_active'       => true,
-            'expires_at'      => null,
-            'last_used_at'    => null,
+            'name' => fake()->words(3, true).' client',
+            'key_hash' => ApiKeyGenerator::hash(ApiKeyGenerator::generate()),
+            'abilities' => ['participants:read'],
+            'is_active' => true,
+            'expires_at' => null,
+            'last_used_at' => null,
         ];
     }
 

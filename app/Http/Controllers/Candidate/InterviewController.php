@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Candidate;
 
+use App\DTOs\Conversation\ComposedPrompt;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ProviderException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
@@ -47,8 +48,7 @@ class InterviewController extends Controller
     use ResolvesOwnedSession;
 
     public function __construct(
-        private readonly ProviderSessionService $providerService,
-        private readonly SystemPromptComposer   $composer,
+        private readonly SystemPromptComposer $composer,
     ) {}
 
     // =========================================================================
@@ -87,6 +87,11 @@ class InterviewController extends Controller
         $project = $participant->project;
         $pid = $participant->id;
 
+        // Fail-closed: a participant must always resolve to its project (non-null FK).
+        if ($project === null) {
+            return response()->json(['error' => 'project_not_found'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         // (1) Resolve next competency — lowest position not yet in a terminal-completed state.
         $nextCompetency = $this->resolveNextCompetency($pid, $project->id);
 
@@ -97,10 +102,9 @@ class InterviewController extends Controller
         // (FIX W1) Guard: only 'standard' assessment type is supported by the composition engine.
         // 'potential' and any future types must not reach composition or the degraded bypass.
         // This check applies on BOTH the fresh-start AND the resume in_corso path.
-        // The `!== null` is a static-analysis guard only: post-authentication a participant
-        // always resolves to a project (project_id is non-nullable), so this branch always fires
-        // the assessment_type check in practice.
-        if ($project !== null && $project->assessment_type !== 'standard') {
+        // ($project is guaranteed non-null here: the project_not_found early return above
+        // narrows it, and project_id is a non-nullable FK.)
+        if ($project->assessment_type !== 'standard') {
             return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -126,8 +130,8 @@ class InterviewController extends Controller
 
             // RESUME in_corso — degrade: proceed with null system prompt.
             Log::warning('C8: composition failed on resume in_corso path — degrading to legacy non-adaptive body', [
-                'participant_id'   => $pid,
-                'competency_code'  => $nextCompetency['competency_code'],
+                'participant_id' => $pid,
+                'competency_code' => $nextCompetency['competency_code'],
                 'composition_error' => $compositionResult->getData(assoc: true)['error'] ?? 'unknown',
             ]);
         }
@@ -143,7 +147,7 @@ class InterviewController extends Controller
         // (composition failed), so we fall back to null system prompt (no fresh BARS prompt was
         // composed — do NOT fabricate prompt text) but restore the prompt_version from config
         // so /start always returns a non-null prompt_version in every 201 response (FIX C1).
-        $systemPrompt  = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->text;
+        $systemPrompt = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->text;
         $promptVersion = ($compositionResult instanceof JsonResponse)
             ? (string) config('conversation.prompt_version')
             : $compositionResult->version;
@@ -154,7 +158,7 @@ class InterviewController extends Controller
             // C8: thread composed prompt and version into QuestionContext (M-3).
             // On the degraded RESUME path systemPrompt is null (legacy non-adaptive provider
             // body), but promptVersion is restored from config (FIX C1) — never null in a 201.
-            systemPrompt:  $systemPrompt,
+            systemPrompt: $systemPrompt,
             promptVersion: $promptVersion,
         );
 
@@ -283,13 +287,11 @@ class InterviewController extends Controller
      *
      * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
      * RV-3: provider field client confirmation required before live deploy.
-     *
-     * @return \App\DTOs\Conversation\ComposedPrompt|JsonResponse
      */
     private function composePromptForCompetency(
         ?Project $project,
         string $competencyCode,
-    ): \App\DTOs\Conversation\ComposedPrompt|JsonResponse {
+    ): ComposedPrompt|JsonResponse {
         if ($project === null) {
             // Participant has no associated project — treat as composition failure.
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -316,11 +318,11 @@ class InterviewController extends Controller
         try {
             return $this->composer->compose(
                 competencyCode: $competencyCode,
-                roleId:         $role->id,
-                competencyId:   $competency->id,
-                projectLocale:  $project->language,
-                budget:         $budget,
-                nudgeMinChars:  $project->nudge_min_chars,
+                roleId: $role->id,
+                competencyId: $competency->id,
+                projectLocale: $project->language,
+                budget: $budget,
+                nudgeMinChars: $project->nudge_min_chars,
             );
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -405,6 +407,8 @@ class InterviewController extends Controller
      * leaving the connection in a "transaction is aborted" state. We wrap the INSERT
      * in a DB::transaction() (which uses a SAVEPOINT internally when nested) so that
      * the savepoint is rolled back on violation while the outer connection remains clean.
+     *
+     * @param  array{competency_code: string, question_index: int}  $competency
      */
     private function createOrResumeSession(
         Participant $participant,
@@ -459,16 +463,20 @@ class InterviewController extends Controller
 
         // (b) Teardown OLD session (best-effort, non-fatal) — FIX-1
         // Provider name is required by ProviderToken::fromRef (F1).
-        $oldToken = ProviderToken::fromRef($session->provider, $session->provider_session_ref);
-        try {
-            $provider->teardown($oldToken);
-        } catch (\Throwable $e) {
-            // Non-fatal — log and continue (candidate needs the fresh session)
-            Log::warning('C7a: teardown of old provider session failed (non-fatal)', [
-                'session_id' => $session->id,
-                'old_ref' => $session->provider_session_ref,
-                'error' => $e->getMessage(),
-            ]);
+        // A null provider_session_ref means there is no old provider session to tear down.
+        $oldRef = $session->provider_session_ref;
+        if ($oldRef !== null) {
+            $oldToken = ProviderToken::fromRef($session->provider, $oldRef);
+            try {
+                $provider->teardown($oldToken);
+            } catch (\Throwable $e) {
+                // Non-fatal — log and continue (candidate needs the fresh session)
+                Log::warning('C7a: teardown of old provider session failed (non-fatal)', [
+                    'session_id' => $session->id,
+                    'old_ref' => $oldRef,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         // (c) Persist new ref in a short DB txn (FIX-8: no participant update needed on RESUME)
@@ -599,8 +607,8 @@ class InterviewController extends Controller
      * C8 (M-3): prompt_version added to question_context for audit/traceability.
      * Machine-facing field — returned literally in every locale (not localized).
      *
-     * @param  string|null  $language      The participant's language (BCP-ish locale, may be null).
-     * @param  string|null  $promptVersion Composed prompt template version (C8). On the standard
+     * @param  string|null  $language  The participant's language (BCP-ish locale, may be null).
+     * @param  string|null  $promptVersion  Composed prompt template version (C8). On the standard
      *                                      path this is the composed prompt's version; on the
      *                                      degraded resume path it falls back to the config
      *                                      version (FIX C1) so a 201 never carries a null version.

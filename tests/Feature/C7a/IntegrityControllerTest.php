@@ -39,6 +39,7 @@ function integrityProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -47,12 +48,13 @@ function integrityParticipant(Organization $org, Project $project, string $statu
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'int-' . ($suffix ?: uniqid()),
-        'display_name'    => 'Integrity Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'int-'.($suffix ?: uniqid()),
+        'display_name' => 'Integrity Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -63,13 +65,13 @@ function integritySession(Organization $org, Participant $participant, Project $
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => $status,
+        'provider' => 'heygen',
+        'status' => $status,
     ]);
 }
 
@@ -81,17 +83,17 @@ function integrityBearer(Participant $participant): string
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('POST /integrity with 3 valid kinds → 202 and 3 IntegrityEvent rows persisted', function (): void {
-    $org         = integrityOrg();
-    $project     = integrityProject($org);
+    $org = integrityOrg();
+    $project = integrityProject($org);
     $participant = integrityParticipant($org, $project, 'in_corso');
-    $session     = integritySession($org, $participant, $project, 'in_corso');
-    $token       = integrityBearer($participant);
+    $session = integritySession($org, $participant, $project, 'in_corso');
+    $token = integrityBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $session->id,
-            'events'     => [
+            'events' => [
                 ['kind' => 'tab_hidden',   'payload' => ['durationMs' => 3000], 'ts' => now()->toIso8601String()],
                 ['kind' => 'focus_lost',   'payload' => [],                     'ts' => now()->toIso8601String()],
                 ['kind' => 'face_absent',  'payload' => ['durationMs' => 1500], 'ts' => now()->toIso8601String()],
@@ -112,11 +114,11 @@ test('POST /integrity with 3 valid kinds → 202 and 3 IntegrityEvent rows persi
 });
 
 test('POST /integrity with unknown kind → 422; no rows persisted', function (): void {
-    $org         = integrityOrg();
-    $project     = integrityProject($org);
+    $org = integrityOrg();
+    $project = integrityProject($org);
     $participant = integrityParticipant($org, $project, 'in_corso');
-    $session     = integritySession($org, $participant, $project, 'in_corso');
-    $token       = integrityBearer($participant);
+    $session = integritySession($org, $participant, $project, 'in_corso');
+    $token = integrityBearer($participant);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
@@ -124,10 +126,10 @@ test('POST /integrity with unknown kind → 422; no rows persisted', function ()
     $countBefore = IntegrityEvent::where('interview_session_id', $session->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $session->id,
-            'events'     => [
+            'events' => [
                 ['kind' => 'unknown_event', 'payload' => [], 'ts' => now()->toIso8601String()],
             ],
         ]);
@@ -139,11 +141,11 @@ test('POST /integrity with unknown kind → 422; no rows persisted', function ()
 });
 
 test('POST /integrity with mixed batch (1 valid + 1 unknown) → 422; no rows persisted (all-or-nothing)', function (): void {
-    $org         = integrityOrg();
-    $project     = integrityProject($org);
+    $org = integrityOrg();
+    $project = integrityProject($org);
     $participant = integrityParticipant($org, $project, 'in_corso');
-    $session     = integritySession($org, $participant, $project, 'in_corso');
-    $token       = integrityBearer($participant);
+    $session = integritySession($org, $participant, $project, 'in_corso');
+    $token = integrityBearer($participant);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
@@ -151,10 +153,10 @@ test('POST /integrity with mixed batch (1 valid + 1 unknown) → 422; no rows pe
     $countBefore = IntegrityEvent::where('interview_session_id', $session->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $session->id,
-            'events'     => [
+            'events' => [
                 ['kind' => 'tab_hidden',    'payload' => [], 'ts' => now()->toIso8601String()],
                 ['kind' => 'cheat_attempt', 'payload' => [], 'ts' => now()->toIso8601String()],
             ],
@@ -168,8 +170,8 @@ test('POST /integrity with mixed batch (1 valid + 1 unknown) → 422; no rows pe
 });
 
 test('POST /integrity with session_id from different participant → 404', function (): void {
-    $org          = integrityOrg();
-    $project      = integrityProject($org);
+    $org = integrityOrg();
+    $project = integrityProject($org);
     $participantX = integrityParticipant($org, $project, 'in_corso', 'x');
     $participantY = integrityParticipant($org, $project, 'in_corso', 'y');
 
@@ -185,10 +187,10 @@ test('POST /integrity with session_id from different participant → 404', funct
     $countBefore = IntegrityEvent::where('interview_session_id', $sessionX->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $sessionX->id,
-            'events'     => [
+            'events' => [
                 ['kind' => 'tab_hidden', 'payload' => [], 'ts' => now()->toIso8601String()],
             ],
         ]);
@@ -202,17 +204,17 @@ test('POST /integrity with session_id from different participant → 404', funct
 // ─── Dataset: all 13 canonical kinds are accepted individually ────────────────
 
 test('POST /integrity accepts all 13 canonical integrity kinds', function (string $kind) {
-    $org         = integrityOrg();
-    $project     = integrityProject($org);
+    $org = integrityOrg();
+    $project = integrityProject($org);
     $participant = integrityParticipant($org, $project, 'in_corso');
-    $session     = integritySession($org, $participant, $project, 'in_corso');
-    $token       = integrityBearer($participant);
+    $session = integritySession($org, $participant, $project, 'in_corso');
+    $token = integrityBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $session->id,
-            'events'     => [
+            'events' => [
                 ['kind' => $kind, 'payload' => [], 'ts' => now()->toIso8601String()],
             ],
         ]);

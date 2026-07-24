@@ -36,7 +36,7 @@ test('operator create → 403', function (): void {
     $token = nonAdminToken($org, 'operator');
 
     $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'Test',
+        'name' => 'Test',
         'abilities' => ['participants:read'],
     ])->assertForbidden();
 });
@@ -46,7 +46,7 @@ test('viewer create → 403', function (): void {
     $token = nonAdminToken($org, 'viewer');
 
     $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'Test',
+        'name' => 'Test',
         'abilities' => ['participants:read'],
     ])->assertForbidden();
 });
@@ -57,7 +57,7 @@ test('operator revoke → 403', function (): void {
     $client = ApiClient::factory()->create(['organization_id' => $org->id]);
 
     $this->withToken($token)
-        ->deleteJson('/api/m2m/clients/' . $client->id)
+        ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertForbidden();
 });
 
@@ -67,14 +67,14 @@ test('machine api_key on auth:api mgmt route → 401 (guard non-interchangeabili
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
     ]);
 
     // An M2M key must NOT work on the human auth:api credential mgmt route
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->postJson('/api/m2m/clients', [
-            'name'      => 'Attempted',
+            'name' => 'Attempted',
             'abilities' => ['participants:read'],
         ])
         ->assertUnauthorized();

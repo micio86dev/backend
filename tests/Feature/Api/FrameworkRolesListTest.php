@@ -14,7 +14,7 @@ use App\Models\User;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('authenticated user gets all 5 global roles with 200', function (): void {

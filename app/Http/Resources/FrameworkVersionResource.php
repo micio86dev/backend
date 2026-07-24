@@ -26,13 +26,13 @@ class FrameworkVersionResource extends JsonResource
         $fv = $this->resource;
 
         return [
-            'id'             => $fv->id,
+            'id' => $fv->id,
             'organization_id' => $fv->organization_id,
-            'version'        => $fv->version,
-            'label'          => $fv->label,
-            'is_locked'      => $fv->is_locked,
-            'created_at'     => $fv->created_at?->toISOString(),
-            'updated_at'     => $fv->updated_at?->toISOString(),
+            'version' => $fv->version,
+            'label' => $fv->label,
+            'is_locked' => $fv->is_locked,
+            'created_at' => $fv->created_at?->toISOString(),
+            'updated_at' => $fv->updated_at?->toISOString(),
         ];
     }
 }

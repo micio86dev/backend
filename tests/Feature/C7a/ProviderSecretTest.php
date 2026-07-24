@@ -27,6 +27,7 @@ use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -45,34 +46,35 @@ function secretProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
 function secretProjectWithComp(Organization $org): array
 {
     $project = secretProject($org);
-    $comp    = Competency::factory()->create();
-    \Illuminate\Support\Facades\DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+    $comp = Competency::factory()->create();
+    DB::table('project_competencies')->insert([
+        'project_id' => $project->id,
         'competency_id' => $comp->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // C8 (M-3): seed Role + BarsIndicator so composition succeeds at /start.
     // firstOrCreate avoids unique-constraint violations when called multiple times for the same role_code.
     $role = Role::firstOrCreate(['code' => $project->role_code], [
-        'name'             => ['en' => 'Secret test role'],
+        'name' => ['en' => 'Secret test role'],
         'responsibilities' => ['en' => 'Secret test responsibilities'],
     ]);
-    $ind  = new BarsIndicator;
+    $ind = new BarsIndicator;
     $ind->forceFill([
-        'role_id'       => $role->id,
+        'role_id' => $role->id,
         'competency_id' => $comp->id,
-        'text'          => ['en' => 'Secret test indicator'],
-        'anchor_5'      => ['en' => 'Excellent'],
-        'anchor_3'      => ['en' => 'Adequate'],
-        'anchor_1'      => ['en' => 'Insufficient'],
-        'position'      => 0,
+        'text' => ['en' => 'Secret test indicator'],
+        'anchor_5' => ['en' => 'Excellent'],
+        'anchor_3' => ['en' => 'Adequate'],
+        'anchor_1' => ['en' => 'Insufficient'],
+        'position' => 0,
     ]);
     $ind->save();
 
@@ -84,12 +86,13 @@ function secretParticipant(Organization $org, Project $project, string $status =
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'sec-' . uniqid(),
-        'display_name'    => 'Secret Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'sec-'.uniqid(),
+        'display_name' => 'Secret Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -108,20 +111,20 @@ test('14.3: /start response body does NOT contain HEYGEN_API_KEY value', functio
         '*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-001']], 200),
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
-                'session_id'   => 'heygen-session-001',
+                'session_id' => 'heygen-session-001',
                 'access_token' => 'ephemeral-token-001',
             ],
         ], 200),
     ]);
     Queue::fake();
 
-    $org  = secretOrg();
+    $org = secretOrg();
     [$project] = secretProjectWithComp($org);
     $participant = secretParticipant($org, $project, 'in_attesa');
-    $token       = secretBearer($participant);
+    $token = secretBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -147,18 +150,18 @@ test('14.3: provider 5xx carrying the API key does NOT propagate key to log chan
     $logMessages = [];
     Log::listen(function ($message) use (&$logMessages): void {
         // Capture both message string and context JSON
-        $msg     = $message->message ?? '';
+        $msg = $message->message ?? '';
         $context = is_array($message->context ?? null) ? json_encode($message->context) : '';
-        $logMessages[] = $msg . ' ' . $context;
+        $logMessages[] = $msg.' '.$context;
     });
 
-    $org  = secretOrg();
+    $org = secretOrg();
     [$project] = secretProjectWithComp($org);
     $participant = secretParticipant($org, $project, 'in_attesa');
-    $token       = secretBearer($participant);
+    $token = secretBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     // Provider hard-failure → 502
@@ -179,42 +182,42 @@ test('14.3: /start response does NOT contain TAVUS_API_KEY value', function (): 
 
     Http::fake([
         '*tavusapi*/v2/conversations*' => Http::response([
-            'conversation_id'  => 'conv-001',
+            'conversation_id' => 'conv-001',
             'conversation_url' => 'https://tavus.io/conv-001',
         ], 200),
     ]);
     Queue::fake();
 
-    $org     = secretOrg();
+    $org = secretOrg();
     $project = secretProject($org);
     // Force Tavus on the project
     $project->forceFill(['provider_override' => 'tavus'])->save();
     $comp = Competency::factory()->create();
-    \Illuminate\Support\Facades\DB::table('project_competencies')->insert([
-        'project_id'    => $project->id,
+    DB::table('project_competencies')->insert([
+        'project_id' => $project->id,
         'competency_id' => $comp->id,
-        'position'      => 1,
+        'position' => 1,
     ]);
 
     // C8 (M-3): seed Role + BarsIndicator so composition succeeds at /start.
     $role = Role::factory()->create(['code' => $project->role_code]);
-    $ind  = new BarsIndicator;
+    $ind = new BarsIndicator;
     $ind->forceFill([
-        'role_id'       => $role->id,
+        'role_id' => $role->id,
         'competency_id' => $comp->id,
-        'text'          => ['en' => 'Tavus secret test indicator'],
-        'anchor_5'      => ['en' => 'Excellent'],
-        'anchor_3'      => ['en' => 'Adequate'],
-        'anchor_1'      => ['en' => 'Insufficient'],
-        'position'      => 0,
+        'text' => ['en' => 'Tavus secret test indicator'],
+        'anchor_5' => ['en' => 'Excellent'],
+        'anchor_3' => ['en' => 'Adequate'],
+        'anchor_1' => ['en' => 'Insufficient'],
+        'position' => 0,
     ]);
     $ind->save();
 
     $participant = secretParticipant($org, $project, 'in_attesa');
-    $token       = secretBearer($participant);
+    $token = secretBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -240,23 +243,23 @@ test('14.4: cross-org /end probe → 404; no terminal-status disclosure', functi
     $resolver->setOrgId($orgB->id);
     $resolver->setBypass(false);
     $sessionB = InterviewSession::create([
-        'participant_id'       => $participantB->id,
-        'project_id'           => $projectB->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participantB->id,
+        'project_id' => $projectB->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $projectB->framework_version_id,
-        'provider'             => 'heygen',
+        'provider' => 'heygen',
         'provider_session_ref' => 'ref-b-123',
-        'status'               => 'completed', // terminal
+        'status' => 'completed', // terminal
     ]);
 
     // Authenticated as participantA (orgA) — cross-org probe
     $tokenA = secretBearer($participantA);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $tokenA])
+        ->withHeaders(['Authorization' => 'Bearer '.$tokenA])
         ->postJson('/api/candidate/interview/end', [
-            'session_id'   => $sessionB->id,
+            'session_id' => $sessionB->id,
             'ended_reason' => 'completed',
         ]);
 

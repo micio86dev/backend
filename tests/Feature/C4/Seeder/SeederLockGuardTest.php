@@ -25,6 +25,7 @@ use App\Models\FrameworkGap;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\DB;
@@ -36,14 +37,13 @@ use Illuminate\Support\Facades\DB;
  * Merges $extraCompetencies into the existing competencies.json if provided.
  * Returns [rolesFile, competenciesFile, barsDir] paths.
  *
- * @param string $tmpDir
- * @param array<string, array{name: string, definition: string}> $extraCompetencies Additional competency codes to add
- * @param array<string, array{name: string, responsibilities: string, competencies: list<string>}> $roleOverrides Role overrides
+ * @param  array<string, array{name: string, definition: string}>  $extraCompetencies  Additional competency codes to add
+ * @param  array<string, array{name: string, responsibilities: string, competencies: list<string>}>  $roleOverrides  Role overrides
  * @return array{string, string, string}
  */
 function buildSeederFixtures(string $tmpDir, array $extraCompetencies = [], array $roleOverrides = []): array
 {
-    $frameworkBase = dirname(base_path()) . '/docs/app_description/02-domain/framework';
+    $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
     $originalRoles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
     $originalCompetencies = json_decode(file_get_contents("{$frameworkBase}/competencies.json"), true, 512, JSON_THROW_ON_ERROR);
 
@@ -56,7 +56,7 @@ function buildSeederFixtures(string $tmpDir, array $extraCompetencies = [], arra
 
     // Copy all BARS files into the tmp dir
     foreach (glob("{$frameworkBase}/bars/*.json") as $barsFile) {
-        copy($barsFile, "{$tmpDir}/bars/" . basename($barsFile));
+        copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
     }
 
     return ["{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars"];
@@ -66,7 +66,7 @@ function buildSeederFixtures(string $tmpDir, array $extraCompetencies = [], arra
 
 test('locked FV: anchor text and competency name edits are suppressed on re-seed', function (): void {
     // First seed normally — no locked FV
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     // Pin a FV (lock it)
@@ -76,7 +76,7 @@ test('locked FV: anchor text and competency name edits are suppressed on re-seed
     $fv = FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
 
     // Capture original anchor text for a known indicator
-    $ico = \App\Models\Role::where('code', 'ICO')->firstOrFail();
+    $ico = Role::where('code', 'ICO')->firstOrFail();
     $firstCompetency = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)
         ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
@@ -94,7 +94,7 @@ test('locked FV: anchor text and competency name edits are suppressed on re-seed
     $originalName = Competency::find($competencyId)->getTranslation('name', 'en');
 
     // Build a modified fixtures with edited anchor + name
-    $tmpDir = sys_get_temp_dir() . '/c4_lock_guard_' . uniqid();
+    $tmpDir = sys_get_temp_dir().'/c4_lock_guard_'.uniqid();
     [$rolesFile, $competenciesFile, $barsDir] = buildSeederFixtures($tmpDir);
 
     // Modify anchor_5 for the first indicator of this competency in the BARS file
@@ -134,7 +134,7 @@ test('locked FV: anchor text and competency name edits are suppressed on re-seed
 // ─── Scenario 2: Locked FV — new competency Z is inserted (additive) ──────────
 
 test('locked FV: new competency Z added to JSON is inserted (additive)', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $org = Organization::factory()->create();
@@ -145,7 +145,7 @@ test('locked FV: new competency Z added to JSON is inserted (additive)', functio
     // Verify Z does not exist yet
     expect(Competency::where('code', 'ZZZ')->exists())->toBeFalse();
 
-    $tmpDir = sys_get_temp_dir() . '/c4_lock_guard_z_' . uniqid();
+    $tmpDir = sys_get_temp_dir().'/c4_lock_guard_z_'.uniqid();
     [$rolesFile, $competenciesFile, $barsDir] = buildSeederFixtures($tmpDir, [
         'ZZZ' => ['name' => 'Test Competency Z', 'definition' => 'Test definition'],
     ]);
@@ -166,7 +166,7 @@ test('locked FV: new competency Z added to JSON is inserted (additive)', functio
 // ─── Scenario 3: Locked FV — JSON-removed competency W leaves indicators/pivot intact ──
 
 test('locked FV: JSON-removed competency W leaves indicators and pivot intact', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $org = Organization::factory()->create();
@@ -175,7 +175,7 @@ test('locked FV: JSON-removed competency W leaves indicators and pivot intact', 
     FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
 
     // Identify a competency in ICO that has bars indicators
-    $ico = \App\Models\Role::where('code', 'ICO')->firstOrFail();
+    $ico = Role::where('code', 'ICO')->firstOrFail();
     $pivotRow = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)
         ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
@@ -188,8 +188,8 @@ test('locked FV: JSON-removed competency W leaves indicators and pivot intact', 
         ->count();
 
     // Build fixtures with W removed from ICO roles
-    $tmpDir = sys_get_temp_dir() . '/c4_lock_guard_w_' . uniqid();
-    $frameworkBase = dirname(base_path()) . '/docs/app_description/02-domain/framework';
+    $tmpDir = sys_get_temp_dir().'/c4_lock_guard_w_'.uniqid();
+    $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
     $originalRoles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
     $originalRoles['ICO']['competencies'] = array_values(
         array_filter($originalRoles['ICO']['competencies'], fn ($c) => $c !== $removedCode)
@@ -200,7 +200,7 @@ test('locked FV: JSON-removed competency W leaves indicators and pivot intact', 
     $origComp = file_get_contents("{$frameworkBase}/competencies.json");
     file_put_contents("{$tmpDir}/competencies.json", $origComp);
     foreach (glob("{$frameworkBase}/bars/*.json") as $barsFile) {
-        copy($barsFile, "{$tmpDir}/bars/" . basename($barsFile));
+        copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
     }
 
     $seeder2 = new FrameworkCatalogSeeder("{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars");
@@ -229,7 +229,7 @@ test('locked FV: JSON-removed competency W leaves indicators and pivot intact', 
 // ─── Scenario 4: Locked FV — framework_gaps upserts still run ─────────────────
 
 test('locked FV: framework_gaps upserts still run', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $org = Organization::factory()->create();
@@ -241,7 +241,7 @@ test('locked FV: framework_gaps upserts still run', function (): void {
     FrameworkGap::query()->delete();
     expect(FrameworkGap::count())->toBe(0);
 
-    $seeder2 = new FrameworkCatalogSeeder();
+    $seeder2 = new FrameworkCatalogSeeder;
     $seeder2->run();
 
     // Gaps should have been re-upserted
@@ -251,7 +251,7 @@ test('locked FV: framework_gaps upserts still run', function (): void {
 // ─── Scenario 5: Locked FV — seeder_lock_guard_active signal emitted ──────────
 
 test('locked FV: seeder_lock_guard_active signal is emitted', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $org = Organization::factory()->create();
@@ -262,7 +262,7 @@ test('locked FV: seeder_lock_guard_active signal is emitted', function (): void 
     // Remove the signal if it already exists from the first run
     FrameworkGap::where('kind', 'seeder_lock_guard_active')->delete();
 
-    $seeder2 = new FrameworkCatalogSeeder();
+    $seeder2 = new FrameworkCatalogSeeder;
     $seeder2->run();
 
     // Signal must be present as a FrameworkGap record
@@ -272,7 +272,7 @@ test('locked FV: seeder_lock_guard_active signal is emitted', function (): void 
 // ─── Scenario 6: Soft-deleted project — FV still locked → guard fires ─────────
 
 test('soft-deleted project keeps FV locked; guard still fires', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $org = Organization::factory()->create();
@@ -292,7 +292,7 @@ test('soft-deleted project keeps FV locked; guard still fires', function (): voi
     // Remove the guard signal to confirm it fires again
     FrameworkGap::where('kind', 'seeder_lock_guard_active')->delete();
 
-    $seeder2 = new FrameworkCatalogSeeder();
+    $seeder2 = new FrameworkCatalogSeeder;
     $seeder2->run();
 
     // Guard must have fired (signal emitted)
@@ -302,13 +302,13 @@ test('soft-deleted project keeps FV locked; guard still fires', function (): voi
 // ─── Scenario 7: No locked FV → normal delete-stale + mutations fire ──────────
 
 test('no locked FV: normal delete-stale and mutations fire', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     // Ensure no locked FVs exist
     expect(FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->exists())->toBeFalse();
 
-    $ico = \App\Models\Role::where('code', 'ICO')->firstOrFail();
+    $ico = Role::where('code', 'ICO')->firstOrFail();
     $pivotRow = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)
         ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
@@ -317,8 +317,8 @@ test('no locked FV: normal delete-stale and mutations fire', function (): void {
     $removedId = $pivotRow->competency_id;
 
     // Build modified fixture with one ICO competency removed
-    $tmpDir = sys_get_temp_dir() . '/c4_no_lock_' . uniqid();
-    $frameworkBase = dirname(base_path()) . '/docs/app_description/02-domain/framework';
+    $tmpDir = sys_get_temp_dir().'/c4_no_lock_'.uniqid();
+    $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
     $originalRoles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
     $originalRoles['ICO']['competencies'] = array_values(
         array_filter($originalRoles['ICO']['competencies'], fn ($c) => $c !== $removedCode)
@@ -328,7 +328,7 @@ test('no locked FV: normal delete-stale and mutations fire', function (): void {
     file_put_contents("{$tmpDir}/roles.json", json_encode($originalRoles));
     file_put_contents("{$tmpDir}/competencies.json", file_get_contents("{$frameworkBase}/competencies.json"));
     foreach (glob("{$frameworkBase}/bars/*.json") as $barsFile) {
-        copy($barsFile, "{$tmpDir}/bars/" . basename($barsFile));
+        copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
     }
 
     $seeder2 = new FrameworkCatalogSeeder("{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars");
@@ -351,7 +351,7 @@ test('no locked FV: normal delete-stale and mutations fire', function (): void {
 // ─── Scenario 8: CatalogMeta::bump() fires only on new-row insert ──────────────
 
 test('locked FV: CatalogMeta::bump() fires only on genuine new-row insert', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     $org = Organization::factory()->create();
@@ -362,7 +362,7 @@ test('locked FV: CatalogMeta::bump() fires only on genuine new-row insert', func
     $bumpBefore = CatalogMeta::first()?->revision ?? 0;
 
     // Re-seed without any new rows → no new insertions → bump should NOT fire
-    $seeder2 = new FrameworkCatalogSeeder();
+    $seeder2 = new FrameworkCatalogSeeder;
     $seeder2->run();
 
     $bumpAfter = CatalogMeta::first()?->revision ?? 0;

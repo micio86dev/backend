@@ -21,6 +21,7 @@ use App\Models\TenantModel;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User;
 use Spatie\Permission\Traits\HasRoles;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -61,7 +62,7 @@ test('Participant does NOT use SoftDeletes trait (no SoftDeletes in C6)', functi
 });
 
 test('Participant extends plain Model (not Foundation\Auth\User)', function (): void {
-    expect(Participant::class)->not->toExtend(\Illuminate\Foundation\Auth\User::class);
+    expect(Participant::class)->not->toExtend(User::class);
 });
 
 test('Participant has no global scopes registered (not TenantScoped)', function (): void {

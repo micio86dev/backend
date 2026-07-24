@@ -82,7 +82,7 @@ class ProjectController extends Controller
             }
 
             // Pin: lock-for-update the FV and conditionally flip is_locked
-            $fv = FrameworkVersion::lockForUpdate()->findOrFail($request->input('framework_version_id'));
+            $fv = FrameworkVersion::lockForUpdate()->findOrFail((int) $request->input('framework_version_id'));
             if (! $fv->is_locked) {
                 $fv->is_locked = true;
                 $fv->save();

@@ -14,6 +14,8 @@ declare(strict_types=1);
  * REQ-5, REQ-T2 / design §Route isolation
  */
 
+use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextM2m;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Models\User;
@@ -25,7 +27,7 @@ test('human JWT on GET /api/m2m/whoami → 401 (guard non-interchangeability)', 
     $jwt = auth('api')->login($user);
 
     // A human JWT must NOT authenticate on the M2M whoami endpoint
-    $this->withHeaders(['Authorization' => 'Bearer ' . $jwt])
+    $this->withHeaders(['Authorization' => 'Bearer '.$jwt])
         ->getJson('/api/m2m/whoami')
         ->assertUnauthorized();
 });
@@ -36,11 +38,11 @@ test('M2M api_key on GET /api/auth/me (auth:api route) → 401 (guard non-interc
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     // An M2M key must NOT authenticate on a human JWT-protected route
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/auth/me')
         ->assertUnauthorized();
 });
@@ -62,7 +64,7 @@ test('M2M whoami route middleware list does NOT include human TenantContext', fu
     $middleware = $whoamiRoute->gatherMiddleware();
 
     // The human TenantContext must NOT be in the M2M route's effective middleware
-    expect($middleware)->not->toContain(\App\Http\Middleware\TenantContext::class);
+    expect($middleware)->not->toContain(TenantContext::class);
     expect($middleware)->not->toContain('App\Http\Middleware\TenantContext');
 });
 
@@ -82,5 +84,5 @@ test('M2M whoami route middleware list includes TenantContextM2m', function (): 
     $middleware = $whoamiRoute->gatherMiddleware();
 
     // Must include the M2M-specific tenant context
-    expect($middleware)->toContain(\App\Http\Middleware\TenantContextM2m::class);
+    expect($middleware)->toContain(TenantContextM2m::class);
 });

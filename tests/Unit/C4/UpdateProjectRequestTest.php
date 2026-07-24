@@ -10,11 +10,10 @@ declare(strict_types=1);
  * Refs spec: Immutable-Field Enforcement; Status Lifecycle; slug uniqueness; UpdateProjectRequest.
  */
 
-use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
-use App\Models\Role;
+use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -22,11 +21,12 @@ use Spatie\Permission\PermissionRegistrar;
 
 function makeAdminUserForUpdate(Organization $org): array
 {
-    $user = \App\Models\User::factory()->create(['organization_id' => $org->id]);
+    $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
     $token = auth('api')->login($user);
+
     return ['user' => $user, 'token' => $token];
 }
 
@@ -175,7 +175,7 @@ test('update: assessment_type change on draft project → 200', function (): voi
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,

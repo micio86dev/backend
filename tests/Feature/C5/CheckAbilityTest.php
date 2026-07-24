@@ -13,6 +13,8 @@ declare(strict_types=1);
  * REQ-6 / design §CheckAbility
  */
 
+use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextM2m;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
@@ -22,8 +24,8 @@ use Illuminate\Support\Facades\Route;
 beforeEach(function (): void {
     // Register a test route requiring 'evaluations:read' ability
     Route::prefix('api')
-        ->withoutMiddleware(\App\Http\Middleware\TenantContext::class)
-        ->middleware(['auth:api-m2m', \App\Http\Middleware\TenantContextM2m::class, SubstituteBindings::class])
+        ->withoutMiddleware(TenantContext::class)
+        ->middleware(['auth:api-m2m', TenantContextM2m::class, SubstituteBindings::class])
         ->group(function (): void {
             Route::middleware('ability:evaluations:read')
                 ->get('/test-ability-check', fn () => response()->json(['ok' => true]));
@@ -36,11 +38,11 @@ test('client with required ability → 200', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'abilities'       => ['evaluations:read', 'participants:read'],
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'abilities' => ['evaluations:read', 'participants:read'],
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-ability-check')
         ->assertOk();
 });
@@ -51,11 +53,11 @@ test('client without required ability → 403', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'abilities'       => ['participants:read'],  // no evaluations:read
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'abilities' => ['participants:read'],  // no evaluations:read
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-ability-check')
         ->assertForbidden();
 });
@@ -66,12 +68,12 @@ test('whoami route requires no ability — client with empty abilities gets 200'
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'abilities'       => [],  // no abilities at all
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'abilities' => [],  // no abilities at all
     ]);
 
     // whoami has no ability middleware — should succeed with auth alone
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/m2m/whoami')
         ->assertOk();
 });

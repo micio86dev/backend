@@ -22,7 +22,7 @@ use App\Models\User;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 // ---------------------------------------------------------------------------

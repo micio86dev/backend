@@ -33,13 +33,13 @@ function loaderMakeIndicator(int $roleId, int $competencyId, int $position, arra
 {
     $indicator = new BarsIndicator;
     $indicator->forceFill(array_merge([
-        'role_id'       => $roleId,
+        'role_id' => $roleId,
         'competency_id' => $competencyId,
-        'text'          => ['en' => "Indicator text {$roleId}-{$position}"],
-        'anchor_5'      => ['en' => "Anchor 5 for {$roleId}-{$position}"],
-        'anchor_3'      => ['en' => "Anchor 3 for {$roleId}-{$position}"],
-        'anchor_1'      => ['en' => "Anchor 1 for {$roleId}-{$position}"],
-        'position'      => $position,
+        'text' => ['en' => "Indicator text {$roleId}-{$position}"],
+        'anchor_5' => ['en' => "Anchor 5 for {$roleId}-{$position}"],
+        'anchor_3' => ['en' => "Anchor 3 for {$roleId}-{$position}"],
+        'anchor_1' => ['en' => "Anchor 1 for {$roleId}-{$position}"],
+        'position' => $position,
     ], $overrides));
     $indicator->save();
 
@@ -87,7 +87,7 @@ test('(b) forRoleCompetency returns only MLL indicators; no FLL indicator presen
 });
 
 test('(c) forRoleCompetency with no indicators for the given competency returns empty Collection', function (): void {
-    $role       = Role::factory()->create(['code' => 'EMPTY_'.uniqid()]);
+    $role = Role::factory()->create(['code' => 'EMPTY_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'EMPTY_'.uniqid()]);
     // No indicators created for this role+competency pair
 
@@ -99,7 +99,7 @@ test('(c) forRoleCompetency with no indicators for the given competency returns 
 });
 
 test('(d) indicators are ordered by position ascending', function (): void {
-    $role       = Role::factory()->create(['code' => 'ORD_'.uniqid()]);
+    $role = Role::factory()->create(['code' => 'ORD_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'ORD_'.uniqid()]);
 
     // Insert in reverse position order

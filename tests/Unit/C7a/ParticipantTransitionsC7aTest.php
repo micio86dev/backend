@@ -44,12 +44,13 @@ function makeC7aParticipantWithStatus(Organization $org, Project $project, strin
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'trans-' . uniqid(),
-        'display_name'    => 'Transition Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'trans-'.uniqid(),
+        'display_name' => 'Transition Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -62,54 +63,54 @@ function c7aTransitionParticipant(Participant $p, string $to): void
 // ─── ALLOWED transitions ──────────────────────────────────────────────────────
 
 test('in_attesa → in_corso is allowed (C6 path)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_corso'))->not->toThrow(ParticipantTransitionException::class);
     expect($p->fresh()->status)->toBe('in_corso');
 });
 
 test('in_attesa → errore is allowed (C7a new edge: hard-fail on first competency)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
 
     expect(fn () => c7aTransitionParticipant($p, 'errore'))->not->toThrow(ParticipantTransitionException::class);
     expect($p->fresh()->status)->toBe('errore');
 });
 
 test('in_corso → in_valutazione is allowed (last question path)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_corso');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_corso');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_valutazione'))->not->toThrow(ParticipantTransitionException::class);
     expect($p->fresh()->status)->toBe('in_valutazione');
 });
 
 test('in_corso → errore is allowed (C7a new edge: hard-fail on subsequent competency)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_corso');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_corso');
 
     expect(fn () => c7aTransitionParticipant($p, 'errore'))->not->toThrow(ParticipantTransitionException::class);
     expect($p->fresh()->status)->toBe('errore');
 });
 
 test('in_valutazione → completato is allowed (C9 completion path)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_valutazione');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_valutazione');
 
     expect(fn () => c7aTransitionParticipant($p, 'completato'))->not->toThrow(ParticipantTransitionException::class);
     expect($p->fresh()->status)->toBe('completato');
 });
 
 test('in_valutazione → errore is allowed (error on final evaluation)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_valutazione');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_valutazione');
 
     expect(fn () => c7aTransitionParticipant($p, 'errore'))->not->toThrow(ParticipantTransitionException::class);
     expect($p->fresh()->status)->toBe('errore');
@@ -118,33 +119,33 @@ test('in_valutazione → errore is allowed (error on final evaluation)', functio
 // ─── TERMINAL states: explicit keys (no ?? [] fallthrough) ────────────────────
 
 test('completato is explicitly terminal — completato → errore is rejected', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'completato');
+    $p = makeC7aParticipantWithStatus($org, $project, 'completato');
 
     expect(fn () => c7aTransitionParticipant($p, 'errore'))->toThrow(ParticipantTransitionException::class);
 });
 
 test('completato is explicitly terminal — completato → in_corso is rejected', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'completato');
+    $p = makeC7aParticipantWithStatus($org, $project, 'completato');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_corso'))->toThrow(ParticipantTransitionException::class);
 });
 
 test('errore is explicitly terminal — errore → in_corso is rejected', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'errore');
+    $p = makeC7aParticipantWithStatus($org, $project, 'errore');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_corso'))->toThrow(ParticipantTransitionException::class);
 });
 
 test('errore is explicitly terminal — errore → in_valutazione is rejected', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'errore');
+    $p = makeC7aParticipantWithStatus($org, $project, 'errore');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_valutazione'))->toThrow(ParticipantTransitionException::class);
 });
@@ -152,25 +153,25 @@ test('errore is explicitly terminal — errore → in_valutazione is rejected', 
 // ─── ILLEGAL transitions ──────────────────────────────────────────────────────
 
 test('in_valutazione → in_corso is rejected (illegal regression)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_valutazione');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_valutazione');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_corso'))->toThrow(ParticipantTransitionException::class);
 });
 
 test('in_attesa → completato is rejected (illegal skip)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
 
     expect(fn () => c7aTransitionParticipant($p, 'completato'))->toThrow(ParticipantTransitionException::class);
 });
 
 test('in_attesa → in_valutazione is rejected (illegal skip)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
 
     expect(fn () => c7aTransitionParticipant($p, 'in_valutazione'))->toThrow(ParticipantTransitionException::class);
 });
@@ -182,9 +183,9 @@ test('started_at is NOT in Participant.$fillable (direct property assignment req
 });
 
 test('started_at is NOT set by mass-assign update()', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
 
     // Attempt to mass-assign started_at — must be silently ignored by $fillable guard.
     $p->update(['started_at' => now()->subHour(), 'status' => 'in_corso']);
@@ -194,9 +195,9 @@ test('started_at is NOT set by mass-assign update()', function (): void {
 });
 
 test('started_at IS set by direct property assignment', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
-    $p       = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
+    $p = makeC7aParticipantWithStatus($org, $project, 'in_attesa');
 
     // Direct property assignment — the correct pattern from the design.
     $now = now();

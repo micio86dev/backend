@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Models\Competency;
+use App\Models\Project;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -27,7 +31,7 @@ class StoreProjectRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->can('create', \App\Models\Project::class) ?? false;
+        return $this->user()?->can('create', Project::class) ?? false;
     }
 
     /**
@@ -35,7 +39,7 @@ class StoreProjectRequest extends FormRequest
      */
     public function rules(): array
     {
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = $this->user();
         $orgId = $user->organization_id;
 
@@ -59,19 +63,19 @@ class StoreProjectRequest extends FormRequest
                     ->where('organization_id', $orgId)
                     ->whereNull('deleted_at'),
             ],
-            'name'                       => ['required', 'string', 'max:255'],
-            'assessment_type'            => ['required', 'string', Rule::in(['standard', 'potential'])],
-            'role_code'                  => ['nullable', 'string'],
-            'language'                   => ['required', 'string', Rule::in($supportedLocales)],
-            'competency_ids'             => ['nullable', 'array'],
-            'competency_ids.*'           => ['integer'],
+            'name' => ['required', 'string', 'max:255'],
+            'assessment_type' => ['required', 'string', Rule::in(['standard', 'potential'])],
+            'role_code' => ['nullable', 'string'],
+            'language' => ['required', 'string', Rule::in($supportedLocales)],
+            'competency_ids' => ['nullable', 'array'],
+            'competency_ids.*' => ['integer'],
             'pause_every_n_competencies' => ['nullable', 'integer', 'min:1', 'max:255'],
-            'nudge_min_chars'            => ['nullable', 'integer', 'min:0', 'max:65535'],
-            'exit_redirect_url'          => ['nullable', 'string', 'url', 'max:2048'],
-            'webhook_url'                => ['nullable', 'url', 'max:2048'],
-            'webhook_secret'             => ['nullable', 'string', 'max:1024'],
-            'deadline_at'                => ['nullable', 'date'],
-            'goes_live_at'               => ['nullable', 'date'],
+            'nudge_min_chars' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
+            'webhook_url' => ['nullable', 'url', 'max:2048'],
+            'webhook_secret' => ['nullable', 'string', 'max:1024'],
+            'deadline_at' => ['nullable', 'date'],
+            'goes_live_at' => ['nullable', 'date'],
         ];
     }
 
@@ -104,7 +108,7 @@ class StoreProjectRequest extends FormRequest
      * Validate potential assessment_type invariants.
      * Order: POTENTIAL_CATALOG_INCOMPLETE check FIRST, then subset + role_code check.
      *
-     * @param array<int, int> $competencyIds
+     * @param  array<int, int>  $competencyIds
      */
     private function validatePotential(Validator $v, array $competencyIds): void
     {
@@ -146,7 +150,7 @@ class StoreProjectRequest extends FormRequest
     /**
      * Validate standard assessment_type invariants.
      *
-     * @param array<int, int> $competencyIds
+     * @param  array<int, int>  $competencyIds
      */
     private function validateStandard(Validator $v, array $competencyIds): void
     {
@@ -154,14 +158,14 @@ class StoreProjectRequest extends FormRequest
         $validRoles = ['ICO', 'FLL', 'MLL', 'BUL', 'SRX'];
 
         if (! in_array($roleCode, $validRoles, true)) {
-            $v->errors()->add('role_code', "role_code must be one of: " . implode(', ', $validRoles) . ".");
+            $v->errors()->add('role_code', 'role_code must be one of: '.implode(', ', $validRoles).'.');
 
             return;
         }
 
         if (! empty($competencyIds)) {
             // Validate each competency: must be type=standard and assigned to this role
-            $role = \App\Models\Role::where('code', $roleCode)->first();
+            $role = Role::where('code', $roleCode)->first();
             if ($role === null) {
                 $v->errors()->add('role_code', "Role '{$roleCode}' not found in catalog.");
 
@@ -199,10 +203,10 @@ class StoreProjectRequest extends FormRequest
         $errors = $validator->errors();
 
         if ($errors->has('__potential_catalog__')) {
-            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+            throw new HttpResponseException(
                 response()->json([
                     'message' => 'Potential catalog incomplete: MTG/LAT competencies are not seeded.',
-                    'code'    => 'POTENTIAL_CATALOG_INCOMPLETE',
+                    'code' => 'POTENTIAL_CATALOG_INCOMPLETE',
                 ], 422)
             );
         }

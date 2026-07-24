@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\ParticipantTransitionException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
@@ -44,7 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // C6: ParticipantTransitionException renders HTTP 422.
         // Registered here as a backstop for direct (non-HTTP) model writes.
         // The exception's own render() method handles the JSON response.
-        $exceptions->render(function (\App\Exceptions\ParticipantTransitionException $e, Request $request) {
+        $exceptions->render(function (ParticipantTransitionException $e, Request $request) {
             return $e->render($request);
         });
 

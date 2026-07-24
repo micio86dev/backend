@@ -21,6 +21,8 @@ declare(strict_types=1);
  * REQ-4, REQ-T1 / design §TenantContextM2m
  */
 
+use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextM2m;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
@@ -31,8 +33,8 @@ use Illuminate\Support\Facades\Route;
 beforeEach(function (): void {
     // Test route that exposes resolver state after middleware runs
     Route::prefix('api')
-        ->withoutMiddleware(\App\Http\Middleware\TenantContext::class)
-        ->middleware(['auth:api-m2m', \App\Http\Middleware\TenantContextM2m::class, SubstituteBindings::class])
+        ->withoutMiddleware(TenantContext::class)
+        ->middleware(['auth:api-m2m', TenantContextM2m::class, SubstituteBindings::class])
         ->get('/test-m2m-context', function () {
             $resolver = app(TenantResolver::class);
 
@@ -54,10 +56,10 @@ test('valid client → resolver orgId is set to client organization_id', functio
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-context')
         ->assertOk()
         ->assertJsonPath('org_id', $org->id);
@@ -69,10 +71,10 @@ test('valid client → bypass is false (setBypass(false) clears stale bypass)', 
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-context')
         ->assertOk()
         ->assertJsonPath('bypass', false);
@@ -85,12 +87,12 @@ test('org always from client record — request body org_id is ignored', functio
 
     ApiClient::factory()->create([
         'organization_id' => $orgA->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     // Attempt to pass org B via query param — must be ignored
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
-        ->getJson('/api/test-m2m-context?organization_id=' . $orgB->id)
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/test-m2m-context?organization_id='.$orgB->id)
         ->assertOk()
         ->assertJsonPath('org_id', $orgA->id);
 });
@@ -101,10 +103,10 @@ test('second org also resolves correctly (different client, different org)', fun
 
     ApiClient::factory()->create([
         'organization_id' => $orgB->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKeyB),
+        'key_hash' => ApiKeyGenerator::hash($rawKeyB),
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKeyB])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyB])
         ->getJson('/api/test-m2m-context')
         ->assertOk()
         ->assertJsonPath('org_id', $orgB->id);

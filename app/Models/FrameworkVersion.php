@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *   - Replaced projects() placeholder with real hasMany(Project::class).
  *
  * @property string $version
- * @property bool   $is_locked
+ * @property bool $is_locked
  * @property string|null $label
  */
 class FrameworkVersion extends TenantModel

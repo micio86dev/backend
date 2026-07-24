@@ -23,8 +23,8 @@ declare(strict_types=1);
 test('avatar speaks end_phrase after at most N follow-up questions (budget exhaustion)', function (): void {
     $this->markTestSkipped(
         'Deferred @ai — requires live provider session (HeyGen/Tavus). '
-        . 'Run on workflow_dispatch/release/* only, never on PR. '
-        . 'Spec: SA-02 budget exhaustion → end_phrase (provider integration ONLY).'
+        .'Run on workflow_dispatch/release/* only, never on PR. '
+        .'Spec: SA-02 budget exhaustion → end_phrase (provider integration ONLY).'
     );
 });
 
@@ -32,8 +32,8 @@ test('avatar speaks end_phrase after at most N follow-up questions (budget exhau
 test('avatar speaks end_phrase early when all BARS indicators are covered before budget', function (): void {
     $this->markTestSkipped(
         'Deferred @ai — requires live provider session. '
-        . 'Run on workflow_dispatch/release/* only. '
-        . 'Spec: SA-02 coverage achieved before budget → end_phrase fires early (provider integration ONLY).'
+        .'Run on workflow_dispatch/release/* only. '
+        .'Spec: SA-02 coverage achieved before budget → end_phrase fires early (provider integration ONLY).'
     );
 });
 
@@ -41,7 +41,7 @@ test('avatar speaks end_phrase early when all BARS indicators are covered before
 test('avatar nudge re-prompt does not consume a follow-up budget slot', function (): void {
     $this->markTestSkipped(
         'Deferred @ai — requires live provider session. '
-        . 'Run on workflow_dispatch/release/* only. '
-        . 'Spec: SA-03 nudge does NOT consume a follow-up slot (OQ-3 provisional, provider integration ONLY).'
+        .'Run on workflow_dispatch/release/* only. '
+        .'Spec: SA-03 nudge does NOT consume a follow-up slot (OQ-3 provisional, provider integration ONLY).'
     );
 });

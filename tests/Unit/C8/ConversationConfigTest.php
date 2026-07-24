@@ -11,7 +11,6 @@ declare(strict_types=1);
  *
  * REQ: config/conversation.php (C8 RV-4)
  */
-
 test('(a) conversation.prompt_version is a non-empty string', function (): void {
     $version = config('conversation.prompt_version');
 

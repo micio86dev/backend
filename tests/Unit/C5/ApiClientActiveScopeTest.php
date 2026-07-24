@@ -36,8 +36,8 @@ test('S1 — active + null expires_at → included in active() scope', function 
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
-        'expires_at'      => null,
+        'is_active' => true,
+        'expires_at' => null,
     ]);
 
     $result = ApiClient::active()->where('id', $client->id)->first();
@@ -54,8 +54,8 @@ test('S1 — active + future expires_at → included in active() scope', functio
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
-        'expires_at'      => now()->addYear(),
+        'is_active' => true,
+        'expires_at' => now()->addYear(),
     ]);
 
     $result = ApiClient::active()->where('id', $client->id)->first();
@@ -72,7 +72,7 @@ test('S1 — inactive client (is_active=false) → excluded from active() scope'
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->inactive()->create([
         'organization_id' => $org->id,
-        'expires_at'      => null,
+        'expires_at' => null,
     ]);
 
     $result = ApiClient::active()->where('id', $client->id)->first();
@@ -88,7 +88,7 @@ test('S1 — expired client (expires_at in the past) → excluded from active() 
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->expired()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
+        'is_active' => true,
     ]);
 
     $result = ApiClient::active()->where('id', $client->id)->first();
@@ -121,8 +121,8 @@ test('S1 — active() scope returns only valid clients from a mixed set', functi
     // One valid client (should be returned)
     $valid = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
-        'expires_at'      => null,
+        'is_active' => true,
+        'expires_at' => null,
     ]);
 
     // One inactive client (should be excluded)

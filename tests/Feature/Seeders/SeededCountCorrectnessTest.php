@@ -16,7 +16,7 @@ use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('seeder creates exactly 5 roles and 18 competencies', function (): void {

@@ -10,7 +10,6 @@
  */
 
 use App\Models\BarsIndicator;
-use App\Models\FrameworkGap;
 use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
 

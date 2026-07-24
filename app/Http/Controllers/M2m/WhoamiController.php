@@ -33,9 +33,9 @@ final class WhoamiController extends Controller
         $client = Auth::guard('api-m2m')->user();
 
         return response()->json([
-            'client_id'       => $client->id,
+            'client_id' => $client->id,
             'organization_id' => $client->organization_id,
-            'abilities'       => $client->abilities ?? [],
+            'abilities' => $client->abilities ?? [],
         ]);
     }
 }

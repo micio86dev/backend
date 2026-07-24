@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Tenant-scoped Utterance model (C7a — Interview Session Mechanics).
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $organization_id
  * @property string $speaker
  * @property string $text
- * @property \Illuminate\Support\Carbon $ts
+ * @property Carbon $ts
  */
 class Utterance extends TenantModel
 {

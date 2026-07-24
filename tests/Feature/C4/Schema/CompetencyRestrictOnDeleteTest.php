@@ -14,9 +14,9 @@ use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
-use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 test('deleting a competency referenced by project_competencies throws DB integrity exception', function (): void {
     $org = Organization::factory()->create();
@@ -34,7 +34,7 @@ test('deleting a competency referenced by project_competencies throws DB integri
     ]);
 
     // Attach the competency to the project pivot
-    \Illuminate\Support\Facades\DB::table('project_competencies')->insert([
+    DB::table('project_competencies')->insert([
         'project_id' => $project->id,
         'competency_id' => $competency->id,
         'position' => 0,

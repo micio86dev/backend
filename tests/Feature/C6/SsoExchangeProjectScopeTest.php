@@ -18,6 +18,7 @@ use App\Models\Organization;
 use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 function makeExchangeProjectScope(Organization $org): Project
 {
@@ -26,12 +27,12 @@ function makeExchangeProjectScope(Organization $org): Project
     $resolver->setBypass(false);
 
     return Project::factory()->create([
-        'status'          => 'active',
+        'status' => 'active',
         'assessment_type' => 'standard',
-        'role_code'       => 'ICO',
-        'language'        => 'en',
-        'goes_live_at'    => null,
-        'deadline_at'     => null,
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'goes_live_at' => null,
+        'deadline_at' => null,
     ]);
 }
 
@@ -40,7 +41,7 @@ test('plain findOrFail on Project at public exchange would fail without TenantRe
     // At the public exchange endpoint, TenantResolver is NOT set (org = null).
     // Project::findOrFail($id) would use the TenantScoped global scope → WHERE org_id=null → 0 rows.
     // We verify this by NOT setting the resolver and confirming plain findOrFail returns null.
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProjectScope($org);
 
     // Reset the resolver (simulating public endpoint with no auth)
@@ -52,7 +53,7 @@ test('plain findOrFail on Project at public exchange would fail without TenantRe
     $found = null;
     try {
         $found = Project::findOrFail($project->id);
-    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+    } catch (ModelNotFoundException) {
         // expected
     }
 
@@ -60,7 +61,7 @@ test('plain findOrFail on Project at public exchange would fail without TenantRe
 });
 
 test('withoutGlobalScope("tenant") finds the project at public exchange', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProjectScope($org);
 
     // Reset resolver (simulating public endpoint)
@@ -76,37 +77,37 @@ test('withoutGlobalScope("tenant") finds the project at public exchange', functi
 });
 
 test('soft-deleted project → 401 at exchange (SoftDeletingScope still active)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProjectScope($org);
 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-softdel-scope',
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ]);
 
     // Soft-delete the project
     $project->delete();
 
     // Exchange must return 401 — soft-deleted project is NOT findable
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertUnauthorized();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertUnauthorized();
 });
 
 test('exchange returns 200 for active (non-deleted) project', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProjectScope($org);
 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-active-scope',
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ]);
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 });

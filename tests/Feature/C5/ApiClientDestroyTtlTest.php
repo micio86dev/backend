@@ -54,8 +54,8 @@ test('W2 — destroy with future expires_at writes a POSITIVE Redis TTL', functi
     $expiresAt = now()->addHour();
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
-        'expires_at'      => $expiresAt,
+        'is_active' => true,
+        'expires_at' => $expiresAt,
     ]);
 
     $capturedTtl = null;
@@ -66,14 +66,14 @@ test('W2 — destroy with future expires_at writes a POSITIVE Redis TTL', functi
             $capturedTtl = $ttl;
 
             // Key must be the revocation key for this client — raw key never exposed
-            expect($key)->toBe('client_revoked:' . $client->id);
+            expect($key)->toBe('client_revoked:'.$client->id);
             expect($value)->toBeTrue();
 
             return true;
         });
 
     $this->withToken($token)
-        ->deleteJson('/api/m2m/clients/' . $client->id)
+        ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertNoContent();
 
     // TTL must be positive (remaining lifetime)
@@ -96,8 +96,8 @@ test('W2 — destroy with expires_at in the past uses TTL of at least 1 (max(1, 
     // diffInSeconds → 0 or -1; max(1, …) must clamp it to 1.
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
-        'expires_at'      => now()->subSeconds(1),
+        'is_active' => true,
+        'expires_at' => now()->subSeconds(1),
     ]);
 
     $capturedTtl = null;
@@ -111,7 +111,7 @@ test('W2 — destroy with expires_at in the past uses TTL of at least 1 (max(1, 
         });
 
     $this->withToken($token)
-        ->deleteJson('/api/m2m/clients/' . $client->id)
+        ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertNoContent();
 
     // max(1, …) ensures TTL is never 0 or negative
@@ -124,8 +124,8 @@ test('W2 — destroy with null expires_at uses 1-year fallback TTL', function ()
 
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
-        'expires_at'      => null,
+        'is_active' => true,
+        'expires_at' => null,
     ]);
 
     $capturedTtl = null;
@@ -139,7 +139,7 @@ test('W2 — destroy with null expires_at uses 1-year fallback TTL', function ()
         });
 
     $this->withToken($token)
-        ->deleteJson('/api/m2m/clients/' . $client->id)
+        ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertNoContent();
 
     expect($capturedTtl)->toBe(365 * 24 * 3600);
@@ -155,17 +155,17 @@ test('W2 — Redis failure during destroy(): DB revocation survives, returns 204
 
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
+        'is_active' => true,
     ]);
 
     // Simulate Redis outage — Cache::put throws
     Cache::shouldReceive('put')
         ->once()
-        ->andThrow(new \RuntimeException('Redis connection refused'));
+        ->andThrow(new RuntimeException('Redis connection refused'));
 
     // Endpoint must still succeed — Redis failure is non-fatal
     $this->withToken($token)
-        ->deleteJson('/api/m2m/clients/' . $client->id)
+        ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertNoContent();
 
     // DB revocation MUST have been committed — this is the authoritative flag
@@ -179,15 +179,15 @@ test('W2 — Redis failure response body does not expose raw key material', func
 
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'is_active'       => true,
+        'is_active' => true,
     ]);
 
     Cache::shouldReceive('put')
         ->once()
-        ->andThrow(new \RuntimeException('connection refused'));
+        ->andThrow(new RuntimeException('connection refused'));
 
     $response = $this->withToken($token)
-        ->deleteJson('/api/m2m/clients/' . $client->id);
+        ->deleteJson('/api/m2m/clients/'.$client->id);
 
     // 204 No Content — no body to leak key material through
     $response->assertNoContent();

@@ -20,10 +20,10 @@ namespace App\Services\Provider;
 readonly class QuestionContext
 {
     public function __construct(
-        public string  $competencyCode,
-        public int     $questionIndex,
+        public string $competencyCode,
+        public int $questionIndex,
         // C8: nullable trailing params — null preserves exact C7a provider body (backward-compatible).
-        public ?string $systemPrompt  = null,
+        public ?string $systemPrompt = null,
         public ?string $promptVersion = null,
     ) {}
 }
