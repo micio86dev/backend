@@ -13,7 +13,7 @@ use App\Models\Competency;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 test('re-seeding preserves manually-added IT translation on a competency', function (): void {
-    $seeder = new FrameworkCatalogSeeder();
+    $seeder = new FrameworkCatalogSeeder;
     $seeder->run();
 
     // Manually add an IT translation after the first seed

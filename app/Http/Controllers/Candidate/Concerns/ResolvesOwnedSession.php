@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate\Concerns;
 
 use App\Models\InterviewSession;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
  * ResolvesOwnedSession — shared session-ownership resolver (C7a).
@@ -45,7 +46,7 @@ trait ResolvesOwnedSession
      *
      * Returns 404 via ModelNotFoundException for any non-owned, cross-org, or nonexistent session.
      *
-     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     * @throws ModelNotFoundException
      */
     protected function resolveOwnedSession(int $id): InterviewSession
     {

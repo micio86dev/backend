@@ -18,6 +18,7 @@ use App\Exceptions\LockedFrameworkVersionException;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 test('FrameworkVersion projects() returns a hasMany relation (not a placeholder)', function (): void {
     $org = Organization::factory()->create();
@@ -28,7 +29,7 @@ test('FrameworkVersion projects() returns a hasMany relation (not a placeholder)
 
     // Verify it's a real HasMany (not the placeholder that returns empty)
     $relation = $fv->projects();
-    expect($relation)->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+    expect($relation)->toBeInstanceOf(HasMany::class);
 
     // The collection should be empty (no projects yet), not non-existent
     expect($fv->projects()->count())->toBe(0);
@@ -55,11 +56,11 @@ test('deleting a locked FrameworkVersion throws LockedFrameworkVersionException'
 });
 
 test('is_locked is NOT in FrameworkVersion fillable', function (): void {
-    $fv = new FrameworkVersion();
+    $fv = new FrameworkVersion;
     expect($fv->getFillable())->not->toContain('is_locked');
 });
 
 test('organization_id IS in FrameworkVersion fillable', function (): void {
-    $fv = new FrameworkVersion();
+    $fv = new FrameworkVersion;
     expect($fv->getFillable())->toContain('organization_id');
 });

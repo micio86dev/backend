@@ -25,7 +25,7 @@ use Spatie\Permission\Events\RoleAttached;
 use Spatie\Permission\Events\RoleDetached;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Translatable\Facades\Translatable;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\JWTAuth;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -164,7 +164,7 @@ class AppServiceProvider extends ServiceProvider
 
             try {
                 // SINGLE decode — returns validated Payload or throws.
-                $payload = JWTAuth::setToken($raw)->checkOrFail();
+                $payload = app(JWTAuth::class)->setToken($raw)->checkOrFail();
             } catch (\Throwable) {
                 return null;
             }

@@ -40,6 +40,7 @@ function guardProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -48,12 +49,13 @@ function guardParticipant(Organization $org, Project $project, string $status): 
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'guard-' . uniqid(),
-        'display_name'    => 'Guard Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'guard-'.uniqid(),
+        'display_name' => 'Guard Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -64,13 +66,13 @@ function guardSession(Organization $org, Participant $participant, Project $proj
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => $status,
+        'provider' => 'heygen',
+        'status' => $status,
     ]);
 }
 
@@ -82,106 +84,106 @@ function guardBearer(Participant $participant): string
 // ─── Terminal status → 403 on all 3 PR2 interview sub-routes ─────────────────
 
 test('completato participant gets 403 on POST /utterance', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'completato');
-    $session     = guardSession($org, $participant, $project, 'completed');
-    $token       = guardBearer($participant);
+    $session = guardSession($org, $participant, $project, 'completed');
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Hello',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Hello',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertForbidden();
 });
 
 test('completato participant gets 403 on POST /integrity', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'completato');
-    $session     = guardSession($org, $participant, $project, 'completed');
-    $token       = guardBearer($participant);
+    $session = guardSession($org, $participant, $project, 'completed');
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $session->id,
-            'events'     => [['kind' => 'tab_hidden', 'payload' => [], 'ts' => now()->toIso8601String()]],
+            'events' => [['kind' => 'tab_hidden', 'payload' => [], 'ts' => now()->toIso8601String()]],
         ]);
 
     $response->assertForbidden();
 });
 
 test('completato participant gets 403 on POST /snapshot', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'completato');
-    $session     = guardSession($org, $participant, $project, 'completed');
-    $token       = guardBearer($participant);
+    $session = guardSession($org, $participant, $project, 'completed');
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $session->id,
-            'image_base64' => base64_encode("\xFF\xD8\xFF" . str_repeat('A', 10)),
+            'session_id' => $session->id,
+            'image_base64' => base64_encode("\xFF\xD8\xFF".str_repeat('A', 10)),
         ]);
 
     $response->assertForbidden();
 });
 
 test('errore participant gets 403 on POST /utterance', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'errore');
-    $session     = guardSession($org, $participant, $project, 'error');
-    $token       = guardBearer($participant);
+    $session = guardSession($org, $participant, $project, 'error');
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Hello',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Hello',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertForbidden();
 });
 
 test('errore participant gets 403 on POST /integrity', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'errore');
-    $session     = guardSession($org, $participant, $project, 'error');
-    $token       = guardBearer($participant);
+    $session = guardSession($org, $participant, $project, 'error');
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $session->id,
-            'events'     => [['kind' => 'tab_hidden', 'payload' => [], 'ts' => now()->toIso8601String()]],
+            'events' => [['kind' => 'tab_hidden', 'payload' => [], 'ts' => now()->toIso8601String()]],
         ]);
 
     $response->assertForbidden();
 });
 
 test('errore participant gets 403 on POST /snapshot', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'errore');
-    $session     = guardSession($org, $participant, $project, 'error');
-    $token       = guardBearer($participant);
+    $session = guardSession($org, $participant, $project, 'error');
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $session->id,
-            'image_base64' => base64_encode("\xFF\xD8\xFF" . str_repeat('A', 10)),
+            'session_id' => $session->id,
+            'image_base64' => base64_encode("\xFF\xD8\xFF".str_repeat('A', 10)),
         ]);
 
     $response->assertForbidden();
@@ -190,19 +192,19 @@ test('errore participant gets 403 on POST /snapshot', function (): void {
 // ─── Non-terminal status → guard passes (NOT 403) ────────────────────────────
 
 test('in_attesa participant is NOT blocked by guard on POST /utterance (passes to controller)', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'in_attesa');
-    $token       = guardBearer($participant);
+    $token = guardBearer($participant);
 
     // No session: controller will respond with 422 (validation) or 404 — not 403.
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => 9999,
-            'speaker'    => 'candidate',
-            'text'       => 'Hello',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Hello',
+            'ts' => now()->toIso8601String(),
         ]);
 
     // Guard did not block: we get something other than 403 (controller responds with 404 for missing session)
@@ -210,19 +212,19 @@ test('in_attesa participant is NOT blocked by guard on POST /utterance (passes t
 });
 
 test('in_corso participant is NOT blocked by guard on POST /utterance (passes to controller)', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'in_corso');
-    $token       = guardBearer($participant);
+    $token = guardBearer($participant);
 
     // No session: controller will respond with 422 or 404 — not 403.
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => 9999,
-            'speaker'    => 'candidate',
-            'text'       => 'Hello',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Hello',
+            'ts' => now()->toIso8601String(),
         ]);
 
     expect($response->status())->not->toBe(403);
@@ -231,13 +233,13 @@ test('in_corso participant is NOT blocked by guard on POST /utterance (passes to
 // ─── Guard does NOT apply to GET /api/candidate/session (FIX-7) ──────────────
 
 test('completato participant can still call GET /api/candidate/session (guard NOT applied there)', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'completato');
-    $token       = guardBearer($participant);
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/api/candidate/session');
 
     // Must NOT be 403 — the guard is not on this route
@@ -245,13 +247,13 @@ test('completato participant can still call GET /api/candidate/session (guard NO
 });
 
 test('errore participant can still call GET /api/candidate/session (guard NOT applied there)', function (): void {
-    $org         = guardOrg();
-    $project     = guardProject($org);
+    $org = guardOrg();
+    $project = guardProject($org);
     $participant = guardParticipant($org, $project, 'errore');
-    $token       = guardBearer($participant);
+    $token = guardBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/api/candidate/session');
 
     $response->assertOk();

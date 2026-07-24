@@ -14,7 +14,7 @@ use App\Models\FrameworkGap;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('MTG competency is not created', function (): void {

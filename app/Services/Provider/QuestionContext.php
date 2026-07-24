@@ -16,6 +16,6 @@ readonly class QuestionContext
 {
     public function __construct(
         public string $competencyCode,
-        public int    $questionIndex,
+        public int $questionIndex,
     ) {}
 }

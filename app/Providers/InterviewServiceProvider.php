@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Models\Participant;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\TavusProvider;
@@ -41,8 +42,8 @@ class InterviewServiceProvider extends ServiceProvider
             // This is a best-effort lookup; if not available, fall back to global config.
             try {
                 $participant = auth('api-candidate')->user();
-                if ($participant !== null) {
-                    $project         = $participant->project;
+                if ($participant instanceof Participant) {
+                    $project = $participant->project;
                     $projectOverride = $project?->provider_override;
                 }
             } catch (\Throwable) {
@@ -52,8 +53,8 @@ class InterviewServiceProvider extends ServiceProvider
             $providerName = $projectOverride ?? config('interview.provider', 'heygen');
 
             return match ($providerName) {
-                'tavus'  => new TavusProvider,
-                default  => new HeygenProvider, // 'heygen' is the default
+                'tavus' => new TavusProvider,
+                default => new HeygenProvider, // 'heygen' is the default
             };
         });
     }

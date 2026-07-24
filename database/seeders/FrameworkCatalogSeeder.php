@@ -38,9 +38,9 @@ use Illuminate\Support\Facades\Log;
  *   - framework_gaps upserts and CatalogMeta::bump() are EXEMPT (operational tables)
  *   - seeder_lock_guard_active signal emitted ONCE (as FrameworkGap + Log::warning)
  *
- * @param string|null $rolesFile     Override path to roles.json (for testing)
- * @param string|null $competenciesFile Override path to competencies.json (for testing)
- * @param string|null $barsDir       Override path to bars/ directory (for testing)
+ * @param  string|null  $rolesFile  Override path to roles.json (for testing)
+ * @param  string|null  $competenciesFile  Override path to competencies.json (for testing)
+ * @param  string|null  $barsDir  Override path to bars/ directory (for testing)
  */
 class FrameworkCatalogSeeder extends Seeder
 {
@@ -66,7 +66,7 @@ class FrameworkCatalogSeeder extends Seeder
 
     public function run(): void
     {
-        $normalizer = new CompetencyNormalizer();
+        $normalizer = new CompetencyNormalizer;
         $structuralChange = false;
 
         // ─── C4 Lock-Guard ────────────────────────────────────────────────────

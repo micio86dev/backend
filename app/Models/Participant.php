@@ -11,6 +11,7 @@ use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
 /**
@@ -46,10 +47,10 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property string|null $role_code
  * @property string|null $language
  * @property string $status
- * @property \Illuminate\Support\Carbon|null $started_at
- * @property \Illuminate\Support\Carbon|null $completed_at
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property Carbon|null $started_at
+ * @property Carbon|null $completed_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class Participant extends Model implements AuthenticatableContract, JWTSubject
 {
@@ -81,7 +82,7 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
     protected function casts(): array
     {
         return [
-            'started_at'   => 'datetime',
+            'started_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
     }
@@ -107,11 +108,11 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
      * @var array<string, list<string>>
      */
     private static array $allowedTransitions = [
-        'in_attesa'      => ['in_corso', 'errore'],
-        'in_corso'       => ['in_valutazione', 'errore'],
+        'in_attesa' => ['in_corso', 'errore'],
+        'in_corso' => ['in_valutazione', 'errore'],
         'in_valutazione' => ['completato', 'errore'],
-        'completato'     => [],   // terminal — no outbound transitions (FIX-5)
-        'errore'         => [],   // terminal — no outbound transitions
+        'completato' => [],   // terminal — no outbound transitions (FIX-5)
+        'errore' => [],   // terminal — no outbound transitions
     ];
 
     /**
@@ -131,7 +132,7 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
             }
 
             $from = $participant->getOriginal('status');
-            $to   = $participant->status;
+            $to = $participant->status;
 
             $allowed = self::$allowedTransitions[$from] ?? [];
 
@@ -149,8 +150,6 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
 
     /**
      * Return the JWT identifier (sub claim) — the participant's DB primary key.
-     *
-     * @return mixed
      */
     public function getJWTIdentifier(): mixed
     {

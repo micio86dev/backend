@@ -37,11 +37,12 @@ function typeAdminUser(Organization $org): array
     $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
     $token = auth('api')->login($user);
+
     return ['user' => $user, 'token' => $token];
 }
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('valid standard project with correct role and subset → 201', function (): void {
@@ -58,12 +59,12 @@ test('valid standard project with correct role and subset → 201', function ():
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'valid-standard',
-        'name'                 => 'Valid Standard',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [$competencyId],
+        'slug' => 'valid-standard',
+        'name' => 'Valid Standard',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [$competencyId],
     ])->assertCreated();
 });
 
@@ -77,12 +78,12 @@ test('standard + invalid role_code → 422', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'bad-role',
-        'name'                 => 'Test',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'INVALID',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'bad-role',
+        'name' => 'Test',
+        'assessment_type' => 'standard',
+        'role_code' => 'INVALID',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertUnprocessable();
 });
 
@@ -103,12 +104,12 @@ test('standard + out-of-role competency → 422', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'out-of-role',
-        'name'                 => 'Test',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [$fllOnlyId],
+        'slug' => 'out-of-role',
+        'name' => 'Test',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [$fllOnlyId],
     ])->assertUnprocessable();
 });
 
@@ -128,12 +129,12 @@ test('standard + potential competency (MTG) → 422', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'std-plus-potential',
-        'name'                 => 'Test',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [$mtg->id],
+        'slug' => 'std-plus-potential',
+        'name' => 'Test',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [$mtg->id],
     ])->assertUnprocessable();
 });
 
@@ -158,12 +159,12 @@ test('valid potential project with MTG + LAT seeded → 201', function (): void 
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'valid-potential',
-        'name'                 => 'Potential Test',
-        'assessment_type'      => 'potential',
-        'role_code'            => null,
-        'language'             => 'en',
-        'competency_ids'       => [$mtg->id, $lat->id],
+        'slug' => 'valid-potential',
+        'name' => 'Potential Test',
+        'assessment_type' => 'potential',
+        'role_code' => null,
+        'language' => 'en',
+        'competency_ids' => [$mtg->id, $lat->id],
     ])->assertCreated();
 });
 
@@ -177,12 +178,12 @@ test('potential + non-null role_code → 422', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'pot-with-role',
-        'name'                 => 'Test',
-        'assessment_type'      => 'potential',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'pot-with-role',
+        'name' => 'Test',
+        'assessment_type' => 'potential',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertUnprocessable();
 });
 
@@ -206,12 +207,12 @@ test('potential + standard competency (PRS) → 422', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'pot-std-comp',
-        'name'                 => 'Test',
-        'assessment_type'      => 'potential',
-        'role_code'            => null,
-        'language'             => 'en',
-        'competency_ids'       => [$prs->id],
+        'slug' => 'pot-std-comp',
+        'name' => 'Test',
+        'assessment_type' => 'potential',
+        'role_code' => null,
+        'language' => 'en',
+        'competency_ids' => [$prs->id],
     ])->assertUnprocessable();
 });
 
@@ -235,12 +236,12 @@ test('mixed standard+potential competencies → 422', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'mixed-types',
-        'name'                 => 'Test',
-        'assessment_type'      => 'potential',
-        'role_code'            => null,
-        'language'             => 'en',
-        'competency_ids'       => [$stdId, $mtg->id],
+        'slug' => 'mixed-types',
+        'name' => 'Test',
+        'assessment_type' => 'potential',
+        'role_code' => null,
+        'language' => 'en',
+        'competency_ids' => [$stdId, $mtg->id],
     ])->assertUnprocessable();
 });
 
@@ -257,12 +258,12 @@ test('potential + neither MTG/LAT seeded → 422 POTENTIAL_CATALOG_INCOMPLETE', 
 
     $response = $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'no-catalog',
-        'name'                 => 'Test',
-        'assessment_type'      => 'potential',
-        'role_code'            => null,
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'no-catalog',
+        'name' => 'Test',
+        'assessment_type' => 'potential',
+        'role_code' => null,
+        'language' => 'en',
+        'competency_ids' => [],
     ]);
     $response->assertUnprocessable();
     expect($response->json('code'))->toBe('POTENTIAL_CATALOG_INCOMPLETE');
@@ -288,12 +289,12 @@ test('potential + only MTG seeded → 422 POTENTIAL_CATALOG_INCOMPLETE', functio
 
     $response = $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'partial-catalog',
-        'name'                 => 'Test',
-        'assessment_type'      => 'potential',
-        'role_code'            => null,
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'partial-catalog',
+        'name' => 'Test',
+        'assessment_type' => 'potential',
+        'role_code' => null,
+        'language' => 'en',
+        'competency_ids' => [],
     ]);
     $response->assertUnprocessable();
     expect($response->json('code'))->toBe('POTENTIAL_CATALOG_INCOMPLETE');

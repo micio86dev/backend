@@ -1,6 +1,8 @@
 <?php
 
 declare(strict_types=1);
+use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextCandidate;
 
 /**
  * Middleware isolation tests (C6 — Participant + SSO Ingress).
@@ -14,7 +16,6 @@ declare(strict_types=1);
  *
  * REQ: Candidate Route Group and Public Exchange Route Do Not Inherit Global TenantContext
  */
-
 test('GET /api/sso/exchange route middleware list does NOT include human TenantContext', function (): void {
     $routes = app('router')->getRoutes();
     $exchangeRoute = null;
@@ -30,7 +31,7 @@ test('GET /api/sso/exchange route middleware list does NOT include human TenantC
 
     $middleware = $exchangeRoute->gatherMiddleware();
 
-    expect($middleware)->not->toContain(\App\Http\Middleware\TenantContext::class);
+    expect($middleware)->not->toContain(TenantContext::class);
     expect($middleware)->not->toContain('App\Http\Middleware\TenantContext');
 });
 
@@ -49,7 +50,7 @@ test('GET /api/candidate/session route middleware list does NOT include human Te
 
     $middleware = $sessionRoute->gatherMiddleware();
 
-    expect($middleware)->not->toContain(\App\Http\Middleware\TenantContext::class);
+    expect($middleware)->not->toContain(TenantContext::class);
     expect($middleware)->not->toContain('App\Http\Middleware\TenantContext');
 });
 
@@ -67,7 +68,7 @@ test('GET /api/candidate/session route middleware includes TenantContextCandidat
     expect($sessionRoute)->not->toBeNull();
     $middleware = $sessionRoute->gatherMiddleware();
 
-    expect($middleware)->toContain(\App\Http\Middleware\TenantContextCandidate::class);
+    expect($middleware)->toContain(TenantContextCandidate::class);
 });
 
 test('GET /api/candidate/session route middleware includes auth:api-candidate', function (): void {

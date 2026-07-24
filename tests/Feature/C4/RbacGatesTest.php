@@ -29,11 +29,12 @@ function rbacUser(Organization $org, string $roleName): array
     $role = SpatieRole::firstOrCreate(['name' => $roleName, 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
     $token = auth('api')->login($user);
+
     return ['user' => $user, 'token' => $token];
 }
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('viewer → POST /api/projects → 403', function (): void {
@@ -46,12 +47,12 @@ test('viewer → POST /api/projects → 403', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'viewer-test',
-        'name'                 => 'Test',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'viewer-test',
+        'name' => 'Test',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertForbidden();
 });
 
@@ -90,12 +91,12 @@ test('operator → POST → 201; PATCH → 200', function (): void {
 
     $response = $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'operator-project',
-        'name'                 => 'Operator Project',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'operator-project',
+        'name' => 'Operator Project',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ]);
     $response->assertCreated();
 

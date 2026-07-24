@@ -37,7 +37,7 @@ test('normalizer handles split shape (competency entry + bars array)', function 
         ],
     ];
 
-    $normalizer = new CompetencyNormalizer();
+    $normalizer = new CompetencyNormalizer;
     $dto = $normalizer->normalize($competencyEntry, $barsArray);
 
     expect($dto->code)->toBe('PRS')
@@ -76,7 +76,7 @@ test('normalizer handles unified shape (competency entry WITH embedded bars)', f
         ],
     ];
 
-    $normalizer = new CompetencyNormalizer();
+    $normalizer = new CompetencyNormalizer;
     // Unified shape: pass null for $barsArray — normalizer detects 'bars' key in competencyEntry
     $dto = $normalizer->normalize($unifiedEntry, null);
 
@@ -106,7 +106,7 @@ test('normalizer produces same DTO from split and unified shapes for identical d
 
     $unifiedEntry = array_merge($competencyEntry, ['bars' => $barsArray]);
 
-    $normalizer = new CompetencyNormalizer();
+    $normalizer = new CompetencyNormalizer;
     $splitDto = $normalizer->normalize($competencyEntry, $barsArray);
     $unifiedDto = $normalizer->normalize($unifiedEntry, null);
 

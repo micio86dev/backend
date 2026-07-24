@@ -13,6 +13,7 @@ declare(strict_types=1);
  * REQ: Cross-Tenant Isolation — all scenarios
  */
 
+use App\Http\Middleware\TenantContext;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -38,8 +39,8 @@ function isolProject(Organization $org, array $attrs = []): Project
     $resolver->setBypass(false);
 
     return Project::factory()->create(array_merge([
-        'status'          => 'active',
-        'role_code'       => 'ICO',
+        'status' => 'active',
+        'role_code' => 'ICO',
         'assessment_type' => 'standard',
     ], $attrs));
 }
@@ -49,10 +50,10 @@ function isolParticipant(Project $project, Organization $org, ?string $ref = nul
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => $ref ?? 'ref-' . uniqid(),
-        'display_name'    => 'Isolation Test',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => $ref ?? 'ref-'.uniqid(),
+        'display_name' => 'Isolation Test',
+        'status' => 'in_attesa',
     ]);
     $p->save();
 
@@ -64,9 +65,9 @@ function isolM2mKey(Organization $org, array $abilities = ['participants:read'])
     $rawKey = ApiKeyGenerator::generate();
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'abilities'       => $abilities,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'abilities' => $abilities,
     ]);
 
     return $rawKey;
@@ -75,7 +76,7 @@ function isolM2mKey(Organization $org, array $abilities = ['participants:read'])
 beforeEach(function (): void {
     Route::middleware('auth:api-candidate')
         ->prefix('api')
-        ->withoutMiddleware(\App\Http\Middleware\TenantContext::class)
+        ->withoutMiddleware(TenantContext::class)
         ->get('/test-candidate-isol', fn () => response()->json(['ok' => true]));
 });
 
@@ -103,14 +104,14 @@ test('Participant::all() returns participants from multiple orgs (confirming no 
 // ---------------------------------------------------------------------------
 
 test('M2M client of Org A cannot list Org B participants (index scoped to caller org)', function (): void {
-    $orgA  = isolOrg();
-    $orgB  = isolOrg();
+    $orgA = isolOrg();
+    $orgB = isolOrg();
     $projA = isolProject($orgA);
     $projB = isolProject($orgB);
-    $pB    = isolParticipant($projB, $orgB, 'isol-m2m-b');
-    $keyA  = isolM2mKey($orgA);
+    $pB = isolParticipant($projB, $orgB, 'isol-m2m-b');
+    $keyA = isolM2mKey($orgA);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $keyA])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$keyA])
         ->getJson('/api/m2m/participants');
 
     $response->assertOk();
@@ -119,14 +120,14 @@ test('M2M client of Org A cannot list Org B participants (index scoped to caller
 });
 
 test('M2M client of Org A cannot read Org B participant by ID → 404', function (): void {
-    $orgA  = isolOrg();
-    $orgB  = isolOrg();
+    $orgA = isolOrg();
+    $orgB = isolOrg();
     $projB = isolProject($orgB);
-    $pB    = isolParticipant($projB, $orgB);
-    $keyA  = isolM2mKey($orgA);
+    $pB = isolParticipant($projB, $orgB);
+    $keyA = isolM2mKey($orgA);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $keyA])
-        ->getJson('/api/m2m/participants/' . $pB->id)
+    $this->withHeaders(['Authorization' => 'Bearer '.$keyA])
+        ->getJson('/api/m2m/participants/'.$pB->id)
         ->assertNotFound();
 });
 
@@ -145,7 +146,7 @@ test('candidate of Org A cannot access /candidate/session as Org B context', fun
     $tokenA = CandidateTokenFactory::mintCandidateToken($pA);
 
     // Org A candidate authenticates and gets their own session — this is fine
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $tokenA])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$tokenA])
         ->getJson('/api/candidate/session');
     $response->assertOk();
 
@@ -166,7 +167,7 @@ test('candidate token from Org A cannot have org_id tampered to access Org B res
 
     // The guard finds pA (by sub=pA.id), TenantContextCandidate reads pA.organization_id = orgA
     // The tampered claim is ignored — org context is orgA, not orgB
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $tamperedToken])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$tamperedToken])
         ->getJson('/api/candidate/session');
 
     $response->assertOk();

@@ -6,7 +6,7 @@ namespace App\Support\Jwt;
 
 use App\Models\Participant;
 use Illuminate\Support\Facades\Cache;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\JWTAuth;
 
 /**
  * CandidateTokenFactory (C6 — Participant + SSO Ingress).
@@ -41,7 +41,7 @@ class CandidateTokenFactory
      * the exchange endpoint performs the sole atomic consume on first use.
      *
      * @param  array<string, mixed>  $claims  Must include 'candidate_ref', 'project_id', 'org_id', 'display_name'.
-     *                                         Optional: 'role_code', 'lang'.
+     *                                        Optional: 'role_code', 'lang'.
      * @return string Signed HS256 JWT
      */
     public static function mintSsoLink(array $claims): string
@@ -49,23 +49,24 @@ class CandidateTokenFactory
         $candidateRef = $claims['candidate_ref'];
 
         $payload = [
-            'sub'           => $candidateRef, // satisfies tymon required_claims; raw candidate_ref
-            'typ'           => 'sso-link',
+            'sub' => $candidateRef, // satisfies tymon required_claims; raw candidate_ref
+            'typ' => 'sso-link',
             'candidate_ref' => $candidateRef,
-            'display_name'  => $claims['display_name'],
-            'project_id'    => $claims['project_id'],
-            'org_id'        => $claims['org_id'],
-            'role_code'     => $claims['role_code'] ?? null,
-            'lang'          => $claims['lang'] ?? null,
+            'display_name' => $claims['display_name'],
+            'project_id' => $claims['project_id'],
+            'org_id' => $claims['org_id'],
+            'role_code' => $claims['role_code'] ?? null,
+            'lang' => $claims['lang'] ?? null,
         ];
 
         // RAW mint: iss/iat/exp/nbf/jti auto-populated by factory.
         // setTTL(30) = 30 minutes for sso-link token.
         // Build Payload then encode to token string.
-        JWTAuth::factory()->setTTL(30);
-        $jwtPayload = JWTAuth::factory()->customClaims($payload)->make();
+        $jwt = app(JWTAuth::class);
+        $jwt->factory()->setTTL(30);
+        $jwtPayload = $jwt->factory()->customClaims($payload)->make();
 
-        return JWTAuth::encode($jwtPayload)->get();
+        return $jwt->manager()->encode($jwtPayload)->get();
     }
 
     /**
@@ -85,18 +86,19 @@ class CandidateTokenFactory
     public static function mintCandidateToken(Participant $participant, array $extra = []): string
     {
         $customClaims = array_merge([
-            'typ'             => 'candidate',
-            'candidate_ref'   => $participant->candidate_ref,
-            'project_id'      => $participant->project_id,
+            'typ' => 'candidate',
+            'candidate_ref' => $participant->candidate_ref,
+            'project_id' => $participant->project_id,
             'organization_id' => $participant->organization_id,
-            'role_code'       => $participant->role_code,
-            'lang'            => $participant->language,
+            'role_code' => $participant->role_code,
+            'lang' => $participant->language,
         ], $extra);
 
         // setTTL(120) BEFORE fromUser — overrides the global 30-min default.
-        JWTAuth::factory()->setTTL(120);
+        $jwt = app(JWTAuth::class);
+        $jwt->factory()->setTTL(120);
 
-        return JWTAuth::customClaims($customClaims)->fromUser($participant);
+        return $jwt->customClaims($customClaims)->fromUser($participant);
     }
 
     /**
@@ -111,7 +113,7 @@ class CandidateTokenFactory
      */
     public static function consumeJti(string $jti, int $ttl): bool
     {
-        $key = 'sso_jti:' . $jti;
+        $key = 'sso_jti:'.$jti;
         $safeTtl = max($ttl, 60);
 
         // Cache::add() is atomic SET NX in Redis-backed stores.

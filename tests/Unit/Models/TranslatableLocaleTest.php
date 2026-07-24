@@ -15,7 +15,7 @@ use App\Models\Competency;
 use Illuminate\Support\Facades\App;
 
 test('competency returns active locale when both en and it translations exist', function (): void {
-    $competency = new Competency();
+    $competency = new Competency;
     $competency->setTranslation('name', 'en', 'Problem Solving');
     $competency->setTranslation('name', 'it', 'Risoluzione dei problemi');
     $competency->setTranslation('definition', 'en', 'Definition in EN');
@@ -32,7 +32,7 @@ test('competency returns active locale when both en and it translations exist', 
 });
 
 test('competency falls back to en when it translation is absent', function (): void {
-    $competency = new Competency();
+    $competency = new Competency;
     $competency->setTranslation('name', 'en', 'Strategy');
     $competency->setTranslation('definition', 'en', 'Definition EN');
     $competency->code = 'TEST2';
@@ -51,7 +51,7 @@ test('competency falls back to en when it translation is absent', function (): v
 });
 
 test('hasTranslation returns true only when translation was explicitly set', function (): void {
-    $competency = new Competency();
+    $competency = new Competency;
     $competency->setTranslation('name', 'en', 'Innovation');
     $competency->setTranslation('definition', 'en', 'Def EN');
     $competency->code = 'TEST3';
@@ -78,7 +78,7 @@ test('empty string IT is treated as absent by spatie (allowEmptyStringForTransla
     // The seeder never sets empty strings; it uses the actual JSON value or skips.
     // This test documents the actual library behavior, which is more conservative than
     // the spec note suggested.
-    $competency = new Competency();
+    $competency = new Competency;
     $competency->setTranslation('name', 'en', 'Drive');
     $competency->setTranslation('name', 'it', ''); // empty string IT
     $competency->setTranslation('definition', 'en', 'Def EN');

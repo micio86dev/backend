@@ -26,9 +26,9 @@ function makeC5PolicyUser(Organization $org, string $role): User
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $user = User::factory()->create(['organization_id' => $org->id]);
     $spatieRole = SpatieRole::firstOrCreate([
-        'name'       => $role,
+        'name' => $role,
         'guard_name' => 'api',
-        'team_id'    => $org->id,
+        'team_id' => $org->id,
     ]);
     $user->assignRole($spatieRole);
 

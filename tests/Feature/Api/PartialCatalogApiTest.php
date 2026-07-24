@@ -12,7 +12,7 @@ use App\Models\User;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run(); // SRX has no bars — partial catalog state
+    (new FrameworkCatalogSeeder)->run(); // SRX has no bars — partial catalog state
 });
 
 test('GET /api/framework/roles returns 200 with SRX included even when SRX has no BARS', function (): void {

@@ -42,9 +42,9 @@ test('ApiClientResource exposes id, name, abilities, is_active, created_at', fun
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'name'            => 'Test Client',
-        'abilities'       => ['participants:read'],
-        'is_active'       => true,
+        'name' => 'Test Client',
+        'abilities' => ['participants:read'],
+        'is_active' => true,
     ]);
 
     $resource = new ApiClientResource($client);
@@ -64,8 +64,8 @@ test('ApiClientResource exposes expires_at and last_used_at (nullable)', functio
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'expires_at'      => null,
-        'last_used_at'    => null,
+        'expires_at' => null,
+        'last_used_at' => null,
     ]);
 
     $resource = new ApiClientResource($client);

@@ -41,6 +41,7 @@ function snapshotProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -49,12 +50,13 @@ function snapshotParticipant(Organization $org, Project $project, string $status
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'snap-' . ($suffix ?: uniqid()),
-        'display_name'    => 'Snapshot Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'snap-'.($suffix ?: uniqid()),
+        'display_name' => 'Snapshot Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -65,13 +67,13 @@ function snapshotSession(Organization $org, Participant $participant, Project $p
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => $status,
+        'provider' => 'heygen',
+        'status' => $status,
     ]);
 }
 
@@ -87,8 +89,9 @@ function snapshotBearer(Participant $participant): string
 function validJpegBase64(int $extraBytes = 100): string
 {
     $jpegHeader = "\xFF\xD8\xFF\xE0";
-    $padding    = str_repeat("\x00", $extraBytes);
-    return base64_encode($jpegHeader . $padding);
+    $padding = str_repeat("\x00", $extraBytes);
+
+    return base64_encode($jpegHeader.$padding);
 }
 
 /**
@@ -97,7 +100,8 @@ function validJpegBase64(int $extraBytes = 100): string
 function nonJpegBase64(): string
 {
     $pngHeader = "\x89\x50\x4E\x47\x0D\x0A\x1A\x0A";
-    return base64_encode($pngHeader . str_repeat("\x00", 50));
+
+    return base64_encode($pngHeader.str_repeat("\x00", 50));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -105,18 +109,18 @@ function nonJpegBase64(): string
 test('POST /snapshot with valid JPEG under limit → 202; S3 key correct; InterviewSnapshot row persisted', function (): void {
     Storage::fake('s3');
 
-    $org         = snapshotOrg();
-    $project     = snapshotProject($org);
+    $org = snapshotOrg();
+    $project = snapshotProject($org);
     $participant = snapshotParticipant($org, $project, 'in_corso');
-    $session     = snapshotSession($org, $participant, $project, 'in_corso');
-    $token       = snapshotBearer($participant);
+    $session = snapshotSession($org, $participant, $project, 'in_corso');
+    $token = snapshotBearer($participant);
 
     $imageBase64 = validJpegBase64();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'image_base64' => $imageBase64,
         ]);
 
@@ -153,14 +157,14 @@ test('POST /snapshot with valid JPEG under limit → 202; S3 key correct; Interv
 test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no S3 write; no DB insert', function (): void {
     Storage::fake('s3');
 
-    $org         = snapshotOrg();
-    $project     = snapshotProject($org);
+    $org = snapshotOrg();
+    $project = snapshotProject($org);
     $participant = snapshotParticipant($org, $project, 'in_corso');
-    $session     = snapshotSession($org, $participant, $project, 'in_corso');
-    $token       = snapshotBearer($participant);
+    $session = snapshotSession($org, $participant, $project, 'in_corso');
+    $token = snapshotBearer($participant);
 
     // Build a base64 string exceeding max_encoded_bytes (~2.7 MB)
-    $maxBytes  = config('interview.snapshot.max_encoded_bytes');
+    $maxBytes = config('interview.snapshot.max_encoded_bytes');
     $overLimit = str_repeat('A', $maxBytes + 1);
 
     $resolver = app(TenantResolver::class);
@@ -169,9 +173,9 @@ test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no
     $countBefore = InterviewSnapshot::where('interview_session_id', $session->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'image_base64' => $overLimit,
         ]);
 
@@ -188,11 +192,11 @@ test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no
 test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; no DB insert', function (): void {
     Storage::fake('s3');
 
-    $org         = snapshotOrg();
-    $project     = snapshotProject($org);
+    $org = snapshotOrg();
+    $project = snapshotProject($org);
     $participant = snapshotParticipant($org, $project, 'in_corso');
-    $session     = snapshotSession($org, $participant, $project, 'in_corso');
-    $token       = snapshotBearer($participant);
+    $session = snapshotSession($org, $participant, $project, 'in_corso');
+    $token = snapshotBearer($participant);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
@@ -200,9 +204,9 @@ test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; 
     $countBefore = InterviewSnapshot::where('interview_session_id', $session->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $session->id,
+            'session_id' => $session->id,
             'image_base64' => nonJpegBase64(),
         ]);
 
@@ -219,10 +223,10 @@ test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; 
 test('POST /snapshot with session_id from different org → 404; no S3 write; no DB insert', function (): void {
     Storage::fake('s3');
 
-    $orgA         = snapshotOrg();
-    $orgB         = snapshotOrg();
-    $projectA     = snapshotProject($orgA);
-    $projectB     = snapshotProject($orgB);
+    $orgA = snapshotOrg();
+    $orgB = snapshotOrg();
+    $projectA = snapshotProject($orgA);
+    $projectB = snapshotProject($orgB);
     $participantA = snapshotParticipant($orgA, $projectA, 'in_corso', 'a');
     $participantB = snapshotParticipant($orgB, $projectB, 'in_corso', 'b');
 
@@ -238,9 +242,9 @@ test('POST /snapshot with session_id from different org → 404; no S3 write; no
     $countBefore = InterviewSnapshot::where('interview_session_id', $sessionB->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $sessionB->id,
+            'session_id' => $sessionB->id,
             'image_base64' => validJpegBase64(),
         ]);
 

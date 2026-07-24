@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * Tenant-scoped InterviewSession model (C7a — Interview Session Mechanics).
@@ -51,10 +52,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $provider_session_ref
  * @property string $status
  * @property string|null $ended_reason
- * @property \Illuminate\Support\Carbon|null $started_at
- * @property \Illuminate\Support\Carbon|null $ended_at
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property Carbon|null $started_at
+ * @property Carbon|null $ended_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class InterviewSession extends TenantModel
 {
@@ -91,7 +92,7 @@ class InterviewSession extends TenantModel
     {
         return [
             'started_at' => 'immutable_datetime',
-            'ended_at'   => 'immutable_datetime',
+            'ended_at' => 'immutable_datetime',
         ];
     }
 

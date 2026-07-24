@@ -19,7 +19,9 @@ declare(strict_types=1);
 
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Cache;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
@@ -30,11 +32,11 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 test('sso-link JWT carries sub=candidate_ref (not a numeric sub)', function (): void {
     $claims = [
         'candidate_ref' => 'ext-abc-123',
-        'display_name'  => 'Test User',
-        'project_id'    => 1,
-        'org_id'        => 1,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Test User',
+        'project_id' => 1,
+        'org_id' => 1,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ];
 
     $token = CandidateTokenFactory::mintSsoLink($claims);
@@ -47,11 +49,11 @@ test('sso-link JWT carries sub=candidate_ref (not a numeric sub)', function (): 
 test('sso-link JWT carries typ=sso-link', function (): void {
     $claims = [
         'candidate_ref' => 'ref-001',
-        'display_name'  => 'Test',
-        'project_id'    => 1,
-        'org_id'        => 1,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Test',
+        'project_id' => 1,
+        'org_id' => 1,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ];
 
     $token = CandidateTokenFactory::mintSsoLink($claims);
@@ -63,11 +65,11 @@ test('sso-link JWT carries typ=sso-link', function (): void {
 test('sso-link JWT carries claim named role_code (not role)', function (): void {
     $claims = [
         'candidate_ref' => 'ref-002',
-        'display_name'  => 'Test',
-        'project_id'    => 1,
-        'org_id'        => 1,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Test',
+        'project_id' => 1,
+        'org_id' => 1,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ];
 
     $token = CandidateTokenFactory::mintSsoLink($claims);
@@ -80,11 +82,11 @@ test('sso-link JWT carries claim named role_code (not role)', function (): void 
 test('sso-link JWT has NO prv claim (RAW mint, not fromUser)', function (): void {
     $claims = [
         'candidate_ref' => 'ref-003',
-        'display_name'  => 'Test',
-        'project_id'    => 1,
-        'org_id'        => 1,
-        'role_code'     => null,
-        'lang'          => 'en',
+        'display_name' => 'Test',
+        'project_id' => 1,
+        'org_id' => 1,
+        'role_code' => null,
+        'lang' => 'en',
     ];
 
     $token = CandidateTokenFactory::mintSsoLink($claims);
@@ -96,11 +98,11 @@ test('sso-link JWT has NO prv claim (RAW mint, not fromUser)', function (): void
 test('sso-link mint does NOT write to Redis (no sso_jti: key at mint)', function (): void {
     $claims = [
         'candidate_ref' => 'ref-no-redis',
-        'display_name'  => 'Test',
-        'project_id'    => 1,
-        'org_id'        => 1,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Test',
+        'project_id' => 1,
+        'org_id' => 1,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ];
 
     $token = CandidateTokenFactory::mintSsoLink($claims);
@@ -108,7 +110,7 @@ test('sso-link mint does NOT write to Redis (no sso_jti: key at mint)', function
     $jti = $payload->get('jti');
 
     // The sso_jti: key must NOT exist in cache after mint (no pre-storage)
-    expect(Cache::has('sso_jti:' . $jti))->toBeFalse();
+    expect(Cache::has('sso_jti:'.$jti))->toBeFalse();
 });
 
 // ---------------------------------------------------------------------------
@@ -166,13 +168,13 @@ test('candidate JWT carries role_code claim (not role)', function (): void {
 // ---------------------------------------------------------------------------
 
 test('consumeJti returns true on first call (first use)', function (): void {
-    $result = CandidateTokenFactory::consumeJti('unique-jti-' . uniqid(), 300);
+    $result = CandidateTokenFactory::consumeJti('unique-jti-'.uniqid(), 300);
 
     expect($result)->toBeTrue();
 });
 
 test('consumeJti returns false on second call (replay attempt)', function (): void {
-    $jti = 'replay-jti-' . uniqid();
+    $jti = 'replay-jti-'.uniqid();
 
     // First consume — succeeds
     $first = CandidateTokenFactory::consumeJti($jti, 300);
@@ -184,11 +186,11 @@ test('consumeJti returns false on second call (replay attempt)', function (): vo
 });
 
 test('consumeJti stores key with sso_jti: prefix (not tymon blacklist namespace)', function (): void {
-    $jti = 'prefix-test-' . uniqid();
+    $jti = 'prefix-test-'.uniqid();
     CandidateTokenFactory::consumeJti($jti, 300);
 
     // sso_jti: prefix must be present
-    expect(Cache::has('sso_jti:' . $jti))->toBeTrue();
+    expect(Cache::has('sso_jti:'.$jti))->toBeTrue();
 });
 
 // ---------------------------------------------------------------------------
@@ -199,21 +201,21 @@ function makeTestParticipant(string $roleCode = 'ICO'): Participant
 {
     $org = Organization::factory()->create();
 
-    $resolver = app(\App\Support\Tenancy\TenantResolver::class);
+    $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = \App\Models\Project::factory()->create(['status' => 'active', 'role_code' => $roleCode]);
+    $project = Project::factory()->create(['status' => 'active', 'role_code' => $roleCode]);
 
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'ref-' . uniqid(),
-        'display_name'    => 'Test Candidate',
-        'role_code'       => $roleCode,
-        'language'        => 'en',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => 'ref-'.uniqid(),
+        'display_name' => 'Test Candidate',
+        'role_code' => $roleCode,
+        'language' => 'en',
+        'status' => 'in_attesa',
     ]);
     $p->save();
 

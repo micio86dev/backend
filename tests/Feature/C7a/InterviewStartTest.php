@@ -29,12 +29,10 @@ use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
-use App\Services\Provider\ProviderSessionService;
-use App\Services\Provider\ProviderToken;
-use App\Services\Provider\QuestionContext;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
@@ -57,6 +55,7 @@ function startProject(Organization $org, ?string $providerOverride = null): Proj
     if ($providerOverride !== null) {
         $attrs['provider_override'] = $providerOverride;
     }
+
     return Project::factory()->create($attrs);
 }
 
@@ -66,13 +65,14 @@ function startProjectWithCompetencies(Organization $org, int $count = 2, ?string
     $competencies = [];
     for ($i = 0; $i < $count; $i++) {
         $comp = Competency::factory()->create();
-        \Illuminate\Support\Facades\DB::table('project_competencies')->insert([
-            'project_id'    => $project->id,
+        DB::table('project_competencies')->insert([
+            'project_id' => $project->id,
             'competency_id' => $comp->id,
-            'position'      => $i + 1,
+            'position' => $i + 1,
         ]);
         $competencies[] = $comp;
     }
+
     return [$project, $competencies];
 }
 
@@ -81,12 +81,13 @@ function startParticipant(Organization $org, Project $project, string $status = 
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'start-' . uniqid(),
-        'display_name'    => 'Start Test Candidate',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'start-'.uniqid(),
+        'display_name' => 'Start Test Candidate',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -101,9 +102,9 @@ function heygenSuccessResponse(): array
         '*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-001']], 200),
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
-                'session_id'   => 'heygen-session-' . uniqid(),
-                'access_token' => 'heygen-token-' . uniqid(),
-                'url'          => 'https://webrtc.heygen.com/test',
+                'session_id' => 'heygen-session-'.uniqid(),
+                'access_token' => 'heygen-token-'.uniqid(),
+                'url' => 'https://webrtc.heygen.com/test',
             ],
         ], 200),
         '*liveavatar*/sessions/*' => Http::response([], 200), // teardown
@@ -116,13 +117,13 @@ test('POST /start first question: 201, session created, participant in_corso, st
     Http::fake(heygenSuccessResponse());
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org);
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -153,13 +154,13 @@ test('POST /start response does NOT contain API key material', function (): void
     Http::fake(heygenSuccessResponse());
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project] = startProjectWithCompetencies($org);
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -173,27 +174,27 @@ test('POST /start second question (participant in_corso): 201, participant statu
     Http::fake(heygenSuccessResponse());
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 2);
     $participant = startParticipant($org, $project, 'in_corso');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     // First session already completed
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
     InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $comps[0]->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'completed',
+        'provider' => 'heygen',
+        'status' => 'completed',
     ]);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -216,7 +217,7 @@ test('POST /start resume in_corso: no duplicate row, fresh token issued, old ses
         '*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-fresh']], 200),
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
-                'session_id'   => 'heygen-session-fresh',
+                'session_id' => 'heygen-session-fresh',
                 'access_token' => 'heygen-token-fresh',
             ],
         ], 200),
@@ -224,28 +225,28 @@ test('POST /start resume in_corso: no duplicate row, fresh token issued, old ses
     ]);
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_corso');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     // Existing in_corso session with a provider_session_ref
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
     $oldSession = InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $comps[0]->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
+        'provider' => 'heygen',
         'provider_session_ref' => 'old-ref-to-teardown',
-        'status'               => 'in_corso',
+        'status' => 'in_corso',
     ]);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -267,28 +268,28 @@ test('POST /start resume pending (no provider_session_ref): retries issue, 201 i
     Http::fake(heygenSuccessResponse());
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     // Session in pending state with NO provider_session_ref
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
     $pendingSession = InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $comps[0]->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
+        'provider' => 'heygen',
         'provider_session_ref' => null,
-        'status'               => 'pending',
+        'status' => 'pending',
     ]);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -304,13 +305,13 @@ test('POST /start provider 5xx → 502; session status = error; participant.stat
     ]);
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(502);
@@ -335,13 +336,13 @@ test('POST /start provider 429 → 429 provider_busy; participant NOT → errore
     ]);
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(429);
@@ -365,27 +366,27 @@ test('POST /start no remaining competency → 422', function (): void {
     Http::fake(heygenSuccessResponse());
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_corso');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     // All competencies already completed
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
     InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $comps[0]->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'completed',
+        'provider' => 'heygen',
+        'status' => 'completed',
     ]);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(422);
@@ -394,20 +395,20 @@ test('POST /start no remaining competency → 422', function (): void {
 test('POST /start with project.provider_override = tavus → Tavus provider called', function (): void {
     Http::fake([
         '*tavusapi*/v2/conversations*' => Http::response([
-            'conversation_id'  => 'conv-001',
+            'conversation_id' => 'conv-001',
             'conversation_url' => 'https://tavus.io/conv-001',
         ], 200),
         '*tavusapi*/v2/conversations/*' => Http::response([], 200), // teardown
     ]);
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1, 'tavus');
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);
@@ -430,28 +431,28 @@ test('POST /start provider 5xx on resume in_corso → 502; participant errore (c
     ]);
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_corso');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     // Existing in_corso session
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
     InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $comps[0]->code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
+        'provider' => 'heygen',
         'provider_session_ref' => 'old-ref-existing',
-        'status'               => 'in_corso',
+        'status' => 'in_corso',
     ]);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(502);
@@ -467,13 +468,13 @@ test('POST /start FIX-8: session + participant writes are in one transaction (bo
     Http::fake(heygenSuccessResponse());
     Queue::fake();
 
-    $org  = startOrg();
+    $org = startOrg();
     [$project, $comps] = startProjectWithCompetencies($org, 1);
     $participant = startParticipant($org, $project, 'in_attesa');
-    $token       = startBearer($participant);
+    $token = startBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     $response->assertStatus(201);

@@ -16,7 +16,7 @@ use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('org B user sees their own pin_context, not org A pin context', function (): void {

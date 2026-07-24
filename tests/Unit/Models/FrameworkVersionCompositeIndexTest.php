@@ -9,6 +9,7 @@
  */
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 test('framework_versions has a composite unique index leading with organization_id', function (): void {
     $indexes = DB::select(
@@ -17,7 +18,6 @@ test('framework_versions has a composite unique index leading with organization_
          WHERE tablename = 'framework_versions'
          AND indexdef LIKE '%organization_id%'"
     ); /** @var array<object{indexname: string, indexdef: string}> $indexes */
-
     expect($indexes)->not->toBeEmpty('Expected at least one index on framework_versions involving organization_id');
 
     // At least one index should have organization_id as the FIRST column
@@ -31,5 +31,5 @@ test('framework_versions has a composite unique index leading with organization_
 });
 
 test('framework_versions table has organization_id column', function (): void {
-    expect(\Illuminate\Support\Facades\Schema::hasColumn('framework_versions', 'organization_id'))->toBeTrue();
+    expect(Schema::hasColumn('framework_versions', 'organization_id'))->toBeTrue();
 });

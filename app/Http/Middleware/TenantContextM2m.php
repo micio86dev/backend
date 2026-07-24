@@ -55,8 +55,9 @@ final class TenantContextM2m
 
         $orgId = $client->organization_id;
 
-        // Fail-closed: a client without an organization_id is a misconfigured credential.
-        if ($orgId === null) {
+        // Fail-closed: a client without a valid organization_id is a misconfigured credential.
+        // organization_id is a positive FK; a missing/zero value means broken hydration.
+        if ($orgId < 1) {
             return response()->json(['message' => 'Unauthenticated.'], Response::HTTP_UNAUTHORIZED);
         }
 

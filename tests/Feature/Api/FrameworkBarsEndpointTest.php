@@ -12,7 +12,7 @@ use App\Models\User;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('GET indicators for ICO/PRS returns 3 indicators with non-null anchors', function (): void {

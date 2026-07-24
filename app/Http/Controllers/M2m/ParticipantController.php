@@ -42,32 +42,32 @@ final class ParticipantController extends Controller
     public function store(Request $request): JsonResponse
     {
         /** @var ApiClient $client */
-        $client      = $request->user('api-m2m');
+        $client = $request->user('api-m2m');
         $clientOrgId = $client->organization_id;
 
         $validated = $request->validate([
-            'project_id'    => ['required', 'integer'],
+            'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
-            'display_name'  => ['required', 'string', 'max:255'],
-            'role_code'     => ['nullable', 'string', 'max:50'],
-            'language'      => ['nullable', 'string', 'max:10'],
-            'status'        => ['nullable', 'string'],
+            'display_name' => ['required', 'string', 'max:255'],
+            'role_code' => ['nullable', 'string', 'max:50'],
+            'language' => ['nullable', 'string', 'max:10'],
+            'status' => ['nullable', 'string'],
         ]);
 
         // Resolve project SCOPED to caller org (cross-org → 404).
         $project = Project::where('organization_id', $clientOrgId)
-            ->findOrFail($validated['project_id']);
+            ->findOrFail((int) $validated['project_id']);
 
         // Create or find existing participant — organization_id from project (NOT from request).
         $participant = new Participant;
         $participant->forceFill([
             'organization_id' => $project->organization_id,  // server-side, NOT from request
-            'project_id'      => $project->id,
-            'candidate_ref'   => $validated['candidate_ref'],
-            'display_name'    => $validated['display_name'],
-            'role_code'       => $validated['role_code'] ?? null,
-            'language'        => $validated['language'] ?? null,
-            'status'          => $validated['status'] ?? 'in_attesa',
+            'project_id' => $project->id,
+            'candidate_ref' => $validated['candidate_ref'],
+            'display_name' => $validated['display_name'],
+            'role_code' => $validated['role_code'] ?? null,
+            'language' => $validated['language'] ?? null,
+            'status' => $validated['status'] ?? 'in_attesa',
         ]);
         $participant->save();
 
@@ -84,7 +84,7 @@ final class ParticipantController extends Controller
     {
         /** @var ApiClient $client */
         $client = $request->user('api-m2m');
-        $orgId  = $client->organization_id;
+        $orgId = $client->organization_id;
 
         // Manual org filter — mirrors ApiClientController::index pattern.
         $participants = Participant::where('organization_id', $orgId)
@@ -104,7 +104,7 @@ final class ParticipantController extends Controller
     {
         /** @var ApiClient $client */
         $client = $request->user('api-m2m');
-        $orgId  = $client->organization_id;
+        $orgId = $client->organization_id;
 
         // Manual org filter — cross-org → 404.
         $participant = Participant::where('organization_id', $orgId)

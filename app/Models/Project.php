@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 /**
  * Org-scoped Project model (C4 Project Configuration).
@@ -40,14 +41,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $exit_redirect_url
  * @property string|null $webhook_url
  * @property string|null $webhook_secret
- * @property \Illuminate\Support\Carbon|null $deadline_at
- * @property \Illuminate\Support\Carbon|null $goes_live_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
+ * @property Carbon|null $deadline_at
+ * @property Carbon|null $goes_live_at
+ * @property Carbon|null $deleted_at
  */
 class Project extends TenantModel
 {
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
+
     use SoftDeletes;
 
     /**
@@ -80,10 +82,10 @@ class Project extends TenantModel
         // pdo_pgsql returns bigint as string — explicit cast prevents false-positive
         // immutability rejection when comparing (int) against persisted value.
         'framework_version_id' => 'integer',
-        'deadline_at'          => 'datetime',
-        'goes_live_at'         => 'datetime',
+        'deadline_at' => 'datetime',
+        'goes_live_at' => 'datetime',
         // encrypted at rest; also in $hidden to prevent serialization exposure.
-        'webhook_secret'       => 'encrypted',
+        'webhook_secret' => 'encrypted',
     ];
 
     /**
@@ -115,7 +117,7 @@ class Project extends TenantModel
             // ── Immutability guard ──────────────────────────────────────────
             // assessment_type and role_code are immutable once status ∈ {active, archived}.
             // framework_version_id is always immutable after creation (blocked at FormRequest layer).
-            $currentStatus  = $project->getOriginal('status');
+            $currentStatus = $project->getOriginal('status');
             $resultingStatus = $project->isDirty('status')
                 ? $project->status
                 : $currentStatus;
@@ -134,7 +136,7 @@ class Project extends TenantModel
             // All other transitions are forbidden.
             if ($project->isDirty('status')) {
                 $origStatus = $project->getOriginal('status');
-                $newStatus  = $project->status;
+                $newStatus = $project->status;
 
                 $allowed = [
                     ['draft',  'active'],

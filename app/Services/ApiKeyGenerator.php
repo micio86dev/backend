@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use Random\RandomException;
+
 /**
  * Generates and hashes opaque M2M API keys (C5).
  *
@@ -23,11 +25,11 @@ final class ApiKeyGenerator
     /**
      * Generate a new raw API key.
      *
-     * @throws \Random\RandomException if the CSPRNG fails
+     * @throws RandomException if the CSPRNG fails
      */
     public static function generate(): string
     {
-        return self::PREFIX . bin2hex(random_bytes(48));
+        return self::PREFIX.bin2hex(random_bytes(48));
     }
 
     /**

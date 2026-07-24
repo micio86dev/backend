@@ -24,21 +24,21 @@ test('whoami reflects client organization_id, not a forged org from request', fu
 
     ApiClient::factory()->create([
         'organization_id' => $orgA->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'abilities'       => ['participants:read'],
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'abilities' => ['participants:read'],
     ]);
 
     // Attempt to pass org B's ID in the request body / header
     $response = $this->withHeaders([
-        'Authorization'    => 'Bearer ' . $rawKey,
+        'Authorization' => 'Bearer '.$rawKey,
         'X-Organization-Id' => (string) $orgB->id,
     ])->postJson('/api/m2m/whoami', ['organization_id' => $orgB->id]);
 
     // whoami is GET; use GET with query params
     $response = $this->withHeaders([
-        'Authorization'    => 'Bearer ' . $rawKey,
+        'Authorization' => 'Bearer '.$rawKey,
         'X-Organization-Id' => (string) $orgB->id,
-    ])->getJson('/api/m2m/whoami?organization_id=' . $orgB->id);
+    ])->getJson('/api/m2m/whoami?organization_id='.$orgB->id);
 
     // org must always be org A (from the client record), never org B
     $response->assertOk()
@@ -51,10 +51,10 @@ test('resolver org_id comes from client record, not request input', function ():
 
     ApiClient::factory()->create([
         'organization_id' => $orgA->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/m2m/whoami');
 
     $resolver = app(TenantResolver::class);

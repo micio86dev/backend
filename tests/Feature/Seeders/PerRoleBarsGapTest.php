@@ -15,7 +15,7 @@ use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('BUL has 24 bars_indicators rows and 6 competency_no_bars gaps', function (): void {

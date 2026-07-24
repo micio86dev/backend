@@ -16,7 +16,9 @@ declare(strict_types=1);
 use App\Exceptions\ParticipantTransitionException;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Http\Request;
 
 function makeParticipantWithStatus(string $status): Participant
 {
@@ -26,15 +28,15 @@ function makeParticipantWithStatus(string $status): Participant
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = \App\Models\Project::factory()->create(['status' => 'active']);
+    $project = Project::factory()->create(['status' => 'active']);
 
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'guard-test-' . uniqid(),
-        'display_name'    => 'Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'guard-test-'.uniqid(),
+        'display_name' => 'Test',
+        'status' => $status,
     ]);
     $p->save();
 
@@ -55,7 +57,6 @@ test('in_attesa → completato (illegal jump) throws ParticipantTransitionExcept
  * This test has been removed to reflect the updated complete $allowedTransitions map.
  * See: tests/Unit/C7a/ParticipantTransitionsC7aTest.php for the full coverage.
  */
-
 test('in_attesa → in_valutazione (illegal skip) throws ParticipantTransitionException', function (): void {
     $participant = makeParticipantWithStatus('in_attesa');
 
@@ -77,8 +78,8 @@ test('record status is NOT mutated after rejected transition', function (): void
 
 test('ParticipantTransitionException renders HTTP 422', function (): void {
     $exception = new ParticipantTransitionException('test message');
-    $request   = \Illuminate\Http\Request::create('/api/test', 'GET');
-    $response  = $exception->render($request);
+    $request = Request::create('/api/test', 'GET');
+    $response = $exception->render($request);
 
     expect($response->getStatusCode())->toBe(422);
     expect(json_decode($response->getContent(), true))->toHaveKey('message');

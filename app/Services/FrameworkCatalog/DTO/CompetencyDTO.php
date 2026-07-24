@@ -12,7 +12,7 @@ namespace App\Services\FrameworkCatalog\DTO;
 final readonly class CompetencyDTO
 {
     /**
-     * @param list<IndicatorDTO> $indicators
+     * @param  list<IndicatorDTO>  $indicators
      */
     public function __construct(
         public string $code,

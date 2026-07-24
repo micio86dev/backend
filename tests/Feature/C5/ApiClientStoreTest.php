@@ -52,7 +52,7 @@ test('admin POST → 201 with data envelope and api_key top-level sibling', func
     ['token' => $token] = storeAdminUser($org);
 
     $response = $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'Test Integration Client',
+        'name' => 'Test Integration Client',
         'abilities' => ['participants:read', 'projects:read'],
     ]);
 
@@ -71,7 +71,7 @@ test('api_key is a top-level sibling of data (not nested in data)', function ():
     ['token' => $token] = storeAdminUser($org);
 
     $response = $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'My Client',
+        'name' => 'My Client',
         'abilities' => ['participants:read'],
     ]);
 
@@ -89,7 +89,7 @@ test('key_hash stored as sha256 of raw key (not the raw key itself)', function (
     ['token' => $token] = storeAdminUser($org);
 
     $response = $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'Hash Verification Client',
+        'name' => 'Hash Verification Client',
         'abilities' => ['participants:read'],
     ]);
 
@@ -125,7 +125,7 @@ test('unknown ability → 422 with validation error', function (): void {
     ['token' => $token] = storeAdminUser($org);
 
     $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'Bad Client',
+        'name' => 'Bad Client',
         'abilities' => ['participants:read', 'admin:delete_everything'],
     ])->assertUnprocessable()
         ->assertJsonPath('errors.abilities.0', fn ($msg) => str_contains($msg, 'allowed'));
@@ -136,14 +136,14 @@ test('operator POST → 403', function (): void {
     ['token' => $token] = storeOperatorUser($org);
 
     $this->withToken($token)->postJson('/api/m2m/clients', [
-        'name'      => 'Operator Client',
+        'name' => 'Operator Client',
         'abilities' => ['participants:read'],
     ])->assertForbidden();
 });
 
 test('unauthenticated POST → 401', function (): void {
     $this->postJson('/api/m2m/clients', [
-        'name'      => 'No Auth Client',
+        'name' => 'No Auth Client',
         'abilities' => ['participants:read'],
     ])->assertUnauthorized();
 });

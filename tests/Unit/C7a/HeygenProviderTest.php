@@ -16,6 +16,7 @@ declare(strict_types=1);
  * REQ: HeygenProvider — provider secret non-exposure (C7a task 14.3)
  */
 
+use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderToken;
@@ -41,10 +42,10 @@ test('HeygenProvider::issue() on 200 returns ProviderToken with non-null token a
     ]);
 
     $session = mockSession('heygen');
-    $ctx     = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
 
     $provider = new HeygenProvider;
-    $token    = $provider->issue($session, $ctx);
+    $token = $provider->issue($session, $ctx);
 
     expect($token)->toBeInstanceOf(ProviderToken::class);
     expect($token->provider)->toBe('heygen');
@@ -69,17 +70,17 @@ test('HeygenProvider::issue() on 5xx throws ProviderException with API key REDAC
     });
 
     $session = mockSession('heygen');
-    $ctx     = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
 
     $provider = new HeygenProvider;
 
     expect(fn () => $provider->issue($session, $ctx))
-        ->toThrow(\App\Exceptions\ProviderException::class);
+        ->toThrow(ProviderException::class);
 
     // Capture the exception message
     try {
         $provider->issue($session, $ctx);
-    } catch (\App\Exceptions\ProviderException $e) {
+    } catch (ProviderException $e) {
         // API key MUST be REDACTED from the exception message
         expect($e->getMessage())->not->toContain('SUPER_SECRET_HEYGEN_KEY_12345');
         // Log messages must NOT contain the raw key
@@ -94,16 +95,16 @@ test('HeygenProvider::issue() on 429 throws ProviderException with retryable sig
         '*liveavatar*/contexts*' => Http::response(['error' => 'Too Many Requests'], 429),
     ]);
 
-    $session  = mockSession('heygen');
-    $ctx      = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
     $provider = new HeygenProvider;
 
     expect(fn () => $provider->issue($session, $ctx))
-        ->toThrow(\App\Exceptions\ProviderException::class);
+        ->toThrow(ProviderException::class);
 
     try {
         $provider->issue($session, $ctx);
-    } catch (\App\Exceptions\ProviderException $e) {
+    } catch (ProviderException $e) {
         expect($e->isRetryable())->toBeTrue();
     }
 });
@@ -118,9 +119,9 @@ test('HeygenProvider::reconcileTranscript() returns array', function (): void {
         ], 200),
     ]);
 
-    $session  = mockSession('heygen', 'ref-session-123');
+    $session = mockSession('heygen', 'ref-session-123');
     $provider = new HeygenProvider;
-    $result   = $provider->reconcileTranscript($session);
+    $result = $provider->reconcileTranscript($session);
 
     expect($result)->toBeArray();
 });
@@ -130,7 +131,7 @@ test('HeygenProvider::teardown() accepts ProviderToken (typed — no raw-string 
         '*liveavatar*/sessions*' => Http::response([], 200),
     ]);
 
-    $token    = ProviderToken::fromRef('heygen', 'session-ref-to-teardown');
+    $token = ProviderToken::fromRef('heygen', 'session-ref-to-teardown');
     $provider = new HeygenProvider;
 
     // Should not throw
@@ -140,9 +141,9 @@ test('HeygenProvider::teardown() accepts ProviderToken (typed — no raw-string 
 });
 
 test('HeygenProvider::reconcileTranscript() with null provider_session_ref returns empty array', function (): void {
-    $session  = mockSession('heygen', null);
+    $session = mockSession('heygen', null);
     $provider = new HeygenProvider;
-    $result   = $provider->reconcileTranscript($session);
+    $result = $provider->reconcileTranscript($session);
     expect($result)->toBe([]);
 });
 
@@ -151,14 +152,14 @@ test('HeygenProvider::reconcileTranscript() on non-200 returns empty array (best
         '*liveavatar*/sessions/*/transcript*' => Http::response(['error' => 'not found'], 404),
     ]);
 
-    $session  = mockSession('heygen', 'ref-fail-transcript');
+    $session = mockSession('heygen', 'ref-fail-transcript');
     $provider = new HeygenProvider;
-    $result   = $provider->reconcileTranscript($session);
+    $result = $provider->reconcileTranscript($session);
     expect($result)->toBe([]);
 });
 
 test('HeygenProvider::teardown() with null provider_session_ref is a no-op', function (): void {
-    $token    = new ProviderToken(provider: 'heygen', provider_session_ref: null);
+    $token = new ProviderToken(provider: 'heygen', provider_session_ref: null);
     $provider = new HeygenProvider;
 
     $provider->teardown($token); // Must not throw or make any HTTP call
@@ -172,16 +173,17 @@ function mockSession(string $provider, ?string $ref = null): InterviewSession
 {
     $session = new InterviewSession;
     $session->forceFill([
-        'id'                   => 1,
-        'organization_id'      => 1,
-        'participant_id'       => 1,
-        'project_id'           => 1,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'id' => 1,
+        'organization_id' => 1,
+        'participant_id' => 1,
+        'project_id' => 1,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => 1,
-        'provider'             => $provider,
+        'provider' => $provider,
         'provider_session_ref' => $ref,
-        'status'               => 'pending',
+        'status' => 'pending',
     ]);
+
     return $session;
 }

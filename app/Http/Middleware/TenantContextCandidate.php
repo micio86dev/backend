@@ -54,8 +54,9 @@ final class TenantContextCandidate
 
         $orgId = $participant->organization_id;
 
-        // Fail-closed: a participant without an organization_id is invalid.
-        if ($orgId === null) {
+        // Fail-closed: a participant without a valid organization_id is invalid.
+        // organization_id is a positive FK; a missing/zero value means broken hydration.
+        if ($orgId < 1) {
             return response()->json(['message' => 'Unauthenticated.'], Response::HTTP_UNAUTHORIZED);
         }
 

@@ -25,12 +25,12 @@ test('valid key → 200 with client_id, organization_id, abilities', function ()
 
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'abilities'       => ['participants:read', 'projects:read'],
-        'is_active'       => true,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'abilities' => ['participants:read', 'projects:read'],
+        'is_active' => true,
     ]);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/m2m/whoami');
 
     $response->assertOk()
@@ -49,12 +49,12 @@ test('expired key → 401', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'expires_at'      => now()->subHour(),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'expires_at' => now()->subHour(),
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/m2m/whoami')
         ->assertUnauthorized();
 });
@@ -65,10 +65,10 @@ test('api_key is absent from whoami response', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/m2m/whoami');
 
     $response->assertOk();
@@ -81,10 +81,10 @@ test('key_hash is absent from whoami response', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/m2m/whoami');
 
     $response->assertOk();

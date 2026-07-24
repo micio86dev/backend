@@ -17,8 +17,10 @@ use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
 use App\Models\Role;
+use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -26,7 +28,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 function makeAdminUser(Organization $org): array
 {
-    $user = \App\Models\User::factory()->create(['organization_id' => $org->id]);
+    $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
@@ -37,7 +39,7 @@ function makeAdminUser(Organization $org): array
 
 function makeViewerUser(Organization $org): array
 {
-    $user = \App\Models\User::factory()->create(['organization_id' => $org->id]);
+    $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $role = SpatieRole::firstOrCreate(['name' => 'viewer', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
@@ -48,7 +50,7 @@ function makeViewerUser(Organization $org): array
 
 function makeOperatorUser(Organization $org): array
 {
-    $user = \App\Models\User::factory()->create(['organization_id' => $org->id]);
+    $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $role = SpatieRole::firstOrCreate(['name' => 'operator', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
@@ -61,12 +63,12 @@ function buildStandardPayload(int $fvId, string $roleCode, array $competencyIds)
 {
     return [
         'framework_version_id' => $fvId,
-        'slug'                 => 'test-project-' . uniqid(),
-        'name'                 => 'Test Project',
-        'assessment_type'      => 'standard',
-        'role_code'            => $roleCode,
-        'language'             => 'en',
-        'competency_ids'       => $competencyIds,
+        'slug' => 'test-project-'.uniqid(),
+        'name' => 'Test Project',
+        'assessment_type' => 'standard',
+        'role_code' => $roleCode,
+        'language' => 'en',
+        'competency_ids' => $competencyIds,
     ];
 }
 
@@ -83,10 +85,10 @@ test('store: assessment_type must be in standard|potential', function (): void {
     $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-1',
-            'name'                 => 'Test',
-            'assessment_type'      => 'invalid',
-            'language'             => 'en',
+            'slug' => 'test-1',
+            'name' => 'Test',
+            'assessment_type' => 'invalid',
+            'language' => 'en',
         ])
         ->assertUnprocessable();
 });
@@ -107,12 +109,12 @@ test('store: cross-org framework_version_id → 422 (org-scoped Rule::exists)', 
     $this->withToken($tokenA)
         ->postJson('/api/projects', [
             'framework_version_id' => $fvB->id, // belongs to org B
-            'slug'                 => 'test-cross-org',
-            'name'                 => 'Cross Org',
-            'assessment_type'      => 'standard',
-            'role_code'            => 'ICO',
-            'language'             => 'en',
-            'competency_ids'       => [],
+            'slug' => 'test-cross-org',
+            'name' => 'Cross Org',
+            'assessment_type' => 'standard',
+            'role_code' => 'ICO',
+            'language' => 'en',
+            'competency_ids' => [],
         ])
         ->assertUnprocessable();
 });
@@ -128,9 +130,9 @@ test('store: slug unique per org — duplicate slug → 422', function (): void 
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
     // Seed so we can create a standard project with ICO competencies
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
     $ico = Role::where('code', 'ICO')->first();
-    $competencyId = \Illuminate\Support\Facades\DB::table('framework_role_competency')
+    $competencyId = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)
         ->value('competency_id');
 
@@ -151,9 +153,9 @@ test('store: slug from soft-deleted project is reusable → 201', function (): v
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
     $ico = Role::where('code', 'ICO')->first();
-    $competencyId = \Illuminate\Support\Facades\DB::table('framework_role_competency')
+    $competencyId = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)
         ->value('competency_id');
 
@@ -188,12 +190,12 @@ test('store: language must be in supported_locales', function (): void {
     $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-lang',
-            'name'                 => 'Test',
-            'assessment_type'      => 'standard',
-            'role_code'            => 'ICO',
-            'language'             => 'xx', // unsupported
-            'competency_ids'       => [],
+            'slug' => 'test-lang',
+            'name' => 'Test',
+            'assessment_type' => 'standard',
+            'role_code' => 'ICO',
+            'language' => 'xx', // unsupported
+            'competency_ids' => [],
         ])
         ->assertUnprocessable();
 });
@@ -211,12 +213,12 @@ test('store: standard with invalid role_code → 422', function (): void {
     $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-role',
-            'name'                 => 'Test',
-            'assessment_type'      => 'standard',
-            'role_code'            => 'INVALID',
-            'language'             => 'en',
-            'competency_ids'       => [],
+            'slug' => 'test-role',
+            'name' => 'Test',
+            'assessment_type' => 'standard',
+            'role_code' => 'INVALID',
+            'language' => 'en',
+            'competency_ids' => [],
         ])
         ->assertUnprocessable();
 });
@@ -229,15 +231,15 @@ test('store: standard with out-of-role competency → 422', function (): void {
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 
     // Get a competency assigned to FLL but NOT to ICO
     $ico = Role::where('code', 'ICO')->firstOrFail();
     $fll = Role::where('code', 'FLL')->firstOrFail();
 
-    $icoIds = \Illuminate\Support\Facades\DB::table('framework_role_competency')
+    $icoIds = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)->pluck('competency_id')->toArray();
-    $fllIds = \Illuminate\Support\Facades\DB::table('framework_role_competency')
+    $fllIds = DB::table('framework_role_competency')
         ->where('role_id', $fll->id)->pluck('competency_id')->toArray();
 
     $fllOnlyIds = array_diff($fllIds, $icoIds);
@@ -257,7 +259,7 @@ test('store: standard with potential-type competency (MTG) → 422', function ()
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 
     // Seed MTG/LAT as potential competencies
     $mtg = Competency::firstOrCreate(['code' => 'MTG'], [
@@ -269,12 +271,12 @@ test('store: standard with potential-type competency (MTG) → 422', function ()
     $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-mtg',
-            'name'                 => 'Test',
-            'assessment_type'      => 'standard',
-            'role_code'            => 'ICO',
-            'language'             => 'en',
-            'competency_ids'       => [$mtg->id],
+            'slug' => 'test-mtg',
+            'name' => 'Test',
+            'assessment_type' => 'standard',
+            'role_code' => 'ICO',
+            'language' => 'en',
+            'competency_ids' => [$mtg->id],
         ])
         ->assertUnprocessable();
 });
@@ -292,12 +294,12 @@ test('store: potential with non-null role_code → 422', function (): void {
     $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-potential-role',
-            'name'                 => 'Test',
-            'assessment_type'      => 'potential',
-            'role_code'            => 'ICO', // must be null for potential
-            'language'             => 'en',
-            'competency_ids'       => [],
+            'slug' => 'test-potential-role',
+            'name' => 'Test',
+            'assessment_type' => 'potential',
+            'role_code' => 'ICO', // must be null for potential
+            'language' => 'en',
+            'competency_ids' => [],
         ])
         ->assertUnprocessable();
 });
@@ -310,10 +312,10 @@ test('store: mixed standard+potential competencies → 422', function (): void {
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 
     $ico = Role::where('code', 'ICO')->firstOrFail();
-    $standardId = \Illuminate\Support\Facades\DB::table('framework_role_competency')
+    $standardId = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)->value('competency_id');
 
     $mtg = Competency::firstOrCreate(['code' => 'MTG'], [
@@ -325,12 +327,12 @@ test('store: mixed standard+potential competencies → 422', function (): void {
     $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-mixed',
-            'name'                 => 'Test',
-            'assessment_type'      => 'potential',
-            'role_code'            => null,
-            'language'             => 'en',
-            'competency_ids'       => [$standardId, $mtg->id], // mixed types
+            'slug' => 'test-mixed',
+            'name' => 'Test',
+            'assessment_type' => 'potential',
+            'role_code' => null,
+            'language' => 'en',
+            'competency_ids' => [$standardId, $mtg->id], // mixed types
         ])
         ->assertUnprocessable();
 });
@@ -352,12 +354,12 @@ test('store: potential project blocked when MTG/LAT not in catalog → 422 POTEN
     $response = $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-potential-no-catalog',
-            'name'                 => 'Test',
-            'assessment_type'      => 'potential',
-            'role_code'            => null,
-            'language'             => 'en',
-            'competency_ids'       => [],
+            'slug' => 'test-potential-no-catalog',
+            'name' => 'Test',
+            'assessment_type' => 'potential',
+            'role_code' => null,
+            'language' => 'en',
+            'competency_ids' => [],
         ]);
 
     $response->assertUnprocessable();
@@ -386,12 +388,12 @@ test('store: potential blocked when only MTG seeded (partial catalog) → 422 PO
     $response = $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-potential-partial',
-            'name'                 => 'Test',
-            'assessment_type'      => 'potential',
-            'role_code'            => null,
-            'language'             => 'en',
-            'competency_ids'       => [],
+            'slug' => 'test-potential-partial',
+            'name' => 'Test',
+            'assessment_type' => 'potential',
+            'role_code' => null,
+            'language' => 'en',
+            'competency_ids' => [],
         ]);
 
     $response->assertUnprocessable();
@@ -414,12 +416,12 @@ test('store: POTENTIAL_CATALOG_INCOMPLETE runs BEFORE subset cross-field validat
     $response = $this->withToken($token)
         ->postJson('/api/projects', [
             'framework_version_id' => $fv->id,
-            'slug'                 => 'test-order',
-            'name'                 => 'Test',
-            'assessment_type'      => 'potential',
-            'role_code'            => null,
-            'language'             => 'en',
-            'competency_ids'       => [99999], // invalid ID — should not matter
+            'slug' => 'test-order',
+            'name' => 'Test',
+            'assessment_type' => 'potential',
+            'role_code' => null,
+            'language' => 'en',
+            'competency_ids' => [99999], // invalid ID — should not matter
         ]);
 
     $response->assertUnprocessable();
@@ -436,9 +438,9 @@ test('store: webhook_url must be a valid URL when provided', function (): void {
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
     $ico = Role::where('code', 'ICO')->firstOrFail();
-    $competencyId = \Illuminate\Support\Facades\DB::table('framework_role_competency')
+    $competencyId = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)->value('competency_id');
 
     $payload = buildStandardPayload($fv->id, 'ICO', [$competencyId]);

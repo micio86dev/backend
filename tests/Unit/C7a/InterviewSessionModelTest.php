@@ -18,8 +18,8 @@ declare(strict_types=1);
  */
 
 use App\Models\FrameworkVersion;
-use App\Models\InterviewSession;
 use App\Models\IntegrityEvent;
+use App\Models\InterviewSession;
 use App\Models\InterviewSnapshot;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -49,12 +49,13 @@ function makeC7aParticipant(Organization $org, Project $project): Participant
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'c7a-' . uniqid(),
-        'display_name'    => 'C7a Test',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => 'c7a-'.uniqid(),
+        'display_name' => 'C7a Test',
+        'status' => 'in_attesa',
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -65,13 +66,13 @@ function makeC7aSession(Organization $org, Participant $participant, Project $pr
     $resolver->setBypass(false);
 
     return InterviewSession::create(array_merge([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'pending',
+        'provider' => 'heygen',
+        'status' => 'pending',
     ], $attrs));
 }
 
@@ -139,8 +140,8 @@ test('InterviewSession has required fields in $fillable', function (): void {
 // ─── Status enum ──────────────────────────────────────────────────────────────
 
 test('InterviewSession accepts valid status values', function (string $status): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
 
     $resolver = app(TenantResolver::class);
@@ -170,47 +171,47 @@ test('InterviewSession.ended_at is cast as immutable datetime', function (): voi
 // ─── Relations ────────────────────────────────────────────────────────────────
 
 test('InterviewSession belongsTo Participant', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     expect($session->participant)->toBeInstanceOf(Participant::class);
     expect($session->participant->id)->toBe($participant->id);
 });
 
 test('InterviewSession belongsTo Project', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     expect($session->project)->toBeInstanceOf(Project::class);
     expect($session->project->id)->toBe($project->id);
 });
 
 test('InterviewSession belongsTo FrameworkVersion', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     expect($session->frameworkVersion)->toBeInstanceOf(FrameworkVersion::class);
     expect($session->frameworkVersion->id)->toBe($project->framework_version_id);
 });
 
 test('InterviewSession hasMany Utterances', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     Utterance::forceCreate([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        'speaker'              => 'candidate',
-        'text'                 => 'Hello',
-        'ts'                   => now(),
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => 'Hello',
+        'ts' => now(),
     ]);
 
     expect($session->utterances)->toHaveCount(1);
@@ -218,17 +219,17 @@ test('InterviewSession hasMany Utterances', function (): void {
 });
 
 test('InterviewSession hasMany IntegrityEvents', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     IntegrityEvent::forceCreate([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        'kind'                 => 'tab_hidden',
-        'payload'              => '{}',
-        'ts'                   => now(),
+        'organization_id' => $org->id,
+        'kind' => 'tab_hidden',
+        'payload' => '{}',
+        'ts' => now(),
     ]);
 
     expect($session->integrityEvents)->toHaveCount(1);
@@ -236,16 +237,16 @@ test('InterviewSession hasMany IntegrityEvents', function (): void {
 });
 
 test('InterviewSession hasMany InterviewSnapshots', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     InterviewSnapshot::forceCreate([
         'interview_session_id' => $session->id,
-        'organization_id'      => $org->id,
-        's3_key'               => 'test/key.jpg',
-        'taken_at'             => now(),
+        'organization_id' => $org->id,
+        's3_key' => 'test/key.jpg',
+        'taken_at' => now(),
     ]);
 
     expect($session->interviewSnapshots)->toHaveCount(1);
@@ -255,10 +256,10 @@ test('InterviewSession hasMany InterviewSnapshots', function (): void {
 // ─── framework_version_id immutability ────────────────────────────────────────
 
 test('InterviewSession.framework_version_id is copied at creation, not re-derived', function (): void {
-    $org         = makeC7aOrg();
-    $project     = makeC7aProject($org);
+    $org = makeC7aOrg();
+    $project = makeC7aProject($org);
     $participant = makeC7aParticipant($org, $project);
-    $session     = makeC7aSession($org, $participant, $project);
+    $session = makeC7aSession($org, $participant, $project);
 
     // The session must carry its own framework_version_id, not a lazy reference to project.
     expect($session->framework_version_id)->toBe($project->framework_version_id);

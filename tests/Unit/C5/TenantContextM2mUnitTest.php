@@ -25,6 +25,7 @@ declare(strict_types=1);
 use App\Http\Middleware\TenantContextM2m;
 use App\Models\ApiClient;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Auth\RequestGuard;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -48,7 +49,7 @@ function makeTenantContextM2mMiddleware(): TenantContextM2m
 /**
  * A minimal "next" closure that always returns 200.
  */
-function passThroughNext(): \Closure
+function passThroughNext(): Closure
 {
     return fn ($req) => response()->json(['next' => true], 200);
 }
@@ -59,7 +60,7 @@ function passThroughNext(): \Closure
 
 test('W1 — null client (guard returns null) → 401 fail-closed, orgId stays null', function (): void {
     // Arrange: fake the guard so user() returns null
-    $mockGuard = Mockery::mock(\Illuminate\Auth\RequestGuard::class);
+    $mockGuard = Mockery::mock(RequestGuard::class);
     $mockGuard->shouldReceive('user')->once()->andReturn(null);
 
     Auth::shouldReceive('guard')
@@ -96,7 +97,7 @@ test('W1 — client with null organization_id → 401 fail-closed, orgId stays n
     $client->is_active = true;
     $client->abilities = ['participants:read'];
 
-    $mockGuard = Mockery::mock(\Illuminate\Auth\RequestGuard::class);
+    $mockGuard = Mockery::mock(RequestGuard::class);
     $mockGuard->shouldReceive('user')->once()->andReturn($client);
 
     Auth::shouldReceive('guard')
@@ -132,7 +133,7 @@ test('W1 — happy path: bypass=false AND correct orgId after handle()', functio
     $client->is_active = true;
     $client->abilities = ['participants:read'];
 
-    $mockGuard = Mockery::mock(\Illuminate\Auth\RequestGuard::class);
+    $mockGuard = Mockery::mock(RequestGuard::class);
     $mockGuard->shouldReceive('user')->once()->andReturn($client);
 
     Auth::shouldReceive('guard')

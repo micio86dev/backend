@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * ApiClient model (C5 — M2M API Authentication).
@@ -36,10 +37,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $key_hash
  * @property string[]|null $abilities
  * @property bool $is_active
- * @property \Illuminate\Support\Carbon|null $expires_at
- * @property \Illuminate\Support\Carbon|null $last_used_at
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property Carbon|null $expires_at
+ * @property Carbon|null $last_used_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class ApiClient extends Model implements AuthenticatableContract
 {
@@ -78,9 +79,9 @@ class ApiClient extends Model implements AuthenticatableContract
     protected function casts(): array
     {
         return [
-            'abilities'    => 'array',
-            'is_active'    => 'boolean',
-            'expires_at'   => 'datetime',
+            'abilities' => 'array',
+            'is_active' => 'boolean',
+            'expires_at' => 'datetime',
             'last_used_at' => 'datetime',
         ];
     }

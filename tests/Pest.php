@@ -42,16 +42,16 @@ pest()->extend(TestCase::class)
 // Unit tests for C3 models (schema inspection, translatable logic).
 // Uses ->use() to avoid re-declaring TestCase (already in Unit/C2 as ->extend()).
 pest()->extend(TestCase::class)
-    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(RefreshDatabase::class)
     ->in('Unit/Models');
 
 // Feature/Models uses ->use() (not ->extend()) to avoid re-declaring TestCase
 // (Feature/ already extends TestCase above).
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/Models');
 
 // Feature/Seeders — RefreshDatabase for seeder idempotency tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/Seeders');
 
 // Unit tests for C3 services/adapters.
@@ -59,18 +59,18 @@ pest()->extend(TestCase::class)
     ->in('Unit/Services');
 
 // Feature/Api — RefreshDatabase for API + tenant isolation tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/Api');
 
 // ─── C4 Project Configuration ─────────────────────────────────────────────────
 
 // Feature/C4 — RefreshDatabase for schema, seeder-guard, CRUD, RBAC, and invariant tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/C4');
 
 // Unit/C4 — needs TestCase + RefreshDatabase for model guard tests (model events require DB).
 pest()->extend(TestCase::class)
-    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(RefreshDatabase::class)
     ->in('Unit/C4');
 
 // ─── C5 M2M API Authentication ───────────────────────────────────────────────
@@ -81,18 +81,18 @@ pest()->extend(TestCase::class)
     ->in('Unit/C5');
 
 // Feature/C5 — RefreshDatabase for guard, isolation, and revocation tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/C5');
 
 // ─── C6 Participant + SSO Ingress ─────────────────────────────────────────────
 
 // Unit/C6 — needs TestCase + RefreshDatabase (model guard tests require DB).
 pest()->extend(TestCase::class)
-    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(RefreshDatabase::class)
     ->in('Unit/C6');
 
 // Feature/C6 — RefreshDatabase for exchange flow, guard matrix, and isolation tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/C6');
 
 // Arch/C6 — covered by the global Arch extension above (TestCase already in Arch/).
@@ -101,11 +101,11 @@ pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
 
 // Unit/C7a — needs TestCase + RefreshDatabase (model guard tests require DB).
 pest()->extend(TestCase::class)
-    ->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(RefreshDatabase::class)
     ->in('Unit/C7a');
 
 // Feature/C7a — RefreshDatabase for schema, model, lifecycle, and isolation tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/C7a');
 
 // ─── C9 Scoring Engine ────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
 // Unit/Models (C9 schema assertions) — already covered by the Unit/Models block above.
 
 // Feature/Jobs — RefreshDatabase for job guard, failed(), lifecycle, and isolation tests.
-pest()->use(\Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->use(RefreshDatabase::class)
     ->in('Feature/Jobs');
 
 // Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.

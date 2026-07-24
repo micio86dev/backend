@@ -18,6 +18,7 @@ declare(strict_types=1);
 
 use App\Models\ApiClient;
 use App\Models\Organization;
+use App\Models\User;
 use App\Services\ApiKeyGenerator;
 use Illuminate\Support\Facades\Route;
 
@@ -35,12 +36,12 @@ test('valid active key → 200 on auth:api-m2m route', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'expires_at'      => null,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'expires_at' => null,
     ]);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-guard');
 
     $response->assertOk();
@@ -49,7 +50,7 @@ test('valid active key → 200 on auth:api-m2m route', function (): void {
 test('unknown key → 401', function (): void {
     $unknownKey = ApiKeyGenerator::generate();
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $unknownKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$unknownKey])
         ->getJson('/api/test-m2m-guard')
         ->assertUnauthorized();
 });
@@ -60,12 +61,12 @@ test('inactive key → 401', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => false,
-        'expires_at'      => null,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => false,
+        'expires_at' => null,
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-guard')
         ->assertUnauthorized();
 });
@@ -76,12 +77,12 @@ test('expired key → 401', function (): void {
 
     ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'expires_at'      => now()->subHour(),
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'expires_at' => now()->subHour(),
     ]);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $rawKey])
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/test-m2m-guard')
         ->assertUnauthorized();
 });
@@ -93,11 +94,11 @@ test('missing Authorization header → 401', function (): void {
 
 test('JWT string on auth:api-m2m route → 401 (guard non-interchangeability)', function (): void {
     $org = Organization::factory()->create();
-    $user = \App\Models\User::factory()->create(['organization_id' => $org->id]);
+    $user = User::factory()->create(['organization_id' => $org->id]);
     $jwt = auth('api')->login($user);
 
     // A valid human JWT must NOT authenticate on the M2M guard
-    $this->withHeaders(['Authorization' => 'Bearer ' . $jwt])
+    $this->withHeaders(['Authorization' => 'Bearer '.$jwt])
         ->getJson('/api/test-m2m-guard')
         ->assertUnauthorized();
 });

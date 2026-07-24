@@ -16,33 +16,33 @@ declare(strict_types=1);
  */
 
 use App\Exceptions\ImmutableProjectException;
-use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 test('organization_id is NOT in Project fillable', function (): void {
-    $project = new Project();
+    $project = new Project;
     expect($project->getFillable())->not->toContain('organization_id');
 });
 
 test('framework_version_id is cast to integer', function (): void {
-    $project = new Project();
+    $project = new Project;
     $casts = $project->getCasts();
     expect($casts)->toHaveKey('framework_version_id');
     expect($casts['framework_version_id'])->toBe('integer');
 });
 
 test('webhook_secret is cast to encrypted', function (): void {
-    $project = new Project();
+    $project = new Project;
     $casts = $project->getCasts();
     expect($casts)->toHaveKey('webhook_secret');
     expect($casts['webhook_secret'])->toBe('encrypted');
 });
 
 test('webhook_secret is in $hidden', function (): void {
-    $project = new Project();
+    $project = new Project;
     expect($project->getHidden())->toContain('webhook_secret');
 });
 
@@ -202,6 +202,6 @@ test('competencies() is a belongsToMany relation with position pivot', function 
     $project = Project::factory()->create(['framework_version_id' => $fv->id]);
 
     $relation = $project->competencies();
-    expect($relation)->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsToMany::class);
+    expect($relation)->toBeInstanceOf(BelongsToMany::class);
     expect($relation->getPivotColumns())->toContain('position');
 });

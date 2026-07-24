@@ -24,10 +24,10 @@ class CompetencyFactory extends Factory
     public function definition(): array
     {
         return [
-            'code'       => strtoupper($this->faker->unique()->lexify('???')),
-            'type'       => 'standard',
+            'code' => strtoupper($this->faker->unique()->lexify('???')),
+            'type' => 'standard',
             // spatie/laravel-translatable — set JSON directly
-            'name'       => json_encode(['en' => $this->faker->word()]),
+            'name' => json_encode(['en' => $this->faker->word()]),
             'definition' => json_encode(['en' => $this->faker->sentence()]),
         ];
     }

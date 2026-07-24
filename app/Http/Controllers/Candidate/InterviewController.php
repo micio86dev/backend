@@ -41,10 +41,6 @@ class InterviewController extends Controller
 {
     use ResolvesOwnedSession;
 
-    public function __construct(
-        private readonly ProviderSessionService $providerService,
-    ) {}
-
     // =========================================================================
     // POST /api/candidate/interview/start
     // =========================================================================
@@ -80,6 +76,11 @@ class InterviewController extends Controller
 
         $project = $participant->project;
         $pid = $participant->id;
+
+        // Fail-closed: a participant must always resolve to its project (non-null FK).
+        if ($project === null) {
+            return response()->json(['error' => 'project_not_found'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         // (1) Resolve next competency — lowest position not yet in a terminal-completed state.
         $nextCompetency = $this->resolveNextCompetency($pid, $project->id);
@@ -270,6 +271,8 @@ class InterviewController extends Controller
      * leaving the connection in a "transaction is aborted" state. We wrap the INSERT
      * in a DB::transaction() (which uses a SAVEPOINT internally when nested) so that
      * the savepoint is rolled back on violation while the outer connection remains clean.
+     *
+     * @param  array{competency_code: string, question_index: int}  $competency
      */
     private function createOrResumeSession(
         Participant $participant,
@@ -324,16 +327,20 @@ class InterviewController extends Controller
 
         // (b) Teardown OLD session (best-effort, non-fatal) — FIX-1
         // Provider name is required by ProviderToken::fromRef (F1).
-        $oldToken = ProviderToken::fromRef($session->provider, $session->provider_session_ref);
-        try {
-            $provider->teardown($oldToken);
-        } catch (\Throwable $e) {
-            // Non-fatal — log and continue (candidate needs the fresh session)
-            Log::warning('C7a: teardown of old provider session failed (non-fatal)', [
-                'session_id' => $session->id,
-                'old_ref' => $session->provider_session_ref,
-                'error' => $e->getMessage(),
-            ]);
+        // A null provider_session_ref means there is no old provider session to tear down.
+        $oldRef = $session->provider_session_ref;
+        if ($oldRef !== null) {
+            $oldToken = ProviderToken::fromRef($session->provider, $oldRef);
+            try {
+                $provider->teardown($oldToken);
+            } catch (\Throwable $e) {
+                // Non-fatal — log and continue (candidate needs the fresh session)
+                Log::warning('C7a: teardown of old provider session failed (non-fatal)', [
+                    'session_id' => $session->id,
+                    'old_ref' => $oldRef,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         // (c) Persist new ref in a short DB txn (FIX-8: no participant update needed on RESUME)

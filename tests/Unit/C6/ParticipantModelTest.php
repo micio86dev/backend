@@ -76,9 +76,9 @@ test('status default is in_attesa', function (): void {
     $participant = new Participant;
     $participant->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'default-test',
-        'display_name'    => 'Test Candidate',
+        'project_id' => $project->id,
+        'candidate_ref' => 'default-test',
+        'display_name' => 'Test Candidate',
     ]);
     $participant->save();
 
@@ -123,10 +123,10 @@ function createParticipant(Project $project, Organization $org, string $ref): Pa
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => $ref,
-        'display_name'    => 'Test Candidate',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => $ref,
+        'display_name' => 'Test Candidate',
+        'status' => 'in_attesa',
     ]);
     $p->save();
 

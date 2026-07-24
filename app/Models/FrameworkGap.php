@@ -23,11 +23,11 @@ use Illuminate\Database\Eloquent\Model;
  * gap rows on read (e.g. missing_translation with both null, role_no_bars with null competency_code).
  * Nullable string columns need no cast.
  *
- * @property string      $kind
+ * @property string $kind
  * @property string|null $role_code
  * @property string|null $competency_code
  * @property string|null $note
- * @property string      $status
+ * @property string $status
  */
 class FrameworkGap extends Model
 {
