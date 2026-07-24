@@ -42,11 +42,24 @@ class TavusProvider implements ProviderSessionService
     {
         $apiKey = (string) config('interview.tavus.api_key', '');
 
+        // C8 (RV-3): conditionally include conversational_context when the composed prompt is available.
+        // When systemPrompt is null (C7a backward-compatible path), the key is OMITTED entirely —
+        // the outbound body is identical to the pre-C8 shape.
+        // NOTE: 'conversational_context' field name and the tavusapi.com/v2/conversations endpoint
+        // are INFERRED from the C7a scaffold and are NOT verified against live provider docs. Client
+        // confirmation of the real provider contract is required before live deploy. The PR-gated
+        // TavusProviderPayloadTest.php assertion catches any rename immediately (RV-3).
+        $conversationBody = [
+            'competency_code' => $ctx->competencyCode,
+            'question_index' => $ctx->questionIndex,
+        ];
+
+        if ($ctx->systemPrompt !== null) {
+            $conversationBody['conversational_context'] = $ctx->systemPrompt;
+        }
+
         $response = Http::withHeaders(['x-api-key' => $apiKey])
-            ->post(self::BASE_URL.'/conversations', [
-                'competency_code' => $ctx->competencyCode,
-                'question_index' => $ctx->questionIndex,
-            ]);
+            ->post(self::BASE_URL.'/conversations', $conversationBody);
 
         if (! $response->successful()) {
             $this->throwRedacted($apiKey, $response->status(), 'conversation creation failed');

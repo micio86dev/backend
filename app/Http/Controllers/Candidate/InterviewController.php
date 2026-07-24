@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Candidate;
 
+use App\DTOs\Conversation\ComposedPrompt;
+use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ProviderException;
+use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
 use App\Jobs\FinalizeInterview;
+use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
+use App\Services\Conversation\SystemPromptComposer;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
@@ -40,6 +46,10 @@ use Symfony\Component\HttpFoundation\Response;
 class InterviewController extends Controller
 {
     use ResolvesOwnedSession;
+
+    public function __construct(
+        private readonly SystemPromptComposer $composer,
+    ) {}
 
     // =========================================================================
     // POST /api/candidate/interview/start
@@ -89,6 +99,43 @@ class InterviewController extends Controller
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // (FIX W1) Guard: only 'standard' assessment type is supported by the composition engine.
+        // 'potential' and any future types must not reach composition or the degraded bypass.
+        // This check applies on BOTH the fresh-start AND the resume in_corso path.
+        // ($project is guaranteed non-null here: the project_not_found early return above
+        // narrows it, and project_id is a non-nullable FK.)
+        if ($project->assessment_type !== 'standard') {
+            return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
+        //
+        // Failure semantics depend on whether this is a RESUME or a NEW session:
+        //   NEW/pending path  → fail-fast (422); no InterviewSession created; no provider call.
+        //   RESUME in_corso   → degrade gracefully; issue fresh provider session WITHOUT a system
+        //                       prompt (legacy non-adaptive body); log a warning. The candidate
+        //                       must not be locked out of an in-progress interview due to a
+        //                       transient composition failure.
+        //
+        // We peek BEFORE attempting composition so we can determine the correct failure mode
+        // without creating any row or making any provider call.
+        $isResumeInCorso = $this->hasActiveInCorsoSession($pid, $nextCompetency['competency_code']);
+
+        $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
+        if ($compositionResult instanceof JsonResponse) {
+            if (! $isResumeInCorso) {
+                // NEW/pending path — hard fail. No session, no provider call.
+                return $compositionResult;
+            }
+
+            // RESUME in_corso — degrade: proceed with null system prompt.
+            Log::warning('C8: composition failed on resume in_corso path — degrading to legacy non-adaptive body', [
+                'participant_id' => $pid,
+                'competency_code' => $nextCompetency['competency_code'],
+                'composition_error' => $compositionResult->getData(assoc: true)['error'] ?? 'unknown',
+            ]);
+        }
+
         // (2) Create-or-RESUME session row.
         $providerName = $project->provider_override ?? config('interview.provider', 'heygen');
         $session = $this->createOrResumeSession($participant, $project, $nextCompetency, $providerName);
@@ -96,9 +143,23 @@ class InterviewController extends Controller
         // Re-resolve the provider after we know the project override.
         $providerService = $this->resolveProvider($providerName);
 
+        // Build QuestionContext. On the degraded RESUME path, compositionResult is a JsonResponse
+        // (composition failed), so we fall back to null system prompt (no fresh BARS prompt was
+        // composed — do NOT fabricate prompt text) but restore the prompt_version from config
+        // so /start always returns a non-null prompt_version in every 201 response (FIX C1).
+        $systemPrompt = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->text;
+        $promptVersion = ($compositionResult instanceof JsonResponse)
+            ? (string) config('conversation.prompt_version')
+            : $compositionResult->version;
+
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
+            // C8: thread composed prompt and version into QuestionContext (M-3).
+            // On the degraded RESUME path systemPrompt is null (legacy non-adaptive provider
+            // body), but promptVersion is restored from config (FIX C1) — never null in a 201.
+            systemPrompt: $systemPrompt,
+            promptVersion: $promptVersion,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -212,6 +273,81 @@ class InterviewController extends Controller
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    /**
+     * Compose the system prompt for the next competency.
+     *
+     * Returns a ComposedPrompt on success, or a 422 JsonResponse on failure.
+     * This MUST be called BEFORE createOrResumeSession() and BEFORE issue() so that
+     * a composition failure leaves zero InterviewSession rows and makes zero provider calls.
+     *
+     * Failure codes (machine-readable, not localized per BEAI machine-facing response policy):
+     *   - 'composition_error'           → CompositionException (empty indicators / bad role)
+     *   - 'anchor_translation_missing'  → AnchorTranslationMissingException (missing locale text)
+     *
+     * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
+     * RV-3: provider field client confirmation required before live deploy.
+     */
+    private function composePromptForCompetency(
+        ?Project $project,
+        string $competencyCode,
+    ): ComposedPrompt|JsonResponse {
+        if ($project === null) {
+            // Participant has no associated project — treat as composition failure.
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Resolve role_id from project.role_code.
+        // role_code is required for standard assessments; null for potential (deferred — not in C8).
+        $role = Role::where('code', $project->role_code)->first();
+
+        if ($role === null) {
+            // role_code set on project but not found in catalog → composition failure.
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Resolve competency_id from competency_code.
+        $competency = Competency::where('code', $competencyCode)->first();
+
+        if ($competency === null) {
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $budget = (int) config('conversation.followup_budget', 2);
+
+        try {
+            return $this->composer->compose(
+                competencyCode: $competencyCode,
+                roleId: $role->id,
+                competencyId: $competency->id,
+                projectLocale: $project->language,
+                budget: $budget,
+                nudgeMinChars: $project->nudge_min_chars,
+            );
+        } catch (AnchorTranslationMissingException) {
+            return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (CompositionException) {
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Check whether an active in_corso session already exists for this participant + competency.
+     *
+     * Used as a cheap pre-check BEFORE composition so we can decide the correct failure mode:
+     *   - true  → RESUME path → composition failure degrades gracefully (log + null prompt).
+     *   - false → NEW/pending path → composition failure returns 422 immediately.
+     *
+     * A single EXISTS-style count query scoped to (participant_id, competency_code, status=in_corso).
+     * This runs before createOrResumeSession() so it never creates any row.
+     */
+    private function hasActiveInCorsoSession(int $participantId, string $competencyCode): bool
+    {
+        return InterviewSession::where('participant_id', $participantId)
+            ->where('competency_code', $competencyCode)
+            ->where('status', 'in_corso')
+            ->exists();
+    }
 
     /**
      * Resolve the next competency for this participant (lowest position not yet terminal-completed).
@@ -363,7 +499,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $freshToken, $participant->language);
+        return $this->buildSuccessResponse($session, $freshToken, $participant->language, $ctx->promptVersion);
     }
 
     /**
@@ -416,7 +552,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $token, $participant->language);
+        return $this->buildSuccessResponse($session, $token, $participant->language, $ctx->promptVersion);
     }
 
     /**
@@ -468,10 +604,21 @@ class InterviewController extends Controller
      * resolved for the participant's language with a platform-default fallback.
      * The frontend (C7b) consumes them as the SOLE completion-signal source.
      *
+     * C8 (M-3): prompt_version added to question_context for audit/traceability.
+     * Machine-facing field — returned literally in every locale (not localized).
+     *
      * @param  string|null  $language  The participant's language (BCP-ish locale, may be null).
+     * @param  string|null  $promptVersion  Composed prompt template version (C8). On the standard
+     *                                      path this is the composed prompt's version; on the
+     *                                      degraded resume path it falls back to the config
+     *                                      version (FIX C1) so a 201 never carries a null version.
      */
-    private function buildSuccessResponse(InterviewSession $session, ProviderToken $token, ?string $language): JsonResponse
-    {
+    private function buildSuccessResponse(
+        InterviewSession $session,
+        ProviderToken $token,
+        ?string $language,
+        ?string $promptVersion = null,
+    ): JsonResponse {
         [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
 
         return response()->json([
@@ -487,6 +634,9 @@ class InterviewController extends Controller
                 // Machine-facing field names stay literal (snake_case); VALUES are localized.
                 'end_phrase' => $endPhrase,
                 'final_phrase' => $finalPhrase,
+                // C8 (M-3): prompt version for audit and traceability.
+                // Machine-facing: returned literally, never localized.
+                'prompt_version' => $promptVersion,
             ],
         ], Response::HTTP_CREATED);
     }

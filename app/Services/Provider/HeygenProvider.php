@@ -49,11 +49,24 @@ class HeygenProvider implements ProviderSessionService
         $apiKey = (string) config('interview.heygen.api_key', '');
 
         // Step 1: create context
+        // C8 (RV-3): conditionally include system_prompt when the composed prompt is available.
+        // When systemPrompt is null (C7a backward-compatible path), the key is OMITTED entirely —
+        // the outbound body is identical to the pre-C8 shape.
+        // NOTE: 'system_prompt' field name and the liveavatar.com/v1/contexts endpoint are INFERRED
+        // from the C7a scaffold and are NOT verified against live provider docs. Client confirmation
+        // of the real provider contract is required before live deploy. The PR-gated
+        // HeygenProviderPayloadTest.php assertion catches any rename immediately (RV-3).
+        $contextBody = [
+            'competency_code' => $ctx->competencyCode,
+            'question_index' => $ctx->questionIndex,
+        ];
+
+        if ($ctx->systemPrompt !== null) {
+            $contextBody['system_prompt'] = $ctx->systemPrompt;
+        }
+
         $ctxResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/contexts', [
-                'competency_code' => $ctx->competencyCode,
-                'question_index' => $ctx->questionIndex,
-            ]);
+            ->post(self::BASE_URL.'/contexts', $contextBody);
 
         if (! $ctxResponse->successful()) {
             $this->throwRedacted($apiKey, $ctxResponse->status(), 'context creation failed');

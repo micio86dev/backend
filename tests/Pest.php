@@ -108,6 +108,18 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C7a');
 
+// ─── C8 Interview Conversation ───────────────────────────────────────────────
+
+// Unit/C8 — needs TestCase + RefreshDatabase (BarsIndicatorLoader, SystemPromptComposer
+// unit tests hit the DB via factories for isolation scenarios).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/C8');
+
+// Feature/C8 — RefreshDatabase for controller composition wiring + provider payload tests.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C8');
+
 // ─── C9 Scoring Engine ────────────────────────────────────────────────────────
 
 // Unit/Models (C9 schema assertions) — already covered by the Unit/Models block above.

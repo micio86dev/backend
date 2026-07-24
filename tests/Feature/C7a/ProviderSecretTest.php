@@ -17,11 +17,13 @@ declare(strict_types=1);
  * REQ: API key secret non-exposure (C7a task 14.3)
  */
 
+use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +59,24 @@ function secretProjectWithComp(Organization $org): array
         'competency_id' => $comp->id,
         'position' => 1,
     ]);
+
+    // C8 (M-3): seed Role + BarsIndicator so composition succeeds at /start.
+    // firstOrCreate avoids unique-constraint violations when called multiple times for the same role_code.
+    $role = Role::firstOrCreate(['code' => $project->role_code], [
+        'name' => ['en' => 'Secret test role'],
+        'responsibilities' => ['en' => 'Secret test responsibilities'],
+    ]);
+    $ind = new BarsIndicator;
+    $ind->forceFill([
+        'role_id' => $role->id,
+        'competency_id' => $comp->id,
+        'text' => ['en' => 'Secret test indicator'],
+        'anchor_5' => ['en' => 'Excellent'],
+        'anchor_3' => ['en' => 'Adequate'],
+        'anchor_1' => ['en' => 'Insufficient'],
+        'position' => 0,
+    ]);
+    $ind->save();
 
     return [$project, $comp];
 }
@@ -178,6 +198,20 @@ test('14.3: /start response does NOT contain TAVUS_API_KEY value', function (): 
         'competency_id' => $comp->id,
         'position' => 1,
     ]);
+
+    // C8 (M-3): seed Role + BarsIndicator so composition succeeds at /start.
+    $role = Role::factory()->create(['code' => $project->role_code]);
+    $ind = new BarsIndicator;
+    $ind->forceFill([
+        'role_id' => $role->id,
+        'competency_id' => $comp->id,
+        'text' => ['en' => 'Tavus secret test indicator'],
+        'anchor_5' => ['en' => 'Excellent'],
+        'anchor_3' => ['en' => 'Adequate'],
+        'anchor_1' => ['en' => 'Insufficient'],
+        'position' => 0,
+    ]);
+    $ind->save();
 
     $participant = secretParticipant($org, $project, 'in_attesa');
     $token = secretBearer($participant);

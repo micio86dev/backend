@@ -21,10 +21,12 @@ declare(strict_types=1);
  * REQ: interview-frontend addendum — localized question_context phrases
  */
 
+use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -50,6 +52,9 @@ function phrasesProjectWithCompetencies(Organization $org, int $count = 1): arra
 
     $project = Project::factory()->create(['status' => 'active']);
 
+    // C8 (M-3): seed a Role matching project.role_code so SystemPromptComposer can succeed.
+    $role = Role::factory()->create(['code' => $project->role_code]);
+
     $competencies = [];
     for ($i = 0; $i < $count; $i++) {
         $comp = Competency::factory()->create();
@@ -58,6 +63,20 @@ function phrasesProjectWithCompetencies(Organization $org, int $count = 1): arra
             'competency_id' => $comp->id,
             'position' => $i + 1,
         ]);
+
+        // Seed a minimal BarsIndicator (EN) so composition succeeds for EN projects.
+        $ind = new BarsIndicator;
+        $ind->forceFill([
+            'role_id' => $role->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "Phrases fixture indicator {$i}"],
+            'anchor_5' => ['en' => "Excellent {$i}"],
+            'anchor_3' => ['en' => "Adequate {$i}"],
+            'anchor_1' => ['en' => "Insufficient {$i}"],
+            'position' => 0,
+        ]);
+        $ind->save();
+
         $competencies[] = $comp;
     }
 
