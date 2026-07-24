@@ -41,11 +41,12 @@ function lifecycleAdminUser(Organization $org): array
     $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
     $token = auth('api')->login($user);
+
     return ['user' => $user, 'token' => $token];
 }
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 // ---- Immutability tests ----
@@ -59,9 +60,9 @@ test('PATCH active project: cannot change assessment_type → 422', function ():
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'active',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
+        'status' => 'active',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
     ]);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
@@ -78,8 +79,8 @@ test('PATCH active project: cannot change role_code → 422', function (): void 
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'active',
-        'role_code'            => 'ICO',
+        'status' => 'active',
+        'role_code' => 'ICO',
     ]);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
@@ -96,8 +97,8 @@ test('PATCH archived project: cannot change assessment_type → 422', function (
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'archived',
-        'assessment_type'      => 'standard',
+        'status' => 'archived',
+        'assessment_type' => 'standard',
     ]);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
@@ -114,7 +115,7 @@ test('PATCH active project: non-immutable field (name) still works → 200', fun
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'status'               => 'active',
+        'status' => 'active',
     ]);
 
     $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
@@ -253,7 +254,7 @@ test('slug reuse after soft-delete same org same slug → 201', function (): voi
     // Create project with slug "reusable-slug"
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
-        'slug'                 => 'reusable-slug',
+        'slug' => 'reusable-slug',
     ]);
 
     // Soft-delete it
@@ -264,11 +265,11 @@ test('slug reuse after soft-delete same org same slug → 201', function (): voi
     $fv2 = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv2->id,
-        'slug'                 => 'reusable-slug',
-        'name'                 => 'Recycled Slug Project',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'reusable-slug',
+        'name' => 'Recycled Slug Project',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertCreated();
 });

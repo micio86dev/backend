@@ -39,6 +39,7 @@ function routeProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -47,12 +48,13 @@ function routeParticipant(Organization $org, Project $project, string $status = 
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'route-' . uniqid(),
-        'display_name'    => 'Route Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'route-'.uniqid(),
+        'display_name' => 'Route Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -113,13 +115,13 @@ test('15.1: POST /start authenticated in_attesa participant with no competencies
     Http::fake();
     Queue::fake();
 
-    $org         = routeOrg();
-    $project     = routeProject($org);  // no competencies added
+    $org = routeOrg();
+    $project = routeProject($org);  // no competencies added
     $participant = routeParticipant($org, $project, 'in_attesa');
-    $token       = routeBearer($participant);
+    $token = routeBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start');
 
     // 422 = no_competency_remaining — route reached InterviewController::start()
@@ -130,13 +132,13 @@ test('15.1: POST /end authenticated with missing session_id → 422 (reaches Int
     Http::fake();
     Queue::fake();
 
-    $org         = routeOrg();
-    $project     = routeProject($org);
+    $org = routeOrg();
+    $project = routeProject($org);
     $participant = routeParticipant($org, $project, 'in_corso');
-    $token       = routeBearer($participant);
+    $token = routeBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/end', [
             // 'session_id' missing — validation error
             'ended_reason' => 'completed',
@@ -149,10 +151,10 @@ test('15.1: POST /end authenticated with missing session_id → 422 (reaches Int
 // ─── Phase 15.2: Middleware stack order ──────────────────────────────────────
 
 test('15.2: ParticipantStatusGuard blocks terminal participants on /interview routes (nested only)', function (): void {
-    $org         = routeOrg();
-    $project     = routeProject($org);
+    $org = routeOrg();
+    $project = routeProject($org);
     $participant = routeParticipant($org, $project, 'completato');
-    $token       = routeBearer($participant);
+    $token = routeBearer($participant);
 
     // All 5 interview sub-routes must return 403 for terminal participants
     $routes = [
@@ -165,7 +167,7 @@ test('15.2: ParticipantStatusGuard blocks terminal participants on /interview ro
 
     foreach ($routes as [$method, $uri, $data]) {
         $response = $this
-            ->withHeaders(['Authorization' => 'Bearer ' . $token])
+            ->withHeaders(['Authorization' => 'Bearer '.$token])
             ->postJson($uri, $data);
 
         expect($response->status())->toBe(403, "Expected 403 on {$uri} for terminal participant");
@@ -173,13 +175,13 @@ test('15.2: ParticipantStatusGuard blocks terminal participants on /interview ro
 });
 
 test('15.2: ParticipantStatusGuard does NOT block terminal participants on GET /api/candidate/session (FIX-7)', function (): void {
-    $org         = routeOrg();
-    $project     = routeProject($org);
+    $org = routeOrg();
+    $project = routeProject($org);
     $participant = routeParticipant($org, $project, 'completato');
-    $token       = routeBearer($participant);
+    $token = routeBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/api/candidate/session');
 
     // Guard is NOT on this route — 200 OK (not 403)

@@ -34,8 +34,8 @@ final class CompetencyNormalizer
     /**
      * Normalize a competency entry into a CompetencyDTO with BARS indicators.
      *
-     * @param array<string, mixed>       $competencyEntry  One competency record (with or without 'bars' key).
-     * @param list<array<string, mixed>>|null $barsArray   BARS indicators (split shape) or null (unified shape).
+     * @param  array<string, mixed>  $competencyEntry  One competency record (with or without 'bars' key).
+     * @param  list<array<string, mixed>>|null  $barsArray  BARS indicators (split shape) or null (unified shape).
      */
     public function normalize(array $competencyEntry, ?array $barsArray): CompetencyDTO
     {
@@ -54,7 +54,7 @@ final class CompetencyNormalizer
     }
 
     /**
-     * @param list<array<string, mixed>> $barsArray
+     * @param  list<array<string, mixed>>  $barsArray
      * @return list<IndicatorDTO>
      */
     private function normalizeBars(array $barsArray): array

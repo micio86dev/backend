@@ -31,9 +31,9 @@ function makeSsoM2mClient(Organization $org, array $abilities = ['participants:c
     $rawKey = ApiKeyGenerator::generate();
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
-        'key_hash'        => ApiKeyGenerator::hash($rawKey),
-        'is_active'       => true,
-        'abilities'       => $abilities,
+        'key_hash' => ApiKeyGenerator::hash($rawKey),
+        'is_active' => true,
+        'abilities' => $abilities,
     ]);
 
     return ['client' => $client, 'key' => $rawKey];
@@ -55,10 +55,10 @@ function makeSsoParticipant(Project $project, Organization $org, ?string $ref = 
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => $ref ?? 'ref-' . uniqid(),
-        'display_name'    => 'Test Candidate',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => $ref ?? 'ref-'.uniqid(),
+        'display_name' => 'Test Candidate',
+        'status' => 'in_attesa',
     ]);
     $p->save();
 
@@ -70,15 +70,15 @@ function makeSsoParticipant(Project $project, Organization $org, ?string $ref = 
 // ---------------------------------------------------------------------------
 
 test('store creates participant with organization_id from project (not from request)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeSsoProject($org);
-    $m2m     = makeSsoM2mClient($org);
+    $m2m = makeSsoM2mClient($org);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $m2m['key']])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
         ->postJson('/api/m2m/participants', [
-            'project_id'      => $project->id,
-            'candidate_ref'   => 'cand-001',
-            'display_name'    => 'Test Candidate',
+            'project_id' => $project->id,
+            'candidate_ref' => 'cand-001',
+            'display_name' => 'Test Candidate',
             'organization_id' => 99999, // should be ignored
         ]);
 
@@ -92,16 +92,16 @@ test('store creates participant with organization_id from project (not from requ
 });
 
 test('store cross-org project_id → 404', function (): void {
-    $orgA    = Organization::factory()->create();
-    $orgB    = Organization::factory()->create();
-    $m2mA    = makeSsoM2mClient($orgA);
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $m2mA = makeSsoM2mClient($orgA);
     $projectB = makeSsoProject($orgB);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $m2mA['key']])
+    $this->withHeaders(['Authorization' => 'Bearer '.$m2mA['key']])
         ->postJson('/api/m2m/participants', [
-            'project_id'    => $projectB->id,
+            'project_id' => $projectB->id,
             'candidate_ref' => 'cand-001',
-            'display_name'  => 'Test',
+            'display_name' => 'Test',
         ])
         ->assertNotFound();
 });
@@ -111,16 +111,16 @@ test('store cross-org project_id → 404', function (): void {
 // ---------------------------------------------------------------------------
 
 test('index returns only participants from caller org (Org B participants absent)', function (): void {
-    $orgA    = Organization::factory()->create();
-    $orgB    = Organization::factory()->create();
-    $m2mA    = makeSsoM2mClient($orgA);
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $m2mA = makeSsoM2mClient($orgA);
     $projectA = makeSsoProject($orgA);
     $projectB = makeSsoProject($orgB);
 
     $pA = makeSsoParticipant($projectA, $orgA, 'ref-a');
     $pB = makeSsoParticipant($projectB, $orgB, 'ref-b');
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $m2mA['key']])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$m2mA['key']])
         ->getJson('/api/m2m/participants');
 
     $response->assertOk();
@@ -135,39 +135,39 @@ test('index returns only participants from caller org (Org B participants absent
 // ---------------------------------------------------------------------------
 
 test('show cross-tenant → 404', function (): void {
-    $orgA    = Organization::factory()->create();
-    $orgB    = Organization::factory()->create();
-    $m2mA    = makeSsoM2mClient($orgA);
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $m2mA = makeSsoM2mClient($orgA);
     $projectB = makeSsoProject($orgB);
-    $pB      = makeSsoParticipant($projectB, $orgB);
+    $pB = makeSsoParticipant($projectB, $orgB);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $m2mA['key']])
-        ->getJson('/api/m2m/participants/' . $pB->id)
+    $this->withHeaders(['Authorization' => 'Bearer '.$m2mA['key']])
+        ->getJson('/api/m2m/participants/'.$pB->id)
         ->assertNotFound();
 });
 
 test('show same org → 200', function (): void {
-    $org     = Organization::factory()->create();
-    $m2m     = makeSsoM2mClient($org);
+    $org = Organization::factory()->create();
+    $m2m = makeSsoM2mClient($org);
     $project = makeSsoProject($org);
-    $p       = makeSsoParticipant($project, $org);
+    $p = makeSsoParticipant($project, $org);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $m2m['key']])
-        ->getJson('/api/m2m/participants/' . $p->id)
+    $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
+        ->getJson('/api/m2m/participants/'.$p->id)
         ->assertOk()
         ->assertJsonPath('data.id', $p->id);
 });
 
 test('missing participants:create ability → 403 on store', function (): void {
-    $org     = Organization::factory()->create();
-    $m2m     = makeSsoM2mClient($org, ['participants:read']); // no create
+    $org = Organization::factory()->create();
+    $m2m = makeSsoM2mClient($org, ['participants:read']); // no create
     $project = makeSsoProject($org);
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $m2m['key']])
+    $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
         ->postJson('/api/m2m/participants', [
-            'project_id'    => $project->id,
+            'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
-            'display_name'  => 'Test',
+            'display_name' => 'Test',
         ])
         ->assertForbidden();
 });
@@ -176,7 +176,7 @@ test('missing participants:read ability → 403 on index', function (): void {
     $org = Organization::factory()->create();
     $m2m = makeSsoM2mClient($org, ['participants:create']); // no read
 
-    $this->withHeaders(['Authorization' => 'Bearer ' . $m2m['key']])
+    $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
         ->getJson('/api/m2m/participants')
         ->assertForbidden();
 });

@@ -24,13 +24,13 @@ use Spatie\Translatable\HasTranslations;
  * translation_gap: true when any of the four translatable fields lacks an IT authoring translation.
  * Detected via hasTranslation('field', 'it') — NOT by testing empty value.
  *
- * @property int    $role_id
- * @property int    $competency_id
- * @property string $text       (resolved via current locale)
- * @property string $anchor_5   (resolved via current locale)
- * @property string $anchor_3   (resolved via current locale)
- * @property string $anchor_1   (resolved via current locale)
- * @property int    $position
+ * @property int $role_id
+ * @property int $competency_id
+ * @property string $text (resolved via current locale)
+ * @property string $anchor_5 (resolved via current locale)
+ * @property string $anchor_3 (resolved via current locale)
+ * @property string $anchor_1 (resolved via current locale)
+ * @property int $position
  */
 class BarsIndicator extends Model
 {

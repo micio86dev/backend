@@ -31,7 +31,7 @@ class FrameworkVersionFactory extends Factory
     {
         return [
             'organization_id' => Organization::factory(),
-            'version' => 'v' . $this->faker->unique()->numerify('#.#.#'),
+            'version' => 'v'.$this->faker->unique()->numerify('#.#.#'),
             'label' => $this->faker->optional()->sentence(3),
             // is_locked defaults to false in the DB — do NOT set it here via mass-assign.
         ];

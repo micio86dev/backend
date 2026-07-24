@@ -27,50 +27,50 @@ function makeLangProject(Organization $org, string $language = 'it'): Project
     $resolver->setBypass(false);
 
     return Project::factory()->create([
-        'status'          => 'active',
-        'role_code'       => 'ICO',
+        'status' => 'active',
+        'role_code' => 'ICO',
         'assessment_type' => 'standard',
-        'language'        => $language,
-        'goes_live_at'    => null,
-        'deadline_at'     => null,
+        'language' => $language,
+        'goes_live_at' => null,
+        'deadline_at' => null,
     ]);
 }
 
 test('lang claim present → participant.language = claim lang', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLangProject($org, 'it');
-    $ref     = 'lang-test-claim';
+    $ref = 'lang-test-claim';
 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => 'fr',  // explicit lang in claim
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => 'fr',  // explicit lang in claim
     ]);
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     $participant = Participant::where('candidate_ref', $ref)->first();
     expect($participant->language)->toBe('fr');
 });
 
 test('lang claim absent (null) → participant.language = project.language', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLangProject($org, 'it');
-    $ref     = 'lang-test-project';
+    $ref = 'lang-test-project';
 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => null,  // no lang claim
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => null,  // no lang claim
     ]);
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     $participant = Participant::where('candidate_ref', $ref)->first();
     // Falls back to project.language = 'it'
@@ -78,20 +78,20 @@ test('lang claim absent (null) → participant.language = project.language', fun
 });
 
 test('stored language is never null after exchange', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLangProject($org, 'en');
-    $ref     = 'lang-test-notnull';
+    $ref = 'lang-test-notnull';
 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => null,
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => null,
     ]);
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     $participant = Participant::where('candidate_ref', $ref)->first();
     expect($participant->language)->not->toBeNull();

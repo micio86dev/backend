@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Models\Project;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -53,7 +54,7 @@ class UpdateProjectRequest extends FormRequest
      */
     public function rules(): array
     {
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = $this->user();
         $orgId = $user->organization_id;
 
@@ -73,21 +74,21 @@ class UpdateProjectRequest extends FormRequest
                     ->whereNull('deleted_at')
                     ->ignore($project?->id),
             ],
-            'name'                       => ['sometimes', 'string', 'max:255'],
-            'assessment_type'            => ['sometimes', 'string', Rule::in(['standard', 'potential'])],
-            'role_code'                  => ['nullable', 'string'],
-            'language'                   => ['sometimes', 'string', Rule::in($supportedLocales)],
+            'name' => ['sometimes', 'string', 'max:255'],
+            'assessment_type' => ['sometimes', 'string', Rule::in(['standard', 'potential'])],
+            'role_code' => ['nullable', 'string'],
+            'language' => ['sometimes', 'string', Rule::in($supportedLocales)],
             // Approved status enum: draft|active|archived (no gone_live)
-            'status'                     => ['sometimes', 'string', Rule::in(['draft', 'active', 'archived'])],
-            'competency_ids'             => ['sometimes', 'nullable', 'array'],
-            'competency_ids.*'           => ['integer'],
+            'status' => ['sometimes', 'string', Rule::in(['draft', 'active', 'archived'])],
+            'competency_ids' => ['sometimes', 'nullable', 'array'],
+            'competency_ids.*' => ['integer'],
             'pause_every_n_competencies' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:255'],
-            'nudge_min_chars'            => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
-            'exit_redirect_url'          => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
-            'webhook_url'                => ['sometimes', 'nullable', 'url', 'max:2048'],
-            'webhook_secret'             => ['sometimes', 'nullable', 'string', 'max:1024'],
-            'deadline_at'                => ['sometimes', 'nullable', 'date'],
-            'goes_live_at'               => ['sometimes', 'nullable', 'date'],
+            'nudge_min_chars' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
+            'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
+            'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
+            'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
+            'deadline_at' => ['sometimes', 'nullable', 'date'],
+            'goes_live_at' => ['sometimes', 'nullable', 'date'],
         ];
 
         // framework_version_id is immutable from creation — prohibited in ALL PATCH requests.
@@ -115,10 +116,11 @@ class UpdateProjectRequest extends FormRequest
             $project = Project::find((int) $this->route('project'));
             if ($project === null) {
                 $v->errors()->add('project', 'Project not found.');
+
                 return;
             }
 
-            $currentStatus   = $project->status;
+            $currentStatus = $project->status;
             $requestedStatus = $this->input('status', $currentStatus);
 
             // ── Immutability gate ────────────────────────────────────────────

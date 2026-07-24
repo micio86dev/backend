@@ -7,6 +7,7 @@ namespace App\Http\Controllers\M2m;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ApiClientResource;
 use App\Models\ApiClient;
+use App\Models\User;
 use App\Services\AbilitiesValidator;
 use App\Services\ApiKeyGenerator;
 use Illuminate\Http\JsonResponse;
@@ -51,8 +52,8 @@ final class ApiClientController extends Controller
         $this->authorize('create', ApiClient::class);
 
         $validated = $request->validate([
-            'name'       => ['required', 'string', 'max:255'],
-            'abilities'  => ['required', 'array'],
+            'name' => ['required', 'string', 'max:255'],
+            'abilities' => ['required', 'array'],
             'abilities.*' => ['required', 'string'],
             'expires_at' => ['nullable', 'date', 'after:now'],
         ]);
@@ -61,14 +62,14 @@ final class ApiClientController extends Controller
         if (! AbilitiesValidator::validate($validated['abilities'])) {
             return response()->json([
                 'message' => 'The given data was invalid.',
-                'errors'  => ['abilities' => ['One or more abilities are not in the allowed set.']],
+                'errors' => ['abilities' => ['One or more abilities are not in the allowed set.']],
             ], 422);
         }
 
         $rawKey = ApiKeyGenerator::generate();
         $hash = ApiKeyGenerator::hash($rawKey);
 
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = $request->user();
 
         // key_hash is NOT in $fillable (security invariant: cannot be mass-assigned).
@@ -76,15 +77,15 @@ final class ApiClientController extends Controller
         $client = new ApiClient;
         $client->forceFill([
             'organization_id' => $user->organization_id,
-            'name'            => $validated['name'],
-            'abilities'       => $validated['abilities'],
-            'expires_at'      => $validated['expires_at'] ?? null,
-            'key_hash'        => $hash,
+            'name' => $validated['name'],
+            'abilities' => $validated['abilities'],
+            'expires_at' => $validated['expires_at'] ?? null,
+            'key_hash' => $hash,
         ]);
         $client->save();
 
         return response()->json([
-            'data'    => new ApiClientResource($client),
+            'data' => new ApiClientResource($client),
             'api_key' => $rawKey,  // returned ONCE — never stored raw, never logged
         ], 201);
     }
@@ -101,7 +102,7 @@ final class ApiClientController extends Controller
     {
         $this->authorize('viewAny', ApiClient::class);
 
-        /** @var \App\Models\User $user */
+        /** @var User $user */
         $user = $request->user();
 
         $clients = ApiClient::where('organization_id', $user->organization_id)
@@ -139,7 +140,7 @@ final class ApiClientController extends Controller
                 ? max(1, $apiClient->expires_at->diffInSeconds(now()))
                 : 365 * 24 * 3600;
 
-            Cache::put('client_revoked:' . $apiClient->id, true, $ttl);
+            Cache::put('client_revoked:'.$apiClient->id, true, $ttl);
         } catch (\Throwable) {
             // Non-fatal — DB is already updated; Redis is a fast-path optimisation.
         }

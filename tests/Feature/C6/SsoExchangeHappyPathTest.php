@@ -17,7 +17,6 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
-use Illuminate\Support\Facades\Cache;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 // ---------------------------------------------------------------------------
@@ -31,12 +30,12 @@ function makeExchangeProject(Organization $org, array $attrs = []): Project
     $resolver->setBypass(false);
 
     return Project::factory()->create(array_merge([
-        'status'          => 'active',
+        'status' => 'active',
         'assessment_type' => 'standard',
-        'role_code'       => 'ICO',
-        'language'        => 'en',
-        'goes_live_at'    => null,
-        'deadline_at'     => null,
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'goes_live_at' => null,
+        'deadline_at' => null,
     ], $attrs));
 }
 
@@ -44,11 +43,11 @@ function mintValidSsoLink(Project $project, Organization $org, string $ref = 'ca
 {
     return CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
-        'display_name'  => $display,
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => $project->role_code,
-        'lang'          => 'en',
+        'display_name' => $display,
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => $project->role_code,
+        'lang' => 'en',
     ]);
 }
 
@@ -57,11 +56,11 @@ function mintValidSsoLink(Project $project, Organization $org, string $ref = 'ca
 // ---------------------------------------------------------------------------
 
 test('happy path: valid sso-link → 200 + candidate JWT', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProject($org);
-    $token   = mintValidSsoLink($project, $org, 'cand-happy');
+    $token = mintValidSsoLink($project, $org, 'cand-happy');
 
-    $response = $this->getJson('/api/sso/exchange?token=' . $token);
+    $response = $this->getJson('/api/sso/exchange?token='.$token);
 
     $response->assertOk()
         ->assertJsonStructure(['access_token']);
@@ -74,11 +73,11 @@ test('happy path: valid sso-link → 200 + candidate JWT', function (): void {
 });
 
 test('happy path: participant is created with status=in_attesa', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProject($org);
-    $token   = mintValidSsoLink($project, $org, 'cand-attesa');
+    $token = mintValidSsoLink($project, $org, 'cand-attesa');
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     $participant = Participant::where('project_id', $project->id)
         ->where('candidate_ref', 'cand-attesa')
@@ -91,15 +90,15 @@ test('happy path: participant is created with status=in_attesa', function (): vo
 });
 
 test('happy path: jti consumed after exchange (replay → 401)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProject($org);
-    $token   = mintValidSsoLink($project, $org, 'cand-jti-test');
+    $token = mintValidSsoLink($project, $org, 'cand-jti-test');
 
     // First exchange — succeeds
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     // Same token again — jti already consumed → 401
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertUnauthorized();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertUnauthorized();
 });
 
 // ---------------------------------------------------------------------------
@@ -107,16 +106,16 @@ test('happy path: jti consumed after exchange (replay → 401)', function (): vo
 // ---------------------------------------------------------------------------
 
 test('re-exchange while in_attesa → 200 + exactly one row + display_name updated', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProject($org);
 
     // First exchange — creates the participant
     $token1 = mintValidSsoLink($project, $org, 'cand-idempotent', 'First Name');
-    $this->getJson('/api/sso/exchange?token=' . $token1)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token1)->assertOk();
 
     // Second exchange with updated display_name — should update, not create new row
     $token2 = mintValidSsoLink($project, $org, 'cand-idempotent', 'Second Name');
-    $this->getJson('/api/sso/exchange?token=' . $token2)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token2)->assertOk();
 
     // Exactly one row
     $count = Participant::where('project_id', $project->id)
@@ -133,39 +132,39 @@ test('re-exchange while in_attesa → 200 + exactly one row + display_name updat
 });
 
 test('language resolved from sso-link lang claim', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProject($org, ['language' => 'it']);
 
     // lang claim is 'es'
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-lang-es',
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => $project->role_code,
-        'lang'          => 'es', // explicit lang
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => $project->role_code,
+        'lang' => 'es', // explicit lang
     ]);
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     $participant = Participant::where('candidate_ref', 'cand-lang-es')->first();
     expect($participant->language)->toBe('es');
 });
 
 test('language falls back to project.language when lang claim absent', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeExchangeProject($org, ['language' => 'it']);
 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-lang-fallback',
-        'display_name'  => 'Test',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => $project->role_code,
-        'lang'          => null, // no lang
+        'display_name' => 'Test',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => $project->role_code,
+        'lang' => null, // no lang
     ]);
 
-    $this->getJson('/api/sso/exchange?token=' . $token)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 
     $participant = Participant::where('candidate_ref', 'cand-lang-fallback')->first();
     // Falls back to project.language = 'it'

@@ -32,41 +32,41 @@ function makeConcurrentProject(Organization $org): Project
     $resolver->setBypass(false);
 
     return Project::factory()->create([
-        'status'          => 'active',
+        'status' => 'active',
         'assessment_type' => 'standard',
-        'role_code'       => 'ICO',
-        'language'        => 'en',
-        'goes_live_at'    => null,
-        'deadline_at'     => null,
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'goes_live_at' => null,
+        'deadline_at' => null,
     ]);
 }
 
 test('two sequential exchange requests for same (project_id, candidate_ref) → exactly one row', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeConcurrentProject($org);
-    $ref     = 'concurrent-cand';
+    $ref = 'concurrent-cand';
 
     // First exchange
     $token1 = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
-        'display_name'  => 'First',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'First',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ]);
-    $this->getJson('/api/sso/exchange?token=' . $token1)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token1)->assertOk();
 
     // Second exchange (different jti, same candidate_ref) — simulates a second link sent
     $token2 = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
-        'display_name'  => 'Second',
-        'project_id'    => $project->id,
-        'org_id'        => $org->id,
-        'role_code'     => 'ICO',
-        'lang'          => 'en',
+        'display_name' => 'Second',
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => 'ICO',
+        'lang' => 'en',
     ]);
-    $this->getJson('/api/sso/exchange?token=' . $token2)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$token2)->assertOk();
 
     // Exactly one row — no duplicate key error, upsert worked
     $count = Participant::where('project_id', $project->id)
@@ -77,10 +77,10 @@ test('two sequential exchange requests for same (project_id, candidate_ref) → 
 });
 
 test('ON CONFLICT upsert on (project_id, candidate_ref) — direct DB test', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeConcurrentProject($org);
-    $ref     = 'direct-upsert-test';
-    $now     = now()->toDateTimeString();
+    $ref = 'direct-upsert-test';
+    $now = now()->toDateTimeString();
 
     // Insert first row
     DB::statement("

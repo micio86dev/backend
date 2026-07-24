@@ -41,19 +41,19 @@ class ParticipantResource extends JsonResource
         $project = $participant->project;
 
         return [
-            'id'            => $participant->id,
+            'id' => $participant->id,
             'candidate_ref' => $participant->candidate_ref,
-            'display_name'  => $participant->display_name,
-            'role_code'     => $participant->role_code,
-            'language'      => $participant->language,
-            'status'        => $participant->status,
-            'started_at'    => $participant->started_at?->toISOString(),
-            'completed_at'  => $participant->completed_at?->toISOString(),
-            'created_at'    => $participant->created_at?->toISOString(),
-            'project'       => $project ? [
-                'id'              => $project->id,
-                'role_code'       => $project->role_code,
-                'language'        => $project->language,
+            'display_name' => $participant->display_name,
+            'role_code' => $participant->role_code,
+            'language' => $participant->language,
+            'status' => $participant->status,
+            'started_at' => $participant->started_at?->toISOString(),
+            'completed_at' => $participant->completed_at?->toISOString(),
+            'created_at' => $participant->created_at?->toISOString(),
+            'project' => $project ? [
+                'id' => $project->id,
+                'role_code' => $project->role_code,
+                'language' => $project->language,
                 'assessment_type' => $project->assessment_type,
                 'exit_redirect_url' => $project->exit_redirect_url,
             ] : null,

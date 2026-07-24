@@ -33,9 +33,9 @@ function makeLifecycleParticipant(Project $project, Organization $org, array $ov
     $p = new Participant;
     $p->forceFill(array_merge([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'lc-ref-' . uniqid(),
-        'display_name'    => 'LC Test',
+        'project_id' => $project->id,
+        'candidate_ref' => 'lc-ref-'.uniqid(),
+        'display_name' => 'LC Test',
     ], $overrides));
     $p->save();
 
@@ -43,24 +43,24 @@ function makeLifecycleParticipant(Project $project, Organization $org, array $ov
 }
 
 test('new participant has status=in_attesa by default', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLifecycleProject($org);
-    $p       = makeLifecycleParticipant($project, $org);
+    $p = makeLifecycleParticipant($project, $org);
 
     expect($p->status)->toBe('in_attesa');
 });
 
 test('new participant has null started_at and completed_at', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLifecycleProject($org);
-    $p       = makeLifecycleParticipant($project, $org);
+    $p = makeLifecycleParticipant($project, $org);
 
     expect($p->started_at)->toBeNull();
     expect($p->completed_at)->toBeNull();
 });
 
 test('C6 code path (create) never sets status beyond in_attesa', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLifecycleProject($org);
 
     // C6 creates participants via forceFill — should not accept anything beyond in_attesa
@@ -71,7 +71,7 @@ test('C6 code path (create) never sets status beyond in_attesa', function (): vo
 });
 
 test('organization_id is stamped from project (forceFill pattern, not from request payload)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = makeLifecycleProject($org);
 
     // Simulate the M2M create path: organization_id comes from $project->organization_id via forceFill
@@ -82,8 +82,8 @@ test('organization_id is stamped from project (forceFill pattern, not from reque
     // forceFill with correct org from project
     $p->forceFill([
         'organization_id' => $project->organization_id,
-        'candidate_ref'   => 'lc-ref-org-test',
-        'display_name'    => 'Test',
+        'candidate_ref' => 'lc-ref-org-test',
+        'display_name' => 'Test',
     ]);
     $p->save();
 

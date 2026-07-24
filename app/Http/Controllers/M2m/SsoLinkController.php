@@ -54,11 +54,11 @@ final class SsoLinkController extends Controller
         $clientOrgId = $client->organization_id;
 
         $validated = $request->validate([
-            'project_id'    => ['required', 'integer'],
+            'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
-            'display_name'  => ['required', 'string', 'max:255'],
-            'role_code'     => ['nullable', 'string', 'max:50'],
-            'lang'          => ['nullable', 'string', 'max:10'],
+            'display_name' => ['required', 'string', 'max:255'],
+            'role_code' => ['nullable', 'string', 'max:50'],
+            'lang' => ['nullable', 'string', 'max:10'],
         ]);
 
         // 1. Resolve project SCOPED to caller org (cross-org → 404).
@@ -75,7 +75,7 @@ final class SsoLinkController extends Controller
         if ($roleCodeError !== null) {
             return response()->json([
                 'message' => 'The given data was invalid.',
-                'errors'  => ['role_code' => [$roleCodeError]],
+                'errors' => ['role_code' => [$roleCodeError]],
             ], 422);
         }
 
@@ -95,11 +95,11 @@ final class SsoLinkController extends Controller
 
         $token = CandidateTokenFactory::mintSsoLink([
             'candidate_ref' => $validated['candidate_ref'],
-            'display_name'  => $validated['display_name'],
-            'project_id'    => $project->id,
-            'org_id'        => $project->organization_id,
-            'role_code'     => $validated['role_code'] ?? null,
-            'lang'          => $lang,
+            'display_name' => $validated['display_name'],
+            'project_id' => $project->id,
+            'org_id' => $project->organization_id,
+            'role_code' => $validated['role_code'] ?? null,
+            'lang' => $lang,
         ]);
 
         return response()->json(['token' => $token], 201);

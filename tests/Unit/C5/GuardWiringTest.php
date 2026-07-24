@@ -13,7 +13,6 @@ declare(strict_types=1);
  * REQ-3 / design §Guard
  */
 
-use Illuminate\Auth\AuthManager;
 use Illuminate\Auth\RequestGuard;
 use Illuminate\Support\Facades\Auth;
 

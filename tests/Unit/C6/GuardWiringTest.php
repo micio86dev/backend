@@ -50,14 +50,14 @@ test('api-candidate guard is a RequestGuard', function (): void {
 
 test('api-candidate guard is NOT the same instance as the api (JWT) guard', function (): void {
     $candidateGuard = Auth::guard('api-candidate');
-    $apiGuard       = Auth::guard('api');
+    $apiGuard = Auth::guard('api');
 
     expect($candidateGuard)->not->toBe($apiGuard);
 });
 
 test('api-candidate guard is NOT the same instance as the api-m2m guard', function (): void {
     $candidateGuard = Auth::guard('api-candidate');
-    $m2mGuard       = Auth::guard('api-m2m');
+    $m2mGuard = Auth::guard('api-m2m');
 
     expect($candidateGuard)->not->toBe($m2mGuard);
 });

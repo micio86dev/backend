@@ -41,7 +41,7 @@ class CandidateTokenFactory
      * the exchange endpoint performs the sole atomic consume on first use.
      *
      * @param  array<string, mixed>  $claims  Must include 'candidate_ref', 'project_id', 'org_id', 'display_name'.
-     *                                         Optional: 'role_code', 'lang'.
+     *                                        Optional: 'role_code', 'lang'.
      * @return string Signed HS256 JWT
      */
     public static function mintSsoLink(array $claims): string
@@ -49,14 +49,14 @@ class CandidateTokenFactory
         $candidateRef = $claims['candidate_ref'];
 
         $payload = [
-            'sub'           => $candidateRef, // satisfies tymon required_claims; raw candidate_ref
-            'typ'           => 'sso-link',
+            'sub' => $candidateRef, // satisfies tymon required_claims; raw candidate_ref
+            'typ' => 'sso-link',
             'candidate_ref' => $candidateRef,
-            'display_name'  => $claims['display_name'],
-            'project_id'    => $claims['project_id'],
-            'org_id'        => $claims['org_id'],
-            'role_code'     => $claims['role_code'] ?? null,
-            'lang'          => $claims['lang'] ?? null,
+            'display_name' => $claims['display_name'],
+            'project_id' => $claims['project_id'],
+            'org_id' => $claims['org_id'],
+            'role_code' => $claims['role_code'] ?? null,
+            'lang' => $claims['lang'] ?? null,
         ];
 
         // RAW mint: iss/iat/exp/nbf/jti auto-populated by factory.
@@ -85,12 +85,12 @@ class CandidateTokenFactory
     public static function mintCandidateToken(Participant $participant, array $extra = []): string
     {
         $customClaims = array_merge([
-            'typ'             => 'candidate',
-            'candidate_ref'   => $participant->candidate_ref,
-            'project_id'      => $participant->project_id,
+            'typ' => 'candidate',
+            'candidate_ref' => $participant->candidate_ref,
+            'project_id' => $participant->project_id,
             'organization_id' => $participant->organization_id,
-            'role_code'       => $participant->role_code,
-            'lang'            => $participant->language,
+            'role_code' => $participant->role_code,
+            'lang' => $participant->language,
         ], $extra);
 
         // setTTL(120) BEFORE fromUser — overrides the global 30-min default.
@@ -111,7 +111,7 @@ class CandidateTokenFactory
      */
     public static function consumeJti(string $jti, int $ttl): bool
     {
-        $key = 'sso_jti:' . $jti;
+        $key = 'sso_jti:'.$jti;
         $safeTtl = max($ttl, 60);
 
         // Cache::add() is atomic SET NX in Redis-backed stores.

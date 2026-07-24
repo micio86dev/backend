@@ -39,6 +39,7 @@ function ownershipProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -47,12 +48,13 @@ function ownershipParticipant(Organization $org, Project $project, string $suffi
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'own-' . ($suffix ?: uniqid()),
-        'display_name'    => 'Ownership Test',
-        'status'          => 'in_corso',
+        'project_id' => $project->id,
+        'candidate_ref' => 'own-'.($suffix ?: uniqid()),
+        'display_name' => 'Ownership Test',
+        'status' => 'in_corso',
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -63,13 +65,13 @@ function ownershipSession(Organization $org, Participant $participant, Project $
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => 'PRS',
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => 'PRS',
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'in_corso',
+        'provider' => 'heygen',
+        'status' => 'in_corso',
     ]);
 }
 
@@ -81,8 +83,8 @@ function ownershipBearer(Participant $participant): string
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('candidate X calling /utterance with session owned by candidate Y (same org) → 404; no Utterance persisted', function (): void {
-    $org          = ownershipOrg();
-    $project      = ownershipProject($org);
+    $org = ownershipOrg();
+    $project = ownershipProject($org);
     $participantX = ownershipParticipant($org, $project, 'x');
     $participantY = ownershipParticipant($org, $project, 'y');
 
@@ -98,12 +100,12 @@ test('candidate X calling /utterance with session owned by candidate Y (same org
     $countBefore = Utterance::where('interview_session_id', $sessionY->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $tokenX])
+        ->withHeaders(['Authorization' => 'Bearer '.$tokenX])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $sessionY->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Cross-participant attempt.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Cross-participant attempt.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertNotFound();
@@ -113,8 +115,8 @@ test('candidate X calling /utterance with session owned by candidate Y (same org
 });
 
 test('candidate X calling /integrity with session owned by candidate Y (same org) → 404; no IntegrityEvent persisted', function (): void {
-    $org          = ownershipOrg();
-    $project      = ownershipProject($org);
+    $org = ownershipOrg();
+    $project = ownershipProject($org);
     $participantX = ownershipParticipant($org, $project, 'x2');
     $participantY = ownershipParticipant($org, $project, 'y2');
 
@@ -130,10 +132,10 @@ test('candidate X calling /integrity with session owned by candidate Y (same org
     $countBefore = IntegrityEvent::where('interview_session_id', $sessionY->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $tokenX])
+        ->withHeaders(['Authorization' => 'Bearer '.$tokenX])
         ->postJson('/api/candidate/interview/integrity', [
             'session_id' => $sessionY->id,
-            'events'     => [
+            'events' => [
                 ['kind' => 'tab_hidden', 'payload' => [], 'ts' => now()->toIso8601String()],
             ],
         ]);
@@ -147,8 +149,8 @@ test('candidate X calling /integrity with session owned by candidate Y (same org
 test('candidate X calling /snapshot with session owned by candidate Y (same org) → 404; no InterviewSnapshot persisted', function (): void {
     Storage::fake('s3');
 
-    $org          = ownershipOrg();
-    $project      = ownershipProject($org);
+    $org = ownershipOrg();
+    $project = ownershipProject($org);
     $participantX = ownershipParticipant($org, $project, 'x3');
     $participantY = ownershipParticipant($org, $project, 'y3');
 
@@ -164,10 +166,10 @@ test('candidate X calling /snapshot with session owned by candidate Y (same org)
     $countBefore = InterviewSnapshot::where('interview_session_id', $sessionY->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $tokenX])
+        ->withHeaders(['Authorization' => 'Bearer '.$tokenX])
         ->postJson('/api/candidate/interview/snapshot', [
-            'session_id'   => $sessionY->id,
-            'image_base64' => base64_encode("\xFF\xD8\xFF\xE0" . str_repeat('A', 100)),
+            'session_id' => $sessionY->id,
+            'image_base64' => base64_encode("\xFF\xD8\xFF\xE0".str_repeat('A', 100)),
         ]);
 
     $response->assertNotFound();

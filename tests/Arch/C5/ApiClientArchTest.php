@@ -15,13 +15,12 @@ declare(strict_types=1);
  * design §Security Notes
  */
 
-use App\Models\ApiClient;
-use App\Http\Resources\ApiClientResource;
-use App\Http\Middleware\TenantContextM2m;
 use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextM2m;
+use App\Http\Resources\ApiClientResource;
+use App\Models\ApiClient;
 use Illuminate\Foundation\Auth\User as FoundationUser;
 use Spatie\Permission\Traits\HasRoles;
-use Illuminate\Http\Request;
 
 test('ApiClient does NOT extend Foundation\\Auth\\User', function (): void {
     expect(ApiClient::class)->not->toExtend(FoundationUser::class);

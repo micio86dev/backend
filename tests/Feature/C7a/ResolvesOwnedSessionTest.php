@@ -21,6 +21,8 @@ declare(strict_types=1);
  */
 
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
+use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextCandidate;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -53,6 +55,7 @@ function makeResolverProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -61,12 +64,13 @@ function makeResolverParticipant(Organization $org, Project $project, string $su
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'res-' . ($suffix ?: uniqid()),
-        'display_name'    => 'Resolver Test',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => 'res-'.($suffix ?: uniqid()),
+        'display_name' => 'Resolver Test',
+        'status' => 'in_attesa',
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -77,13 +81,13 @@ function makeResolverSession(Organization $org, Participant $participant, Projec
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'in_corso',
+        'provider' => 'heygen',
+        'status' => 'in_corso',
     ]);
 }
 
@@ -97,37 +101,37 @@ function mintCandidateBearer(Participant $participant): string
 beforeEach(function (): void {
     Route::middleware([
         'auth:api-candidate',
-        \App\Http\Middleware\TenantContextCandidate::class,
+        TenantContextCandidate::class,
     ])
-    ->withoutMiddleware(\App\Http\Middleware\TenantContext::class)
-    ->get('/test-resolve-session/{id}', function (int $id) {
-        $controller = new TestResolverController;
-        $session    = $controller->expose($id);
+        ->withoutMiddleware(TenantContext::class)
+        ->get('/test-resolve-session/{id}', function (int $id) {
+            $controller = new TestResolverController;
+            $session = $controller->expose($id);
 
-        return response()->json(['session_id' => $session->id]);
-    });
+            return response()->json(['session_id' => $session->id]);
+        });
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('resolveOwnedSession returns session when participant_id matches auth user', function (): void {
-    $org         = makeResolverOrg();
-    $project     = makeResolverProject($org);
+    $org = makeResolverOrg();
+    $project = makeResolverProject($org);
     $participant = makeResolverParticipant($org, $project);
-    $session     = makeResolverSession($org, $participant, $project);
-    $token       = mintCandidateBearer($participant);
+    $session = makeResolverSession($org, $participant, $project);
+    $token = mintCandidateBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
-        ->getJson('/test-resolve-session/' . $session->id);
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->getJson('/test-resolve-session/'.$session->id);
 
     $response->assertOk();
     expect($response->json('session_id'))->toBe($session->id);
 });
 
 test('resolveOwnedSession returns 404 when participant_id mismatches (same org)', function (): void {
-    $org          = makeResolverOrg();
-    $project      = makeResolverProject($org);
+    $org = makeResolverOrg();
+    $project = makeResolverProject($org);
     $participantX = makeResolverParticipant($org, $project, 'x');
     $participantY = makeResolverParticipant($org, $project, 'y');
 
@@ -138,17 +142,17 @@ test('resolveOwnedSession returns 404 when participant_id mismatches (same org)'
     $token = mintCandidateBearer($participantY);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
-        ->getJson('/test-resolve-session/' . $session->id);
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->getJson('/test-resolve-session/'.$session->id);
 
     $response->assertNotFound();
 });
 
 test('resolveOwnedSession returns 404 for cross-tenant session (different org)', function (): void {
-    $orgA         = makeResolverOrg();
-    $orgB         = makeResolverOrg();
-    $projectA     = makeResolverProject($orgA);
-    $projectB     = makeResolverProject($orgB);
+    $orgA = makeResolverOrg();
+    $orgB = makeResolverOrg();
+    $projectA = makeResolverProject($orgA);
+    $projectB = makeResolverProject($orgB);
     $participantA = makeResolverParticipant($orgA, $projectA, 'a');
     $participantB = makeResolverParticipant($orgB, $projectB, 'b');
 
@@ -159,28 +163,28 @@ test('resolveOwnedSession returns 404 for cross-tenant session (different org)',
     $token = mintCandidateBearer($participantA);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
-        ->getJson('/test-resolve-session/' . $sessionB->id);
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->getJson('/test-resolve-session/'.$sessionB->id);
 
     $response->assertNotFound();
 });
 
 test('resolveOwnedSession returns 404 for nonexistent session', function (): void {
-    $org         = makeResolverOrg();
-    $project     = makeResolverProject($org);
+    $org = makeResolverOrg();
+    $project = makeResolverProject($org);
     $participant = makeResolverParticipant($org, $project);
-    $token       = mintCandidateBearer($participant);
+    $token = mintCandidateBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/test-resolve-session/99999');
 
     $response->assertNotFound();
 });
 
 test('resolveOwnedSession is protected (not private — usable across 4 controllers via trait)', function (): void {
-    $reflection = new \ReflectionClass(TestResolverController::class);
-    $method     = $reflection->getMethod('resolveOwnedSession');
+    $reflection = new ReflectionClass(TestResolverController::class);
+    $method = $reflection->getMethod('resolveOwnedSession');
 
     expect($method->isPrivate())->toBeFalse('resolveOwnedSession MUST NOT be private — shared across 4 controllers');
     expect($method->isProtected() || $method->isPublic())->toBeTrue();

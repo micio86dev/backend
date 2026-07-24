@@ -54,14 +54,14 @@ class SnapshotController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'session_id'   => ['required', 'integer'],
+            'session_id' => ['required', 'integer'],
             'image_base64' => ['required', 'string'],
         ]);
 
         // ── Step 1: Encoded length check BEFORE decode (design mandated, prevents OOM) ──
         // strlen() on a PHP string returns the byte count of the raw string.
         $encodedLength = strlen($validated['image_base64']);
-        $maxEncoded    = (int) config('interview.snapshot.max_encoded_bytes');
+        $maxEncoded = (int) config('interview.snapshot.max_encoded_bytes');
 
         if ($encodedLength > $maxEncoded) {
             return response()->json(
@@ -100,11 +100,11 @@ class SnapshotController extends Controller
         // S3 key scheme: {org_id}/{participant_id}/{session_id}/{uuid}.jpg
         // All segments are server-generated integer IDs + UUID — no client input in the path.
         $snapshotUuid = (string) Str::uuid();
-        $s3Key        = implode('/', [
+        $s3Key = implode('/', [
             $session->organization_id,
             $session->participant_id,
             $session->id,
-            $snapshotUuid . '.jpg',
+            $snapshotUuid.'.jpg',
         ]);
 
         Storage::disk('s3')->put($s3Key, $decoded);
@@ -116,8 +116,8 @@ class SnapshotController extends Controller
         $snapshot = new InterviewSnapshot;
         $snapshot->forceFill([
             'interview_session_id' => $session->id,
-            's3_key'               => $s3Key,
-            'taken_at'             => now(),
+            's3_key' => $s3Key,
+            'taken_at' => now(),
         ]);
         $snapshot->save();
 

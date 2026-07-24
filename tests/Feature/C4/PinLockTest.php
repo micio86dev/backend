@@ -16,6 +16,7 @@ declare(strict_types=1);
  * Refs spec: Framework-Version Reference-Pin.
  */
 
+use App\Exceptions\LockedFrameworkVersionException;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
@@ -32,11 +33,12 @@ function pinAdminUser(Organization $org): array
     $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($role);
     $token = auth('api')->login($user);
+
     return ['user' => $user, 'token' => $token];
 }
 
 beforeEach(function (): void {
-    (new FrameworkCatalogSeeder())->run();
+    (new FrameworkCatalogSeeder)->run();
 });
 
 test('creating first project pins FV: is_locked flips to true', function (): void {
@@ -50,12 +52,12 @@ test('creating first project pins FV: is_locked flips to true', function (): voi
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'pin-test',
-        'name'                 => 'Pin Test',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'pin-test',
+        'name' => 'Pin Test',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertCreated();
 
     expect($fv->fresh()->is_locked)->toBeTrue();
@@ -71,12 +73,12 @@ test('second project reusing locked FV succeeds (201)', function (): void {
 
     $this->withToken($token)->postJson('/api/projects', [
         'framework_version_id' => $fv->id,
-        'slug'                 => 'second-proj',
-        'name'                 => 'Second',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'second-proj',
+        'name' => 'Second',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertCreated();
 });
 
@@ -92,12 +94,12 @@ test('cross-org FV pin → 422', function (): void {
     $resolver->setOrgId($orgA->id);
     $this->withToken($tokenA)->postJson('/api/projects', [
         'framework_version_id' => $fvB->id, // org B's FV
-        'slug'                 => 'cross-org-pin',
-        'name'                 => 'Test',
-        'assessment_type'      => 'standard',
-        'role_code'            => 'ICO',
-        'language'             => 'en',
-        'competency_ids'       => [],
+        'slug' => 'cross-org-pin',
+        'name' => 'Test',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+        'language' => 'en',
+        'competency_ids' => [],
     ])->assertUnprocessable();
 });
 
@@ -112,7 +114,7 @@ test('locked FV PATCH → 422 (not 500)', function (): void {
     // Attempt to mutate the locked FV via the framework API (C3 route still applies)
     $this->withToken($token)->patchJson("/api/framework/versions/{$fv->id}", ['label' => 'Changed'])
         ->assertStatus(404); // Framework does not expose a PATCH /versions/{id} route in C3
-        // The LockedFrameworkVersionException renders correctly when accessed programmatically
+    // The LockedFrameworkVersionException renders correctly when accessed programmatically
 });
 
 test('LockedFrameworkVersionException renders 422 (model guard)', function (): void {
@@ -126,7 +128,7 @@ test('LockedFrameworkVersionException renders 422 (model guard)', function (): v
     $exception = null;
     try {
         $fv->update(['label' => 'Changed']);
-    } catch (\App\Exceptions\LockedFrameworkVersionException $e) {
+    } catch (LockedFrameworkVersionException $e) {
         $exception = $e;
     }
 
@@ -142,7 +144,7 @@ test('locked FV delete throws LockedFrameworkVersionException (renders 422)', fu
 
     $fv = FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
 
-    expect(fn () => $fv->delete())->toThrow(\App\Exceptions\LockedFrameworkVersionException::class);
+    expect(fn () => $fv->delete())->toThrow(LockedFrameworkVersionException::class);
 });
 
 test('GET /api/framework/versions → lists only own-org FVs', function (): void {

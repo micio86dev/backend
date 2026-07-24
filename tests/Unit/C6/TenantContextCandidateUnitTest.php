@@ -19,6 +19,7 @@ declare(strict_types=1);
 use App\Http\Middleware\TenantContextCandidate;
 use App\Models\Participant;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Auth\RequestGuard;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
@@ -36,14 +37,14 @@ function makeTenantContextCandidateMiddleware(): TenantContextCandidate
     );
 }
 
-function passThroughNextCandidate(): \Closure
+function passThroughNextCandidate(): Closure
 {
     return fn ($req) => response()->json(['next' => true], 200);
 }
 
 function mockCandidateGuard(?Participant $participant): void
 {
-    $mockGuard = Mockery::mock(\Illuminate\Auth\RequestGuard::class);
+    $mockGuard = Mockery::mock(RequestGuard::class);
     $mockGuard->shouldReceive('user')->once()->andReturn($participant);
 
     Auth::shouldReceive('guard')
@@ -59,9 +60,9 @@ function mockCandidateGuard(?Participant $participant): void
 test('null participant (guard returns null) → 401 fail-closed, orgId stays null', function (): void {
     mockCandidateGuard(null);
 
-    $resolver   = app(TenantResolver::class);
+    $resolver = app(TenantResolver::class);
     $middleware = makeTenantContextCandidateMiddleware();
-    $request    = Request::create('/test', 'GET');
+    $request = Request::create('/test', 'GET');
 
     $response = $middleware->handle($request, passThroughNextCandidate());
 
@@ -81,9 +82,9 @@ test('participant with null organization_id → 401 fail-closed', function (): v
 
     mockCandidateGuard($participant);
 
-    $resolver   = app(TenantResolver::class);
+    $resolver = app(TenantResolver::class);
     $middleware = makeTenantContextCandidateMiddleware();
-    $request    = Request::create('/test', 'GET');
+    $request = Request::create('/test', 'GET');
 
     $response = $middleware->handle($request, passThroughNextCandidate());
 
@@ -108,7 +109,7 @@ test('happy path: bypass=false AND correct orgId from DB record', function (): v
     $resolver->setBypass(true); // pre-set stale bypass to verify it is cleared
 
     $middleware = makeTenantContextCandidateMiddleware();
-    $request    = Request::create('/test', 'GET');
+    $request = Request::create('/test', 'GET');
 
     $response = $middleware->handle($request, passThroughNextCandidate());
 
@@ -126,7 +127,7 @@ test('org is resolved from DB record, not JWT claims (tampered claim ignored)', 
     // The guard closure loads the Participant by sub (id), so the participant already
     // has organization_id=7 from the DB. TenantContextCandidate reads participant.organization_id.
     // The JWT claim value is never consulted here — this is the security invariant.
-    $dbOrgId      = 7;
+    $dbOrgId = 7;
     $tamperedOrgId = 99;
 
     $participant = new Participant;
@@ -140,7 +141,7 @@ test('org is resolved from DB record, not JWT claims (tampered claim ignored)', 
 
     $resolver = app(TenantResolver::class);
     $middleware = makeTenantContextCandidateMiddleware();
-    $request    = Request::create('/test', 'GET');
+    $request = Request::create('/test', 'GET');
 
     $response = $middleware->handle($request, passThroughNextCandidate());
 

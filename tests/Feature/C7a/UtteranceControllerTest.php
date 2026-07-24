@@ -38,6 +38,7 @@ function utteranceProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -46,12 +47,13 @@ function utteranceParticipant(Organization $org, Project $project, string $statu
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'utt-' . ($suffix ?: uniqid()),
-        'display_name'    => 'Utterance Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'utt-'.($suffix ?: uniqid()),
+        'display_name' => 'Utterance Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -62,13 +64,13 @@ function utteranceSession(Organization $org, Participant $participant, Project $
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => $status,
+        'provider' => 'heygen',
+        'status' => $status,
     ]);
 }
 
@@ -80,21 +82,21 @@ function utteranceBearer(Participant $participant): string
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('POST /utterance with in_corso session → 202 and Utterance row persisted', function (): void {
-    $org         = utteranceOrg();
-    $project     = utteranceProject($org);
+    $org = utteranceOrg();
+    $project = utteranceProject($org);
     $participant = utteranceParticipant($org, $project, 'in_corso');
-    $session     = utteranceSession($org, $participant, $project, 'in_corso');
-    $token       = utteranceBearer($participant);
+    $session = utteranceSession($org, $participant, $project, 'in_corso');
+    $token = utteranceBearer($participant);
 
     $ts = now()->toIso8601String();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'candidate',
-            'text'       => 'This is my answer.',
-            'ts'         => $ts,
+            'speaker' => 'candidate',
+            'text' => 'This is my answer.',
+            'ts' => $ts,
         ]);
 
     $response->assertStatus(202);
@@ -113,19 +115,19 @@ test('POST /utterance with in_corso session → 202 and Utterance row persisted'
 });
 
 test('POST /utterance with avatar speaker → 202 and Utterance row persisted', function (): void {
-    $org         = utteranceOrg();
-    $project     = utteranceProject($org);
+    $org = utteranceOrg();
+    $project = utteranceProject($org);
     $participant = utteranceParticipant($org, $project, 'in_corso');
-    $session     = utteranceSession($org, $participant, $project, 'in_corso');
-    $token       = utteranceBearer($participant);
+    $session = utteranceSession($org, $participant, $project, 'in_corso');
+    $token = utteranceBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'avatar',
-            'text'       => 'Tell me about yourself.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'avatar',
+            'text' => 'Tell me about yourself.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertStatus(202);
@@ -139,11 +141,11 @@ test('POST /utterance with avatar speaker → 202 and Utterance row persisted', 
 });
 
 test('POST /utterance with completed session → 409 Conflict; no row persisted (atomic guard)', function (): void {
-    $org         = utteranceOrg();
-    $project     = utteranceProject($org);
+    $org = utteranceOrg();
+    $project = utteranceProject($org);
     $participant = utteranceParticipant($org, $project, 'in_corso');
-    $session     = utteranceSession($org, $participant, $project, 'completed');
-    $token       = utteranceBearer($participant);
+    $session = utteranceSession($org, $participant, $project, 'completed');
+    $token = utteranceBearer($participant);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
@@ -151,12 +153,12 @@ test('POST /utterance with completed session → 409 Conflict; no row persisted 
     $countBefore = Utterance::where('interview_session_id', $session->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Too late.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Too late.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertStatus(409);
@@ -167,23 +169,23 @@ test('POST /utterance with completed session → 409 Conflict; no row persisted 
 });
 
 test('POST /utterance with timeout session → 409 Conflict; no row persisted', function (): void {
-    $org         = utteranceOrg();
-    $project     = utteranceProject($org);
+    $org = utteranceOrg();
+    $project = utteranceProject($org);
     $participant = utteranceParticipant($org, $project, 'in_corso');
-    $session     = utteranceSession($org, $participant, $project, 'timeout');
-    $token       = utteranceBearer($participant);
+    $session = utteranceSession($org, $participant, $project, 'timeout');
+    $token = utteranceBearer($participant);
 
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Too late.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Too late.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertStatus(409);
@@ -191,8 +193,8 @@ test('POST /utterance with timeout session → 409 Conflict; no row persisted', 
 });
 
 test('POST /utterance with session_id from different participant (same org) → 404', function (): void {
-    $org          = utteranceOrg();
-    $project      = utteranceProject($org);
+    $org = utteranceOrg();
+    $project = utteranceProject($org);
     $participantX = utteranceParticipant($org, $project, 'in_corso', 'x');
     $participantY = utteranceParticipant($org, $project, 'in_corso', 'y');
 
@@ -208,12 +210,12 @@ test('POST /utterance with session_id from different participant (same org) → 
     $countBefore = Utterance::where('interview_session_id', $sessionX->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $sessionX->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Unauthorized.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Unauthorized.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertNotFound();
@@ -223,10 +225,10 @@ test('POST /utterance with session_id from different participant (same org) → 
 });
 
 test('POST /utterance with session_id from different org → 404', function (): void {
-    $orgA         = utteranceOrg();
-    $orgB         = utteranceOrg();
-    $projectA     = utteranceProject($orgA);
-    $projectB     = utteranceProject($orgB);
+    $orgA = utteranceOrg();
+    $orgB = utteranceOrg();
+    $projectA = utteranceProject($orgA);
+    $projectB = utteranceProject($orgB);
     $participantA = utteranceParticipant($orgA, $projectA, 'in_corso', 'a');
     $participantB = utteranceParticipant($orgB, $projectB, 'in_corso', 'b');
 
@@ -242,12 +244,12 @@ test('POST /utterance with session_id from different org → 404', function (): 
     $countBefore = Utterance::where('interview_session_id', $sessionB->id)->count();
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $sessionB->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Cross-tenant attempt.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Cross-tenant attempt.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     $response->assertNotFound();
@@ -261,10 +263,10 @@ test('POST /utterance TOCTOU: session status completed atomically means 409 not 
     // This test verifies the atomic guard: we set the session to 'completed' BEFORE
     // the request, simulating a concurrent /end having already committed.
     // The conditional INSERT (WHERE status='in_corso') must return 0 rows → 409.
-    $org         = utteranceOrg();
-    $project     = utteranceProject($org);
+    $org = utteranceOrg();
+    $project = utteranceProject($org);
     $participant = utteranceParticipant($org, $project, 'in_corso');
-    $session     = utteranceSession($org, $participant, $project, 'in_corso');
+    $session = utteranceSession($org, $participant, $project, 'in_corso');
 
     // Simulate concurrent /end committed right before our /utterance reaches the DB
     $resolver = app(TenantResolver::class);
@@ -276,12 +278,12 @@ test('POST /utterance TOCTOU: session status completed atomically means 409 not 
     $token = utteranceBearer($participant);
 
     $response = $this
-        ->withHeaders(['Authorization' => 'Bearer ' . $token])
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/utterance', [
             'session_id' => $session->id,
-            'speaker'    => 'candidate',
-            'text'       => 'Late utterance.',
-            'ts'         => now()->toIso8601String(),
+            'speaker' => 'candidate',
+            'text' => 'Late utterance.',
+            'ts' => now()->toIso8601String(),
         ]);
 
     // The atomic WHERE status='in_corso' condition fails → 409

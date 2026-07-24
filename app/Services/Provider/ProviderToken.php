@@ -32,9 +32,9 @@ namespace App\Services\Provider;
 readonly class ProviderToken
 {
     public function __construct(
-        public string  $provider,
-        public ?string $token               = null,
-        public ?string $conversation_url    = null,
+        public string $provider,
+        public ?string $token = null,
+        public ?string $conversation_url = null,
         public ?string $provider_session_ref = null,
     ) {}
 
@@ -54,7 +54,7 @@ readonly class ProviderToken
     {
         if ($provider === '') {
             throw new \InvalidArgumentException(
-                'ProviderToken::fromRef() requires a non-empty provider (F1). ' .
+                'ProviderToken::fromRef() requires a non-empty provider (F1). '.
                 'Pass $session->provider to ensure teardown routes to the correct provider client.'
             );
         }

@@ -7,7 +7,6 @@ namespace Database\Factories;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
-use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -33,12 +32,12 @@ class ParticipantFactory extends Factory
     {
         return [
             'candidate_ref' => $this->faker->unique()->uuid(),
-            'display_name'  => $this->faker->name(),
-            'role_code'     => 'ICO',
-            'language'      => 'en',
-            'status'        => 'in_attesa',
-            'started_at'    => null,
-            'completed_at'  => null,
+            'display_name' => $this->faker->name(),
+            'role_code' => 'ICO',
+            'language' => 'en',
+            'status' => 'in_attesa',
+            'started_at' => null,
+            'completed_at' => null,
         ];
     }
 

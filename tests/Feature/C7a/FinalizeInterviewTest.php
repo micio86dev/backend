@@ -20,6 +20,7 @@ use App\Jobs\FinalizeInterview;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -37,7 +38,7 @@ function finalizeOrg(): Organization
 function finalizeParticipant(Organization $org, string $status = 'in_valutazione'): Participant
 {
     // Need a project for FK
-    $resolver = app(\App\Support\Tenancy\TenantResolver::class);
+    $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
     $project = Project::factory()->create(['status' => 'active']);
@@ -45,23 +46,24 @@ function finalizeParticipant(Organization $org, string $status = 'in_valutazione
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'fin-' . uniqid(),
-        'display_name'    => 'Finalize Test',
-        'status'          => $status,
+        'project_id' => $project->id,
+        'candidate_ref' => 'fin-'.uniqid(),
+        'display_name' => 'Finalize Test',
+        'status' => $status,
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('FinalizeInterview job is idempotent: participant already completato → no-op', function (): void {
-    $org         = finalizeOrg();
+    $org = finalizeOrg();
     $participant = finalizeParticipant($org, 'completato');
 
     // Clear any dedup lock from previous runs
-    Cache::forget('finalize:' . $participant->id);
+    Cache::forget('finalize:'.$participant->id);
 
     $logMessages = [];
     Log::listen(function ($message) use (&$logMessages): void {
@@ -82,10 +84,10 @@ test('FinalizeInterview job: first execution acquires lock and emits C9 trigger'
     // (QUEUE_CONNECTION=sync in tests; the ScoringRequested listener dispatches the job).
     Queue::fake();
 
-    $org         = finalizeOrg();
+    $org = finalizeOrg();
     $participant = finalizeParticipant($org, 'in_valutazione');
-    $pid         = $participant->id;
-    $lockKey     = 'finalize:' . $pid;
+    $pid = $participant->id;
+    $lockKey = 'finalize:'.$pid;
 
     // Ensure no lock exists
     Cache::forget($lockKey);
@@ -93,7 +95,7 @@ test('FinalizeInterview job: first execution acquires lock and emits C9 trigger'
     $logMessages = [];
     Log::listen(function ($message) use (&$logMessages): void {
         $context = is_array($message->context ?? null) ? json_encode($message->context) : '';
-        $logMessages[] = ($message->message ?? '') . $context;
+        $logMessages[] = ($message->message ?? '').$context;
     });
 
     $job = new FinalizeInterview($pid);
@@ -108,10 +110,10 @@ test('FinalizeInterview job: first execution acquires lock and emits C9 trigger'
 });
 
 test('FinalizeInterview job: second execution with lock held → no-op (FIX-4 dedup)', function (): void {
-    $org         = finalizeOrg();
+    $org = finalizeOrg();
     $participant = finalizeParticipant($org, 'in_valutazione');
-    $pid         = $participant->id;
-    $lockKey     = 'finalize:' . $pid;
+    $pid = $participant->id;
+    $lockKey = 'finalize:'.$pid;
 
     // Simulate lock already held (as if first execution ran)
     Cache::forget($lockKey);
@@ -133,7 +135,7 @@ test('FinalizeInterview job: second execution with lock held → no-op (FIX-4 de
 test('FinalizeInterview dispatched ->afterCommit(): Queue::fake records dispatch', function (): void {
     Queue::fake();
 
-    $org         = finalizeOrg();
+    $org = finalizeOrg();
     $participant = finalizeParticipant($org, 'in_valutazione');
 
     // Dispatch with afterCommit — Queue::fake bypasses transaction awareness

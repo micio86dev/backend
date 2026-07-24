@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Tenant-scoped IntegrityEvent model (C7a — Interview Session Mechanics).
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $organization_id
  * @property string $kind
  * @property array<string, mixed> $payload
- * @property \Illuminate\Support\Carbon $ts
+ * @property Carbon $ts
  */
 class IntegrityEvent extends TenantModel
 {
@@ -58,7 +59,7 @@ class IntegrityEvent extends TenantModel
     {
         return [
             'payload' => 'array',
-            'ts'      => 'immutable_datetime',
+            'ts' => 'immutable_datetime',
         ];
     }
 

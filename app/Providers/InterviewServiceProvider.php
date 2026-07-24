@@ -42,7 +42,7 @@ class InterviewServiceProvider extends ServiceProvider
             try {
                 $participant = auth('api-candidate')->user();
                 if ($participant !== null) {
-                    $project         = $participant->project;
+                    $project = $participant->project;
                     $projectOverride = $project?->provider_override;
                 }
             } catch (\Throwable) {
@@ -52,8 +52,8 @@ class InterviewServiceProvider extends ServiceProvider
             $providerName = $projectOverride ?? config('interview.provider', 'heygen');
 
             return match ($providerName) {
-                'tavus'  => new TavusProvider,
-                default  => new HeygenProvider, // 'heygen' is the default
+                'tavus' => new TavusProvider,
+                default => new HeygenProvider, // 'heygen' is the default
             };
         });
     }

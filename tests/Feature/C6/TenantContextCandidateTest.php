@@ -16,6 +16,8 @@ declare(strict_types=1);
  * REQ: TenantContextCandidate — all scenarios
  */
 
+use App\Http\Middleware\TenantContext;
+use App\Http\Middleware\TenantContextCandidate;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
@@ -41,10 +43,10 @@ function tcParticipant(Project $project, Organization $org, ?string $ref = null)
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => $ref ?? 'tc-ref-' . uniqid(),
-        'display_name'    => 'TC Test',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => $ref ?? 'tc-ref-'.uniqid(),
+        'display_name' => 'TC Test',
+        'status' => 'in_attesa',
     ]);
     $p->save();
 
@@ -54,16 +56,16 @@ function tcParticipant(Project $project, Organization $org, ?string $ref = null)
 // ── Register a test route that reveals the resolved org from the resolver ──
 
 beforeEach(function (): void {
-    Route::middleware(['auth:api-candidate', \App\Http\Middleware\TenantContextCandidate::class])
+    Route::middleware(['auth:api-candidate', TenantContextCandidate::class])
         ->prefix('api')
-        ->withoutMiddleware(\App\Http\Middleware\TenantContext::class)
+        ->withoutMiddleware(TenantContext::class)
         ->get('/test-candidate-tc', function () {
             $orgId = app(TenantResolver::class)->getOrgId();
             $bypass = app(TenantResolver::class)->isBypass();
 
             return response()->json([
                 'resolved_org_id' => $orgId,
-                'bypass'          => $bypass,
+                'bypass' => $bypass,
             ]);
         });
 });
@@ -73,15 +75,15 @@ beforeEach(function (): void {
 // ---------------------------------------------------------------------------
 
 test('org resolved from participant DB record (not JWT claims)', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = tcOrgProject($org);
-    $p       = tcParticipant($project, $org);
+    $p = tcParticipant($project, $org);
 
     // Mint with a tampered organization_id claim
     $tamperedOrgId = $org->id + 999;
     $token = CandidateTokenFactory::mintCandidateToken($p, ['organization_id' => $tamperedOrgId]);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $token])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/api/test-candidate-tc');
 
     $response->assertOk();
@@ -91,12 +93,12 @@ test('org resolved from participant DB record (not JWT claims)', function (): vo
 });
 
 test('bypass is false after TenantContextCandidate resolves org', function (): void {
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = tcOrgProject($org);
-    $p       = tcParticipant($project, $org);
-    $token   = CandidateTokenFactory::mintCandidateToken($p);
+    $p = tcParticipant($project, $org);
+    $token = CandidateTokenFactory::mintCandidateToken($p);
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $token])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/api/test-candidate-tc');
 
     $response->assertOk();
@@ -126,13 +128,13 @@ test('candidate session route does not invoke human TenantContext', function ():
     // NOT by TenantContext (which reads from $request->user() human guard).
     // If human TenantContext ran first and set org from a human JWT (which is null here),
     // the request would fail differently. This test confirms the correct middleware runs.
-    $org     = Organization::factory()->create();
+    $org = Organization::factory()->create();
     $project = tcOrgProject($org);
-    $p       = tcParticipant($project, $org);
-    $token   = CandidateTokenFactory::mintCandidateToken($p);
+    $p = tcParticipant($project, $org);
+    $token = CandidateTokenFactory::mintCandidateToken($p);
 
     // No human auth header — only candidate token
-    $response = $this->withHeaders(['Authorization' => 'Bearer ' . $token])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$token])
         ->getJson('/api/candidate/session');
 
     $response->assertOk();

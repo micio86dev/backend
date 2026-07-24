@@ -19,6 +19,7 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ function isolationProject(Organization $org): Project
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
+
     return Project::factory()->create(['status' => 'active']);
 }
 
@@ -40,12 +42,13 @@ function isolationParticipant(Organization $org, Project $project): Participant
     $p = new Participant;
     $p->forceFill([
         'organization_id' => $org->id,
-        'project_id'      => $project->id,
-        'candidate_ref'   => 'iso-' . uniqid(),
-        'display_name'    => 'Isolation Test',
-        'status'          => 'in_attesa',
+        'project_id' => $project->id,
+        'candidate_ref' => 'iso-'.uniqid(),
+        'display_name' => 'Isolation Test',
+        'status' => 'in_attesa',
     ]);
     $p->save();
+
     return $p->fresh();
 }
 
@@ -56,23 +59,23 @@ function isolationSession(Organization $org, Participant $participant, Project $
     $resolver->setBypass(false);
 
     return InterviewSession::create([
-        'participant_id'       => $participant->id,
-        'project_id'           => $project->id,
-        'question_index'       => 0,
-        'competency_code'      => $code,
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $code,
         'framework_version_id' => $project->framework_version_id,
-        'provider'             => 'heygen',
-        'status'               => 'pending',
+        'provider' => 'heygen',
+        'status' => 'pending',
     ]);
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('InterviewSession::all() scoped to org A does NOT return org B sessions', function (): void {
-    $orgA         = isolationOrg();
-    $orgB         = isolationOrg();
-    $projectA     = isolationProject($orgA);
-    $projectB     = isolationProject($orgB);
+    $orgA = isolationOrg();
+    $orgB = isolationOrg();
+    $projectA = isolationProject($orgA);
+    $projectB = isolationProject($orgB);
     $participantA = isolationParticipant($orgA, $projectA);
     $participantB = isolationParticipant($orgB, $projectB);
 
@@ -91,10 +94,10 @@ test('InterviewSession::all() scoped to org A does NOT return org B sessions', f
 });
 
 test('InterviewSession::where(participant_id) scoped to org A cannot find org B session by ID', function (): void {
-    $orgA         = isolationOrg();
-    $orgB         = isolationOrg();
-    $projectA     = isolationProject($orgA);
-    $projectB     = isolationProject($orgB);
+    $orgA = isolationOrg();
+    $orgB = isolationOrg();
+    $projectA = isolationProject($orgA);
+    $projectB = isolationProject($orgB);
     $participantA = isolationParticipant($orgA, $projectA);
     $participantB = isolationParticipant($orgB, $projectB);
 
@@ -112,10 +115,10 @@ test('InterviewSession::where(participant_id) scoped to org A cannot find org B 
 });
 
 test('InterviewSession::findOrFail() throws for org B session when scoped to org A', function (): void {
-    $orgA         = isolationOrg();
-    $orgB         = isolationOrg();
-    $projectA     = isolationProject($orgA);
-    $projectB     = isolationProject($orgB);
+    $orgA = isolationOrg();
+    $orgB = isolationOrg();
+    $projectA = isolationProject($orgA);
+    $projectB = isolationProject($orgB);
     $participantA = isolationParticipant($orgA, $projectA);
     $participantB = isolationParticipant($orgB, $projectB);
 
@@ -127,14 +130,14 @@ test('InterviewSession::findOrFail() throws for org B session when scoped to org
     $resolver->setBypass(false);
 
     expect(fn () => InterviewSession::findOrFail($sessionB->id))
-        ->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        ->toThrow(ModelNotFoundException::class);
 });
 
 test('TenantScoped bypass=true allows cross-org session visibility (superadmin mode)', function (): void {
-    $orgA         = isolationOrg();
-    $orgB         = isolationOrg();
-    $projectA     = isolationProject($orgA);
-    $projectB     = isolationProject($orgB);
+    $orgA = isolationOrg();
+    $orgB = isolationOrg();
+    $projectA = isolationProject($orgA);
+    $projectB = isolationProject($orgB);
     $participantA = isolationParticipant($orgA, $projectA);
     $participantB = isolationParticipant($orgB, $projectB);
 
@@ -157,10 +160,10 @@ test('TenantScoped bypass=true allows cross-org session visibility (superadmin m
 // ─── Dataset: multiple query patterns all respect tenant scope ─────────────────
 
 test('cross-tenant isolation via dataset', function (string $queryMethod) {
-    $orgA         = isolationOrg();
-    $orgB         = isolationOrg();
-    $projectA     = isolationProject($orgA);
-    $projectB     = isolationProject($orgB);
+    $orgA = isolationOrg();
+    $orgB = isolationOrg();
+    $projectA = isolationProject($orgA);
+    $projectB = isolationProject($orgB);
     $participantA = isolationParticipant($orgA, $projectA);
     $participantB = isolationParticipant($orgB, $projectB);
 
@@ -171,7 +174,7 @@ test('cross-tenant isolation via dataset', function (string $queryMethod) {
     $resolver->setBypass(false);
 
     $found = match ($queryMethod) {
-        'find'  => InterviewSession::find($sessionB->id),
+        'find' => InterviewSession::find($sessionB->id),
         'first' => InterviewSession::where('id', $sessionB->id)->first(),
         'count' => InterviewSession::where('id', $sessionB->id)->count() > 0 ? true : null,
     };

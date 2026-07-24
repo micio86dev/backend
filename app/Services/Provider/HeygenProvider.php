@@ -50,9 +50,9 @@ class HeygenProvider implements ProviderSessionService
 
         // Step 1: create context
         $ctxResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL . '/contexts', [
+            ->post(self::BASE_URL.'/contexts', [
                 'competency_code' => $ctx->competencyCode,
-                'question_index'  => $ctx->questionIndex,
+                'question_index' => $ctx->questionIndex,
             ]);
 
         if (! $ctxResponse->successful()) {
@@ -63,7 +63,7 @@ class HeygenProvider implements ProviderSessionService
 
         // Step 2: issue session token
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL . '/sessions/token', [
+            ->post(self::BASE_URL.'/sessions/token', [
                 'context_id' => $contextId,
             ]);
 
@@ -71,9 +71,9 @@ class HeygenProvider implements ProviderSessionService
             $this->throwRedacted($apiKey, $tokenResponse->status(), 'session token issuance failed');
         }
 
-        $data        = $tokenResponse->json('data', []);
+        $data = $tokenResponse->json('data', []);
         $accessToken = $data['access_token'] ?? null;
-        $sessionId   = $data['session_id']   ?? null;
+        $sessionId = $data['session_id'] ?? null;
 
         if ($accessToken === null || $sessionId === null) {
             throw new ProviderException('HeyGen: malformed token response (missing access_token or session_id)', false);
@@ -98,22 +98,23 @@ class HeygenProvider implements ProviderSessionService
     public function reconcileTranscript(InterviewSession $session): array
     {
         $apiKey = (string) config('interview.heygen.api_key', '');
-        $ref    = $session->provider_session_ref;
+        $ref = $session->provider_session_ref;
 
         if ($ref === null) {
             return [];
         }
 
         $response = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->get(self::BASE_URL . '/sessions/' . $ref . '/transcript');
+            ->get(self::BASE_URL.'/sessions/'.$ref.'/transcript');
 
         if (! $response->successful()) {
             // Non-fatal: log and return empty — best effort transcript
             Log::warning('HeyGen: transcript fetch failed', [
                 'session_id' => $session->id,
-                'status'     => $response->status(),
+                'status' => $response->status(),
                 // Raw body is NOT logged (may contain key material)
             ]);
+
             return [];
         }
 
@@ -122,8 +123,8 @@ class HeygenProvider implements ProviderSessionService
         return array_map(function (array $row): array {
             return [
                 'speaker' => $row['role'] === 'user' ? 'candidate' : 'avatar',
-                'text'    => (string) ($row['content'] ?? ''),
-                'ts'      => isset($row['time_ms'])
+                'text' => (string) ($row['content'] ?? ''),
+                'ts' => isset($row['time_ms'])
                     ? now()->subMilliseconds((int) $row['time_ms'])->toIso8601String()
                     : now()->toIso8601String(),
             ];
@@ -146,12 +147,12 @@ class HeygenProvider implements ProviderSessionService
 
         try {
             Http::withHeaders(['X-API-KEY' => $apiKey])
-                ->delete(self::BASE_URL . '/sessions/' . $token->provider_session_ref);
+                ->delete(self::BASE_URL.'/sessions/'.$token->provider_session_ref);
         } catch (\Throwable $e) {
             // Best-effort — log without raw response (key material may be present)
             Log::warning('HeyGen: teardown failed', [
                 'provider_session_ref' => $token->provider_session_ref,
-                'error'                => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -170,7 +171,7 @@ class HeygenProvider implements ProviderSessionService
         // Log at WARNING level with REDACTED body — never include raw response or key
         Log::warning('HeyGen: provider call failed', [
             'context' => $context,
-            'status'  => $status,
+            'status' => $status,
             // Deliberately NO 'response_body' — may contain HEYGEN_API_KEY
         ]);
 

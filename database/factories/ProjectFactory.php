@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\FrameworkVersion;
-use App\Models\Organization;
 use App\Models\Project;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -34,14 +33,14 @@ class ProjectFactory extends Factory
     {
         return [
             'framework_version_id' => FrameworkVersion::factory(),
-            'slug'                 => Str::slug($this->faker->unique()->words(3, true)),
-            'name'                 => $this->faker->sentence(4),
-            'assessment_type'      => 'standard',
-            'role_code'            => 'ICO',
-            'language'             => 'en',
-            'status'               => 'draft',
-            'webhook_url'          => null,
-            'webhook_secret'       => null,
+            'slug' => Str::slug($this->faker->unique()->words(3, true)),
+            'name' => $this->faker->sentence(4),
+            'assessment_type' => 'standard',
+            'role_code' => 'ICO',
+            'language' => 'en',
+            'status' => 'draft',
+            'webhook_url' => null,
+            'webhook_secret' => null,
         ];
     }
 
@@ -52,7 +51,7 @@ class ProjectFactory extends Factory
     {
         return $this->state(fn (array $attrs) => [
             'assessment_type' => 'standard',
-            'role_code'       => 'ICO',
+            'role_code' => 'ICO',
         ]);
     }
 
@@ -63,7 +62,7 @@ class ProjectFactory extends Factory
     {
         return $this->state(fn (array $attrs) => [
             'assessment_type' => 'potential',
-            'role_code'       => null,
+            'role_code' => null,
         ]);
     }
 }

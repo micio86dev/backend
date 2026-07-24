@@ -53,9 +53,9 @@ class UtteranceController extends Controller
     {
         $validated = $request->validate([
             'session_id' => ['required', 'integer'],
-            'speaker'    => ['required', 'string', 'in:candidate,avatar'],
-            'text'       => ['required', 'string'],
-            'ts'         => ['required', 'string'],
+            'speaker' => ['required', 'string', 'in:candidate,avatar'],
+            'text' => ['required', 'string'],
+            'ts' => ['required', 'string'],
         ]);
 
         // resolveOwnedSession: enforces participant_id + org isolation → 404 if not owned.

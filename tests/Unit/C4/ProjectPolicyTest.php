@@ -24,6 +24,7 @@ function makePolicyUser(Organization $org, string $roleName): User
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $spatieRole = SpatieRole::firstOrCreate(['name' => $roleName, 'guard_name' => 'api', 'team_id' => $org->id]);
     $user->assignRole($spatieRole);
+
     // Force-refresh user so hasRole() picks up the assignment
     return $user->fresh();
 }
@@ -34,7 +35,7 @@ test('admin can viewAny, view, create, update, delete', function (): void {
     $resolver->setOrgId($org->id);
     $admin = makePolicyUser($org, 'admin');
     $project = Project::factory()->create();
-    $policy = new ProjectPolicy();
+    $policy = new ProjectPolicy;
 
     expect($policy->viewAny($admin))->toBeTrue();
     expect($policy->view($admin, $project))->toBeTrue();
@@ -49,7 +50,7 @@ test('operator can viewAny, view, create, update, delete', function (): void {
     $resolver->setOrgId($org->id);
     $operator = makePolicyUser($org, 'operator');
     $project = Project::factory()->create();
-    $policy = new ProjectPolicy();
+    $policy = new ProjectPolicy;
 
     expect($policy->viewAny($operator))->toBeTrue();
     expect($policy->view($operator, $project))->toBeTrue();
@@ -64,7 +65,7 @@ test('viewer can viewAny and view but NOT create, update, or delete', function (
     $resolver->setOrgId($org->id);
     $viewer = makePolicyUser($org, 'viewer');
     $project = Project::factory()->create();
-    $policy = new ProjectPolicy();
+    $policy = new ProjectPolicy;
 
     expect($policy->viewAny($viewer))->toBeTrue();
     expect($policy->view($viewer, $project))->toBeTrue();

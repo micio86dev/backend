@@ -24,6 +24,7 @@ use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as FoundationUser;
+use Spatie\Permission\Traits\HasRoles;
 
 test('ApiClient implements Authenticatable contract', function (): void {
     $client = new ApiClient;
@@ -103,5 +104,5 @@ test('organization() returns a BelongsTo relation pointing to Organization', fun
 test('ApiClient does NOT use HasRoles trait', function (): void {
     $traits = class_uses_recursive(ApiClient::class);
 
-    expect($traits)->not->toContain(\Spatie\Permission\Traits\HasRoles::class);
+    expect($traits)->not->toContain(HasRoles::class);
 });
