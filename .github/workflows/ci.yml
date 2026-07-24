@@ -30,7 +30,10 @@ jobs:
 
     env:
       APP_ENV: testing
-      APP_KEY: base64:placeholder==
+      # Throwaway 32-byte key for CI only (aes-256-cbc); NOT a production secret.
+      # The placeholder previously here was an invalid cipher length and broke
+      # any test that encrypts a field (e.g. webhook_secret encrypted cast).
+      APP_KEY: base64:/RbDHF9zcNfJtZX1fRWXfBOPQnh1f2vpFpTNs8URgOY=
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
