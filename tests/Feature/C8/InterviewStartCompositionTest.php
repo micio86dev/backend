@@ -448,8 +448,10 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
     // A warning must have been logged about the composition failure
     Log::shouldHaveReceived('warning')->once();
 
-    // prompt_version in response must be null (degraded)
-    $response->assertJsonPath('question_context.prompt_version', null);
+    // prompt_version in response must be non-null non-empty (FIX C1 — degraded resume path
+    // returns config('conversation.prompt_version') instead of null for C9 traceability).
+    $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
+    expect($response->json('question_context.prompt_version'))->toBe(config('conversation.prompt_version'));
 });
 
 test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains system_prompt (adaptive resume)', function (): void {
@@ -574,5 +576,102 @@ test('5.8 NEW session + composition fails (regression guard) → still 422, no I
     $resolver->setOrgId($org->id);
     expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(0);
 
+    Http::assertNothingSent();
+});
+
+// ─── FIX W1: assessment_type guard ───────────────────────────────────────────
+
+test('W1 potential-type project → 422 assessment_type_not_supported, no session created, no provider call', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $org = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    // potential type: role_code is null (domain constraint); assessment_type = 'potential'
+    $competency = Competency::factory()->create(['code' => 'MTG_' . uniqid()]);
+
+    $project = Project::factory()->create([
+        'status'          => 'active',
+        'role_code'       => null,
+        'language'        => 'en',
+        'assessment_type' => 'potential',
+    ]);
+
+    DB::table('project_competencies')->insert([
+        'project_id'    => $project->id,
+        'competency_id' => $competency->id,
+        'position'      => 1,
+    ]);
+
+    $participant = c8MakeParticipant($org, $project, 'in_attesa');
+    $bearer = CandidateTokenFactory::mintCandidateToken($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(422);
+    $response->assertJsonPath('error', 'assessment_type_not_supported');
+
+    // No InterviewSession row created
+    $resolver->setOrgId($org->id);
+    expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(0);
+
+    // No provider HTTP call made
+    Http::assertNothingSent();
+});
+
+test('W1 potential-type project on RESUME in_corso path → 422 assessment_type_not_supported, no provider call', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $org = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $competency = Competency::factory()->create(['code' => 'LAT_' . uniqid()]);
+
+    $project = Project::factory()->create([
+        'status'          => 'active',
+        'role_code'       => null,
+        'language'        => 'en',
+        'assessment_type' => 'potential',
+    ]);
+
+    DB::table('project_competencies')->insert([
+        'project_id'    => $project->id,
+        'competency_id' => $competency->id,
+        'position'      => 1,
+    ]);
+
+    // Participant already in_corso with a pre-existing in_corso session (resume scenario)
+    $participant = c8MakeParticipant($org, $project, 'in_corso');
+
+    InterviewSession::create([
+        'participant_id'       => $participant->id,
+        'project_id'           => $project->id,
+        'question_index'       => 0,
+        'competency_code'      => $competency->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider'             => 'heygen',
+        'provider_session_ref' => 'old-potential-ref-' . uniqid(),
+        'status'               => 'in_corso',
+    ]);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer ' . $bearer])
+        ->postJson('/api/candidate/interview/start');
+
+    // Must hard-fail even on resume path — non-standard type never reaches degraded bypass
+    $response->assertStatus(422);
+    $response->assertJsonPath('error', 'assessment_type_not_supported');
+
+    // No provider HTTP call made
     Http::assertNothingSent();
 });

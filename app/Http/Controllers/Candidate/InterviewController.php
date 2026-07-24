@@ -94,6 +94,16 @@ class InterviewController extends Controller
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // (FIX W1) Guard: only 'standard' assessment type is supported by the composition engine.
+        // 'potential' and any future types must not reach composition or the degraded bypass.
+        // This check applies on BOTH the fresh-start AND the resume in_corso path.
+        // The `!== null` is a static-analysis guard only: post-authentication a participant
+        // always resolves to a project (project_id is non-nullable), so this branch always fires
+        // the assessment_type check in practice.
+        if ($project !== null && $project->assessment_type !== 'standard') {
+            return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
         //
         // Failure semantics depend on whether this is a RESUME or a NEW session:
@@ -130,15 +140,20 @@ class InterviewController extends Controller
         $providerService = $this->resolveProvider($providerName);
 
         // Build QuestionContext. On the degraded RESUME path, compositionResult is a JsonResponse
-        // (composition failed), so we fall back to null system prompt and null prompt version.
+        // (composition failed), so we fall back to null system prompt (no fresh BARS prompt was
+        // composed — do NOT fabricate prompt text) but restore the prompt_version from config
+        // so /start always returns a non-null prompt_version in every 201 response (FIX C1).
         $systemPrompt  = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->text;
-        $promptVersion = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->version;
+        $promptVersion = ($compositionResult instanceof JsonResponse)
+            ? (string) config('conversation.prompt_version')
+            : $compositionResult->version;
 
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
             // C8: thread composed prompt and version into QuestionContext (M-3).
-            // On degraded RESUME path both are null → legacy non-adaptive provider body.
+            // On the degraded RESUME path systemPrompt is null (legacy non-adaptive provider
+            // body), but promptVersion is restored from config (FIX C1) — never null in a 201.
             systemPrompt:  $systemPrompt,
             promptVersion: $promptVersion,
         );
@@ -585,7 +600,10 @@ class InterviewController extends Controller
      * Machine-facing field — returned literally in every locale (not localized).
      *
      * @param  string|null  $language      The participant's language (BCP-ish locale, may be null).
-     * @param  string|null  $promptVersion Composed prompt template version (C8); null on null path.
+     * @param  string|null  $promptVersion Composed prompt template version (C8). On the standard
+     *                                      path this is the composed prompt's version; on the
+     *                                      degraded resume path it falls back to the config
+     *                                      version (FIX C1) so a 201 never carries a null version.
      */
     private function buildSuccessResponse(
         InterviewSession $session,
