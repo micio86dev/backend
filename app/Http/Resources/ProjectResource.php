@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Models\Competency;
 use App\Models\Project;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -59,11 +60,11 @@ class ProjectResource extends JsonResource
             ] : null,
             // Competencies with position pivot
             'competencies' => $project->relationLoaded('competencies')
-                ? $project->competencies->map(fn ($c) => [
+                ? $project->competencies->map(fn (Competency $c): array => [
                     'id' => $c->id,
                     'code' => $c->code,
                     'type' => $c->type,
-                    'position' => $c->pivot->position,
+                    'position' => $c->pivot->getAttribute('position'),
                 ])->values()->toArray()
                 : [],
         ];

@@ -42,7 +42,7 @@ class ApiClientResource extends JsonResource
             'is_active' => $client->is_active,
             'expires_at' => $client->expires_at?->toISOString(),
             'last_used_at' => $client->last_used_at?->toISOString(),
-            'created_at' => $client->created_at?->toISOString(),
+            'created_at' => $client->created_at->toISOString(),
             // key_hash: intentionally excluded (hidden + security-critical)
             // api_key:  intentionally excluded (transient; in 201 body only)
             // organization_id: not needed in resource; returned directly in whoami

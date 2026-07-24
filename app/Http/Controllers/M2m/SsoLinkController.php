@@ -63,7 +63,7 @@ final class SsoLinkController extends Controller
 
         // 1. Resolve project SCOPED to caller org (cross-org → 404).
         $project = Project::where('organization_id', $clientOrgId)
-            ->findOrFail($validated['project_id']);
+            ->findOrFail((int) $validated['project_id']);
 
         // 2. Entry gates (NULL-safe).
         if (! $this->projectIsAccessible($project)) {

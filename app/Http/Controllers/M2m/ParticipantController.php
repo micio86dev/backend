@@ -56,7 +56,7 @@ final class ParticipantController extends Controller
 
         // Resolve project SCOPED to caller org (cross-org → 404).
         $project = Project::where('organization_id', $clientOrgId)
-            ->findOrFail($validated['project_id']);
+            ->findOrFail((int) $validated['project_id']);
 
         // Create or find existing participant — organization_id from project (NOT from request).
         $participant = new Participant;

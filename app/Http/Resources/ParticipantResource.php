@@ -49,7 +49,7 @@ class ParticipantResource extends JsonResource
             'status' => $participant->status,
             'started_at' => $participant->started_at?->toISOString(),
             'completed_at' => $participant->completed_at?->toISOString(),
-            'created_at' => $participant->created_at?->toISOString(),
+            'created_at' => $participant->created_at->toISOString(),
             'project' => $project ? [
                 'id' => $project->id,
                 'role_code' => $project->role_code,

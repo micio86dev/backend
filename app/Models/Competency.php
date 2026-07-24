@@ -8,6 +8,7 @@ use Database\Factories\CompetencyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Spatie\Translatable\HasTranslations;
 
 /**
@@ -20,6 +21,7 @@ use Spatie\Translatable\HasTranslations;
  * @property string $name (resolved via current locale)
  * @property string $definition (resolved via current locale)
  * @property string $type standard|potential
+ * @property-read Pivot $pivot Pivot row when hydrated via Project::competencies() (carries the `position` column)
  */
 class Competency extends Model
 {

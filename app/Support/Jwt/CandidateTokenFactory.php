@@ -6,7 +6,7 @@ namespace App\Support\Jwt;
 
 use App\Models\Participant;
 use Illuminate\Support\Facades\Cache;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\JWTAuth;
 
 /**
  * CandidateTokenFactory (C6 — Participant + SSO Ingress).
@@ -62,10 +62,11 @@ class CandidateTokenFactory
         // RAW mint: iss/iat/exp/nbf/jti auto-populated by factory.
         // setTTL(30) = 30 minutes for sso-link token.
         // Build Payload then encode to token string.
-        JWTAuth::factory()->setTTL(30);
-        $jwtPayload = JWTAuth::factory()->customClaims($payload)->make();
+        $jwt = app(JWTAuth::class);
+        $jwt->factory()->setTTL(30);
+        $jwtPayload = $jwt->factory()->customClaims($payload)->make();
 
-        return JWTAuth::encode($jwtPayload)->get();
+        return $jwt->manager()->encode($jwtPayload)->get();
     }
 
     /**
@@ -94,9 +95,10 @@ class CandidateTokenFactory
         ], $extra);
 
         // setTTL(120) BEFORE fromUser — overrides the global 30-min default.
-        JWTAuth::factory()->setTTL(120);
+        $jwt = app(JWTAuth::class);
+        $jwt->factory()->setTTL(120);
 
-        return JWTAuth::customClaims($customClaims)->fromUser($participant);
+        return $jwt->customClaims($customClaims)->fromUser($participant);
     }
 
     /**

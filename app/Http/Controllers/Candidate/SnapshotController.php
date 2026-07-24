@@ -80,7 +80,7 @@ class SnapshotController extends Controller
         // ── Step 3: Base64 decode ─────────────────────────────────────────────────────
         $decoded = base64_decode($validated['image_base64'], strict: false);
 
-        if ($decoded === false || strlen($decoded) < 3) {
+        if (strlen($decoded) < 3) {
             return response()->json(
                 ['message' => 'Invalid base64 encoding.'],
                 Response::HTTP_UNPROCESSABLE_ENTITY

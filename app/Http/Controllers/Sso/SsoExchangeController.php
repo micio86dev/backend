@@ -11,7 +11,7 @@ use App\Support\Jwt\CandidateTokenFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\JWTAuth;
 
 /**
  * SsoExchangeController (C6 — Participant + SSO Ingress).
@@ -60,13 +60,13 @@ final class SsoExchangeController extends Controller
     public function exchange(Request $request): JsonResponse
     {
         $raw = $request->query('token', '');
-        if ($raw === '' || $raw === null) {
+        if (! is_string($raw) || $raw === '') {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
         // ── Step 1: Parse + verify sig + exp ─────────────────────────────────
         try {
-            $payload = JWTAuth::setToken((string) $raw)->checkOrFail();
+            $payload = app(JWTAuth::class)->setToken((string) $raw)->checkOrFail();
         } catch (\Throwable) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
@@ -161,6 +161,10 @@ final class SsoExchangeController extends Controller
         $participant = Participant::where('project_id', $project->id)
             ->where('candidate_ref', $candidateRef)
             ->first();
+
+        if ($participant === null) {
+            return response()->json(['message' => self::GENERIC_403], 403);
+        }
 
         // ── Step 10: Mint candidate JWT ───────────────────────────────────────
         $token = CandidateTokenFactory::mintCandidateToken($participant);

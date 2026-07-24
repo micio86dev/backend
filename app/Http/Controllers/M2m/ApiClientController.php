@@ -137,7 +137,7 @@ final class ApiClientController extends Controller
         // TTL: remaining life if expires_at set; 1-year fallback for non-expiring keys.
         try {
             $ttl = $apiClient->expires_at !== null
-                ? max(1, $apiClient->expires_at->diffInSeconds(now()))
+                ? max(1, (int) $apiClient->expires_at->diffInSeconds(now()))
                 : 365 * 24 * 3600;
 
             Cache::put('client_revoked:'.$apiClient->id, true, $ttl);

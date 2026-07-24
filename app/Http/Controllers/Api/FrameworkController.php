@@ -81,12 +81,12 @@ class FrameworkController extends Controller
             ->toArray();
 
         // Pass the covered set to each resource via ->additional()
-        $collection = CompetencyResource::collection($competencies);
-        $collection->each(function (CompetencyResource $resource) use ($barsCoveredIds): void {
-            $resource->additional(['bars_covered_ids' => $barsCoveredIds]);
-        });
+        $resources = $competencies->map(
+            fn (Competency $competency): CompetencyResource => (new CompetencyResource($competency))
+                ->additional(['bars_covered_ids' => $barsCoveredIds])
+        );
 
-        return $collection->response();
+        return CompetencyResource::collection($resources)->response();
     }
 
     /**
