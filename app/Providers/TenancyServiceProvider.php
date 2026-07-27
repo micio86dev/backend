@@ -31,7 +31,9 @@ class TenancyServiceProvider extends ServiceProvider
      *   2. Spatie team context (setPermissionsTeamId(null))
      *
      * This prevents HTTP request tenancy from bleeding into queue jobs.
-     * Each job is responsible for re-establishing tenancy from its own payload.
+     * Each job is responsible for re-establishing tenancy explicitly via
+     * App\Support\Tenancy\TenantContextScope::runFor(), re-derived from its
+     * own aggregate root's DB record — never from the payload.
      */
     public function boot(): void
     {

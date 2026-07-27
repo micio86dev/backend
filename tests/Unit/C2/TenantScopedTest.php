@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Models\Concerns\TenantScoped;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Builder;
@@ -65,7 +66,11 @@ it('creating listener overrides organization_id unconditionally (tamper-proof)',
     expect($model->organization_id)->toBe(10, 'creating listener must stamp resolver org_id, not caller-supplied value');
 });
 
-it('creating listener stamps null when resolver has no org (bypass=false, null orgId)', function (): void {
+// D4(a) (queued-job-tenancy): the null-stamp path was the exact defect this
+// design closes. The creating listener now fails closed instead of writing
+// organization_id=null — see tests/Unit/Models/Concerns/TenantScopedNullContextTest.php
+// for the full RED/GREEN cycle on this behavior.
+it('creating listener throws MissingTenantContextException when resolver has no org (bypass=false, null orgId)', function (): void {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId(null);
     $resolver->setBypass(false);
@@ -73,9 +78,8 @@ it('creating listener stamps null when resolver has no org (bypass=false, null o
     $model = new StubTenantModel;
     $model->organization_id = 99;
 
-    $model->fireCreating();
-
-    expect($model->organization_id)->toBeNull('With null resolver orgId, creating listener stamps null (unconditional override)');
+    expect(fn () => $model->fireCreating())
+        ->toThrow(MissingTenantContextException::class);
 });
 
 // ── Task 1.17: bypass flag behaviour ──
