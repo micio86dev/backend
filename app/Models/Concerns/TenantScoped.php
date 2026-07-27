@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Concerns;
 
+use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -50,12 +51,27 @@ trait TenantScoped
         // Creating listener — tamper-proof organization_id stamp.
         // Runs BEFORE the INSERT; unconditionally replaces any caller-supplied
         // organization_id with the resolver value (NOT "set only if null").
+        //
+        // D4(a): if no tenant context has been established (resolver.orgId is
+        // null), fail closed by throwing instead of stamping null. This is
+        // deliberately NOT a "set only if null" guard — there is no code path
+        // here that leaves organization_id untouched. The caller's context-
+        // establishment mechanism (e.g. App\Support\Tenancy\TenantContextScope
+        // for queued jobs, or TenantContext/TenantContextCandidate for HTTP)
+        // is responsible for ensuring a valid org is set BEFORE this listener runs.
         static::creating(function (Model $model): void {
             /** @var TenantResolver $resolver */
             $resolver = app(TenantResolver::class);
+
+            $orgId = $resolver->getOrgId();
+
+            if ($orgId === null) {
+                throw new MissingTenantContextException(static::class);
+            }
+
             // Use setAttribute() so PHPStan knows we are setting a dynamic property
             // via Eloquent's magic setter, not a typed class property.
-            $model->setAttribute('organization_id', $resolver->getOrgId());
+            $model->setAttribute('organization_id', $orgId);
         });
     }
 }

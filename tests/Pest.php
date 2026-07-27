@@ -128,6 +128,13 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Jobs');
 
+// ─── queued-job-tenancy (C9 retrofit) ─────────────────────────────────────────
+
+// Unit/Support/Tenancy — needs TestCase so app() helpers (scoped TenantResolver
+// binding, PermissionRegistrar container resolution) work for TenantContextScope tests.
+pest()->extend(TestCase::class)
+    ->in('Unit/Support/Tenancy');
+
 // Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.
 // Note: Feature/Models already has RefreshDatabase from the C3 block above.
 
