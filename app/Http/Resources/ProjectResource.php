@@ -46,6 +46,7 @@ class ProjectResource extends JsonResource
             'nudge_min_chars' => $project->nudge_min_chars,
             'exit_redirect_url' => $project->exit_redirect_url,
             'webhook_url' => $project->webhook_url,
+            'webhook_events' => $project->webhook_events,
             // webhook_secret intentionally excluded (hidden + encrypted)
             'deadline_at' => $project->deadline_at?->toISOString(),
             'goes_live_at' => $project->goes_live_at?->toISOString(),

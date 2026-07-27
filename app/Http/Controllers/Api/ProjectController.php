@@ -91,6 +91,11 @@ class ProjectController extends Controller
             return $project;
         });
 
+        // Refresh before load(): Eloquent's create() only writes back the incrementing
+        // key, not other DB-computed defaults (e.g. projects.webhook_events' jsonb
+        // DEFAULT — C10 D10). Without this, a fresh POST with no webhook_events in the
+        // payload would report null instead of the DB default in the response.
+        $project->refresh();
         $project->load(['frameworkVersion', 'competencies']);
 
         return (new ProjectResource($project))
