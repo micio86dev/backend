@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Assert;
 
 uses(RefreshDatabase::class);
 
@@ -37,6 +38,34 @@ function c10WebhookDeliveryFixtures(): array
     $participant = Participant::factory()->forProject($project)->create();
 
     return [$org, $project, $participant];
+}
+
+/**
+ * Assert that inserting $row raises a genuine Postgres CHECK-constraint violation for
+ * $constraintName — SQLSTATE 23514, with the named constraint present in the driver
+ * message. A bare `toThrow(QueryException::class)` would also pass on an unrelated
+ * failure (e.g. the table not existing at all, SQLSTATE 42P01) — this helper closes
+ * that gap (fixes the vacuous-RED finding from PR1 review).
+ *
+ * @param  array<string, mixed>  $row
+ */
+function c10ExpectCheckViolation(array $row, string $constraintName): void
+{
+    try {
+        DB::table('webhook_deliveries')->insert($row);
+    } catch (QueryException $e) {
+        expect($e->getCode())->toBe(
+            '23514',
+            "Expected SQLSTATE 23514 (check_violation) for constraint '{$constraintName}', got '{$e->getCode()}': {$e->getMessage()}"
+        );
+        expect(str_contains($e->getMessage(), $constraintName))->toBeTrue(
+            "Expected the '{$constraintName}' constraint name in the driver error message, got: {$e->getMessage()}"
+        );
+
+        return;
+    }
+
+    Assert::fail("Expected constraint '{$constraintName}' to reject the insert, but it succeeded.");
 }
 
 /**
@@ -208,8 +237,7 @@ test('CHECK constraint rejects status=skipped with skip_reason null', function (
     $row['skip_reason'] = null;
     $row['attempt_count'] = 0;
 
-    expect(fn () => DB::table('webhook_deliveries')->insert($row))
-        ->toThrow(QueryException::class);
+    c10ExpectCheckViolation($row, 'webhook_deliveries_skip_reason_check');
 });
 
 test('CHECK constraint rejects status=pending with skip_reason set', function (): void {
@@ -219,8 +247,7 @@ test('CHECK constraint rejects status=pending with skip_reason set', function ()
     $row['status'] = 'pending';
     $row['skip_reason'] = 'no_webhook_url';
 
-    expect(fn () => DB::table('webhook_deliveries')->insert($row))
-        ->toThrow(QueryException::class);
+    c10ExpectCheckViolation($row, 'webhook_deliveries_skip_reason_check');
 });
 
 test('CHECK constraint rejects status=delivered with delivered_at null', function (): void {
@@ -230,8 +257,7 @@ test('CHECK constraint rejects status=delivered with delivered_at null', functio
     $row['status'] = 'delivered';
     $row['delivered_at'] = null;
 
-    expect(fn () => DB::table('webhook_deliveries')->insert($row))
-        ->toThrow(QueryException::class);
+    c10ExpectCheckViolation($row, 'webhook_deliveries_delivered_at_check');
 });
 
 test('CHECK constraint rejects status=skipped with attempt_count greater than zero', function (): void {
@@ -242,8 +268,7 @@ test('CHECK constraint rejects status=skipped with attempt_count greater than ze
     $row['skip_reason'] = 'no_webhook_url';
     $row['attempt_count'] = 1;
 
-    expect(fn () => DB::table('webhook_deliveries')->insert($row))
-        ->toThrow(QueryException::class);
+    c10ExpectCheckViolation($row, 'webhook_deliveries_skipped_attempt_count_check');
 });
 
 test('CHECK constraint rejects attempt_count greater than max_attempts', function (): void {
@@ -253,6 +278,5 @@ test('CHECK constraint rejects attempt_count greater than max_attempts', functio
     $row['attempt_count'] = 7;
     $row['max_attempts'] = 6;
 
-    expect(fn () => DB::table('webhook_deliveries')->insert($row))
-        ->toThrow(QueryException::class);
+    c10ExpectCheckViolation($row, 'webhook_deliveries_attempt_count_max_check');
 });
