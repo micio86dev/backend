@@ -137,9 +137,20 @@ test('ScoreEvaluationJob for org A participant does NOT create Evaluation for or
     $participantA = crossTenantParticipant($orgA, $projectA);
     $participantB = crossTenantParticipant($orgB, $projectB);
 
-    // Run job for org A participant.
-    $job = new ScoreEvaluationJob($participantA->id);
-    $job->handle();
+    // Dispatch (not handle()) — only the dispatch path triggers Queue::before,
+    // matching production behavior (D5 dispatcher-based test discipline).
+    ScoreEvaluationJob::dispatch($participantA->id);
+
+    // The row the job actually created must carry org A — assert the row it
+    // wrote, not merely the absence of an unrelated participant's row.
+    $writtenEval = Evaluation::withoutGlobalScopes()
+        ->where('participant_id', $participantA->id)
+        ->first();
+
+    expect($writtenEval)->not->toBeNull();
+    expect($writtenEval->organization_id)->toBe($orgA->id,
+        'ScoreEvaluationJob must stamp the participant\'s own org on the row it creates.'
+    );
 
     // Org B must have no Evaluations.
     $resolver = app(TenantResolver::class);
@@ -152,16 +163,18 @@ test('ScoreEvaluationJob for org A participant does NOT create Evaluation for or
 
 test('ScoreEvaluationJob creates Evaluation with correct organization_id from TenantScoped', function (): void {
     $orgA = crossTenantOrg();
+    $orgB = crossTenantOrg();
     $projectA = crossTenantProject($orgA);
     $participantA = crossTenantParticipant($orgA, $projectA);
 
-    // Set resolver to org A before job runs.
+    // Hostile ambient: resolver holds a FOREIGN org (B), not org A, right before
+    // dispatch. Queue::before resets it before handle() runs either way — this
+    // proves the job never trusts leftover ambient state, foreign or not.
     $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($orgA->id);
+    $resolver->setOrgId($orgB->id);
     $resolver->setBypass(false);
 
-    $job = new ScoreEvaluationJob($participantA->id);
-    $job->handle();
+    ScoreEvaluationJob::dispatch($participantA->id);
 
     $eval = Evaluation::withoutGlobalScopes()
         ->where('participant_id', $participantA->id)
@@ -169,6 +182,6 @@ test('ScoreEvaluationJob creates Evaluation with correct organization_id from Te
 
     expect($eval)->not->toBeNull();
     expect($eval->organization_id)->toBe($orgA->id,
-        'Evaluation organization_id must match the participant organization.'
+        'Evaluation organization_id must match the participant organization, never the ambient (foreign) org.'
     );
 });
