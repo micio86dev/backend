@@ -34,6 +34,7 @@ use App\Services\Scoring\IndicatorValidator;
 use App\Services\Scoring\MeanCalculator;
 use App\Services\Scoring\PromptBuilder;
 use App\Services\Scoring\TranscriptAssembler;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
@@ -108,6 +109,14 @@ class ScoreEvaluationJob implements ShouldQueue
      * Execute the scoring job.
      *
      * PR2: Full pipeline wired — start-of-job guard + scoring pipeline.
+     *
+     * Tenant context (queued-job-tenancy PR2): steps 1 and the org-derivation
+     * guard run OUTSIDE any tenant context — the org is not yet known, and no
+     * tenant-scoped write happens here. Once the org is derived from the
+     * participant's own DB record, the ENTIRE remaining pipeline (evaluation
+     * guard, scoring loop, gate, lifecycle, EvaluationCompleted) runs inside
+     * ONE TenantContextScope::runFor() boundary (design D3 — one wrapper, not
+     * one per write site).
      */
     public function handle(): void
     {
@@ -132,8 +141,30 @@ class ScoreEvaluationJob implements ShouldQueue
             return;
         }
 
-        // ── Step 2: Evaluation row guard ─────────────────────────────────────
-        $this->enterEvaluationGuard($participant);
+        // ── Step 2: derive tenant context from the aggregate root ─────────────
+        // Re-derived from the participant's own DB record — NEVER from ambient
+        // TenantResolver state (Queue::before already reset it to null) and
+        // NEVER from the job's serialized payload (design D2).
+        $orgId = $participant->organization_id;
+
+        if ($orgId < 1) {
+            // Fail closed: no throw, no queue retry — mirrors the invariant-guard
+            // precedent at resolveEvaluationTerminalState() (ZeroCompetenciesInvariantException
+            // handling below, ~:428-442). A corrupted/unresolvable org must abort
+            // before any write, not crash the queue worker.
+            Log::error('ScoreEvaluationJob: participant has no resolvable organization_id — aborting before any write', [
+                'participant_id' => $this->participantId,
+                'organization_id' => $orgId,
+            ]);
+
+            $participant->refresh();
+            $this->transitionParticipantToErrore($participant);
+
+            return;
+        }
+
+        // ── Step 3: Evaluation row guard — runs inside the established context ─
+        TenantContextScope::runFor($orgId, fn () => $this->enterEvaluationGuard($participant));
     }
 
     /**
@@ -159,7 +190,7 @@ class ScoreEvaluationJob implements ShouldQueue
         if ($evaluation === null) {
             // No row exists → create in processing and proceed.
             try {
-                $evaluation = Evaluation::withoutGlobalScopes()->create([
+                $evaluation = Evaluation::create([
                     'participant_id' => $this->participantId,
                     'status' => EvaluationStatus::Processing->value,
                     'framework_version_id' => $this->resolveFrameworkVersionId($participant),
@@ -622,7 +653,7 @@ class ScoreEvaluationJob implements ShouldQueue
             $llmResponse, $latencyMs, $options
         ): void {
             // 1. Append ai_requests row (evaluation_id always known — Evaluation was created at START).
-            AiRequest::withoutGlobalScopes()->create([
+            AiRequest::create([
                 'evaluation_id' => $evaluation->id,
                 'competency_code' => $competencyCode,
                 'model' => $llmResponse->model,
@@ -634,7 +665,7 @@ class ScoreEvaluationJob implements ShouldQueue
             ]);
 
             // 2. Persist CompetencyResult with real reliability + valid (PR3).
-            $cr = CompetencyResult::withoutGlobalScopes()->create([
+            $cr = CompetencyResult::create([
                 'evaluation_id' => $evaluation->id,
                 'competency_code' => $competencyCode,
                 'score' => $score,
@@ -645,7 +676,7 @@ class ScoreEvaluationJob implements ShouldQueue
 
             // 3. Persist IndicatorScore rows.
             foreach ($dtos as $dto) {
-                IndicatorScore::withoutGlobalScopes()->create([
+                IndicatorScore::create([
                     'competency_result_id' => $cr->id,
                     'indicator_text' => $dto->indicatorText,
                     'score' => $dto->score,
@@ -674,7 +705,7 @@ class ScoreEvaluationJob implements ShouldQueue
         string $reason,
     ): void {
         try {
-            CompetencyResult::withoutGlobalScopes()->create([
+            CompetencyResult::create([
                 'evaluation_id' => $evaluation->id,
                 'competency_code' => $competencyCode,
                 'score' => null,
@@ -715,6 +746,13 @@ class ScoreEvaluationJob implements ShouldQueue
      * (b) ALWAYS emit EvaluationFailed($participantId) regardless of transition outcome.
      *
      * This ensures PRs 1–2 cannot leave participants orphaned in in_valutazione on failure.
+     *
+     * Tenant context (queued-job-tenancy PR2): failed() performs zero tenant-scoped
+     * writes today (Participant is a plain Model, not TenantModel), but it emits
+     * EvaluationFailed, which C10's tenant-scoped webhook listeners will attach to.
+     * When the org is derivable from the participant, the whole body runs inside
+     * TenantContextScope::runFor(). When it is NOT derivable, D9's "ALWAYS emit"
+     * outranks tenant context — the event still fires, unwrapped (design D3).
      */
     public function failed(\Throwable $e): void
     {
@@ -723,13 +761,49 @@ class ScoreEvaluationJob implements ShouldQueue
             'error' => $e->getMessage(),
         ]);
 
-        // (a) Guard transition: only if currently in_valutazione.
         $participant = Participant::withoutGlobalScopes()->find($this->participantId);
+        $orgId = $participant?->organization_id;
 
-        if ($participant !== null && $participant->status === 'in_valutazione') {
+        if ($participant !== null && $orgId !== null && $orgId >= 1) {
+            TenantContextScope::runFor($orgId, function () use ($participant): void {
+                $this->transitionParticipantToErrore($participant);
+                event(new EvaluationFailed($this->participantId));
+            });
+
+            return;
+        }
+
+        Log::error('ScoreEvaluationJob: cannot derive organization context in failed() — emitting EvaluationFailed unwrapped', [
+            'participant_id' => $this->participantId,
+        ]);
+
+        if ($participant !== null) {
+            $this->transitionParticipantToErrore($participant);
+        }
+
+        // (b) ALWAYS emit EvaluationFailed, regardless of transition outcome or context derivability.
+        event(new EvaluationFailed($this->participantId));
+    }
+
+    /**
+     * Guard transition: in_valutazione → errore, only if currently in_valutazione.
+     * Skips silently if already errore (race with a concurrent failed() call).
+     *
+     * The save() runs inside DB::transaction() so a failure here (e.g. the
+     * participant row itself is corrupted — organization_id fails FK
+     * revalidation on ANY update to the row, not only when that column
+     * changes) rolls back to a SAVEPOINT instead of poisoning whatever
+     * outer transaction the caller may be inside. This keeps the guard
+     * genuinely "no throw" as required by the fail-closed org guard.
+     */
+    private function transitionParticipantToErrore(Participant $participant): void
+    {
+        if ($participant->status === 'in_valutazione') {
             try {
-                $participant->status = 'errore';
-                $participant->save();
+                DB::transaction(function () use ($participant): void {
+                    $participant->status = 'errore';
+                    $participant->save();
+                });
 
                 Log::info('ScoreEvaluationJob: participant transitioned to errore', [
                     'participant_id' => $this->participantId,
@@ -740,13 +814,10 @@ class ScoreEvaluationJob implements ShouldQueue
                     'error' => $transitionException->getMessage(),
                 ]);
             }
-        } elseif ($participant !== null && $participant->status === 'errore') {
+        } elseif ($participant->status === 'errore') {
             Log::info('ScoreEvaluationJob: participant already errore — skipping transition', [
                 'participant_id' => $this->participantId,
             ]);
         }
-
-        // (b) ALWAYS emit EvaluationFailed, regardless of transition outcome.
-        event(new EvaluationFailed($this->participantId));
     }
 }
