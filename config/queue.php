@@ -40,7 +40,7 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1500),
             'after_commit' => false,
         ],
 
@@ -68,7 +68,7 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 1500),
             'block_for' => null,
             'after_commit' => false,
         ],
@@ -89,6 +89,42 @@ return [
             ],
         ],
 
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Runtime — Worker Process Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Single source of truth for every number the `beai:queue-work` wrapper
+    | command (App\Console\Commands\QueueWorkCommand) forwards to the
+    | underlying `queue:work` invocation. The reliability invariant is:
+    |
+    |     max(declared job $timeout) < worker_timeout < connections.*.retry_after
+    |
+    | AND ScoreEvaluationJob::$timeout independently clears the derived
+    | ceiling: 18 competencies x scoring.anthropic.timeout_seconds x 1.1,
+    | with a config-independent 600s floor (queue-runtime/spec.md).
+    |
+    | worker_timeout:      forwarded as `queue:work --timeout`. Kills a job
+    |                       that runs longer than this.
+    | worker_max_time:     forwarded as `queue:work --max-time`. Worker
+    |                       process exits cleanly after this many seconds
+    |                       (deploy/restart hygiene), not a per-job bound.
+    | worker_memory_mb:    forwarded as `queue:work --memory`.
+    | worker_queues:       forwarded as `queue:work --queue` (comma-joined).
+    | stall_threshold_seconds: used by the queue health probe to decide
+    |                       whether the queue is "stalled" (depth > 0 and
+    |                       last-processed age exceeds this).
+    |
+    */
+
+    'runtime' => [
+        'worker_timeout' => (int) env('QUEUE_WORKER_TIMEOUT', 1260),
+        'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
+        'worker_memory_mb' => (int) env('QUEUE_WORKER_MEMORY_MB', 512),
+        'worker_queues' => explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default')),
+        'stall_threshold_seconds' => (int) env('QUEUE_STALL_THRESHOLD_SECONDS', 300),
     ],
 
     /*
