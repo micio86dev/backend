@@ -17,6 +17,11 @@ declare(strict_types=1);
  * (b) no bare `Participant::` static call under app/Http/Controllers/Api —
  *     the sanctioned path is AdminParticipantReader::read() (D1); a direct
  *     static call bypasses both the org filter and the lifecycle gate.
+ * (c) (task 5.3, PR A2) no `withoutGlobalScopes(` anywhere under
+ *     app/Services/Admin — AdminEvaluationSerializer/AdminTranscriptSerializer
+ *     MUST query Evaluation/CompetencyResult/IndicatorScore/InterviewSession/
+ *     Utterance under the ambient TenantContext scope, never bypass it (spec
+ *     scenario "Serializer never bypasses the tenant scope").
  *
  * Mirrors the glob+file_get_contents+str_contains shape of
  * tests/Arch/Tenancy/QueuedJobTenantContextArchTest.php.
@@ -74,6 +79,24 @@ test('no withoutGlobalScopes() call exists anywhere under app/Http/', function (
     expect($violations)->toBe([], 'withoutGlobalScopes() is reserved for the queued-job context '
         .'(EvaluationPayloadAssembler) and MUST NOT appear under app/Http/. Violations: '
         .implode(', ', $violations));
+})->group('arch');
+
+test('no withoutGlobalScopes() call exists anywhere under app/Services/Admin/ (task 5.3)', function (): void {
+    $violations = [];
+
+    $callPattern = '/(->|::)withoutGlobalScopes\(/';
+
+    foreach (phpFilesUnder(base_path('app/Services/Admin')) as $file) {
+        $source = file_get_contents($file);
+
+        if ($source !== false && preg_match($callPattern, $source) === 1) {
+            $violations[] = $file;
+        }
+    }
+
+    expect($violations)->toBe([], 'withoutGlobalScopes() is reserved for the queued-job context '
+        .'(EvaluationPayloadAssembler) and MUST NOT appear in the admin serializers under '
+        .'app/Services/Admin. Violations: '.implode(', ', $violations));
 })->group('arch');
 
 test('no bare Participant:: static call exists under app/Http/Controllers/Api', function (): void {
