@@ -26,37 +26,6 @@ use App\Services\Webhooks\WebhookDeliveryRecorder;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Http;
 
-/**
- * @param  array<string, mixed>  $projectAttrs
- * @return array{0: Organization, 1: Project, 2: Participant}
- */
-function c10RecorderFixtures(array $projectAttrs = []): array
-{
-    $org = Organization::factory()->create();
-
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    $resolver->setBypass(false);
-
-    $project = Project::factory()->create(array_merge([
-        'webhook_url' => 'https://receiver.example.test/hook',
-        'webhook_secret' => 'whsec_test_secret_value',
-        'webhook_events' => ['progress', 'evaluation'],
-    ], $projectAttrs));
-
-    $participant = Participant::factory()->forProject($project)->create();
-
-    return [$org, $project, $participant];
-}
-
-/**
- * @return Closure(string): array<string, mixed>
- */
-function c10StubPayload(): Closure
-{
-    return fn (string $deliveryId): array => ['delivery_id' => $deliveryId, 'stub' => true];
-}
-
 beforeEach(function (): void {
     Http::fake();
 });
