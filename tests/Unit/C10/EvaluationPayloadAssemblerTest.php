@@ -147,8 +147,26 @@ test('files has exactly transcript and evaluation_raw, never audio', function ()
 
     expect(array_keys($files))->toEqualCanonicalizing(['transcript', 'evaluation_raw'])
         ->and($files)->not->toHaveKey('audio')
-        ->and($files['transcript'])->toBe(['type' => 'transcript', 'ref' => "participant:{$participant->id}"])
-        ->and($files['evaluation_raw'])->toBe(['type' => 'evaluation', 'ref' => "evaluation:{$evaluation->id}"]);
+        ->and($files['transcript'])->toBe([
+            'type' => 'transcript',
+            'ref' => "participant:{$participant->id}",
+            'url' => route('admin.participants.transcript.download', ['id' => $participant->id]),
+        ])
+        ->and($files['evaluation_raw'])->toBe([
+            'type' => 'evaluation',
+            'ref' => "evaluation:{$evaluation->id}",
+            'url' => route('admin.participants.evaluation.download', ['id' => $participant->id]),
+        ]);
+});
+
+test('files url is absolute and rooted at config(app.url) — not a relative path', function (): void {
+    [, , $participant, $evaluation] = c10EvaluationFixtures();
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+    $files = $payload['data']['files'];
+
+    expect($files['transcript']['url'])->toStartWith((string) config('app.url'))
+        ->and($files['evaluation_raw']['url'])->toStartWith((string) config('app.url'));
 });
 
 test('unscorable competency serializes score:null plus an additive unscorable_reason key', function (): void {
@@ -241,6 +259,10 @@ test('assembleForFailedParticipant renders the terminal participant state when n
     expect($payload['data']['status'])->toBe('errore')
         ->and($payload['data']['text'])->toBe([])
         ->and($payload['data']['files'])->toBe([
-            'transcript' => ['type' => 'transcript', 'ref' => "participant:{$participant->id}"],
+            'transcript' => [
+                'type' => 'transcript',
+                'ref' => "participant:{$participant->id}",
+                'url' => route('admin.participants.transcript.download', ['id' => $participant->id]),
+            ],
         ]);
 });

@@ -135,6 +135,29 @@ pest()->use(RefreshDatabase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Support/Tenancy');
 
+// ─── C11 Admin Dashboards ─────────────────────────────────────────────────────
+
+// Unit/Support/Admin — needs TestCase + RefreshDatabase: AdminParticipantReaderTest
+// creates Organization/User/Participant via factories and authenticates via Gate.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Admin');
+
+// Unit/Services/Admin — needs RefreshDatabase: AdminEvaluationSerializer/
+// AdminTranscriptSerializer tests build Participant/Project/Evaluation/CompetencyResult/
+// IndicatorScore/InterviewSession/Utterance fixtures via factories (PR A2).
+// TestCase is already bound by the broader Unit/Services block above (->use()
+// only here, not ->extend() — re-declaring the same TestCase binding for a
+// subdirectory already covered by a parent ->in() errors at suite build time).
+pest()->use(RefreshDatabase::class)
+    ->in('Unit/Services/Admin');
+
+// Feature/C11 — RefreshDatabase for the admin controllers/routes feature-test
+// matrix (PR A3): cross-org, lifecycle gate matrix, RBAC, download headers,
+// route surface, dashboard metrics.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C11');
+
 // Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.
 // Note: Feature/Models already has RefreshDatabase from the C3 block above.
 

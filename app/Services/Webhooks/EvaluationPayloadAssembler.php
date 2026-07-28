@@ -159,11 +159,17 @@ final class EvaluationPayloadAssembler
     }
 
     /**
-     * `files` — PARTIAL per design.md D9: transcript + evaluation_raw REFERENCES only
-     * (no resolvable URL exists yet — S12: no evaluation/transcript read endpoint).
-     * Per-question `audio` is an explicit non-goal (open product decision #2, GDPR
-     * retention). This map is documented to receivers as OPEN and EXTENSIBLE — adding
-     * `audio` or a `url` key later is additive, never a breaking payload-shape change.
+     * `files` — transcript + evaluation_raw references, each additively carrying a
+     * `url` key (design.md D9 + webhooks-integration/design.md:309,460 — Δ3: C11 adds
+     * `url` additively once a read endpoint exists). Both routes are keyed by
+     * participant id (ParticipantDownloadController::transcript()/evaluation()), never
+     * evaluation id — see the route definitions in routes/api.php. `route()` resolves
+     * absolute (default `$absolute = true`); this assembler runs from a queued job with
+     * no ambient HTTP request (see class docblock), so the UrlGenerator falls back to
+     * `config('app.url')` as the root rather than any per-request host. Per-question
+     * `audio` is an explicit non-goal (open product decision #2, GDPR retention). This
+     * map is documented to receivers as OPEN and EXTENSIBLE — adding `audio` later is
+     * additive, never a breaking payload-shape change.
      *
      * @return array<string, array<string, string>>
      */
@@ -173,6 +179,7 @@ final class EvaluationPayloadAssembler
             'transcript' => [
                 'type' => 'transcript',
                 'ref' => "participant:{$participantId}",
+                'url' => route('admin.participants.transcript.download', ['id' => $participantId]),
             ],
         ];
 
@@ -180,6 +187,7 @@ final class EvaluationPayloadAssembler
             $files['evaluation_raw'] = [
                 'type' => 'evaluation',
                 'ref' => "evaluation:{$evaluationId}",
+                'url' => route('admin.participants.evaluation.download', ['id' => $participantId]),
             ];
         }
 
