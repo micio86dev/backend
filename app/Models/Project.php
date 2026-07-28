@@ -41,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $exit_redirect_url
  * @property string|null $webhook_url
  * @property string|null $webhook_secret
+ * @property list<string> $webhook_events
  * @property Carbon|null $deadline_at
  * @property Carbon|null $goes_live_at
  * @property Carbon|null $deleted_at
@@ -71,6 +72,7 @@ class Project extends TenantModel
         'exit_redirect_url',
         'webhook_url',
         'webhook_secret',
+        'webhook_events',
         'deadline_at',
         'goes_live_at',
     ];
@@ -86,6 +88,8 @@ class Project extends TenantModel
         'goes_live_at' => 'datetime',
         // encrypted at rest; also in $hidden to prevent serialization exposure.
         'webhook_secret' => 'encrypted',
+        // jsonb NOT NULL, default ["progress","evaluation"] (C10 D10).
+        'webhook_events' => 'array',
     ];
 
     /**

@@ -74,6 +74,10 @@ class StoreProjectRequest extends FormRequest
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['nullable', 'url', 'max:2048'],
             'webhook_secret' => ['nullable', 'string', 'max:1024'],
+            // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
+            // the config, never a hardcoded list.
+            'webhook_events' => ['sometimes', 'array'],
+            'webhook_events.*' => [Rule::in(config('webhooks.events.types'))],
             'deadline_at' => ['nullable', 'date'],
             'goes_live_at' => ['nullable', 'date'],
         ];

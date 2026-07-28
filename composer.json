@@ -39,7 +39,11 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
-        }
+        },
+        "files": [
+            "tests/Helpers/C10Fixtures.php",
+            "tests/Helpers/ScoringFixtures.php"
+        ]
     },
     "scripts": {
         "test": [

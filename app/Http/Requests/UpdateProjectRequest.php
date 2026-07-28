@@ -87,6 +87,10 @@ class UpdateProjectRequest extends FormRequest
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
+            // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
+            // the config, never a hardcoded list.
+            'webhook_events' => ['sometimes', 'array'],
+            'webhook_events.*' => [Rule::in(config('webhooks.events.types'))],
             'deadline_at' => ['sometimes', 'nullable', 'date'],
             'goes_live_at' => ['sometimes', 'nullable', 'date'],
         ];
