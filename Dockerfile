@@ -35,7 +35,7 @@ RUN composer dump-autoload --optimize --no-dev --no-scripts
 FROM php:8.5.8-fpm-alpine AS runtime
 
 LABEL org.opencontainers.image.title="BEAI API" \
-      org.opencontainers.image.description="Business Evaluation AI — Laravel 13 API" \
+      org.opencontainers.image.description="Behavioral Event AI — Laravel 13 API" \
       org.opencontainers.image.version="0.1.0"
 
 # Robust extension installer (also pulls the correct runtime libs and cleans up build deps)
