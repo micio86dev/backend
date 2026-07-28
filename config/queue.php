@@ -113,6 +113,9 @@ return [
     |                       (deploy/restart hygiene), not a per-job bound.
     | worker_memory_mb:    forwarded as `queue:work --memory`.
     | worker_queues:       forwarded as `queue:work --queue` (comma-joined).
+    | worker_sleep_seconds: forwarded as `queue:work --sleep`. Seconds to
+    |                       sleep when no job is available (framework
+    |                       default is 3 — see WorkCommand's --sleep=3).
     | stall_threshold_seconds: used by the queue health probe to decide
     |                       whether the queue is "stalled" (depth > 0 and
     |                       last-processed age exceeds this).
@@ -124,6 +127,7 @@ return [
         'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
         'worker_memory_mb' => (int) env('QUEUE_WORKER_MEMORY_MB', 512),
         'worker_queues' => explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default')),
+        'worker_sleep_seconds' => (int) env('QUEUE_WORKER_SLEEP_SECONDS', 3),
         'stall_threshold_seconds' => (int) env('QUEUE_STALL_THRESHOLD_SECONDS', 300),
     ],
 
