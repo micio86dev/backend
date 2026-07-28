@@ -22,6 +22,7 @@ use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
+use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
 use App\Http\Middleware\TenantContext;
@@ -31,6 +32,12 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
+
+// queue-worker-scheduler PR4 (design.md D7): unauthenticated so Docker/
+// Railway probes can reach it without credentials — the body carries
+// counts/booleans/ages ONLY, never a candidate/tenant identifier. Doubles
+// as the worker HEALTHCHECK (wrapper PR5).
+Route::get('/health/queue', QueueHealthController::class);
 
 // ─── Auth routes (C2) ────────────────────────────────────────────────────────
 // POST /api/auth/login is public (no auth middleware).

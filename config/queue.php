@@ -126,9 +126,34 @@ return [
     | worker_sleep_seconds: forwarded as `queue:work --sleep`. Seconds to
     |                       sleep when no job is available (framework
     |                       default is 3 — see WorkCommand's --sleep=3).
-    | stall_threshold_seconds: used by the queue health probe to decide
-    |                       whether the queue is "stalled" (depth > 0 and
-    |                       last-processed age exceeds this).
+    | stall_threshold_seconds: DEPTH-based stall signal. Used by the queue
+    |                       health probe: the queue is "stalled" when depth
+    |                       > 0 AND the age since the last successfully
+    |                       processed job exceeds this. 300s is appropriate
+    |                       here because under healthy operation a pending
+    |                       job should be PICKED UP within seconds — this
+    |                       threshold is about the worker failing to start
+    |                       consuming at all, not about how long any single
+    |                       job takes to run.
+    | reserved_job_stall_threshold_seconds: RESERVATION-based stall signal —
+    |                       deliberately a SEPARATE, larger threshold, not
+    |                       the same number as stall_threshold_seconds
+    |                       above. A legitimately-running ScoreEvaluationJob
+    |                       can validly stay "reserved" for close to
+    |                       worker_timeout (1260s) — that is normal, not a
+    |                       stall. Only a reservation held meaningfully
+    |                       LONGER than worker_timeout indicates the worker
+    |                       that reserved it crashed or was restarted
+    |                       (Symfony's own --timeout enforcement never let a
+    |                       healthy worker hold a reservation past
+    |                       worker_timeout). Default is worker_timeout + a
+    |                       60s buffer = 1320s, deliberately still below
+    |                       retry_after (1500s) so this signal fires BEFORE
+    |                       Laravel's own migrateExpiredJobs() silently
+    |                       requeues the job — giving an operator ~180s of
+    |                       lead time on the exact failure mode retry_after
+    |                       was raised to 1500s to tolerate (queue-runtime/
+    |                       spec.md; see also App\Support\Queue\ReservedJobAgeProbe).
     |
     */
 
@@ -139,6 +164,7 @@ return [
         'worker_queues' => explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default')),
         'worker_sleep_seconds' => (int) env('QUEUE_WORKER_SLEEP_SECONDS', 3),
         'stall_threshold_seconds' => (int) env('QUEUE_STALL_THRESHOLD_SECONDS', 300),
+        'reserved_job_stall_threshold_seconds' => (int) env('QUEUE_RESERVED_JOB_STALL_THRESHOLD_SECONDS', 1320),
     ],
 
     /*
