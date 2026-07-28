@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ProviderException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
@@ -215,8 +216,13 @@ class InterviewController extends Controller
         $providerName = $session->provider;
         $providerService = $this->resolveProvider($providerName);
 
+        // C10 D5: declared before the closure, captured by reference, set ONLY on
+        // the success path (last statement inside the closure — every abort() above
+        // it throws past this point, so reaching it means the write committed).
+        $progress = null;
+
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
-        DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService): void {
+        DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress): void {
             // Lock the session row (scope MUST cover the status UPDATE in step 6)
             $locked = InterviewSession::lockForUpdate()->find($session->id);
 
@@ -264,8 +270,28 @@ class InterviewController extends Controller
                     FinalizeInterview::dispatch($pid)->afterCommit();
                 }
             }
+
+            // C10 D5: set ONLY on the success path — every abort() above (:225,
+            // :231) throws past this point, so reaching it means the write
+            // committed. Captured here (not re-derived after the closure returns)
+            // so the emitted competency_code is exactly the one this /end call
+            // just ended, even if a later request changes state before the event
+            // fires.
+            $progress = [
+                'participant_id' => $pid,
+                'project_id' => $projectId,
+                'competency_code' => $session->competency_code,
+            ];
             // (9) COMMIT happens at end of DB::transaction closure
         });
+
+        if ($progress !== null) {
+            event(new CompetencySessionEnded(
+                $progress['participant_id'],
+                $progress['project_id'],
+                $progress['competency_code'],
+            ));
+        }
 
         return response()->json(null, Response::HTTP_OK);
     }
