@@ -15,12 +15,86 @@ declare(strict_types=1);
  * Mirrors the reflection+glob+violations shape of
  * tests/Arch/C2/TenantModelArchTest.php:40-107.
  *
+ * HARDENED (C10 PR5, orchestrator-verified finding): the original discovery used
+ * `glob(base_path('app/Jobs/*.php'))`, which has two blind spots:
+ *   1. A single `*` glob is NOT recursive — a ShouldQueue class in a subdirectory
+ *      (e.g. `app/Jobs/Webhooks/DeliverWebhookJob.php`) would be silently skipped,
+ *      pass CI, and throw MissingTenantContextException on its first production write.
+ *   2. It only scanned `app/Jobs/` — a ShouldQueue class living in `app/Listeners/`
+ *      or elsewhere in `app/` escaped entirely.
+ * Discovery is now a recursive walk of the ENTIRE `app/` tree via
+ * RecursiveDirectoryIterator, extracted into c10DiscoverShouldQueueViolations() so
+ * the recursion itself can be proven correct against a controlled fixture tree
+ * (see the proof test below) without touching the real `app/` directory.
+ *
  * REQ: Queued-Job Tenant Context Establishment (openspec/specs/tenancy/spec.md)
  */
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 
-test('every ShouldQueue job references TenantContextScope or is explicitly allowlisted', function (): void {
+/**
+ * Recursively scan $rootDir for .php files, resolve each to a fully-qualified class
+ * name under $namespaceRoot (PSR-4: directory structure mirrors namespace), and
+ * return the class names of every ShouldQueue implementor that neither references
+ * TenantContextScope:: in its own source NOR appears in $allowlist.
+ *
+ * @param  array<string, string>  $allowlist  class-string => written justification
+ * @return list<string>
+ */
+function c10DiscoverShouldQueueViolations(string $rootDir, string $namespaceRoot, array $allowlist): array
+{
+    if (! is_dir($rootDir)) {
+        return [];
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($rootDir, FilesystemIterator::SKIP_DOTS)
+    );
+
+    $violations = [];
+
+    foreach ($iterator as $fileInfo) {
+        /** @var SplFileInfo $fileInfo */
+        if (! $fileInfo->isFile() || $fileInfo->getExtension() !== 'php') {
+            continue;
+        }
+
+        $relativePath = ltrim(
+            str_replace($rootDir, '', $fileInfo->getPathname()),
+            DIRECTORY_SEPARATOR
+        );
+        $relativeClass = str_replace(
+            ['/', DIRECTORY_SEPARATOR, '.php'],
+            ['\\', '\\', ''],
+            $relativePath
+        );
+        $class = rtrim($namespaceRoot, '\\').'\\'.$relativeClass;
+
+        if (! class_exists($class)) {
+            continue;
+        }
+
+        $reflection = new ReflectionClass($class);
+
+        if (! $reflection->isInstantiable() || ! $reflection->implementsInterface(ShouldQueue::class)) {
+            continue;
+        }
+
+        if (array_key_exists($class, $allowlist)) {
+            continue;
+        }
+
+        $source = file_get_contents($fileInfo->getPathname());
+
+        if ($source === false || ! str_contains($source, 'TenantContextScope::')) {
+            $violations[] = $class;
+        }
+    }
+
+    return $violations;
+}
+
+test('every ShouldQueue job under app/ references TenantContextScope or is explicitly allowlisted', function (): void {
     // Allowlist entries MUST carry a written justification — verified, not assumed.
     $allowlist = [
         // FinalizeInterview performs zero tenant-scoped writes (design D3): it only
@@ -30,35 +104,32 @@ test('every ShouldQueue job references TenantContextScope or is explicitly allow
         'App\\Jobs\\FinalizeInterview' => 'Zero tenant-scoped writes (design D3) — only touches Participant, a plain (non-TenantModel) Model.',
     ];
 
-    $jobFiles = glob(base_path('app/Jobs/*.php')) ?: [];
-
-    $violations = [];
-
-    foreach ($jobFiles as $file) {
-        $class = 'App\\Jobs\\'.basename($file, '.php');
-
-        if (! class_exists($class)) {
-            continue;
-        }
-
-        $reflection = new ReflectionClass($class);
-
-        if (! $reflection->implementsInterface(ShouldQueue::class)) {
-            continue;
-        }
-
-        if (array_key_exists($class, $allowlist)) {
-            continue;
-        }
-
-        $source = file_get_contents($file);
-
-        if ($source === false || ! str_contains($source, 'TenantContextScope::')) {
-            $violations[] = $class;
-        }
-    }
+    $violations = c10DiscoverShouldQueueViolations(app_path(), 'App', $allowlist);
 
     expect($violations)
         ->toBe([], 'The following ShouldQueue jobs neither reference TenantContextScope:: nor are '
             .'allowlisted with a justification: '.implode(', ', $violations));
+})->group('arch');
+
+/**
+ * Proof that the recursive/broadened discovery actually works — a guard that has
+ * never been shown to fail is not a guard. Uses a controlled fixture tree under
+ * tests/Fixtures/ArchGuardFixtures/ (never the real app/ directory) so this proof
+ * is a permanent regression test, not a one-off manual check.
+ */
+test('c10DiscoverShouldQueueViolations recursively catches a ShouldQueue class in a nested subdirectory', function (): void {
+    $fixtureRoot = base_path('tests/Fixtures/ArchGuardFixtures/Jobs');
+
+    $violations = c10DiscoverShouldQueueViolations($fixtureRoot, 'Tests\\Fixtures\\ArchGuardFixtures\\Jobs', []);
+
+    // The nested, non-compliant fixture MUST be caught — this is exactly the blind
+    // spot a non-recursive glob('*.php') would have silently missed.
+    expect($violations)->toContain('Tests\\Fixtures\\ArchGuardFixtures\\Jobs\\Nested\\NonCompliantNestedJob');
+
+    // The root-level compliant fixture must NOT be flagged (it references
+    // TenantContextScope:: in its source).
+    expect($violations)->not->toContain('Tests\\Fixtures\\ArchGuardFixtures\\Jobs\\CompliantJob');
+
+    // A plain (non-ShouldQueue) class must never be flagged, regardless of depth.
+    expect($violations)->not->toContain('Tests\\Fixtures\\ArchGuardFixtures\\Jobs\\NotAJob');
 })->group('arch');
