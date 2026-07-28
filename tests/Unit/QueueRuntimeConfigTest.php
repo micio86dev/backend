@@ -20,6 +20,12 @@ declare(strict_types=1);
  * shrinking every number toward zero — Assertion C is the
  * config-independent floor that closes it.
  *
+ * Assertion D (worker_queues well-formedness) and the QUEUE_WORKER_QUEUES
+ * parsing tests at the bottom of this file close a separate silent-failure
+ * path found in adversarial review: `QUEUE_WORKER_QUEUES=default, webhooks`
+ * used to parse to ['default', ' webhooks'], and the worker then consumed
+ * nothing at all from `webhooks` with no error signal.
+ *
  * REQ: Timeout / Retry-After Ordering and Ceiling Invariant (queue-runtime/spec.md)
  */
 
@@ -185,3 +191,138 @@ test('discovery guards against a timeout() method reading uninitialized construc
     expect(fn () => $invariant->violations())->not->toThrow(Throwable::class);
     expect($invariant->violations())->toBe(['No ShouldQueue job declares a $timeout.']);
 });
+
+// ─── QUEUE_WORKER_QUEUES parsing — config/queue.php, not config()->set ───
+//
+// These re-evaluate the REAL config/queue.php expression with a controlled
+// env value, because the bug being guarded lives in the PARSING, not in any
+// consumer. Driving them with config()->set() would assert on a value the
+// production parser never produced and would stay green with the trim removed.
+
+/**
+ * Evaluate config/queue.php with QUEUE_WORKER_QUEUES temporarily set to
+ * $value (null = unset, i.e. exercise the 'default' fallback) and return the
+ * parsed queue.runtime.worker_queues list.
+ *
+ * $_SERVER/$_ENV are the sources Laravel's Env repository reads (ServerConst +
+ * EnvConst adapters); both are restored exactly, including the "was not set at
+ * all" case, so no later test in this worker process inherits the override.
+ *
+ * @return array<int, mixed>
+ */
+function qwsParseWorkerQueuesEnv(?string $value): array
+{
+    $hadServer = array_key_exists('QUEUE_WORKER_QUEUES', $_SERVER);
+    $hadEnv = array_key_exists('QUEUE_WORKER_QUEUES', $_ENV);
+    $previousServer = $_SERVER['QUEUE_WORKER_QUEUES'] ?? null;
+    $previousEnv = $_ENV['QUEUE_WORKER_QUEUES'] ?? null;
+
+    try {
+        if ($value === null) {
+            unset($_SERVER['QUEUE_WORKER_QUEUES'], $_ENV['QUEUE_WORKER_QUEUES']);
+        } else {
+            $_SERVER['QUEUE_WORKER_QUEUES'] = $value;
+            $_ENV['QUEUE_WORKER_QUEUES'] = $value;
+        }
+
+        /** @var array{runtime: array{worker_queues: array<int, mixed>}} $config */
+        $config = require config_path('queue.php');
+
+        return $config['runtime']['worker_queues'];
+    } finally {
+        if ($hadServer) {
+            $_SERVER['QUEUE_WORKER_QUEUES'] = $previousServer;
+        } else {
+            unset($_SERVER['QUEUE_WORKER_QUEUES']);
+        }
+
+        if ($hadEnv) {
+            $_ENV['QUEUE_WORKER_QUEUES'] = $previousEnv;
+        } else {
+            unset($_ENV['QUEUE_WORKER_QUEUES']);
+        }
+    }
+}
+
+test('QUEUE_WORKER_QUEUES trims whitespace around each entry', function (): void {
+    // The exact operator typo from the finding: a space after the comma is an
+    // entirely normal way to write a comma-separated env var. Untrimmed, this
+    // produced [' webhooks'], forwarded as `--queue=default, webhooks`, and the
+    // worker silently consumed NOTHING from the webhooks queue.
+    expect(qwsParseWorkerQueuesEnv('default, webhooks'))->toBe(['default', 'webhooks']);
+})->group('queue');
+
+test('QUEUE_WORKER_QUEUES trims leading, trailing and tab whitespace on every entry', function (): void {
+    expect(qwsParseWorkerQueuesEnv("  default ,\twebhooks\t, scoring  "))
+        ->toBe(['default', 'webhooks', 'scoring']);
+})->group('queue');
+
+test('QUEUE_WORKER_QUEUES drops empty entries and reindexes the list', function (): void {
+    // A trailing comma / double comma must not produce '' entries: `--queue`
+    // is a comma-joined string, so an empty entry means an empty queue name.
+    // array_values() matters — an un-reindexed array json/implodes differently
+    // and is not the list<string> the invariant and the wrapper expect.
+    expect(qwsParseWorkerQueuesEnv('default,,webhooks,'))->toBe(['default', 'webhooks']);
+})->group('queue');
+
+test('QUEUE_WORKER_QUEUES unset falls back to the single default queue', function (): void {
+    expect(qwsParseWorkerQueuesEnv(null))->toBe(['default']);
+})->group('queue');
+
+test('QUEUE_WORKER_QUEUES made entirely of separators and whitespace parses to an empty list, which Assertion D then rejects', function (): void {
+    // Trimming alone CANNOT signal this case — it degrades to an empty list,
+    // `--queue=''`, and WorkCommand::getQueue()'s `?:` silently falls back to
+    // the connection default queue. This is why the invariant validates it.
+    $parsed = qwsParseWorkerQueuesEnv(' , , ');
+
+    expect($parsed)->toBe([]);
+
+    config()->set('queue.runtime.worker_queues', $parsed);
+
+    expect(implode(' ', (new QueueRuntimeInvariant)->violations()))
+        ->toContain('must be a non-empty list of queue names');
+})->group('queue');
+
+// ─── Assertion D — worker_queues well-formedness ─────────────────────────
+
+test('Assertion D: an untrimmed queue name is reported as a violation', function (): void {
+    config()->set('queue.runtime.worker_queues', ['default', ' webhooks']);
+
+    $invariant = new QueueRuntimeInvariant;
+    $violations = $invariant->violations();
+
+    expect(implode(' ', $violations))->toContain('contains whitespace')
+        ->and(implode(' ', $violations))->toContain('webhooks')
+        ->and($invariant->holds())->toBeFalse();
+})->group('queue');
+
+test('Assertion D: an empty-string queue name is reported as a violation', function (): void {
+    config()->set('queue.runtime.worker_queues', ['default', '']);
+
+    expect(implode(' ', (new QueueRuntimeInvariant)->violations()))
+        ->toContain('empty or whitespace-only queue name');
+})->group('queue');
+
+test('Assertion D: a comma inside a queue name is reported as a violation', function (): void {
+    // Entries are comma-JOINED into --queue, so an embedded comma silently
+    // becomes two queue names.
+    config()->set('queue.runtime.worker_queues', ['default,webhooks']);
+
+    expect(implode(' ', (new QueueRuntimeInvariant)->violations()))
+        ->toContain('contains a comma');
+})->group('queue');
+
+test('Assertion D: a non-string entry is reported as a violation', function (): void {
+    config()->set('queue.runtime.worker_queues', ['default', 42]);
+
+    expect(implode(' ', (new QueueRuntimeInvariant)->violations()))
+        ->toContain('non-string entry (int)');
+})->group('queue');
+
+test('Assertion D: legitimate queue names with hyphens, underscores and colons are NOT flagged', function (): void {
+    // Guards the opposite failure: over-constraining queue names would break
+    // real deployments. Laravel queue names are arbitrary strings.
+    config()->set('queue.runtime.worker_queues', ['default', 'high-priority', 'emails:v2', 'tenant_42']);
+
+    expect((new QueueRuntimeInvariant)->violations())->toBe([]);
+})->group('queue');

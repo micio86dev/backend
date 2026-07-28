@@ -8,8 +8,8 @@ use App\Jobs\ScoreEvaluationJob;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
- * Single source of truth for the timeout/retry_after ordering-and-ceiling
- * invariant (queue-runtime/spec.md Requirement 2). Three assertions:
+ * Single source of truth for the queue runtime invariants
+ * (queue-runtime/spec.md Requirement 2). Four assertions:
  * A: max(declared job timeout) < worker_timeout < connections.*.retry_after.
  * B: the ceiling-check job's timeout clears the derived ceiling
  *    (MAX_ROLE_COMPETENCIES x scoring.anthropic.timeout_seconds x 1.1).
@@ -17,6 +17,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
  *    config-independent floor — the anti-degenerate lock: A+B alone are
  *    satisfiable by shrinking every number toward zero (e.g. dropping
  *    scoring.anthropic.timeout_seconds collapses B's derived ceiling too).
+ * D: queue.runtime.worker_queues is a non-empty list of well-formed queue
+ *    names — see workerQueueViolations() for why this belongs here.
  *
  * Used DIRECTLY by both `beai:queue-work --validate-only`
  * (App\Console\Commands\QueueWorkCommand) so the container can fail fast at
@@ -81,7 +83,7 @@ final class QueueRuntimeInvariant
      */
     public function violations(): array
     {
-        $violations = [];
+        $violations = $this->workerQueueViolations();
 
         $timeouts = $this->discoverJobTimeouts($this->rootDir, $this->namespaceRoot);
         $declared = array_filter($timeouts, static fn (?int $timeout): bool => $timeout !== null);
@@ -137,6 +139,77 @@ final class QueueRuntimeInvariant
     public function holds(): bool
     {
         return $this->violations() === [];
+    }
+
+    /**
+     * Assertion D — queue.runtime.worker_queues is a non-empty list of
+     * well-formed queue names.
+     *
+     * WHY HERE. config/queue.php now trims each QUEUE_WORKER_QUEUES entry, which
+     * fixes the common typo (`default, webhooks`), but trimming alone cannot
+     * signal the residual malformed cases: `QUEUE_WORKER_QUEUES=` or `=" ,, "`
+     * both parse to an empty list, `implode(',', [])` is `''`, and
+     * Illuminate\Queue\Console\WorkCommand::getQueue() treats `''` as "not set"
+     * (`$this->option('queue') ?: config(...)`) and silently falls back to the
+     * connection's default queue. Same failure shape as the original bug — a
+     * worker consuming a queue nobody asked it to consume, with no error.
+     *
+     * This class is already the fail-fast startup gate that
+     * `beai:queue-work --validate-only` runs inside the container, and its own
+     * docblock records what happened the last time this logic lived in two
+     * places. So the check goes HERE rather than into a second validator: the
+     * operator gets a loud, named failure at container start instead of a
+     * healthy-looking worker making zero progress.
+     *
+     * DELIBERATELY NOT a charset allowlist. Laravel queue names are arbitrary
+     * strings (`high-priority`, `emails:v2`, `tenant_42` are all legal), so this
+     * rejects only what is provably an operator mistake rather than a name:
+     * an empty list, a non-string entry, an empty/whitespace-only entry, any
+     * embedded whitespace (the trim in config/queue.php failed or was bypassed),
+     * and any embedded comma (the value is comma-JOINED before it reaches
+     * `--queue`, so a comma inside an entry silently splits it into two queues).
+     *
+     * @return list<string>
+     */
+    private function workerQueueViolations(): array
+    {
+        $configured = config('queue.runtime.worker_queues');
+
+        if (! is_array($configured) || $configured === []) {
+            return ['queue.runtime.worker_queues must be a non-empty list of queue names — an empty value makes `queue:work --queue=` fall back to the connection default queue silently.'];
+        }
+
+        $violations = [];
+
+        foreach ($configured as $queue) {
+            if (! is_string($queue)) {
+                $violations[] = 'queue.runtime.worker_queues contains a non-string entry ('.get_debug_type($queue).').';
+
+                continue;
+            }
+
+            if (trim($queue) === '') {
+                $violations[] = 'queue.runtime.worker_queues contains an empty or whitespace-only queue name.';
+
+                continue;
+            }
+
+            // strpbrk(), not preg_match(): a preg_match() that returns false on
+            // an engine failure would make this check silently pass — the wrong
+            // failure direction for a validator (see the same lesson in
+            // tests/Arch/Queue/SchedulerOnOneServerArchTest.php).
+            if (strpbrk($queue, " \t\n\r\v\f") !== false) {
+                $violations[] = "queue.runtime.worker_queues entry \"{$queue}\" contains whitespace — a queue name never does; this is an untrimmed QUEUE_WORKER_QUEUES value and would match no queue any job dispatches to.";
+
+                continue;
+            }
+
+            if (str_contains($queue, ',')) {
+                $violations[] = "queue.runtime.worker_queues entry \"{$queue}\" contains a comma — entries are comma-joined into `queue:work --queue`, so this would silently split into separate queue names.";
+            }
+        }
+
+        return $violations;
     }
 
     /**

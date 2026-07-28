@@ -123,6 +123,14 @@ return [
     |                       (deploy/restart hygiene), not a per-job bound.
     | worker_memory_mb:    forwarded as `queue:work --memory`.
     | worker_queues:       forwarded as `queue:work --queue` (comma-joined).
+    |                       Parsed from QUEUE_WORKER_QUEUES with each entry
+    |                       TRIMMED and empties dropped — see the parsing
+    |                       note at the value itself. Validated by
+    |                       App\Support\Queue\QueueRuntimeInvariant, so a
+    |                       malformed value fails the container's
+    |                       `beai:queue-work --validate-only` startup check
+    |                       instead of degrading into a worker that consumes
+    |                       the wrong queue.
     | worker_sleep_seconds: forwarded as `queue:work --sleep`. Seconds to
     |                       sleep when no job is available (framework
     |                       default is 3 — see WorkCommand's --sleep=3).
@@ -161,7 +169,20 @@ return [
         'worker_timeout' => (int) env('QUEUE_WORKER_TIMEOUT', 1260),
         'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
         'worker_memory_mb' => (int) env('QUEUE_WORKER_MEMORY_MB', 512),
-        'worker_queues' => explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default')),
+        // TRIMMED, and empty entries dropped. `QUEUE_WORKER_QUEUES=default, webhooks`
+        // is an entirely ordinary way to write a comma-separated env var, and a
+        // bare explode() turns it into ['default', ' webhooks'] — forwarded verbatim
+        // as `queue:work --queue=default, webhooks`, which matches no queue any job
+        // dispatches to. The worker then silently stops consuming that queue with no
+        // error signal at all. Whitespace here is an operator typo, never a queue name.
+        // The residual "all entries dropped" case (e.g. QUEUE_WORKER_QUEUES=" ,, ")
+        // is caught loudly by App\Support\Queue\QueueRuntimeInvariant, because an
+        // empty --queue silently falls back to the connection's default queue
+        // (Illuminate\Queue\Console\WorkCommand::getQueue() — `$this->option('queue') ?: ...`).
+        'worker_queues' => array_values(array_filter(
+            array_map('trim', explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default'))),
+            static fn (string $queue): bool => $queue !== '',
+        )),
         'worker_sleep_seconds' => (int) env('QUEUE_WORKER_SLEEP_SECONDS', 3),
         'stall_threshold_seconds' => (int) env('QUEUE_STALL_THRESHOLD_SECONDS', 300),
         'reserved_job_stall_threshold_seconds' => (int) env('QUEUE_RESERVED_JOB_STALL_THRESHOLD_SECONDS', 1320),
