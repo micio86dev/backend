@@ -133,6 +133,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Maintenance — Scheduled Queue-Table Pruning
+    |--------------------------------------------------------------------------
+    |
+    | Retention windows for the scheduled `queue:prune-failed` and
+    | `queue:prune-batches` tasks (registered via ->withSchedule() in
+    | bootstrap/app.php, both ->onOneServer()). Queue hygiene, NOT a domain
+    | concern — this is distinct from any future GDPR candidate-data purge
+    | (C13's own retention policy, unrelated to these framework tables).
+    |
+    | 168 hours (7 days) balances the operational debugging window (enough
+    | time to notice and investigate a failed job or an incomplete batch)
+    | against unbounded table growth. failed_jobs payloads for this app's
+    | jobs carry only scalar IDs (ScoreEvaluationJob takes an int
+    | participantId, DeliverWebhookJob an int deliveryId — see their
+    | constructors), not participant PII, so the retention window is a
+    | pure operability/storage tradeoff, not a data-minimization one; only
+    | the free-text `exception` column could carry incidental data, which
+    | is why this stays finite and short rather than indefinite. Env-driven
+    | so a future change (e.g. C13) can shorten it without a code change.
+    |
+    */
+
+    'maintenance' => [
+        'failed_jobs_retention_hours' => (int) env('QUEUE_FAILED_JOBS_RETENTION_HOURS', 168),
+        'batches_retention_hours' => (int) env('QUEUE_BATCHES_RETENTION_HOURS', 168),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Job Batching
     |--------------------------------------------------------------------------
     |
