@@ -56,6 +56,22 @@ class FinalizeInterview implements ShouldQueue
      */
     private const DEDUP_LOCK_TTL_SECONDS = 7200;
 
+    /**
+     * Queue-level retry attempts. Previously undeclared — the job silently
+     * inherited the framework default of 1 (WorkCommand::$signature default
+     * --tries=1), i.e. zero retries. This job only performs a Redis NX lock
+     * check + event dispatch, so 3 attempts covers a transient Redis/DB blip
+     * without risking duplicate ScoringRequested emission (guarded by the
+     * dedup lock regardless of attempt count).
+     */
+    public int $tries = 3;
+
+    /**
+     * Per-job execution ceiling in seconds. The job body is a status check +
+     * a Redis NX lock + an event dispatch — no LLM call, no long-running I/O.
+     */
+    public int $timeout = 60;
+
     public function __construct(
         private readonly int $participantId,
     ) {}

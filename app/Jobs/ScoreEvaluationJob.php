@@ -49,7 +49,7 @@ use Illuminate\Support\Facades\Log;
  * ScoreEvaluationJob — async BARS scoring orchestrator (C9 — Scoring Engine).
  *
  * Dispatched from FinalizeInterview (via ScoringRequested event + DispatchScoringJob
- * listener — wired in PR3). Runs on Horizon; processes all competencies sequentially.
+ * listener — wired in PR3). Processes all competencies sequentially.
  *
  * PR3 SCOPE: ReliabilityStrategy, ValidityPredicate, CompletionGate, lifecycle resolution,
  *   EvaluationCompleted event, ZeroCompetencies invariant guard, FinalizeInterview hook wired.
@@ -90,10 +90,22 @@ class ScoreEvaluationJob implements ShouldQueue
      * Distinct from domain retry RT-B (D10). Queue retries handle transient
      * infrastructure failures (DB blip, network timeout). RT-B handles domain
      * re-scoring after a 'pending' evaluation.
-     *
-     * Value mirrors the Horizon configuration for the scoring queue.
      */
     public int $tries = 3;
+
+    /**
+     * Per-job execution ceiling in seconds.
+     *
+     * Derived from the sequential per-competency LLM loop (handle() ->
+     * runScoringPipeline() -> scoreCompetency(), one Anthropic call per
+     * competency, no retry()): 18 competencies (CLAUDE.md max per role) x
+     * scoring.anthropic.timeout_seconds (default 60) x 1.1 safety margin =
+     * 1188s, rounded up to 1200s (20 min). MUST independently exceed the
+     * config-independent 600s floor (queue-runtime/spec.md) and MUST stay
+     * below queue.runtime.worker_timeout and connections.*.retry_after —
+     * enforced by tests/Unit/QueueRuntimeConfigTest.php.
+     */
+    public int $timeout = 1200;
 
     /**
      * Backoff in seconds between queue-level retry attempts.
