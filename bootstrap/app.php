@@ -7,6 +7,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,6 +21,18 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // queue-worker-scheduler PR2 (design.md D6): registers the scheduler
+    // RUNNER (makes `schedule:work` viable) only — no tasks yet. The first
+    // real consumer is C13's GDPR purge sweep (not yet implemented).
+    // ANY task added here in a future change MUST chain ->onOneServer():
+    // `deploy.replicas: 1` on the scheduler compose service (wrapper PR5) is
+    // overridable by --scale, so onOneServer() (backed by a real DB lock —
+    // Illuminate\Cache\DatabaseStore implements LockProvider, cache_locks
+    // table already exists) is structural defense-in-depth, not just
+    // documentation. Enforced by tests/Arch/Queue/SchedulerOnOneServerArchTest.php.
+    ->withSchedule(function (Schedule $schedule): void {
+        // Intentionally empty in PR2.
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         // Apply security headers globally (task 7.7 / D29).
         $middleware->append(SecurityHeaders::class);
