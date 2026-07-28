@@ -6,6 +6,7 @@ namespace App\Support\Admin;
 
 use App\Models\Participant;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -57,5 +58,27 @@ final class AdminParticipantReader
         $this->gate->assert($participant->status, $scope);
 
         return $participant;
+    }
+
+    /**
+     * The sanctioned path to list participants for the admin index endpoint
+     * (C11 PR A3). Applies the same two concerns read() applies for a single
+     * participant — RBAC (D3) and the tenant filter (D1) — before returning a
+     * builder the controller may further constrain with request filters and
+     * paginate. There is no lifecycle gate here: list/detail is the Summary
+     * scope (D2), which has no lifecycle threshold.
+     *
+     * Kept on this class (rather than duplicated in the controller) so
+     * App\Http\Controllers\Api never needs a bare Participant:: call for the
+     * list endpoint either — the arch guard (AdminTenancySafetyArchTest,
+     * task 2.3b) forbids that there.
+     *
+     * @return Builder<Participant>
+     */
+    public function listQuery(): Builder
+    {
+        Gate::authorize('viewAny', Participant::class);
+
+        return Participant::where('organization_id', $this->resolver->getOrgId());
     }
 }

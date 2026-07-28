@@ -6,7 +6,10 @@ declare(strict_types=1);
 // breaking changes require a new /api/v2/ prefix, coordinated across consumers.
 // See docs/api-versioning.md for the full contract.
 
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FrameworkController;
+use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
+use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Candidate\IntegrityController;
@@ -65,6 +68,39 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::apiResource('projects', ProjectController::class);
+});
+
+// ─── Admin Read API (C11) ─────────────────────────────────────────────────────
+// Org-scoped, read-only endpoints for participants, transcripts, evaluations,
+// downloads, and dashboard metrics. Behind auth:api + TenantContext middleware.
+// RBAC via ParticipantPolicy/EvaluationPolicy: admin/operator/viewer all read
+// (ProjectPolicy::viewAny pattern — no owner filter).
+//
+// IDs are resolved manually inside AdminParticipantReader (D1) — never
+// route-model binding, per ProjectController.php:23-28's documented reason.
+// Every Participant access goes through AdminParticipantReader; a bare
+// `Participant::` static call anywhere in this file's controllers is
+// arch-tested against (AdminTenancySafetyArchTest, task 2.3b).
+//
+// Lifecycle-gated reads (transcript >= in_valutazione, evaluation ===
+// completato) return 409 lifecycle_not_ready via LifecycleNotReadyException
+// (D4) — registered once in bootstrap/app.php, covering every route below.
+//
+// Named download routes so ParticipantDetailResource's `files` open map (D9)
+// can generate real URLs via route() rather than inventing/hardcoding paths.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/participants', [AdminParticipantController::class, 'index']);
+    Route::get('/participants/{id}', [AdminParticipantController::class, 'show']);
+    Route::get('/participants/{id}/transcript', [AdminParticipantController::class, 'transcript']);
+    Route::get('/participants/{id}/evaluation', [AdminParticipantController::class, 'evaluation']);
+
+    Route::get('/participants/{id}/transcript/download', [ParticipantDownloadController::class, 'transcript'])
+        ->name('admin.participants.transcript.download');
+    Route::get('/participants/{id}/evaluation/download', [ParticipantDownloadController::class, 'evaluation'])
+        ->name('admin.participants.evaluation.download');
+
+    Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
 });
 
 // ─── M2M Machine Routes (C5) ─────────────────────────────────────────────────

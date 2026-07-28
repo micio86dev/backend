@@ -152,6 +152,12 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Unit/Services/Admin');
 
+// Feature/C11 — RefreshDatabase for the admin controllers/routes feature-test
+// matrix (PR A3): cross-org, lifecycle gate matrix, RBAC, download headers,
+// route surface, dashboard metrics.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C11');
+
 // Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.
 // Note: Feature/Models already has RefreshDatabase from the C3 block above.
 

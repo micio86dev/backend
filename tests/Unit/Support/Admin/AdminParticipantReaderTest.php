@@ -124,3 +124,43 @@ test('same-org, authorized, ready status returns the Participant', function (): 
     expect($result->id)->toBe($participant->id);
     expect($result->organization_id)->toBe($org->id);
 });
+
+/**
+ * PR A3 (task 8.1): the admin list endpoint needs a tenant-safe + RBAC-safe
+ * query, but AdminParticipantReader::read() only handles a single id.
+ * listQuery() extends the reader with the same two concerns (org filter +
+ * RBAC), so app/Http/Controllers/Api never needs a bare Participant:: call
+ * for the list endpoint either — the arch guard (AdminTenancySafetyArchTest,
+ * task 2.3b) forbids it there.
+ */
+test('listQuery scopes to the caller org and excludes other orgs', function (): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+
+    $participantInOrgA = createParticipantIn($orgA, 'completato');
+    createParticipantIn($orgB, 'completato');
+
+    $viewer = createAdminUser($orgA, 'viewer');
+    app(TenantResolver::class)->setOrgId($orgA->id);
+    actingAs($viewer, 'api');
+
+    $reader = new AdminParticipantReader(app(TenantResolver::class));
+
+    $results = $reader->listQuery()->get();
+
+    expect($results)->toHaveCount(1);
+    expect($results->first()->id)->toBe($participantInOrgA->id);
+});
+
+test('listQuery denies a user with no role, before any row is returned', function (): void {
+    $org = Organization::factory()->create();
+    createParticipantIn($org, 'completato');
+    $userWithNoRole = createAdminUser($org, null);
+
+    app(TenantResolver::class)->setOrgId($org->id);
+    actingAs($userWithNoRole, 'api');
+
+    $reader = new AdminParticipantReader(app(TenantResolver::class));
+
+    expect(fn () => $reader->listQuery())->toThrow(AuthorizationException::class);
+});

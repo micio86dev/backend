@@ -37,4 +37,29 @@ class EvaluationResource extends JsonResource
     {
         return $this->resource;
     }
+
+    /**
+     * Force JSON_PRESERVE_ZERO_FRACTION on the FIRST encode of this resource.
+     *
+     * Without it, PHP's json_encode() silently drops the fractional part of
+     * a whole-number float (json_encode(4.0) === "4", not "4.0") — Laravel's
+     * JsonResponse default encoding options do not set this flag either.
+     * `score` is a float per spec and the reference shape
+     * (esempio-report-valutazione.json) shows "score": 4.0 literally; losing
+     * the decimal on the wire would (a) diverge from that reference and
+     * (b) make an integer-vs-float distinction ambiguous to API consumers
+     * that treat "4" and "4.0" differently (e.g. strict client-side schemas).
+     *
+     * MUST be set here, not in withResponse(): ResourceResponse::toResponse()
+     * builds the JsonResponse (encoding with jsonOptions()) BEFORE it calls
+     * withResponse() — by then the float has already round-tripped through a
+     * lossy encode/decode via JsonResponse::setEncodingOptions()
+     * (Symfony's implementation re-decodes the ALREADY-serialized string).
+     * Setting the flag late is provably too late; it must be part of the
+     * options used for the original encode.
+     */
+    public function jsonOptions(): int
+    {
+        return JSON_PRESERVE_ZERO_FRACTION;
+    }
 }

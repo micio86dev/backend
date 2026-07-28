@@ -13,16 +13,19 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * Admin ParticipantDetailResource — Summary scope (C11 D5).
  *
  * Serializes a Participant for `GET /api/participants/{id}`: identity fields
- * plus a lifecycle timeline (`started_at`, `completed_at`, session count).
- * RBAC-only — no lifecycle threshold (D2's Summary scope).
+ * plus a lifecycle timeline (`started_at`, `completed_at`, session count) and
+ * the `files` open map (D9). RBAC-only — no lifecycle threshold (D2's
+ * Summary scope).
  *
- * Deferred from this PR (A2), flagged honestly: D5/D9's `files` open map
- * (`{ transcript: {type, ref, url}, evaluation_raw: {...} }`) is NOT included
- * here. Building it now would require either inventing untested `ref`/`url`
- * values or calling `route()` against download routes that do not exist yet
- * (they land in PR A3, Phase 8). Adding it here would be either fabricated or
- * broken. It is added in A3 once `ParticipantDownloadController` and its
- * routes exist to generate real values.
+ * `files` (wired in PR A3, once ParticipantDownloadController's named routes
+ * exist to generate real values — deferred from A2, which could only have
+ * invented untested `ref`/`url` values): keyed by type, open for a future
+ * `audio` key without a shape change (D9). Each `url` is ALWAYS present —
+ * gating is identical to the corresponding read endpoint (same
+ * AdminParticipantReader::read() call inside the download controller), so a
+ * pre-threshold request to the URL returns 409, not a missing/absent link.
+ * Per-question audio has no key here: it does not exist and is gated by open
+ * product decision #2 (spec: "No audio download endpoint exists").
  *
  * SCOPE BOUNDARY: Summary-scope ONLY — MUST NEVER carry Transcript or
  * Evaluation fields (`utterances`, `reliability`, `behaviors`, `score`).
@@ -51,6 +54,18 @@ class ParticipantDetailResource extends JsonResource
                 'started_at' => $participant->started_at?->toISOString(),
                 'completed_at' => $participant->completed_at?->toISOString(),
                 'session_count' => InterviewSession::where('participant_id', $participant->id)->count(),
+            ],
+            'files' => [
+                'transcript' => [
+                    'type' => 'text/plain',
+                    'ref' => 'transcript',
+                    'url' => route('admin.participants.transcript.download', $participant->id),
+                ],
+                'evaluation_raw' => [
+                    'type' => 'application/json',
+                    'ref' => 'evaluation',
+                    'url' => route('admin.participants.evaluation.download', $participant->id),
+                ],
             ],
             'created_at' => $participant->created_at->toISOString(),
         ];
