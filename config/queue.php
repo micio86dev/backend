@@ -11,9 +11,17 @@ return [
     | API, giving you convenient access to each backend using identical
     | syntax for each. The default queue connection is defined below.
     |
+    | queue-worker-scheduler PR3: default flipped database -> redis. Safe
+    | as of this change (not before): PR1 landed ext-redis in the runtime
+    | image (Dockerfile) and raised retry_after to a value that clears the
+    | timeout/retry_after invariant on BOTH connections; PR2 landed the
+    | beai:queue-work wrapper that structurally forbids a worker-level
+    | --tries override. `jobs`/`job_batches` tables are NOT dropped, so
+    | QUEUE_CONNECTION=database is a one-line rollback if ever needed.
+    |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'database'),
+    'default' => env('QUEUE_CONNECTION', 'redis'),
 
     /*
     |--------------------------------------------------------------------------
