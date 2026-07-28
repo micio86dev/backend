@@ -161,6 +161,19 @@ pest()->use(RefreshDatabase::class)
 // Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.
 // Note: Feature/Models already has RefreshDatabase from the C3 block above.
 
+// ─── C10 Webhooks Integration ─────────────────────────────────────────────────
+
+// Unit/C10 — needs TestCase + RefreshDatabase: signer/redactor/assembler unit tests are
+// DB-free, but model and config-invariant unit tests across this PR chain hit factories
+// and app() bindings, so the directory is wired once up front (S18).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/C10');
+
+// Feature/C10 — RefreshDatabase for schema, delivery-gate, dedupe, and job feature tests.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C10');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

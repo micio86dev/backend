@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Sso;
 
+use App\Events\ParticipantCreated;
 use App\Http\Controllers\Controller;
 use App\Models\Participant;
 use App\Models\Project;
@@ -124,6 +125,11 @@ final class SsoExchangeController extends Controller
             return response()->json(['message' => self::GENERIC_403], 403);
         }
 
+        // C10 D5: "created" is inferred from THIS pre-flight read, captured BEFORE
+        // the upsert runs — never re-derived from the post-upsert row (which always
+        // exists by the time we could inspect it).
+        $isNewCandidate = $existingStatus === null;
+
         // ── Step 9: Atomic upsert ─────────────────────────────────────────────
         // language chain: sso-link lang → project.language → fallback_locale
         $lang = $payload->get('lang')
@@ -164,6 +170,13 @@ final class SsoExchangeController extends Controller
 
         if ($participant === null) {
             return response()->json(['message' => self::GENERIC_403], 403);
+        }
+
+        // C10 D5: post-durability (the upsert already executed) — a concurrent
+        // duplicate "creation" is absorbed by the webhook_deliveries unique dedupe
+        // index (PR4), never by weakening this atomic upsert.
+        if ($isNewCandidate) {
+            event(new ParticipantCreated($participant->id, $project->id));
         }
 
         // ── Step 10: Mint candidate JWT ───────────────────────────────────────
