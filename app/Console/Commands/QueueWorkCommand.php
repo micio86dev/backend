@@ -14,16 +14,42 @@ use Illuminate\Console\Command;
  * sourced from config('queue.runtime.*') — no numeric flags are ever passed
  * by the caller (compose `command:`, Railway start command, etc.).
  *
- * Structurally enforces the retry-ownership prohibition
- * (queue-runtime/spec.md Requirement 4, tests/Arch/Queue/QueuedJobRetryOwnershipArchTest.php):
  * `--tries` is NEVER a defined option on this signature. A flag that does
  * not exist cannot be forwarded — Symfony Console's own option validation
  * rejects an unrecognized `--tries` with a non-zero exit BEFORE handle()
- * ever runs, and therefore before any job is reserved. A worker-level
- * `--tries` would remove the safety net for any job that ever fails to
- * declare its own retry policy (DeliverWebhookJob owns a 6-attempt
- * pending -> dead state machine — see app/Jobs/DeliverWebhookJob.php class
- * doc — that a framework cap could otherwise short-circuit).
+ * ever runs, and therefore before any job is reserved
+ * (tests/Feature/Queue/QueueWorkCommandTest.php exercises exactly that).
+ *
+ * WHAT THIS DOES AND DOES NOT PROTECT — verified against vendor/, because an
+ * earlier revision of this docblock asserted a Laravel precedence rule that
+ * does not exist and would have misled anyone weakening the arch test:
+ *
+ *   A job that declares its OWN tries is already immune to any worker-level
+ *   `--tries`. `maxTries` is baked into the job payload at DISPATCH time from
+ *   the job's own $tries/tries()
+ *   (Illuminate\Queue\Queue::createObjectPayload() line 176 -> getJobTries()
+ *   line 230; Illuminate\Queue\Jobs\Job::maxTries() line 294 reads it back),
+ *   and the worker then prefers it unconditionally:
+ *   `$maxTries = ! is_null($job->maxTries()) ? $job->maxTries() : $maxTries;`
+ *   in BOTH Illuminate\Queue\Worker::markJobAsFailedIfAlreadyExceedsMaxAttempts()
+ *   line 639 (the post-timeout path) and ::markJobAsFailedIfWillExceedMaxAttempts()
+ *   line 667 (the normal failure path). DeliverWebhookJob declares tries()
+ *   (app/Jobs/DeliverWebhookJob.php:80), so its 6-attempt pending -> dead state
+ *   machine could NOT have been short-circuited by a worker `--tries` in the
+ *   first place. Omitting `--tries` here is not what protects it.
+ *
+ *   What the omission genuinely prevents is narrower and still worth having:
+ *   an operator typing `beai:queue-work --tries=N` and having it silently
+ *   forwarded. (It is also inert by default either way — since handle() never
+ *   passes `--tries`, the delegated `queue:work` just takes its own framework
+ *   default of 1, Illuminate\Queue\Console\WorkCommand line 50.)
+ *
+ *   The real protection against a job inheriting a worker-level default is a
+ *   DIFFERENT mechanism, and it is the one to preserve:
+ *   tests/Arch/Queue/QueuedJobRetryOwnershipArchTest.php, which fails the build
+ *   if any ShouldQueue class omits its own $tries/tries() — because a job that
+ *   declares nothing has a null payload maxTries and DOES fall through to the
+ *   worker's value (queue-runtime/spec.md Requirement 4).
  *
  * --validate-only runs the SAME invariant PR1 encoded
  * (App\Support\Queue\QueueRuntimeInvariant) against live config and exits

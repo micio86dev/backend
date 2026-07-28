@@ -7,14 +7,25 @@ declare(strict_types=1);
  * ownership — $tries/tries() AND $timeout/timeout() — never inherit a
  * worker-level default silently.
  *
- * This is the structural half of queue-runtime/spec.md Requirement 4
- * ("Job-Level Retry Ownership"): a worker-level `--tries` would override
- * each job's own retry policy — DeliverWebhookJob owns a 6-attempt state
- * machine with its own `pending -> dead` transition (see
- * app/Jobs/DeliverWebhookJob.php class doc), and a framework cap would
- * dead-letter it early, silently rewriting C10's design. PR1's job is this
- * arch test; the structural enforcement (a `beai:queue-work` wrapper that
- * never defines `--tries` at all) is PR2.
+ * This is the LOAD-BEARING half of queue-runtime/spec.md Requirement 4
+ * ("Job-Level Retry Ownership"). Stated precisely, because an earlier
+ * revision of this docblock had the framework's precedence rule backwards:
+ *
+ *   A job that DOES declare its own tries always wins over the worker's
+ *   `--tries` — `maxTries` is baked into the payload at dispatch
+ *   (Illuminate\Queue\Queue::createObjectPayload() line 176) and the worker
+ *   prefers it unconditionally in both failure paths
+ *   (Illuminate\Queue\Worker lines 639 and 667:
+ *   `! is_null($job->maxTries()) ? $job->maxTries() : $maxTries`).
+ *   DeliverWebhookJob's 6-attempt `pending -> dead` state machine is therefore
+ *   safe from a worker `--tries` on its own merits.
+ *
+ *   A job that declares NOTHING has a null payload maxTries and DOES silently
+ *   inherit whatever the worker was started with — that is the real hazard,
+ *   and this test is what prevents it. Deleting or weakening this guard is a
+ *   genuine loss of protection; the `beai:queue-work` wrapper's missing
+ *   `--tries` option (PR2) does NOT cover for it, it only stops an operator
+ *   from passing the flag by hand.
  *
  * Mirrors the reflection+glob+violations shape of
  * tests/Arch/Tenancy/QueuedJobTenantContextArchTest.php:44-95 (cloned, not
