@@ -135,6 +135,14 @@ pest()->use(RefreshDatabase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Support/Tenancy');
 
+// ─── C11 Admin Dashboards ─────────────────────────────────────────────────────
+
+// Unit/Support/Admin — needs TestCase + RefreshDatabase: AdminParticipantReaderTest
+// creates Organization/User/Participant via factories and authenticates via Gate.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Admin');
+
 // Feature/Models (C9 versioning + cross-tenant) — RefreshDatabase.
 // Note: Feature/Models already has RefreshDatabase from the C3 block above.
 

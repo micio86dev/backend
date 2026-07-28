@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\Admin\LifecycleNotReadyException;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ParticipantTransitionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
@@ -61,5 +62,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (AnchorTranslationMissingException $e, Request $request) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        });
+
+        // C11: LifecycleNotReadyException → HTTP 409 (D4 — gated admin read, not RBAC).
+        // The exception's own render() method handles the JSON response.
+        $exceptions->render(function (LifecycleNotReadyException $e, Request $request) {
+            return $e->render($request);
         });
     })->create();

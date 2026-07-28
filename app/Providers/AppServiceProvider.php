@@ -4,9 +4,12 @@ namespace App\Providers;
 
 use App\Contracts\LLMProvider;
 use App\Models\ApiClient;
+use App\Models\Evaluation;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Policies\ApiClientPolicy;
+use App\Policies\EvaluationPolicy;
+use App\Policies\ParticipantPolicy;
 use App\Policies\ProjectPolicy;
 use App\Services\LLM\AnthropicLLMProvider;
 use App\Services\Scoring\AssessableFractionReliability;
@@ -65,6 +68,10 @@ class AppServiceProvider extends ServiceProvider
 
         // C5 — Register ApiClientPolicy for Gate-based authorization.
         Gate::policy(ApiClient::class, ApiClientPolicy::class);
+
+        // C11 — Register ParticipantPolicy/EvaluationPolicy for admin read RBAC (D3).
+        Gate::policy(Participant::class, ParticipantPolicy::class);
+        Gate::policy(Evaluation::class, EvaluationPolicy::class);
 
         // C5 — Register the api-m2m RequestGuard.
         //
