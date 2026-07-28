@@ -54,12 +54,40 @@ function c10PendingDelivery(?string $webhookSecret = null): array
         $participant->id,
         WebhookEventType::Evaluation,
         (string) Str::uuid(),
+        // Realistic payload shape — NOT the sanitized {"status":"completed"} stub
+        // this fixture used before. A real evaluation payload's `files` block
+        // carries slash-bearing references and `text` excerpts are verbatim
+        // Italian (candidate transcripts, per the binding i18n mandate) — content
+        // with ZERO slashes and ZERO non-ASCII bytes is unrepresentative of
+        // production data and makes `json_encode($p)` and
+        // `json_encode($p, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)`
+        // byte-identical, silently defeating any test that compares the two
+        // encodings (verified: this WAS the case before this fix — see
+        // "the exact transmitted body is what was signed" below).
         fn (string $id): array => [
             'version' => '1.0',
             'event' => 'evaluation',
             'delivery_id' => $id,
             'candidate_ref' => $participant->candidate_ref,
-            'data' => ['status' => 'completed'],
+            'data' => [
+                'status' => 'completed',
+                'files' => [
+                    'transcript' => ['type' => 'transcript', 'ref' => "participant:{$participant->id}"],
+                    'evaluation_raw' => ['type' => 'evaluation', 'ref' => 'https://cdn.example.test/evaluations/501/raw.json'],
+                ],
+                'text' => [
+                    'COL' => [
+                        'behaviors' => [[
+                            'indicator' => 'Lavora efficacemente con gli altri',
+                            'score' => 5,
+                            'explanation' => 'Il candidato ha collaborato con un collega del team front-end.',
+                            'excerpts' => ['è stato un esempio di collaborazione che ha funzionato molto bene'],
+                        ]],
+                        'reliability' => '100%',
+                        'score' => 3.67,
+                    ],
+                ],
+            ],
         ]
     );
 
@@ -280,6 +308,31 @@ test('terminal-row idempotency guard: a re-executed already-terminal row is a no
     $reloaded = $delivery->fresh();
     expect($reloaded->status)->toBe(WebhookDeliveryStatus::Delivered)
         ->and($reloaded->attempt_count)->toBe($delivery->attempt_count);
+});
+
+test('terminal-row idempotency guard: a re-executed already-DEAD row is also a no-op', function (): void {
+    // Same shared guard/code path as the Delivered case above, but exercised from the
+    // OTHER terminal status the state machine can reach on its own (exhaustion) —
+    // "dead-lettering is terminal" should be proven from Dead specifically, not only
+    // inferred from Delivered sharing the same `if ($status !== Pending)` check.
+    [, , , $delivery] = c10PendingDelivery();
+
+    Http::fake();
+
+    $delivery->forceFill([
+        'status' => WebhookDeliveryStatus::Dead,
+        'attempt_count' => 6,
+        'last_error' => 'exhausted retries',
+    ])->save();
+
+    c10InvokeHandle(c10JobAtAttempt($delivery->id, 7));
+
+    Http::assertNothingSent();
+
+    $reloaded = $delivery->fresh();
+    expect($reloaded->status)->toBe(WebhookDeliveryStatus::Dead)
+        ->and($reloaded->attempt_count)->toBe(6)
+        ->and($reloaded->last_error)->toBe('exhausted retries');
 });
 
 test('secret non-leak: a receiver echoing the secret in a 500 body never leaks it into the row or any log line', function (): void {
