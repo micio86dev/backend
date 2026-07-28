@@ -8,24 +8,73 @@ use App\Jobs\ScoreEvaluationJob;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
- * Production-code counterpart to PR1's tests/Unit/QueueRuntimeConfigTest.php
- * — the SAME three assertions (A: ordering, B: derived ceiling, C:
- * config-independent floor), evaluated against LIVE config so
- * `beai:queue-work --validate-only` can fail fast at container startup
- * instead of drifting into a bad configuration at runtime
- * (queue-runtime/spec.md Requirement 2).
+ * Single source of truth for the timeout/retry_after ordering-and-ceiling
+ * invariant (queue-runtime/spec.md Requirement 2). Three assertions:
+ * A: max(declared job timeout) < worker_timeout < connections.*.retry_after.
+ * B: the ceiling-check job's timeout clears the derived ceiling
+ *    (MAX_ROLE_COMPETENCIES x scoring.anthropic.timeout_seconds x 1.1).
+ * C: the ceiling-check job's timeout independently exceeds a
+ *    config-independent floor — the anti-degenerate lock: A+B alone are
+ *    satisfiable by shrinking every number toward zero (e.g. dropping
+ *    scoring.anthropic.timeout_seconds collapses B's derived ceiling too).
  *
- * Deliberately duplicates PR1's reflection walker rather than importing the
- * test file (test files are not autoloaded in production) — mirrors this
- * codebase's existing convention of duplicating discovery walkers per use
- * site (see tests/Arch/Tenancy/QueuedJobTenantContextArchTest.php vs
- * tests/Arch/Queue/QueuedJobRetryOwnershipArchTest.php).
+ * Used DIRECTLY by both `beai:queue-work --validate-only`
+ * (App\Console\Commands\QueueWorkCommand) so the container can fail fast at
+ * startup, AND by tests/Unit/QueueRuntimeConfigTest.php. There is
+ * deliberately only ONE implementation of this logic — an earlier revision
+ * duplicated the reflection walker into the test file, which meant the two
+ * copies could silently diverge (e.g. change the 1.1 multiplier or the 600s
+ * floor in one place and the OTHER copy keeps passing) while looking
+ * identically green. Constructor parameters exist so tests can point the
+ * scan at a controlled fixture tree instead of the real app/ directory,
+ * without needing a second implementation to do it.
  */
 final class QueueRuntimeInvariant
 {
-    private const MAX_ROLE_COMPETENCIES = 18; // CLAUDE.md — max competencies per role.
+    /**
+     * Max competencies per role (CLAUDE.md — SRX/FLL/MLL). Single source of
+     * truth for the derived-ceiling multiplier: app/Jobs/ScoreEvaluationJob.php's
+     * docblock and config/queue.php's docblock both point here rather than
+     * restating the literal, so there is exactly one place this number can
+     * drift from.
+     */
+    public const MAX_ROLE_COMPETENCIES = 18;
 
-    private const CONFIG_INDEPENDENT_FLOOR_SECONDS = 600;
+    /**
+     * Config-independent floor in seconds — a LITERAL, not derived from any
+     * config value. This is what Assertion C guards with.
+     */
+    public const CONFIG_INDEPENDENT_FLOOR_SECONDS = 600;
+
+    private readonly string $rootDir;
+
+    private readonly string $namespaceRoot;
+
+    /** @var class-string */
+    private readonly string $ceilingCheckClass;
+
+    /**
+     * @param  string|null  $rootDir  Directory to recursively scan for
+     *                                ShouldQueue implementors. Defaults to app_path() in production;
+     *                                tests may point this at a controlled fixture tree.
+     * @param  string|null  $namespaceRoot  PSR-4 namespace root matching
+     *                                      $rootDir. Defaults to 'App'.
+     * @param  class-string|null  $ceilingCheckClass  The job class whose
+     *                                                timeout is checked against the derived ceiling and the
+     *                                                config-independent floor (Assertions B/C). Defaults to
+     *                                                ScoreEvaluationJob in production — the only job in this
+     *                                                codebase whose execution time scales with a variable
+     *                                                (competency count x LLM call latency).
+     */
+    public function __construct(
+        ?string $rootDir = null,
+        ?string $namespaceRoot = null,
+        ?string $ceilingCheckClass = null,
+    ) {
+        $this->rootDir = $rootDir ?? app_path();
+        $this->namespaceRoot = $namespaceRoot ?? 'App';
+        $this->ceilingCheckClass = $ceilingCheckClass ?? ScoreEvaluationJob::class;
+    }
 
     /**
      * @return list<string> human-readable violation messages; empty = invariant holds.
@@ -34,7 +83,7 @@ final class QueueRuntimeInvariant
     {
         $violations = [];
 
-        $timeouts = $this->discoverJobTimeouts(app_path(), 'App');
+        $timeouts = $this->discoverJobTimeouts($this->rootDir, $this->namespaceRoot);
         $declared = array_filter($timeouts, static fn (?int $timeout): bool => $timeout !== null);
 
         if ($declared === []) {
@@ -60,21 +109,26 @@ final class QueueRuntimeInvariant
             $violations[] = "queue.runtime.worker_timeout ({$workerTimeout}s) must be < connections.database.retry_after ({$databaseRetryAfter}s)";
         }
 
-        $scoreEvaluationTimeout = $timeouts[ScoreEvaluationJob::class] ?? null;
+        $ceilingCheckTimeout = $timeouts[$this->ceilingCheckClass] ?? null;
 
-        if ($scoreEvaluationTimeout !== null) {
+        if ($ceilingCheckTimeout !== null) {
             $anthropicTimeout = (int) config('scoring.anthropic.timeout_seconds');
             $derivedCeiling = (int) ceil(self::MAX_ROLE_COMPETENCIES * $anthropicTimeout * 1.1);
 
-            if ($scoreEvaluationTimeout < $derivedCeiling) {
-                $violations[] = "ScoreEvaluationJob::\$timeout ({$scoreEvaluationTimeout}s) must be >= the derived ceiling ({$derivedCeiling}s)";
+            if ($ceilingCheckTimeout < $derivedCeiling) {
+                $violations[] = "{$this->ceilingCheckClass}::\$timeout ({$ceilingCheckTimeout}s) must be >= the derived ceiling ({$derivedCeiling}s)";
             }
 
-            if ($scoreEvaluationTimeout <= self::CONFIG_INDEPENDENT_FLOOR_SECONDS) {
-                $violations[] = "ScoreEvaluationJob::\$timeout ({$scoreEvaluationTimeout}s) must exceed the ".self::CONFIG_INDEPENDENT_FLOOR_SECONDS.'s config-independent floor';
+            // Assertion C — config-independent floor. Deliberately a SEPARATE
+            // `if`, not an `elseif` off the ceiling check above: both must be
+            // evaluated independently so shrinking scoring.anthropic.timeout_seconds
+            // (which shrinks $derivedCeiling) cannot silently satisfy B while
+            // still being caught by C.
+            if ($ceilingCheckTimeout <= self::CONFIG_INDEPENDENT_FLOOR_SECONDS) {
+                $violations[] = "{$this->ceilingCheckClass}::\$timeout ({$ceilingCheckTimeout}s) must exceed the ".self::CONFIG_INDEPENDENT_FLOOR_SECONDS.'s config-independent floor';
             }
         } else {
-            $violations[] = 'ScoreEvaluationJob does not declare a $timeout — cannot verify the derived ceiling / config-independent floor.';
+            $violations[] = "{$this->ceilingCheckClass} does not declare a \$timeout — cannot verify the derived ceiling / config-independent floor.";
         }
 
         return $violations;
@@ -136,7 +190,20 @@ final class QueueRuntimeInvariant
 
                 if ($method->isPublic() && $method->getNumberOfRequiredParameters() === 0 && $method->getDeclaringClass()->getName() === $class) {
                     $instance = $reflection->newInstanceWithoutConstructor();
-                    $timeouts[$class] = (int) $method->invoke($instance);
+
+                    try {
+                        // newInstanceWithoutConstructor() never ran the real
+                        // constructor, so any typed/readonly property a
+                        // future job's timeout() reads from constructor
+                        // state is uninitialized here and would throw
+                        // \Error on access. Treat that as "undeclared"
+                        // rather than crashing --validate-only or the
+                        // health probe over a job whose timeout() simply
+                        // cannot be evaluated outside a real dispatch.
+                        $timeouts[$class] = (int) $method->invoke($instance);
+                    } catch (\Throwable) {
+                        $timeouts[$class] = null;
+                    }
 
                     continue;
                 }

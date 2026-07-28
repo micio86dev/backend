@@ -111,8 +111,10 @@ return [
     |     max(declared job $timeout) < worker_timeout < connections.*.retry_after
     |
     | AND ScoreEvaluationJob::$timeout independently clears the derived
-    | ceiling: 18 competencies x scoring.anthropic.timeout_seconds x 1.1,
-    | with a config-independent 600s floor (queue-runtime/spec.md).
+    | ceiling: App\Support\Queue\QueueRuntimeInvariant::MAX_ROLE_COMPETENCIES
+    | (single source of truth) x scoring.anthropic.timeout_seconds x 1.1,
+    | with App\Support\Queue\QueueRuntimeInvariant::CONFIG_INDEPENDENT_FLOOR_SECONDS
+    | (600s) as the floor (queue-runtime/spec.md).
     |
     | worker_timeout:      forwarded as `queue:work --timeout`. Kills a job
     |                       that runs longer than this.

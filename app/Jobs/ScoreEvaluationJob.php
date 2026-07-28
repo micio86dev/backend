@@ -98,7 +98,8 @@ class ScoreEvaluationJob implements ShouldQueue
      *
      * Derived from the sequential per-competency LLM loop (handle() ->
      * runScoringPipeline() -> scoreCompetency(), one Anthropic call per
-     * competency, no retry()): 18 competencies (CLAUDE.md max per role) x
+     * competency, no retry()): App\Support\Queue\QueueRuntimeInvariant::MAX_ROLE_COMPETENCIES
+     * (18, single source of truth — CLAUDE.md max per role) x
      * scoring.anthropic.timeout_seconds (default 60) x 1.1 safety margin =
      * 1188s, rounded up to 1200s (20 min). MUST independently exceed the
      * config-independent 600s floor (queue-runtime/spec.md) and MUST stay
