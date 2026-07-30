@@ -42,6 +42,10 @@ class User extends Authenticatable implements JWTSubject
         'name',
         'email',
         'password',
+        // C12 D7 — the recipient's preferred notification language. A
+        // preference, not a security attribute, so mass assignment is
+        // appropriate here in a way it is not for organization_id.
+        'locale',
     ];
 
     /**
