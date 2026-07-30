@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Enums\WebhookDeliveryOutcome;
 use App\Enums\WebhookDeliveryStatus;
+use App\Events\WebhookDeliveryDead;
 use App\Models\Project;
 use App\Models\WebhookDelivery;
 use App\Services\Webhooks\RetryClassifier;
@@ -216,6 +217,12 @@ class DeliverWebhookJob implements ShouldQueue
                 'attempt_count' => $attemptCount,
             ]);
 
+            // C12 D5. Placed here — immediately after persist(), OUTSIDE the
+            // runFor() closure and alongside the existing log line — so the
+            // listener never inherits an ambient organization it is required to
+            // re-derive for itself.
+            WebhookDeliveryDead::dispatch($delivery->getKey());
+
             return;
         }
 
@@ -297,5 +304,12 @@ class DeliverWebhookJob implements ShouldQueue
             'delivery_id' => $this->deliveryId,
             'reason' => 'unhandled_exception',
         ]);
+
+        // The safety net's emission. recordRetryable() returns early for
+        // terminal rows and this method does too, so the two are mutually
+        // exclusive per row — but emitting from only one of them would leave a
+        // silent hole exactly where an unhandled exception killed the job, i.e.
+        // the case an operator most needs to hear about.
+        WebhookDeliveryDead::dispatch($delivery->getKey());
     }
 }
