@@ -8,10 +8,10 @@ declare(strict_types=1);
  * Covers the two branches flagged by sdd-verify as uncovered:
  *
  * W2a (line 139) — client with a FUTURE expires_at:
- *   The Redis TTL must be computed from the remaining lifetime
- *   (expires_at – now in seconds, floored at 1). A past or zero TTL must
- *   never be written; a positive TTL that reflects the actual remaining
- *   lifetime is the invariant.
+ *   The Redis TTL must EQUAL the remaining lifetime (expires_at – now in
+ *   seconds, floored at 1). "Positive" is not the invariant — Carbon 3 returns
+ *   a signed diff, so the wrong argument order also produces a positive TTL:
+ *   the constant 1. The assertions here pin the exact second count.
  *
  * W2b (line 143) — Redis throws during destroy():
  *   The DB write (is_active=false) must survive a Redis outage.
@@ -46,7 +46,12 @@ function destroyTtlAdminToken(Organization $org): string
 // W2a — future expires_at → positive Redis TTL
 // ---------------------------------------------------------------------------
 
-test('W2 — destroy with future expires_at writes a POSITIVE Redis TTL', function (): void {
+test('W2 — destroy with future expires_at writes the REMAINING LIFETIME as the Redis TTL', function (): void {
+    // Time is frozen so the expected TTL is an exact number, not a window.
+    // Without this the assertion below would have to be a range, and a range is
+    // how the original bug survived: 1 second satisfies "greater than 0".
+    $this->freezeTime();
+
     $org = Organization::factory()->create();
     $token = destroyTtlAdminToken($org);
 
@@ -76,24 +81,24 @@ test('W2 — destroy with future expires_at writes a POSITIVE Redis TTL', functi
         ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertNoContent();
 
-    // TTL must be positive (remaining lifetime)
-    expect($capturedTtl)->toBeGreaterThan(0);
-
-    // TTL must be at most ~3600 s (1 hour) and at least 1 s
-    expect($capturedTtl)->toBeLessThanOrEqual(3600);
-    expect($capturedTtl)->toBeGreaterThanOrEqual(1);
+    // The TTL must BE the remaining lifetime — one hour, to the second.
+    // The value the Carbon-3 signed-diff bug produces is 1; this assertion is
+    // the only shape that excludes it.
+    expect($capturedTtl)->toBe(3600);
 
     // DB write must still have happened
     $client->refresh();
     expect($client->is_active)->toBeFalse();
 });
 
-test('W2 — destroy with expires_at in the past uses TTL of at least 1 (max(1, …) guard)', function (): void {
+test('W2 — destroy with expires_at in the past clamps the TTL to exactly 1 (max(1, …) guard)', function (): void {
+    $this->freezeTime();
+
     $org = Organization::factory()->create();
     $token = destroyTtlAdminToken($org);
 
     // Edge case: expires_at is 1 second in the past when destroy() fires.
-    // diffInSeconds → 0 or -1; max(1, …) must clamp it to 1.
+    // now()->diffInSeconds(past) → -1; max(1, …) must clamp it to 1.
     $client = ApiClient::factory()->create([
         'organization_id' => $org->id,
         'is_active' => true,
@@ -114,8 +119,9 @@ test('W2 — destroy with expires_at in the past uses TTL of at least 1 (max(1, 
         ->deleteJson('/api/m2m/clients/'.$client->id)
         ->assertNoContent();
 
-    // max(1, …) ensures TTL is never 0 or negative
-    expect($capturedTtl)->toBeGreaterThanOrEqual(1);
+    // max(1, …) ensures TTL is never 0 or negative — and, with time frozen,
+    // the clamped value is exactly 1.
+    expect($capturedTtl)->toBe(1);
 });
 
 test('W2 — destroy with null expires_at uses 1-year fallback TTL', function (): void {

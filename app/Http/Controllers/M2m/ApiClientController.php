@@ -135,9 +135,20 @@ final class ApiClientController extends Controller
 
         // 2. Redis fast-path SECOND — best-effort, exception-guarded.
         // TTL: remaining life if expires_at set; 1-year fallback for non-expiring keys.
+        //
+        // Argument order is load-bearing. Carbon 3 returns a SIGNED diff, so
+        // $expires_at->diffInSeconds(now()) on a FUTURE date yields a negative
+        // number and max(1, …) collapses every TTL to 1 second. The receiver must
+        // be the earlier instant: now()->diffInSeconds($expires_at).
+        // max(1, …) still clamps an already-expired key to the minimum TTL.
+        //
+        // ceil(), not a plain (int) cast: the diff is a float and `expires_at`
+        // is stored at second precision, so truncating would let the denylist
+        // entry expire up to a second BEFORE the key it revokes. Rounding up
+        // is the only direction that keeps the entry alive as long as the key.
         try {
             $ttl = $apiClient->expires_at !== null
-                ? max(1, (int) $apiClient->expires_at->diffInSeconds(now()))
+                ? max(1, (int) ceil(now()->diffInSeconds($apiClient->expires_at)))
                 : 365 * 24 * 3600;
 
             Cache::put('client_revoked:'.$apiClient->id, true, $ttl);
