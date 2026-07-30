@@ -93,6 +93,12 @@ return [
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),
             'charset' => env('DB_CHARSET', 'utf8'),
+            // Pin the session time zone to UTC. Without it the connection
+            // inherits the server's TimeZone setting, and every `timestamptz`
+            // value Laravel writes — which it formats WITHOUT an offset — is
+            // reinterpreted in that zone, shifting the stored instant. The app
+            // runs on UTC (config/app.php), so the connection must too.
+            'timezone' => env('DB_TIMEZONE', 'UTC'),
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
