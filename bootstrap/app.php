@@ -50,6 +50,24 @@ return Application::configure(basePath: dirname(__DIR__))
         ])->dailyAt('03:20')->onOneServer();
     })
     ->withMiddleware(function (Middleware $middleware): void {
+        // This application is API-only (CLAUDE.md: "API-only, no Blade UI").
+        // There is no `login` route and there never will be — so guests must
+        // never be redirected anywhere.
+        //
+        // Not defensive: ApplicationBuilder::withMiddleware() installs a DEFAULT
+        // callback of `fn () => route('login')`, and
+        // Authenticate::unauthenticated() invokes it whenever
+        // $request->expectsJson() is false. That call throws
+        // RouteNotFoundException INSIDE the middleware, before the
+        // AuthenticationException is ever constructed — so the exception
+        // handler's shouldRenderJsonWhen(api/*) rule below never runs, and a
+        // caller who merely omitted an Accept header receives a 500 with a
+        // stack trace instead of a 401.
+        //
+        // Returning null lets the AuthenticationException be thrown normally,
+        // which the handler then renders as a 401 JSON body.
+        $middleware->redirectGuestsTo(fn () => null);
+
         // Apply security headers globally (task 7.7 / D29).
         $middleware->append(SecurityHeaders::class);
 
