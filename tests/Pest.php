@@ -207,6 +207,13 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C12');
 
+// Unit/Notifications — TestCase + RefreshDatabase: the resolver's whole job is
+// a database query, and its riskiest assertions are about rows that do NOT
+// exist (a missing role row, a null-org superadmin).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Notifications');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
