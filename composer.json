@@ -42,7 +42,8 @@
         },
         "files": [
             "tests/Helpers/C10Fixtures.php",
-            "tests/Helpers/ScoringFixtures.php"
+            "tests/Helpers/ScoringFixtures.php",
+            "tests/Helpers/QueueWorkCommandFixtures.php"
         ]
     },
     "scripts": {

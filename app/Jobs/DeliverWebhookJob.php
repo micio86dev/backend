@@ -64,6 +64,14 @@ class DeliverWebhookJob implements ShouldQueue
     ) {}
 
     /**
+     * Per-job execution ceiling in seconds — the job-level envelope around
+     * the per-attempt HTTP budget (config/webhooks.php:79-80 — 5s connect +
+     * 10s read = 15s per attempt), leaving headroom for signing, retry
+     * bookkeeping, and persistence within a single handle() invocation.
+     */
+    public int $timeout = 60;
+
+    /**
      * Queue-level attempt ceiling — read from config, never hardcoded. This is a
      * SAFETY NET for a genuinely unexpected exception (e.g. a DB error inside the
      * save() itself); the modeled retryable-HTTP-failure path never throws and never

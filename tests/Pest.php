@@ -174,6 +174,26 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C10');
 
+// ─── queue-worker-scheduler (infrastructure) ──────────────────────────────────
+
+// Unit/QueueRuntimeConfigTest.php sits directly in Unit/ (config-invariant
+// reflection test, no DB needed) — needs TestCase so config() resolves
+// against the booted app.
+pest()->extend(TestCase::class)
+    ->in('Unit/QueueRuntimeConfigTest.php');
+
+// Unit/Support/Queue (PR4) — needs TestCase + RefreshDatabase: the reserved-
+// job-age probe's database-driver path inserts fake rows into the `jobs`
+// table via DB::table(), needs a real schema.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Queue');
+
+// Feature/Health (PR4) — RefreshDatabase for the queue health endpoint
+// feature tests (failed_jobs count assertions).
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Health');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
