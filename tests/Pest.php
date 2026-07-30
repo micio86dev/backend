@@ -194,6 +194,26 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Health');
 
+// ─── notifications-reminders (C12) ────────────────────────────────────────────
+
+// Unit/NotificationsConfigTest.php sits directly in Unit/ (config-invariant
+// test, no DB needed) — needs TestCase so config() resolves against the booted
+// app. Same shape as Unit/QueueRuntimeConfigTest.php above.
+pest()->extend(TestCase::class)
+    ->in('Unit/NotificationsConfigTest.php');
+
+// Feature/C12 — RefreshDatabase: the schema tests assert real Postgres unique
+// and CHECK violations, which need a real schema to violate.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C12');
+
+// Unit/Notifications — TestCase + RefreshDatabase: the resolver's whole job is
+// a database query, and its riskiest assertions are about rows that do NOT
+// exist (a missing role row, a null-org superadmin).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Notifications');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
