@@ -3,6 +3,7 @@
 use App\Providers\AppServiceProvider;
 use App\Providers\EventServiceProvider;
 use App\Providers\InterviewServiceProvider;
+use App\Providers\QueueRuntimeServiceProvider;
 use App\Providers\TenancyServiceProvider;
 
 return [
@@ -10,4 +11,5 @@ return [
     TenancyServiceProvider::class,
     InterviewServiceProvider::class,
     EventServiceProvider::class,
+    QueueRuntimeServiceProvider::class,
 ];
