@@ -113,6 +113,9 @@ return [
     |                       (deploy/restart hygiene), not a per-job bound.
     | worker_memory_mb:    forwarded as `queue:work --memory`.
     | worker_queues:       forwarded as `queue:work --queue` (comma-joined).
+    | worker_sleep_seconds: forwarded as `queue:work --sleep`. Seconds to
+    |                       sleep when no job is available (framework
+    |                       default is 3 — see WorkCommand's --sleep=3).
     | stall_threshold_seconds: used by the queue health probe to decide
     |                       whether the queue is "stalled" (depth > 0 and
     |                       last-processed age exceeds this).
@@ -124,7 +127,37 @@ return [
         'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
         'worker_memory_mb' => (int) env('QUEUE_WORKER_MEMORY_MB', 512),
         'worker_queues' => explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default')),
+        'worker_sleep_seconds' => (int) env('QUEUE_WORKER_SLEEP_SECONDS', 3),
         'stall_threshold_seconds' => (int) env('QUEUE_STALL_THRESHOLD_SECONDS', 300),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Maintenance — Scheduled Queue-Table Pruning
+    |--------------------------------------------------------------------------
+    |
+    | Retention windows for the scheduled `queue:prune-failed` and
+    | `queue:prune-batches` tasks (registered via ->withSchedule() in
+    | bootstrap/app.php, both ->onOneServer()). Queue hygiene, NOT a domain
+    | concern — this is distinct from any future GDPR candidate-data purge
+    | (C13's own retention policy, unrelated to these framework tables).
+    |
+    | 168 hours (7 days) balances the operational debugging window (enough
+    | time to notice and investigate a failed job or an incomplete batch)
+    | against unbounded table growth. failed_jobs payloads for this app's
+    | jobs carry only scalar IDs (ScoreEvaluationJob takes an int
+    | participantId, DeliverWebhookJob an int deliveryId — see their
+    | constructors), not participant PII, so the retention window is a
+    | pure operability/storage tradeoff, not a data-minimization one; only
+    | the free-text `exception` column could carry incidental data, which
+    | is why this stays finite and short rather than indefinite. Env-driven
+    | so a future change (e.g. C13) can shorten it without a code change.
+    |
+    */
+
+    'maintenance' => [
+        'failed_jobs_retention_hours' => (int) env('QUEUE_FAILED_JOBS_RETENTION_HOURS', 168),
+        'batches_retention_hours' => (int) env('QUEUE_BATCHES_RETENTION_HOURS', 168),
     ],
 
     /*

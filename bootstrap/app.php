@@ -7,6 +7,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,6 +21,28 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // queue-worker-scheduler PR2/PR3 (design.md D6): registers the scheduler
+    // RUNNER (makes `schedule:work` viable) plus queue-table maintenance
+    // (queue hygiene, not a domain concern — distinct from any future
+    // GDPR candidate-data purge, which is C13's own retention policy).
+    // ANY task added here MUST chain ->onOneServer():
+    // `deploy.replicas: 1` on the scheduler compose service (wrapper PR5) is
+    // overridable by --scale, so onOneServer() (backed by a real DB lock —
+    // Illuminate\Cache\DatabaseStore implements LockProvider, cache_locks
+    // table already exists) is structural defense-in-depth, not just
+    // documentation. Enforced by tests/Arch/Queue/SchedulerOnOneServerArchTest.php.
+    ->withSchedule(function (Schedule $schedule): void {
+        // Retention windows are config-driven (queue.maintenance.*) — see
+        // config/queue.php for the 168h/7-day reasoning. Never hardcode
+        // --hours here.
+        $schedule->command('queue:prune-failed', [
+            '--hours' => (int) config('queue.maintenance.failed_jobs_retention_hours'),
+        ])->dailyAt('03:10')->onOneServer();
+
+        $schedule->command('queue:prune-batches', [
+            '--hours' => (int) config('queue.maintenance.batches_retention_hours'),
+        ])->dailyAt('03:20')->onOneServer();
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         // Apply security headers globally (task 7.7 / D29).
         $middleware->append(SecurityHeaders::class);
