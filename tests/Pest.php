@@ -174,6 +174,14 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C10');
 
+// ─── queue-worker-scheduler (infrastructure) ──────────────────────────────────
+
+// Unit/QueueRuntimeConfigTest.php sits directly in Unit/ (config-invariant
+// reflection test, no DB needed) — needs TestCase so config() resolves
+// against the booted app.
+pest()->extend(TestCase::class)
+    ->in('Unit/QueueRuntimeConfigTest.php');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
