@@ -11,9 +11,17 @@ return [
     | API, giving you convenient access to each backend using identical
     | syntax for each. The default queue connection is defined below.
     |
+    | queue-worker-scheduler PR3: default flipped database -> redis. Safe
+    | as of this change (not before): PR1 landed ext-redis in the runtime
+    | image (Dockerfile) and raised retry_after to a value that clears the
+    | timeout/retry_after invariant on BOTH connections; PR2 landed the
+    | beai:queue-work wrapper that structurally forbids a worker-level
+    | --tries override. `jobs`/`job_batches` tables are NOT dropped, so
+    | QUEUE_CONNECTION=database is a one-line rollback if ever needed.
+    |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'database'),
+    'default' => env('QUEUE_CONNECTION', 'redis'),
 
     /*
     |--------------------------------------------------------------------------
@@ -40,7 +48,7 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 1500),
             'after_commit' => false,
         ],
 
@@ -68,7 +76,7 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 1500),
             'block_for' => null,
             'after_commit' => false,
         ],
@@ -89,6 +97,124 @@ return [
             ],
         ],
 
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Runtime — Worker Process Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Single source of truth for every number the `beai:queue-work` wrapper
+    | command (App\Console\Commands\QueueWorkCommand) forwards to the
+    | underlying `queue:work` invocation. The reliability invariant is:
+    |
+    |     max(declared job $timeout) < worker_timeout < connections.*.retry_after
+    |
+    | AND ScoreEvaluationJob::$timeout independently clears the derived
+    | ceiling: App\Support\Queue\QueueRuntimeInvariant::MAX_ROLE_COMPETENCIES
+    | (single source of truth) x scoring.anthropic.timeout_seconds x 1.1,
+    | with App\Support\Queue\QueueRuntimeInvariant::CONFIG_INDEPENDENT_FLOOR_SECONDS
+    | (600s) as the floor (queue-runtime/spec.md).
+    |
+    | worker_timeout:      forwarded as `queue:work --timeout`. Kills a job
+    |                       that runs longer than this.
+    | worker_max_time:     forwarded as `queue:work --max-time`. Worker
+    |                       process exits cleanly after this many seconds
+    |                       (deploy/restart hygiene), not a per-job bound.
+    | worker_memory_mb:    forwarded as `queue:work --memory`.
+    | worker_queues:       forwarded as `queue:work --queue` (comma-joined).
+    |                       Parsed from QUEUE_WORKER_QUEUES with each entry
+    |                       TRIMMED and empties dropped — see the parsing
+    |                       note at the value itself. Validated by
+    |                       App\Support\Queue\QueueRuntimeInvariant, so a
+    |                       malformed value fails the container's
+    |                       `beai:queue-work --validate-only` startup check
+    |                       instead of degrading into a worker that consumes
+    |                       the wrong queue.
+    | worker_sleep_seconds: forwarded as `queue:work --sleep`. Seconds to
+    |                       sleep when no job is available (framework
+    |                       default is 3 — see WorkCommand's --sleep=3).
+    | stall_threshold_seconds: DEPTH-based stall signal. Used by the queue
+    |                       health probe: the queue is "stalled" when depth
+    |                       > 0 AND the age since the last successfully
+    |                       processed job exceeds this. 300s is appropriate
+    |                       here because under healthy operation a pending
+    |                       job should be PICKED UP within seconds — this
+    |                       threshold is about the worker failing to start
+    |                       consuming at all, not about how long any single
+    |                       job takes to run.
+    | reserved_job_stall_threshold_seconds: RESERVATION-based stall signal —
+    |                       deliberately a SEPARATE, larger threshold, not
+    |                       the same number as stall_threshold_seconds
+    |                       above. A legitimately-running ScoreEvaluationJob
+    |                       can validly stay "reserved" for close to
+    |                       worker_timeout (1260s) — that is normal, not a
+    |                       stall. Only a reservation held meaningfully
+    |                       LONGER than worker_timeout indicates the worker
+    |                       that reserved it crashed or was restarted
+    |                       (Symfony's own --timeout enforcement never let a
+    |                       healthy worker hold a reservation past
+    |                       worker_timeout). Default is worker_timeout + a
+    |                       60s buffer = 1320s, deliberately still below
+    |                       retry_after (1500s) so this signal fires BEFORE
+    |                       Laravel's own migrateExpiredJobs() silently
+    |                       requeues the job — giving an operator ~180s of
+    |                       lead time on the exact failure mode retry_after
+    |                       was raised to 1500s to tolerate (queue-runtime/
+    |                       spec.md; see also App\Support\Queue\ReservedJobAgeProbe).
+    |
+    */
+
+    'runtime' => [
+        'worker_timeout' => (int) env('QUEUE_WORKER_TIMEOUT', 1260),
+        'worker_max_time' => (int) env('QUEUE_WORKER_MAX_TIME', 3600),
+        'worker_memory_mb' => (int) env('QUEUE_WORKER_MEMORY_MB', 512),
+        // TRIMMED, and empty entries dropped. `QUEUE_WORKER_QUEUES=default, webhooks`
+        // is an entirely ordinary way to write a comma-separated env var, and a
+        // bare explode() turns it into ['default', ' webhooks'] — forwarded verbatim
+        // as `queue:work --queue=default, webhooks`, which matches no queue any job
+        // dispatches to. The worker then silently stops consuming that queue with no
+        // error signal at all. Whitespace here is an operator typo, never a queue name.
+        // The residual "all entries dropped" case (e.g. QUEUE_WORKER_QUEUES=" ,, ")
+        // is caught loudly by App\Support\Queue\QueueRuntimeInvariant, because an
+        // empty --queue silently falls back to the connection's default queue
+        // (Illuminate\Queue\Console\WorkCommand::getQueue() — `$this->option('queue') ?: ...`).
+        'worker_queues' => array_values(array_filter(
+            array_map('trim', explode(',', (string) env('QUEUE_WORKER_QUEUES', 'default'))),
+            static fn (string $queue): bool => $queue !== '',
+        )),
+        'worker_sleep_seconds' => (int) env('QUEUE_WORKER_SLEEP_SECONDS', 3),
+        'stall_threshold_seconds' => (int) env('QUEUE_STALL_THRESHOLD_SECONDS', 300),
+        'reserved_job_stall_threshold_seconds' => (int) env('QUEUE_RESERVED_JOB_STALL_THRESHOLD_SECONDS', 1320),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Maintenance — Scheduled Queue-Table Pruning
+    |--------------------------------------------------------------------------
+    |
+    | Retention windows for the scheduled `queue:prune-failed` and
+    | `queue:prune-batches` tasks (registered via ->withSchedule() in
+    | bootstrap/app.php, both ->onOneServer()). Queue hygiene, NOT a domain
+    | concern — this is distinct from any future GDPR candidate-data purge
+    | (C13's own retention policy, unrelated to these framework tables).
+    |
+    | 168 hours (7 days) balances the operational debugging window (enough
+    | time to notice and investigate a failed job or an incomplete batch)
+    | against unbounded table growth. failed_jobs payloads for this app's
+    | jobs carry only scalar IDs (ScoreEvaluationJob takes an int
+    | participantId, DeliverWebhookJob an int deliveryId — see their
+    | constructors), not participant PII, so the retention window is a
+    | pure operability/storage tradeoff, not a data-minimization one; only
+    | the free-text `exception` column could carry incidental data, which
+    | is why this stays finite and short rather than indefinite. Env-driven
+    | so a future change (e.g. C13) can shorten it without a code change.
+    |
+    */
+
+    'maintenance' => [
+        'failed_jobs_retention_hours' => (int) env('QUEUE_FAILED_JOBS_RETENTION_HOURS', 168),
+        'batches_retention_hours' => (int) env('QUEUE_BATCHES_RETENTION_HOURS', 168),
     ],
 
     /*

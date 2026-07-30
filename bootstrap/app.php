@@ -7,6 +7,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -20,6 +21,34 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // queue-worker-scheduler PR2/PR3 (design.md D6): registers the scheduler
+    // RUNNER (makes `schedule:work` viable) plus queue-table maintenance
+    // (queue hygiene, not a domain concern — distinct from any future
+    // GDPR candidate-data purge, which is C13's own retention policy).
+    // ANY task added here MUST chain ->onOneServer():
+    // `deploy.replicas: 1` on the scheduler compose service (wrapper PR5) is
+    // overridable by --scale, so onOneServer() is structural defense-in-depth,
+    // not just documentation. It is backed by whichever cache store is
+    // configured, and the store is deliberately NOT named here: the compose
+    // stack pins CACHE_STORE=redis per CLAUDE.md's stack table, while
+    // config/cache.php still defaults to `database` outside Docker. Both work —
+    // RedisStore and DatabaseStore each implement LockProvider — and naming one
+    // of them in this comment is how it goes stale the next time the driver
+    // moves. What matters is that the store is SHARED across processes; a
+    // per-container store (CACHE_STORE=file) silently reduces this lock to no
+    // lock at all. Enforced by tests/Arch/Queue/SchedulerOnOneServerArchTest.php.
+    ->withSchedule(function (Schedule $schedule): void {
+        // Retention windows are config-driven (queue.maintenance.*) — see
+        // config/queue.php for the 168h/7-day reasoning. Never hardcode
+        // --hours here.
+        $schedule->command('queue:prune-failed', [
+            '--hours' => (int) config('queue.maintenance.failed_jobs_retention_hours'),
+        ])->dailyAt('03:10')->onOneServer();
+
+        $schedule->command('queue:prune-batches', [
+            '--hours' => (int) config('queue.maintenance.batches_retention_hours'),
+        ])->dailyAt('03:20')->onOneServer();
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         // Apply security headers globally (task 7.7 / D29).
         $middleware->append(SecurityHeaders::class);

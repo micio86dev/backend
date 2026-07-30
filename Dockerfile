@@ -41,9 +41,12 @@ LABEL org.opencontainers.image.title="BEAI API" \
 # Robust extension installer (also pulls the correct runtime libs and cleans up build deps)
 COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
 
-# Runtime-only system deps + PHP extensions needed in production
+# Runtime-only system deps + PHP extensions needed in production.
+# pcntl + posix: required for graceful worker shutdown (SIGTERM handling,
+# Worker::supportsAsyncSignals()). redis: phpredis client for the `redis`
+# queue connection (predis/predis is not a dependency — see composer.lock).
 RUN apk add --no-cache postgresql-client curl \
-    && install-php-extensions pdo_pgsql zip opcache \
+    && install-php-extensions pdo_pgsql zip opcache pcntl posix redis \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user (D17)
