@@ -31,6 +31,10 @@ class AiRequestFactory extends Factory
     {
         return [
             'evaluation_id' => Evaluation::factory(),
+            'provider' => 'anthropic',
+            'estimated_cost_usd' => 0.001234,
+            'success' => true,
+            'failure_reason' => null,
             'competency_code' => $this->faker->randomElement(['COL', 'PRS', 'STG', 'SLF', 'COM']),
             'model' => 'fake-llm-provider-v1',
             'prompt_version' => '1.0.0',

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\AiRequestFailureReason;
 use Database\Factories\AiRequestFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -69,6 +70,10 @@ class AiRequest extends TenantModel
      */
     protected $fillable = [
         'evaluation_id',
+        'provider',
+        'estimated_cost_usd',
+        'success',
+        'failure_reason',
         'competency_code',
         'model',
         'prompt_version',
@@ -89,6 +94,9 @@ class AiRequest extends TenantModel
             'created_at' => 'immutable_datetime',
             'input_tokens' => 'integer',
             'output_tokens' => 'integer',
+            'estimated_cost_usd' => 'decimal:6',
+            'success' => 'boolean',
+            'failure_reason' => AiRequestFailureReason::class,
             'latency_ms' => 'integer',
         ];
     }

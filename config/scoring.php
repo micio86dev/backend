@@ -52,6 +52,45 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Provider
+    |--------------------------------------------------------------------------
+    |
+    | Which vendor is being billed. Stamped onto every ai_requests row, because
+    | "estimated cost per provider and model" is a promise the observability
+    | spec makes and an unattributable cost record cannot keep.
+    |
+    */
+    'provider' => env('SCORING_PROVIDER', 'anthropic'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cost Rates (USD per MILLION tokens)
+    |--------------------------------------------------------------------------
+    |
+    | Keyed by the exact model id — never an alias, for the same reason
+    | model_version is pinned exactly: an alias silently repoints and the cost
+    | history stops meaning anything.
+    |
+    | These are ESTIMATES used to populate ai_requests.estimated_cost_usd at
+    | write time. They are not an invoice and are not authoritative for billing.
+    | An unknown model yields 0.0 rather than an exception: a missing rate must
+    | never be the thing that stops a scoring job or loses the record of a call
+    | that was actually made. A zero-cost row is visible in the dashboard as the
+    | anomaly it is.
+    |
+    | Update deliberately when a vendor changes pricing; historical rows keep
+    | the rate that applied when they were written, which is the whole reason
+    | the value is stored rather than computed on read.
+    |
+    */
+    'cost_rates_usd_per_million' => [
+        'claude-haiku-4-5-20251001' => ['input' => 1.00, 'output' => 5.00],
+        'claude-sonnet-4-5-20250929' => ['input' => 3.00, 'output' => 15.00],
+        'claude-opus-4-5-20251101' => ['input' => 5.00, 'output' => 25.00],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Prompt Version
     |--------------------------------------------------------------------------
     |
