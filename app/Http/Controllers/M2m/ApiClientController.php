@@ -10,6 +10,7 @@ use App\Models\ApiClient;
 use App\Models\User;
 use App\Services\AbilitiesValidator;
 use App\Services\ApiKeyGenerator;
+use App\Support\Audit\AuditRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -84,6 +85,21 @@ final class ApiClientController extends Controller
         ]);
         $client->save();
 
+        // The raw key and its hash are both absent from the payload below:
+        // AuditRecorder redacts key_hash by name, and $rawKey is never handed
+        // to it in the first place. An audit trail that captures credentials is
+        // a breach with good intentions.
+        app(AuditRecorder::class)->record(
+            action: 'api_client.created',
+            subjectType: 'api_client',
+            subjectId: (int) $client->getKey(),
+            after: [
+                'name' => $client->name,
+                'abilities' => $client->abilities,
+                'expires_at' => $client->expires_at?->toIso8601String(),
+            ],
+        );
+
         return response()->json([
             'data' => new ApiClientResource($client),
             'api_key' => $rawKey,  // returned ONCE — never stored raw, never logged
@@ -155,6 +171,18 @@ final class ApiClientController extends Controller
         } catch (\Throwable) {
             // Non-fatal — DB is already updated; Redis is a fast-path optimisation.
         }
+
+        // Recorded AFTER the durable DB write, so the trail never claims a
+        // revocation that did not commit. The Redis fast-path above is
+        // best-effort and its outcome is deliberately not audited: it is a
+        // cache, and a cache miss is not a security event.
+        app(AuditRecorder::class)->record(
+            action: 'api_client.revoked',
+            subjectType: 'api_client',
+            subjectId: (int) $apiClient->getKey(),
+            before: ['is_active' => true],
+            after: ['is_active' => false],
+        );
 
         return response()->json(null, 204);
     }
