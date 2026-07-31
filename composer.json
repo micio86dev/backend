@@ -10,6 +10,7 @@
         "php": "^8.5",
         "dedoc/scramble": "^0.13",
         "laravel/framework": "^13.8",
+        "laravel/pulse": "^1.7",
         "laravel/tinker": "^3.0",
         "resend/resend-php": "^1.7",
         "sentry/sentry-laravel": "^4.27",
