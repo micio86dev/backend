@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Contracts\LLMProvider;
+use App\DTOs\LLMResponse;
 use App\DTOs\Scoring\IndicatorRef;
 use App\DTOs\Scoring\IndicatorScoreDTO;
+use App\Enums\AiRequestFailureReason;
 use App\Enums\EvaluationStatus;
 use App\Events\EvaluationCompleted;
 use App\Events\EvaluationFailed;
@@ -34,6 +36,7 @@ use App\Services\Scoring\IndicatorValidator;
 use App\Services\Scoring\MeanCalculator;
 use App\Services\Scoring\PromptBuilder;
 use App\Services\Scoring\TranscriptAssembler;
+use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -648,6 +651,26 @@ class ScoreEvaluationJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
 
+            // C13: the call above was MADE and BILLED. Returning without a row
+            // here is how four classes of paid failure left no trace at all.
+            // The reason is a machine key, never $e->getMessage(): a provider
+            // error can echo prompt content, and prompts contain candidate
+            // answers.
+            $this->recordAiRequest(
+                $evaluation,
+                $competencyCode,
+                $llmResponse,
+                $latencyMs,
+                $options,
+                success: false,
+                failureReason: match (true) {
+                    $e instanceof JsonParseException => AiRequestFailureReason::ParseError,
+                    $e instanceof IndicatorCountMismatchException => AiRequestFailureReason::IndicatorCountMismatch,
+                    $e instanceof InvalidIndicatorScoreException => AiRequestFailureReason::InvalidIndicatorScore,
+                    default => AiRequestFailureReason::ExcerptNotVerbatim,
+                },
+            );
+
             // DO NOT queue-retry: persist as llm_parse_error immediately (D4 FIX-9).
             $this->persistUnscorable($evaluation, $competencyCode, 'llm_parse_error');
 
@@ -660,24 +683,35 @@ class ScoreEvaluationJob implements ShouldQueue
         $reliability = $reliabilityStrategy->compute($scores);
         $valid = $validityPredicate->isValid($reliability);
 
-        // ── Persist: ai_requests + CompetencyResult + IndicatorScores in ONE transaction ──
-        DB::transaction(function () use (
-            $evaluation, $competencyCode, $score, $reliability, $valid, $dtos,
-            $llmResponse, $latencyMs, $options
-        ): void {
-            // 1. Append ai_requests row (evaluation_id always known — Evaluation was created at START).
-            AiRequest::create([
-                'evaluation_id' => $evaluation->id,
-                'competency_code' => $competencyCode,
-                'model' => $llmResponse->model,
-                'prompt_version' => $options['prompt_version'] ?? config('scoring.prompt_version'),
-                'input_tokens' => $llmResponse->inputTokens,
-                'output_tokens' => $llmResponse->outputTokens,
-                'finish_reason' => $llmResponse->finishReason,
-                'latency_ms' => $latencyMs,
-            ]);
+        // ── Record the billed call BEFORE the results transaction (C13 D1) ──
+        //
+        // This deliberately REVERSES C9's D2 CW, which required the ai_requests
+        // row and the CompetencyResult INSERT to share a transaction. A provider
+        // call is external, irreversible and billed; the results are local and
+        // revocable. Nesting the first inside the second meant any later failure
+        // in that transaction erased the record of money already spent — and it
+        // failed in the direction that HIDES cost, at exactly the moment
+        // something else had gone wrong.
+        //
+        // Safe on C9's own terms: that design states the resume-skip signal is
+        // the CompetencyResult row ("do NOT use the presence of an ai_requests
+        // row as a skip signal") and that an extra ai_requests row is "valid
+        // audit data", not an anomaly. Nothing depended on the coupling.
+        $this->recordAiRequest(
+            $evaluation,
+            $competencyCode,
+            $llmResponse,
+            $latencyMs,
+            $options,
+            success: true,
+            failureReason: null,
+        );
 
-            // 2. Persist CompetencyResult with real reliability + valid (PR3).
+        // ── Persist: CompetencyResult + IndicatorScores in ONE transaction ──
+        DB::transaction(function () use (
+            $evaluation, $competencyCode, $score, $reliability, $valid, $dtos
+        ): void {
+            // Persist CompetencyResult with real reliability + valid (PR3).
             $cr = CompetencyResult::create([
                 'evaluation_id' => $evaluation->id,
                 'competency_code' => $competencyCode,
@@ -706,6 +740,51 @@ class ScoreEvaluationJob implements ShouldQueue
             'score' => $score,
             'reliability' => $reliability,
             'valid' => $valid,
+        ]);
+    }
+
+    /**
+     * Append the cost record for one provider call (C13, observability delta).
+     *
+     * Called on EVERY path that follows a completed call — success and each
+     * failure class alike — and deliberately never from inside a transaction
+     * that persists scoring results. See the call sites and design D1.
+     *
+     * `estimated_cost_usd` is computed here, at write time, from the config
+     * rate table. Computing it on read would let a later price change silently
+     * rewrite history: last quarter's spend would move because this quarter's
+     * rates did.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    private function recordAiRequest(
+        Evaluation $evaluation,
+        string $competencyCode,
+        LLMResponse $llmResponse,
+        int $latencyMs,
+        array $options,
+        bool $success,
+        ?AiRequestFailureReason $failureReason,
+    ): void {
+        $estimator = app(AiRequestCostEstimator::class);
+
+        AiRequest::create([
+            'evaluation_id' => $evaluation->id,
+            'competency_code' => $competencyCode,
+            'provider' => (string) config('scoring.provider', 'anthropic'),
+            'model' => $llmResponse->model,
+            'prompt_version' => $options['prompt_version'] ?? config('scoring.prompt_version'),
+            'input_tokens' => $llmResponse->inputTokens,
+            'output_tokens' => $llmResponse->outputTokens,
+            'estimated_cost_usd' => $estimator->estimate(
+                $llmResponse->model,
+                $llmResponse->inputTokens,
+                $llmResponse->outputTokens,
+            ),
+            'success' => $success,
+            'failure_reason' => $failureReason?->value,
+            'finish_reason' => $llmResponse->finishReason,
+            'latency_ms' => $latencyMs,
         ]);
     }
 

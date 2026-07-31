@@ -3,14 +3,34 @@
 declare(strict_types=1);
 
 /**
- * RED — Task 14.7: ai_requests persistence in the scoring loop (C9 D1/D2).
+ * ai_requests persistence in the scoring loop (C9 D1, amended by C13 D1).
  *
  * Verifies:
- * (a) ai_requests row persisted with evaluation_id (never null) when competency is scored.
- * (b) Unscorable competency (role_no_bars) → no ai_requests row.
- * (c) ai_requests + CompetencyResult written in the same DB transaction (roll-back test).
+ * (a) ai_requests row persisted with evaluation_id (never null) when scored.
+ * (b) Unscorable competency (role_no_bars) → no ai_requests row. Still true:
+ *     an unscorable competency makes NO provider call, so there is nothing to
+ *     bill and nothing to record.
  *
- * Refs spec: D1 "ai_requests linkage", D2 CW "same-txn".
+ * ── What changed, and a note on what was never here ──────────────────────────
+ *
+ * This docblock previously advertised a third case: "(c) ai_requests +
+ * CompetencyResult written in the same DB transaction (roll-back test)",
+ * referencing C9's D2 CW "same-txn".
+ *
+ * Two things are true about that line. First, **no such test was ever
+ * written** — only (a) and (b) exist below. The invariant lived in prose and in
+ * a docblock, and nothing enforced it. Second, C13 D1 deliberately REVERSES the
+ * invariant itself: the ai_requests row is now written OUTSIDE the results
+ * transaction, because a provider call is external, irreversible and billed
+ * while the results are local and revocable. Coupling them erased the record of
+ * money already spent whenever the transaction rolled back.
+ *
+ * That combination is worth stating rather than quietly deleting the line. An
+ * invariant asserted in a comment and never tested is exactly the kind that
+ * gets violated for months without anyone noticing — and this one was, on the
+ * failure paths, where four classes of billed call left no trace at all.
+ *
+ * The new behaviour is covered by tests/Feature/Jobs/AiRequestCostRecordTest.php.
  */
 
 use App\Contracts\LLMProvider;
