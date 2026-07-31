@@ -244,3 +244,10 @@ function something()
 {
     // ..
 }
+
+// ─── C13 nfr-hardening ────────────────────────────────────────────────────────
+
+// Feature/C13 — RefreshDatabase: project-configuration and audit assertions
+// create real rows through factories.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C13');

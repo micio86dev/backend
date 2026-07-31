@@ -56,6 +56,7 @@ class ParticipantResource extends JsonResource
                 'language' => $project->language,
                 'assessment_type' => $project->assessment_type,
                 'exit_redirect_url' => $project->exit_redirect_url,
+                'error_redirect_url' => $project->error_redirect_url,
             ] : null,
         ];
     }

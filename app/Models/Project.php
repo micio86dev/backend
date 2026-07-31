@@ -39,6 +39,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $pause_every_n_competencies
  * @property int|null $nudge_min_chars
  * @property string|null $exit_redirect_url
+ * @property string|null $error_redirect_url
  * @property string|null $webhook_url
  * @property string|null $webhook_secret
  * @property list<string> $webhook_events
@@ -70,6 +71,7 @@ class Project extends TenantModel
         'pause_every_n_competencies',
         'nudge_min_chars',
         'exit_redirect_url',
+        'error_redirect_url',
         'webhook_url',
         'webhook_secret',
         'webhook_events',
