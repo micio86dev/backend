@@ -86,7 +86,7 @@ jobs:
 
       # ── Static analysis (PHPStan level 8) ─────────────────────────────────
       - name: Static analysis (PHPStan)
-        run: ./vendor/bin/phpstan analyse --no-progress
+        run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
       # ── Run migrations against beai_test ──────────────────────────────────
       - name: Run migrations

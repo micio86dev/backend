@@ -7,6 +7,7 @@ use App\Models\ApiClient;
 use App\Models\Evaluation;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\User;
 use App\Policies\ApiClientPolicy;
 use App\Policies\EvaluationPolicy;
 use App\Policies\ParticipantPolicy;
@@ -72,6 +73,41 @@ class AppServiceProvider extends ServiceProvider
         // C11 — Register ParticipantPolicy/EvaluationPolicy for admin read RBAC (D3).
         Gate::policy(Participant::class, ParticipantPolicy::class);
         Gate::policy(Evaluation::class, EvaluationPolicy::class);
+
+        // C13 — Gate the Laravel Pulse dashboard (task 5.2).
+        //
+        // Two conditions, deliberately, and this is a considered DEVIATION from
+        // spec.md:242 ("authenticated users with the `admin` RBAC role").
+        //
+        // `admin` here is ORG-SCOPED: spatie runs in teams mode with
+        // team_id = organization_id, so every customer has an admin of their
+        // own. Pulse has no organization_id anywhere — it aggregates the slow
+        // queries, exception messages and job payloads of every tenant onto a
+        // single page, and there is no scoping to apply to it. Read literally,
+        // the spec hands each customer's admin a view of every other customer's
+        // data, which CLAUDE.md's "a tenant must never see another tenant's
+        // data" forbids outright.
+        //
+        // So: the admin role AND an explicit platform-operator allowlist. Both,
+        // not either — the allowlist is a deployment artifact that outlives the
+        // person it names, while the role is revoked the day they leave. Each
+        // one covers the other going stale.
+        Gate::define('viewPulse', function (User $user): bool {
+            $operators = config('pulse.operators', []);
+
+            if (! is_array($operators) || ! in_array($user->email, $operators, true)) {
+                return false;
+            }
+
+            // Teams mode: the registrar's team id must be set before hasRole()
+            // means anything, and Pulse's routes carry no TenantContext
+            // middleware to have set it. Without this the check silently
+            // resolves against team_id NULL and denies everyone — fail-closed,
+            // but for the wrong reason and impossible to debug.
+            app(PermissionRegistrar::class)->setPermissionsTeamId($user->organization_id);
+
+            return $user->hasRole('admin');
+        });
 
         // C5 — Register the api-m2m RequestGuard.
         //
