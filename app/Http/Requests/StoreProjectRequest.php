@@ -72,6 +72,7 @@ class StoreProjectRequest extends FormRequest
             'pause_every_n_competencies' => ['nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
+            'error_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['nullable', 'url', 'max:2048'],
             'webhook_secret' => ['nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads

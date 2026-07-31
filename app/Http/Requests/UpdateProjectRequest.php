@@ -85,6 +85,7 @@ class UpdateProjectRequest extends FormRequest
             'pause_every_n_competencies' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
+            'error_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads

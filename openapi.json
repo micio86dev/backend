@@ -1790,6 +1790,156 @@
                 }
             }
         },
+        "/health/queue": {
+            "get": {
+                "operationId": "queueHealth",
+                "tags": [
+                    "QueueHealth"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "degraded",
+                                                "ok"
+                                            ]
+                                        },
+                                        "worker": {
+                                            "type": "object",
+                                            "properties": {
+                                                "alive": {
+                                                    "type": "boolean"
+                                                },
+                                                "last_heartbeat_age_seconds": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "alive",
+                                                "last_heartbeat_age_seconds"
+                                            ]
+                                        },
+                                        "queue": {
+                                            "type": "object",
+                                            "properties": {
+                                                "depth": {
+                                                    "type": "integer"
+                                                },
+                                                "last_processed_age_seconds": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "stalled": {
+                                                    "type": "string"
+                                                },
+                                                "oldest_reserved_age_seconds": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "reservation_stalled": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "depth",
+                                                "last_processed_age_seconds",
+                                                "stalled",
+                                                "oldest_reserved_age_seconds",
+                                                "reservation_stalled"
+                                            ]
+                                        },
+                                        "failed": {
+                                            "type": "object",
+                                            "properties": {
+                                                "count": {
+                                                    "type": "integer"
+                                                },
+                                                "oldest_age_seconds": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "count",
+                                                "oldest_age_seconds"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "worker",
+                                        "queue",
+                                        "failed"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "down"
+                                        },
+                                        "worker": {
+                                            "type": "object",
+                                            "properties": {
+                                                "alive": {
+                                                    "type": "boolean"
+                                                },
+                                                "last_heartbeat_age_seconds": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "alive",
+                                                "last_heartbeat_age_seconds"
+                                            ]
+                                        },
+                                        "queue": {
+                                            "type": "null"
+                                        },
+                                        "failed": {
+                                            "type": "null"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "worker",
+                                        "queue",
+                                        "failed"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/candidate/session": {
             "get": {
                 "operationId": "session.show",
@@ -2327,6 +2477,9 @@
                             },
                             "exit_redirect_url": {
                                 "type": "string"
+                            },
+                            "error_redirect_url": {
+                                "type": "string"
                             }
                         },
                         "required": [
@@ -2334,7 +2487,8 @@
                             "role_code",
                             "language",
                             "assessment_type",
-                            "exit_redirect_url"
+                            "exit_redirect_url",
+                            "error_redirect_url"
                         ]
                     }
                 },
@@ -2688,6 +2842,9 @@
                     "webhook_url": {
                         "type": "string"
                     },
+                    "webhook_events": {
+                        "type": "string"
+                    },
                     "deadline_at": {
                         "type": [
                             "string",
@@ -2763,6 +2920,7 @@
                     "nudge_min_chars",
                     "exit_redirect_url",
                     "webhook_url",
+                    "webhook_events",
                     "deadline_at",
                     "goes_live_at",
                     "created_at",
@@ -2867,6 +3025,14 @@
                         "format": "uri",
                         "maxLength": 2048
                     },
+                    "error_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
                     "webhook_url": {
                         "type": [
                             "string",
@@ -2881,6 +3047,17 @@
                             "null"
                         ],
                         "maxLength": 1024
+                    },
+                    "webhook_events": {
+                        "type": "array",
+                        "description": "Closed event-type set (C10 D10) \u2014 not env-overridable, so Rule::in reads\nthe config, never a hardcoded list.",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "progress",
+                                "evaluation"
+                            ]
+                        }
                     },
                     "deadline_at": {
                         "type": [
