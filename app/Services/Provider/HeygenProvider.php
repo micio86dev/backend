@@ -6,6 +6,8 @@ namespace App\Services\Provider;
 
 use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
+use App\Support\AvatarTemplates\ActiveTemplateResolver;
+use App\Support\AvatarTemplates\TemplatePayload;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -64,6 +66,21 @@ class HeygenProvider implements ProviderSessionService
         if ($ctx->systemPrompt !== null) {
             $contextBody['system_prompt'] = $ctx->systemPrompt;
         }
+
+        // C14: the organization's active avatar template, if it has one.
+        //
+        // Merged rather than assigned, so an organization with NO active
+        // template sends exactly the body it sent before templates existed —
+        // which is the state every tenant is in on the day this ships.
+        //
+        // The template's keys are additive: it can only add avatar_id,
+        // avatar_persona, voice_settings and friends. It cannot overwrite
+        // competency_code, question_index or system_prompt, because those are
+        // the interview, not its appearance.
+        $contextBody = array_merge(
+            TemplatePayload::heygen($this->activeTemplateConfig()),
+            $contextBody,
+        );
 
         $ctxResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
             ->post(self::BASE_URL.'/contexts', $contextBody);
@@ -192,5 +209,26 @@ class HeygenProvider implements ProviderSessionService
             "HeyGen: {$context} (HTTP {$status}) — provider response redacted",
             $retryable,
         );
+    }
+
+    /**
+     * The active template's config, or an empty array.
+     *
+     * Resolution failures are swallowed on purpose. An interview must not fail
+     * because a cosmetic setting could not be read — the fallback is the
+     * provider's own defaults, which is exactly what this product did before
+     * templates existed.
+     *
+     * @return array<string, mixed>
+     */
+    private function activeTemplateConfig(): array
+    {
+        try {
+            $template = app(ActiveTemplateResolver::class)->resolve();
+
+            return $template === null ? [] : $template->config;
+        } catch (\Throwable) {
+            return [];
+        }
     }
 }
