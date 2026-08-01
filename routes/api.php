@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ParticipantController as AdminParticipantController
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\AvatarTemplateController;
 use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
@@ -75,6 +76,25 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::apiResource('projects', ProjectController::class);
+});
+
+// ─── Avatar Templates (C14) ───────────────────────────────────────────────────
+// Org-scoped CRUD plus activation. Admin-only via AvatarTemplatePolicy —
+// including READ, because choosing the face and voice every candidate of an
+// organization meets is a brand decision rather than a day-to-day one.
+//
+// `field-specs` is declared BEFORE the {id} routes. Registered after, Laravel
+// would match "field-specs" as an id, and the endpoint would 404 with no hint
+// as to why.
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
+    Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
+
+    Route::get('/avatar-templates', [AvatarTemplateController::class, 'index']);
+    Route::post('/avatar-templates', [AvatarTemplateController::class, 'store']);
+    Route::get('/avatar-templates/{id}', [AvatarTemplateController::class, 'show']);
+    Route::patch('/avatar-templates/{id}', [AvatarTemplateController::class, 'update']);
+    Route::delete('/avatar-templates/{id}', [AvatarTemplateController::class, 'destroy']);
 });
 
 // ─── Admin Read API (C11) ─────────────────────────────────────────────────────

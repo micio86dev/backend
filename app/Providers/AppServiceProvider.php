@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Contracts\LLMProvider;
 use App\Models\ApiClient;
+use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
 use App\Policies\ApiClientPolicy;
+use App\Policies\AvatarTemplatePolicy;
 use App\Policies\EvaluationPolicy;
 use App\Policies\ParticipantPolicy;
 use App\Policies\ProjectPolicy;
@@ -73,6 +75,12 @@ class AppServiceProvider extends ServiceProvider
         // C11 — Register ParticipantPolicy/EvaluationPolicy for admin read RBAC (D3).
         Gate::policy(Participant::class, ParticipantPolicy::class);
         Gate::policy(Evaluation::class, EvaluationPolicy::class);
+
+        // C14 — Register AvatarTemplatePolicy. Laravel would auto-discover it by
+        // name, but every other policy here is registered explicitly, and an
+        // authorization rule that works by convention is one that breaks
+        // silently the day a namespace moves.
+        Gate::policy(AvatarTemplate::class, AvatarTemplatePolicy::class);
 
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //
