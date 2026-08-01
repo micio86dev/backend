@@ -17,7 +17,17 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    // pgsql, not Laravel's stock sqlite. This product is PostgreSQL 17 +
+    // pgvector only — there is no sqlite path through tenancy, the vector
+    // columns, or the partial unique indexes the scoring and template
+    // invariants rest on.
+    //
+    // Nothing relies on the fallback today: docker-compose pins it, phpunit.xml
+    // pins it, .env.example sets it. That is exactly why the wrong default was
+    // survivable and worth changing anyway — the day something runs without one
+    // of those, the failure is a silently wrong ENGINE rather than a missing
+    // setting, and it looks like the application working.
+    'default' => env('DB_CONNECTION', 'pgsql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -93,6 +103,12 @@ return [
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),
             'charset' => env('DB_CHARSET', 'utf8'),
+            // Pin the session time zone to UTC. Without it the connection
+            // inherits the server's TimeZone setting, and every `timestamptz`
+            // value Laravel writes — which it formats WITHOUT an offset — is
+            // reinterpreted in that zone, shifting the stored instant. The app
+            // runs on UTC (config/app.php), so the connection must too.
+            'timezone' => env('DB_TIMEZONE', 'UTC'),
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',

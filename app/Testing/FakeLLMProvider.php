@@ -40,7 +40,7 @@ final class FakeLLMProvider implements LLMProvider
     /**
      * Return the pre-configured fake response without making any HTTP request.
      *
-     * @param  array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      */
     public function complete(string $prompt, array $options = []): LLMResponse
     {

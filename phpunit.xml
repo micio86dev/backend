@@ -12,15 +12,19 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <testsuite name="Arch">
+            <directory>tests/Arch</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
             <directory>app</directory>
         </include>
         <exclude>
-            <!-- Exclude framework scaffold models from C1 coverage gate.
-                 User model is part of the Laravel skeleton, not authored C1 code (D9). -->
-            <directory>app/Models</directory>
+            <!-- Exclude ONLY the Laravel skeleton User model from coverage gate (D9).
+                 C2-authored models (Organization, TenantModel, Models/Concerns/TenantScoped)
+                 are security-critical and MUST be included in the coverage gate. -->
+            <file>app/Models/User.php</file>
         </exclude>
     </source>
     <coverage>
@@ -30,13 +34,18 @@
     </coverage>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="/>
+        <env name="JWT_SECRET" value="testing-secret-key-for-phpunit-only-not-for-production-use"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="5432"/>
         <env name="DB_DATABASE" value="beai_test"/>
+        <env name="DB_USERNAME" value="postgres"/>
+        <env name="DB_PASSWORD" value="postgres"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

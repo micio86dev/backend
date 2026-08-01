@@ -32,4 +32,4 @@ test('withCassette() replays content verbatim', function (): void {
 
 test('withCassette() throws RuntimeException for unknown cassette', function (): void {
     $this->withCassette('non-existent-cassette--v99');
-})->throws(\RuntimeException::class, 'Cassette not found');
+})->throws(RuntimeException::class, 'Cassette not found');

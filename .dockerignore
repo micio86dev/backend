@@ -1,0 +1,74 @@
+# Build context exclusions for the api image.
+#
+# WHY THIS FILE EXISTS
+# The Dockerfile installs production dependencies with `composer install --no-dev`
+# and then does `COPY . .`. Without this file that COPY overwrites the clean
+# install with whatever happens to be on the developer's machine, which caused a
+# boot crash loop:
+#
+#   Class "Laravel\Pail\PailServiceProvider" not found
+#
+# Mechanism: the local `vendor/` (with dev packages) was copied in, then
+# `dump-autoload --optimize --no-dev` regenerated the classmap WITHOUT dev
+# classes, while the stale `bootstrap/cache/packages.php` — generated locally
+# with dev packages present — still declared the dev-only Pail provider. The
+# files existed, the autoloader ignored them, and every boot died.
+#
+# It also kept `.env` and `.git` OUT of the image. A local `.env` baked into an
+# image layer leaks APP_KEY, database credentials and provider API keys to
+# anyone who can pull that image. Runtime configuration must arrive as
+# environment variables, never as a file committed into a layer.
+
+# ── Secrets and local configuration ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Version control and CI metadata ─────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+captainhook.json
+
+# ── Dependencies: installed inside the image, never copied from the host ────
+vendor
+node_modules
+
+# ── Generated caches: must be rebuilt in the image, never inherited ──────────
+# The `.gitignore` files are re-included on purpose: Laravel ships them to keep
+# these directories present in a checkout, and the framework expects the
+# directories to exist at runtime. Excluding a directory's entire contents would
+# drop the directory itself from the build context.
+bootstrap/cache/*.php
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+storage/debugbar
+!bootstrap/cache/.gitignore
+!storage/framework/cache/data/.gitignore
+!storage/framework/sessions/.gitignore
+!storage/framework/views/.gitignore
+!storage/logs/.gitignore
+
+# ── Test and tooling artefacts: not needed at runtime ───────────────────────
+tests
+.phpunit.result.cache
+.phpunit.cache
+coverage
+build
+.php-cs-fixer.cache
+phpstan.neon.dist.cache
+
+# ── Editor and OS noise ─────────────────────────────────────────────────────
+.idea
+.vscode
+.fleet
+.DS_Store
+Thumbs.db
+
+# ── Container definitions themselves ────────────────────────────────────────
+Dockerfile
+.dockerignore
+docker-compose*.yml

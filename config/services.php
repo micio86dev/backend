@@ -14,6 +14,10 @@ return [
     |
     */
 
+    // C2: The backoffice SPA origin used to build the Content-Security-Policy header.
+    // Must be a non-empty, non-wildcard explicit HTTPS origin (e.g. https://backoffice.example.com).
+    'backoffice_origin' => env('BACKOFFICE_ORIGIN', ''),
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

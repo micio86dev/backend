@@ -16,7 +16,7 @@ return [
     */
 
     'defaults' => [
-        'guard' => env('AUTH_GUARD', 'web'),
+        'guard' => env('AUTH_GUARD', 'api'),
         'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
     ],
 
@@ -41,6 +41,29 @@ return [
         'web' => [
             'driver' => 'session',
             'provider' => 'users',
+        ],
+
+        // API guard — JWT driver (C2). All protected routes MUST use auth:api explicitly.
+        // Never use bare `auth` middleware which silently falls back to the web session guard.
+        'api' => [
+            'driver' => 'jwt',
+            'provider' => 'users',
+        ],
+
+        // M2M guard — opaque API-key (C5). RequestGuard registered via Auth::viaRequest
+        // in AppServiceProvider::boot(). No provider key — RequestGuard takes a null provider.
+        // This config entry is REQUIRED: AuthManager::resolve() reads config("auth.guards.api-m2m")
+        // BEFORE consulting customCreators and throws InvalidArgumentException if absent.
+        'api-m2m' => [
+            'driver' => 'api-m2m',
+        ],
+
+        // Candidate guard — BEAI-minted JWT (C6). RequestGuard registered via Auth::viaRequest
+        // in AppServiceProvider::boot(). NO provider key — same reason as api-m2m.
+        // AuthManager::resolve() reads this entry BEFORE consulting customCreators.
+        // WARNING: do NOT add a 'provider' key — it breaks AuthManager resolution.
+        'api-candidate' => [
+            'driver' => 'api-candidate',
         ],
     ],
 

@@ -6,18 +6,12 @@
 # ─── Build stage ────────────────────────────────────────────────────────────
 FROM php:8.5.8-fpm-alpine AS builder
 
-# Install system dependencies for PHP extensions
-RUN apk add --no-cache \
-    postgresql-dev \
-    libzip-dev \
-    unzip \
-    git
+# Robust PHP extension installer (handles system deps + PHP 8.5 build quirks)
+COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
 
-# Install PHP extensions: pdo_pgsql (required), pcov (test coverage), zip
-RUN docker-php-ext-install pdo pdo_pgsql zip opcache
-
-# Install PCOV for fast code coverage
-RUN pecl install pcov && docker-php-ext-enable pcov
+# Build tools + PHP extensions (pdo_pgsql required; zip for composer; opcache; pcov for coverage)
+RUN apk add --no-cache unzip git \
+    && install-php-extensions pdo_pgsql zip opcache pcov
 
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -33,8 +27,9 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 # Copy application source
 COPY . .
 
-# Generate optimized autoloader
-RUN composer dump-autoload --optimize --no-dev
+# Generate optimized autoloader (skip scripts: package:discover needs a booted
+# app + .env, unavailable at build time; Laravel rebuilds the manifest at runtime)
+RUN composer dump-autoload --optimize --no-dev --no-scripts
 
 # ─── Runtime stage ──────────────────────────────────────────────────────────
 FROM php:8.5.8-fpm-alpine AS runtime
@@ -43,23 +38,16 @@ LABEL org.opencontainers.image.title="BEAI API" \
       org.opencontainers.image.description="Business Evaluation AI — Laravel 13 API" \
       org.opencontainers.image.version="0.1.0"
 
-# Install runtime-only system dependencies
-RUN apk add --no-cache \
-    postgresql-client \
-    postgresql-libs \
-    libzip \
-    curl \
-    && rm -rf /var/cache/apk/*
+# Robust extension installer (also pulls the correct runtime libs and cleans up build deps)
+COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
 
-# Install PHP extensions needed at runtime
-RUN apk add --no-cache postgresql-dev libzip-dev \
-    && docker-php-ext-install pdo pdo_pgsql zip opcache \
-    && apk del postgresql-dev libzip-dev \
+# Runtime-only system deps + PHP extensions needed in production.
+# pcntl + posix: required for graceful worker shutdown (SIGTERM handling,
+# Worker::supportsAsyncSignals()). redis: phpredis client for the `redis`
+# queue connection (predis/predis is not a dependency — see composer.lock).
+RUN apk add --no-cache postgresql-client curl \
+    && install-php-extensions pdo_pgsql zip opcache pcntl posix redis \
     && rm -rf /var/cache/apk/*
-
-# Copy PHP config
-COPY --from=builder /usr/local/lib/php/extensions /usr/local/lib/php/extensions
-COPY --from=builder /usr/local/etc/php/conf.d /usr/local/etc/php/conf.d
 
 # Create non-root user (D17)
 RUN addgroup -g 1001 -S appgroup && \
