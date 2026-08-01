@@ -9,6 +9,7 @@ use App\Models\AvatarTemplate;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
+use App\Support\AvatarTemplates\TavusPalSync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -98,6 +99,7 @@ final class AvatarTemplateController extends Controller
         );
 
         return (new AvatarTemplateResource($template))
+            ->additional($this->palWarning($template))
             ->response()
             ->setStatusCode(Response::HTTP_CREATED);
     }
@@ -143,7 +145,7 @@ final class AvatarTemplateController extends Controller
             after: ['name' => $template->name],
         );
 
-        return new AvatarTemplateResource($template);
+        return (new AvatarTemplateResource($template))->additional($this->palWarning($template));
     }
 
     /**
@@ -184,7 +186,9 @@ final class AvatarTemplateController extends Controller
             after: ['name' => $template->name, 'provider' => $template->provider],
         );
 
-        return new AvatarTemplateResource($template->fresh());
+        $fresh = $template->fresh();
+
+        return (new AvatarTemplateResource($fresh))->additional($this->palWarning($fresh));
     }
 
     public function destroy(int $id): JsonResponse
@@ -253,5 +257,34 @@ final class AvatarTemplateController extends Controller
         throw ValidationException::withMessages([
             'name' => 'A template with this name already exists.',
         ]);
+    }
+
+    /**
+     * Push persona-level knobs to Tavus, and report it if that did not work.
+     *
+     * Nine of the seventeen Tavus fields live on the PERSONA, not the
+     * conversation — sent on a conversation they do nothing at all. Offering
+     * them without this call would be the dead-knob defect this change refused
+     * to port, nine times over.
+     *
+     * The result is ADDITIONAL data on a successful response, never an error.
+     * The operator's intent is already recorded in our own database and saving
+     * again retries; failing the save would discard a valid edit because a
+     * third party was slow. But it is reported, because an operator who is not
+     * told will believe the setting took effect.
+     *
+     * @return array<string, mixed>
+     */
+    private function palWarning(?AvatarTemplate $template): array
+    {
+        if ($template === null) {
+            return [];
+        }
+
+        $result = app(TavusPalSync::class)->sync($template);
+
+        return $result['status'] === 'warning'
+            ? ['warning' => $result['message'] ?? 'pal_sync_failed']
+            : [];
     }
 }

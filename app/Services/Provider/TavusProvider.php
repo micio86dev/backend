@@ -6,6 +6,8 @@ namespace App\Services\Provider;
 
 use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
+use App\Support\AvatarTemplates\ActiveTemplateResolver;
+use App\Support\AvatarTemplates\TemplatePayload;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -57,6 +59,14 @@ class TavusProvider implements ProviderSessionService
         if ($ctx->systemPrompt !== null) {
             $conversationBody['conversational_context'] = $ctx->systemPrompt;
         }
+
+        // C14: see HeygenProvider for the merge-not-assign reasoning. Persona
+        // knobs are deliberately NOT here — they belong to the PAL, and sent on
+        // a conversation Tavus ignores them silently.
+        $conversationBody = array_merge(
+            TemplatePayload::tavus($this->activeTemplateConfig()),
+            $conversationBody,
+        );
 
         $response = Http::withHeaders(['x-api-key' => $apiKey])
             ->post(self::BASE_URL.'/conversations', $conversationBody);
@@ -136,5 +146,26 @@ class TavusProvider implements ProviderSessionService
             "Tavus: {$context} (HTTP {$status}) — provider response redacted",
             $retryable,
         );
+    }
+
+    /**
+     * The active template's config, or an empty array.
+     *
+     * Resolution failures are swallowed on purpose. An interview must not fail
+     * because a cosmetic setting could not be read — the fallback is the
+     * provider's own defaults, which is exactly what this product did before
+     * templates existed.
+     *
+     * @return array<string, mixed>
+     */
+    private function activeTemplateConfig(): array
+    {
+        try {
+            $template = app(ActiveTemplateResolver::class)->resolve();
+
+            return $template === null ? [] : $template->config;
+        } catch (\Throwable) {
+            return [];
+        }
     }
 }
