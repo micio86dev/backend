@@ -20,6 +20,22 @@ jobs:
     name: AI Integration Tests (@ai group)
     runs-on: ubuntu-latest
 
+    # Job-wide, because this job has a postgres service and NOTHING else. Every
+    # step set DB_* and left the cache, queue and session drivers to config —
+    # which resolves to redis, and there is no redis here. `artisan migrate`
+    # died on RedisException: Connection refused before running a single
+    # migration, and the postgres log's "pulse_entries does not exist" from a
+    # later moment made it look like a Pulse ordering problem it was not.
+    #
+    # array/sync need no service and no cleanup between runs. Adding a redis
+    # service instead would buy nothing: nothing in the @ai group exercises the
+    # queue or the cache, and a service is one more thing to keep healthy.
+    env:
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      PULSE_ENABLED: false
+
     services:
       postgres:
         image: pgvector/pgvector:0.8.0-pg17
