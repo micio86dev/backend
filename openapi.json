@@ -506,6 +506,369 @@
                 }
             }
         },
+        "/avatar-templates/field-specs": {
+            "get": {
+                "operationId": "avatarTemplate.fieldSpecs",
+                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives.",
+                "summary": "The field specs both providers accept",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates/{id}/activate": {
+            "post": {
+                "operationId": "avatarTemplate.activate",
+                "description": "The swap runs in ONE transaction, deactivate-then-activate. The order is\nforced: the partial unique index refuses a second active row, so\nactivating first would simply fail. Doing it outside a transaction would\nleave a window with no active template at all, during which an interview\nstarting would quietly fall back to the environment defaults \u2014 the exact\nbehaviour this whole change exists to replace.",
+                "summary": "Make this the organization's active template",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates": {
+            "get": {
+                "operationId": "avatarTemplate.index",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/AvatarTemplateResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "avatarTemplate.store",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    },
+                                    "provider": {
+                                        "type": "string",
+                                        "enum": [
+                                            ""
+                                        ]
+                                    },
+                                    "config": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "minItems": 1
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "provider",
+                                    "config"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates/{id}": {
+            "get": {
+                "operationId": "avatarTemplate.show",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "avatarTemplate.update",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    },
+                                    "config": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "avatarTemplate.destroy",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "409": {
+                        "description": "Deleting what candidates are currently being interviewed with is\na decision, not a cleanup. 409 rather than 422: the request is\nwell-formed, the state is what refuses it.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "const": "template_active"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Activate another template before deleting this one."
+                                        }
+                                    },
+                                    "required": [
+                                        "error",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/dashboard/metrics": {
             "get": {
                 "operationId": "dashboard.metrics",
@@ -2370,29 +2733,17 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "name": {
                         "type": "string"
                     },
                     "abilities": {
-                        "anyOf": [
-                            {
-                                "type": "string"
-                            },
-                            {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "minItems": 0,
-                                "maxItems": 0,
-                                "additionalItems": false
-                            }
-                        ]
+                        "type": "array",
+                        "items": {}
                     },
                     "is_active": {
-                        "type": "string"
+                        "type": "boolean"
                     },
                     "expires_at": {
                         "type": [
@@ -2407,7 +2758,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -2425,7 +2779,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -2434,10 +2788,16 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string"
@@ -2455,7 +2815,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "project": {
                         "type": [
@@ -2464,10 +2827,13 @@
                         ],
                         "properties": {
                             "id": {
-                                "type": "string"
+                                "type": "integer"
                             },
                             "role_code": {
-                                "type": "string"
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "language": {
                                 "type": "string"
@@ -2476,10 +2842,16 @@
                                 "type": "string"
                             },
                             "exit_redirect_url": {
-                                "type": "string"
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "error_redirect_url": {
-                                "type": "string"
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             }
                         },
                         "required": [
@@ -2505,6 +2877,56 @@
                     "project"
                 ],
                 "title": "App.Http.Resources.ParticipantResource"
+            },
+            "AvatarTemplateResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "config": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "provider",
+                    "config",
+                    "is_active",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "AvatarTemplateResource"
             },
             "BarsIndicatorResource": {
                 "type": "object",
@@ -2631,7 +3053,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -2640,16 +3062,22 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string"
                     },
                     "project_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "timeline": {
                         "type": "object",
@@ -2729,7 +3157,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -2750,7 +3181,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -2759,16 +3190,22 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string"
                     },
                     "project_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "started_at": {
                         "type": [
@@ -2783,7 +3220,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -2804,13 +3244,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "organization_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "framework_version_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "slug": {
                         "type": "string"
@@ -2822,7 +3262,10 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
                         "type": "string"
@@ -2831,19 +3274,32 @@
                         "type": "string"
                     },
                     "pause_every_n_competencies": {
-                        "type": "string"
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     },
                     "nudge_min_chars": {
-                        "type": "string"
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     },
                     "exit_redirect_url": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "webhook_url": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "webhook_events": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {}
                     },
                     "deadline_at": {
                         "type": [
