@@ -251,3 +251,11 @@ function something()
 // create real rows through factories.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C13');
+
+// ─── C14 avatar-provider-templates ────────────────────────────────────────────
+
+// Feature/C14 — RefreshDatabase: the one-active-template invariant is asserted
+// against the REAL partial unique index, so these tests need a migrated schema
+// rather than a mocked repository. That is the point of them.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/C14');
