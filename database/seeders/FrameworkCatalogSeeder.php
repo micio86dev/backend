@@ -14,6 +14,7 @@ use App\Services\FrameworkCatalog\CompetencyNormalizer;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 /**
  * FrameworkCatalogSeeder (C3 + C4 lock-guard).
@@ -55,10 +56,19 @@ class FrameworkCatalogSeeder extends Seeder
         ?string $competenciesFile = null,
         ?string $barsDir = null,
     ) {
-        // JSON source files live in the wrapper repo's docs/ directory,
-        // one level ABOVE the api/ submodule (base_path() = api/).
-        // dirname(base_path()) resolves to the wrapper root.
-        $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
+        // JSON source files live in the wrapper repo's docs/ directory, one
+        // level ABOVE the api/ submodule — dirname(base_path()) resolves to the
+        // wrapper root when this runs from a developer's checkout.
+        //
+        // That default holds ONLY there. Inside the Docker image WORKDIR is
+        // /var/www, so it resolves to /var/docs — a path nothing mounts — and
+        // on Railway the api submodule deploys alone with no wrapper above it
+        // at all. The env override exists because the previous hardcoded path
+        // made `php artisan db:seed` impossible in any container, and it failed
+        // with a raw file_get_contents warning that named a path no one could
+        // place.
+        $frameworkBase = env('FRAMEWORK_CATALOG_PATH')
+            ?: dirname(base_path()).'/docs/app_description/02-domain/framework';
         $this->rolesFile = $rolesFile ?? "{$frameworkBase}/roles.json";
         $this->competenciesFile = $competenciesFile ?? "{$frameworkBase}/competencies.json";
         $this->barsDir = $barsDir ?? "{$frameworkBase}/bars";
@@ -87,6 +97,20 @@ class FrameworkCatalogSeeder extends Seeder
         }
 
         // ─── 1. Load JSON data ────────────────────────────────────────────────
+        // Checked explicitly, because file_get_contents on a missing path emits
+        // a warning and returns false, which json_decode then reports as a
+        // syntax error — sending whoever hits it looking for a malformed JSON
+        // file that is not malformed and, in the container case, not there.
+        foreach ([$this->rolesFile, $this->competenciesFile] as $required) {
+            if (! is_readable($required)) {
+                throw new RuntimeException(
+                    "Framework catalog not found at [{$required}]. The catalog lives in the WRAPPER repository "
+                    .'(docs/app_description/02-domain/framework), which is not present inside the api container. '
+                    .'Either run this seeder from a wrapper checkout, or set FRAMEWORK_CATALOG_PATH to a readable directory.'
+                );
+            }
+        }
+
         /** @var array<string, array{name: string, responsibilities: string, competencies: list<string>}> $rolesJson */
         $rolesJson = json_decode(file_get_contents($this->rolesFile), true, 512, JSON_THROW_ON_ERROR);
 

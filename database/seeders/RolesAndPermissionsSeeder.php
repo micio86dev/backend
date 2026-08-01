@@ -46,8 +46,17 @@ final class RolesAndPermissionsSeeder extends Seeder
         // Seed the three authorization roles org-scoped.
         // No superadmin role. No BEAI framework roles (ICO/FLL/MLL/BUL/SRX).
         foreach (['admin', 'operator', 'viewer'] as $roleName) {
+            // team_id passed EXPLICITLY, not left to the registrar context.
+            //
+            // setPermissionsTeamId() above governs Spatie's own Role::create()
+            // and the runtime permission checks — it does NOT reach Eloquent's
+            // firstOrCreate(), which builds the row from the attributes it is
+            // given and nothing else. Without this the roles were written with
+            // team_id = NULL while this seeder's own comment claimed they were
+            // org-scoped, and a NULL-team role is invisible to every teams-mode
+            // hasRole() check: seeded, present, and silently inert.
             Role::firstOrCreate(
-                ['name' => $roleName, 'guard_name' => 'api'],
+                ['name' => $roleName, 'guard_name' => 'api', 'team_id' => $org->id],
             );
         }
 
