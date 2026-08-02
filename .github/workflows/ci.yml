@@ -117,12 +117,28 @@ jobs:
         run: test -f openapi.json && echo "openapi.json OK"
 
       # ── Assert OpenAPI version matches VERSION file ────────────────────────
+      # This one alone was never enough: openapi.json's info.version is GENERATED
+      # from VERSION, so it compared the file against itself and passed for every
+      # release from v0.2.0 to v0.3.0 while VERSION sat at 0.1.0 — publishing a
+      # contract that claimed the same version release after release, to clients
+      # that generate their typed TS client from exactly this field.
       - name: Assert openapi.json version matches VERSION
         run: |
           API_VERSION=$(cat VERSION | tr -d '[:space:]')
           OAS_VERSION=$(php -r "echo json_decode(file_get_contents('openapi.json'), true)['info']['version'] ?? '';")
           echo "VERSION file: $API_VERSION | openapi.json info.version: $OAS_VERSION"
           [ "$OAS_VERSION" = "$API_VERSION" ] || (echo "Version mismatch!" && exit 1)
+
+      # The anchor the check above lacks: composer.json is what a release bump
+      # touches, so tying VERSION to it means a bumped release can no longer
+      # publish a stale contract version.
+      - name: Assert VERSION matches composer.json
+        run: |
+          API_VERSION=$(cat VERSION | tr -d '[:space:]')
+          PKG_VERSION=$(php -r "echo json_decode(file_get_contents('composer.json'), true)['version'] ?? '';")
+          echo "VERSION file: $API_VERSION | composer.json version: $PKG_VERSION"
+          [ -n "$PKG_VERSION" ] || (echo "composer.json has no version field!" && exit 1)
+          [ "$PKG_VERSION" = "$API_VERSION" ] || (echo "Version mismatch!" && exit 1)
 
       # ── Docker image build (no push) ──────────────────────────────────────
       - name: Build Docker image
