@@ -252,6 +252,14 @@ function something()
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C13');
 
+// ─── org-provisioning ─────────────────────────────────────────────────────────
+
+// Feature/Provisioning — RefreshDatabase: the command's riskiest assertions are
+// about rows that must NOT survive a failed run, which needs a real schema and
+// a real transaction rather than a mocked repository.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Provisioning');
+
 // ─── C14 avatar-provider-templates ────────────────────────────────────────────
 
 // Feature/C14 — RefreshDatabase: the one-active-template invariant is asserted
