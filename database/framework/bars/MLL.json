@@ -1,0 +1,210 @@
+{
+  "STG": [
+    {
+      "indicator": "Translate business strategies into clear goals and tactics for own team",
+      "scale": {
+        "5": "Consistently translates complex business strategies into actionable, clear goals and tactics aligned with team capabilities.",
+        "3": "Usually provides goals aligned with business strategies, though sometimes lacks clarity or full alignment.",
+        "1": "Fails to connect business strategies to team goals; often leaves team without direction or misaligned objectives."
+      }
+    },
+    {
+      "indicator": "Effectively balance day-to-day activities with the pursuit of long-term goals",
+      "scale": {
+        "5": "Seamlessly balances short-term tasks with strategic long-term planning, ensuring sustained team performance.",
+        "3": "Manages most daily tasks and long-term goals, though occasional imbalance may hinder one or the other.",
+        "1": "Focuses primarily on immediate tasks or long-term plans, neglecting the other and affecting team success."
+      }
+    },
+    {
+      "indicator": "Understand and clearly communicate own area's priorities",
+      "scale": {
+        "5": "Clearly articulates team priorities and ensures full understanding across stakeholders and team members.",
+        "3": "Usually communicates priorities, though sometimes lacks consistency or clarity.",
+        "1": "Seldom communicates area priorities, leading to confusion and misalignment within the team."
+      }
+    }
+  ],
+  "INN": [
+    {
+      "indicator": "Constantly push for professional and technological innovation",
+      "scale": {
+        "5": "Champions continuous innovation, proactively implementing new professional and technological approaches.",
+        "3": "Supports innovation but often waits for direction or shows limited initiative.",
+        "1": "Resists change and rarely seeks or promotes new professional or technological improvements."
+      }
+    },
+    {
+      "indicator": "Identify new cost saving or revenue opportunities",
+      "scale": {
+        "5": "Routinely identifies and implements impactful cost-saving or revenue-generating opportunities.",
+        "3": "Occasionally identifies savings or revenue opportunities with moderate impact.",
+        "1": "Fails to seek or recognize opportunities for cost savings or revenue growth."
+      }
+    },
+    {
+      "indicator": "Routinely promote continuous process improvement",
+      "scale": {
+        "5": "Continuously evaluates and improves processes, embedding a culture of efficiency and optimization.",
+        "3": "Supports process improvements when issues arise but lacks ongoing initiative.",
+        "1": "Avoids process change and maintains inefficient systems despite issues."
+      }
+    }
+  ],
+  "CSF": [
+    {
+      "indicator": "Anticipate customer needs and expectations and lead the team to meet them",
+      "scale": {
+        "5": "Proactively anticipates customer needs and guides team to exceed expectations.",
+        "3": "Addresses customer needs when apparent, but may not anticipate them effectively.",
+        "1": "Responds reactively or inadequately to customer needs, often falling short of expectations."
+      }
+    },
+    {
+      "indicator": "Ensure that customer problems are solved and their expectations met",
+      "scale": {
+        "5": "Drives timely, effective resolution of customer issues, ensuring satisfaction.",
+        "3": "Resolves most customer issues but may require prompting or assistance.",
+        "1": "Neglects or mishandles customer problems, leading to dissatisfaction."
+      }
+    },
+    {
+      "indicator": "Measures own team's performance against customer expectations",
+      "scale": {
+        "5": "Regularly uses customer expectations to assess and improve team performance.",
+        "3": "Occasionally aligns performance measures with customer expectations.",
+        "1": "Rarely considers customer expectations in performance evaluations."
+      }
+    }
+  ],
+  "OPX": [
+    {
+      "indicator": "Identify the action steps to accomplish  objectives and the resources needed to implement them",
+      "scale": {
+        "5": "Breaks down objectives into detailed steps and secures all necessary resources for execution.",
+        "3": "Identifies basic steps and resources but may miss key elements or details.",
+        "1": "Fails to define actionable steps or resource needs, leading to execution delays or failures."
+      }
+    },
+    {
+      "indicator": "Monitor team's performance and take action promptly when people don't achieve their goals",
+      "scale": {
+        "5": "Actively tracks team performance and swiftly addresses underperformance.",
+        "3": "Monitors team results and acts when issues are evident, though delays occur.",
+        "1": "Rarely monitors team progress or delays response to underperformance."
+      }
+    },
+    {
+      "indicator": "Delegate assignments and responsibilities at the lowest appropriate level",
+      "scale": {
+        "5": "Effectively delegates tasks, empowering team members at the right level of responsibility.",
+        "3": "Delegates some responsibilities appropriately, but misses opportunities for empowerment.",
+        "1": "Micromanages or delegates ineffectively, leading to inefficiency and disengagement."
+      }
+    }
+  ],
+  "INS": [
+    {
+      "indicator": "Help direct reports define their development goals",
+      "scale": {
+        "5": "Actively supports direct reports in setting and pursuing meaningful development goals.",
+        "3": "Encourages development planning, though does not always follow up or provide guidance.",
+        "1": "Neglects employee development or fails to engage in goal-setting."
+      }
+    },
+    {
+      "indicator": "Promote the sharing of skills and continuous learning in the team",
+      "scale": {
+        "5": "Fosters a strong culture of learning and knowledge sharing within the team.",
+        "3": "Encourages learning when prompted but doesn’t actively drive knowledge exchange.",
+        "1": "Discourages or ignores team learning opportunities and knowledge sharing."
+      }
+    },
+    {
+      "indicator": "Celebrate and reward significant achievements of others",
+      "scale": {
+        "5": "Consistently recognizes and rewards team accomplishments, boosting morale and motivation.",
+        "3": "Acknowledges achievements occasionally, but without consistency or impact.",
+        "1": "Rarely or never recognizes team success, missing morale-building opportunities."
+      }
+    }
+  ],
+  "INF": [
+    {
+      "indicator": "Express own positions with strong rationality, confidence and enthusiasm",
+      "scale": {
+        "5": "Communicates positions confidently with clear logic and positive energy that inspires others.",
+        "3": "Generally explains positions well but may lack consistency in clarity or conviction.",
+        "1": "Struggles to express viewpoints convincingly, often appearing uncertain or unclear."
+      }
+    },
+    {
+      "indicator": "Identify the motives and objectives of the interlocutors and use them to argue own positions",
+      "scale": {
+        "5": "Accurately understands others' motives and uses them to frame persuasive arguments.",
+        "3": "Sometimes identifies motives but struggles to use them effectively in argumentation.",
+        "1": "Fails to consider others' objectives, resulting in ineffective or disconnected arguments."
+      }
+    },
+    {
+      "indicator": "Express disagreement with tact and sensitivity, being clear without hurting the interlocutors",
+      "scale": {
+        "5": "Effectively expresses dissent respectfully and constructively, preserving relationships.",
+        "3": "Usually expresses disagreement acceptably, but may occasionally cause discomfort.",
+        "1": "Expresses disagreement bluntly or insensitively, damaging rapport or trust."
+      }
+    }
+  ],
+  "RES": [
+    {
+      "indicator": "Find creative ways to adapt quickly and effectively to unexpected or unclear situations",
+      "scale": {
+        "5": "Demonstrates exceptional creativity and agility in ambiguous or changing environments.",
+        "3": "Manages change adequately with some creative thinking when needed.",
+        "1": "Struggles to adapt to change, relying on rigid approaches or becoming overwhelmed."
+      }
+    },
+    {
+      "indicator": "Demonstrate strength and confidence in difficult situations, maintaining excellent emotional control",
+      "scale": {
+        "5": "Remains composed and confident under pressure, providing stability to others.",
+        "3": "Maintains basic emotional control but may show signs of stress or uncertainty.",
+        "1": "Loses composure in tough situations, affecting decisions and team confidence."
+      }
+    },
+    {
+      "indicator": "Constructively handle mistakes, accepting responsibility and learning from experience",
+      "scale": {
+        "5": "Owns mistakes fully, learns quickly, and models accountability for others.",
+        "3": "Acknowledges errors and makes some effort to improve based on them.",
+        "1": "Denies or deflects responsibility for mistakes, missing learning opportunities."
+      }
+    }
+  ],
+  "LRN": [
+    {
+      "indicator": "Demonstrate awareness of their strengths and weaknesses",
+      "scale": {
+        "5": "Shows deep self-awareness, leveraging strengths and actively addressing weaknesses.",
+        "3": "Has some awareness but doesn’t consistently act on self-insight.",
+        "1": "Lacks insight into own strengths and weaknesses, leading to repeated issues."
+      }
+    },
+    {
+      "indicator": "Know the expectations and success criteria of the organization",
+      "scale": {
+        "5": "Fully understands and aligns actions with the organization's strategic expectations.",
+        "3": "Generally aware of success criteria but may not always act in alignment.",
+        "1": "Unclear on organizational goals, leading to misaligned or ineffective work."
+      }
+    },
+    {
+      "indicator": "Gladly accept challenging assignments and new career opportunities",
+      "scale": {
+        "5": "Eagerly pursues and thrives on new challenges and growth opportunities.",
+        "3": "Accepts challenges when required but shows some reluctance or hesitation.",
+        "1": "Avoids challenging tasks or career growth opportunities, preferring comfort zones."
+      }
+    }
+  ]
+}

@@ -56,19 +56,23 @@ class FrameworkCatalogSeeder extends Seeder
         ?string $competenciesFile = null,
         ?string $barsDir = null,
     ) {
-        // JSON source files live in the wrapper repo's docs/ directory, one
-        // level ABOVE the api/ submodule — dirname(base_path()) resolves to the
-        // wrapper root when this runs from a developer's checkout.
+        // The catalog ships INSIDE this repository, at database/framework.
         //
-        // That default holds ONLY there. Inside the Docker image WORKDIR is
-        // /var/www, so it resolves to /var/docs — a path nothing mounts — and
-        // on Railway the api submodule deploys alone with no wrapper above it
-        // at all. The env override exists because the previous hardcoded path
-        // made `php artisan db:seed` impossible in any container, and it failed
-        // with a raw file_get_contents warning that named a path no one could
-        // place.
-        $frameworkBase = env('FRAMEWORK_CATALOG_PATH')
-            ?: dirname(base_path()).'/docs/app_description/02-domain/framework';
+        // It used to be read from the wrapper — dirname(base_path())/docs/… —
+        // which resolves only in a developer's checkout. Inside the Docker
+        // image WORKDIR is /var/www so it became /var/docs, a path nothing
+        // mounts; and on Railway this submodule deploys alone, with no wrapper
+        // above it at all. `php artisan db:seed` was therefore impossible in
+        // every container, which meant a production database with no
+        // competencies, no roles and no BARS anchors — one no project can be
+        // created against.
+        //
+        // The wrapper's docs/app_description/02-domain/framework remains the
+        // AUTHORED source: a human edits it, and CLAUDE.md marks it binding.
+        // This is a vendored copy so the API can carry its own seed data, and
+        // the wrapper's Cross-Stack Consistency job fails if the two diverge —
+        // the same treatment openapi.json already gets, for the same reason.
+        $frameworkBase = env('FRAMEWORK_CATALOG_PATH') ?: database_path('framework');
         $this->rolesFile = $rolesFile ?? "{$frameworkBase}/roles.json";
         $this->competenciesFile = $competenciesFile ?? "{$frameworkBase}/competencies.json";
         $this->barsDir = $barsDir ?? "{$frameworkBase}/bars";

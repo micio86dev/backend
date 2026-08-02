@@ -1,0 +1,74 @@
+{
+  "PRS": {
+    "name": "Problem Solving",
+    "definition": "Gather and analyze the most critical information needed to understand problems; probe and look past symptoms to determine underlying causes of problems and issues; integrate information from a variety of sources to arrive at optimal solutions; detect inaccuracies or flaws in reasoning; define reasonable alternatives to resolve problems."
+  },
+  "STG": {
+    "name": "Strategy",
+    "definition": "Understand the ramifications of matters; perceive the connections between teams, corporate workflows, and results; factor in strategic concerns that impact one's own domain while reaching decisions; formulate approaches that harmonize objectives spanning both the immediate and distant future."
+  },
+  "INN": {
+    "name": "Innovation",
+    "definition": "Approach challenges with a sense of curiosity, generating fresh and inventive concepts and remedies; inspire creativity and innovation in peers, questioning traditional methods and advocating for novel approaches; actively champion new proposals and ventures, providing support to individuals who lead change efforts and embrace risks."
+  },
+  "JDG": {
+    "name": "Judgment",
+    "definition": "Make logical and rational decisions; seek resolution for problem in ambiguous or uncertain situations; select the optimal alternative by weighing pros, cons, tradeoffs, timing, and resource availability."
+  },
+  "DRV": {
+    "name": "Drive",
+    "definition": "Establish ambitious objectives, emphasizing the importance of achieving outcomes promptly; persevere when confronted with challenges, showcase proactive behavior, and establish elevated personal performance standards; sustain a steady, elevated level of efficiency and remains dedicated to the organization's mission."
+  },
+  "CSF": {
+    "name": "Customer Focus",
+    "definition": "Understand customers’ requirements, expectations, and needs; fulfill promises made to customers, offering value and ensuring outstanding interactions; actively solicit input from customers; cultivate a team with a strong customer-centric focus."
+  },
+  "SLF": {
+    "name": "Sales Focus",
+    "definition": "Establish sales targets and objectives to guide efforts and measure success. Demonstrate a thorough understanding of the products and/or services being sold, and negotiate based on the value they can provide to customers."
+  },
+  "OPX": {
+    "name": "Operational Excellence",
+    "definition": "Identify concrete action steps, clarify who is responsible, and establish deadlines for their completion; create accurate resource requirement estimates based on reality; foster collaboration in planning across various functions and business divisions; utilize statistical data to detect patterns and monitor advancement; implement standardized work procedures to streamline endeavors."
+  },
+  "TMG": {
+    "name": "Team Management",
+    "definition": "Set goals, delegate assignments to get things done and support people development, provide candid and specific feedback, promote teamwork, support team members’ motivation and engagement."
+  },
+  "INS": {
+    "name": "Inspiring Others",
+    "definition": "Foster a sense of individual accountability and dedication to tasks; cultivate a work environment that encourages top-tier performance; acknowledge the accomplishments of colleagues; establish an efficient learning atmosphere for team members; assist others in comprehending their skillsets; and collaboratively devise development and coaching strategies."
+  },
+  "COM": {
+    "name": "Communication",
+    "definition": "Effectively communicates ideas and information to others; have the ability to get their point across clearly and concisely, keeping their audience engaged and interested throughout their communication. Listen attentively to others input and encourage a free flow of information and ideas."
+  },
+  "COL": {
+    "name": "Collaboration",
+    "definition": "Developing partnerships, engaging in collaborative efforts with others to achieve common goals, promoting open discussions and finding resolutions amidst differing opinions, actively involving others in the process of shaping plans and decisions that impact them, and making equitable contributions to the team's workload."
+  },
+  "INF": {
+    "name": "Influence",
+    "definition": "Grasp the viewpoints and interests of others, skillfully articulate proposals and ideas, garner endorsement from others, exhibit assertiveness, and stand resolute when required, and adeptly engage in convincing negotiations."
+  },
+  "NET": {
+    "name": "Networking",
+    "definition": "Engage with others openly, displaying consideration for individuals. Exhibit adaptability in communication styles when interacting with diverse people and situations. Recognize and nurture relationships with colleagues and stakeholders across different areas of the organization. Establish and sustain relevant connections within your industry or profession. Utilize both formal and informal networks to achieve objectives."
+  },
+  "RES": {
+    "name": "Resilience",
+    "definition": "Perform well in scenarios marked by uncertainty and changing priorities; exhibit adaptability and composure during challenging situations; handle errors and setbacks in a constructive manner; adeptly manage stress and high-pressure situations."
+  },
+  "LRN": {
+    "name": "Learning",
+    "definition": "Prioritize key learning goals, dedicate daily time to personal growth, contemplate both successful and less successful experiences, draw insights from feedback and suggestions provided by others, and applying newfound knowledge to future actions."
+  },
+  "ITG": {
+    "name": "Integrity",
+    "definition": "Exhibit ethical and principled leadership, consistently aligning values with actions; earn the trust and confidence of others through authenticity and by consistently fulfilling own commitments; strive to create an environment where unwavering integrity is the standard."
+  },
+  "INC": {
+    "name": "Inclusion",
+    "definition": "Promote a culture of respect towards individuals and their unique backgrounds, cultures, values, and viewpoints: support individuals from diverse backgrounds and cultures in making meaningful contributions and achieving success within the organization; strive to harness the various personalities and backgrounds of individuals to enhance the organization's overall performance; actively explores ways to accommodate the varied needs of a diverse workforce."
+  }
+}
