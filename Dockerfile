@@ -78,9 +78,18 @@ COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
 # php-fpm on a local TCP socket rather than the default Unix one: nginx and fpm
 # are separate processes in this container, and a TCP socket needs no shared
 # path with the right ownership on a filesystem the non-root user cannot chown.
-RUN printf '[global]\ndaemonize = no\nerror_log = /dev/stderr\n\n[www]\nlisten = 127.0.0.1:9000\nuser = appuser\ngroup = appgroup\npm = dynamic\npm.max_children = 20\npm.start_servers = 4\npm.min_spare_servers = 2\npm.max_spare_servers = 8\ncatch_workers_output = yes\ndecorate_workers_output = no\naccess.log = /dev/null\nclear_env = no\n' > /usr/local/etc/php-fpm.conf \
-    && mkdir -p /tmp/nginx-client-body /tmp/nginx-proxy /tmp/nginx-fastcgi /tmp/nginx-uwsgi /tmp/nginx-scgi /var/lib/nginx/logs \
-    && chown -R appuser:appgroup /tmp/nginx-* /var/lib/nginx /etc/nginx
+#
+# No user/group directives: FPM only honours them when it starts as root, and
+# this image drops to appuser below. Leaving them in printed two "directive is
+# ignored" notices on every boot and implied a privilege drop that is not
+# happening here.
+RUN printf '[global]\ndaemonize = no\nerror_log = /dev/stderr\n\n[www]\nlisten = 127.0.0.1:9000\npm = dynamic\npm.max_children = 20\npm.start_servers = 4\npm.min_spare_servers = 2\npm.max_spare_servers = 8\ncatch_workers_output = yes\ndecorate_workers_output = no\naccess.log = /dev/null\nclear_env = no\n' > /usr/local/etc/php-fpm.conf \
+    && mkdir -p /tmp/nginx-client-body /tmp/nginx-proxy /tmp/nginx-fastcgi /tmp/nginx-uwsgi /tmp/nginx-scgi \
+    && chown -R appuser:appgroup /tmp/nginx-* /etc/nginx
+
+# X-Powered-By announced the exact PHP patch level to every caller, which tells
+# an attacker which CVEs to try without them having to probe for it.
+RUN printf 'expose_php = Off\n' > /usr/local/etc/php/conf.d/99-hardening.ini
 
 # Switch to non-root user
 USER appuser
