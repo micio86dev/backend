@@ -65,6 +65,23 @@ RUN mkdir -p storage/framework/{cache,sessions,views} \
     && chown -R appuser:appgroup storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
+# nginx + supervisord. The comment that used to sit at the bottom of this file
+# said "production would use PHP-FPM + nginx or Octane" — and then ran
+# `php artisan serve`, Laravel's DEVELOPMENT server: one request at a time, and
+# explicitly documented as unsuitable for production. The base image has always
+# been php-fpm-alpine, so fpm was here and unused.
+RUN apk add --no-cache nginx supervisor
+
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
+
+# php-fpm on a local TCP socket rather than the default Unix one: nginx and fpm
+# are separate processes in this container, and a TCP socket needs no shared
+# path with the right ownership on a filesystem the non-root user cannot chown.
+RUN printf '[global]\ndaemonize = no\nerror_log = /dev/stderr\n\n[www]\nlisten = 127.0.0.1:9000\nuser = appuser\ngroup = appgroup\npm = dynamic\npm.max_children = 20\npm.start_servers = 4\npm.min_spare_servers = 2\npm.max_spare_servers = 8\ncatch_workers_output = yes\ndecorate_workers_output = no\naccess.log = /dev/null\nclear_env = no\n' > /usr/local/etc/php-fpm.conf \
+    && mkdir -p /tmp/nginx-client-body /tmp/nginx-proxy /tmp/nginx-fastcgi /tmp/nginx-uwsgi /tmp/nginx-scgi /var/lib/nginx/logs \
+    && chown -R appuser:appgroup /tmp/nginx-* /var/lib/nginx /etc/nginx
+
 # Switch to non-root user
 USER appuser
 
@@ -74,5 +91,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Use PHP built-in server for the API (production would use PHP-FPM + nginx or Octane)
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]

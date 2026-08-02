@@ -1,0 +1,210 @@
+{
+  "STG": [
+    {
+      "indicator": "Have a plan to achieve own team's goals",
+      "scale": {
+        "5": "Consistently develops and communicates clear, actionable plans aligned with team and organizational goals, ensuring team focus and accountability.",
+        "3": "Creates basic plans to achieve team goals but may lack clarity or follow-through.",
+        "1": "Does not create plans or goals for the team, leading to confusion or misalignment."
+      }
+    },
+    {
+      "indicator": "Demonstrate an understanding of the organization's mission and strategies",
+      "scale": {
+        "5": "Clearly articulates how team objectives align with the organization’s mission and incorporates strategic priorities in decisions.",
+        "3": "Understands the mission and strategies but inconsistently applies them in daily work.",
+        "1": "Lacks awareness of or disregards the organization’s mission and strategies."
+      }
+    },
+    {
+      "indicator": "Understand the overall picture of the situation (general themes, trends, goals)",
+      "scale": {
+        "5": "Anticipates changes and identifies patterns or trends that guide proactive decision-making.",
+        "3": "Recognizes general themes or trends but rarely uses them to inform decisions.",
+        "1": "Focuses only on immediate issues without grasping broader context."
+      }
+    }
+  ],
+  "INN": [
+    {
+      "indicator": "Encourage others to look at problems and processes in new ways",
+      "scale": {
+        "5": "Inspires and facilitates creative thinking among team members, regularly leading to innovative improvements.",
+        "3": "Occasionally promotes alternative thinking but without consistent follow-up.",
+        "1": "Discourages or ignores novel approaches and sticks rigidly to existing methods."
+      }
+    },
+    {
+      "indicator": "Find ways to increase productivity or streamline processes",
+      "scale": {
+        "5": "Proactively identifies and implements efficient processes, significantly improving team output.",
+        "3": "Suggests or adopts minor improvements in productivity or workflow.",
+        "1": "Fails to recognize inefficiencies or resists changes to established processes."
+      }
+    },
+    {
+      "indicator": "Challenge \"the way it has always been done\"",
+      "scale": {
+        "5": "Proactively questions outdated practices, proposes innovative alternatives, and leads change initiatives with measurable benefits.",
+        "3": "Occasionally challenges existing methods and suggests alternatives but may not always follow through.",
+        "1": "Accepts current practices without question and resists considering new approaches."
+      }
+    }
+  ],
+  "CSF": [
+    {
+      "indicator": "Solve customer problems, involving others when needed",
+      "scale": {
+        "5": "Quickly resolves complex customer issues by leveraging team expertise and cross-functional collaboration.",
+        "3": "Handles standard problems and seeks help for more complex issues.",
+        "1": "Struggles to resolve customer problems or fails to seek help when necessary."
+      }
+    },
+    {
+      "indicator": "Make sure customers are satisfied with the solution provided",
+      "scale": {
+        "5": "Follows up and ensures complete customer satisfaction with proactive communication and resolution.",
+        "3": "Delivers appropriate solutions but limited in follow-up.",
+        "1": "Does not check if the customer is satisfied or fails to address concerns fully."
+      }
+    },
+    {
+      "indicator": "Ask for feedback from customers to identify opportunities for improvement",
+      "scale": {
+        "5": "Proactively seeks detailed feedback from customers and uses it to implement effective changes.",
+        "3": "Occasionally asks for feedback and considers it for improvements.",
+        "1": "Rarely or never requests feedback from customers; ignores input."
+      }
+    }
+  ],
+  "OPX": [
+    {
+      "indicator": "Convey expectations for assignments clearly and precisely",
+      "scale": {
+        "5": "Consistently provides clear, detailed instructions and expectations, reducing misunderstandings.",
+        "3": "Communicates expectations with general clarity but may miss important details.",
+        "1": "Gives vague or incomplete directions, causing confusion."
+      }
+    },
+    {
+      "indicator": "Routinely check work outcomes to ensure quality",
+      "scale": {
+        "5": "Implements regular quality checks and follows up to maintain high standards.",
+        "3": "Checks work occasionally and addresses issues when noticed.",
+        "1": "Neglects to review work outcomes; problems often go unnoticed."
+      }
+    },
+    {
+      "indicator": "Remove obstacles in order to move the work forward and/or get efforts back on track",
+      "scale": {
+        "5": "Quickly identifies and removes roadblocks, ensuring timely progress.",
+        "3": "Addresses issues when raised but may not anticipate obstacles.",
+        "1": "Fails to act on or recognize blockers, delaying progress."
+      }
+    }
+  ],
+  "INS": [
+    {
+      "indicator": "Shadow younger team memebers to support their professional growth",
+      "scale": {
+        "5": "Regularly mentors juniors, providing guidance and learning opportunities.",
+        "3": "Offers occasional support or guidance to younger team members.",
+        "1": "Shows little interest in mentoring or supporting junior staff."
+      }
+    },
+    {
+      "indicator": "Openly and proactively share own knowledge and expertise",
+      "scale": {
+        "5": "Freely shares knowledge, encourages learning, and is seen as a go-to expert.",
+        "3": "Shares knowledge when asked but not consistently proactive.",
+        "1": "Withholds information or avoids sharing expertise."
+      }
+    },
+    {
+      "indicator": "Help employees develop awareness of their strengths and weaknesses",
+      "scale": {
+        "5": "Regularly coaches others in a constructive way to build self-awareness and growth.",
+        "3": "Provides occasional feedback to help others reflect on their performance.",
+        "1": "Avoids giving feedback or offers only vague praise or criticism."
+      }
+    }
+  ],
+  "INF": [
+    {
+      "indicator": "Provide comprehensive and convincing rational arguments to support own ideas and proposals",
+      "scale": {
+        "5": "Consistently presents well-structured arguments that win support and drive decisions.",
+        "3": "Presents logical arguments but may lack depth or clarity.",
+        "1": "Struggles to justify proposals or ideas clearly."
+      }
+    },
+    {
+      "indicator": "Express own positions taking into account the interests and concerns of the interlocutors",
+      "scale": {
+        "5": "Balances own views with empathy and adapts approach based on audience needs.",
+        "3": "Generally considers others’ views but may lack flexibility in discussion.",
+        "1": "Disregards others’ concerns and insists solely on own viewpoint."
+      }
+    },
+    {
+      "indicator": "Actively solicit support for ideas and proposals from others",
+      "scale": {
+        "5": "Engages others early in the idea process, building broad support and collaboration.",
+        "3": "Seeks input when necessary but may not actively involve others.",
+        "1": "Pursues ideas alone without consulting or involving stakeholders."
+      }
+    }
+  ],
+  "RES": [
+    {
+      "indicator": "Work productively in the face of ambiguity or uncertainty",
+      "scale": {
+        "5": "Thrives in unclear environments, making sound decisions and maintaining output.",
+        "3": "Maintains productivity in ambiguity but may seek frequent reassurance.",
+        "1": "Struggles to act without clear guidance; becomes unproductive."
+      }
+    },
+    {
+      "indicator": "Maintain clariry of mind and optimism even in the most unfavorable circumstances",
+      "scale": {
+        "5": "Remains calm, focused, and inspires confidence in others under pressure.",
+        "3": "Stays composed but may show signs of stress in difficult times.",
+        "1": "Panics or becomes negative, affecting team morale."
+      }
+    },
+    {
+      "indicator": "Constructively handle mistakes, accepting responsibility and learning from experience",
+      "scale": {
+        "5": "Openly acknowledges errors, learns quickly, and shares lessons with others.",
+        "3": "Admits to mistakes and adjusts behavior when prompted.",
+        "1": "Avoids accountability or repeats the same mistakes."
+      }
+    }
+  ],
+  "LRN": [
+    {
+      "indicator": "Ask for feedback to improve own performance",
+      "scale": {
+        "5": "Regularly seeks out feedback and implements changes to improve performance.",
+        "3": "Open to feedback when offered, but rarely initiates requests.",
+        "1": "Avoids or dismisses feedback; shows little interest in self-improvement."
+      }
+    },
+    {
+      "indicator": "Show interest and energy regarding their growth in the organization",
+      "scale": {
+        "5": "Actively seeks growth opportunities and demonstrates commitment to career progression.",
+        "3": "Shows general interest in growth but takes limited initiative.",
+        "1": "Displays little enthusiasm or effort toward personal development."
+      }
+    },
+    {
+      "indicator": "Look for additional responsibilities that allow them to develop new skills",
+      "scale": {
+        "5": "Frequently takes on new challenges and uses them to build relevant skills.",
+        "3": "Accepts new tasks when assigned, with occasional interest in learning.",
+        "1": "Avoids taking on additional responsibilities or resists skill development."
+      }
+    }
+  ]
+}
