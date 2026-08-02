@@ -1,0 +1,210 @@
+{
+  "STG": [
+    {
+      "indicator": "Align the strategic priorities of own area with the broader priorities of the organization",
+      "scale": {
+        "5": "Fully aligns area priorities with organizational strategy, ensuring cohesive and synergistic outcomes.",
+        "3": "Generally aligns area priorities, though some disconnects or inefficiencies may occur.",
+        "1": "Fails to align area activities with organizational goals, creating misdirection and wasted effort."
+      }
+    },
+    {
+      "indicator": "Convey a thorough understanding of own area's strengths, weaknesses, opportunities, and threats",
+      "scale": {
+        "5": "Clearly articulates a nuanced SWOT analysis, using insights to drive informed decisions.",
+        "3": "Has a basic grasp of SWOT but may miss deeper implications or changes.",
+        "1": "Lacks understanding of key internal/external factors, leading to reactive or misguided decisions."
+      }
+    },
+    {
+      "indicator": "Stay abreast of key competitor actions and their implications or threats to the business",
+      "scale": {
+        "5": "Proactively tracks competitor moves, adapting strategies to mitigate threats or seize advantages.",
+        "3": "Monitors competitors occasionally but may miss important changes or insights.",
+        "1": "Unaware of competitor developments, resulting in strategic surprises or losses."
+      }
+    }
+  ],
+  "INN": [
+    {
+      "indicator": "Create an environment that encourages innovation and experimentation",
+      "scale": {
+        "5": "Builds a culture of experimentation and psychological safety, where innovation flourishes.",
+        "3": "Supports innovation occasionally, though risk aversion may limit experimentation.",
+        "1": "Discourages innovation, creating a fear of failure or resistance to change."
+      }
+    },
+    {
+      "indicator": "Leverage innovative ideas and unconventional approaches to generate value for the organization",
+      "scale": {
+        "5": "Frequently applies creative, unconventional solutions that lead to measurable business value.",
+        "3": "Sometimes adopts new ideas but impact or follow-through may be limited.",
+        "1": "Relies solely on traditional methods, missing opportunities for innovation."
+      }
+    },
+    {
+      "indicator": "Pursue new business opportunities and implement them",
+      "scale": {
+        "5": "Identifies, evaluates, and successfully executes new business opportunities with measurable returns.",
+        "3": "Occasionally pursues opportunities, though some lack follow-through or impact.",
+        "1": "Rarely seeks or executes new business opportunities, missing growth potential."
+      }
+    }
+  ],
+  "CSF": [
+    {
+      "indicator": "Understand how customers' needs and expectations are evolving and which trends drive the evolution",
+      "scale": {
+        "5": "Anticipates customer trends and integrates them into planning and service design.",
+        "3": "Responds to evident customer trends but may lack forward-looking insights.",
+        "1": "Fails to consider customer evolution, resulting in outdated offerings or services."
+      }
+    },
+    {
+      "indicator": "Foster a customer-focused environment where people at all levels are committed to maximizing customer satisfaction and loyalty",
+      "scale": {
+        "5": "Instills deep customer focus at all levels, consistently driving satisfaction and loyalty.",
+        "3": "Supports customer service efforts, but commitment varies across the team.",
+        "1": "Customer needs are not prioritized, leading to inconsistent or poor service."
+      }
+    },
+    {
+      "indicator": "Create systems and processes that make it easy for customers to work with own organizational unit",
+      "scale": {
+        "5": "Designs seamless, customer-friendly systems that enhance accessibility and satisfaction.",
+        "3": "Implements some improvements but may retain inefficient processes.",
+        "1": "Processes are cumbersome and unfriendly, creating barriers for customers."
+      }
+    }
+  ],
+  "OPX": [
+    {
+      "indicator": "Establish ambitious but realistic plans to achieve the unit's strategic objectives",
+      "scale": {
+        "5": "Sets high-reaching yet attainable strategic goals, with clear execution plans.",
+        "3": "Sets goals but may struggle with feasibility or detailed planning.",
+        "1": "Plans lack ambition or realism, leading to poor execution or abandonment."
+      }
+    },
+    {
+      "indicator": "Constantly monitor the progress of the organizational unit and intervene decisively on who causes negative deviations",
+      "scale": {
+        "5": "Actively monitors progress and promptly addresses root causes of underperformance.",
+        "3": "Tracks results periodically and intervenes when problems become evident.",
+        "1": "Rarely monitors performance or avoids difficult corrective actions."
+      }
+    },
+    {
+      "indicator": "Ensure subordinates have the resources, authority, and support they need to achieve goals",
+      "scale": {
+        "5": "Proactively removes barriers and secures everything the team needs to succeed.",
+        "3": "Provides basic support but may overlook key needs or constraints.",
+        "1": "Neglects to support subordinates, hindering their ability to deliver results."
+      }
+    }
+  ],
+  "INS": [
+    {
+      "indicator": "Provides coaching and guidance to foster skills development within the organizational unit",
+      "scale": {
+        "5": "Regularly coaches team members, driving clear improvement in skills and confidence.",
+        "3": "Offers coaching when asked or during formal reviews.",
+        "1": "Avoids developmental feedback or coaching, leaving team growth stagnant."
+      }
+    },
+    {
+      "indicator": "Shape roles and assignments in ways that develop people's capabilities",
+      "scale": {
+        "5": "Strategically shapes roles to stretch abilities and foster growth.",
+        "3": "Occasionally aligns tasks with development, but inconsistently.",
+        "1": "Makes assignments based only on immediate needs, ignoring development potential."
+      }
+    },
+    {
+      "indicator": "Identify successors for key positions, and arrange for appropriate development opportunities for them",
+      "scale": {
+        "5": "Proactively identifies talent and prepares them for succession through tailored development.",
+        "3": "Identifies potential successors informally but without structured development.",
+        "1": "Ignores succession planning, leaving key roles vulnerable."
+      }
+    }
+  ],
+  "INF": [
+    {
+      "indicator": "Support own positions with compelling business arguments, addressing all relevant factors",
+      "scale": {
+        "5": "Presents positions with strong data, logic, and strategic relevance.",
+        "3": "Arguments are logical but may overlook some key factors.",
+        "1": "Arguments lack substance or relevance, weakening credibility."
+      }
+    },
+    {
+      "indicator": "Identify the motives and objectives of the interlocutors and use them to argue own positions",
+      "scale": {
+        "5": "Skilfully tailors arguments to others' motives, increasing influence and buy-in.",
+        "3": "Occasionally considers others' interests but struggles to integrate them effectively.",
+        "1": "Disregards others' views, leading to ineffective communication."
+      }
+    },
+    {
+      "indicator": "Negotiate persuasively, creating \"win-win\" solutions for all stakeholders",
+      "scale": {
+        "5": "Achieves favorable outcomes while ensuring others feel heard and respected.",
+        "3": "Reaches acceptable deals, though may miss opportunities for mutual benefit.",
+        "1": "Negotiations often end in conflict, dissatisfaction, or imbalanced outcomes."
+      }
+    }
+  ],
+  "RES": [
+    {
+      "indicator": "Respond constructively and resourcefully to changes in context and strategy",
+      "scale": {
+        "5": "Adapts quickly and guides others through change with clear, resourceful plans.",
+        "3": "Handles change when required, but may need support or direction.",
+        "1": "Struggles with change, resisting or reacting ineffectively."
+      }
+    },
+    {
+      "indicator": "Quickly recover from failures and disappointments, maintaining a positive and future-oriented attitude",
+      "scale": {
+        "5": "Bounces back swiftly from setbacks with positivity and renewed focus.",
+        "3": "Recovers from setbacks but may linger on negatives temporarily.",
+        "1": "Dwells on failure, losing motivation or momentum."
+      }
+    },
+    {
+      "indicator": "Demostrate resilience when dealing with \"political\" difficulties within the organization",
+      "scale": {
+        "5": "Maintains integrity and effectiveness in politically sensitive environments.",
+        "3": "Navigates politics with some discomfort or inconsistency.",
+        "1": "Avoids or mishandles political dynamics, damaging credibility or results."
+      }
+    }
+  ],
+  "LRN": [
+    {
+      "indicator": "Look for challenging assignments and career opportunities that force them to grow",
+      "scale": {
+        "5": "Actively seeks stretch roles that drive significant personal and professional growth.",
+        "3": "Accepts challenges when presented but may hesitate to pursue them.",
+        "1": "Avoids challenging assignments, preferring comfort and routine."
+      }
+    },
+    {
+      "indicator": "Show strong interest in trying new things, even at the risk of possible failures",
+      "scale": {
+        "5": "Embraces experimentation, understanding that failure is part of learning.",
+        "3": "Open to new experiences when stakes are low or risk is manageable.",
+        "1": "Resists new approaches due to fear of failure or discomfort with change."
+      }
+    },
+    {
+      "indicator": "Look for people who are different from oneselves to learn from them",
+      "scale": {
+        "5": "Seeks diverse perspectives actively to broaden thinking and improve outcomes.",
+        "3": "Open to other viewpoints but tends to stay in familiar circles.",
+        "1": "Avoids engaging with those who are different, limiting personal growth."
+      }
+    }
+  ]
+}

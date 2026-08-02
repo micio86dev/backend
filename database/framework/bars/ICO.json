@@ -1,0 +1,392 @@
+{
+  "PRS": [
+    {
+      "indicator": "Recognizes symptoms that indicate problems.",
+      "scale": {
+        "5": "Consistently utilizes symptoms and ongoing patterns as clues to look more deeply at the underlying, related, or ongoing causes of problems and issues.",
+        "3": "Searches for and recognizes symptoms that indicate problems; accurately differentiates the problems from the symptoms.",
+        "1": "Focuses on surface symptoms, rather than the underlying source of problems."
+      }
+    },
+    {
+      "indicator": "Come up with solution hypotheses for problems",
+      "scale": {
+        "5": "Consistently generates multiple well-reasoned, innovative solution hypotheses for complex problems. Uses data and insights to validate ideas before implementation.",
+        "3": "Proposes reasonable solution hypotheses based on available information but may require refinement. Occasionally needs guidance to validate and improve solutions.",
+        "1": "Struggles to generate viable solution hypotheses. Offers vague or impractical ideas, often relying on others to drive problem-solving efforts."
+      }
+    },
+    {
+      "indicator": "Analyzes, incorporates and applies new information and concepts.",
+      "scale": {
+        "5": "Immediately recognizes when new information or concepts are relevant, understands the implications, and appropriately incorporates all new inputs into current thinking.",
+        "3": "Analyzes, incorporates, and applies new information and concepts.",
+        "1": "Acknowledges new pieces of information and concepts, but may be slow to do so, or may have trouble applying them effectively."
+      }
+    }
+  ],
+  "STG": [
+    {
+      "indicator": "Understand the short- and medium-term consequences of own actions",
+      "scale": {
+        "5": "Consistently anticipates and evaluates the impact of own actions on tasks, colleagues, and the organization, taking proactive steps to enhance positive outcomes and mitigate risks.",
+        "3": "Understands the consequences of own actions in most situations but may need occasional guidance to assess broader implications.",
+        "1": "Rarely considers the consequences of own actions, often leading to unforeseen issues or disruptions."
+      }
+    },
+    {
+      "indicator": "Understand hierarchical and organizational relationships",
+      "scale": {
+        "5": "Clearly understands and effectively navigates hierarchical structures, leveraging organizational relationships to improve collaboration and decision-making.",
+        "3": "Has a functional understanding of organizational hierarchy and relationships but may struggle to use them effectively in complex situations.",
+        "1": "Lacks awareness of hierarchical structures and organizational relationships, leading to ineffective communication and poor decision-making."
+      }
+    },
+    {
+      "indicator": "Know the purpose of the organization and how the main processes work",
+      "scale": {
+        "5": "Demonstrates deep understanding of the organization’s purpose, mission, and processes, aligning work effectively with business goals and identifying opportunities for improvement.",
+        "3": "Has a general awareness of the organization’s purpose and main processes but may not always see how their role contributes to broader objectives.",
+        "1": "Lacks understanding of the organization’s purpose and processes, resulting in misalignment with company goals and inefficiencies in work."
+      }
+    }
+  ],
+  "INN": [
+    {
+      "indicator": "Approaches problems with curiosity and open-mindedness.",
+      "scale": {
+        "5": "Consistently approaches problems with strong curiosity and open-mindedness.",
+        "3": "Demonstrates openness and curiosity when approaching problems.",
+        "1": "Displays little curiosity or open-mindedness when presented with problems to resolve."
+      }
+    },
+    {
+      "indicator": "Generates innovative ideas and solutions to problems.",
+      "scale": {
+        "5": "Generates highly innovative ideas, solutions, and opportunities that challenge status quo thinking and assumptions.",
+        "3": "Generates innovative ideas, solutions, and new perspectives in reaction to issues; is open to challenging current processes and procedures.",
+        "1": "Generates status-quo ideas and solutions, and/or resists others' efforts to challenge current processes and procedures."
+      }
+    },
+    {
+      "indicator": "Quickly adapt to new ways of doing things",
+      "scale": {
+        "5": "Embraces change proactively, quickly adjusting to new methods with minimal disruption. Encourages others to adapt and finds innovative ways to optimize transitions.",
+        "3": "Adapts to new methods with some hesitation but eventually aligns with changes. Requires some support or guidance to fully implement new ways of working.",
+        "1": "Resists change, struggles to adapt to new methods, and requires excessive support. Often reverts to old ways, slowing down team progress."
+      }
+    }
+  ],
+  "DRV": [
+    {
+      "indicator": "Maintain a consistent, high level of productivity",
+      "scale": {
+        "5": "Consistently exceeds productivity expectations, delivering high-quality work efficiently. Effectively manages workload even under pressure.",
+        "3": "Meets productivity expectations, completing tasks in a timely and competent manner. Occasionally struggles with workload balance.",
+        "1": "Frequently falls short of productivity expectations, requiring reminders or interventions to complete tasks on time. Struggles to maintain efficiency."
+      }
+    },
+    {
+      "indicator": "Organize own work and manage time wisely",
+      "scale": {
+        "5": "Demonstrates exceptional time management and organizational skills, prioritizing tasks effectively and completing work ahead of deadlines.",
+        "3": "Organizes work adequately and manages time well, though occasional prioritization issues may arise. Meets most deadlines without significant intervention.",
+        "1": "Struggles to organize work, often missing deadlines or requiring constant supervision. Poor prioritization leads to inefficiencies."
+      }
+    },
+    {
+      "indicator": "Respond promptly to requests also managing conflicting priorities",
+      "scale": {
+        "5": "Handles multiple requests efficiently, responding promptly while balancing conflicting priorities with minimal disruption. Proactively communicates if adjustments are needed.",
+        "3": "Responds to requests in a timely manner but may struggle to balance multiple priorities effectively at times. Requires occasional guidance to manage workload.",
+        "1": "Frequently delays responses or fails to manage conflicting priorities, leading to missed deadlines and frustration for stakeholders."
+      }
+    }
+  ],
+  "CSF": [
+    {
+      "indicator": "Understand customer needs and interests",
+      "scale": {
+        "5": "Proactively seeks to understand customer needs and interests, anticipating and addressing concerns effectively. Provides tailored solutions that exceed expectations.",
+        "3": "Understands customer needs and interests at a basic level, responding appropriately to requests but may not always anticipate needs.",
+        "1": "Demonstrates little effort to understand customer needs, often providing generic or ineffective responses. May cause frustration due to lack of attention to detail."
+      }
+    },
+    {
+      "indicator": "Keep commitments to customers",
+      "scale": {
+        "5": "Consistently follows through on commitments to customers, ensuring reliability and trust. Proactively communicates any necessary adjustments.",
+        "3": "Generally keeps commitments to customers but may occasionally require reminders or extensions. Communicates when delays occur.",
+        "1": "Frequently fails to meet commitments, leading to customer dissatisfaction. Does not communicate effectively when unable to fulfill obligations."
+      }
+    },
+    {
+      "indicator": "Establish effective working relationships with internal and external customers",
+      "scale": {
+        "5": "Builds and maintains strong, professional relationships with internal and external customers. Communicates effectively, fostering collaboration and trust.",
+        "3": "Maintains satisfactory relationships with customers, though interactions may sometimes lack consistency or engagement.",
+        "1": "Struggles to establish or maintain effective relationships, often leading to misunderstandings or conflicts with customers."
+      }
+    }
+  ],
+  "SLF": [
+    {
+      "indicator": "Describe products and services accurately",
+      "scale": {
+        "5": "Provides detailed, precise, and engaging descriptions of products and services, ensuring customers fully understand their value and benefits. Tailors explanations to different audiences.",
+        "3": "Describes products and services correctly but may lack depth or adaptation to different customer needs. Occasionally needs support for complex details.",
+        "1": "Provides vague, incorrect, or misleading descriptions of products and services, leading to confusion or dissatisfaction. Lacks product knowledge."
+      }
+    },
+    {
+      "indicator": "Link own arguments to customer needs and priorities",
+      "scale": {
+        "5": "Skillfully aligns arguments with customer needs, demonstrating deep understanding and persuasive communication. Uses data and insights to strengthen connections.",
+        "3": "Makes an effort to connect arguments with customer needs but may not always be compelling or fully aligned. Can improve customization of messaging.",
+        "1": "Fails to link arguments to customer priorities, providing generic or irrelevant points. Struggles to engage or persuade customers effectively."
+      }
+    },
+    {
+      "indicator": "Negotiate to reach solutions that meet the primary interests of customers",
+      "scale": {
+        "5": "Effectively negotiates win-win solutions, balancing customer needs with business objectives. Demonstrates patience, active listening, and creative problem-solving.",
+        "3": "Engages in negotiation and reaches acceptable solutions, though may require additional support or refinement in handling complex situations.",
+        "1": "Struggles with negotiation, often failing to reach mutually beneficial solutions. May come across as inflexible or unable to address customer concerns."
+      }
+    }
+  ],
+  "OPX": [
+    {
+      "indicator": "Perform tasks correctly and on time",
+      "scale": {
+        "5": "Consistently completes tasks with high accuracy and ahead of deadlines. Manages workload efficiently, even under pressure.",
+        "3": "Completes tasks correctly and on time most of the time but may require occasional follow-ups or reminders.",
+        "1": "Frequently misses deadlines or submits work with errors. Requires constant supervision to complete tasks."
+      }
+    },
+    {
+      "indicator": "Check own work to ensure accuracy and quality",
+      "scale": {
+        "5": "Regularly reviews work thoroughly, identifying and correcting errors before submission. Ensures high-quality results with minimal oversight.",
+        "3": "Occasionally checks work for accuracy and quality but may overlook minor errors. Requires some guidance to improve attention to detail.",
+        "1": "Rarely reviews work, leading to frequent mistakes and quality issues. Requires significant intervention to ensure accuracy."
+      }
+    },
+    {
+      "indicator": "Contribute to the achievement of own team goals",
+      "scale": {
+        "5": "Actively collaborates with team members, takes initiative, and contributes innovative ideas to achieve team goals. Supports others when needed.",
+        "3": "Participates in team efforts and completes assigned responsibilities but may not always go beyond basic expectations.",
+        "1": "Contributes minimally to team goals, often focusing only on individual tasks without considering team success. May cause delays or conflicts."
+      }
+    }
+  ],
+  "COM": [
+    {
+      "indicator": "Get the point across clearly and concisely",
+      "scale": {
+        "5": "Communicates messages with clarity and precision, ensuring understanding with minimal repetition. Uses well-structured and concise language suited to the audience.",
+        "3": "Expresses thoughts clearly but may sometimes provide unnecessary details or require clarification. Generally effective but could improve conciseness.",
+        "1": "Struggles to communicate clearly, often using vague or confusing language. Requires frequent clarification, leading to misunderstandings."
+      }
+    },
+    {
+      "indicator": "Keep people interested when speaking",
+      "scale": {
+        "5": "Engages the audience effectively through confident delivery, relevant examples, and dynamic tone. Adapts to audience reactions to maintain interest.",
+        "3": "Keeps listeners engaged but may rely on standard delivery techniques. Occasionally struggles to hold attention in longer discussions.",
+        "1": "Fails to maintain audience interest, often speaking in a monotone or lacking structure. Listeners become disengaged or distracted."
+      }
+    },
+    {
+      "indicator": "Speak effectively in a group",
+      "scale": {
+        "5": "Contributes confidently and articulately in group settings, ensuring ideas are well-received. Encourages dialogue and integrates diverse viewpoints.",
+        "3": "Participates effectively in group discussions but may occasionally struggle with clarity, confidence, or engagement.",
+        "1": "Has difficulty expressing ideas in group settings, either remaining silent or dominating conversations without consideration for others."
+      }
+    }
+  ],
+  "COL": [
+    {
+      "indicator": "Work effectively with others",
+      "scale": {
+        "5": "Collaborates seamlessly with colleagues, fostering a positive and productive work environment. Listens actively and values input from others.",
+        "3": "Works well with colleagues but may encounter occasional difficulties in teamwork. Open to feedback and willing to contribute.",
+        "1": "Struggles to collaborate, often working in isolation or causing conflicts within the team. Resists feedback."
+      }
+    },
+    {
+      "indicator": "Willingly help colleagues in trouble",
+      "scale": {
+        "5": "Proactively offers assistance to colleagues, even before being asked. Provides support with a positive attitude and fosters a culture of teamwork.",
+        "3": "Helps colleagues when requested but may not always take the initiative to offer support.",
+        "1": "Avoids helping colleagues, showing reluctance or lack of concern for team challenges."
+      }
+    },
+    {
+      "indicator": "Demonstrate commitment and dedication to team goals",
+      "scale": {
+        "5": "Consistently prioritizes team goals, actively contributing to shared success. Shows enthusiasm and persistence in overcoming obstacles.",
+        "3": "Supports team goals and contributes to objectives but may not take a proactive role in ensuring success.",
+        "1": "Shows little commitment to team goals, focusing only on personal tasks or disengaging from team efforts."
+      }
+    }
+  ],
+  "INF": [
+    {
+      "indicator": "Win support from others",
+      "scale": {
+        "5": "Effectively persuades and influences others through logical reasoning, empathy, and strong communication. Gains enthusiastic support for ideas.",
+        "3": "Gains support from others but may struggle in challenging situations. Uses basic persuasion techniques but could improve influence.",
+        "1": "Fails to gain support due to unclear communication, lack of credibility, or inability to address concerns. Often faces resistance."
+      }
+    },
+    {
+      "indicator": "Ensure that own positions address others' needs and priorities.",
+      "scale": {
+        "5": "Consistently tailors arguments and decisions to align with others' needs and priorities, fostering mutual understanding and cooperation.",
+        "3": "Attempts to consider others’ needs when presenting positions but may not always address them effectively.",
+        "1": "Rarely considers others’ needs, presenting positions in a one-sided manner that leads to resistance or disengagement."
+      }
+    },
+    {
+      "indicator": "Provide sound rationale to support opinions and proposals",
+      "scale": {
+        "5": "Backs up opinions and proposals with strong, well-researched arguments, data, and logical reasoning, making a compelling case.",
+        "3": "Provides some rationale for opinions but may lack depth or supporting evidence. Can explain reasoning but not always persuasively.",
+        "1": "Struggles to justify opinions or proposals with logic or evidence, often leading to weak arguments that fail to convince others."
+      }
+    }
+  ],
+  "NET": [
+    {
+      "indicator": "Easily connect with people at all organizational levels",
+      "scale": {
+        "5": "Builds rapport effortlessly with individuals at all levels, adapting communication style appropriately and fostering trust.",
+        "3": "Connects well with most people but may struggle with higher-level stakeholders or unfamiliar audiences.",
+        "1": "Has difficulty engaging with others, leading to ineffective interactions or strained relationships."
+      }
+    },
+    {
+      "indicator": "Listen to others carefully and without interrupting",
+      "scale": {
+        "5": "Actively listens, demonstrating full attention and patience. Responds thoughtfully and respectfully, making others feel valued.",
+        "3": "Listens attentively but may occasionally interrupt or get distracted. Usually responds appropriately.",
+        "1": "Frequently interrupts, appears disengaged, or fails to acknowledge others’ input, leading to frustration."
+      }
+    },
+    {
+      "indicator": "Establish and maintain effective working relationships with people from own organizational unit",
+      "scale": {
+        "5": "Consistently fosters strong, collaborative relationships with colleagues, contributing to a supportive and productive work environment.",
+        "3": "Maintains functional working relationships with team members but may not proactively strengthen them.",
+        "1": "Struggles to build or sustain working relationships, leading to misunderstandings, conflicts, or isolation."
+      }
+    }
+  ],
+  "RES": [
+    {
+      "indicator": "Demonstrate flexibility and adaptability when priorities change",
+      "scale": {
+        "5": "Quickly adjusts to shifting priorities with a positive attitude, maintaining productivity and helping others adapt. Seeks solutions to challenges proactively.",
+        "3": "Adapts to changing priorities with some initial hesitation but eventually aligns with new directions. May require occasional support.",
+        "1": "Resists change, struggles to adjust, and often slows down team progress when priorities shift. Needs constant guidance to adapt."
+      }
+    },
+    {
+      "indicator": "Keep calm under pressure",
+      "scale": {
+        "5": "Maintains composure and focus even in high-pressure situations. Thinks clearly, makes rational decisions, and reassures others.",
+        "3": "Handles pressure adequately but may show occasional signs of stress. Manages tasks but could improve emotional control.",
+        "1": "Easily overwhelmed under pressure, leading to panic, errors, or negative interactions with others."
+      }
+    },
+    {
+      "indicator": "Acknowledge own mistakes",
+      "scale": {
+        "5": "Takes full ownership of mistakes, proactively addressing them and implementing corrective actions. Uses mistakes as learning opportunities.",
+        "3": "Admits mistakes when confronted and works on improvements but may not always take initiative in addressing them.",
+        "1": "Avoids or denies mistakes, shifts blame, or makes excuses, leading to repeated errors and lost trust."
+      }
+    }
+  ],
+  "LRN": [
+    {
+      "indicator": "Accept feedback openly, without getting defensive",
+      "scale": {
+        "5": "Seeks out feedback proactively, listens attentively, and applies constructive criticism to improve performance.",
+        "3": "Accepts feedback with some hesitation but makes an effort to improve. Occasionally needs reminders to remain receptive.",
+        "1": "Reacts defensively or dismisses feedback, refusing to acknowledge areas for improvement."
+      }
+    },
+    {
+      "indicator": "Seeks opportunities to acquire new knowledge and skills.",
+      "scale": {
+        "5": "Actively pursues learning opportunities, staying ahead of trends and continuously expanding knowledge and skills.",
+        "3": "Engages in learning when required but does not consistently seek out new opportunities independently.",
+        "1": "Shows little interest in learning, relying only on existing knowledge and avoiding opportunities for growth."
+      }
+    },
+    {
+      "indicator": "Prove \"hungry\" to learn new things",
+      "scale": {
+        "5": "Demonstrates strong curiosity and enthusiasm for learning, taking initiative to explore new topics and apply knowledge.",
+        "3": "Willing to learn when prompted but does not always take initiative. Shows interest in learning but may need encouragement.",
+        "1": "Lacks curiosity and motivation to learn new things. Avoids challenges and resists new information."
+      }
+    }
+  ],
+  "ITG": [
+    {
+      "indicator": "Know and respect the organization's values and standards of conduct",
+      "scale": {
+        "5": "Fully understands, upholds, and promotes the organization’s values and conduct standards. Acts as a role model and encourages others to follow them.",
+        "3": "Follows organizational values and standards but may need occasional reminders. Does not actively promote them.",
+        "1": "Disregards or violates organizational values and conduct standards, creating ethical or reputational risks."
+      }
+    },
+    {
+      "indicator": "Behave with honesty and sincerity",
+      "scale": {
+        "5": "Consistently acts with integrity, transparency, and sincerity. Earns trust by being truthful and fair in all interactions.",
+        "3": "Generally honest and sincere but may occasionally withhold information or be unclear in difficult situations.",
+        "1": "Engages in dishonest or insincere behavior, misleading others or failing to maintain trust."
+      }
+    },
+    {
+      "indicator": "Keep commitments and promises",
+      "scale": {
+        "5": "Always follows through on commitments, ensuring reliability and accountability. Proactively communicates if adjustments are needed.",
+        "3": "Keeps most commitments but may occasionally fail to meet expectations or require reminders.",
+        "1": "Frequently breaks commitments, causing delays, mistrust, or frustration among colleagues and stakeholders."
+      }
+    }
+  ],
+  "INC": [
+    {
+      "indicator": "Build constructive relationships with people different of self",
+      "scale": {
+        "5": "Actively seeks to understand and collaborate with diverse individuals. Values different perspectives and fosters an inclusive environment.",
+        "3": "Works well with different people but may not actively seek out diverse perspectives or relationships.",
+        "1": "Struggles to connect with people different from self, showing little interest in understanding or engaging with them."
+      }
+    },
+    {
+      "indicator": "Avoid using cultural stereotypes to make judgments about people.",
+      "scale": {
+        "5": "Treats individuals with respect and fairness, avoiding assumptions based on stereotypes. Actively challenges bias in oneself and others.",
+        "3": "Generally avoids stereotypes but may occasionally make assumptions unconsciously. Open to learning and improving.",
+        "1": "Frequently relies on cultural stereotypes to judge others, leading to biased decisions and strained relationships."
+      }
+    },
+    {
+      "indicator": "Adapt to basic cultural differences",
+      "scale": {
+        "5": "Demonstrates strong cultural awareness, adapting communication and behavior to work effectively across cultures. Shows deep respect for different traditions and norms.",
+        "3": "Acknowledges cultural differences and makes an effort to adapt, though may need guidance in unfamiliar situations.",
+        "1": "Struggles to recognize or adapt to cultural differences, leading to misunderstandings or ineffective interactions."
+      }
+    }
+  ]
+}
