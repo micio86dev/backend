@@ -3967,12 +3967,15 @@
                     "webhook_events": {
                         "type": "string"
                     },
+                    "has_webhook_secret": {
+                        "type": "boolean",
+                        "description": "webhook_secret intentionally excluded (hidden + encrypted).\nA PRESENCE BOOLEAN is exposed instead, never the value \u2014 mirroring\nOrganizationResource::has_default_webhook_secret. Without it the\nedit form cannot distinguish \"no secret configured\" from \"a secret\n exists but is write-only\", so it renders \"not set\" over a project\nthat has one. On a security-relevant field that is not a cosmetic\ngap: it invites an operator to believe no secret is in place."
+                    },
                     "deadline_at": {
                         "type": [
                             "string",
                             "null"
-                        ],
-                        "description": "webhook_secret intentionally excluded (hidden + encrypted)"
+                        ]
                     },
                     "goes_live_at": {
                         "type": [
@@ -4043,6 +4046,7 @@
                     "exit_redirect_url",
                     "webhook_url",
                     "webhook_events",
+                    "has_webhook_secret",
                     "deadline_at",
                     "goes_live_at",
                     "created_at",

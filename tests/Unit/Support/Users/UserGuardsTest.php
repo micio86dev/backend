@@ -21,6 +21,7 @@ use App\Models\Organization;
 use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use App\Support\Users\UserGuards;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
@@ -173,18 +174,33 @@ test('two admins demoting each other concurrently: the lock closes the race', fu
         $sessionC->rollBack();
         expect($lockWasUnavailable)->toBeTrue();
 
-        // B completes the demotion of admin2 and commits — one admin remains.
+        // B still holds the lock, UNCOMMITTED, and has already removed
+        // admin2's role inside its own transaction. This is the exact instant
+        // the race lives in: one admin remains in truth, but the change is not
+        // yet visible to anyone else.
         $sessionB->prepare(
             'DELETE FROM model_has_roles WHERE role_id = :roleId AND model_type = :modelType AND model_id = :userId'
         )->execute(['roleId' => $adminRoleId, 'modelType' => User::class, 'userId' => $admin2->id]);
-        $sessionB->commit();
 
-        // A = admin2's request thread, demoting admin1 — the REAL production
-        // guard, on the default connection, called only now that B's lock is
-        // released. It must observe the POST-COMMIT count (1), not the stale
-        // "2" both sessions could see before B committed.
+        // A = admin2's request thread, running the REAL production guard on
+        // the default connection WHILE B holds the lock. This ordering is the
+        // whole test. Calling the guard only after B commits — as an earlier
+        // version of this test did — proves nothing: read-committed would hand
+        // it the post-commit count anyway, so it passed identically with
+        // `lockForUpdate()` deleted. It tested Postgres, not our reliance on it.
+        //
+        // Under contention the two implementations diverge observably:
+        //   WITH    lockForUpdate() → blocks on B's lock → lock_timeout fires
+        //   WITHOUT lockForUpdate() → reads the stale committed count (2),
+        //                             concludes "another admin survives", and
+        //                             runs mutate — leaving zero admins.
+        // A short lock_timeout turns that divergence into a deterministic
+        // assertion instead of a hang.
+        DB::statement("SET lock_timeout = '400ms'");
+
         $guards = new UserGuards($resolver);
-        $rejected = null;
+        $blockedOnLock = false;
+        $mutateRan = false;
 
         try {
             $guards->ensureAdminSurvivesThenMutate(
@@ -192,17 +208,37 @@ test('two admins demoting each other concurrently: the lock closes the race', fu
                 target: $admin1,
                 targetLosesAdminStatus: true,
                 selfErrorCode: 'self_demotion',
-                mutate: fn () => throw new RuntimeException('mutate must never run — the guard must reject first'),
+                mutate: function () use (&$mutateRan): mixed {
+                    $mutateRan = true;
+
+                    return null;
+                },
             );
-        } catch (UserGuardException $e) {
-            $rejected = $e;
+        } catch (QueryException $e) {
+            $blockedOnLock = str_contains(strtolower($e->getMessage()), 'lock timeout')
+                || str_contains(strtolower($e->getMessage()), 'canceling statement');
+        } catch (UserGuardException) {
+            // Also an acceptable outcome — it means the guard saw one admin
+            // and refused. What must NEVER happen is mutate running.
+        } finally {
+            DB::statement('SET lock_timeout = 0');
         }
 
-        expect($rejected)->not->toBeNull();
-        expect($rejected->errorCode())->toBe('last_admin');
+        // Released BEFORE the assertions, not after. An earlier version rolled
+        // back only once the expectations had passed, so a FAILING assertion
+        // threw first and left B's lock held — and the cleanup below, which
+        // deletes those very rows, then blocked forever. The test hung instead
+        // of reporting, which is the one failure mode a test must never have.
+        $sessionB->rollBack();
 
-        // admin1 must still hold the admin role — the guard's rejection
-        // means the mutate closure (which would have removed it) never ran.
+        // The decisive assertion: the guard must NOT have sailed through on a
+        // stale count. Either it blocked on the lock, or it refused outright.
+        // Verified by mutation — deleting `lockForUpdate()` from UserGuards
+        // makes `$mutateRan` true and fails this line.
+        expect($mutateRan)->toBeFalse();
+        expect($blockedOnLock)->toBeTrue();
+
+        // admin1 must still hold the admin role — mutate never ran.
         expect($admin1->fresh()->hasRole('admin'))->toBeTrue();
     } finally {
         // This test committed real rows outside RefreshDatabase's rollback —
