@@ -1,6 +1,10 @@
 <?php
 
+use App\Models\Organization;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role as SpatieRole;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /*
@@ -245,6 +249,24 @@ function something()
     // ..
 }
 
+// ─── backoffice-missing-pages shared auth helper ──────────────────────────────
+//
+// Shared by Feature/OrganizationSettings and Feature/UserManagement: mints an
+// org-scoped user with exactly one Spatie authorization role (admin/operator/
+// viewer, teams mode, team_id = organization_id) and returns a login JWT.
+// Mirrors ProjectCrudTest.php's crudAdminUser() / AdminCrossTenantIsolationTest.php's
+// crossOrgReaderToken() pattern, generalised to any of the three roles and
+// centralised here because three different test files in this change need it.
+function authTokenForRole(Organization $org, string $role): string
+{
+    $user = User::factory()->create(['organization_id' => $org->id]);
+    app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
+    $spatieRole = SpatieRole::firstOrCreate(['name' => $role, 'guard_name' => 'api', 'team_id' => $org->id]);
+    $user->assignRole($spatieRole);
+
+    return auth('api')->login($user);
+}
+
 // ─── C13 nfr-hardening ────────────────────────────────────────────────────────
 
 // Feature/C13 — RefreshDatabase: project-configuration and audit assertions
@@ -267,3 +289,27 @@ pest()->use(RefreshDatabase::class)
 // rather than a mocked repository. That is the point of them.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C14');
+
+// ─── backoffice-missing-pages (organization-settings / user-management / admin-read-api delta) ──
+
+// Feature/OrganizationSettings — RefreshDatabase: the singular self-resolving
+// /api/organization route and webhook-defaults copy-on-create are asserted
+// against real Organization/Project rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/OrganizationSettings');
+
+// Unit/Support/Users — needs TestCase + RefreshDatabase: UserAdminReader and
+// UserGuards create Organization/User/Role fixtures via factories and Spatie.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Users');
+
+// Feature/UserManagement — RefreshDatabase: the privilege-escalation and
+// last-admin-guard matrix is asserted against real users/roles rows, not mocks.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/UserManagement');
+
+// Feature/AdminReadApi — RefreshDatabase: the evaluations index/summary
+// lifecycle gate is asserted against real Participant/Evaluation/CompetencyResult rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/AdminReadApi');

@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.1.0"
+        "version": "0.4.0"
     },
     "servers": [
         {
@@ -1274,6 +1274,87 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/organization": {
+            "get": {
+                "operationId": "organization.show",
+                "summary": "GET /api/organization",
+                "tags": [
+                    "Organization"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "organization.update",
+                "description": "`slug` is intentionally never read from the request \u2014 only()\nwhitelists the writable fields, so a `slug` key in the body is\nsilently dropped rather than validated-then-rejected (D2).",
+                "summary": "PATCH /api/organization",
+                "tags": [
+                    "Organization"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateOrganizationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     }
                 }
             }
@@ -2733,17 +2814,29 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "name": {
                         "type": "string"
                     },
                     "abilities": {
-                        "type": "array",
-                        "items": {}
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "minItems": 0,
+                                "maxItems": 0,
+                                "additionalItems": false
+                            }
+                        ]
                     },
                     "is_active": {
-                        "type": "boolean"
+                        "type": "string"
                     },
                     "expires_at": {
                         "type": [
@@ -2758,10 +2851,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -2779,7 +2869,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -2788,16 +2878,10 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
@@ -2815,10 +2899,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "project": {
                         "type": [
@@ -2827,13 +2908,10 @@
                         ],
                         "properties": {
                             "id": {
-                                "type": "integer"
+                                "type": "string"
                             },
                             "role_code": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
+                                "type": "string"
                             },
                             "language": {
                                 "type": "string"
@@ -2842,16 +2920,10 @@
                                 "type": "string"
                             },
                             "exit_redirect_url": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
+                                "type": "string"
                             },
                             "error_redirect_url": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
+                                "type": "string"
                             }
                         },
                         "required": [
@@ -2882,26 +2954,22 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "name": {
                         "type": "string"
                     },
                     "description": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "config": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "is_active": {
-                        "type": "boolean"
+                        "type": "string"
                     },
                     "created_at": {
                         "type": [
@@ -3049,11 +3117,58 @@
                 ],
                 "title": "FrameworkVersionResource"
             },
-            "ParticipantDetailResource": {
+            "OrganizationResource": {
                 "type": "object",
                 "properties": {
                     "id": {
                         "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "default_webhook_url": {
+                        "type": "string"
+                    },
+                    "default_webhook_events": {
+                        "type": "string"
+                    },
+                    "has_default_webhook_secret": {
+                        "type": "boolean",
+                        "description": "default_webhook_secret intentionally excluded (hidden + encrypted) \u2014\nonly a presence boolean is exposed, never the value."
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "default_webhook_url",
+                    "default_webhook_events",
+                    "has_default_webhook_secret",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "OrganizationResource"
+            },
+            "ParticipantDetailResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -3062,22 +3177,16 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "project_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "timeline": {
                         "type": "object",
@@ -3157,10 +3266,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -3181,7 +3287,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -3190,22 +3296,16 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "project_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [
@@ -3220,10 +3320,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -3244,13 +3341,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "organization_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "framework_version_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "slug": {
                         "type": "string"
@@ -3262,10 +3359,7 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
                         "type": "string"
@@ -3274,32 +3368,19 @@
                         "type": "string"
                     },
                     "pause_every_n_competencies": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "nudge_min_chars": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "exit_redirect_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "webhook_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "webhook_events": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "deadline_at": {
                         "type": [
@@ -3550,6 +3631,46 @@
                     "sessions"
                 ],
                 "title": "TranscriptResource"
+            },
+            "UpdateOrganizationRequest": {
+                "type": "object",
+                "description": "UpdateOrganizationRequest (backoffice-missing-pages D2/D3).\n\nValidates PATCH /api/organization. Accepts `name` and the three\n`default_webhook_*` fields; `slug` is deliberately NOT a rule here \u2014 it is\na tenancy identifier, never editable, and the controller only ever writes\n`$request->safe()->only([...])`, so a `slug` key in the body is silently\ndropped rather than validated-then-rejected.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "default_webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
+                    "default_webhook_secret": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 1024
+                    },
+                    "default_webhook_events": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "description": "Closed event-type set \u2014 mirrors UpdateProjectRequest.php:94's\nconfig-driven Rule::in (never a hardcoded list, never env-overridable).",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "progress",
+                                "evaluation"
+                            ]
+                        }
+                    }
+                },
+                "title": "UpdateOrganizationRequest"
             },
             "UpdateProjectRequest": {
                 "type": "object",

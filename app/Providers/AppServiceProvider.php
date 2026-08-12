@@ -6,14 +6,17 @@ use App\Contracts\LLMProvider;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
+use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
 use App\Policies\ApiClientPolicy;
 use App\Policies\AvatarTemplatePolicy;
 use App\Policies\EvaluationPolicy;
+use App\Policies\OrganizationPolicy;
 use App\Policies\ParticipantPolicy;
 use App\Policies\ProjectPolicy;
+use App\Policies\UserPolicy;
 use App\Services\LLM\AnthropicLLMProvider;
 use App\Services\Scoring\AssessableFractionReliability;
 use App\Services\Scoring\Contracts\ReliabilityStrategy;
@@ -75,6 +78,11 @@ class AppServiceProvider extends ServiceProvider
         // C11 — Register ParticipantPolicy/EvaluationPolicy for admin read RBAC (D3).
         Gate::policy(Participant::class, ParticipantPolicy::class);
         Gate::policy(Evaluation::class, EvaluationPolicy::class);
+
+        // backoffice-missing-pages — Register OrganizationPolicy/UserPolicy for
+        // the org settings + admin-only user management RBAC (D2/D4).
+        Gate::policy(Organization::class, OrganizationPolicy::class);
+        Gate::policy(User::class, UserPolicy::class);
 
         // C14 — Register AvatarTemplatePolicy. Laravel would auto-discover it by
         // name, but every other policy here is registered explicitly, and an

@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FrameworkController;
+use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
@@ -76,6 +77,17 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::apiResource('projects', ProjectController::class);
+});
+
+// ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
+// Singular, self-resolving resource — NO id in the path, ever. The org
+// resolves exclusively from the authenticated user's organization_id, so
+// there is no `{organization}` route variant and no IDOR surface to guard.
+// Read for all roles, write admin-only (OrganizationPolicy).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/organization', [OrganizationController::class, 'show']);
+    Route::patch('/organization', [OrganizationController::class, 'update']);
 });
 
 // ─── Avatar Templates (C14) ───────────────────────────────────────────────────
