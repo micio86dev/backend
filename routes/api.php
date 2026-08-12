@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\AvatarTemplateController;
 use App\Http\Controllers\Candidate\IntegrityController;
@@ -88,6 +89,30 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/organization', [OrganizationController::class, 'show']);
     Route::patch('/organization', [OrganizationController::class, 'update']);
+});
+
+// ─── User Management (backoffice-missing-pages, D4) ───────────────────────────
+// Admin-only, org-scoped CRUD + Spatie role assignment — a privilege-
+// escalation surface (it can grant `admin`). RBAC via UserPolicy: every
+// ability admin-only, unlike ProjectPolicy/ParticipantPolicy/EvaluationPolicy
+// which are all-roles-read.
+//
+// Deliberately absent: GET /api/roles (D4 — the admin/operator/viewer
+// allow-list is a code-level enum, App\Enums\OrgRole, exported into
+// openapi.json, never a runtime endpoint — and one path segment away from
+// the UNRELATED GET /api/framework/roles below, which serves the BEAI
+// organizational roles ICO/FLL/MLL/BUL/SRX) and DELETE (D5 — soft
+// deactivation only, via the two explicit verbs below).
+//
+// IDs are resolved manually inside UserAdminReader (D4) — never route-model
+// binding, per ProjectController.php:23-28's documented reason.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/users', [UserController::class, 'index']);
+    Route::post('/users', [UserController::class, 'store']);
+    Route::patch('/users/{user}', [UserController::class, 'update']);
+    Route::post('/users/{user}/deactivate', [UserController::class, 'deactivate']);
+    Route::post('/users/{user}/activate', [UserController::class, 'activate']);
 });
 
 // ─── Avatar Templates (C14) ───────────────────────────────────────────────────

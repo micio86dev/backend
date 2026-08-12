@@ -2676,6 +2676,211 @@
                 }
             }
         },
+        "/users": {
+            "get": {
+                "operationId": "user.index",
+                "summary": "GET /api/users",
+                "tags": [
+                    "User"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `UserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/UserResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "user.store",
+                "description": "`organization_id` and `is_superadmin` are never read from the request\nat all \u2014 the org comes from TenantContext via the authenticated\ncaller, and is_superadmin is always false for a user created here.",
+                "summary": "POST /api/users",
+                "tags": [
+                    "User"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`UserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/UserResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/users/{id}": {
+            "patch": {
+                "operationId": "user.update",
+                "description": "A role change that would remove the target's admin status routes\nthrough UserGuards \u2014 the ONLY place a role is ever written on this\nsurface \u2014 so the last-admin / self-demotion invariants can never be\nbypassed by a future call site.",
+                "summary": "PATCH /api/users/{id}",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`UserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/UserResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/users/{id}/deactivate": {
+            "post": {
+                "operationId": "user.deactivate",
+                "description": "204 No Content. Soft deactivation only \u2014 the row survives so\naudit-relevant authorship survives (D5).",
+                "summary": "POST /api/users/{id}/deactivate",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/users/{id}/activate": {
+            "post": {
+                "operationId": "user.activate",
+                "description": "204 No Content. Never guarded by UserGuards \u2014 activation only ever\nADDS an available admin/operator/viewer back to the org, so it cannot\nviolate the last-admin invariant.",
+                "summary": "POST /api/users/{id}/activate",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/candidate/interview/utterance": {
             "post": {
                 "operationId": "utterance.store",
@@ -3620,6 +3825,40 @@
                 ],
                 "title": "StoreProjectRequest"
             },
+            "StoreUserRequest": {
+                "type": "object",
+                "description": "StoreUserRequest (backoffice-missing-pages D4).\n\nValidates POST /api/users. `organization_id` and `is_superadmin` are\ndeliberately NOT rules here \u2014 they are never read from the request at\nall (the controller only ever passes $request->safe()->only([...]) the\nfour whitelisted fields to User::create()), so a crafted value in either\nkey is ignored, never validated-then-rejected.\n\n`role` validates against the code-level OrgRole::values() allow-list \u2014\nNEVER `Rule::exists('roles', 'name')`, which would make the assignable\nset DATA (any seeder/migration/future feature that inserts a `roles` row\nwould instantly make it grantable, and it would also accept another\ntenant's role name). `role_code` is never a rule here at all: it is\nignored, not validated-then-rejected \u2014 this surface governs authorization\nroles only, never the BEAI organizational role_code.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "admin",
+                            "operator",
+                            "viewer"
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "email",
+                    "password",
+                    "role"
+                ],
+                "title": "StoreUserRequest"
+            },
             "TranscriptResource": {
                 "type": "object",
                 "properties": {
@@ -3676,6 +3915,74 @@
                 "type": "object",
                 "description": "UpdateProjectRequest (C4 Project Configuration).\n\nValidates PATCH /api/projects/{id} payload.\n\nKey invariants:\n- framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).\n  Any PATCH that includes this field is rejected with 422 \u2014 even the same value, even on draft.\n- slug: self-ignoring unique rule (->ignore) with soft-delete exclusion\n- Immutability: changing assessment_type or role_code when the resulting status is 'active' or\n  'archived' \u2192 422\n- Lifecycle: allowed transitions are draft\u2192active and active\u2192archived only.\n  Forbidden (active\u2192draft, archived\u2192active, archived\u2192draft) \u2192 422.\n\nSubstituteBindings note: the route parameter 'project' is an int (no implicit model binding \u2014\nSubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding\nwould resolve Project before the tenant scope is set). Manual findOrFail() inside controller\nand FormRequest methods ensures the TenantScoped global scope is active at resolution time.",
                 "title": "UpdateProjectRequest"
+            },
+            "UpdateUserRequest": {
+                "type": "object",
+                "description": "UpdateUserRequest (backoffice-missing-pages D4).\n\nValidates PATCH /api/users/{id}. The target is resolved through\nUserAdminReader (D4) \u2014 the org filter runs BEFORE authorization, so a\ncross-org id 404s before any role is even evaluated (mirrors\nUpdateProjectRequest.php's SubstituteBindings-runs-before-TenantContext\ndiscipline).",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "admin",
+                            "operator",
+                            "viewer"
+                        ]
+                    }
+                },
+                "title": "UpdateUserRequest"
+            },
+            "UserResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "role": {},
+                    "is_deactivated": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "role",
+                    "is_deactivated",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "UserResource"
             }
         },
         "responses": {

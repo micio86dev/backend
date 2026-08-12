@@ -56,7 +56,13 @@ final class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        if ($user === null || ! Hash::check($request->password, $user->password)) {
+        // A deactivated user (backoffice-missing-pages D5) gets the SAME
+        // generic invalid-credentials response as a wrong password or an
+        // unknown email — never a distinguishable "this account is
+        // disabled" message. login.vue:47-54 is explicit that this form
+        // must not become a user-enumeration oracle, and a status-specific
+        // message here would make it one.
+        if ($user === null || $user->isDeactivated() || ! Hash::check($request->password, $user->password)) {
             return response()->json(['message' => 'Invalid credentials.'], 401);
         }
 
