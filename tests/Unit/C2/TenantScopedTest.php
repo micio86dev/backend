@@ -115,7 +115,7 @@ it('bypass=true — global scope is present but applies no WHERE filter', functi
     $scopeClosure($mockBuilder);
 });
 
-it('bypass=false with null orgId — scope adds WHERE organization_id = null filter', function (): void {
+it('bypass=false with null orgId — scope adds a table-qualified WHERE organization_id = null filter', function (): void {
     $resolver = app(TenantResolver::class);
     $resolver->setBypass(false);
     $resolver->setOrgId(null);
@@ -130,11 +130,17 @@ it('bypass=false with null orgId — scope adds WHERE organization_id = null fil
     $scopes = $model->getGlobalScopes();
     expect($scopes)->toHaveKey('tenant');
 
-    // Verify the scope closure calls where() when bypass=false
+    // Verify the scope closure calls where() when bypass=false — table-
+    // qualified (backoffice-missing-pages D6): an unqualified
+    // 'organization_id' is ambiguous the moment the caller's query JOINs
+    // another table that also carries that column (e.g. EvaluationIndexQuery
+    // joining Evaluation to participants/projects); Postgres rejects such a
+    // query outright rather than guessing which table was meant.
     $mockBuilder = Mockery::mock(Builder::class);
+    $mockBuilder->shouldReceive('getModel')->once()->andReturn($model);
     $mockBuilder->shouldReceive('where')
         ->once()
-        ->with('organization_id', null);
+        ->with('organizations.organization_id', null);
 
     $scopeClosure = $scopes['tenant'];
     $scopeClosure($mockBuilder);

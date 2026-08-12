@@ -900,6 +900,328 @@
                 }
             }
         },
+        "/evaluations/summary": {
+            "get": {
+                "operationId": "evaluationIndex.summary",
+                "description": "Aggregates over the identical filter set, sourced from the SAME\n`EvaluationIndexQuery::build()` call as the index \u2014 so the summary\ncan never describe a different population than the table above it.",
+                "summary": "GET /api/evaluations/summary",
+                "tags": [
+                    "EvaluationIndex"
+                ],
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "assessment_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "standard",
+                                "potential"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "role_code",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ICO",
+                                "FLL",
+                                "MLL",
+                                "BUL",
+                                "SRX"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "completed",
+                                "pending"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "evaluated_from",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "evaluated_to",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "by_status": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "competencies": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "competency_code": {
+                                                                "type": "string"
+                                                            },
+                                                            "mean_score": {
+                                                                "type": [
+                                                                    "number",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "scored_count": {
+                                                                "type": "integer"
+                                                            },
+                                                            "result_count": {
+                                                                "type": "integer"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "competency_code",
+                                                            "mean_score",
+                                                            "scored_count",
+                                                            "result_count"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "by_status",
+                                                "competencies"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/evaluations": {
+            "get": {
+                "operationId": "evaluationIndex.index",
+                "description": "Two queries total, never per row (D6): the paginated page (via\n`simplePaginate()` \u2014 no separate COUNT query, matching design D6's\n\"two queries per request, never per row\"), plus ONE grouped query\nover `competency_results` for the page's ids to attach each row's\nmean reliability.",
+                "summary": "GET /api/evaluations",
+                "tags": [
+                    "EvaluationIndex"
+                ],
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "assessment_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "standard",
+                                "potential"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "role_code",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ICO",
+                                "FLL",
+                                "MLL",
+                                "BUL",
+                                "SRX"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "completed",
+                                "pending"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "evaluated_from",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "evaluated_to",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated set of `EvaluationIndexResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/EvaluationIndexResource"
+                                            }
+                                        },
+                                        "links": {
+                                            "type": "object",
+                                            "properties": {
+                                                "first": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "last": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "prev": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "next": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "first",
+                                                "last",
+                                                "prev",
+                                                "next"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "current_page": {
+                                                    "type": "integer",
+                                                    "minimum": 1
+                                                },
+                                                "from": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "minimum": 1
+                                                },
+                                                "path": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "description": "Base path for paginator generated URLs."
+                                                },
+                                                "per_page": {
+                                                    "type": "integer",
+                                                    "description": "Number of items shown per page.",
+                                                    "minimum": 0
+                                                },
+                                                "to": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "description": "Number of the last item in the slice.",
+                                                    "minimum": 1
+                                                }
+                                            },
+                                            "required": [
+                                                "current_page",
+                                                "from",
+                                                "path",
+                                                "per_page",
+                                                "to"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "links",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
         "/framework/roles": {
             "get": {
                 "operationId": "framework.index",
@@ -3271,6 +3593,59 @@
                 "type": "object",
                 "additionalProperties": {},
                 "title": "DashboardMetricsResource"
+            },
+            "EvaluationIndexResource": {
+                "type": "object",
+                "properties": {
+                    "participant_id": {
+                        "type": "string"
+                    },
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "project_id": {
+                        "type": "string"
+                    },
+                    "project_name": {
+                        "type": "string"
+                    },
+                    "assessment_type": {
+                        "type": "string"
+                    },
+                    "role_code": {
+                        "type": "string"
+                    },
+                    "evaluated_at": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "'completed' | 'pending' \u2014 the \u226590% valid-competencies gate."
+                    },
+                    "reliability": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Integer percentage via ReliabilityRenderer, attached by the\ncontroller \u2014 null only when the page's grouped aggregate\nquery found no competency_results row for this evaluation."
+                    }
+                },
+                "required": [
+                    "participant_id",
+                    "candidate_ref",
+                    "display_name",
+                    "project_id",
+                    "project_name",
+                    "assessment_type",
+                    "role_code",
+                    "evaluated_at",
+                    "status",
+                    "reliability"
+                ],
+                "title": "EvaluationIndexResource"
             },
             "EvaluationResource": {
                 "type": "object",

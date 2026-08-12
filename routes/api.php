@@ -7,6 +7,7 @@ declare(strict_types=1);
 // See docs/api-versioning.md for the full contract.
 
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\EvaluationIndexController;
 use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
@@ -165,6 +166,19 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
         ->name('admin.participants.evaluation.download');
 
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
+});
+
+// ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────
+// GET /evaluations          — org-scoped, paginated, lifecycle-gated index.
+// GET /evaluations/summary  — mean competency score per code, over the SAME
+//                              filtered population as the index (D7).
+// Both route through the identical EvaluationIndexQuery::build() builder —
+// the lifecycle gate (completato / completed|pending) lives there once,
+// never at this call site. RBAC via EvaluationPolicy::viewAny — all roles.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/evaluations/summary', [EvaluationIndexController::class, 'summary']);
+    Route::get('/evaluations', [EvaluationIndexController::class, 'index']);
 });
 
 // ─── M2M Machine Routes (C5) ─────────────────────────────────────────────────

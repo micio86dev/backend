@@ -17,6 +17,16 @@ use App\Models\User;
 class EvaluationPolicy
 {
     /**
+     * List/aggregate evaluations (backoffice-missing-pages D6/D7's
+     * `/evaluations` and `/evaluations/summary`) — allowed for all roles,
+     * same as the single-resource `view` ability below.
+     */
+    public function viewAny(User $user): bool
+    {
+        return $user->hasRole('admin') || $user->hasRole('operator') || $user->hasRole('viewer');
+    }
+
+    /**
      * View an evaluation report — allowed for all roles.
      */
     public function view(User $user, Evaluation $evaluation): bool
