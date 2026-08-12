@@ -83,11 +83,33 @@ final class UserGuards
             // count as its own `SELECT count(*) ... FOR UPDATE`, which is
             // the exact SQL Postgres rejects.
             // @phpstan-ignore larastan.noUnnecessaryCollectionCall
-            $adminCount = DB::table('model_has_roles')
+            $adminIds = DB::table('model_has_roles')
                 ->where('role_id', $adminRoleId)
                 ->where('model_type', User::class)
                 ->lockForUpdate()
                 ->get()
+                ->pluck('model_id')
+                ->all();
+
+            // Holding the admin role is not the same as being able to use it.
+            // Deactivation stamps `deactivated_at` and deliberately does NOT
+            // revoke the role, so a deactivated admin's assignment row survives
+            // and used to keep counting here — which let the last admin who
+            // could still authenticate demote or deactivate themselves. The
+            // organization was then locked out of its own backoffice with no
+            // self-service recovery: the deactivated admin is refused by
+            // TenantContext on every request including login, and the demoted
+            // one no longer holds the role. A guard that counts users who
+            // cannot log in is not counting administrators.
+            //
+            // Filtered here rather than as a JOIN on the locked query on
+            // purpose: `FOR UPDATE` against a join locks rows in every joined
+            // table, and this transaction has no business locking `users`.
+            // The set is a handful of rows, already loaded.
+            $adminCount = $adminIds === [] ? 0 : User::query()
+                ->withoutGlobalScopes()
+                ->whereIn('id', $adminIds)
+                ->whereNull('deactivated_at')
                 ->count();
 
             if ($adminCount <= 1) {
