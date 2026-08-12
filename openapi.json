@@ -3562,6 +3562,10 @@
             "CompetencyResource": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Exposed because `StoreProjectRequest` validates `competency_ids[]`\nagainst primary keys, and this catalog is the only surface a\nclient can discover competencies through. Without it the project\nform can render a competency picker it is structurally unable to\nsubmit. The catalog is global \u2014 `framework_competencies` carries\nno `organization_id` \u2014 so the key leaks nothing tenant-specific."
+                    },
                     "code": {
                         "type": "string"
                     },
@@ -3581,6 +3585,7 @@
                     }
                 },
                 "required": [
+                    "id",
                     "code",
                     "name",
                     "definition",
