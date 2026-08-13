@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Traits\HasRoles;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -21,11 +22,15 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * - `is_superadmin` MUST NOT be in $fillable — prevents mass-assignment privilege escalation.
  *   A crafted payload with `is_superadmin=true` MUST NOT persist (DB default=false is not
  *   sufficient because fillable mass-assignment sets the value before INSERT).
+ * - `deactivated_at` MUST NOT be in $fillable — written only by
+ *   UserController::deactivate/activate (backoffice-missing-pages D5).
  *
  * JWT claims:
  * - getJWTCustomClaims() includes organization_id for CLIENT CONVENIENCE only.
  *   The server NEVER trusts this claim for scoping — TenantContext reads exclusively
  *   from $user->organization_id (DB record).
+ *
+ * @property Carbon|null $deactivated_at
  */
 class User extends Authenticatable implements JWTSubject
 {
@@ -68,6 +73,17 @@ class User extends Authenticatable implements JWTSubject
         return $this->belongsTo(Organization::class);
     }
 
+    /**
+     * Whether this user is soft-deactivated (backoffice-missing-pages D5).
+     *
+     * `deactivated_at` is deliberately NOT in $fillable — it is written only by
+     * UserController::deactivate/activate, never by a PATCH mass-update.
+     */
+    public function isDeactivated(): bool
+    {
+        return $this->deactivated_at !== null;
+    }
+
     // -------------------------------------------------------------------------
     // JWTSubject
     // -------------------------------------------------------------------------
@@ -107,6 +123,7 @@ class User extends Authenticatable implements JWTSubject
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_superadmin' => 'boolean',
+            'deactivated_at' => 'datetime',
         ];
     }
 }

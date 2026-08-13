@@ -1,6 +1,10 @@
 <?php
 
+use App\Models\Organization;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role as SpatieRole;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /*
@@ -245,6 +249,71 @@ function something()
     // ..
 }
 
+// ─── backoffice-missing-pages shared auth helper ──────────────────────────────
+//
+// Shared by Feature/OrganizationSettings and Feature/UserManagement: mints an
+// org-scoped user with exactly one Spatie authorization role (admin/operator/
+// viewer, teams mode, team_id = organization_id) and returns a login JWT.
+// Mirrors ProjectCrudTest.php's crudAdminUser() / AdminCrossTenantIsolationTest.php's
+// crossOrgReaderToken() pattern, generalised to any of the three roles and
+// centralised here because three different test files in this change need it.
+function authTokenForRole(Organization $org, string $role): string
+{
+    return authUserAndTokenForRole($org, $role)['token'];
+}
+
+/**
+ * Same as authTokenForRole(), but also returns the created User — needed by
+ * self-action tests (last-admin self-demotion/self-deactivation,
+ * privilege-escalation payload checks against the acting user's own row).
+ *
+ * @return array{user: User, token: string}
+ */
+function authUserAndTokenForRole(Organization $org, string $role): array
+{
+    $user = User::factory()->create(['organization_id' => $org->id]);
+    app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
+
+    // Mirrors production provisioning (ProvisionOrganizationCommand.php /
+    // RolesAndPermissionsSeeder.php): every organization gets all THREE
+    // authorization roles up front, team_id explicit — never left to the
+    // ambient registrar context, which is the NULL-team trap both of those
+    // files document. UserController::assignRole() resolves roles via
+    // firstOrFail() (never firstOrCreate()), so a test that only ever seeds
+    // the one role it's about to assign would silently diverge from how a
+    // real, provisioned organization looks.
+    foreach (['admin', 'operator', 'viewer'] as $roleName) {
+        SpatieRole::firstOrCreate(['name' => $roleName, 'guard_name' => 'api', 'team_id' => $org->id]);
+    }
+
+    $spatieRole = SpatieRole::where(['name' => $role, 'guard_name' => 'api', 'team_id' => $org->id])->firstOrFail();
+    $user->assignRole($spatieRole);
+
+    return ['user' => $user, 'token' => auth('api')->login($user)];
+}
+
+/**
+ * Reset jwt-auth's cached identity state between two authenticated HTTP
+ * calls made with DIFFERENT tokens inside the SAME test method.
+ *
+ * Gotcha discovered in this batch: `Tymon\JWTAuth\JWT::getToken()` (bound
+ * as the container singleton 'tymon.jwt', injected into JWTGuard) caches
+ * the FIRST successfully parsed token on `$this->token` and never
+ * re-parses it — `setRequest()` only updates the request the parser reads
+ * FROM, not this cache. `JWTGuard::user()` also caches `$this->user`
+ * directly (set by `login()` at MINT time, not just at request time). A
+ * second `withToken($differentToken)->getJson(...)` call within the same
+ * test therefore silently resolves to the FIRST call's user, regardless of
+ * the new Authorization header — confirmed empirically: neither cache
+ * alone explains it, and clearing only one of the two still reproduces the
+ * bug. Both must be cleared together.
+ */
+function resetAuthGuardState(): void
+{
+    app('tymon.jwt')->unsetToken();
+    app('auth')->forgetGuards();
+}
+
 // ─── C13 nfr-hardening ────────────────────────────────────────────────────────
 
 // Feature/C13 — RefreshDatabase: project-configuration and audit assertions
@@ -267,3 +336,27 @@ pest()->use(RefreshDatabase::class)
 // rather than a mocked repository. That is the point of them.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C14');
+
+// ─── backoffice-missing-pages (organization-settings / user-management / admin-read-api delta) ──
+
+// Feature/OrganizationSettings — RefreshDatabase: the singular self-resolving
+// /api/organization route and webhook-defaults copy-on-create are asserted
+// against real Organization/Project rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/OrganizationSettings');
+
+// Unit/Support/Users — needs TestCase + RefreshDatabase: UserAdminReader and
+// UserGuards create Organization/User/Role fixtures via factories and Spatie.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Users');
+
+// Feature/UserManagement — RefreshDatabase: the privilege-escalation and
+// last-admin-guard matrix is asserted against real users/roles rows, not mocks.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/UserManagement');
+
+// Feature/AdminReadApi — RefreshDatabase: the evaluations index/summary
+// lifecycle gate is asserted against real Participant/Evaluation/CompetencyResult rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/AdminReadApi');

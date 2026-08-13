@@ -7,10 +7,13 @@ declare(strict_types=1);
 // See docs/api-versioning.md for the full contract.
 
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\EvaluationIndexController;
 use App\Http\Controllers\Api\FrameworkController;
+use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\AvatarTemplateController;
 use App\Http\Controllers\Candidate\IntegrityController;
@@ -19,6 +22,7 @@ use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\M2m\AbilityCatalogController;
 use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
@@ -78,6 +82,41 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::apiResource('projects', ProjectController::class);
 });
 
+// ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
+// Singular, self-resolving resource — NO id in the path, ever. The org
+// resolves exclusively from the authenticated user's organization_id, so
+// there is no `{organization}` route variant and no IDOR surface to guard.
+// Read for all roles, write admin-only (OrganizationPolicy).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/organization', [OrganizationController::class, 'show']);
+    Route::patch('/organization', [OrganizationController::class, 'update']);
+});
+
+// ─── User Management (backoffice-missing-pages, D4) ───────────────────────────
+// Admin-only, org-scoped CRUD + Spatie role assignment — a privilege-
+// escalation surface (it can grant `admin`). RBAC via UserPolicy: every
+// ability admin-only, unlike ProjectPolicy/ParticipantPolicy/EvaluationPolicy
+// which are all-roles-read.
+//
+// Deliberately absent: GET /api/roles (D4 — the admin/operator/viewer
+// allow-list is a code-level enum, App\Enums\OrgRole, exported into
+// openapi.json, never a runtime endpoint — and one path segment away from
+// the UNRELATED GET /api/framework/roles below, which serves the BEAI
+// organizational roles ICO/FLL/MLL/BUL/SRX) and DELETE (D5 — soft
+// deactivation only, via the two explicit verbs below).
+//
+// IDs are resolved manually inside UserAdminReader (D4) — never route-model
+// binding, per ProjectController.php:23-28's documented reason.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/users', [UserController::class, 'index']);
+    Route::post('/users', [UserController::class, 'store']);
+    Route::patch('/users/{user}', [UserController::class, 'update']);
+    Route::post('/users/{user}/deactivate', [UserController::class, 'deactivate']);
+    Route::post('/users/{user}/activate', [UserController::class, 'activate']);
+});
+
 // ─── Avatar Templates (C14) ───────────────────────────────────────────────────
 // Org-scoped CRUD plus activation. Admin-only via AvatarTemplatePolicy —
 // including READ, because choosing the face and voice every candidate of an
@@ -128,6 +167,19 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
         ->name('admin.participants.evaluation.download');
 
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
+});
+
+// ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────
+// GET /evaluations          — org-scoped, paginated, lifecycle-gated index.
+// GET /evaluations/summary  — mean competency score per code, over the SAME
+//                              filtered population as the index (D7).
+// Both route through the identical EvaluationIndexQuery::build() builder —
+// the lifecycle gate (completato / completed|pending) lives there once,
+// never at this call site. RBAC via EvaluationPolicy::viewAny — all roles.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/evaluations/summary', [EvaluationIndexController::class, 'summary']);
+    Route::get('/evaluations', [EvaluationIndexController::class, 'index']);
 });
 
 // ─── M2M Machine Routes (C5) ─────────────────────────────────────────────────
@@ -235,6 +287,10 @@ Route::prefix('candidate')
 // NO show endpoint — GET /api/m2m/clients/{id} → 404.
 
 Route::middleware(['auth:api', TenantContext::class])->prefix('m2m')->group(function (): void {
+    // The ability vocabulary a client may be granted. Published so the
+    // backoffice can offer the real set instead of mirroring it in a constant
+    // that would drift the moment an ability is added or removed.
+    Route::get('/abilities', AbilityCatalogController::class);
     Route::post('/clients', [ApiClientController::class, 'store']);
     Route::get('/clients', [ApiClientController::class, 'index']);
     Route::delete('/clients/{apiClient}', [ApiClientController::class, 'destroy']);

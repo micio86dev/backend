@@ -40,6 +40,20 @@ final class TenantContext
         }
 
         /** @var User $user */
+        // backoffice-missing-pages D5 — the live-token kill switch. A
+        // deactivated user can hold a valid JWT for up to 30 minutes
+        // (config/jwt.php's ttl) with no token registry to revoke against,
+        // so this is the ONE enforcement point: every /api/* request
+        // (including /auth/refresh and /auth/me) already loads the user
+        // from the DB here. 403, not 401 — a 401 would trigger the
+        // backoffice's single-flight refresh (C11 D11) and read as "your
+        // session expired", which misrepresents an account someone
+        // deliberately disabled. Machine-facing, non-localized body,
+        // matching the adjacent fail-closed branch below.
+        if ($user->isDeactivated()) {
+            return response()->json(['error' => 'account_deactivated'], Response::HTTP_FORBIDDEN);
+        }
+
         // Resolve org from the DB record — NOT from the JWT claim (D3).
         $orgId = $user->organization_id;
 

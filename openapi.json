@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.1.0"
+        "version": "0.4.0"
     },
     "servers": [
         {
@@ -10,6 +10,43 @@
         }
     ],
     "paths": {
+        "/m2m/abilities": {
+            "get": {
+                "operationId": "m2m.abilityCatalog",
+                "description": "GET /api/m2m/abilities\nAuth: auth:api (admin only via ApiClientPolicy::viewAny)\n\nResponse (200): { \"data\": [\"participants:create\", ...] }",
+                "summary": "List the abilities an API client may be granted",
+                "tags": [
+                    "AbilityCatalog"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/m2m/clients": {
             "post": {
                 "operationId": "apiClient.store",
@@ -900,6 +937,328 @@
                 }
             }
         },
+        "/evaluations/summary": {
+            "get": {
+                "operationId": "evaluationIndex.summary",
+                "description": "Aggregates over the identical filter set, sourced from the SAME\n`EvaluationIndexQuery::build()` call as the index \u2014 so the summary\ncan never describe a different population than the table above it.",
+                "summary": "GET /api/evaluations/summary",
+                "tags": [
+                    "EvaluationIndex"
+                ],
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "assessment_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "standard",
+                                "potential"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "role_code",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ICO",
+                                "FLL",
+                                "MLL",
+                                "BUL",
+                                "SRX"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "completed",
+                                "pending"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "evaluated_from",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "evaluated_to",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "by_status": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "competencies": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "competency_code": {
+                                                                "type": "string"
+                                                            },
+                                                            "mean_score": {
+                                                                "type": [
+                                                                    "number",
+                                                                    "null"
+                                                                ]
+                                                            },
+                                                            "scored_count": {
+                                                                "type": "integer"
+                                                            },
+                                                            "result_count": {
+                                                                "type": "integer"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "competency_code",
+                                                            "mean_score",
+                                                            "scored_count",
+                                                            "result_count"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "by_status",
+                                                "competencies"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/evaluations": {
+            "get": {
+                "operationId": "evaluationIndex.index",
+                "description": "Two queries total, never per row (D6): the paginated page (via\n`simplePaginate()` \u2014 no separate COUNT query, matching design D6's\n\"two queries per request, never per row\"), plus ONE grouped query\nover `competency_results` for the page's ids to attach each row's\nmean reliability.",
+                "summary": "GET /api/evaluations",
+                "tags": [
+                    "EvaluationIndex"
+                ],
+                "parameters": [
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "assessment_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "standard",
+                                "potential"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "role_code",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "ICO",
+                                "FLL",
+                                "MLL",
+                                "BUL",
+                                "SRX"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "completed",
+                                "pending"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "evaluated_from",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "evaluated_to",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated set of `EvaluationIndexResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/EvaluationIndexResource"
+                                            }
+                                        },
+                                        "links": {
+                                            "type": "object",
+                                            "properties": {
+                                                "first": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "last": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "prev": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "next": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "first",
+                                                "last",
+                                                "prev",
+                                                "next"
+                                            ]
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "current_page": {
+                                                    "type": "integer",
+                                                    "minimum": 1
+                                                },
+                                                "from": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "minimum": 1
+                                                },
+                                                "path": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "description": "Base path for paginator generated URLs."
+                                                },
+                                                "per_page": {
+                                                    "type": "integer",
+                                                    "description": "Number of items shown per page.",
+                                                    "minimum": 0
+                                                },
+                                                "to": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ],
+                                                    "description": "Number of the last item in the slice.",
+                                                    "minimum": 1
+                                                }
+                                            },
+                                            "required": [
+                                                "current_page",
+                                                "from",
+                                                "path",
+                                                "per_page",
+                                                "to"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "links",
+                                        "meta"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
         "/framework/roles": {
             "get": {
                 "operationId": "framework.index",
@@ -1274,6 +1633,87 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/organization": {
+            "get": {
+                "operationId": "organization.show",
+                "summary": "GET /api/organization",
+                "tags": [
+                    "Organization"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "organization.update",
+                "description": "`slug` is intentionally never read from the request \u2014 only()\nwhitelists the writable fields, so a `slug` key in the body is\nsilently dropped rather than validated-then-rejected (D2).",
+                "summary": "PATCH /api/organization",
+                "tags": [
+                    "Organization"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateOrganizationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     }
                 }
             }
@@ -2595,6 +3035,211 @@
                 }
             }
         },
+        "/users": {
+            "get": {
+                "operationId": "user.index",
+                "summary": "GET /api/users",
+                "tags": [
+                    "User"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `UserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/UserResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "user.store",
+                "description": "`organization_id` and `is_superadmin` are never read from the request\nat all \u2014 the org comes from TenantContext via the authenticated\ncaller, and is_superadmin is always false for a user created here.",
+                "summary": "POST /api/users",
+                "tags": [
+                    "User"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`UserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/UserResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/users/{id}": {
+            "patch": {
+                "operationId": "user.update",
+                "description": "A role change that would remove the target's admin status routes\nthrough UserGuards \u2014 the ONLY place a role is ever written on this\nsurface \u2014 so the last-admin / self-demotion invariants can never be\nbypassed by a future call site.",
+                "summary": "PATCH /api/users/{id}",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`UserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/UserResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/users/{id}/deactivate": {
+            "post": {
+                "operationId": "user.deactivate",
+                "description": "204 No Content. Soft deactivation only \u2014 the row survives so\naudit-relevant authorship survives (D5).",
+                "summary": "POST /api/users/{id}/deactivate",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/users/{id}/activate": {
+            "post": {
+                "operationId": "user.activate",
+                "description": "204 No Content. Never guarded by UserGuards \u2014 activation only ever\nADDS an available admin/operator/viewer back to the org, so it cannot\nviolate the last-admin invariant.",
+                "summary": "POST /api/users/{id}/activate",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/candidate/interview/utterance": {
             "post": {
                 "operationId": "utterance.store",
@@ -2733,17 +3378,29 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "name": {
                         "type": "string"
                     },
                     "abilities": {
-                        "type": "array",
-                        "items": {}
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "minItems": 0,
+                                "maxItems": 0,
+                                "additionalItems": false
+                            }
+                        ]
                     },
                     "is_active": {
-                        "type": "boolean"
+                        "type": "string"
                     },
                     "expires_at": {
                         "type": [
@@ -2758,10 +3415,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -2779,7 +3433,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -2788,16 +3442,10 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
@@ -2815,10 +3463,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "project": {
                         "type": [
@@ -2827,13 +3472,10 @@
                         ],
                         "properties": {
                             "id": {
-                                "type": "integer"
+                                "type": "string"
                             },
                             "role_code": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
+                                "type": "string"
                             },
                             "language": {
                                 "type": "string"
@@ -2842,16 +3484,10 @@
                                 "type": "string"
                             },
                             "exit_redirect_url": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
+                                "type": "string"
                             },
                             "error_redirect_url": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
+                                "type": "string"
                             }
                         },
                         "required": [
@@ -2882,26 +3518,22 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "name": {
                         "type": "string"
                     },
                     "description": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "config": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "is_active": {
-                        "type": "boolean"
+                        "type": "string"
                     },
                     "created_at": {
                         "type": [
@@ -2967,6 +3599,10 @@
             "CompetencyResource": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Exposed because `StoreProjectRequest` validates `competency_ids[]`\nagainst primary keys, and this catalog is the only surface a\nclient can discover competencies through. Without it the project\nform can render a competency picker it is structurally unable to\nsubmit. The catalog is global \u2014 `framework_competencies` carries\nno `organization_id` \u2014 so the key leaks nothing tenant-specific."
+                    },
                     "code": {
                         "type": "string"
                     },
@@ -2986,6 +3622,7 @@
                     }
                 },
                 "required": [
+                    "id",
                     "code",
                     "name",
                     "definition",
@@ -2998,6 +3635,59 @@
                 "type": "object",
                 "additionalProperties": {},
                 "title": "DashboardMetricsResource"
+            },
+            "EvaluationIndexResource": {
+                "type": "object",
+                "properties": {
+                    "participant_id": {
+                        "type": "string"
+                    },
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "project_id": {
+                        "type": "string"
+                    },
+                    "project_name": {
+                        "type": "string"
+                    },
+                    "assessment_type": {
+                        "type": "string"
+                    },
+                    "role_code": {
+                        "type": "string"
+                    },
+                    "evaluated_at": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "'completed' | 'pending' \u2014 the \u226590% valid-competencies gate."
+                    },
+                    "reliability": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Integer percentage via ReliabilityRenderer, attached by the\ncontroller \u2014 null only when the page's grouped aggregate\nquery found no competency_results row for this evaluation."
+                    }
+                },
+                "required": [
+                    "participant_id",
+                    "candidate_ref",
+                    "display_name",
+                    "project_id",
+                    "project_name",
+                    "assessment_type",
+                    "role_code",
+                    "evaluated_at",
+                    "status",
+                    "reliability"
+                ],
+                "title": "EvaluationIndexResource"
             },
             "EvaluationResource": {
                 "type": "object",
@@ -3049,11 +3739,58 @@
                 ],
                 "title": "FrameworkVersionResource"
             },
-            "ParticipantDetailResource": {
+            "OrganizationResource": {
                 "type": "object",
                 "properties": {
                     "id": {
                         "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "default_webhook_url": {
+                        "type": "string"
+                    },
+                    "default_webhook_events": {
+                        "type": "string"
+                    },
+                    "has_default_webhook_secret": {
+                        "type": "boolean",
+                        "description": "default_webhook_secret intentionally excluded (hidden + encrypted) \u2014\nonly a presence boolean is exposed, never the value."
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "default_webhook_url",
+                    "default_webhook_events",
+                    "has_default_webhook_secret",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "OrganizationResource"
+            },
+            "ParticipantDetailResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -3062,22 +3799,16 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "project_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "timeline": {
                         "type": "object",
@@ -3157,10 +3888,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -3181,7 +3909,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -3190,22 +3918,16 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "project_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [
@@ -3220,10 +3942,7 @@
                         ]
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
@@ -3244,13 +3963,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "organization_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "framework_version_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "slug": {
                         "type": "string"
@@ -3262,10 +3981,7 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "language": {
                         "type": "string"
@@ -3274,39 +3990,29 @@
                         "type": "string"
                     },
                     "pause_every_n_competencies": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "nudge_min_chars": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "exit_redirect_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "webhook_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "webhook_events": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
+                    },
+                    "has_webhook_secret": {
+                        "type": "boolean",
+                        "description": "webhook_secret intentionally excluded (hidden + encrypted).\nA PRESENCE BOOLEAN is exposed instead, never the value \u2014 mirroring\nOrganizationResource::has_default_webhook_secret. Without it the\nedit form cannot distinguish \"no secret configured\" from \"a secret\n exists but is write-only\", so it renders \"not set\" over a project\nthat has one. On a security-relevant field that is not a cosmetic\ngap: it invites an operator to believe no secret is in place."
                     },
                     "deadline_at": {
                         "type": [
                             "string",
                             "null"
-                        ],
-                        "description": "webhook_secret intentionally excluded (hidden + encrypted)"
+                        ]
                     },
                     "goes_live_at": {
                         "type": [
@@ -3377,6 +4083,7 @@
                     "exit_redirect_url",
                     "webhook_url",
                     "webhook_events",
+                    "has_webhook_secret",
                     "deadline_at",
                     "goes_live_at",
                     "created_at",
@@ -3539,6 +4246,40 @@
                 ],
                 "title": "StoreProjectRequest"
             },
+            "StoreUserRequest": {
+                "type": "object",
+                "description": "StoreUserRequest (backoffice-missing-pages D4).\n\nValidates POST /api/users. `organization_id` and `is_superadmin` are\ndeliberately NOT rules here \u2014 they are never read from the request at\nall (the controller only ever passes $request->safe()->only([...]) the\nfour whitelisted fields to User::create()), so a crafted value in either\nkey is ignored, never validated-then-rejected.\n\n`role` validates against the code-level OrgRole::values() allow-list \u2014\nNEVER `Rule::exists('roles', 'name')`, which would make the assignable\nset DATA (any seeder/migration/future feature that inserts a `roles` row\nwould instantly make it grantable, and it would also accept another\ntenant's role name). `role_code` is never a rule here at all: it is\nignored, not validated-then-rejected \u2014 this surface governs authorization\nroles only, never the BEAI organizational role_code.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "admin",
+                            "operator",
+                            "viewer"
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "email",
+                    "password",
+                    "role"
+                ],
+                "title": "StoreUserRequest"
+            },
             "TranscriptResource": {
                 "type": "object",
                 "properties": {
@@ -3551,10 +4292,118 @@
                 ],
                 "title": "TranscriptResource"
             },
+            "UpdateOrganizationRequest": {
+                "type": "object",
+                "description": "UpdateOrganizationRequest (backoffice-missing-pages D2/D3).\n\nValidates PATCH /api/organization. Accepts `name` and the three\n`default_webhook_*` fields; `slug` is deliberately NOT a rule here \u2014 it is\na tenancy identifier, never editable, and the controller only ever writes\n`$request->safe()->only([...])`, so a `slug` key in the body is silently\ndropped rather than validated-then-rejected.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "default_webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
+                    "default_webhook_secret": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 1024
+                    },
+                    "default_webhook_events": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "description": "Closed event-type set \u2014 mirrors UpdateProjectRequest.php:94's\nconfig-driven Rule::in (never a hardcoded list, never env-overridable).",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "progress",
+                                "evaluation"
+                            ]
+                        }
+                    }
+                },
+                "title": "UpdateOrganizationRequest"
+            },
             "UpdateProjectRequest": {
                 "type": "object",
                 "description": "UpdateProjectRequest (C4 Project Configuration).\n\nValidates PATCH /api/projects/{id} payload.\n\nKey invariants:\n- framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).\n  Any PATCH that includes this field is rejected with 422 \u2014 even the same value, even on draft.\n- slug: self-ignoring unique rule (->ignore) with soft-delete exclusion\n- Immutability: changing assessment_type or role_code when the resulting status is 'active' or\n  'archived' \u2192 422\n- Lifecycle: allowed transitions are draft\u2192active and active\u2192archived only.\n  Forbidden (active\u2192draft, archived\u2192active, archived\u2192draft) \u2192 422.\n\nSubstituteBindings note: the route parameter 'project' is an int (no implicit model binding \u2014\nSubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding\nwould resolve Project before the tenant scope is set). Manual findOrFail() inside controller\nand FormRequest methods ensures the TenantScoped global scope is active at resolution time.",
                 "title": "UpdateProjectRequest"
+            },
+            "UpdateUserRequest": {
+                "type": "object",
+                "description": "UpdateUserRequest (backoffice-missing-pages D4).\n\nValidates PATCH /api/users/{id}. The target is resolved through\nUserAdminReader (D4) \u2014 the org filter runs BEFORE authorization, so a\ncross-org id 404s before any role is even evaluated (mirrors\nUpdateProjectRequest.php's SubstituteBindings-runs-before-TenantContext\ndiscipline).",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "admin",
+                            "operator",
+                            "viewer"
+                        ]
+                    }
+                },
+                "title": "UpdateUserRequest"
+            },
+            "UserResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "role": {},
+                    "is_deactivated": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "role",
+                    "is_deactivated",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "UserResource"
             }
         },
         "responses": {

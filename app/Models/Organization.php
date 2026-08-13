@@ -17,7 +17,36 @@ class Organization extends Model
     /**
      * @var list<string>
      */
-    protected $fillable = ['name', 'slug'];
+    protected $fillable = [
+        'name',
+        'slug',
+        // Org-level webhook defaults (backoffice-missing-pages D1/D3) — copy-on-create
+        // prefill for new Projects. `default_webhook_secret` is never serialized
+        // (see $hidden below), mirroring Project::$fillable/$hidden for webhook_secret.
+        'default_webhook_url',
+        'default_webhook_secret',
+        'default_webhook_events',
+    ];
+
+    /**
+     * default_webhook_secret is excluded from all serialized output — same
+     * discipline as Project::$hidden for webhook_secret.
+     *
+     * @var list<string>
+     */
+    protected $hidden = ['default_webhook_secret'];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            // encrypted at rest; also in $hidden to prevent serialization exposure.
+            'default_webhook_secret' => 'encrypted',
+            'default_webhook_events' => 'array',
+        ];
+    }
 
     /**
      * @return HasMany<User, $this>

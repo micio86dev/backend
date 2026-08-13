@@ -33,6 +33,16 @@
         </report>
     </coverage>
     <php>
+        <!-- The suite does not fit PHP's 128M default: the coverage collector
+             holds the whole `app/` line map, and parallel mode gives every
+             worker its own copy, so a full run died with "Allowed memory size
+             of 134217728 bytes exhausted" long before any assertion failed.
+             A cap, not a reservation: PHP still allocates only what it uses,
+             and 2G keeps a parallel run inside an 8GB machine. Set here rather
+             than in php.ini so artisan test, its parallel workers and a bare
+             vendor/bin/pest all get it. Passing the limit on the command line
+             does NOT reach the child process artisan test spawns. -->
+        <ini name="memory_limit" value="2G"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_KEY" value="base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="/>
         <env name="JWT_SECRET" value="testing-secret-key-for-phpunit-only-not-for-production-use"/>
