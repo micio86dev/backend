@@ -93,12 +93,35 @@ final class SsoLinkController extends Controller
         // 5. Mint the sso-link JWT (RAW mint; NO Redis write at this point).
         $lang = $validated['lang'] ?? $project->language ?? config('app.fallback_locale', 'en');
 
+        // An omitted role_code is INHERITED from the project, for standard
+        // projects only.
+        //
+        // Without this the mint returned 201 carrying a token the exchange
+        // would refuse: the exchange requires the claim to EQUAL the project's
+        // role, and null never does. Worse than a confusing 403 — the exchange
+        // consumes the jti BEFORE evaluating its gates (deliberate replay
+        // protection), so the refused link was also spent and retrying the same
+        // URL could never work, while the calling system had already recorded a
+        // success.
+        //
+        // A 201 has to mean the token in that response is redeemable.
+        //
+        // Only when ABSENT. A supplied value is still validated against the
+        // project above and still 422s on mismatch: a caller who states a role
+        // is asserting something, and silently replacing that assertion would
+        // hide the integration bug that 422 exists to reveal.
+        $roleCode = $validated['role_code'] ?? null;
+
+        if ($roleCode === null && $project->assessment_type === 'standard') {
+            $roleCode = $project->role_code;
+        }
+
         $token = CandidateTokenFactory::mintSsoLink([
             'candidate_ref' => $validated['candidate_ref'],
             'display_name' => $validated['display_name'],
             'project_id' => $project->id,
             'org_id' => $project->organization_id,
-            'role_code' => $validated['role_code'] ?? null,
+            'role_code' => $roleCode,
             'lang' => $lang,
         ]);
 

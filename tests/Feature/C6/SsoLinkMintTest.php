@@ -355,3 +355,80 @@ test('no Redis sso_jti: key written at mint time', function (): void {
     // The jti key must NOT be in cache at this point (consume only at exchange)
     expect(Cache::has('sso_jti:'.$jti))->toBeFalse();
 });
+
+// ---------------------------------------------------------------------------
+// role_code inheritance (sso-link-role-code-default)
+//
+// The mint accepted an omitted role_code and the exchange refused the result:
+// the exchange requires the claim to EQUAL the project's role, and null never
+// does. The API returned 201 with a credential it would later refuse — and
+// because the exchange consumes the jti before evaluating the gates, that link
+// was also spent, so retrying the same URL could never work.
+// ---------------------------------------------------------------------------
+
+test('an omitted role_code is inherited from a standard project', function (): void {
+    $org = Organization::factory()->create();
+    $auth = makeM2mClient($org);
+    $project = makeActiveProject($org, ['assessment_type' => 'standard', 'role_code' => 'ICO']);
+
+    $response = $this->withToken($auth['key'])->postJson('/api/m2m/sso-link', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'inherit-1',
+        'display_name' => 'Mario Rossi',
+    ]);
+
+    $response->assertCreated();
+
+    $claims = JWTAuth::setToken($response->json('token'))->getPayload();
+
+    expect($claims->get('role_code'))->toBe('ICO');
+});
+
+test('a token minted without an explicit role_code is redeemable', function (): void {
+    $org = Organization::factory()->create();
+    $auth = makeM2mClient($org);
+    $project = makeActiveProject($org, ['assessment_type' => 'standard', 'role_code' => 'FLL']);
+
+    $token = $this->withToken($auth['key'])->postJson('/api/m2m/sso-link', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'inherit-2',
+        'display_name' => 'Mario Rossi',
+    ])->json('token');
+
+    // The whole point: a 201 must mean the token in that response works.
+    $this->getJson("/api/sso/exchange?token={$token}")->assertOk();
+});
+
+test('a supplied role_code is still asserted, not silently replaced', function (): void {
+    $org = Organization::factory()->create();
+    $auth = makeM2mClient($org);
+    $project = makeActiveProject($org, ['assessment_type' => 'standard', 'role_code' => 'ICO']);
+
+    // A caller who states a role is asserting something. Overwriting it with
+    // the project's value would hide the integration bug this 422 reveals.
+    $this->withToken($auth['key'])->postJson('/api/m2m/sso-link', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'inherit-3',
+        'display_name' => 'Mario Rossi',
+        'role_code' => 'BUL',
+    ])->assertStatus(422);
+});
+
+test('a potential project still mints a null role_code', function (): void {
+    $org = Organization::factory()->create();
+    $auth = makeM2mClient($org);
+    $project = makeActiveProject($org, ['assessment_type' => 'potential', 'role_code' => null]);
+
+    $response = $this->withToken($auth['key'])->postJson('/api/m2m/sso-link', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'inherit-4',
+        'display_name' => 'Mario Rossi',
+    ]);
+
+    $response->assertCreated();
+
+    $claims = JWTAuth::setToken($response->json('token'))->getPayload();
+
+    // Nothing to inherit: a potential project has no project-level role.
+    expect($claims->get('role_code'))->toBeNull();
+});
