@@ -146,10 +146,41 @@ class DemoSeeder extends Seeder
      * organization, so the Tavus one ships inactive — seeding two active rows
      * would produce a state the application forbids and the UI cannot render.
      *
+     * The avatar/voice/persona/replica identifiers come from env, falling back
+     * to the `demo_*` placeholders. They are account-specific resource ids, so
+     * hardcoding a developer's own values here would commit one person's studio
+     * setup to everybody's repository — and the next person to run the seeder
+     * would silently get an avatar that does not exist under their key.
+     *
+     * `LIVEAVATAR_*` is accepted as an alias for `HEYGEN_*`: LiveAvatar is
+     * HeyGen's product name for the same thing (see config/interview.php), and
+     * the two names circulate interchangeably.
+     *
      * @return list<AvatarTemplate>
      */
     private function seedAvatarTemplates(Organization $org): array
     {
+        $heygenAvatarId = env('HEYGEN_AVATAR_ID') ?? env('LIVEAVATAR_AVATAR_ID');
+        $heygenVoiceId = env('HEYGEN_VOICE_ID') ?? env('LIVEAVATAR_VOICE_ID');
+        $heygenLanguage = env('HEYGEN_LANGUAGE') ?? env('LIVEAVATAR_LANGUAGE');
+        $tavusPalId = env('TAVUS_PERSONA_ID');
+        $tavusFaceId = env('TAVUS_REPLICA_ID');
+
+        // Only the RESOURCE IDENTITY comes from env. Everything else in `config`
+        // is a tuning knob an operator may have changed from the backoffice, and
+        // re-running a seeder must not silently undo their work.
+        $identityFromEnv = [
+            'heygen' => array_filter([
+                'avatarId' => $heygenAvatarId,
+                'voiceId' => $heygenVoiceId,
+                'language' => $heygenLanguage,
+            ], static fn ($v) => $v !== null && $v !== ''),
+            'tavus' => array_filter([
+                'palId' => $tavusPalId,
+                'faceId' => $tavusFaceId,
+            ], static fn ($v) => $v !== null && $v !== ''),
+        ];
+
         $definitions = [
             [
                 'name' => 'HeyGen — Italian interviewer',
@@ -157,9 +188,9 @@ class DemoSeeder extends Seeder
                 'provider' => 'heygen',
                 'is_active' => true,
                 'config' => [
-                    'avatarId' => 'demo_avatar_it',
-                    'voiceId' => 'demo_voice_it',
-                    'language' => 'it',
+                    'avatarId' => $heygenAvatarId ?? 'demo_avatar_it',
+                    'voiceId' => $heygenVoiceId ?? 'demo_voice_it',
+                    'language' => $heygenLanguage ?? 'it',
                     'interactivityType' => 'CONVERSATIONAL',
                     'maxSessionDurationSec' => 600,
                     'videoQuality' => 'high',
@@ -177,8 +208,8 @@ class DemoSeeder extends Seeder
                 'provider' => 'tavus',
                 'is_active' => false,
                 'config' => [
-                    'faceId' => 'demo_face_en',
-                    'palId' => 'demo_pal_en',
+                    'faceId' => $tavusFaceId ?? 'demo_face_en',
+                    'palId' => $tavusPalId ?? 'demo_pal_en',
                     'language' => 'en',
                     'audioOnly' => false,
                     'maxCallDurationSec' => 900,
@@ -211,6 +242,20 @@ class DemoSeeder extends Seeder
                     ...$definition,
                 ])->save();
                 $template->refresh();
+            } else {
+                // The row already exists, so the seeder does NOT rewrite it
+                // wholesale — that would discard operator tuning. It refreshes
+                // only the identifiers env supplies, which is what makes
+                // "set the ids, re-run the seeder" actually work: before this,
+                // re-running was a no-op on every existing template and the
+                // demo placeholders survived forever.
+                $refresh = $identityFromEnv[$definition['provider']] ?? [];
+
+                if ($refresh !== []) {
+                    $template->config = [...$template->config, ...$refresh];
+                    $template->save();
+                    $template->refresh();
+                }
             }
 
             $created[] = $template;
