@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.4.0"
+        "version": "0.5.1"
     },
     "servers": [
         {
@@ -922,6 +922,42 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/DashboardMetricsResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/dashboard/activity": {
+            "get": {
+                "operationId": "dashboard.activity",
+                "description": "GET /api/dashboard/activity\nAuth: auth:api (same `viewAny` gate as the candidate list, via\nAdminParticipantReader \u2014 this is that list's data, not a wider view)\n\nHard-capped: the dashboard answers \"what just happened\", and a feed that\ncan grow without bound is a second candidate list wearing a summary's\nclothes. Anyone who needs more has /participants, which paginates.\n\n`with('project:id,name')` is not an optimisation detail \u2014 without it\nevery row would fire its own query for a single string.",
+                "summary": "The most recently updated candidates, newest first",
+                "tags": [
+                    "Dashboard"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `DashboardActivityResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/DashboardActivityResource"
+                                            }
                                         }
                                     },
                                     "required": [
@@ -3630,6 +3666,37 @@
                     "bars_available"
                 ],
                 "title": "CompetencyResource"
+            },
+            "DashboardActivityResource": {
+                "type": "object",
+                "properties": {
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "project_name": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "candidate_ref",
+                    "display_name",
+                    "status",
+                    "project_name",
+                    "updated_at"
+                ],
+                "title": "DashboardActivityResource"
             },
             "DashboardMetricsResource": {
                 "type": "object",

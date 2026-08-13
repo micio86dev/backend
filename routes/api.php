@@ -167,6 +167,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
         ->name('admin.participants.evaluation.download');
 
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
+    Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
 });
 
 // ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────
