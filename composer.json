@@ -9,7 +9,7 @@
         "api"
     ],
     "license": "MIT",
-    "version": "0.5.1",
+    "version": "0.6.0",
     "require": {
         "php": "^8.5",
         "dedoc/scramble": "^0.13",
@@ -57,6 +57,9 @@
         "test": [
             "@php artisan config:clear --ansi",
             "@php artisan test"
+        ],
+        "analyse": [
+            "vendor/bin/phpstan analyse --memory-limit=2G"
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

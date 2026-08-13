@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Admin\DashboardActivityResource;
 use App\Http\Resources\Admin\DashboardMetricsResource;
 use App\Models\AiRequest;
 use App\Models\Evaluation;
@@ -15,6 +16,7 @@ use Illuminate\Support\Collection;
 /**
  * Admin DashboardController (C11 — Admin Dashboards, PR A3, D7).
  *
+ * GET /api/dashboard/activity — the most recently updated candidates.
  * GET /api/dashboard/metrics — org-scoped participants-by-status,
  * evaluations-by-status, completion rate, and (from `ai_requests`) summed
  * token usage + p50/p95 latency.
@@ -36,9 +38,42 @@ use Illuminate\Support\Collection;
  */
 final class DashboardController extends Controller
 {
+    /**
+     * Rows returned by the activity feed. Ten is what fits above the fold at
+     * the 1280x800 minimum viewport (DESIGN.md §2) without the dashboard
+     * turning into a scrolling list.
+     */
+    private const ACTIVITY_LIMIT = 10;
+
     public function __construct(
         private readonly AdminParticipantReader $reader,
     ) {}
+
+    /**
+     * The most recently updated candidates, newest first.
+     *
+     * GET /api/dashboard/activity
+     * Auth: auth:api (same `viewAny` gate as the candidate list, via
+     * AdminParticipantReader — this is that list's data, not a wider view)
+     *
+     * Hard-capped: the dashboard answers "what just happened", and a feed that
+     * can grow without bound is a second candidate list wearing a summary's
+     * clothes. Anyone who needs more has /participants, which paginates.
+     *
+     * `with('project:id,name')` is not an optimisation detail — without it
+     * every row would fire its own query for a single string.
+     */
+    public function activity(): JsonResponse
+    {
+        $recent = $this->reader->listQuery()
+            ->with('project:id,name')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->limit(self::ACTIVITY_LIMIT)
+            ->get();
+
+        return DashboardActivityResource::collection($recent)->response();
+    }
 
     public function metrics(): JsonResponse
     {

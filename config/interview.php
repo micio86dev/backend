@@ -62,6 +62,35 @@ return [
     | ~2 764 800 bytes encoded ≈ ~2 MB decoded (base64 overhead is ~33%).
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Provider Cost Rates (C11 review surface)
+    |--------------------------------------------------------------------------
+    |
+    | Used to ESTIMATE what a session cost. Neither provider exposes a
+    | per-session billed amount through an API, so the figure is always an
+    | estimate and must be labelled as one wherever it surfaces — an operator
+    | who reads it as an invoice line will reconcile it against a real bill and
+    | find a discrepancy that was never a defect.
+    |
+    | Defaults mirror `quint-avatar-tester/src/lib/pricing.ts`, verified against
+    | THAT project's plan. BEAI's contracts may differ; these are env-overridable
+    | precisely so a wrong rate is a config change, not a release.
+    |
+    | HeyGen bills credits per minute at a per-credit rate; Tavus bills per
+    | conversational minute.
+    |
+    */
+    'rates' => [
+        'heygen' => [
+            'credits_per_minute' => (float) env('HEYGEN_CREDITS_PER_MIN', 2),
+            'usd_per_credit' => (float) env('HEYGEN_USD_PER_CREDIT', 0.10),
+        ],
+        'tavus' => [
+            'usd_per_minute' => (float) env('TAVUS_USD_PER_MIN', 0.37),
+        ],
+    ],
+
     'snapshot' => [
         'max_encoded_bytes' => (int) env('SNAPSHOT_MAX_ENCODED_BYTES', 2_764_800),
     ],

@@ -1,0 +1,83 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Resources\Admin;
+
+use App\Models\InterviewSession;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * One interview session, reviewed (C11).
+ *
+ * Carries the evidence BEAI has always collected and never shown: timing, the
+ * proctoring timeline with its weighted score, the timed snapshot strip, and
+ * the cost estimate.
+ *
+ * The score arrives ALONGSIDE its events, never instead of them. A band is an
+ * input to an operator's judgement about a candidate, and a judgement that
+ * cannot be checked against what produced it is not a judgement, it is a
+ * verdict.
+ *
+ * Snapshots carry signed, expiring URLs. `s3_key` never leaves the server:
+ * returning it would imply either a public bucket of identifiable webcam
+ * frames or a disclosed storage layout.
+ *
+ * @mixin InterviewSession
+ */
+final class SessionReviewResource extends JsonResource
+{
+    /**
+     * @param  array<string, mixed>  $integrity
+     * @param  list<array{url: string, taken_at: string}>  $snapshots
+     * @param  array{provider: string, minutes: float, usd: float}|null  $avatarCost
+     */
+    public function __construct(
+        InterviewSession $session,
+        private readonly array $integrity,
+        private readonly array $snapshots,
+        private readonly ?array $avatarCost,
+    ) {
+        parent::__construct($session);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'participant_id' => $this->participant_id,
+            'competency_code' => $this->competency_code,
+            'question_index' => $this->question_index,
+            'provider' => $this->provider,
+            'provider_session_ref' => $this->provider_session_ref,
+            'status' => $this->status,
+            'ended_reason' => $this->ended_reason,
+            'started_at' => $this->started_at?->toIso8601String(),
+            'ended_at' => $this->ended_at?->toIso8601String(),
+            'duration_seconds' => $this->durationSeconds(),
+            'integrity' => $this->integrity,
+            'snapshots' => $this->snapshots,
+            // Avatar minutes only. `ai_requests` has no interview_session_id,
+            // so LLM spend cannot be attributed to one session without
+            // inventing the link — and a plausible number with no basis is
+            // worse than an absent one (D5).
+            'cost' => [
+                'avatar' => $this->avatarCost,
+                'is_estimate' => true,
+            ],
+        ];
+    }
+
+    private function durationSeconds(): ?int
+    {
+        if ($this->started_at === null || $this->ended_at === null) {
+            return null;
+        }
+
+        return $this->ended_at->getTimestamp() - $this->started_at->getTimestamp();
+    }
+}

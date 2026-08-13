@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.4.0"
+        "version": "0.5.1"
     },
     "servers": [
         {
@@ -906,6 +906,147 @@
                 }
             }
         },
+        "/avatar-templates/export": {
+            "get": {
+                "operationId": "avatarTemplatePortability.export",
+                "summary": "GET /api/avatar-templates/export",
+                "tags": [
+                    "AvatarTemplatePortability"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "schema": {
+                                            "type": "string",
+                                            "const": "beai.avatar-template/1"
+                                        },
+                                        "exported_at": {
+                                            "type": "string"
+                                        },
+                                        "templates": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "description": {
+                                                        "type": "string"
+                                                    },
+                                                    "provider": {
+                                                        "type": "string"
+                                                    },
+                                                    "config": {
+                                                        "type": "string"
+                                                    },
+                                                    "persona": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ],
+                                                        "description": "Persona is optional: a template may be pure provider config."
+                                                    }
+                                                },
+                                                "required": [
+                                                    "name",
+                                                    "description",
+                                                    "provider",
+                                                    "config",
+                                                    "persona"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "schema",
+                                        "exported_at",
+                                        "templates"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates/import": {
+            "post": {
+                "operationId": "avatarTemplatePortability.import",
+                "description": "All-or-nothing. A partial import leaves the operator believing a\nconfiguration is present when it is not, which is worse than a refusal:\nthey find out at interview time, on a candidate.",
+                "summary": "POST /api/avatar-templates/import",
+                "tags": [
+                    "AvatarTemplatePortability"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "templates": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "minItems": 1
+                                    }
+                                },
+                                "required": [
+                                    "schema",
+                                    "templates"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/dashboard/metrics": {
             "get": {
                 "operationId": "dashboard.metrics",
@@ -922,6 +1063,42 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/DashboardMetricsResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/dashboard/activity": {
+            "get": {
+                "operationId": "dashboard.activity",
+                "description": "GET /api/dashboard/activity\nAuth: auth:api (same `viewAny` gate as the candidate list, via\nAdminParticipantReader \u2014 this is that list's data, not a wider view)\n\nHard-capped: the dashboard answers \"what just happened\", and a feed that\ncan grow without bound is a second candidate list wearing a summary's\nclothes. Anyone who needs more has /participants, which paginates.\n\n`with('project:id,name')` is not an optimisation detail \u2014 without it\nevery row would fire its own query for a single string.",
+                "summary": "The most recently updated candidates, newest first",
+                "tags": [
+                    "Dashboard"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `DashboardActivityResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/DashboardActivityResource"
+                                            }
                                         }
                                     },
                                     "required": [
@@ -2776,6 +2953,95 @@
                 }
             }
         },
+        "/participants/{participant}/sessions": {
+            "get": {
+                "operationId": "sessionReview.index",
+                "description": "GET /api/participants/{participant}/sessions",
+                "summary": "The sessions of one participant, newest first",
+                "tags": [
+                    "SessionReview"
+                ],
+                "parameters": [
+                    {
+                        "name": "participant",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `SessionSummaryResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/SessionSummaryResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/interview-sessions/{session}/review": {
+            "get": {
+                "operationId": "sessionReview.show",
+                "description": "GET /api/interview-sessions/{session}/review",
+                "summary": "One session, with its evidence",
+                "tags": [
+                    "SessionReview"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`SessionReviewResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SessionReviewResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/candidate/interview/snapshot": {
             "post": {
                 "operationId": "snapshot.store",
@@ -3631,6 +3897,34 @@
                 ],
                 "title": "CompetencyResource"
             },
+            "DashboardActivityResource": {
+                "type": "object",
+                "properties": {
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "project_name": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "candidate_ref",
+                    "display_name",
+                    "status",
+                    "project_name",
+                    "updated_at"
+                ],
+                "title": "DashboardActivityResource"
+            },
             "DashboardMetricsResource": {
                 "type": "object",
                 "additionalProperties": {},
@@ -4119,6 +4413,275 @@
                     "competency_count"
                 ],
                 "title": "RoleResource"
+            },
+            "SessionReviewResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "participant_id": {
+                        "type": "string"
+                    },
+                    "competency_code": {
+                        "type": "string"
+                    },
+                    "question_index": {
+                        "type": "string"
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "provider_session_ref": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "ended_reason": {
+                        "type": "string"
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "ended_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "duration_seconds": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "integrity": {
+                        "type": "object",
+                        "properties": {
+                            "score": {
+                                "type": "number"
+                            },
+                            "band": {
+                                "type": "string",
+                                "enum": [
+                                    "medium",
+                                    "low",
+                                    "high"
+                                ]
+                            },
+                            "counts": {
+                                "type": "string"
+                            },
+                            "total": {
+                                "type": "integer"
+                            },
+                            "tab_hidden_sec": {
+                                "type": "integer"
+                            },
+                            "face_absent_sec": {
+                                "type": "integer"
+                            },
+                            "looking_away_sec": {
+                                "type": "integer"
+                            },
+                            "multiple_faces_sec": {
+                                "type": "integer"
+                            },
+                            "second_voice_sec": {
+                                "type": "integer"
+                            },
+                            "second_monitor": {
+                                "type": "boolean"
+                            },
+                            "fullscreen_exits": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "integer",
+                                        "enum": [
+                                            0
+                                        ]
+                                    }
+                                ]
+                            },
+                            "clipboard_copies": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "integer",
+                                        "enum": [
+                                            0
+                                        ]
+                                    }
+                                ]
+                            },
+                            "clipboard_pastes": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "integer",
+                                        "enum": [
+                                            0
+                                        ]
+                                    }
+                                ]
+                            },
+                            "events": {
+                                "type": "array",
+                                "items": {}
+                            }
+                        },
+                        "required": [
+                            "score",
+                            "band",
+                            "counts",
+                            "total",
+                            "tab_hidden_sec",
+                            "face_absent_sec",
+                            "looking_away_sec",
+                            "multiple_faces_sec",
+                            "second_voice_sec",
+                            "second_monitor",
+                            "fullscreen_exits",
+                            "clipboard_copies",
+                            "clipboard_pastes",
+                            "events"
+                        ]
+                    },
+                    "snapshots": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "cost": {
+                        "type": "object",
+                        "description": "Avatar minutes only. `ai_requests` has no interview_session_id,\nso LLM spend cannot be attributed to one session without\ninventing the link \u2014 and a plausible number with no basis is\nworse than an absent one (D5).",
+                        "properties": {
+                            "avatar": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "provider": {
+                                        "type": "string"
+                                    },
+                                    "minutes": {
+                                        "type": "number"
+                                    },
+                                    "usd": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "provider",
+                                    "minutes",
+                                    "usd"
+                                ]
+                            },
+                            "is_estimate": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "avatar",
+                            "is_estimate"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "participant_id",
+                    "competency_code",
+                    "question_index",
+                    "provider",
+                    "provider_session_ref",
+                    "status",
+                    "ended_reason",
+                    "started_at",
+                    "ended_at",
+                    "duration_seconds",
+                    "integrity",
+                    "snapshots",
+                    "cost"
+                ],
+                "title": "SessionReviewResource"
+            },
+            "SessionSummaryResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "competency_code": {
+                        "type": "string"
+                    },
+                    "question_index": {
+                        "type": "string"
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "ended_reason": {
+                        "type": "string"
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "ended_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "duration_seconds": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "integrity_event_count": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "integer",
+                                "enum": [
+                                    0
+                                ]
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "competency_code",
+                    "question_index",
+                    "provider",
+                    "status",
+                    "ended_reason",
+                    "started_at",
+                    "ended_at",
+                    "duration_seconds",
+                    "integrity_event_count"
+                ],
+                "title": "SessionSummaryResource"
             },
             "StoreProjectRequest": {
                 "type": "object",

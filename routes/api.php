@@ -13,9 +13,11 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\AvatarTemplateController;
+use App\Http\Controllers\AvatarTemplatePortabilityController;
 use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
@@ -126,6 +128,11 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // would match "field-specs" as an id, and the endpoint would 404 with no hint
 // as to why.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    // Portability (C14). Admin-only both ways: export is the fastest way to
+    // lift configuration out of a tenant, import changes what future
+    // interviews run on. Declared BEFORE /{id} so the literal paths win.
+    Route::get('/avatar-templates/export', [AvatarTemplatePortabilityController::class, 'export']);
+    Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import']);
     Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
 
@@ -166,7 +173,15 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/participants/{id}/evaluation/download', [ParticipantDownloadController::class, 'evaluation'])
         ->name('admin.participants.evaluation.download');
 
+    // Interview session review (C11). BACKOFFICE-ONLY by design: the proctoring
+    // taxonomy is the list of behaviours being counted, so it must never be
+    // reachable with a candidate token. Guarded by
+    // tests/Arch/C11/CandidateCannotReadProctoringArchTest.php.
+    Route::get('/participants/{participant}/sessions', [SessionReviewController::class, 'index']);
+    Route::get('/interview-sessions/{session}/review', [SessionReviewController::class, 'show']);
+
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
+    Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
 });
 
 // ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────
