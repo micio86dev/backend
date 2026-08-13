@@ -45,7 +45,15 @@ trait TenantScoped
                 return;
             }
 
-            $query->where('organization_id', $resolver->getOrgId());
+            // Table-qualified (backoffice-missing-pages D6): an unqualified
+            // 'organization_id' is ambiguous the moment a caller JOINs this
+            // model's query to another table that also carries an
+            // organization_id column (e.g. EvaluationIndexQuery joining
+            // Evaluation to participants/projects) — Postgres rejects the
+            // query outright ("column reference is ambiguous") rather than
+            // guessing which table was meant. Qualifying with the model's
+            // own table is a strict no-op for every existing non-join query.
+            $query->where($query->getModel()->getTable().'.organization_id', $resolver->getOrgId());
         });
 
         // Creating listener — tamper-proof organization_id stamp.

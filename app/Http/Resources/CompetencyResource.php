@@ -33,6 +33,13 @@ class CompetencyResource extends JsonResource
         $barsAvailable = in_array($competency->id, $barsCoveredIds, true);
 
         return [
+            // Exposed because `StoreProjectRequest` validates `competency_ids[]`
+            // against primary keys, and this catalog is the only surface a
+            // client can discover competencies through. Without it the project
+            // form can render a competency picker it is structurally unable to
+            // submit. The catalog is global — `framework_competencies` carries
+            // no `organization_id` — so the key leaks nothing tenant-specific.
+            'id' => $competency->id,
             'code' => $competency->code,
             'name' => $competency->name,
             'definition' => $competency->definition,

@@ -4,6 +4,7 @@ use App\Exceptions\Admin\LifecycleNotReadyException;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ParticipantTransitionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
+use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
@@ -114,6 +115,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // C11: LifecycleNotReadyException → HTTP 409 (D4 — gated admin read, not RBAC).
         // The exception's own render() method handles the JSON response.
         $exceptions->render(function (LifecycleNotReadyException $e, Request $request) {
+            return $e->render($request);
+        });
+
+        // backoffice-missing-pages: UserGuardException → HTTP 422 with a
+        // machine-readable error code (last_admin/self_demotion/self_deactivation).
+        // The exception's own render() method handles the JSON response.
+        $exceptions->render(function (UserGuardException $e, Request $request) {
             return $e->render($request);
         });
     })->create();

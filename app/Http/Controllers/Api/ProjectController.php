@@ -9,7 +9,10 @@ use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
 use App\Http\Resources\ProjectResource;
 use App\Models\FrameworkVersion;
+use App\Models\Organization;
 use App\Models\Project;
+use App\Models\User;
+use App\Support\Projects\ProjectWebhookDefaults;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -41,6 +44,10 @@ use Illuminate\Support\Facades\DB;
  */
 class ProjectController extends Controller
 {
+    public function __construct(
+        private readonly ProjectWebhookDefaults $webhookDefaults,
+    ) {}
+
     /**
      * GET /api/projects
      *
@@ -63,14 +70,28 @@ class ProjectController extends Controller
      */
     public function store(StoreProjectRequest $request): JsonResponse
     {
-        $project = DB::transaction(function () use ($request): Project {
+        /** @var User $user */
+        $user = $request->user();
+        // Plain Model — resolved explicitly, not via the TenantScoped global scope
+        // (Organization carries no organization_id of its own; its id IS the tenant key).
+        $organization = Organization::findOrFail($user->organization_id);
+
+        $project = DB::transaction(function () use ($request, $organization): Project {
             $competencyIds = $request->input('competency_ids', []);
             if (! is_array($competencyIds)) {
                 $competencyIds = [];
             }
 
+            // Copy-on-create org webhook defaults (D3) — applied BEFORE create,
+            // only for keys the request payload does not contain at all.
+            $payload = $this->webhookDefaults->apply(
+                $request->safe()->except(['competency_ids']),
+                $request,
+                $organization,
+            );
+
             // Create the project — organization_id stamped by TenantScoped.creating
-            $project = Project::create($request->safe()->except(['competency_ids']));
+            $project = Project::create($payload);
 
             // Attach competencies with position pivot
             $attach = [];

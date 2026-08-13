@@ -47,7 +47,14 @@ class ProjectResource extends JsonResource
             'exit_redirect_url' => $project->exit_redirect_url,
             'webhook_url' => $project->webhook_url,
             'webhook_events' => $project->webhook_events,
-            // webhook_secret intentionally excluded (hidden + encrypted)
+            // webhook_secret intentionally excluded (hidden + encrypted).
+            // A PRESENCE BOOLEAN is exposed instead, never the value — mirroring
+            // OrganizationResource::has_default_webhook_secret. Without it the
+            // edit form cannot distinguish "no secret configured" from "a secret
+            // exists but is write-only", so it renders "not set" over a project
+            // that has one. On a security-relevant field that is not a cosmetic
+            // gap: it invites an operator to believe no secret is in place.
+            'has_webhook_secret' => $project->getRawOriginal('webhook_secret') !== null,
             'deadline_at' => $project->deadline_at?->toISOString(),
             'goes_live_at' => $project->goes_live_at?->toISOString(),
             'created_at' => $project->created_at?->toISOString(),
