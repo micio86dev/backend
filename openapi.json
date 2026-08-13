@@ -10,6 +10,43 @@
         }
     ],
     "paths": {
+        "/m2m/abilities": {
+            "get": {
+                "operationId": "m2m.abilityCatalog",
+                "description": "GET /api/m2m/abilities\nAuth: auth:api (admin only via ApiClientPolicy::viewAny)\n\nResponse (200): { \"data\": [\"participants:create\", ...] }",
+                "summary": "List the abilities an API client may be granted",
+                "tags": [
+                    "AbilityCatalog"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/m2m/clients": {
             "post": {
                 "operationId": "apiClient.store",

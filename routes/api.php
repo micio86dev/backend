@@ -22,6 +22,7 @@ use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\M2m\AbilityCatalogController;
 use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
@@ -286,6 +287,10 @@ Route::prefix('candidate')
 // NO show endpoint — GET /api/m2m/clients/{id} → 404.
 
 Route::middleware(['auth:api', TenantContext::class])->prefix('m2m')->group(function (): void {
+    // The ability vocabulary a client may be granted. Published so the
+    // backoffice can offer the real set instead of mirroring it in a constant
+    // that would drift the moment an ability is added or removed.
+    Route::get('/abilities', AbilityCatalogController::class);
     Route::post('/clients', [ApiClientController::class, 'store']);
     Route::get('/clients', [ApiClientController::class, 'index']);
     Route::delete('/clients/{apiClient}', [ApiClientController::class, 'destroy']);
