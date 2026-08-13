@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\AvatarTemplateController;
+use App\Http\Controllers\AvatarTemplatePortabilityController;
 use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
@@ -127,6 +128,11 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // would match "field-specs" as an id, and the endpoint would 404 with no hint
 // as to why.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    // Portability (C14). Admin-only both ways: export is the fastest way to
+    // lift configuration out of a tenant, import changes what future
+    // interviews run on. Declared BEFORE /{id} so the literal paths win.
+    Route::get('/avatar-templates/export', [AvatarTemplatePortabilityController::class, 'export']);
+    Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import']);
     Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
 

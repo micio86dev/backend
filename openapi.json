@@ -906,6 +906,147 @@
                 }
             }
         },
+        "/avatar-templates/export": {
+            "get": {
+                "operationId": "avatarTemplatePortability.export",
+                "summary": "GET /api/avatar-templates/export",
+                "tags": [
+                    "AvatarTemplatePortability"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "schema": {
+                                            "type": "string",
+                                            "const": "beai.avatar-template/1"
+                                        },
+                                        "exported_at": {
+                                            "type": "string"
+                                        },
+                                        "templates": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "description": {
+                                                        "type": "string"
+                                                    },
+                                                    "provider": {
+                                                        "type": "string"
+                                                    },
+                                                    "config": {
+                                                        "type": "string"
+                                                    },
+                                                    "persona": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ],
+                                                        "description": "Persona is optional: a template may be pure provider config."
+                                                    }
+                                                },
+                                                "required": [
+                                                    "name",
+                                                    "description",
+                                                    "provider",
+                                                    "config",
+                                                    "persona"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "schema",
+                                        "exported_at",
+                                        "templates"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates/import": {
+            "post": {
+                "operationId": "avatarTemplatePortability.import",
+                "description": "All-or-nothing. A partial import leaves the operator believing a\nconfiguration is present when it is not, which is worse than a refusal:\nthey find out at interview time, on a candidate.",
+                "summary": "POST /api/avatar-templates/import",
+                "tags": [
+                    "AvatarTemplatePortability"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "templates": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "minItems": 1
+                                    }
+                                },
+                                "required": [
+                                    "schema",
+                                    "templates"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/dashboard/metrics": {
             "get": {
                 "operationId": "dashboard.metrics",

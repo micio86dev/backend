@@ -24,6 +24,7 @@ namespace App\Models;
  * @property string|null $description
  * @property string $provider
  * @property array<string, mixed> $config
+ * @property array<string, mixed>|null $persona
  * @property bool $is_active
  */
 class AvatarTemplate extends TenantModel
@@ -49,6 +50,7 @@ class AvatarTemplate extends TenantModel
         'description',
         'provider',
         'config',
+        'persona',
         'is_active',
     ];
 
@@ -60,6 +62,7 @@ class AvatarTemplate extends TenantModel
             // downstream read sees "no avatar configured" — a failure that
             // reads as a missing setting rather than a broken cast.
             'config' => 'array',
+            'persona' => 'array',
             'is_active' => 'boolean',
         ];
     }
