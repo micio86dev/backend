@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Database\Factories\InterviewSessionFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
@@ -59,6 +61,9 @@ use Illuminate\Support\Carbon;
  */
 class InterviewSession extends TenantModel
 {
+    /** @use HasFactory<InterviewSessionFactory> */
+    use HasFactory;
+
     /**
      * Mass-assignable attributes.
      *

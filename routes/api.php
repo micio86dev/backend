@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\AvatarTemplateController;
@@ -165,6 +166,13 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
         ->name('admin.participants.transcript.download');
     Route::get('/participants/{id}/evaluation/download', [ParticipantDownloadController::class, 'evaluation'])
         ->name('admin.participants.evaluation.download');
+
+    // Interview session review (C11). BACKOFFICE-ONLY by design: the proctoring
+    // taxonomy is the list of behaviours being counted, so it must never be
+    // reachable with a candidate token. Guarded by
+    // tests/Arch/C11/CandidateCannotReadProctoringArchTest.php.
+    Route::get('/participants/{participant}/sessions', [SessionReviewController::class, 'index']);
+    Route::get('/interview-sessions/{session}/review', [SessionReviewController::class, 'show']);
 
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
     Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
