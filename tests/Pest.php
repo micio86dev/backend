@@ -337,6 +337,13 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C14');
 
+// Unit/C14 — needs TestCase + RefreshDatabase: AvatarTemplateResourceTest
+// creates a real tenant-scoped AvatarTemplate row (mirrors Unit/C4/C6's
+// reasoning — model-creation tests need a migrated schema).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/C14');
+
 // ─── backoffice-missing-pages (organization-settings / user-management / admin-read-api delta) ──
 
 // Feature/OrganizationSettings — RefreshDatabase: the singular self-resolving

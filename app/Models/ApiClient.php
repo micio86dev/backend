@@ -109,6 +109,34 @@ class ApiClient extends Model implements AuthenticatableContract
             );
     }
 
+    /**
+     * Three-state derivation of this client's status, in PHP, from the SAME
+     * predicate `scopeActive` expresses in SQL: `is_active = true AND
+     * (expires_at IS NULL OR expires_at > now())`.
+     *
+     * A SQL `WHERE` and a PHP boolean cannot literally share code, so this is
+     * a second expression of the one rule, not a third source of truth —
+     * pinned against `scopeActive` by `ApiClientStateTest`'s five-row
+     * equivalence table (design.md D3). Server-derived deliberately: the
+     * guard that accepts or refuses the key compares `expires_at` against
+     * the SERVER's clock, so the badge must use the same clock, not the
+     * viewer's browser.
+     *
+     * @return 'active'|'expired'|'revoked'
+     */
+    public function state(): string
+    {
+        if (! $this->is_active) {
+            return 'revoked';
+        }
+
+        if ($this->expires_at !== null && $this->expires_at->isPast()) {
+            return 'expired';
+        }
+
+        return 'active';
+    }
+
     // -------------------------------------------------------------------------
     // Ability check
     // -------------------------------------------------------------------------

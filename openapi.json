@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.7.0"
+        "version": "0.8.0"
     },
     "servers": [
         {
@@ -3644,29 +3644,27 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "name": {
                         "type": "string"
                     },
                     "abilities": {
-                        "anyOf": [
-                            {
-                                "type": "string"
-                            },
-                            {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "minItems": 0,
-                                "maxItems": 0,
-                                "additionalItems": false
-                            }
-                        ]
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     },
                     "is_active": {
-                        "type": "string"
+                        "type": "boolean"
+                    },
+                    "state": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "expired",
+                            "revoked"
+                        ]
                     },
                     "expires_at": {
                         "type": [
@@ -3681,7 +3679,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -3689,6 +3690,7 @@
                     "name",
                     "abilities",
                     "is_active",
+                    "state",
                     "expires_at",
                     "last_used_at",
                     "created_at"
@@ -3784,22 +3786,26 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "name": {
                         "type": "string"
                     },
                     "description": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "provider": {
                         "type": "string"
                     },
                     "config": {
-                        "type": "string"
+                        "type": "object",
+                        "additionalProperties": {}
                     },
                     "is_active": {
-                        "type": "string"
+                        "type": "boolean"
                     },
                     "created_at": {
                         "type": [
