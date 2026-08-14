@@ -27,6 +27,16 @@ final readonly class FieldSpec
         public string $key,
         public FieldType $type,
         public string $labelKey,
+        /**
+         * i18n key for the one-line explanation shown under the control.
+         *
+         * Carried by the SPEC, not the form: a field added server-side then
+         * arrives with its explanation instead of acquiring one later, if ever.
+         * Nullable so a field without a hint still renders its control —
+         * explanation is an aid, and losing it must never cost the operator the
+         * ability to configure.
+         */
+        public ?string $hintKey = null,
         public bool $required = false,
         public ?array $options = null,
         public int|float|null $min = null,
@@ -42,6 +52,7 @@ final readonly class FieldSpec
             'key' => $this->key,
             'type' => $this->type->value,
             'label_key' => $this->labelKey,
+            'hint_key' => $this->hintKey,
             'required' => $this->required,
             'options' => $this->options,
             'min' => $this->min,
