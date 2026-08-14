@@ -147,7 +147,8 @@ test('candidate X calling /integrity with session owned by candidate Y (same org
 });
 
 test('candidate X calling /snapshot with session owned by candidate Y (same org) → 404; no InterviewSnapshot persisted', function (): void {
-    Storage::fake('s3');
+    // No argument: resolves the configured default disk (object-storage-fix D3).
+    Storage::fake();
 
     $org = ownershipOrg();
     $project = ownershipProject($org);
@@ -174,8 +175,8 @@ test('candidate X calling /snapshot with session owned by candidate Y (same org)
 
     $response->assertNotFound();
 
-    // No S3 write
-    Storage::disk('s3')->assertDirectoryEmpty('');
+    // No write occurred
+    Storage::disk()->assertDirectoryEmpty('');
 
     $countAfter = InterviewSnapshot::where('interview_session_id', $sessionY->id)->count();
     expect($countAfter)->toBe($countBefore, 'No InterviewSnapshot must be persisted for cross-participant /snapshot');

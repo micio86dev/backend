@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.6.0"
+        "version": "0.6.1"
     },
     "servers": [
         {
@@ -3046,7 +3046,7 @@
             "post": {
                 "operationId": "snapshot.store",
                 "description": "resolveOwnedSession MUST be called FIRST \u2014 enforces participant_id + org isolation.\nEncoded length check MUST happen BEFORE decoding to avoid OOM on oversized inputs.",
-                "summary": "Upload a JPEG snapshot to S3 and persist the reference",
+                "summary": "Upload a JPEG snapshot to the configured disk and persist the reference",
                 "tags": [
                     "Snapshot"
                 ],

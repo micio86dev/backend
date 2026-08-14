@@ -67,7 +67,13 @@ function reviewSession(Organization $org, array $overrides = []): InterviewSessi
 }
 
 beforeEach(function (): void {
-    Storage::fake('s3');
+    // No argument: resolves the configured default disk (object-storage-fix D3).
+    // NOT parametrised over ['local', 's3'] like DataRetentionPurgeTest — a
+    // Storage::fake('s3') call here would build a LOCAL-driver fake disk merely
+    // NAMED 's3', and temporaryUrl() on a local disk needs the signed
+    // storage.{diskName} route, which exists only for 'local'. This suite stays
+    // on the default and asserts URL *shape* only (see below), never a name.
+    Storage::fake();
 });
 
 test('an admin reads a session review with timing, integrity and snapshots', function (): void {

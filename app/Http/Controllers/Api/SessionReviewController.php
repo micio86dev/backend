@@ -122,7 +122,8 @@ final class SessionReviewController extends Controller
      */
     private function signedSnapshots(InterviewSession $session): array
     {
-        $disk = Storage::disk('s3');
+        // No argument: resolves the same disk the writer and purge use (D1).
+        $disk = Storage::disk();
 
         return array_values($session->interviewSnapshots
             ->sortBy([['taken_at', 'asc'], ['id', 'asc']])
