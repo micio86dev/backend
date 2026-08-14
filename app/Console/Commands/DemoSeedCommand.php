@@ -195,8 +195,12 @@ final class DemoSeedCommand extends Command
     {
         $anyLocked = FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->exists();
 
-        $this->warn('Framework-lock consequence: creating a demo PROJECT pins a FrameworkVersion (is_locked=true) — a CROSS-TENANT, PERMANENT effect. FrameworkCatalogSeeder becomes additive-only for EVERY tenant in this deployment once any FrameworkVersion is locked.');
-        $this->line('This command does NOT lock any FrameworkVersion itself (design D8) — only ProjectController::store does, when a project is created through the backoffice UI.');
+        // The first sentence used to assert that creating a demo project pins
+        // the version. It does not, and saying so contradicted the very next
+        // line — an operator reading a warning that argues with itself learns
+        // nothing except not to trust the warning.
+        $this->line('This command does NOT lock any FrameworkVersion (design D8). Only ProjectController::store sets is_locked, i.e. a project created through the backoffice UI.');
+        $this->warn('Framework-lock consequence, for when you do create one there: locking is CROSS-TENANT and PERMANENT — once any FrameworkVersion is locked, FrameworkCatalogSeeder becomes additive-only for EVERY tenant in this deployment.');
         $this->line('Deployment-wide lock state: '.($anyLocked
             ? 'a FrameworkVersion is ALREADY locked somewhere in this deployment.'
             : 'no FrameworkVersion is locked yet.'));
