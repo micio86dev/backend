@@ -20,7 +20,20 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class AvatarTemplateResource extends JsonResource
 {
-    /** @return array<string, mixed> */
+    /**
+     * Same Scramble local-assignment defect as `ApiClientResource` (design.md
+     * D2, dates-and-destructive-actions Phase 0 audit) — the `@var
+     * AvatarTemplate $template` below is not honoured by Scramble's static
+     * walk, so every `$template->x` fetch degraded to its inferred default.
+     * `@scramble-return` is the actual override hook (a plain `@return`
+     * alone does not change `scramble:export`'s output — verified
+     * empirically on `ApiClientResource` first); `@return` is kept for
+     * PHPStan/IDE tooling.
+     *
+     * @return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null}
+     *
+     * @scramble-return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null}
+     */
     public function toArray(Request $request): array
     {
         /** @var AvatarTemplate $template */
