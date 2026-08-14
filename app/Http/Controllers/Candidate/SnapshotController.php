@@ -18,35 +18,38 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Handles POST /api/candidate/interview/snapshot
  *
- * Accepts a base64-encoded JPEG proctoring snapshot, validates it, uploads it to S3,
+ * Accepts a base64-encoded JPEG proctoring snapshot, validates it, uploads it to the
+ * disk resolved through the single storage configuration point (`FILESYSTEM_DISK`),
  * and persists an InterviewSnapshot row with the server-generated s3_key and taken_at.
+ * `s3_key` is a legacy column name — storage is disk-agnostic (object-storage-fix);
+ * the rename is a separate, out-of-scope change.
  *
  * Validation pipeline (order matters — design and spec mandated):
  * 1. Encoded length check BEFORE decode: strlen($image_base64) > max_encoded_bytes → 413.
  *    Checked first to avoid OOM on maliciously large inputs.
  * 2. Decode the base64 string.
  * 3. JPEG magic bytes check: first 3 bytes must be 0xFF 0xD8 0xFF → else 422.
- * 4. S3 upload: server-generated key {org_id}/{participant_id}/{session_id}/{uuid}.jpg.
+ * 4. Upload to the configured disk: server-generated key {org_id}/{participant_id}/{session_id}/{uuid}.jpg.
  * 5. Persist InterviewSnapshot row; taken_at is server-set (now()).
  *
- * S3 key scheme (server-generated, design mandated):
+ * Object key scheme (server-generated, design mandated):
  *   {organization_id}/{participant_id}/{session_id}/{snapshot_uuid}.jpg
  * No client-supplied path segments. No timestamp-collision risk.
  *
  * Response contract:
- * - 202 Accepted → snapshot uploaded to S3; InterviewSnapshot row persisted.
+ * - 202 Accepted → snapshot uploaded; InterviewSnapshot row persisted.
  * - 404 Not Found → session not owned by authenticated candidate.
  * - 413 Payload Too Large → encoded string length exceeds max_encoded_bytes.
  * - 422 Unprocessable → valid base64 but decoded bytes are not JPEG magic bytes.
  *
- * REQ: POST /snapshot — base64 JPEG to S3 (C7a)
+ * REQ: POST /snapshot — base64 JPEG to the configured disk (C7a; object-storage-fix)
  */
 class SnapshotController extends Controller
 {
     use ResolvesOwnedSession;
 
     /**
-     * Upload a JPEG snapshot to S3 and persist the reference.
+     * Upload a JPEG snapshot to the configured disk and persist the reference.
      *
      * resolveOwnedSession MUST be called FIRST — enforces participant_id + org isolation.
      * Encoded length check MUST happen BEFORE decoding to avoid OOM on oversized inputs.
@@ -96,8 +99,8 @@ class SnapshotController extends Controller
             );
         }
 
-        // ── Step 5: S3 upload ─────────────────────────────────────────────────────────
-        // S3 key scheme: {org_id}/{participant_id}/{session_id}/{uuid}.jpg
+        // ── Step 5: Upload to the configured disk ────────────────────────────────────
+        // Object key scheme: {org_id}/{participant_id}/{session_id}/{uuid}.jpg
         // All segments are server-generated integer IDs + UUID — no client input in the path.
         $snapshotUuid = (string) Str::uuid();
         $s3Key = implode('/', [
@@ -107,7 +110,12 @@ class SnapshotController extends Controller
             $snapshotUuid.'.jpg',
         ]);
 
-        Storage::disk('s3')->put($s3Key, $decoded);
+        // No argument: the disk is resolved through the single storage
+        // configuration point (env FILESYSTEM_DISK), never named here. This
+        // is what makes "writer and purge disagree about the disk"
+        // syntactically impossible rather than merely avoided by convention
+        // (D1; enforced by the arch guard at tests/Arch/Storage — D2).
+        Storage::put($s3Key, $decoded);
 
         // ── Step 6: Persist InterviewSnapshot ────────────────────────────────────────
         // taken_at is server-set; NOT in $fillable to prevent client forgery.

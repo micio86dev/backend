@@ -135,7 +135,12 @@ final class PurgeExpiredDataCommand extends Command
             return $rows->count();
         }
 
-        $disk = Storage::disk(config('filesystems.default'));
+        // No argument: resolves through the SAME storage configuration point
+        // as the writer (SnapshotController::store()). A second resolution
+        // here — even an explicit env-key read — would be a second place the
+        // writer and the purge could diverge (D1; enforced by the arch guard
+        // at tests/Arch/Storage — D2).
+        $disk = Storage::disk();
         $purged = 0;
 
         foreach ($rows as $row) {

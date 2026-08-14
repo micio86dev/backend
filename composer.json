@@ -9,13 +9,14 @@
         "api"
     ],
     "license": "MIT",
-    "version": "0.6.1",
+    "version": "0.7.0",
     "require": {
         "php": "^8.5",
         "dedoc/scramble": "^0.13",
         "laravel/framework": "^13.8",
         "laravel/pulse": "^1.7",
         "laravel/tinker": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.25.1",
         "resend/resend-php": "^1.7",
         "sentry/sentry-laravel": "^4.27",
         "spatie/laravel-permission": "^6.0",

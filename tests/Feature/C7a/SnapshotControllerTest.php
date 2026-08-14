@@ -14,10 +14,11 @@ declare(strict_types=1);
  * - Valid base64 but decodes to non-JPEG bytes → HTTP 422; no S3 write; no DB insert.
  * - session_id from different org → HTTP 404.
  *
- * Uses Storage::fake('s3') to intercept S3 writes.
+ * Uses Storage::fake() — no argument, resolves the configured default disk
+ * (object-storage-fix D3) — to intercept writes.
  *
  * Tasks: 12.1 (RED)
- * REQ: POST /snapshot — base64 JPEG to S3 (C7a)
+ * REQ: POST /snapshot — base64 JPEG to the configured disk (C7a; object-storage-fix)
  */
 
 use App\Models\InterviewSession;
@@ -107,7 +108,7 @@ function nonJpegBase64(): string
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('POST /snapshot with valid JPEG under limit → 202; S3 key correct; InterviewSnapshot row persisted', function (): void {
-    Storage::fake('s3');
+    Storage::fake();
 
     $org = snapshotOrg();
     $project = snapshotProject($org);
@@ -148,14 +149,14 @@ test('POST /snapshot with valid JPEG under limit → 202; S3 key correct; Interv
     expect($uuidPart)->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/');
 
     // S3 write must have occurred
-    Storage::disk('s3')->assertExists($s3Key);
+    Storage::disk()->assertExists($s3Key);
 
     // taken_at must be server-set (not null)
     expect($snapshot->taken_at)->not->toBeNull();
 });
 
 test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no S3 write; no DB insert', function (): void {
-    Storage::fake('s3');
+    Storage::fake();
 
     $org = snapshotOrg();
     $project = snapshotProject($org);
@@ -182,7 +183,7 @@ test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no
     $response->assertStatus(413);
 
     // No S3 writes must have occurred
-    Storage::disk('s3')->assertDirectoryEmpty('');
+    Storage::disk()->assertDirectoryEmpty('');
 
     // No DB insert must have occurred
     $countAfter = InterviewSnapshot::where('interview_session_id', $session->id)->count();
@@ -190,7 +191,7 @@ test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no
 });
 
 test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; no DB insert', function (): void {
-    Storage::fake('s3');
+    Storage::fake();
 
     $org = snapshotOrg();
     $project = snapshotProject($org);
@@ -213,7 +214,7 @@ test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; 
     $response->assertStatus(422);
 
     // No S3 write
-    Storage::disk('s3')->assertDirectoryEmpty('');
+    Storage::disk()->assertDirectoryEmpty('');
 
     // No DB insert
     $countAfter = InterviewSnapshot::where('interview_session_id', $session->id)->count();
@@ -221,7 +222,7 @@ test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; 
 });
 
 test('POST /snapshot with session_id from different org → 404; no S3 write; no DB insert', function (): void {
-    Storage::fake('s3');
+    Storage::fake();
 
     $orgA = snapshotOrg();
     $orgB = snapshotOrg();
@@ -251,7 +252,7 @@ test('POST /snapshot with session_id from different org → 404; no S3 write; no
     $response->assertNotFound();
 
     // No S3 write
-    Storage::disk('s3')->assertDirectoryEmpty('');
+    Storage::disk()->assertDirectoryEmpty('');
 
     // No DB insert
     $resolver->setOrgId($orgB->id);
