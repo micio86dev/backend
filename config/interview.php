@@ -95,4 +95,28 @@ return [
         'max_encoded_bytes' => (int) env('SNAPSHOT_MAX_ENCODED_BYTES', 2_764_800),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Demo Avatar Identity (beai:demo-seed)
+    |--------------------------------------------------------------------------
+    |
+    | Resource identifiers `beai:demo-seed` writes into its demo
+    | AvatarTemplate rows. LIVEAVATAR_* is accepted as an alias of HEYGEN_*:
+    | LiveAvatar is HeyGen's product name for the same service. Falls back to
+    | committed, WORKING values (never a `demo_*` placeholder) so a fresh
+    | checkout with no env vars set still seeds a demo that connects.
+    |
+    */
+    'demo' => [
+        'heygen' => [
+            'avatar_id' => env('HEYGEN_AVATAR_ID', env('LIVEAVATAR_AVATAR_ID', 'ab0765ad-69de-41fb-9f8a-bd01c3c52d6f')),
+            'voice_id' => env('HEYGEN_VOICE_ID', env('LIVEAVATAR_VOICE_ID', 'c84af063-5ce2-4370-8ef8-dcd0ef903d43')),
+            'language' => env('HEYGEN_LANGUAGE', env('LIVEAVATAR_LANGUAGE', 'it')),
+        ],
+        'tavus' => [
+            'replica_id' => env('TAVUS_REPLICA_ID', 'rf4e9d9790f0'),
+            'persona_id' => env('TAVUS_PERSONA_ID', 'p8a490c4dfd4'),
+        ],
+    ],
+
 ];
