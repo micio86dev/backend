@@ -47,6 +47,10 @@
         <env name="APP_KEY" value="base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="/>
         <env name="JWT_SECRET" value="testing-secret-key-for-phpunit-only-not-for-production-use"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <!-- object-storage-fix: pinned so a developer with FILESYSTEM_DISK=s3 in
+             their own .env cannot leak a real cloud disk into the suite the
+             moment a test resolves the disk without faking it (D3). -->
+        <env name="FILESYSTEM_DISK" value="local"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>

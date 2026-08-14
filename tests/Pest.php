@@ -360,3 +360,18 @@ pest()->use(RefreshDatabase::class)
 // lifecycle gate is asserted against real Participant/Evaluation/CompetencyResult rows.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/AdminReadApi');
+
+// ─── object-storage-fix ────────────────────────────────────────────────────────
+
+// Unit/Storage — needs TestCase so config()->set() and Storage::disk() resolve
+// against a booted app. No DB needed: this tier asserts driver installability
+// only (offline, no network/credentials). Same shape as Unit/NotificationsConfigTest.php.
+pest()->extend(TestCase::class)
+    ->in('Unit/Storage');
+
+// Integration/Storage — needs TestCase for $this->artisan(). NOT wired into any
+// phpunit.xml <testsuite>, so this directory never runs under `php artisan test
+// --parallel`; it is invoked explicitly (e.g. `railway run ... ./vendor/bin/pest
+// tests/Integration`) wherever live storage credentials actually live (D4.2).
+pest()->extend(TestCase::class)
+    ->in('Integration/Storage');
