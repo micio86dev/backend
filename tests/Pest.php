@@ -375,3 +375,20 @@ pest()->extend(TestCase::class)
 // tests/Integration`) wherever live storage credentials actually live (D4.2).
 pest()->extend(TestCase::class)
     ->in('Integration/Storage');
+
+// ─── demo-data-provisioning ────────────────────────────────────────────────
+
+// Unit/Support/Demo — needs TestCase + RefreshDatabase: DemoDatasetValidator
+// checks the fixture against real BarsIndicator/Role rows seeded by
+// FrameworkCatalogSeeder. DemoMarker/PlaceholderJpeg are pure but share the
+// directory.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Demo');
+
+// Feature/Demo — RefreshDatabase: beai:demo-seed / beai:demo-teardown are
+// asserted against a real, migrated schema (tenancy scope, cascade deletes,
+// partial unique indexes) — none of this is mockable without losing the
+// point of the test.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Demo');
