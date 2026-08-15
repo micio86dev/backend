@@ -6,6 +6,9 @@ namespace App\Support\Demo;
 
 use App\DTOs\Scoring\IndicatorScoreDTO;
 use App\Enums\EvaluationStatus;
+use App\Enums\WebhookEventType;
+use App\Models\AiRequest;
+use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
@@ -16,23 +19,30 @@ use App\Models\IndicatorScore;
 use App\Models\IntegrityEvent;
 use App\Models\InterviewSession;
 use App\Models\InterviewSnapshot;
+use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\Utterance;
+use App\Models\WebhookDelivery;
 use App\Services\Scoring\AssessableFractionReliability;
 use App\Services\Scoring\CompletionGate;
 use App\Services\Scoring\ExcerptValidator;
 use App\Services\Scoring\MeanCalculator;
 use App\Services\Scoring\ThresholdValidityPredicate;
 use App\Services\Scoring\TranscriptAssembler;
+use App\Services\Webhooks\EvaluationPayloadAssembler;
+use App\Services\Webhooks\ProgressPayloadAssembler;
 use App\Support\AvatarTemplates\ConfigValidator;
+use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Ramsey\Uuid\Uuid;
 use RuntimeException;
 use Throwable;
 
@@ -51,6 +61,11 @@ use Throwable;
  */
 final class DemoWriter
 {
+    public function __construct(
+        private readonly EvaluationPayloadAssembler $evaluationPayloadAssembler,
+        private readonly ProgressPayloadAssembler $progressPayloadAssembler,
+    ) {}
+
     public function write(Command $command, Organization $organization): int
     {
         $summary = TenantContextScope::runFor($organization->id, function () use ($command, $organization): array {
@@ -59,8 +74,14 @@ final class DemoWriter
             $projects = $this->writeProjects($organization, $version);
             $participants = $this->writeParticipants($organization, $projects, $version);
             $evaluations = $this->writeEvaluations($version, $participants, $projects);
+            $aiRequestCount = $this->writeAiRequests($evaluations);
+            $deliveries = $this->writeWebhookDeliveries($participants, $projects, $evaluations);
             $this->writeProctoringEvents($participants);
             $snapshotCount = $this->writeSnapshots($organization, $participants);
+            $apiClients = $this->writeApiClients($organization);
+            // Runs LAST (design D18): every subject it can reference
+            // (participants, webhook_deliveries) must already be persisted.
+            $notificationLogCount = $this->writeNotificationLogs($participants, $deliveries);
 
             return [
                 'snapshot_count' => $snapshotCount,
@@ -69,6 +90,10 @@ final class DemoWriter
                 'projects' => $projects,
                 'participants' => $participants,
                 'evaluations' => $evaluations,
+                'api_clients' => $apiClients,
+                'ai_request_count' => $aiRequestCount,
+                'deliveries' => $deliveries,
+                'notification_log_count' => $notificationLogCount,
             ];
         });
 
@@ -239,10 +264,59 @@ final class DemoWriter
                 $project->competencies()->attach($attach);
             }
 
+            $this->applyWebhookConfigTopUp($project, $definition['key']);
+
             $projects[$definition['key']] = $project;
         }
 
         return $projects;
+    }
+
+    /**
+     * Webhook configuration top-up (design D13). `writeProjects()` above
+     * skips any project that already exists — on a production top-up
+     * against an OLDER dataset, that would leave P1/P2/P4 forever
+     * unconfigured while their `webhook_deliveries` rows claim otherwise.
+     * This runs for BOTH branches (new and pre-existing project), and only
+     * fills `webhook_*` when `webhook_url IS NULL` — a project already
+     * configured (by an earlier run of this same top-up, or by an operator)
+     * is never touched again.
+     *
+     * Verified safe against `Project::booted()`'s immutability guard
+     * (`Project.php:118-159`): that guard only fires when
+     * `assessment_type`/`framework_version_id`/`role_code` is dirty, and
+     * none of those three is ever set here — so the archived P4 updates
+     * cleanly.
+     *
+     * `webhook_secret` is minted from `random_bytes` and is NEVER authored
+     * in `DemoDataset` (design D16's deliberate randomness exception) — P4
+     * deliberately gets no secret (`has_secret = false`), the prerequisite
+     * for its `no_webhook_secret` skip reason (design D13).
+     */
+    private function applyWebhookConfigTopUp(Project $project, string $projectKey): void
+    {
+        $definition = DemoDataset::webhookConfig()[$projectKey] ?? null;
+
+        if ($definition === null) {
+            // P3 carries no webhook configuration by design (no
+            // participants — a draft project must not be reachable).
+            return;
+        }
+
+        if ($project->webhook_url !== null) {
+            // Already configured — by a prior run of this top-up, or by an
+            // operator. Never overwritten.
+            return;
+        }
+
+        $project->webhook_url = $definition['webhook_url'];
+        $project->webhook_events = $definition['webhook_events'];
+
+        if ($definition['has_secret']) {
+            $project->webhook_secret = bin2hex(random_bytes(32));
+        }
+
+        $project->save();
     }
 
     /**
@@ -701,7 +775,348 @@ final class DemoWriter
     }
 
     /**
-     * @param  array{version: FrameworkVersion, templates: list<AvatarTemplate>, projects: array<string, Project>, participants: array<string, Participant>, evaluations: array<string, Evaluation>, snapshot_count: int}  $summary
+     * `ai_requests` writer (design D14). 26 hand-authored rows across the
+     * dataset's 5 evaluations, drawn from `DemoDataset::aiRequestCalls()`.
+     * Every row's `evaluation_id` is NOT NULL by construction — attached to
+     * the participant's already-written Evaluation, never a bare INSERT
+     * (design D12: this is what makes the automatic `cascadeOnDelete` on
+     * teardown sound).
+     *
+     * `estimated_cost_usd` is NEVER authored — computed by
+     * `AiRequestCostEstimator` from `(model, input_tokens, output_tokens)`
+     * against `config('scoring.cost_rates_usd_per_million')` at write time
+     * (design D14, mirrors D5's "computed, never hardcoded").
+     *
+     * Idempotent PER PARENT EVALUATION (design D14/D12 seam, matching
+     * `writeProctoringEvents`/`writeSnapshots`): if any `ai_requests` row
+     * already exists for this evaluation, the whole batch for it is skipped
+     * — never a partial re-write.
+     *
+     * @param  array<string, Evaluation>  $evaluations
+     * @return int total rows written
+     */
+    private function writeAiRequests(array $evaluations): int
+    {
+        $estimator = new AiRequestCostEstimator;
+        $provider = (string) config('scoring.provider', 'anthropic');
+        $written = 0;
+
+        foreach (DemoDataset::aiRequestCalls() as $participantKey => $rows) {
+            $evaluation = $evaluations[$participantKey] ?? null;
+
+            if ($evaluation === null) {
+                throw new RuntimeException("Demo ai_requests fixture references participant [{$participantKey}] with no Evaluation row.");
+            }
+
+            // `ai_requests` is append-only by architecture guard
+            // (`AiRequestAppendOnlyArchTest`) — a source-text scan that bans
+            // the Eloquent model's own query methods anywhere outside its
+            // model file (C13 design D4). A raw query-builder existence
+            // check is a pure read, never a mutation, and satisfies the
+            // guard without inventing a reader class this change's design
+            // never called for.
+            if (DB::table('ai_requests')->where('evaluation_id', $evaluation->id)->exists()) {
+                // Already written by a prior run.
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                AiRequest::create([
+                    'evaluation_id' => $evaluation->id,
+                    'provider' => $provider,
+                    'estimated_cost_usd' => $estimator->estimate($row['model'], $row['input_tokens'], $row['output_tokens']),
+                    'success' => $row['success'],
+                    'failure_reason' => $row['failure_reason'],
+                    'competency_code' => $row['competency_code'],
+                    'model' => $row['model'],
+                    'prompt_version' => 'beai-demo-fixture-v1',
+                    'input_tokens' => $row['input_tokens'],
+                    'output_tokens' => $row['output_tokens'],
+                    'finish_reason' => $row['success'] ? 'stop' : null,
+                    'latency_ms' => $row['latency_ms'],
+                ]);
+
+                $written++;
+            }
+        }
+
+        return $written;
+    }
+
+    /**
+     * `webhook_deliveries` writer (design D15). 8 hand-authored rows from
+     * `DemoDataset::webhookDeliveries()`. `payload` is built by the SAME
+     * production assemblers a real delivery uses —
+     * `EvaluationPayloadAssembler::assembleForEvaluation()` /
+     * `ProgressPayloadAssembler::assemble()` — never hand-authored (design
+     * D5's "computed, never hardcoded" reason: a frozen literal stops
+     * matching the product the first time the payload shape changes).
+     *
+     * `delivery_id` is a v5 UUID over a stable name
+     * (`beai-demo/{orgId}/{eventType}/{dedupeKey}`) — deterministic,
+     * collision-free, no randomness (design D16); the `uuid` column cannot
+     * carry a text prefix marker, so this is the row's identification
+     * mechanism.
+     *
+     * No dispatch ever happens — rows are inserted directly, never through
+     * `WebhookDeliveryRecorder`/`DeliverWebhookJob`, so no HTTP call is ever
+     * made (proposal correction 3).
+     *
+     * Idempotent by `key` (design's per-row natural identity — the unique
+     * `(organization_id, project_id, event_type, dedupe_key)` constraint):
+     * a row is looked up by that exact tuple and left untouched if found.
+     *
+     * @param  array<string, Participant>  $participants
+     * @param  array<string, Project>  $projects
+     * @param  array<string, Evaluation>  $evaluations
+     * @return array<string, WebhookDelivery>
+     */
+    private function writeWebhookDeliveries(array $participants, array $projects, array $evaluations): array
+    {
+        $projectKeyByParticipantKey = collect(DemoDataset::participants())->pluck('project_key', 'key');
+        $backoffSeconds = config('webhooks.delivery.backoff_seconds');
+        $created = [];
+
+        foreach (DemoDataset::webhookDeliveries() as $row) {
+            $participant = $participants[$row['participant_key']] ?? null;
+            $projectKey = $projectKeyByParticipantKey[$row['participant_key']] ?? null;
+            $project = $projectKey !== null ? ($projects[$projectKey] ?? null) : null;
+
+            if ($participant === null || $project === null) {
+                throw new RuntimeException("Demo webhook_deliveries fixture [{$row['key']}] references an unknown participant/project.");
+            }
+
+            if ($row['event_type'] === 'evaluation') {
+                $evaluation = $evaluations[$row['participant_key']] ?? null;
+
+                if ($evaluation === null) {
+                    throw new RuntimeException("Demo webhook_deliveries fixture [{$row['key']}] references participant [{$row['participant_key']}] with no Evaluation row.");
+                }
+
+                $dedupeKey = (string) $evaluation->id;
+                $eventType = WebhookEventType::Evaluation;
+                $payload = $this->evaluationPayloadAssembler->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+            } else {
+                $progressKind = $row['progress_kind'] ?? null;
+
+                if ($progressKind === 'created') {
+                    $dedupeKey = 'participant-created:'.$participant->id;
+                } else {
+                    $competencyCode = $row['competency_code'] ?? null;
+
+                    if ($competencyCode === null) {
+                        throw new RuntimeException("Demo webhook_deliveries fixture [{$row['key']}] has event_type=progress/ended with no competency_code.");
+                    }
+
+                    $dedupeKey = 'competency-ended:'.$participant->id.':'.$competencyCode;
+                }
+
+                $eventType = WebhookEventType::Progress;
+                $payload = $this->progressPayloadAssembler->assemble($participant->id, (string) Str::uuid());
+            }
+
+            $existing = WebhookDelivery::where('project_id', $project->id)
+                ->where('event_type', $eventType->value)
+                ->where('dedupe_key', $dedupeKey)
+                ->first();
+
+            if ($existing !== null) {
+                $created[$row['key']] = $existing;
+
+                continue;
+            }
+
+            $deliveryId = Uuid::uuid5(Uuid::NAMESPACE_URL, "beai-demo/{$project->organization_id}/{$eventType->value}/{$dedupeKey}")->toString();
+
+            // Persisted-anchor + integer-offset timestamps (design D16) — no
+            // now() in this writer. `evaluated_at` for evaluation-type
+            // deliveries, `completed_at`/`started_at` (already persisted by
+            // writeParticipants) for progress-type deliveries, falling back
+            // to the participant's own `created_at` for a participant with
+            // neither (e.g. c-006, `in_attesa`, no sessions yet).
+            $anchor = $row['event_type'] === 'evaluation'
+                ? ($evaluations[$row['participant_key']]->evaluated_at ?? $participant->completed_at ?? $participant->started_at ?? $participant->created_at)
+                : ($participant->completed_at ?? $participant->started_at ?? $participant->created_at);
+
+            $isSkipped = $row['status'] === 'skipped';
+            $attemptCount = $row['attempt_count'] ?? 0;
+            $lastResponseStatus = $row['last_response_status'] ?? null;
+
+            $lastAttemptAt = null;
+            $deliveredAt = null;
+            $nextAttemptAt = null;
+            $lastError = null;
+
+            if (! $isSkipped) {
+                $lastAttemptAt = $anchor->copy()->addMinutes(30);
+
+                if ($row['status'] === 'delivered') {
+                    $deliveredAt = $lastAttemptAt;
+                } else {
+                    $lastError = "HTTP {$lastResponseStatus}";
+                }
+
+                if ($row['status'] === 'pending') {
+                    $gapSeconds = $backoffSeconds[$attemptCount - 1] ?? end($backoffSeconds);
+                    $nextAttemptAt = $lastAttemptAt->copy()->addSeconds($gapSeconds);
+                }
+            }
+
+            // decide()'s own rule (WebhookDeliveryRecorder.php:145-161):
+            // target_url is null ONLY on no_webhook_url — never our case here
+            // (every row's project carries a webhook_url) — set on every
+            // other branch, skipped or not.
+            $delivery = WebhookDelivery::create([
+                'project_id' => $project->id,
+                'participant_id' => $participant->id,
+                'delivery_id' => $deliveryId,
+                'event_type' => $eventType,
+                'dedupe_key' => $dedupeKey,
+                'status' => $row['status'],
+                'skip_reason' => $row['skip_reason'] ?? null,
+                'target_url' => $project->webhook_url,
+                'payload' => $payload,
+                'payload_version' => (string) config('webhooks.payload.version'),
+                'attempt_count' => $attemptCount,
+                'max_attempts' => (int) config('webhooks.delivery.max_attempts'),
+                'last_attempt_at' => $lastAttemptAt,
+                'next_attempt_at' => $nextAttemptAt,
+                'delivered_at' => $deliveredAt,
+                'last_response_status' => $lastResponseStatus,
+                'last_error' => $lastError,
+            ]);
+
+            $created[$row['key']] = $delivery;
+        }
+
+        return $created;
+    }
+
+    /**
+     * `api_clients` writer (design D17). Three rows, one per
+     * `ApiClient::state()` badge — `active`, `expired` (`expires_at` in the
+     * past), `revoked` (`is_active = false`).
+     *
+     * `key_hash` is minted from a raw key generated and discarded INSIDE ONE
+     * EXPRESSION (`hash('sha256', bin2hex(random_bytes(32)))`) — no PHP
+     * variable ever holds the raw value, not even transiently. Nobody,
+     * including this command's own output, ever holds the preimage, so the
+     * `active` row still cannot authenticate — the badge reports credential
+     * state, never possession (design D16/D17, non-negotiable #5).
+     *
+     * `key_hash` is NOT in `ApiClient::$fillable` — `forceFill`, mirroring
+     * `ApiClientController::store()`. `ApiClient` is NOT a `TenantModel` —
+     * `organization_id` is set explicitly, the one writer in this class
+     * where the ambient `TenantContextScope` wrapper does not stamp it.
+     * `abilities` is drawn only from `config('m2m_abilities.allowed')`,
+     * never a literal.
+     *
+     * Idempotent by `name`: a client already created by a prior run is left
+     * untouched — never re-minted, which would silently invalidate whatever
+     * credential state a prior run's row already represented.
+     *
+     * @return array<string, ApiClient>
+     */
+    private function writeApiClients(Organization $organization): array
+    {
+        $created = [];
+
+        foreach (DemoDataset::apiClients() as $definition) {
+            $client = ApiClient::where('organization_id', $organization->id)
+                ->where('name', $definition['name'])
+                ->first();
+
+            if ($client === null) {
+                $client = new ApiClient;
+                $client->forceFill([
+                    'organization_id' => $organization->id,
+                    'name' => $definition['name'],
+                    'abilities' => config('m2m_abilities.allowed'),
+                    'is_active' => $definition['is_active'],
+                    'expires_at' => $definition['expires_offset_days'] === null
+                        ? null
+                        : now()->addDays($definition['expires_offset_days']),
+                    // Discarded in the same expression — no variable ever
+                    // holds the raw key (design D16/D17).
+                    'key_hash' => hash('sha256', bin2hex(random_bytes(32))),
+                ]);
+                $client->save();
+                $client->refresh();
+            }
+
+            $created[$definition['key']] = $client;
+        }
+
+        return $created;
+    }
+
+    /**
+     * `notification_logs` writer (design D18). 3 hand-authored rows from
+     * `DemoDataset::notificationLogs()`. MUST run LAST — every subject it
+     * can reference (a demo participant or a demo webhook delivery) has
+     * already been persisted by the time this runs.
+     *
+     * `organization_id` is stamped automatically by `TenantScoped::creating`
+     * (`NotificationLog` IS a `TenantModel`, unlike `ApiClient`) — plain
+     * `create()`, never `forceFill()`, mirrors
+     * `SendOperatorNotificationJob`'s own write path.
+     *
+     * Idempotent by `(notification_type, subject_type, subject_id)` — the
+     * same tuple the raw-DDL unique index arbitrates.
+     *
+     * @param  array<string, Participant>  $participants
+     * @param  array<string, WebhookDelivery>  $deliveries
+     * @return int total rows written
+     */
+    private function writeNotificationLogs(array $participants, array $deliveries): int
+    {
+        $written = 0;
+
+        foreach (DemoDataset::notificationLogs() as $row) {
+            $subjectType = $row['subject_kind'] === 'delivery' ? 'webhook_delivery' : 'participant';
+            $subject = $row['subject_kind'] === 'delivery'
+                ? ($deliveries[$row['subject_key']] ?? null)
+                : ($participants[$row['subject_key']] ?? null);
+
+            if ($subject === null) {
+                throw new RuntimeException("Demo notification_logs fixture references unknown {$row['subject_kind']} [{$row['subject_key']}].");
+            }
+
+            $anchor = $subject instanceof WebhookDelivery
+                ? $subject->last_attempt_at
+                : $subject->completed_at ?? $subject->created_at;
+
+            $exists = NotificationLog::where('notification_type', $row['notification_type'])
+                ->where('subject_type', $subjectType)
+                ->where('subject_id', $subject->id)
+                ->exists();
+
+            if ($exists) {
+                // Already written by a prior run.
+                continue;
+            }
+
+            NotificationLog::create([
+                'notification_type' => $row['notification_type'],
+                'subject_type' => $subjectType,
+                'subject_id' => $subject->id,
+                'status' => $row['status'],
+                'suppression_reason' => $row['suppression_reason'] ?? null,
+                'recipient_count' => $row['recipient_count'] ?? 0,
+                'suppressed_carried_count' => $row['suppressed_carried_count'] ?? 0,
+                'last_error' => $row['last_error'] ?? null,
+                // Persisted-anchor + integer-offset (design D16) — no now().
+                'sent_at' => $row['status'] === 'sent' && $anchor !== null ? $anchor->copy()->addMinutes(5) : null,
+            ]);
+
+            $written++;
+        }
+
+        return $written;
+    }
+
+    /**
+     * @param  array{version: FrameworkVersion, templates: list<AvatarTemplate>, projects: array<string, Project>, participants: array<string, Participant>, evaluations: array<string, Evaluation>, snapshot_count: int, api_clients: array<string, ApiClient>, ai_request_count: int, deliveries: array<string, WebhookDelivery>, notification_log_count: int}  $summary
      */
     private function report(Command $command, array $summary): void
     {
@@ -716,6 +1131,10 @@ final class DemoWriter
                 ['Participants', count($summary['participants']).' across every lifecycle status'],
                 ['Evaluations', count($summary['evaluations']).' with computed competency results and indicator scores'],
                 ['Snapshots', $summary['snapshot_count'].' objects written to the configured disk'],
+                ['API clients', count($summary['api_clients']).' (active/expired/revoked)'],
+                ['AI requests', $summary['ai_request_count'].' (dashboard token usage + latency percentiles)'],
+                ['Webhook deliveries', count($summary['deliveries']).' (status spread: delivered/dead/pending/failed_permanent/skipped)'],
+                ['Notification logs', $summary['notification_log_count'].' (sent/suppressed/failed)'],
             ],
         );
     }

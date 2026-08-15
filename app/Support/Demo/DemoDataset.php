@@ -407,6 +407,296 @@ final class DemoDataset
     }
 
     /**
+     * Webhook configuration for demo projects (design D13). Keyed by project
+     * `key` — P3 is deliberately absent (no participants, `no_webhook_url` is
+     * every unconfigured project's state and needs no demo row).
+     *
+     * `webhook_url` targets `webhooks.invalid` — RFC 2606 reserved and
+     * guaranteed non-resolvable, so even a reachable dispatch path could
+     * never leave the network. `webhook_secret` is NOT authored here: design
+     * D16 marks it a deliberate randomness exception, minted by the writer
+     * from `random_bytes` and discarded in the same expression when
+     * `has_secret` is true. P4 sets `has_secret = false` on purpose — the
+     * `no_webhook_secret` skip reason needs a project with a URL but no
+     * secret.
+     *
+     * @return array<string, array{webhook_url: string, webhook_events: list<string>, has_secret: bool}>
+     */
+    public static function webhookConfig(): array
+    {
+        return [
+            'P1' => [
+                'webhook_url' => 'https://webhooks.invalid/beai-demo/sales-ico',
+                'webhook_events' => ['progress', 'evaluation'],
+                'has_secret' => true,
+            ],
+            'P2' => [
+                'webhook_url' => 'https://webhooks.invalid/beai-demo/team-lead-fll',
+                'webhook_events' => ['evaluation'],
+                'has_secret' => true,
+            ],
+            'P4' => [
+                'webhook_url' => 'https://webhooks.invalid/beai-demo/closed-campaign',
+                'webhook_events' => ['evaluation'],
+                'has_secret' => false,
+            ],
+        ];
+    }
+
+    /**
+     * 26 hand-authored `ai_requests` rows (design D14), keyed by participant
+     * `key`. Every row's `evaluation_id` is NOT NULL by construction — the
+     * writer attaches each row to the participant's already-written
+     * Evaluation, never a bare INSERT with no parent.
+     *
+     * Composition:
+     *   - 5 rows each for c-001, c-007, c-009 — one per `competency_results`
+     *     row (`ScoreEvaluationJob` makes exactly one LLM call per
+     *     competency per pass).
+     *   - 10 rows for c-002 — 5 first calls + 5 queue-retry duplicates (a
+     *     degraded-provider window during this evaluation forced a second
+     *     LLM call per competency; `ScoreEvaluationJob.php:686-699` states an
+     *     extra `ai_requests` row is valid audit data, never a skip signal;
+     *     `$tries=3` bounds it).
+     *   - 1 row for c-003 — the ONLY failed row, attached to c-003's
+     *     `processing` evaluation (zero `competency_results` by design): the
+     *     one place a `success=false` row does not contradict the shipped
+     *     dataset's `persistUnscorable('llm_parse_error')` rewrite path.
+     *
+     * The 26 `latency_ms` values are the hand-authored ladder (design D14)
+     * pinned by `LatencyLadderTest` to p50=1284ms / p95=7436ms under
+     * nearest-rank percentile — each value used exactly once across the 26
+     * rows. Two models, one provider (design D14: a second provider forces
+     * either a fabricated rate or a visible zero-cost anomaly row) —
+     * `estimated_cost_usd` is NEVER authored here; it is computed by
+     * `AiRequestCostEstimator` at write time from `(model, input_tokens,
+     * output_tokens)`.
+     *
+     * `failure_reason` is drawn only from the four values the engine
+     * actually writes — `provider_error` and `timeout` exist in
+     * `AiRequestFailureReason` but no code path writes them (design D14).
+     *
+     * @return array<string, list<array{
+     *   competency_code: string, model: string, input_tokens: int,
+     *   output_tokens: int, latency_ms: int, success: bool,
+     *   failure_reason: string|null
+     * }>>
+     */
+    public static function aiRequestCalls(): array
+    {
+        $haiku = 'claude-haiku-4-5-20251001';
+        $sonnet = 'claude-sonnet-4-5-20250929';
+
+        return [
+            'c-001' => [
+                ['competency_code' => 'PRS', 'model' => $haiku, 'input_tokens' => 812, 'output_tokens' => 246, 'latency_ms' => 683, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'STG', 'model' => $haiku, 'input_tokens' => 798, 'output_tokens' => 231, 'latency_ms' => 712, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'DRV', 'model' => $haiku, 'input_tokens' => 845, 'output_tokens' => 258, 'latency_ms' => 749, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COM', 'model' => $haiku, 'input_tokens' => 820, 'output_tokens' => 240, 'latency_ms' => 806, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COL', 'model' => $haiku, 'input_tokens' => 861, 'output_tokens' => 264, 'latency_ms' => 838, 'success' => true, 'failure_reason' => null],
+            ],
+            'c-007' => [
+                ['competency_code' => 'STG', 'model' => $haiku, 'input_tokens' => 790, 'output_tokens' => 225, 'latency_ms' => 877, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'INN', 'model' => $haiku, 'input_tokens' => 833, 'output_tokens' => 249, 'latency_ms' => 912, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'CSF', 'model' => $haiku, 'input_tokens' => 807, 'output_tokens' => 237, 'latency_ms' => 964, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'OPX', 'model' => $haiku, 'input_tokens' => 856, 'output_tokens' => 268, 'latency_ms' => 1013, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'INS', 'model' => $haiku, 'input_tokens' => 822, 'output_tokens' => 244, 'latency_ms' => 1087, 'success' => true, 'failure_reason' => null],
+            ],
+            'c-009' => [
+                ['competency_code' => 'PRS', 'model' => $haiku, 'input_tokens' => 779, 'output_tokens' => 219, 'latency_ms' => 1142, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'STG', 'model' => $haiku, 'input_tokens' => 803, 'output_tokens' => 233, 'latency_ms' => 1219, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'DRV', 'model' => $haiku, 'input_tokens' => 848, 'output_tokens' => 261, 'latency_ms' => 1284, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COM', 'model' => $haiku, 'input_tokens' => 815, 'output_tokens' => 228, 'latency_ms' => 1361, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COL', 'model' => $haiku, 'input_tokens' => 867, 'output_tokens' => 271, 'latency_ms' => 1447, 'success' => true, 'failure_reason' => null],
+            ],
+            'c-002' => [
+                // First call, one per competency.
+                ['competency_code' => 'PRS', 'model' => $sonnet, 'input_tokens' => 1340, 'output_tokens' => 402, 'latency_ms' => 1538, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'STG', 'model' => $sonnet, 'input_tokens' => 1298, 'output_tokens' => 388, 'latency_ms' => 1642, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'DRV', 'model' => $sonnet, 'input_tokens' => 1365, 'output_tokens' => 411, 'latency_ms' => 1791, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COM', 'model' => $sonnet, 'input_tokens' => 1312, 'output_tokens' => 395, 'latency_ms' => 1963, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COL', 'model' => $sonnet, 'input_tokens' => 1387, 'output_tokens' => 418, 'latency_ms' => 2214, 'success' => true, 'failure_reason' => null],
+                // Queue-retry duplicates — a degraded-provider window during
+                // this evaluation forced a second LLM call per competency
+                // (design D14).
+                ['competency_code' => 'PRS', 'model' => $sonnet, 'input_tokens' => 1352, 'output_tokens' => 407, 'latency_ms' => 2587, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'STG', 'model' => $sonnet, 'input_tokens' => 1301, 'output_tokens' => 391, 'latency_ms' => 3142, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'DRV', 'model' => $sonnet, 'input_tokens' => 1379, 'output_tokens' => 414, 'latency_ms' => 3908, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COM', 'model' => $sonnet, 'input_tokens' => 1327, 'output_tokens' => 399, 'latency_ms' => 5217, 'success' => true, 'failure_reason' => null],
+                ['competency_code' => 'COL', 'model' => $sonnet, 'input_tokens' => 1401, 'output_tokens' => 422, 'latency_ms' => 7436, 'success' => true, 'failure_reason' => null],
+            ],
+            'c-003' => [
+                // The evaluation is `processing`, zero competency_results
+                // (design D14) — the ONLY place a failed row can live
+                // without contradicting the shipped dataset's
+                // persistUnscorable('llm_parse_error') rewrite path.
+                ['competency_code' => 'PRS', 'model' => $haiku, 'input_tokens' => 690, 'output_tokens' => 58, 'latency_ms' => 9182, 'success' => false, 'failure_reason' => 'excerpt_not_verbatim'],
+            ],
+        ];
+    }
+
+    /**
+     * 8 hand-authored `webhook_deliveries` rows (design D15), each keyed
+     * uniquely (`key`) so `DemoWriter` can hand the same row to
+     * `writeNotificationLogs()` for subject resolution. `progress_kind` is
+     * `'created'` | `'ended'` — mirrors `SendProgressWebhook`'s two dedupe
+     * seams exactly (`participant-created:{id}` /
+     * `competency-ended:{id}:{code}`); absent for `event_type = 'evaluation'`
+     * rows, whose dedupe_key is the evaluation id itself
+     * (`SendEvaluationWebhook.php:72`).
+     *
+     * Every status in `WebhookDeliveryStatus` is represented at least once.
+     * `attempt_count`/`last_response_status` are chosen so
+     * `RetryClassifier::classify()` agrees with the recorded outcome (design
+     * D15). No dispatch ever happens — `DemoWriter` inserts rows directly.
+     *
+     * @return list<array{
+     *   key: string, participant_key: string, event_type: string,
+     *   progress_kind?: string, competency_code?: string, status: string,
+     *   attempt_count?: int, last_response_status?: int, skip_reason?: string
+     * }>
+     */
+    public static function webhookDeliveries(): array
+    {
+        return [
+            [
+                'key' => 'd1',
+                'participant_key' => 'c-001',
+                'event_type' => 'evaluation',
+                'status' => 'delivered',
+                'attempt_count' => 1,
+                'last_response_status' => 201,
+            ],
+            [
+                'key' => 'd2',
+                'participant_key' => 'c-007',
+                'event_type' => 'evaluation',
+                'status' => 'delivered',
+                'attempt_count' => 2,
+                'last_response_status' => 200,
+            ],
+            [
+                'key' => 'd3',
+                'participant_key' => 'c-002',
+                'event_type' => 'evaluation',
+                'status' => 'dead',
+                'attempt_count' => 6,
+                'last_response_status' => 502,
+            ],
+            [
+                'key' => 'd4',
+                'participant_key' => 'c-004',
+                'event_type' => 'progress',
+                'progress_kind' => 'ended',
+                'competency_code' => 'STG',
+                'status' => 'dead',
+                'attempt_count' => 6,
+                'last_response_status' => 502,
+            ],
+            [
+                'key' => 'd5',
+                'participant_key' => 'c-004',
+                'event_type' => 'progress',
+                'progress_kind' => 'ended',
+                'competency_code' => 'PRS',
+                'status' => 'pending',
+                'attempt_count' => 3,
+                'last_response_status' => 503,
+            ],
+            [
+                'key' => 'd6',
+                'participant_key' => 'c-006',
+                'event_type' => 'progress',
+                'progress_kind' => 'created',
+                'status' => 'failed_permanent',
+                'attempt_count' => 1,
+                'last_response_status' => 404,
+            ],
+            [
+                'key' => 'd7',
+                'participant_key' => 'c-007',
+                'event_type' => 'progress',
+                'progress_kind' => 'created',
+                'status' => 'skipped',
+                'skip_reason' => 'event_type_disabled',
+            ],
+            [
+                'key' => 'd8',
+                'participant_key' => 'c-009',
+                'event_type' => 'evaluation',
+                'status' => 'skipped',
+                'skip_reason' => 'no_webhook_secret',
+            ],
+        ];
+    }
+
+    /**
+     * 3 demo `api_clients` rows (design D17), one per `ApiClient::state()`
+     * badge. `expires_offset_days` is applied to `now()` by the WRITER at
+     * seed time (not here) — negative for the already-expired row, positive
+     * for the not-yet-expired but revoked row, absent (null) for the
+     * evergreen active row. `key_hash` is never authored here: design D16
+     * marks it a deliberate randomness exception, minted from
+     * `random_bytes` and discarded in the same expression.
+     *
+     * @return list<array{key: string, name: string, is_active: bool, expires_offset_days: int|null}>
+     */
+    public static function apiClients(): array
+    {
+        return [
+            ['key' => 'active', 'name' => DemoMarker::PREFIX.'ats-integration', 'is_active' => true, 'expires_offset_days' => null],
+            ['key' => 'expired', 'name' => DemoMarker::PREFIX.'legacy-export', 'is_active' => true, 'expires_offset_days' => -31],
+            ['key' => 'revoked', 'name' => DemoMarker::PREFIX.'revoked-partner', 'is_active' => false, 'expires_offset_days' => 90],
+        ];
+    }
+
+    /**
+     * 3 hand-authored `notification_logs` rows (design D18), spanning both
+     * `NotificationType` cases and `sent`/`suppressed`/`failed`. Subjects
+     * reference already-persisted rows by kind + key: `'delivery'` resolves
+     * against `webhookDeliveries()`'s `key` field, `'participant'` against
+     * `participants()`'s `key` field — `DemoWriter` resolves both to real
+     * database ids at write time (this writer runs LAST, design D18).
+     *
+     * `no_recipients` is deliberately absent — it requires an organization
+     * with zero notifiable users, impossible for the org this demo runs
+     * against (the operator is signed in).
+     *
+     * @return list<array{
+     *   notification_type: string, subject_kind: string, subject_key: string,
+     *   status: string, suppression_reason?: string, recipient_count?: int,
+     *   suppressed_carried_count?: int, last_error?: string
+     * }>
+     */
+    public static function notificationLogs(): array
+    {
+        return [
+            [
+                'notification_type' => 'webhook_delivery_dead',
+                'subject_kind' => 'delivery',
+                'subject_key' => 'd3',
+                'status' => 'sent',
+                'recipient_count' => 2,
+            ],
+            [
+                'notification_type' => 'webhook_delivery_dead',
+                'subject_kind' => 'delivery',
+                'subject_key' => 'd4',
+                'status' => 'suppressed',
+                'suppression_reason' => 'window',
+                'suppressed_carried_count' => 1,
+            ],
+            [
+                'notification_type' => 'scoring_failed',
+                'subject_kind' => 'participant',
+                'subject_key' => 'c-005',
+                'status' => 'failed',
+                'last_error' => 'LLM scoring failed: interview session ended in error before any competency could be assessed.',
+            ],
+        ];
+    }
+
+    /**
      * Env-overridable avatar/voice identifiers, read through
      * `config('interview.demo.*')` — never `env()` directly outside a config
      * file (larastan `noEnvCallsOutsideOfConfig`: `env()` returns null once
