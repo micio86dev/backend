@@ -13,12 +13,35 @@ declare(strict_types=1);
  * docblock, never wrote the test the docblock advertised, and the invariant was
  * then violated on four failure paths for months without anyone noticing.
  * Append-only gets an enforcement point instead.
+ *
+ * Known, deliberate narrowing (demo-data-operational-surfaces change):
+ * `App\Support\Demo\DemoWriter::writeAiRequests()` reads through
+ * `DB::table('ai_requests')->where(...)->exists()` for its per-evaluation
+ * idempotency check — the raw query builder, not the Eloquent model, and a
+ * pure read, never a mutation. That call sidesteps the "read it through a
+ * dedicated reader" intent of this guard (no such reader class exists yet;
+ * building one was out of that change's scope) but does NOT sidestep
+ * append-only, because it never writes. The needles below therefore ALSO
+ * ban the raw-query-builder MUTATION forms of this exact table — the gap a
+ * verification pass found: a future `DB::table('ai_requests')->update(`/
+ * `->delete(` at that same call site would previously have been completely
+ * unguarded by this scan.
  */
 
 use App\Models\AiRequest;
 
 test('no business logic mutates an ai_requests row', function (): void {
     $violations = [];
+
+    $bannedNeedles = [
+        'AiRequest::query()->update(',
+        'AiRequest::where(',
+        'AiRequest::find(',
+        "DB::table('ai_requests')->update(",
+        "DB::table('ai_requests')->delete(",
+        "DB::table('ai_requests')->increment(",
+        "DB::table('ai_requests')->decrement(",
+    ];
 
     /** @var SplFileInfo $file */
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path())) as $file) {
@@ -34,7 +57,7 @@ test('no business logic mutates an ai_requests row', function (): void {
             continue;
         }
 
-        foreach (['AiRequest::query()->update(', 'AiRequest::where(', 'AiRequest::find('] as $needle) {
+        foreach ($bannedNeedles as $needle) {
             if (str_contains($source, $needle)) {
                 $violations[] = "{$relative} contains {$needle}";
             }

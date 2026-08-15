@@ -24,9 +24,13 @@ declare(strict_types=1);
  * column or creating a duplicate `candidate_ref`.
  */
 
+use App\Models\AiRequest;
+use App\Models\ApiClient;
 use App\Models\Evaluation;
+use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Models\WebhookDelivery;
 use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
 use Database\Seeders\FrameworkCatalogSeeder;
@@ -46,6 +50,30 @@ test('a second run on a fully-seeded organization writes nothing and exits 0', f
 
     expect(Participant::where('organization_id', $this->org->id)->count())->toBe($participantsBefore);
     expect(TenantContextScope::runFor($this->org->id, fn () => Evaluation::count()))->toBe($evaluationsBefore);
+});
+
+test('a second run does not duplicate rows in any of the four operational tables (design D11 top-up idempotency)', function (): void {
+    $this->artisan('beai:demo-seed', ['--org' => 'acme'])->assertExitCode(0);
+
+    $countsBefore = TenantContextScope::runFor($this->org->id, fn () => [
+        'ai_requests' => AiRequest::count(),
+        'webhook_deliveries' => WebhookDelivery::count(),
+        'notification_logs' => NotificationLog::count(),
+    ]);
+    $countsBefore['api_clients'] = ApiClient::where('organization_id', $this->org->id)->where('name', 'like', DemoMarker::PREFIX.'%')->count();
+
+    expect($countsBefore)->toBe(['ai_requests' => 26, 'webhook_deliveries' => 8, 'notification_logs' => 3, 'api_clients' => 3]);
+
+    $this->artisan('beai:demo-seed', ['--org' => 'acme'])->assertExitCode(0);
+
+    $countsAfter = TenantContextScope::runFor($this->org->id, fn () => [
+        'ai_requests' => AiRequest::count(),
+        'webhook_deliveries' => WebhookDelivery::count(),
+        'notification_logs' => NotificationLog::count(),
+    ]);
+    $countsAfter['api_clients'] = ApiClient::where('organization_id', $this->org->id)->where('name', 'like', DemoMarker::PREFIX.'%')->count();
+
+    expect($countsAfter)->toBe($countsBefore);
 });
 
 test('deleting one demo participant then re-running REFUSES, exits 1, writes nothing, and prints the census diff', function (): void {

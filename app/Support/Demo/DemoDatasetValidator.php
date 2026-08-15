@@ -39,6 +39,9 @@ final class DemoDatasetValidator
             ...self::validateScoreArity(),
             ...self::validateExcerptSentenceIndices(),
             ...self::validatePotentialRoleCodeGuard(),
+            ...self::validateAiRequestsConformance(),
+            ...self::validateWebhookDeliveriesConformance(),
+            ...self::validateNotificationLogsConformance(),
         ];
     }
 
@@ -61,10 +64,18 @@ final class DemoDatasetValidator
      * from the fixture (no DB read) — the census gate's basis for
      * "already provisioned" vs "partial" vs "empty" (design D3).
      *
+     * The four operational-surface keys (`ai_requests`, `api_clients`,
+     * `webhook_deliveries`, `notification_logs`) are REPORT-ONLY — added for
+     * `printOperationalCensus` (design D11's seam at `checkCensusGate:152-157`
+     * builds `$expectedShallow` from four explicitly named keys and never
+     * reads these). They are never fed into `checkCensusGate`, which stays
+     * byte-for-byte untouched.
+     *
      * @return array{
      *   framework_versions: int, avatar_templates: int, avatar_templates_active: int,
      *   projects: int, participants: int, interview_sessions: int,
-     *   evaluations: int, snapshots: int
+     *   evaluations: int, snapshots: int, ai_requests: int, api_clients: int,
+     *   webhook_deliveries: int, notification_logs: int
      * }
      */
     public static function expectedCensus(): array
@@ -101,6 +112,10 @@ final class DemoDatasetValidator
             'interview_sessions' => $sessionCount,
             'evaluations' => $evaluationCount,
             'snapshots' => $snapshotCount,
+            'ai_requests' => collect(DemoDataset::aiRequestCalls())->flatten(1)->count(),
+            'api_clients' => count(DemoDataset::apiClients()),
+            'webhook_deliveries' => count(DemoDataset::webhookDeliveries()),
+            'notification_logs' => count(DemoDataset::notificationLogs()),
         ];
     }
 
@@ -226,6 +241,123 @@ final class DemoDatasetValidator
             if ($project['assessment_type'] === 'potential' && $project['role_code'] !== null) {
                 $errors[] = "Project [{$project['key']}] is assessment_type=potential but carries a non-null role_code — potential requires role_code=null.";
             }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * `ai_requests` fixture guard (design D14): `(success = false) =
+     * (failure_reason IS NOT NULL)` — the same equivalence the raw-DDL CHECK
+     * enforces at the DB — checked here before any row is written, and every
+     * authored `model` must exist in `scoring.cost_rates_usd_per_million` or
+     * `AiRequestCostEstimator` would silently write a 0.000000 anomaly row.
+     *
+     * @return list<string>
+     */
+    private static function validateAiRequestsConformance(): array
+    {
+        $errors = [];
+        $rates = config('scoring.cost_rates_usd_per_million', []);
+
+        foreach (DemoDataset::aiRequestCalls() as $participantKey => $rows) {
+            foreach ($rows as $index => $row) {
+                $hasFailureReason = $row['failure_reason'] !== null;
+
+                if ((! $row['success']) !== $hasFailureReason) {
+                    $errors[] = "ai_requests fixture [{$participantKey}][{$index}]: success/failure_reason equivalence violated.";
+                }
+
+                if (! array_key_exists($row['model'], $rates)) {
+                    $errors[] = "ai_requests fixture [{$participantKey}][{$index}]: model [{$row['model']}] is not in the rate table.";
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * `webhook_deliveries` fixture guard (design D15). Only the equivalences
+     * fully derivable from the fixture itself are checked here —
+     * `delivered_at` is computed by the writer at write time (persisted
+     * anchor + offset, design D16), so `status='delivered' <=> delivered_at
+     * IS NOT NULL` is enforced by the raw-DDL CHECK at write time instead.
+     *
+     * @return list<string>
+     */
+    private static function validateWebhookDeliveriesConformance(): array
+    {
+        $errors = [];
+        $maxAttempts = (int) config('webhooks.delivery.max_attempts');
+        $seenKeys = [];
+        $seenDedupeIdentities = [];
+
+        foreach (DemoDataset::webhookDeliveries() as $row) {
+            $isSkipped = $row['status'] === 'skipped';
+            $hasSkipReason = array_key_exists('skip_reason', $row);
+
+            if ($isSkipped !== $hasSkipReason) {
+                $errors[] = "webhook_deliveries fixture [{$row['key']}]: skipped <=> skip_reason violated.";
+            }
+
+            if ($isSkipped && ($row['attempt_count'] ?? 0) !== 0) {
+                $errors[] = "webhook_deliveries fixture [{$row['key']}]: skipped rows must have attempt_count=0.";
+            }
+
+            if (($row['attempt_count'] ?? 0) > $maxAttempts) {
+                $errors[] = "webhook_deliveries fixture [{$row['key']}]: attempt_count exceeds max_attempts.";
+            }
+
+            if (isset($seenKeys[$row['key']])) {
+                $errors[] = "webhook_deliveries fixture: duplicate key [{$row['key']}].";
+            }
+            $seenKeys[$row['key']] = true;
+
+            $dedupeIdentity = implode('|', [
+                $row['participant_key'],
+                $row['event_type'],
+                $row['progress_kind'] ?? 'n/a',
+                $row['competency_code'] ?? 'n/a',
+            ]);
+
+            if (isset($seenDedupeIdentities[$dedupeIdentity])) {
+                $errors[] = "webhook_deliveries fixture [{$row['key']}]: duplicate dedupe identity [{$dedupeIdentity}].";
+            }
+            $seenDedupeIdentities[$dedupeIdentity] = true;
+        }
+
+        return $errors;
+    }
+
+    /**
+     * `notification_logs` fixture guard (design D18). `sent_at` is
+     * writer-computed (design D16), so `status='sent' <=> sent_at IS NOT
+     * NULL` is enforced by the raw-DDL CHECK at write time; the
+     * `suppression_reason` equivalence IS fully fixture-derivable and
+     * checked here.
+     *
+     * @return list<string>
+     */
+    private static function validateNotificationLogsConformance(): array
+    {
+        $errors = [];
+        $seenSubjects = [];
+
+        foreach (DemoDataset::notificationLogs() as $index => $row) {
+            $isSuppressed = $row['status'] === 'suppressed';
+            $hasSuppressionReason = array_key_exists('suppression_reason', $row);
+
+            if ($isSuppressed !== $hasSuppressionReason) {
+                $errors[] = "notification_logs fixture [{$index}]: suppressed <=> suppression_reason violated.";
+            }
+
+            $subject = $row['subject_kind'].':'.$row['subject_key'];
+
+            if (isset($seenSubjects[$subject])) {
+                $errors[] = "notification_logs fixture: duplicate subject [{$subject}] — violates the (org, type, subject_type, subject_id) unique.";
+            }
+            $seenSubjects[$subject] = true;
         }
 
         return $errors;
