@@ -35,7 +35,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class ParticipantDetailResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * As `Admin\ParticipantResource` (design.md D1 — `status` union closed by
+     * `Participant::$allowedTransitions`; `role_code` plain nullable string;
+     * `id`/`project_id`/`timeline.session_count` backed by explicit `(int)`
+     * casts).
+     *
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -43,17 +50,17 @@ class ParticipantDetailResource extends JsonResource
         $participant = $this->resource;
 
         return [
-            'id' => $participant->id,
+            'id' => (int) $participant->id,
             'candidate_ref' => $participant->candidate_ref,
             'display_name' => $participant->display_name,
             'role_code' => $participant->role_code,
             'language' => $participant->language,
             'status' => $participant->status,
-            'project_id' => $participant->project_id,
+            'project_id' => (int) $participant->project_id,
             'timeline' => [
                 'started_at' => $participant->started_at?->toISOString(),
                 'completed_at' => $participant->completed_at?->toISOString(),
-                'session_count' => InterviewSession::where('participant_id', $participant->id)->count(),
+                'session_count' => (int) InterviewSession::where('participant_id', $participant->id)->count(),
             ],
             'files' => [
                 'transcript' => [

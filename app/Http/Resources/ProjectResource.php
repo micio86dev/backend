@@ -25,7 +25,17 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class ProjectResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * `status`/`assessment_type` are unions closed by the model's own
+     * `booted()` guards (`Project.php:118-158`) — a status transition or an
+     * immutable-field change outside the allowed set throws. `role_code`
+     * stays plain nullable string (data owned by the wrapper superproject,
+     * design.md D1). Every id/FK/nullable-int is backed by an explicit
+     * `(int)` cast; nullable ints use the ternary form so `null` never
+     * becomes `0`.
+     *
+     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
+     *
+     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
      */
     public function toArray(Request $request): array
     {
@@ -33,17 +43,21 @@ class ProjectResource extends JsonResource
         $project = $this->resource;
 
         return [
-            'id' => $project->id,
-            'organization_id' => $project->organization_id,
-            'framework_version_id' => $project->framework_version_id,
+            'id' => (int) $project->id,
+            'organization_id' => (int) $project->organization_id,
+            'framework_version_id' => (int) $project->framework_version_id,
             'slug' => $project->slug,
             'name' => $project->name,
             'assessment_type' => $project->assessment_type,
             'role_code' => $project->role_code,
             'language' => $project->language,
             'status' => $project->status,
-            'pause_every_n_competencies' => $project->pause_every_n_competencies,
-            'nudge_min_chars' => $project->nudge_min_chars,
+            'pause_every_n_competencies' => $project->pause_every_n_competencies === null
+                ? null
+                : (int) $project->pause_every_n_competencies,
+            'nudge_min_chars' => $project->nudge_min_chars === null
+                ? null
+                : (int) $project->nudge_min_chars,
             'exit_redirect_url' => $project->exit_redirect_url,
             'webhook_url' => $project->webhook_url,
             'webhook_events' => $project->webhook_events,
@@ -61,19 +75,19 @@ class ProjectResource extends JsonResource
             'updated_at' => $project->updated_at?->toISOString(),
             // Pin context: the FrameworkVersion this project is pinned to
             'pin_context' => $project->frameworkVersion ? [
-                'id' => $project->frameworkVersion->id,
+                'id' => (int) $project->frameworkVersion->id,
                 'version' => $project->frameworkVersion->version,
                 'label' => $project->frameworkVersion->label,
                 'is_locked' => $project->frameworkVersion->is_locked,
             ] : null,
             // Competencies with position pivot
             'competencies' => $project->relationLoaded('competencies')
-                ? $project->competencies->map(fn (Competency $c): array => [
-                    'id' => $c->id,
+                ? array_values($project->competencies->map(fn (Competency $c): array => [
+                    'id' => (int) $c->id,
                     'code' => $c->code,
                     'type' => $c->type,
-                    'position' => $c->pivot->getAttribute('position'),
-                ])->values()->toArray()
+                    'position' => (int) $c->pivot->getAttribute('position'),
+                ])->all())
                 : [],
         ];
     }

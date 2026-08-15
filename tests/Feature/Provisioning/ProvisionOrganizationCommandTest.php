@@ -19,12 +19,32 @@ declare(strict_types=1);
  * the inside.
  */
 
+use App\Console\Commands\ProvisionOrganizationCommand;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+
+/**
+ * Deterministic double for the `generatePassword()` override seam
+ * (generated-client-truth-and-session-safety D7) — pins a FIXED password
+ * containing every Symfony OutputFormatter-significant character
+ * (`<info>`, bare `<`, `>`, `\`) instead of depending on a random draw from
+ * `Str::password(20)`, which can and does produce them but not
+ * reproducibly. NOT a shared fixture (tests/Helpers/): only this one file
+ * uses it.
+ */
+final class FixedPasswordProvisionOrganizationCommand extends ProvisionOrganizationCommand
+{
+    public const FIXED_PASSWORD = 'p<info>x</info>a<b>ss\\word>secret';
+
+    protected function generatePassword(): string
+    {
+        return self::FIXED_PASSWORD;
+    }
+}
 
 test('provisions the organization, its roles and its admin', function (): void {
     $this->artisan('beai:provision-organization', [
@@ -133,6 +153,30 @@ test('generates a password and shows it exactly once', function (): void {
 
     expect($password)->not->toBe('');
     expect(Hash::check($password, User::where('email', 'admin@acme.test')->firstOrFail()->password))->toBeTrue();
+});
+
+test('a generated password containing OutputFormatter-significant characters reaches the operator byte-exact', function (): void {
+    app()->instance(ProvisionOrganizationCommand::class, new FixedPasswordProvisionOrganizationCommand);
+
+    // Artisan::call(), not $this->artisan() — same reasoning as the test
+    // above: Artisan::output() must actually carry the printed bytes.
+    $exitCode = Artisan::call('beai:provision-organization', [
+        '--name' => 'Acme Formatter Corp',
+        '--admin-email' => 'admin-formatter@acme.test',
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $output = Artisan::output();
+
+    // Byte-exact: `$this->line()` would have let Symfony's OutputFormatter
+    // interpret `<info>`/`<b>` as tags (stripped or re-styled) and `\` as an
+    // escape character, so the printed string would differ from what was
+    // actually hashed. OUTPUT_RAW is what makes this assertion meaningful.
+    expect($output)->toContain('Password: '.FixedPasswordProvisionOrganizationCommand::FIXED_PASSWORD);
+
+    $user = User::where('email', 'admin-formatter@acme.test')->firstOrFail();
+    expect(Hash::check(FixedPasswordProvisionOrganizationCommand::FIXED_PASSWORD, $user->password))->toBeTrue();
 });
 
 test('uses a supplied password and does not echo it', function (): void {

@@ -32,10 +32,10 @@ use Illuminate\Support\Carbon;
  * @property int $framework_version_id
  * @property string $slug
  * @property string $name
- * @property string $assessment_type
+ * @property 'standard'|'potential' $assessment_type
  * @property string|null $role_code
  * @property string $language
- * @property string $status
+ * @property 'draft'|'active'|'archived' $status
  * @property int|null $pause_every_n_competencies
  * @property int|null $nudge_min_chars
  * @property string|null $exit_redirect_url

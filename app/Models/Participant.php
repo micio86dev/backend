@@ -46,7 +46,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property string $display_name
  * @property string|null $role_code
  * @property string|null $language
- * @property string $status
+ * @property 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore' $status
  * @property Carbon|null $started_at
  * @property Carbon|null $completed_at
  * @property Carbon $created_at

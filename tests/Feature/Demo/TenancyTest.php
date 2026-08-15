@@ -21,6 +21,7 @@ use App\Models\Participant;
 use App\Models\Utterance;
 use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
+use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 
 beforeEach(function (): void {
@@ -28,11 +29,24 @@ beforeEach(function (): void {
     $this->org = Organization::factory()->create(['slug' => 'acme']);
 });
 
-test('the command runs with no ambient tenant context and never throws MissingTenantContextException', function (): void {
-    // No TenantContextScope::runFor() is established before this call —
-    // exactly the console-command condition design D7 exists for.
+test('the command establishes and restores its own tenant context boundary, leaking nothing into the ambient resolver', function (): void {
+    // `->throwsNoExceptions()` only restated what an uncaught exception
+    // already does (fail the test) — its real effect was silencing PHPUnit's
+    // no-assertion detector without asserting the thing this test's own name
+    // claims (generated-client-truth-and-session-safety D7). The actual
+    // claim: the command establishes its OWN `TenantContextScope::runFor`
+    // boundary and restores it (`TenantContextScope.php:62-68`) rather than
+    // leaking a global tenant context into the process — proven by reading
+    // the ambient resolver both BEFORE and AFTER the call, with no
+    // `TenantContextScope::runFor()` established around this test itself
+    // (exactly the console-command condition design D7 exists for).
+    $resolver = app(TenantResolver::class);
+    expect($resolver->getOrgId())->toBeNull();
+
     $this->artisan('beai:demo-seed', ['--org' => 'acme'])->assertExitCode(0);
-})->throwsNoExceptions();
+
+    expect($resolver->getOrgId())->toBeNull();
+});
 
 test('9 demo participants are written across P1, P2 and P4, every row carrying the target organization_id', function (): void {
     $this->artisan('beai:demo-seed', ['--org' => 'acme'])->assertExitCode(0);
