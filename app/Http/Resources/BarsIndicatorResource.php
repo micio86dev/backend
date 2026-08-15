@@ -24,7 +24,15 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class BarsIndicatorResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * `text`/`anchor_5`/`anchor_3`/`anchor_1` are translatable
+     * (`BarsIndicator::$translatable`) but resolve to a scalar STRING at
+     * property-read time — same `HasTranslations::getAttributeValue()`
+     * interception as `CompetencyResource` (design.md D1). `position`
+     * backed by an explicit `(int)` cast.
+     *
+     * @return array{position: int, text: string, anchor_5: string, anchor_3: string, anchor_1: string, translation_gap: bool}
+     *
+     * @scramble-return array{position: int, text: string, anchor_5: string, anchor_3: string, anchor_1: string, translation_gap: bool}
      */
     public function toArray(Request $request): array
     {
@@ -32,7 +40,7 @@ class BarsIndicatorResource extends JsonResource
         $indicator = $this->resource;
 
         return [
-            'position' => $indicator->position,
+            'position' => (int) $indicator->position,
             'text' => $indicator->text,
             'anchor_5' => $indicator->anchor_5,
             'anchor_3' => $indicator->anchor_3,

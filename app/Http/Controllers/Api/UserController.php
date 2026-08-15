@@ -77,6 +77,10 @@ class UserController extends Controller
         $user = new User($request->safe()->only(['name', 'email', 'password']));
         $user->organization()->associate(Organization::findOrFail($orgId));
         $user->is_superadmin = false;
+        // Not a security control here — a just-created user has no prior
+        // tokens to reject. Set so the column's meaning stays uniform across
+        // every row this surface creates (generated-client-truth-and-session-safety D4).
+        $user->password_changed_at = now()->startOfSecond();
         $user->save();
 
         $this->assignRole($user, $orgId, (string) $request->validated('role'));
@@ -118,6 +122,17 @@ class UserController extends Controller
         }
 
         $target->update($request->safe()->only(['name', 'email', 'password']));
+
+        // Admin-initiated password write invalidates the target's existing
+        // sessions (generated-client-truth-and-session-safety D4) — the same
+        // `password_changed_at`/`RejectStaleCredentials` mechanism the
+        // self-service path already relies on. `store()` and `startOfSecond()`
+        // for consistency: `iat` is second-precision, and the self-service
+        // path already uses `startOfSecond()` for the same reason.
+        if ($request->has('password')) {
+            $target->password_changed_at = now()->startOfSecond();
+            $target->save();
+        }
 
         return (new UserResource($target->fresh()))->response();
     }

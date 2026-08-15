@@ -18,7 +18,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class FrameworkVersionResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * `id`/`organization_id` backed by an explicit `(int)` cast (design.md
+     * D1). Already exports correctly today per the committed snapshot —
+     * annotated anyway so a future Scramble upgrade cannot silently
+     * re-degrade the field.
+     *
+     * @return array{id: int, organization_id: int, version: string, label: string|null, is_locked: bool, created_at: string|null, updated_at: string|null}
+     *
+     * @scramble-return array{id: int, organization_id: int, version: string, label: string|null, is_locked: bool, created_at: string|null, updated_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -26,8 +33,8 @@ class FrameworkVersionResource extends JsonResource
         $fv = $this->resource;
 
         return [
-            'id' => $fv->id,
-            'organization_id' => $fv->organization_id,
+            'id' => (int) $fv->id,
+            'organization_id' => (int) $fv->organization_id,
             'version' => $fv->version,
             'label' => $fv->label,
             'is_locked' => $fv->is_locked,

@@ -29,9 +29,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class ParticipantResource extends JsonResource
 {
     /**
-     * Explicit whitelist — safe fields only.
+     * Explicit whitelist — safe fields only. As `Admin\ParticipantResource`
+     * (design.md D1) for `status`/`role_code`/`id`, plus the nested
+     * `project.assessment_type` union (closed by the FormRequest + model
+     * immutability guard, `Project.php:147-150`) and `project.id` `(int)`.
      *
-     * @return array<string, mixed>
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
      */
     public function toArray(Request $request): array
     {
@@ -41,7 +46,7 @@ class ParticipantResource extends JsonResource
         $project = $participant->project;
 
         return [
-            'id' => $participant->id,
+            'id' => (int) $participant->id,
             'candidate_ref' => $participant->candidate_ref,
             'display_name' => $participant->display_name,
             'role_code' => $participant->role_code,
@@ -51,7 +56,7 @@ class ParticipantResource extends JsonResource
             'completed_at' => $participant->completed_at?->toISOString(),
             'created_at' => $participant->created_at->toISOString(),
             'project' => $project ? [
-                'id' => $project->id,
+                'id' => (int) $project->id,
                 'role_code' => $project->role_code,
                 'language' => $project->language,
                 'assessment_type' => $project->assessment_type,

@@ -20,7 +20,16 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class CompetencyResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * `name`/`definition` are translatable (`Competency::$translatable`) but
+     * resolve to a scalar STRING at property-read time —
+     * `HasTranslations::getAttributeValue()` intercepts every `$this->name`
+     * fetch and returns `getTranslation($key, $locale)`, bypassing the
+     * `array` cast Scramble's static walk sees (design.md D1). `id` backed
+     * by an explicit `(int)` cast.
+     *
+     * @return array{id: int, code: string, name: string, definition: string, type: string, bars_available: bool}
+     *
+     * @scramble-return array{id: int, code: string, name: string, definition: string, type: string, bars_available: bool}
      */
     public function toArray(Request $request): array
     {
@@ -39,7 +48,7 @@ class CompetencyResource extends JsonResource
             // form can render a competency picker it is structurally unable to
             // submit. The catalog is global — `framework_competencies` carries
             // no `organization_id` — so the key leaks nothing tenant-specific.
-            'id' => $competency->id,
+            'id' => (int) $competency->id,
             'code' => $competency->code,
             'name' => $competency->name,
             'definition' => $competency->definition,

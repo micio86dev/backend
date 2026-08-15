@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
 /**
@@ -29,8 +30,15 @@ use Throwable;
  * Every input is an option rather than a prompt, because the place this command
  * is most needed — a production container — has no TTY, and under
  * --no-interaction an ask() returns null.
+ *
+ * NOT final (same reason as QueueWorkCommand, tests/Helpers/QueueWorkCommandFixtures.php):
+ * `generatePassword()` is a deliberate override seam so a test can supply a
+ * password containing Symfony OutputFormatter-significant characters
+ * (`<`, `>`, `\`) without depending on a random draw — the shape
+ * `Str::password(20)` can and does produce (generated-client-truth-and-
+ * session-safety D7).
  */
-final class ProvisionOrganizationCommand extends Command
+class ProvisionOrganizationCommand extends Command
 {
     /**
      * The three authorization roles every organization gets. These are Spatie
@@ -61,7 +69,7 @@ final class ProvisionOrganizationCommand extends Command
 
         $suppliedPassword = (string) $this->option('admin-password');
         $passwordWasGenerated = $suppliedPassword === '';
-        $password = $passwordWasGenerated ? Str::password(20) : $suppliedPassword;
+        $password = $passwordWasGenerated ? $this->generatePassword() : $suppliedPassword;
 
         if ($error = $this->validateInput($name, $adminEmail, $slug)) {
             $this->error($error);
@@ -84,6 +92,16 @@ final class ProvisionOrganizationCommand extends Command
         $this->reportSuccess($organization, $adminEmail, $password, $passwordWasGenerated);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * `Str::password(20)`'s symbol alphabet includes `<`, `>` and `\` — an
+     * override seam, not an indirection for its own sake, so a test can pin
+     * a value containing them without depending on a random draw.
+     */
+    protected function generatePassword(): string
+    {
+        return Str::password(20);
     }
 
     /**
@@ -199,7 +217,15 @@ final class ProvisionOrganizationCommand extends Command
             // Shown once and stored only as a hash: if this is not printed the
             // account is unusable. A supplied password is never echoed — the
             // operator has it, and printing only widens where it lands.
-            $this->line("Password: {$password}");
+            //
+            // OUTPUT_RAW bypasses Symfony's OutputFormatter (generated-client-
+            // truth-and-session-safety D7): `$this->line()` routes through it,
+            // and `Str::password(20)`'s alphabet contains `<`, `>` and `\` —
+            // all three of which the formatter assigns tag/escape meaning to.
+            // A formatted credential can differ from the stored one for the
+            // one account that bootstraps a deployment; raw output guarantees
+            // the printed bytes are the bytes that were hashed.
+            $this->output->writeln("Password: {$password}", OutputInterface::OUTPUT_RAW);
             $this->warn('This password is shown once and cannot be recovered. Store it now.');
         }
     }

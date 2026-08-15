@@ -19,7 +19,15 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class RoleResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * `name`/`responsibilities` are translatable (`Role::$translatable`) but
+     * resolve to a scalar STRING at property-read time — same
+     * `HasTranslations::getAttributeValue()` interception as
+     * `CompetencyResource`/`BarsIndicatorResource` (design.md D1).
+     * `competency_count` backed by an explicit `(int)` cast.
+     *
+     * @return array{code: string, name: string, responsibilities: string, competency_count: int}
+     *
+     * @scramble-return array{code: string, name: string, responsibilities: string, competency_count: int}
      */
     public function toArray(Request $request): array
     {
@@ -30,7 +38,7 @@ class RoleResource extends JsonResource
             'code' => $role->code,
             'name' => $role->name,
             'responsibilities' => $role->responsibilities,
-            'competency_count' => $role->competencies()->count(),
+            'competency_count' => (int) $role->competencies()->count(),
         ];
     }
 }

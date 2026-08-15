@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.11.0"
+        "version": "0.12.0"
     },
     "servers": [
         {
@@ -125,14 +125,14 @@
             },
             "get": {
                 "operationId": "apiClient.index",
-                "description": "GET /api/m2m/clients\nAuth: auth:api (admin only via ApiClientPolicy)\n\nNever returns key_hash or raw api_key.",
+                "description": "GET /api/m2m/clients\nAuth: auth:api (admin only via ApiClientPolicy)\n\nUnpaginated (generated-client-truth-and-session-safety D5) \u2014 the panel\nanswers a whole-set question: what can authenticate against my org,\nand what did I revoke. Not a page-at-a-time one; `UserController::index`\nalready returns an unpaginated org-scoped `->get()` for the same class\nof operator-managed collection. `is_active` first so the rows that\nmatter most stay first even at unusual scale.\n\nNever returns key_hash or raw api_key.",
                 "summary": "List M2M API clients for the authenticated admin's organization",
                 "tags": [
                     "ApiClient"
                 ],
                 "responses": {
                     "200": {
-                        "description": "Paginated set of `ApiClientResource`",
+                        "description": "Array of `ApiClientResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -143,128 +143,10 @@
                                             "items": {
                                                 "$ref": "#/components/schemas/ApiClientResource"
                                             }
-                                        },
-                                        "links": {
-                                            "type": "object",
-                                            "properties": {
-                                                "first": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "last": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "prev": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                },
-                                                "next": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ]
-                                                }
-                                            },
-                                            "required": [
-                                                "first",
-                                                "last",
-                                                "prev",
-                                                "next"
-                                            ]
-                                        },
-                                        "meta": {
-                                            "type": "object",
-                                            "properties": {
-                                                "current_page": {
-                                                    "type": "integer",
-                                                    "minimum": 1
-                                                },
-                                                "from": {
-                                                    "type": [
-                                                        "integer",
-                                                        "null"
-                                                    ],
-                                                    "minimum": 1
-                                                },
-                                                "last_page": {
-                                                    "type": "integer",
-                                                    "minimum": 1
-                                                },
-                                                "links": {
-                                                    "type": "array",
-                                                    "description": "Generated paginator links.",
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "url": {
-                                                                "type": [
-                                                                    "string",
-                                                                    "null"
-                                                                ]
-                                                            },
-                                                            "label": {
-                                                                "type": "string"
-                                                            },
-                                                            "active": {
-                                                                "type": "boolean"
-                                                            }
-                                                        },
-                                                        "required": [
-                                                            "url",
-                                                            "label",
-                                                            "active"
-                                                        ]
-                                                    }
-                                                },
-                                                "path": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ],
-                                                    "description": "Base path for paginator generated URLs."
-                                                },
-                                                "per_page": {
-                                                    "type": "integer",
-                                                    "description": "Number of items shown per page.",
-                                                    "minimum": 0
-                                                },
-                                                "to": {
-                                                    "type": [
-                                                        "integer",
-                                                        "null"
-                                                    ],
-                                                    "description": "Number of the last item in the slice.",
-                                                    "minimum": 1
-                                                },
-                                                "total": {
-                                                    "type": "integer",
-                                                    "description": "Total number of items being paginated.",
-                                                    "minimum": 0
-                                                }
-                                            },
-                                            "required": [
-                                                "current_page",
-                                                "from",
-                                                "last_page",
-                                                "links",
-                                                "path",
-                                                "per_page",
-                                                "to",
-                                                "total"
-                                            ]
                                         }
                                     },
                                     "required": [
-                                        "data",
-                                        "links",
-                                        "meta"
+                                        "data"
                                     ]
                                 }
                             }
@@ -499,7 +381,10 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
-                                                    "type": "string",
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 },
                                                 "photo_url": {
@@ -947,20 +832,25 @@
                                                         "type": "string"
                                                     },
                                                     "description": {
-                                                        "type": "string"
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
                                                     },
                                                     "provider": {
                                                         "type": "string"
                                                     },
                                                     "config": {
-                                                        "type": "string"
+                                                        "type": "array",
+                                                        "items": {}
                                                     },
                                                     "persona": {
                                                         "type": [
-                                                            "string",
+                                                            "array",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config."
+                                                        "description": "Persona is optional: a template may be pure provider config.",
+                                                        "items": {}
                                                     }
                                                 },
                                                 "required": [
@@ -2689,7 +2579,7 @@
         "/profile/photo": {
             "post": {
                 "operationId": "profilePhoto.store",
-                "description": "Validation order matters (design D3b) \u2014 the first three steps touch\nonly the PHP temp file, so a rejected upload NEVER reaches the disk:\n  1. UpdateProfilePhotoRequest (required|file|max:2048 KB, shape only)\n  2. Magic-byte verdict (content, never the declared type)\n  3. getimagesize() \u2014 false, or over the configured dimension cap\n  4. Storage::putFileAs(...) \u2014 no disk() argument (SingleStorageDiskArchTest)\n  5. $user->profile_photo_path = $newKey; $user->save();\n     throws \u2192 delete the NEW key in the catch, then re-throw \u2014 never\n     orphan the object the row-write that just failed never pointed to.\n  6. After the row commits, delete the OLD key. Logged, never fatal:\n     at most one stale object per user is preferable to failing a\n     request over a change that already succeeded.",
+                "description": "Validation order matters (design D3b) \u2014 the first four steps touch\nonly the PHP temp file, so a rejected upload NEVER reaches the disk:\n  1. UpdateProfilePhotoRequest (required|file|max:2048 KB, shape only\n     \u2014 a fast pre-check against a hardcoded literal, NOT itself\n     config-driven; step 2 below is the real enforcement point).\n  2. Magic-byte verdict (content, never the declared type)\n  3. $file->getSize() > config('profile.photo.max_bytes') \u2014 the ACTUAL\n     byte cap (post-apply verification finding: this step was\n     missing; the FormRequest literal merely coincided with the\n     config default and could not be overridden).\n  4. getimagesize() \u2014 false, or over the configured dimension cap\n  5. Storage::putFileAs(...) \u2014 no disk() argument (SingleStorageDiskArchTest)\n  6. $user->profile_photo_path = $newKey; $user->save();\n     throws \u2192 delete the NEW key in the catch, then re-throw \u2014 never\n     orphan the object the row-write that just failed never pointed to.\n  7. After the row commits, delete the OLD key. Logged, never fatal:\n     at most one stale object per user is preferable to failing a\n     request over a change that already succeeded.",
                 "summary": "POST /api/profile/photo",
                 "tags": [
                     "ProfilePhoto"
@@ -3935,7 +3825,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -3944,13 +3834,26 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "in_attesa",
+                            "in_corso",
+                            "in_valutazione",
+                            "completato",
+                            "errore"
+                        ]
                     },
                     "started_at": {
                         "type": [
@@ -3965,7 +3868,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "project": {
                         "type": [
@@ -3974,22 +3880,35 @@
                         ],
                         "properties": {
                             "id": {
-                                "type": "string"
+                                "type": "integer"
                             },
                             "role_code": {
-                                "type": "string"
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "language": {
                                 "type": "string"
                             },
                             "assessment_type": {
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                    "standard",
+                                    "potential"
+                                ]
                             },
                             "exit_redirect_url": {
-                                "type": "string"
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             },
                             "error_redirect_url": {
-                                "type": "string"
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             }
                         },
                         "required": [
@@ -4073,20 +3992,16 @@
                         "type": "integer"
                     },
                     "text": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "anchor_5": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "anchor_3": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "anchor_1": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "translation_gap": {
                         "type": "boolean"
@@ -4106,19 +4021,16 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer",
-                        "description": "Exposed because `StoreProjectRequest` validates `competency_ids[]`\nagainst primary keys, and this catalog is the only surface a\nclient can discover competencies through. Without it the project\nform can render a competency picker it is structurally unable to\nsubmit. The catalog is global \u2014 `framework_competencies` carries\nno `organization_id` \u2014 so the key leaks nothing tenant-specific."
+                        "type": "integer"
                     },
                     "code": {
                         "type": "string"
                     },
                     "name": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "definition": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "type": {
                         "type": "string"
@@ -4286,14 +4198,22 @@
                         "type": "string"
                     },
                     "default_webhook_url": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "default_webhook_events": {
-                        "type": "string"
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "string"
+                        }
                     },
                     "has_default_webhook_secret": {
-                        "type": "boolean",
-                        "description": "default_webhook_secret intentionally excluded (hidden + encrypted) \u2014\nonly a presence boolean is exposed, never the value."
+                        "type": "boolean"
                     },
                     "created_at": {
                         "type": [
@@ -4324,7 +4244,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -4333,16 +4253,29 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "in_attesa",
+                            "in_corso",
+                            "in_valutazione",
+                            "completato",
+                            "errore"
+                        ]
                     },
                     "project_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "timeline": {
                         "type": "object",
@@ -4360,8 +4293,7 @@
                                 ]
                             },
                             "session_count": {
-                                "type": "integer",
-                                "minimum": 0
+                                "type": "integer"
                             }
                         },
                         "required": [
@@ -4377,12 +4309,10 @@
                                 "type": "object",
                                 "properties": {
                                     "type": {
-                                        "type": "string",
-                                        "const": "text/plain"
+                                        "type": "string"
                                     },
                                     "ref": {
-                                        "type": "string",
-                                        "const": "transcript"
+                                        "type": "string"
                                     },
                                     "url": {
                                         "type": "string"
@@ -4398,12 +4328,10 @@
                                 "type": "object",
                                 "properties": {
                                     "type": {
-                                        "type": "string",
-                                        "const": "application/json"
+                                        "type": "string"
                                     },
                                     "ref": {
-                                        "type": "string",
-                                        "const": "evaluation"
+                                        "type": "string"
                                     },
                                     "url": {
                                         "type": "string"
@@ -4422,7 +4350,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -4443,7 +4374,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -4452,16 +4383,29 @@
                         "type": "string"
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "in_attesa",
+                            "in_corso",
+                            "in_valutazione",
+                            "completato",
+                            "errore"
+                        ]
                     },
                     "project_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "started_at": {
                         "type": [
@@ -4476,7 +4420,10 @@
                         ]
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -4557,13 +4504,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "organization_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "framework_version_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "slug": {
                         "type": "string"
@@ -4572,35 +4519,61 @@
                         "type": "string"
                     },
                     "assessment_type": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "standard",
+                            "potential"
+                        ]
                     },
                     "role_code": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "language": {
                         "type": "string"
                     },
                     "status": {
-                        "type": "string"
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "active",
+                            "archived"
+                        ]
                     },
                     "pause_every_n_competencies": {
-                        "type": "string"
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     },
                     "nudge_min_chars": {
-                        "type": "string"
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
                     },
                     "exit_redirect_url": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "webhook_url": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "webhook_events": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     },
                     "has_webhook_secret": {
-                        "type": "boolean",
-                        "description": "webhook_secret intentionally excluded (hidden + encrypted).\nA PRESENCE BOOLEAN is exposed instead, never the value \u2014 mirroring\nOrganizationResource::has_default_webhook_secret. Without it the\nedit form cannot distinguish \"no secret configured\" from \"a secret\n exists but is write-only\", so it renders \"not set\" over a project\nthat has one. On a security-relevant field that is not a cosmetic\ngap: it invites an operator to believe no secret is in place."
+                        "type": "boolean"
                     },
                     "deadline_at": {
                         "type": [
@@ -4631,7 +4604,6 @@
                             "object",
                             "null"
                         ],
-                        "description": "Pin context: the FrameworkVersion this project is pinned to",
                         "properties": {
                             "id": {
                                 "type": "integer"
@@ -4658,8 +4630,29 @@
                     },
                     "competencies": {
                         "type": "array",
-                        "description": "Competencies with position pivot",
-                        "items": {}
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "code": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "position": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "code",
+                                "type",
+                                "position"
+                            ]
+                        }
                     }
                 },
                 "required": [
@@ -4694,16 +4687,13 @@
                         "type": "string"
                     },
                     "name": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "responsibilities": {
-                        "type": "array",
-                        "items": {}
+                        "type": "string"
                     },
                     "competency_count": {
-                        "type": "integer",
-                        "minimum": 0
+                        "type": "integer"
                     }
                 },
                 "required": [
@@ -4718,28 +4708,34 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "participant_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "provider_session_ref": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "started_at": {
                         "type": [
@@ -4920,13 +4916,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "provider": {
                         "type": "string"
@@ -4935,7 +4931,10 @@
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "started_at": {
                         "type": [
@@ -5302,7 +5301,18 @@
                     "email": {
                         "type": "string"
                     },
-                    "role": {},
+                    "role": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "admin",
+                            "operator",
+                            "viewer",
+                            null
+                        ]
+                    },
                     "is_deactivated": {
                         "type": "boolean"
                     },
