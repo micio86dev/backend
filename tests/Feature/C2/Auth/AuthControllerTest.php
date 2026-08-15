@@ -165,6 +165,22 @@ test('me with valid token → 200 with user, org, and roles', function (): void 
         ->assertJsonPath('organization.name', $org->name);
 });
 
+// user-profile-self-service, identity-auth spec delta: "locale is included
+// and reflects the stored preference". Previously the column and $fillable
+// entry existed but /auth/me never returned it (AuthController.php:144).
+test('me includes the user\'s stored locale (identity-auth spec, user-profile-self-service)', function (): void {
+    $org = Organization::factory()->create();
+    $user = makeUser(['organization_id' => $org->id, 'locale' => 'it']);
+
+    $token = auth('api')->login($user);
+
+    $response = $this->withToken($token)
+        ->getJson('/api/auth/me');
+
+    $response->assertOk()
+        ->assertJsonPath('user.locale', 'it');
+});
+
 test('me with denylisted token → 401', function (): void {
     $org = Organization::factory()->create();
     $user = makeUser(['organization_id' => $org->id]);
