@@ -53,6 +53,15 @@ test('is_superadmin is NOT in fillable', function (): void {
     expect($fillable)->not->toContain('is_superadmin');
 });
 
+// user-avatar-image, design D2.3 — the cheap third layer: not mass-
+// assignable at all, independent of any controller or request.
+test('profile_photo_path is NOT in fillable', function (): void {
+    $user = new User;
+    $fillable = $user->getFillable();
+
+    expect($fillable)->not->toContain('profile_photo_path');
+});
+
 test('organization() returns a BelongsTo relation', function (): void {
     $user = new User;
     $relation = $user->organization();

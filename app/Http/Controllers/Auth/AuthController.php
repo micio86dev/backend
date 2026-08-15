@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\ProfilePhotoUrlSigner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -142,6 +143,11 @@ final class AuthController extends Controller
                 // user-profile-self-service: previously the column and
                 // $fillable entry existed but /auth/me never returned it.
                 'locale' => $user->locale,
+                // user-avatar-image (design D4): the SAME signer ProfileResource
+                // uses — /auth/me is the shell-identity contract useCurrentUser
+                // caches once per page load, so this is the second (and only
+                // other) caller of ProfilePhotoUrlSigner.
+                'photo_url' => app(ProfilePhotoUrlSigner::class)->urlFor($user->profile_photo_path),
             ],
             'organization' => $org !== null ? [
                 'id' => $org->id,

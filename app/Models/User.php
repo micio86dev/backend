@@ -28,6 +28,16 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  *   ProfileController::updatePassword (user-profile-self-service, design D3).
  *   Compared against a JWT's `iat` claim by RejectStaleCredentials to revoke
  *   every session other than the one that performed the change.
+ * - `profile_photo_path` MUST NOT be in $fillable — written only by
+ *   ProfilePhotoController::store/destroy via direct attribute assignment
+ *   (user-avatar-image, design D1/D2). The stored key is server-generated
+ *   entirely (a UUID plus the caller's own id); if a caller could set this
+ *   column through the general profile allow-list, the API would presign and
+ *   serve ANY object in the bucket on their behalf — including a candidate's
+ *   proctoring snapshot under `{org}/{participant}/{session}/{uuid}.jpg`. This
+ *   is a READ primitive, not merely a write one: ProfilePhotoUrlSigner's
+ *   `profile-photos/` prefix guard is the second, independent layer that
+ *   survives even if this invariant is ever weakened.
  *
  * JWT claims:
  * - getJWTCustomClaims() includes organization_id for CLIENT CONVENIENCE only.
@@ -36,6 +46,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  *
  * @property Carbon|null $deactivated_at
  * @property Carbon|null $password_changed_at
+ * @property string|null $profile_photo_path
  */
 class User extends Authenticatable implements JWTSubject
 {

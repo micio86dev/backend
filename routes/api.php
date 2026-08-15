@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
@@ -106,12 +107,23 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 //
 // throttle:6,1 on the password route only (design D5): without it the
 // endpoint is a current-password oracle for a stolen bearer token.
+//
+// user-avatar-image (design D1): POST/DELETE /profile/photo join this SAME
+// block — a binary sub-resource beside the JSON /profile resource, never
+// inside it. `PATCH /profile`'s `only(['name','email','locale'])` line
+// (ProfileController::update) stays byte-unchanged by this addition.
+// throttle:10,1 on POST only (design D1): every call costs an object-storage
+// PUT, so an unthrottled upload is a storage-burn primitive for a stolen
+// bearer token. DELETE is idempotent and free — no throttle.
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::patch('/profile', [ProfileController::class, 'update']);
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])
         ->middleware('throttle:6,1');
+    Route::post('/profile/photo', [ProfilePhotoController::class, 'store'])
+        ->middleware('throttle:10,1');
+    Route::delete('/profile/photo', [ProfilePhotoController::class, 'destroy']);
 });
 
 // ─── User Management (backoffice-missing-pages, D4) ───────────────────────────
