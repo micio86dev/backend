@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.9.0"
+        "version": "0.11.0"
     },
     "servers": [
         {
@@ -501,13 +501,18 @@
                                                 "locale": {
                                                     "type": "string",
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
+                                                },
+                                                "photo_url": {
+                                                    "type": "string",
+                                                    "description": "user-avatar-image (design D4): the SAME signer ProfileResource\nuses \u2014 /auth/me is the shell-identity contract useCurrentUser\ncaches once per page load, so this is the second (and only\nother) caller of ProfilePhotoUrlSigner."
                                                 }
                                             },
                                             "required": [
                                                 "id",
                                                 "name",
                                                 "email",
-                                                "locale"
+                                                "locale",
+                                                "photo_url"
                                             ]
                                         },
                                         "organization": {
@@ -2681,6 +2686,92 @@
                 }
             }
         },
+        "/profile/photo": {
+            "post": {
+                "operationId": "profilePhoto.store",
+                "description": "Validation order matters (design D3b) \u2014 the first three steps touch\nonly the PHP temp file, so a rejected upload NEVER reaches the disk:\n  1. UpdateProfilePhotoRequest (required|file|max:2048 KB, shape only)\n  2. Magic-byte verdict (content, never the declared type)\n  3. getimagesize() \u2014 false, or over the configured dimension cap\n  4. Storage::putFileAs(...) \u2014 no disk() argument (SingleStorageDiskArchTest)\n  5. $user->profile_photo_path = $newKey; $user->save();\n     throws \u2192 delete the NEW key in the catch, then re-throw \u2014 never\n     orphan the object the row-write that just failed never pointed to.\n  6. After the row commits, delete the OLD key. Logged, never fatal:\n     at most one stale object per user is preferable to failing a\n     request over a change that already succeeded.",
+                "summary": "POST /api/profile/photo",
+                "tags": [
+                    "ProfilePhoto"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateProfilePhotoRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`ProfileResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProfileResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "profilePhoto.destroy",
+                "description": "Object-first, then null the column \u2014 exactly purgeSnapshots()'s\nordering (design D5): a failed object delete leaves the row intact\nfor a retryable second call, and S3/R2 deletes are idempotent, so a\nsecond DELETE with nothing left to remove still succeeds (design\nspec: \"Removing a photo twice ... still 200\").",
+                "summary": "DELETE /api/profile/photo",
+                "tags": [
+                    "ProfilePhoto"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ProfileResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProfileResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/projects": {
             "get": {
                 "operationId": "projects.index",
@@ -4415,9 +4506,17 @@
                         "type": "string"
                     },
                     "locale": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
-                    "role": {},
+                    "role": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "organization": {
                         "type": [
                             "object",
@@ -4435,6 +4534,12 @@
                             "id",
                             "name"
                         ]
+                    },
+                    "photo_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -4443,7 +4548,8 @@
                     "email",
                     "locale",
                     "role",
-                    "organization"
+                    "organization",
+                    "photo_url"
                 ],
                 "title": "ProfileResource"
             },
@@ -5111,6 +5217,22 @@
                     "password_confirmation"
                 ],
                 "title": "UpdatePasswordRequest"
+            },
+            "UpdateProfilePhotoRequest": {
+                "type": "object",
+                "description": "UpdateProfilePhotoRequest (user-avatar-image, design D3/D3b).\n\nValidates POST /api/profile/photo. `max:2048` (KB) is the SHAPE check \u2014\n`ValidatePostSize` already returns 413 for anything past nginx's\n`client_max_body_size 8m` / PHP's `post_max_size=8M` before this even\nruns. The REAL enforcement is `config('profile.photo.max_bytes')`\n(2 MiB), checked in ProfilePhotoController against the real byte count,\nnever this literal.\n\nWhat this rule does NOT do, stated plainly, per design D3 \u2014 the residual\nis documented in code, not just in design.md:\n\n- No re-encode: EXIF (including GPS coordinates, camera serial, capture\n  timestamp, and any embedded thumbnail) survives verbatim into every\n  presigned URL served from the stored object.\n- Polyglots and trailing payloads pass every check here \u2014 bytes appended\n  after valid image data are never inspected, so the object is\n  effectively a byte-capped arbitrary-content store keyed to a user id.\n- A 4096\u00d74096 PNG (the dimension cap's own ceiling) is roughly 64 MB\n  decompressed once a browser renders it \u2014 the cap bounds the spike, it\n  does not remove it.\n- Nothing decodes server-side, so a header-valid file crafted to crash a\n  specific image decoder is not detected.\n\nThe only route to closing any of the above is re-encoding, which needs\n`ext-gd` or `ext-imagick` \u2014 neither is installed in either Dockerfile\nstage, and adding one is explicitly out of scope for this change.\nClient-side canvas re-encoding is a UX convenience, never a control: it\nmakes honest uploads fit the cap and incidentally drops EXIF, but an\nattacker posts the multipart request directly and skips it entirely.\n\nREQ: Upload Is Validated By Content, Not By Declared Type\n(openspec/changes/user-avatar-image/specs/user-self-service/spec.md)",
+                "properties": {
+                    "photo": {
+                        "type": "string",
+                        "format": "binary",
+                        "contentMediaType": "application/octet-stream",
+                        "description": "Maximum file size: 2048 kilobytes."
+                    }
+                },
+                "required": [
+                    "photo"
+                ],
+                "title": "UpdateProfilePhotoRequest"
             },
             "UpdateProfileRequest": {
                 "type": "object",
