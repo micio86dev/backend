@@ -26,7 +26,17 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class ParticipantResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * `status` is a union closed by `Participant::$allowedTransitions`
+     * (`Participant.php:110-116`) — a private static map the `updating`
+     * guard enforces by throwing on anything outside it. `role_code` stays a
+     * plain nullable string: the ICO/FLL/MLL/BUL/SRX set is data owned by
+     * the wrapper superproject (`docs/app_description/.../roles.json`), not
+     * code in this repository. `id`/`project_id` are backed by an explicit
+     * `(int)` cast (design.md D1 — pdo_pgsql bigint).
+     *
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, started_at: string|null, completed_at: string|null, created_at: string|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, started_at: string|null, completed_at: string|null, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -34,13 +44,13 @@ class ParticipantResource extends JsonResource
         $participant = $this->resource;
 
         return [
-            'id' => $participant->id,
+            'id' => (int) $participant->id,
             'candidate_ref' => $participant->candidate_ref,
             'display_name' => $participant->display_name,
             'role_code' => $participant->role_code,
             'language' => $participant->language,
             'status' => $participant->status,
-            'project_id' => $participant->project_id,
+            'project_id' => (int) $participant->project_id,
             'started_at' => $participant->started_at?->toISOString(),
             'completed_at' => $participant->completed_at?->toISOString(),
             'created_at' => $participant->created_at->toISOString(),

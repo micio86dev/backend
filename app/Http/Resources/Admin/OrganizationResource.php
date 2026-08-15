@@ -22,7 +22,17 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class OrganizationResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * Same Scramble local-assignment defect as `ApiClientResource` (design.md
+     * D1) — a local var-annotated assignment alone is not honoured by
+     * Scramble's static walk. `@scramble-return` is the actual override
+     * hook; `@return` is kept for PHPStan/IDE tooling. `id` is backed by an
+     * explicit `(int)` cast — `Project.php:86-88` records that pdo_pgsql can
+     * return bigint as string, and the contract must be true regardless of
+     * that PDO detail.
+     *
+     * @return array{id: int, name: string, slug: string, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     *
+     * @scramble-return array{id: int, name: string, slug: string, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -30,7 +40,7 @@ class OrganizationResource extends JsonResource
         $organization = $this->resource;
 
         return [
-            'id' => $organization->id,
+            'id' => (int) $organization->id,
             'name' => $organization->name,
             'slug' => $organization->slug,
             'default_webhook_url' => $organization->default_webhook_url,

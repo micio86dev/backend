@@ -126,7 +126,7 @@ test('a created template is never active', function () use ($validPayload): void
     expect($existing->fresh()->is_active)->toBeTrue();
 });
 
-test('an invalid config is rejected with every error at once', function (): void {
+test('an invalid config is rejected with every error at once, keyed per field', function (): void {
     $org = Organization::factory()->create();
 
     $response = $this->withToken(templateActor($org, 'admin'))
@@ -138,9 +138,13 @@ test('an invalid config is rejected with every error at once', function (): void
         ->assertStatus(422);
 
     // avatarId + voiceId missing, voiceSpeed out of range, nonsense unknown.
-    // All four, in one response: one error per round trip turns filling in a
-    // form into a guessing game.
-    expect($response->json('errors.config'))->toHaveCount(4);
+    // All four, in one response, each under its own `config.{knob}` key
+    // (generated-client-truth-and-session-safety D6) — one error per round
+    // trip turns filling in a form into a guessing game, and a field-keyed
+    // shape is what lets the client place each one without parsing text.
+    $response->assertJsonValidationErrors([
+        'config.avatarId', 'config.voiceId', 'config.voiceSpeed', 'config.nonsense',
+    ])->assertJsonMissingValidationErrors(['config']);
 });
 
 test('an unknown provider is rejected', function (): void {

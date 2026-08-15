@@ -9,6 +9,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $id
+ * @property string $name
+ * @property string $slug
+ * @property string|null $default_webhook_url
+ * @property list<string>|null $default_webhook_events
+ * @property string|null $default_webhook_secret
+ */
 class Organization extends Model
 {
     /** @use HasFactory<OrganizationFactory> */

@@ -112,6 +112,13 @@ final class ApiClientController extends Controller
      * GET /api/m2m/clients
      * Auth: auth:api (admin only via ApiClientPolicy)
      *
+     * Unpaginated (generated-client-truth-and-session-safety D5) — the panel
+     * answers a whole-set question: what can authenticate against my org,
+     * and what did I revoke. Not a page-at-a-time one; `UserController::index`
+     * already returns an unpaginated org-scoped `->get()` for the same class
+     * of operator-managed collection. `is_active` first so the rows that
+     * matter most stay first even at unusual scale.
+     *
      * Never returns key_hash or raw api_key.
      */
     public function index(Request $request): AnonymousResourceCollection
@@ -122,8 +129,9 @@ final class ApiClientController extends Controller
         $user = $request->user();
 
         $clients = ApiClient::where('organization_id', $user->organization_id)
+            ->orderByDesc('is_active')
             ->orderByDesc('created_at')
-            ->paginate(20);
+            ->get();
 
         return ApiClientResource::collection($clients);
     }

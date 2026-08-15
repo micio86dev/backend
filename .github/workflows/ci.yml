@@ -39,6 +39,13 @@ jobs:
 
     env:
       APP_ENV: testing
+      # Pinned so `scramble:export`'s servers[0].url (built from APP_URL by
+      # Generator.php) is environment-coupled to a KNOWN value rather than to
+      # Laravel's `env('APP_URL', 'http://localhost')` default — the freshness
+      # gate below must fail on a real contract change, never on a server URL
+      # that happened to match the committed file by accident of the default
+      # (generated-client-truth-and-session-safety D2).
+      APP_URL: http://localhost
       # Throwaway 32-byte key for CI only (aes-256-cbc); NOT a production secret.
       # The placeholder previously here was an invalid cipher length and broke
       # any test that encrypts a field (e.g. webhook_secret encrypted cast).
@@ -112,6 +119,19 @@ jobs:
       # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
       - name: Generate OpenAPI spec
         run: php artisan scramble:export
+
+      # ── Freshness gate: the committed snapshot MUST match a fresh export ───
+      # Proves the committed api/openapi.json is TRUE (matches a live
+      # regeneration of the CURRENT code), not merely that Scramble can
+      # produce a document — the exact class of drift that let ten mistyped
+      # resources and a `ProfileResource.locale` staleness ship undetected
+      # (generated-client-truth-and-session-safety D2/proposal). Verified
+      # byte-deterministic across two consecutive local exports on unchanged
+      # code before this step was enabled; if that ever stops holding, switch
+      # to the canonicalised-JSON comparison `wrapper-ci.yml` already uses for
+      # its three-way diff instead of weakening this to a grep.
+      - name: Assert committed openapi.json matches a fresh export
+        run: git diff --exit-code openapi.json
 
       - name: Assert openapi.json produced
         run: test -f openapi.json && echo "openapi.json OK"

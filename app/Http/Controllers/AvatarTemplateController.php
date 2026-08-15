@@ -229,14 +229,19 @@ final class AvatarTemplateController extends Controller
             return;
         }
 
-        // Every problem at once. One error per round trip turns filling in a
-        // seventeen-field form into a guessing game.
-        throw ValidationException::withMessages([
-            'config' => array_map(
-                fn (array $e): string => "{$e['key']}: {$e['code']}",
-                $errors,
-            ),
-        ]);
+        // Every problem at once, one entry per offending knob
+        // (generated-client-truth-and-session-safety D6) — `config.{key}` is
+        // Laravel's own nested-attribute convention (`competency_ids.0`), and
+        // the backoffice form maps each one onto its own control through the
+        // shared 422-mapping pattern. `config` and `config.{knob}` are
+        // disjoint by construction: this method only runs after
+        // `$request->validate(['config' => ['required','array']])` already
+        // passed, so a non-array config never reaches here.
+        throw ValidationException::withMessages(
+            collect($errors)
+                ->mapWithKeys(fn (array $e): array => ["config.{$e['key']}" => $e['code']])
+                ->all()
+        );
     }
 
     private function assertNameFree(string $name, ?int $exceptId): void
