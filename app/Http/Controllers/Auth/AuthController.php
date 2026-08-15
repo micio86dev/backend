@@ -139,6 +139,9 @@ final class AuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                // user-profile-self-service: previously the column and
+                // $fillable entry existed but /auth/me never returned it.
+                'locale' => $user->locale,
             ],
             'organization' => $org !== null ? [
                 'id' => $org->id,

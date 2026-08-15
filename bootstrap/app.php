@@ -6,6 +6,7 @@ use App\Exceptions\ParticipantTransitionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
+use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
 use Illuminate\Console\Scheduling\Schedule;
@@ -77,6 +78,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // has authenticated the bearer token and loaded the User from the DB.
         // IMPORTANT: TenantContext must never run before auth:api — it would receive null user.
         $middleware->appendToGroup('api', TenantContext::class);
+
+        // user-profile-self-service (design D3): registered AFTER TenantContext,
+        // its own middleware rather than folded into TenantContext — three route
+        // groups call withoutMiddleware(TenantContext::class), and piggybacking
+        // would let a future tenancy exemption silently exempt credential
+        // revocation too. Relies on $request->user() already being loaded by
+        // auth:api, same ordering requirement as TenantContext above.
+        $middleware->appendToGroup('api', RejectStaleCredentials::class);
 
         // C5: Register the 'ability' middleware alias for per-route M2M ability checks.
         // e.g. Route::middleware('ability:participants:read')

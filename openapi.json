@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.8.0"
+        "version": "0.9.0"
     },
     "servers": [
         {
@@ -497,12 +497,17 @@
                                                 },
                                                 "email": {
                                                     "type": "string"
+                                                },
+                                                "locale": {
+                                                    "type": "string",
+                                                    "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 }
                                             },
                                             "required": [
                                                 "id",
                                                 "name",
-                                                "email"
+                                                "email",
+                                                "locale"
                                             ]
                                         },
                                         "organization": {
@@ -2538,6 +2543,144 @@
                 }
             }
         },
+        "/profile": {
+            "get": {
+                "operationId": "profile.show",
+                "summary": "GET /api/profile",
+                "tags": [
+                    "Profile"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ProfileResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProfileResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "profile.update",
+                "description": "`role`, `organization_id`, `is_superadmin`, `deactivated_at` are\nnever read from the request at all \u2014 `only()` whitelists the writable\nfields, so any of those keys in the body is silently dropped rather\nthan validated-then-rejected (design D2).",
+                "summary": "PATCH /api/profile",
+                "tags": [
+                    "Profile"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateProfileRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`ProfileResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProfileResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/profile/password": {
+            "put": {
+                "operationId": "profile.updatePassword",
+                "description": "The acting session survives by RE-MINTING, not by exemption (design\nD3): sets the password and `password_changed_at`, then\n`$guard->logout()` denylists the ACTING jti (the SAME mechanism\nAuthController::logout() uses), then `$guard->login($user)` mints a\nbrand-new token whose `iat >= password_changed_at`, returned in the\nbody \u2014 the same {access_token, token_type} shape as\nAuthController::refresh().\n\n`iat` is second-precision (design D3): `startOfSecond()` here pairs\nwith RejectStaleCredentials's strict `<` comparison, so a token minted\nin the same wall-clock second as this change is not born dead.",
+                "summary": "PUT /api/profile/password",
+                "tags": [
+                    "Profile"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdatePasswordRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string"
+                                        },
+                                        "token_type": {
+                                            "type": "string",
+                                            "const": "bearer"
+                                        }
+                                    },
+                                    "required": [
+                                        "access_token",
+                                        "token_type"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
         "/projects": {
             "get": {
                 "operationId": "projects.index",
@@ -4259,6 +4402,51 @@
                 ],
                 "title": "ParticipantResource"
             },
+            "ProfileResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "locale": {
+                        "type": "string"
+                    },
+                    "role": {},
+                    "organization": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "locale",
+                    "role",
+                    "organization"
+                ],
+                "title": "ProfileResource"
+            },
             "ProjectResource": {
                 "type": "object",
                 "properties": {
@@ -4900,6 +5088,52 @@
                     }
                 },
                 "title": "UpdateOrganizationRequest"
+            },
+            "UpdatePasswordRequest": {
+                "type": "object",
+                "description": "UpdatePasswordRequest (user-profile-self-service, design D4).\n\nValidates PUT /api/profile/password. Its OWN request \u2014 the admin\n`UpdateUserRequest` (`['sometimes','string','min:8']`, no current-password\ncheck) MUST NOT be reused for this route.\n\n`current_password:api` is not decoration: the rule resolves\n`auth()->guard($param)`, and the default guard is `env('AUTH_GUARD', 'api')`\n(config/auth.php:19) \u2014 an env change would make the rule read the wrong\nguard and fail closed on every request. `min:8` deliberately matches the\nadmin path floor \u2014 a stricter self-service floor would be theatre.\n\nREQ: Password Change Requires The Current Password\n(openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)",
+                "properties": {
+                    "current_password": {
+                        "type": "string"
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    },
+                    "password_confirmation": {
+                        "type": "string",
+                        "minLength": 8
+                    }
+                },
+                "required": [
+                    "current_password",
+                    "password",
+                    "password_confirmation"
+                ],
+                "title": "UpdatePasswordRequest"
+            },
+            "UpdateProfileRequest": {
+                "type": "object",
+                "description": "UpdateProfileRequest (user-profile-self-service, design D2/D8).\n\nValidates PATCH /api/profile. Declares ONLY `name`, `email`, `locale` \u2014\n`role`, `organization_id`, `is_superadmin`, `deactivated_at` are NEVER\ndeclared here, so a FormRequest alone does not strip them (D2 layer 1);\nProfileController's `$request->safe()->only([...])` (D2 layer 2) and\nUser::$fillable (D2 layer 3) are what actually drop them, silently rather\nthan a validated-then-rejected `prohibited` 422 (same discipline as\nUpdateOrganizationRequest.php's `slug`).\n\nREQ: Editable Fields Are An Allow-List; Email Uniqueness On Self-Update\n(openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "locale": {
+                        "type": "string",
+                        "enum": [
+                            "it",
+                            "en"
+                        ]
+                    }
+                },
+                "title": "UpdateProfileRequest"
             },
             "UpdateProjectRequest": {
                 "type": "object",
