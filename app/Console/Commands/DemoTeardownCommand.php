@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
 use App\Models\FrameworkVersion;
 use App\Models\InterviewSession;
 use App\Models\InterviewSnapshot;
+use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\WebhookDelivery;
 use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
@@ -108,6 +111,14 @@ final class DemoTeardownCommand extends Command
             ->where('candidate_ref', 'like', DemoMarker::PREFIX.'%')
             ->get();
 
+        // Step 1, MUST BE FIRST (design D12): notification_logs has no FK to
+        // its polymorphic subject, so its demo rows are identified by
+        // resolving (subject_type, subject_id) against a STILL-EXISTING
+        // demo participant or demo webhook delivery — collected here, before
+        // anything else is deleted. Deleting subjects first would make these
+        // rows PERMANENTLY unidentifiable orphans (non-negotiable #6).
+        $notificationLogsRemoved = $this->deleteNotificationLogs($demoParticipants);
+
         $this->sweepStorage($organization, $demoParticipants);
 
         // Deleting each participant cascades its sessions (→ utterances,
@@ -130,6 +141,14 @@ final class DemoTeardownCommand extends Command
         foreach ($demoTemplates as $template) {
             $template->delete();
         }
+
+        // Step 6 (design D12): explicit delete — no cascade exists from
+        // organizations. api_clients is NOT a TenantModel, so this is
+        // filtered by organization_id explicitly, mirroring the guard's own
+        // raw lookup.
+        $demoApiClientsRemoved = ApiClient::where('organization_id', $organization->id)
+            ->where('name', 'like', DemoMarker::PREFIX.'%')
+            ->delete();
 
         $version = FrameworkVersion::where('version', DemoMarker::PREFIX.'1.0.0')->first();
         $versionRemoved = false;
@@ -154,14 +173,39 @@ final class DemoTeardownCommand extends Command
         $this->table(
             ['What', 'Removed'],
             [
+                ['Notification logs', $notificationLogsRemoved],
                 ['Participants', $demoParticipants->count()],
                 ['Projects', $demoProjects->count()],
                 ['Avatar templates', $demoTemplates->count()],
+                ['API clients', $demoApiClientsRemoved],
                 ['FrameworkVersion', $versionRemoved ? 'beai-demo-1.0.0' : 'none (did not exist)'],
             ],
         );
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Step 1 of teardown, MUST run before anything else is deleted (design
+     * D12). `notification_logs` has no FK to its polymorphic subject, so its
+     * demo rows are identified by resolving `(subject_type, subject_id)`
+     * against a demo participant's id or a demo webhook delivery's id — both
+     * collected here while they still exist. `webhook_deliveries` are read
+     * (never written) from participants that have not been touched yet, so
+     * every one reachable from a demo participant is still present.
+     *
+     * @param  Collection<int, Participant>  $demoParticipants
+     */
+    private function deleteNotificationLogs(Collection $demoParticipants): int
+    {
+        $participantIds = $demoParticipants->pluck('id');
+
+        $deliveryIds = WebhookDelivery::whereIn('participant_id', $participantIds)->pluck('id');
+
+        return NotificationLog::where(function ($query) use ($participantIds, $deliveryIds): void {
+            $query->where(fn ($q) => $q->where('subject_type', 'participant')->whereIn('subject_id', $participantIds))
+                ->orWhere(fn ($q) => $q->where('subject_type', 'webhook_delivery')->whereIn('subject_id', $deliveryIds));
+        })->delete();
     }
 
     /**

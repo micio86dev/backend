@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\AiRequest;
+use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\FrameworkVersion;
+use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\WebhookDelivery;
 use App\Support\Demo\DemoDatasetValidator;
 use App\Support\Demo\DemoMarker;
 use App\Support\Demo\DemoWriter;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -87,6 +92,7 @@ final class DemoSeedCommand extends Command
 
         $this->printPreflightCensus($organization);
         $this->printAssessmentTypeGap();
+        $this->printOperationalCensus($organization);
 
         DemoDatasetValidator::assertValid();
 
@@ -161,7 +167,7 @@ final class DemoSeedCommand extends Command
         }
 
         if ($observed === $expectedShallow) {
-            $this->info('Demo dataset already fully provisioned for this organization — verifying idempotently, no new rows expected.');
+            $this->info('Demo dataset already fully provisioned for this organization: the four marked roots are complete; operational surfaces will be topped up where missing.');
 
             return null;
         }
@@ -223,13 +229,53 @@ final class DemoSeedCommand extends Command
 
         $userCount = User::where('organization_id', $organization->id)->count();
 
+        // api_clients is NOT a TenantModel (design D17) — organization_id is
+        // filtered explicitly, matching the guard's own raw lookup.
+        $nonDemoApiClients = ApiClient::where('organization_id', $organization->id)
+            ->where('name', 'not like', DemoMarker::PREFIX.'%')
+            ->count();
+
         $this->table(
             ['Pre-existing (non-demo)', 'Count'],
             [
                 ['Projects', $nonDemoProjects],
                 ['Participants', $nonDemoParticipants],
                 ['Users', $userCount],
+                ['API clients', $nonDemoApiClients],
             ],
         );
+    }
+
+    /**
+     * Reported, never a refusal basis (design D11): `ai_requests`,
+     * `api_clients`, `webhook_deliveries`, and `notification_logs` are
+     * non-root, per-parent-idempotent top-ups — `checkCensusGate` never reads
+     * these counts. Printed BEFORE the gate decision so an operator sees
+     * exactly what will be topped up whether the run proceeds or refuses.
+     */
+    private function printOperationalCensus(Organization $organization): void
+    {
+        $expected = DemoDatasetValidator::expectedCensus();
+
+        $observed = TenantContextScope::runFor($organization->id, fn (): array => [
+            'ai_requests' => AiRequest::count(),
+            'webhook_deliveries' => WebhookDelivery::count(),
+            'notification_logs' => NotificationLog::count(),
+        ]);
+
+        $observed['api_clients'] = ApiClient::where('organization_id', $organization->id)
+            ->where('name', 'like', DemoMarker::PREFIX.'%')
+            ->count();
+
+        $rows = [];
+
+        foreach (['ai_requests', 'api_clients', 'webhook_deliveries', 'notification_logs'] as $key) {
+            $expectedCount = $expected[$key];
+            $observedCount = $observed[$key];
+            $rows[] = [$key, $expectedCount, $observedCount, max(0, $expectedCount - $observedCount)];
+        }
+
+        $this->line('Operational surfaces (top-ups — never a refusal basis, design D11):');
+        $this->table(['Table', 'Expected', 'Observed', 'To write'], $rows);
     }
 }

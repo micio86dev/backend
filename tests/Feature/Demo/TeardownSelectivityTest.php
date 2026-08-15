@@ -19,12 +19,16 @@ declare(strict_types=1);
  *     answer to design open question 2)
  */
 
+use App\Models\AiRequest;
+use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
 use App\Models\FrameworkVersion;
+use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\WebhookDelivery;
 use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
 use Database\Seeders\FrameworkCatalogSeeder;
@@ -94,7 +98,14 @@ test('teardown removes every demo row and storage object, leaves a real particip
         expect(Project::where('slug', 'like', DemoMarker::PREFIX.'%')->count())->toBe(0);
         expect(AvatarTemplate::where('name', 'like', DemoMarker::PREFIX.'%')->count())->toBe(0);
         expect(FrameworkVersion::where('version', DemoMarker::PREFIX.'1.0.0')->count())->toBe(0);
+        // The four operational tables (design D12/D17): ai_requests and
+        // webhook_deliveries via cascade, api_clients and notification_logs
+        // via the explicit delete steps.
+        expect(AiRequest::count())->toBe(0);
+        expect(WebhookDelivery::count())->toBe(0);
+        expect(NotificationLog::count())->toBe(0);
     });
+    expect(ApiClient::where('organization_id', $this->org->id)->where('name', 'like', DemoMarker::PREFIX.'%')->count())->toBe(0);
 
     // The organization row itself is never deleted.
     expect(Organization::find($this->org->id))->not->toBeNull();
