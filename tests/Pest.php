@@ -368,6 +368,14 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/AdminReadApi');
 
+// ─── user-profile-self-service ─────────────────────────────────────────────────
+
+// Feature/UserSelfService — RefreshDatabase: the allow-list, email-uniqueness,
+// password-change and credential-revocation assertions are all made against
+// real users/roles rows and real minted JWTs, not mocks.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/UserSelfService');
+
 // ─── object-storage-fix ────────────────────────────────────────────────────────
 
 // Unit/Storage — needs TestCase so config()->set() and Storage::disk() resolve

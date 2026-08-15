@@ -24,6 +24,10 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  *   sufficient because fillable mass-assignment sets the value before INSERT).
  * - `deactivated_at` MUST NOT be in $fillable — written only by
  *   UserController::deactivate/activate (backoffice-missing-pages D5).
+ * - `password_changed_at` MUST NOT be in $fillable — written only by
+ *   ProfileController::updatePassword (user-profile-self-service, design D3).
+ *   Compared against a JWT's `iat` claim by RejectStaleCredentials to revoke
+ *   every session other than the one that performed the change.
  *
  * JWT claims:
  * - getJWTCustomClaims() includes organization_id for CLIENT CONVENIENCE only.
@@ -31,6 +35,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  *   from $user->organization_id (DB record).
  *
  * @property Carbon|null $deactivated_at
+ * @property Carbon|null $password_changed_at
  */
 class User extends Authenticatable implements JWTSubject
 {
@@ -124,6 +129,7 @@ class User extends Authenticatable implements JWTSubject
             'password' => 'hashed',
             'is_superadmin' => 'boolean',
             'deactivated_at' => 'datetime',
+            'password_changed_at' => 'datetime',
         ];
     }
 }

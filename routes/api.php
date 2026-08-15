@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
@@ -32,6 +33,7 @@ use App\Http\Controllers\M2m\WhoamiController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
+use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\TenantContext;
 use App\Http\Middleware\TenantContextCandidate;
 use App\Http\Middleware\TenantContextM2m;
@@ -93,6 +95,23 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/organization', [OrganizationController::class, 'show']);
     Route::patch('/organization', [OrganizationController::class, 'update']);
+});
+
+// ─── User Self-Service Profile (user-profile-self-service, design D1) ────────
+// Singular, self-resolving resource — NO id in the path, ever, mirroring the
+// Organization Settings block above exactly. The subject resolves
+// EXCLUSIVELY from the authenticated user's token; there is no policy check
+// here (no object to authorize) and this surface is entirely separate from
+// the admin-only User Management block below — UserPolicy is untouched.
+//
+// throttle:6,1 on the password route only (design D5): without it the
+// endpoint is a current-password oracle for a stolen bearer token.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/profile', [ProfileController::class, 'show']);
+    Route::patch('/profile', [ProfileController::class, 'update']);
+    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])
+        ->middleware('throttle:6,1');
 });
 
 // ─── User Management (backoffice-missing-pages, D4) ───────────────────────────
@@ -205,6 +224,11 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 //   TenantContext (bootstrap/app.php:24) from this group — without this, the
 //   human TenantContext would silently pass through on a null User, potentially
 //   leaving the resolver in a stale/null state.
+//   withoutMiddleware(RejectStaleCredentials::class) (user-profile-self-service,
+//   design D3) — same reasoning: that middleware blindly reads $request->user()
+//   on the default 'api' guard, which on an M2M request resolves the human JWT
+//   guard against whatever bearer key is present and would 500 rather than
+//   pass through cleanly.
 //
 // Inline middleware stack (explicit, ordered):
 //   1. auth:api-m2m       — resolves ApiClient via bearer key
@@ -215,7 +239,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // TenantContext (see admin group below).
 
 Route::prefix('m2m')
-    ->withoutMiddleware(TenantContext::class)
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
     ->middleware(['auth:api-m2m', TenantContextM2m::class, SubstituteBindings::class])
     ->group(function (): void {
         // GET /api/m2m/whoami — identity for the authenticated M2M client.
@@ -243,14 +267,23 @@ Route::prefix('m2m')
 // PUBLIC endpoint — no guard, no TenantContext.
 // CRITICAL: withoutMiddleware(TenantContext::class) prevents the globally-appended
 // human TenantContext (bootstrap/app.php) from running on this public request.
+// withoutMiddleware(RejectStaleCredentials::class) (user-profile-self-service,
+// design D3): same reasoning — this route is PUBLIC and unauthenticated on the
+// 'api' guard, but $request->user() still attempts to resolve whatever bearer
+// token is present (here, a structurally-JWT-but-not-a-User sso-link token),
+// which 500s rather than passing through.
 
 Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
-    ->withoutMiddleware(TenantContext::class);
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class]);
 
 // ─── Candidate Routes (C6) ───────────────────────────────────────────────────
 // Protected by auth:api-candidate → TenantContextCandidate → SubstituteBindings.
 // withoutMiddleware(TenantContext::class) strips the globally-appended human
 // TenantContext — same isolation as M2M routes.
+// withoutMiddleware(RejectStaleCredentials::class) (user-profile-self-service,
+// design D3) — same isolation reasoning: the candidate JWT's `sub` is a
+// Participant identifier, not a users.id, so resolving it against the human
+// 'api' guard's User provider would 500 instead of passing through.
 //
 // Middleware stack (explicit, ordered):
 //   1. auth:api-candidate      — resolves Participant via candidate JWT
@@ -258,7 +291,7 @@ Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
 //   3. SubstituteBindings      — route-model-binding (LAST)
 
 Route::prefix('candidate')
-    ->withoutMiddleware(TenantContext::class)
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
     ->middleware(['auth:api-candidate', TenantContextCandidate::class, SubstituteBindings::class])
     ->group(function (): void {
         // GET /api/candidate/session — candidate whoami + project config
