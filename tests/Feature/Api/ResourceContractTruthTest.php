@@ -219,6 +219,55 @@ describe('2.2 ids and foreign keys are integers', function (): void {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// 2.2b — operator-interview-link (design D5): ParticipantDetailResource
+// carries a nested `project` gate-fields object — required for the
+// backoffice to disable the mint action with a reason instead of offering
+// an action guaranteed to fail server-side.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('2.2b Admin ParticipantDetailResource nested project object', function (): void {
+    test('data.project carries id, name, status, goes_live_at, deadline_at', function (): void {
+        $org = Organization::factory()->create();
+        $token = truthTestAdminUser($org);
+        $project = truthTestProjectIn($org, [
+            'name' => 'Truth Project',
+            'status' => 'active',
+            'goes_live_at' => now()->subDay(),
+            'deadline_at' => now()->addWeek(),
+        ]);
+        $participant = Participant::factory()->forProject($project)->create();
+
+        $response = $this->withToken($token)->getJson('/api/participants/'.$participant->id);
+        $response->assertOk();
+
+        $data = $response->json('data');
+        expect($data)->toHaveKey('project');
+        expect($data['project']['id'])->toBeInt();
+        expect($data['project']['id'])->toBe($project->id);
+        expect($data['project']['name'])->toBe('Truth Project');
+        expect($data['project']['status'])->toBe('active');
+        expect($data['project']['goes_live_at'])->toBeString();
+        expect($data['project']['deadline_at'])->toBeString();
+    });
+
+    test('data.project.goes_live_at and .deadline_at are null when unset', function (): void {
+        $org = Organization::factory()->create();
+        $token = truthTestAdminUser($org);
+        $project = truthTestProjectIn($org, ['goes_live_at' => null, 'deadline_at' => null]);
+        $participant = Participant::factory()->forProject($project)->create();
+
+        $response = $this->withToken($token)->getJson('/api/participants/'.$participant->id);
+        $response->assertOk();
+
+        $data = $response->json('data');
+        expect($data['project'])->toHaveKey('goes_live_at');
+        expect($data['project']['goes_live_at'])->toBeNull();
+        expect($data['project'])->toHaveKey('deadline_at');
+        expect($data['project']['deadline_at'])->toBeNull();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // 2.3 — Union RED: status/assessment_type/role are the real value.
 // ─────────────────────────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.12.0"
+        "version": "0.14.1"
     },
     "servers": [
         {
@@ -1007,6 +1007,108 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/entry-links": {
+            "post": {
+                "operationId": "entryLink.store",
+                "tags": [
+                    "EntryLink"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "project_id": {
+                                        "type": "integer"
+                                    },
+                                    "candidate_ref": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "display_name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "role_code": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 50
+                                    },
+                                    "lang": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 10
+                                    }
+                                },
+                                "required": [
+                                    "project_id",
+                                    "candidate_ref",
+                                    "display_name"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "entry_url": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "entry_url",
+                                        "expires_at"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Conflict: participant has already completed this assessment."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -4277,6 +4379,44 @@
                     "project_id": {
                         "type": "integer"
                     },
+                    "project": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "draft",
+                                    "active",
+                                    "archived"
+                                ]
+                            },
+                            "goes_live_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "deadline_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "status",
+                            "goes_live_at",
+                            "deadline_at"
+                        ]
+                    },
                     "timeline": {
                         "type": "object",
                         "properties": {
@@ -4364,6 +4504,7 @@
                     "language",
                     "status",
                     "project_id",
+                    "project",
                     "timeline",
                     "files",
                     "created_at"

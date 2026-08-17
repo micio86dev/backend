@@ -31,6 +31,16 @@ use Tymon\JWTAuth\JWTAuth;
 class CandidateTokenFactory
 {
     /**
+     * TTL, in minutes, of a raw sso-link mint (both the M2M mint and the
+     * operator-facing mint, operator-interview-link design D1). The minter
+     * derives `expires_at` from THIS constant so it can never drift from
+     * `setTTL()` below — a single source of truth for the 30-minute
+     * invariant this feature was designed around (see
+     * `openspec/specs/participant-sso/spec.md` — "No Revocation Semantics").
+     */
+    public const SSO_LINK_TTL_MINUTES = 30;
+
+    /**
      * Mint a RAW sso-link JWT.
      *
      * The token carries custom claims only — NOT minted via JWTAuth::fromUser,
@@ -60,10 +70,10 @@ class CandidateTokenFactory
         ];
 
         // RAW mint: iss/iat/exp/nbf/jti auto-populated by factory.
-        // setTTL(30) = 30 minutes for sso-link token.
+        // setTTL(self::SSO_LINK_TTL_MINUTES) for the sso-link token.
         // Build Payload then encode to token string.
         $jwt = app(JWTAuth::class);
-        $jwt->factory()->setTTL(30);
+        $jwt->factory()->setTTL(self::SSO_LINK_TTL_MINUTES);
         $jwtPayload = $jwt->factory()->customClaims($payload)->make();
 
         return $jwt->manager()->encode($jwtPayload)->get();

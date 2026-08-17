@@ -7,6 +7,7 @@ declare(strict_types=1);
 // See docs/api-versioning.md for the full contract.
 
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationIndexController;
 use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\OrganizationController;
@@ -213,6 +214,18 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
     Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
+});
+
+// ─── Entry Link Mint (operator-interview-link) ────────────────────────────
+// POST /api/entry-links — human-facing mint for an authenticated backoffice
+// operator. Own route group, adjacent to (NOT inside) the Admin Read API
+// block above — it is a WRITE (starts an assessment), not a read.
+// ParticipantPolicy::create denies viewer; EntryLinkController resolves the
+// project scoped by TenantContext's TenantScoped global scope (cross-org →
+// 404) before delegating to the shared EntryLinkMinter (design D1/D2).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::post('/entry-links', [EntryLinkController::class, 'store']);
 });
 
 // ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────

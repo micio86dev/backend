@@ -407,3 +407,18 @@ pest()->extend(TestCase::class)
 // point of the test.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Demo');
+
+// Unit/Sso — needs TestCase + RefreshDatabase (operator-interview-link):
+// EntryLinkMinterTest exercises the minter against a real Project/Participant
+// row (gates, role_code inheritance, terminal-status refusal); a JWT is minted
+// via CandidateTokenFactory, so the decoded exp claim can be compared against
+// the returned expires_at. EntryLinkUrlComposerTest is pure (no DB) but shares
+// the directory.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Sso');
+
+// Feature/EntryLink — RefreshDatabase: POST /api/entry-links is exercised
+// end-to-end (auth:api + TenantContext + ParticipantPolicy + real Project rows).
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/EntryLink');

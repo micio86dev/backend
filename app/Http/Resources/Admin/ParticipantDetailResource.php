@@ -40,14 +40,29 @@ class ParticipantDetailResource extends JsonResource
      * `id`/`project_id`/`timeline.session_count` backed by explicit `(int)`
      * casts).
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * `project` (operator-interview-link, design D5): the same three gate
+     * fields `ProjectResource` already carries (`status`, `goes_live_at`,
+     * `deadline_at`), plus `id`/`name` — lets the backoffice disable the
+     * "Generate new link" action with a stated reason instead of offering an
+     * action guaranteed to fail server-side. `id`/`name`/`goes_live_at`/
+     * `deadline_at` move in lockstep across BOTH this docblock and the
+     * `@scramble-return` below, or the exported schema lies (design D5).
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
         /** @var Participant $participant */
         $participant = $this->resource;
+        // firstOrFail(), not the magic `->project` accessor: `project_id` is
+        // a required FK, but BelongsTo::getResults() is typed nullable
+        // (PHPStan/Larastan), which a bare property access cannot narrow.
+        // firstOrFail() both satisfies the type checker honestly and throws
+        // a clear exception instead of a null-pointer crash on the
+        // pathological case of an orphaned FK.
+        $project = $participant->project()->firstOrFail();
 
         return [
             'id' => (int) $participant->id,
@@ -57,6 +72,13 @@ class ParticipantDetailResource extends JsonResource
             'language' => $participant->language,
             'status' => $participant->status,
             'project_id' => (int) $participant->project_id,
+            'project' => [
+                'id' => (int) $project->id,
+                'name' => $project->name,
+                'status' => $project->status,
+                'goes_live_at' => $project->goes_live_at?->toISOString(),
+                'deadline_at' => $project->deadline_at?->toISOString(),
+            ],
             'timeline' => [
                 'started_at' => $participant->started_at?->toISOString(),
                 'completed_at' => $participant->completed_at?->toISOString(),

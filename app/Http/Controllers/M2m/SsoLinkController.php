@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\M2m;
 
+use App\Exceptions\Sso\EntryLinkRefusalReason;
+use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
 use App\Models\ApiClient;
-use App\Models\Participant;
 use App\Models\Project;
-use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Sso\EntryLinkMinter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,11 +23,13 @@ use Illuminate\Http\Request;
  *
  * Flow:
  *   1. Resolve project SCOPED to the caller's organization (cross-org → 404).
- *   2. Validate entry gates: status=active, goes_live_at, deadline_at.
- *   3. Validate role_code (standard: must match; potential: any supplied → 422).
- *   4. Validate display_name present and non-empty.
- *   5. MINT GATE: check if participant exists with status ∈ {completato, errore} → 409.
- *   6. Mint sso-link JWT via CandidateTokenFactory.
+ *   2. Delegate the mint decision to `EntryLinkMinter::mint()` (entry gates,
+ *      role_code inheritance/validation, terminal-status refusal, the raw
+ *      sso-link mint — operator-interview-link, design D1).
+ *   3. Map an `EntryLinkRefused` refusal onto this endpoint's OWN literal
+ *      response — request validation and every response body below are
+ *      UNCHANGED from before the extraction, byte-identical
+ *      (`SsoLinkMintTest.php`, `SsoLinkResponseGoldenTest.php`).
  *
  * Security invariants:
  * - Project is resolved SCOPED to the caller's org: cross-org → 404.
@@ -35,10 +38,16 @@ use Illuminate\Http\Request;
  * - Finished candidates (completato/errore) are rejected with 409.
  * - No Redis write at mint (jti consumed only at exchange).
  *
- * REQ: M2M SSO-Link Mint
+ * REQ: M2M SSO-Link Mint,
+ *      M2M mint response is unchanged after the extraction
+ *      (openspec/changes/operator-interview-link/specs/participant-sso/spec.md)
  */
 final class SsoLinkController extends Controller
 {
+    public function __construct(
+        private readonly EntryLinkMinter $minter,
+    ) {}
+
     /**
      * Mint an sso-link JWT.
      *
@@ -53,6 +62,11 @@ final class SsoLinkController extends Controller
         $client = $request->user('api-m2m');
         $clientOrgId = $client->organization_id;
 
+        // Validation call stays HERE, inline and verbatim: Scramble derives
+        // this endpoint's requestBody schema (maxLength/required) from this
+        // exact call site (openapi.json:3320-3358) — moving it into the
+        // minter or a FormRequest would rewrite the exported /m2m/sso-link
+        // node (design D1).
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
@@ -61,116 +75,37 @@ final class SsoLinkController extends Controller
             'lang' => ['nullable', 'string', 'max:10'],
         ]);
 
-        // 1. Resolve project SCOPED to caller org (cross-org → 404).
+        // Resolve project SCOPED to caller org (cross-org → 404) — the one
+        // thing genuinely different between this caller and the operator
+        // mint, so it stays here rather than inside the shared minter.
         $project = Project::where('organization_id', $clientOrgId)
             ->findOrFail((int) $validated['project_id']);
 
-        // 2. Entry gates (NULL-safe).
-        if (! $this->projectIsAccessible($project)) {
-            return response()->json(['message' => 'Access denied.'], 403);
+        try {
+            $minted = $this->minter->mint(
+                $project,
+                $validated['candidate_ref'],
+                $validated['display_name'],
+                $validated['role_code'] ?? null,
+                $validated['lang'] ?? null,
+            );
+        } catch (EntryLinkRefused $e) {
+            return match ($e->reason) {
+                EntryLinkRefusalReason::Terminal => response()->json(
+                    ['message' => 'Conflict: participant has already completed this assessment.'],
+                    409
+                ),
+                EntryLinkRefusalReason::RoleCode => response()->json([
+                    'message' => 'The given data was invalid.',
+                    'errors' => ['role_code' => [$e->getMessage()]],
+                ], 422),
+                EntryLinkRefusalReason::Gates => response()->json(
+                    ['message' => 'Access denied.'],
+                    403
+                ),
+            };
         }
 
-        // 3. Validate role_code.
-        $roleCodeError = $this->validateRoleCode($project, $validated['role_code'] ?? null);
-        if ($roleCodeError !== null) {
-            return response()->json([
-                'message' => 'The given data was invalid.',
-                'errors' => ['role_code' => [$roleCodeError]],
-            ], 422);
-        }
-
-        // 4. MINT GATE: check for terminal-status participants.
-        $existing = Participant::where('project_id', $project->id)
-            ->where('candidate_ref', $validated['candidate_ref'])
-            ->value('status');
-
-        if ($existing !== null && in_array($existing, ['completato', 'errore'], true)) {
-            return response()->json([
-                'message' => 'Conflict: participant has already completed this assessment.',
-            ], 409);
-        }
-
-        // 5. Mint the sso-link JWT (RAW mint; NO Redis write at this point).
-        $lang = $validated['lang'] ?? $project->language ?? config('app.fallback_locale', 'en');
-
-        // An omitted role_code is INHERITED from the project, for standard
-        // projects only.
-        //
-        // Without this the mint returned 201 carrying a token the exchange
-        // would refuse: the exchange requires the claim to EQUAL the project's
-        // role, and null never does. Worse than a confusing 403 — the exchange
-        // consumes the jti BEFORE evaluating its gates (deliberate replay
-        // protection), so the refused link was also spent and retrying the same
-        // URL could never work, while the calling system had already recorded a
-        // success.
-        //
-        // A 201 has to mean the token in that response is redeemable.
-        //
-        // Only when ABSENT. A supplied value is still validated against the
-        // project above and still 422s on mismatch: a caller who states a role
-        // is asserting something, and silently replacing that assertion would
-        // hide the integration bug that 422 exists to reveal.
-        $roleCode = $validated['role_code'] ?? null;
-
-        if ($roleCode === null && $project->assessment_type === 'standard') {
-            $roleCode = $project->role_code;
-        }
-
-        $token = CandidateTokenFactory::mintSsoLink([
-            'candidate_ref' => $validated['candidate_ref'],
-            'display_name' => $validated['display_name'],
-            'project_id' => $project->id,
-            'org_id' => $project->organization_id,
-            'role_code' => $roleCode,
-            'lang' => $lang,
-        ]);
-
-        return response()->json(['token' => $token], 201);
-    }
-
-    /**
-     * Check project entry gates (NULL-safe).
-     *
-     * status = 'active'
-     * AND (goes_live_at IS NULL OR goes_live_at <= now())
-     * AND (deadline_at  IS NULL OR deadline_at  >  now())
-     */
-    private function projectIsAccessible(Project $project): bool
-    {
-        if ($project->status !== 'active') {
-            return false;
-        }
-
-        if ($project->goes_live_at !== null && $project->goes_live_at->isAfter(now())) {
-            return false;
-        }
-
-        if ($project->deadline_at !== null && ! $project->deadline_at->isAfter(now())) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Validate role_code against project type.
-     *
-     * @return string|null Error message if invalid, null if valid.
-     */
-    private function validateRoleCode(Project $project, ?string $roleCode): ?string
-    {
-        if ($project->assessment_type === 'potential') {
-            // potential projects: ANY supplied role_code is an integration error → 422.
-            if ($roleCode !== null) {
-                return 'role_code must not be supplied for potential assessment projects.';
-            }
-        } elseif ($project->assessment_type === 'standard') {
-            // standard projects: role_code must match project.role_code if supplied.
-            if ($roleCode !== null && $roleCode !== $project->role_code) {
-                return 'role_code does not match the project role.';
-            }
-        }
-
-        return null;
+        return response()->json(['token' => $minted->token], 201);
     }
 }
