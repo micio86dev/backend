@@ -4,6 +4,7 @@ use App\Exceptions\Admin\LifecycleNotReadyException;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ParticipantTransitionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
+use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
 use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\RejectStaleCredentials;
@@ -131,6 +132,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // machine-readable error code (last_admin/self_demotion/self_deactivation).
         // The exception's own render() method handles the JSON response.
         $exceptions->render(function (UserGuardException $e, Request $request) {
+            return $e->render($request);
+        });
+
+        // operator-interview-link (design D3): EntryLinkUrlNotConfigured →
+        // HTTP 500 with a specific, actionable message. NOT suppressed from
+        // Sentry — being noisy about an unset CANDIDATE_APP_URL is the point.
+        // The exception's own render() method handles the JSON response.
+        $exceptions->render(function (EntryLinkUrlNotConfigured $e, Request $request) {
             return $e->render($request);
         });
     })->create();

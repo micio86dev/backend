@@ -119,4 +119,31 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Entry Link Origin (operator-interview-link)
+    |--------------------------------------------------------------------------
+    |
+    | candidate_app_url — the origin of the CANDIDATE app (`frontend/`), NOT
+    | the backoffice. `EntryLinkUrlComposer` composes the operator-facing
+    | `entry_url` from this value and fails loud (`EntryLinkUrlNotConfigured`,
+    | at compose time) when it is unset, empty, or not an absolute http(s)
+    | URL — it deliberately has NO default and NEVER falls back to
+    | `config('app.url')`, which is the API's OWN origin and would produce a
+    | link that resolves against the wrong application.
+    |
+    | frontend_default_locale / frontend_locales mirror
+    | `frontend/nuxt.config.ts`'s `defaultLocale: 'it'` and
+    | `strategy: 'prefix_except_default'`: the default locale's URL carries no
+    | prefix, every other listed locale is prefixed with its code, and a
+    | resolved language outside this list falls back unprefixed (never a
+    | 422 — see design.md D3).
+    |
+    */
+    'candidate_app_url' => env('CANDIDATE_APP_URL'),
+
+    'frontend_default_locale' => 'it',
+
+    'frontend_locales' => ['it', 'en'],
+
 ];
