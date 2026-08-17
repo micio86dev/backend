@@ -16,6 +16,7 @@ declare(strict_types=1);
  * Refs spec: Org-Scoped Project Entity; CRUD API; cross-tenant isolation.
  */
 
+use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
@@ -179,6 +180,31 @@ test('DELETE cross-org → 404', function (): void {
     $projectB = Project::factory()->create(['framework_version_id' => $fvB->id]);
 
     $this->withToken($tokenA)->deleteJson("/api/projects/{$projectB->id}")->assertNotFound();
+});
+
+// bars-coverage-visibility Phase 1.1 — documents the safety net that makes
+// hydration + submission in ProjectForm.vue safe to add: a PATCH that never
+// mentions competency_ids must not touch the pivot at all. This is what
+// protects every existing project from a `sync([])` wipe once the client
+// starts submitting competency_ids on every save (see ProjectController::
+// update — the sync() call is guarded by `$competencyIds !== null`).
+test('PATCH /api/projects/{id} without competency_ids leaves project_competencies unchanged', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create(['framework_version_id' => $fv->id]);
+
+    $competency = Competency::factory()->create(['type' => 'standard']);
+    $project->competencies()->attach($competency->id, ['position' => 0]);
+
+    $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['name' => 'Renamed, no competency_ids in payload'])
+        ->assertOk();
+
+    expect($project->competencies()->pluck('framework_competencies.id')->all())->toBe([$competency->id]);
 });
 
 test('webhook_secret is absent from response', function (): void {
