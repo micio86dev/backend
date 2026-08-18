@@ -17,6 +17,7 @@ declare(strict_types=1);
  */
 
 use App\Console\Commands\ResetUserPasswordCommand;
+use App\Models\AuditLog;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Console\Command;
@@ -26,6 +27,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -318,4 +320,148 @@ test('labels a platform superadmin (no organization) instead of printing a raw n
 
     expect($exitCode)->toBe(0);
     expect(Artisan::output())->toContain('org id=none (platform superadmin)');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Audit trail (security-review gap closure)
+|--------------------------------------------------------------------------
+|
+| The mechanism already existed — `audit_logs` + `AuditRecorder` (C13,
+| tests/Feature/C13/AuditLogTest.php) — and this reuses it rather than
+| inventing a second one. `AuditLog::withoutGlobalScopes()` is required
+| because the tenant global scope filters by the CURRENT resolver orgId,
+| which an Artisan console call does not set the way an authenticated HTTP
+| request does.
+*/
+
+test('a successful reset writes an audit record with the target user, email, organization and operator', function (): void {
+    $org = Organization::factory()->create();
+    $user = User::factory()->create(['organization_id' => $org->id]);
+
+    $exitCode = Artisan::call('beai:reset-user-password', [
+        'email' => $user->email,
+        '--operator' => 'jane@ops.example',
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $row = AuditLog::withoutGlobalScopes()->where('action', 'user.password_reset')->first();
+
+    expect($row)->not->toBeNull();
+    expect($row->subject_type)->toBe('user');
+    expect($row->subject_id)->toBe($user->id);
+    expect($row->organization_id)->toBe($org->id);
+    expect($row->after['email'])->toBe($user->email);
+    expect($row->after['operator'])->toBe('jane@ops.example');
+    expect($row->created_at)->not->toBeNull();
+});
+
+test('the audit record does not contain the generated password', function (): void {
+    $org = Organization::factory()->create();
+    $user = User::factory()->create(['organization_id' => $org->id]);
+
+    app()->instance(ResetUserPasswordCommand::class, new FixedPasswordResetUserPasswordCommand);
+
+    $exitCode = Artisan::call('beai:reset-user-password', [
+        'email' => $user->email,
+    ]);
+
+    expect($exitCode)->toBe(0);
+
+    $row = AuditLog::withoutGlobalScopes()->where('action', 'user.password_reset')->firstOrFail();
+
+    // Asserted against the ACTUAL generated value, not a placeholder string —
+    // a test written against a fake value would still pass even if the real
+    // password leaked into the row.
+    //
+    // Walked recursively rather than compared against json_encode() output.
+    // The first version of this test did the latter and COULD NOT FAIL: the
+    // fixed password contains `</info>`, json_encode escapes the slash to
+    // `<\/info>`, and the escaped form never matches the unescaped constant.
+    // Mutating the command to write the plaintext straight into the audit
+    // payload left it green. A test that cannot fail on the thing it covers
+    // is worse than no test, because it is counted as coverage.
+    $flatten = function (mixed $value) use (&$flatten): array {
+        if (is_array($value)) {
+            return array_merge(...array_map($flatten, array_values($value)) ?: [[]]);
+        }
+
+        return $value === null ? [] : [(string) $value];
+    };
+
+    $leaves = array_merge($flatten($row->before), $flatten($row->after), [
+        (string) $row->action,
+        (string) $row->subject_type,
+    ]);
+
+    foreach ($leaves as $leaf) {
+        expect($leaf)->not->toContain(FixedPasswordResetUserPasswordCommand::FIXED_PASSWORD);
+    }
+});
+
+test('an unknown email writes no audit record', function (): void {
+    Artisan::call('beai:reset-user-password', ['email' => 'nobody@example.test']);
+
+    expect(AuditLog::withoutGlobalScopes()->where('action', 'user.password_reset')->exists())->toBeFalse();
+});
+
+test('a deactivated user writes no audit record', function (): void {
+    $org = Organization::factory()->create();
+    $user = User::factory()->create([
+        'organization_id' => $org->id,
+        'deactivated_at' => now(),
+    ]);
+
+    Artisan::call('beai:reset-user-password', ['email' => $user->email]);
+
+    expect(AuditLog::withoutGlobalScopes()->where('action', 'user.password_reset')->exists())->toBeFalse();
+});
+
+test('a failure after the write rolls back and leaves no audit record', function (): void {
+    $org = Organization::factory()->create();
+    $user = User::factory()->create(['organization_id' => $org->id]);
+
+    // KNOWN CEILING (same shape as the pre-existing rollback test above for
+    // report()): this listener throws SYNCHRONOUSLY during save(), inside
+    // DB::transaction()'s closure, so it cannot distinguish "audit written
+    // after commit" from "audit written right after save(), still inside
+    // the closure" — nothing placed after save() in that closure runs
+    // either way. See the comment above recordAudit() in
+    // ResetUserPasswordCommand.php for the full explanation.
+    Event::listen('eloquent.saved: '.User::class, function (): void {
+        throw new RuntimeException('boom');
+    });
+
+    Artisan::call('beai:reset-user-password', ['email' => $user->email]);
+
+    expect(AuditLog::withoutGlobalScopes()->where('action', 'user.password_reset')->exists())->toBeFalse();
+});
+
+test('a platform superadmin reset cannot persist to the tenant-scoped audit table and falls back to the application log', function (): void {
+    // audit_logs.organization_id is a NOT NULL foreign key — a platform
+    // superadmin (organization_id IS NULL) cannot be represented as a row in
+    // it without either faking an org (misattributing the event to a real
+    // tenant) or widening the column (weakening the isolation invariant the
+    // table exists to enforce). This is the documented fallback, not a gap.
+    Log::spy();
+
+    $user = User::factory()->create();
+    expect($user->organization_id)->toBeNull();
+
+    $exitCode = Artisan::call('beai:reset-user-password', [
+        'email' => $user->email,
+        '--operator' => 'root',
+    ]);
+
+    expect($exitCode)->toBe(0);
+    expect(AuditLog::withoutGlobalScopes()->where('action', 'user.password_reset')->exists())->toBeFalse();
+
+    Log::shouldHaveReceived('notice')->once()->withArgs(function (string $message, array $context) use ($user): bool {
+        return $message === 'audit.user.password_reset'
+            && $context['user_id'] === $user->id
+            && $context['email'] === $user->email
+            && $context['operator'] === 'root'
+            && $context['organization_id'] === null;
+    });
 });
