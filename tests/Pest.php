@@ -430,3 +430,14 @@ pest()->use(RefreshDatabase::class)
 // migrated schema and real User rows, not mocks.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PasswordRecovery');
+
+// ─── framework-catalog-it-translations ─────────────────────────────────────────
+
+// Feature/Console — RefreshDatabase: ForgetLocaleCommandTest seeds real
+// Role/Competency/BarsIndicator rows via FrameworkCatalogSeeder and locks a
+// real FrameworkVersion in one scenario; without RefreshDatabase that locked
+// row (and the seeded `it` translations) leak into later tests in the same
+// file, since Feature/'s bare ->extend(TestCase::class) above carries no
+// transaction rollback on its own.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Console');

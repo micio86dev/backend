@@ -68,11 +68,11 @@ test('a structural change committed before a mid-run crash is not permanently lo
     // ── 2. A genuinely NEW indicator for ICO/PRS (processed first) ─────
     $icoBars = json_decode(file_get_contents("{$tempBase}/bars/ICO.json"), true, 512, JSON_THROW_ON_ERROR);
     $icoBars['PRS'][] = [
-        'indicator' => 'A brand-new indicator added after the baseline catalog was seeded.',
+        'indicator' => ['en' => 'A brand-new indicator added after the baseline catalog was seeded.'],
         'scale' => [
-            '5' => 'Five-level anchor for the new indicator.',
-            '3' => 'Three-level anchor for the new indicator.',
-            '1' => 'One-level anchor for the new indicator.',
+            '5' => ['en' => 'Five-level anchor for the new indicator.'],
+            '3' => ['en' => 'Three-level anchor for the new indicator.'],
+            '1' => ['en' => 'One-level anchor for the new indicator.'],
         ],
     ];
     file_put_contents(

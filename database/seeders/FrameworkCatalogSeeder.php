@@ -11,18 +11,26 @@ use App\Models\FrameworkGap;
 use App\Models\FrameworkVersion;
 use App\Models\Role;
 use App\Services\FrameworkCatalog\CompetencyNormalizer;
+use App\Services\FrameworkCatalog\DTO\IndicatorDTO;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * FrameworkCatalogSeeder (C3 + C4 lock-guard).
+ * FrameworkCatalogSeeder (C3 + C4 lock-guard + framework-catalog-it-translations locale writing).
  *
  * Seeds the global BEAI framework catalog from split-file JSON:
  *   docs/app_description/02-domain/framework/roles.json
  *   docs/app_description/02-domain/framework/competencies.json
  *   docs/app_description/02-domain/framework/bars/{ROLE}.json
+ *
+ * Locale dimension (framework-catalog-it-translations, design D1/D4): every
+ * translatable field's JSON value is a locale map — `{"en": "...", "it":
+ * "..."}`, `en` mandatory, `it` optional until authored. The seeder writes
+ * `setTranslation($field, $locale, $value)` for EVERY locale present in the
+ * source map, not `en` only — so an authored `it` value is picked up by the
+ * SAME write path as `en`, with no separate "IT-writing mode".
  *
  * Idempotent + delete-stale (sync):
  *   - updateOrCreate() for roles and competencies (by code)
@@ -38,6 +46,24 @@ use RuntimeException;
  *   - Only genuinely new rows (not yet in DB by natural key) are inserted
  *   - framework_gaps upserts and CatalogMeta::bump() are EXEMPT (operational tables)
  *   - seeder_lock_guard_active signal emitted ONCE (as FrameworkGap + Log::warning)
+ *
+ * **Fill-empty-locale exception under lock** (framework-catalog-it-translations
+ * design D4, the PRIMARY path — not an edge case: `ProjectController::store`
+ * locks a FrameworkVersion the moment any tenant creates a project, so
+ * production has zero locked FVs only until the first real signup). Extends
+ * the existing `Role.responsibilities` EN-fill-when-empty precedent (fix 5b,
+ * unchanged, see below) with a SEPARATE, more general exception: for ANY
+ * translatable field on an EXISTING row, under lock, a NON-`en` locale MAY be
+ * written iff the row does not already carry a translation for that locale.
+ * `en` is NEVER touched by this exception, and a non-empty existing non-`en`
+ * value is NEVER overwritten. See `fillEmptyLocalesUnderLock()`.
+ *
+ * **Per-pair `missing_translation` gap resolution** (design D5): computed
+ * from the SOURCE JSON, not DB state (proceeds under lock, like every other
+ * gap-resolution point here) — a role×competency pair's 12 strings (3
+ * indicators × {text, anchor_5, anchor_3, anchor_1}) must ALL carry an `it`
+ * value before that pair's gap resolves. 11 of 12 counts as 0 (mirrors the
+ * scoring-engine's own per-competency hard-fail unit).
  *
  * Atomicity (post-verification hardening, finding #1): the whole run, INCLUDING
  * CatalogMeta::bump(), executes inside a single DB::transaction(). Before this,
@@ -183,10 +209,10 @@ class FrameworkCatalogSeeder extends Seeder
             }
         }
 
-        /** @var array<string, array{name: string, responsibilities: string, competencies: list<string>}> $rolesJson */
+        /** @var array<string, array{name: array<string,string>, responsibilities: array<string,string>, competencies: list<string>}> $rolesJson */
         $rolesJson = json_decode(file_get_contents($this->rolesFile), true, 512, JSON_THROW_ON_ERROR);
 
-        /** @var array<string, array{name: string, definition: string}> $competenciesJson */
+        /** @var array<string, array{name: array<string,string>, definition: array<string,string>}> $competenciesJson */
         $competenciesJson = json_decode(file_get_contents($this->competenciesFile), true, 512, JSON_THROW_ON_ERROR);
 
         // ─── 2. Seed competencies ─────────────────────────────────────────────
@@ -195,15 +221,30 @@ class FrameworkCatalogSeeder extends Seeder
 
         foreach ($competenciesJson as $code => $data) {
             $competency = Competency::firstOrNew(['code' => $code]);
+            $nameLocales = $this->readLocaleMap($data['name'] ?? null, "competencies.json:{$code}.name");
+            $definitionLocales = $this->readLocaleMap($data['definition'] ?? null, "competencies.json:{$code}.definition");
 
             if ($locked && $competency->exists) {
-                // Pre-existing row in locked mode: capture id only. DO NOT setTranslation or save.
+                // Pre-existing row in locked mode: capture id. `en` is NEVER touched.
                 $competencyIdsByCode[$code] = $competency->id;
+
+                // Fill-empty-locale exception (design D4) — non-en locales only.
+                $changed = $this->fillEmptyLocalesUnderLock($competency, 'name', $nameLocales);
+                $changed = $this->fillEmptyLocalesUnderLock($competency, 'definition', $definitionLocales) || $changed;
+
+                if ($changed) {
+                    $competency->save();
+                    $this->recordLockedFillEmptyLocaleGap(null, $code, "Competency {$code}");
+
+                    if ($competency->wasChanged()) {
+                        $structuralChange = true;
+                    }
+                }
             } else {
                 // New row (or unlocked mode): insert / upsert is allowed.
                 $competency->type = 'standard';
-                $competency->setTranslation('name', 'en', $data['name']);
-                $competency->setTranslation('definition', 'en', $data['definition']);
+                $this->setAllLocales($competency, 'name', $nameLocales);
+                $this->setAllLocales($competency, 'definition', $definitionLocales);
                 $competency->save();
                 $competencyIdsByCode[$code] = $competency->id;
 
@@ -225,8 +266,12 @@ class FrameworkCatalogSeeder extends Seeder
                     // actually hold — do not rely on it.
                 }
 
-                // Track structural change only for genuinely new rows.
-                if ($competency->wasRecentlyCreated) {
+                // Track structural change for a genuinely new row OR an
+                // actual mutation of an existing one (Eloquent's own answer
+                // to "did this row actually change" — see design D4 /
+                // framework-catalog-it-translations Phase 3). A true no-op
+                // re-seed leaves wasChanged() false, so idempotency survives.
+                if ($competency->wasRecentlyCreated || $competency->wasChanged()) {
                     $structuralChange = true;
                 }
             }
@@ -236,20 +281,23 @@ class FrameworkCatalogSeeder extends Seeder
         foreach ($rolesJson as $roleCode => $roleData) {
             // 3a. Upsert role — use firstOrNew to set translations before initial INSERT
             $role = Role::firstOrNew(['code' => $roleCode]);
+            $roleNameLocales = $this->readLocaleMap($roleData['name'] ?? null, "roles.json:{$roleCode}.name");
+            $roleResponsibilitiesLocales = $this->readLocaleMap($roleData['responsibilities'] ?? null, "roles.json:{$roleCode}.responsibilities", allowBlankEn: true);
 
             if ($locked && $role->exists) {
                 // Pre-existing role row in locked mode: `name` is NEVER touched under lock.
                 //
-                // Fill-empty-only exception (fix 5b): `responsibilities` is display-only
-                // (its one consumer is RoleResource — it feeds no scoring, no prompt), so
-                // filling an EMPTY stored value from the JSON cannot move a score in a
-                // locked version, which is what the lock exists to protect. A non-empty
-                // stored value is NEVER overwritten, even under this exception.
-                $storedResponsibilities = $role->getTranslation('responsibilities', 'en');
-                $jsonResponsibilities = $roleData['responsibilities'];
+                // Fill-empty-only exception (fix 5b, UNCHANGED precedent): `responsibilities`
+                // is display-only (its one consumer is RoleResource — it feeds no scoring, no
+                // prompt), so filling an EMPTY stored EN value from the JSON cannot move a
+                // score in a locked version, which is what the lock exists to protect. A
+                // non-empty stored value is NEVER overwritten, even under this exception. This
+                // is EN-specific and pre-dates the locale dimension — kept exactly as-is.
+                $storedResponsibilitiesEn = $role->getTranslation('responsibilities', 'en');
+                $jsonResponsibilitiesEn = $roleResponsibilitiesLocales['en'] ?? '';
 
-                if (($storedResponsibilities === null || $storedResponsibilities === '') && $jsonResponsibilities !== '') {
-                    $role->setTranslation('responsibilities', 'en', $jsonResponsibilities);
+                if (($storedResponsibilitiesEn === null || $storedResponsibilitiesEn === '') && $jsonResponsibilitiesEn !== '') {
+                    $role->setTranslation('responsibilities', 'en', $jsonResponsibilitiesEn);
                     $role->save();
 
                     FrameworkGap::updateOrCreate(
@@ -259,19 +307,40 @@ class FrameworkCatalogSeeder extends Seeder
                     Log::warning("FrameworkCatalogSeeder: filled empty responsibilities for role {$roleCode} under a locked FrameworkVersion (fill-empty-only exception).", [
                         'role' => $roleCode,
                     ]);
+
+                    if ($role->wasChanged()) {
+                        $structuralChange = true;
+                    }
+                }
+
+                // NEW fill-empty-locale exception (design D4, framework-catalog-it-translations
+                // Phase 4) — any NON-en locale, on `name` and `responsibilities` alike, may fill
+                // an EMPTY slot. `en` is never touched by this path (see
+                // fillEmptyLocalesUnderLock's own doc) and a non-empty existing non-en value is
+                // never overwritten.
+                $nameChanged = $this->fillEmptyLocalesUnderLock($role, 'name', $roleNameLocales);
+                $responsibilitiesChanged = $this->fillEmptyLocalesUnderLock($role, 'responsibilities', $roleResponsibilitiesLocales);
+
+                if ($nameChanged || $responsibilitiesChanged) {
+                    $role->save();
+                    $this->recordLockedFillEmptyLocaleGap($roleCode, null, "Role {$roleCode}");
+
+                    if ($role->wasChanged()) {
+                        $structuralChange = true;
+                    }
                 }
             } else {
-                $role->setTranslation('name', 'en', $roleData['name']);
-                $role->setTranslation('responsibilities', 'en', $roleData['responsibilities']);
+                $this->setAllLocales($role, 'name', $roleNameLocales);
+                $this->setAllLocales($role, 'responsibilities', $roleResponsibilitiesLocales);
                 $role->save();
 
-                if ($role->wasRecentlyCreated) {
+                if ($role->wasRecentlyCreated || $role->wasChanged()) {
                     $structuralChange = true;
                 }
             }
 
             // Flag empty responsibilities (always — operational gap, not catalog mutation)
-            if ($roleData['responsibilities'] === '') {
+            if (($roleResponsibilitiesLocales['en'] ?? '') === '') {
                 FrameworkGap::updateOrCreate(
                     ['kind' => 'missing_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
                     ['note' => "Role {$roleCode} responsibilities is empty string — pending authoring", 'status' => 'pending_authoring'],
@@ -343,7 +412,7 @@ class FrameworkCatalogSeeder extends Seeder
                 ->where('status', 'pending_authoring')
                 ->update(['status' => 'resolved']);
 
-            /** @var array<string, list<array{indicator: string, scale: array{5: string, 3: string, 1: string}}>> $barsJson */
+            /** @var array<string, list<array{indicator: array<string,string>, scale: array{5: array<string,string>, 3: array<string,string>, 1: array<string,string>}}>> $barsJson */
             $barsJson = json_decode(file_get_contents($barsFile), true, 512, JSON_THROW_ON_ERROR);
 
             $coveredCompetencyCodes = array_keys($barsJson);
@@ -377,8 +446,13 @@ class FrameworkCatalogSeeder extends Seeder
                     continue;
                 }
 
+                // 'name'/'definition' here are throwaway placeholders — this call site only
+                // ever reads $dto->indicators below; competency name/definition are seeded
+                // separately, directly from competenciesJson (step 2, above). They must still
+                // be valid locale maps (CompetencyNormalizer::normalize() fails closed on a
+                // bare string per design D1), so a harmless non-empty 'en' placeholder is used.
                 $dto = $normalizer->normalize(
-                    ['code' => $competencyCode, 'name' => '', 'definition' => '', 'type' => 'standard'],
+                    ['code' => $competencyCode, 'name' => ['en' => $competencyCode], 'definition' => ['en' => $competencyCode], 'type' => 'standard'],
                     $indicatorArray,
                 );
 
@@ -393,20 +467,43 @@ class FrameworkCatalogSeeder extends Seeder
                     ]);
 
                     if ($locked && $indicator->exists) {
-                        // Pre-existing indicator in locked mode: DO NOT setTranslation or save.
-                        // Track position only (needed to know what "present" means for delete-stale check,
-                        // but the delete-stale block below is skipped in locked mode anyway).
+                        // Pre-existing indicator in locked mode: `en` is NEVER touched.
                         $presentPositions[] = $indicatorDto->position;
+
+                        // Fill-empty-locale exception (design D4) — non-en locales only. This
+                        // is the PRIMARY path this exception exists for: an `it` project pinned
+                        // to a locked FrameworkVersion cannot be interviewed at all today (422
+                        // on the first indicator), so filling the empty `it` slot is strictly
+                        // monotone — no assessment previously producible changes; it goes from
+                        // "cannot be scored" to "can be scored", never the reverse.
+                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'text', $indicatorDto->text);
+                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'anchor_5', $indicatorDto->anchor5) || $changed;
+                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'anchor_3', $indicatorDto->anchor3) || $changed;
+                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'anchor_1', $indicatorDto->anchor1) || $changed;
+
+                        if ($changed) {
+                            $indicator->save();
+                            $this->recordLockedFillEmptyLocaleGap(
+                                $roleCode,
+                                $competencyCode,
+                                "BarsIndicator ({$roleCode}, {$competencyCode}, position {$indicatorDto->position})",
+                            );
+
+                            if ($indicator->wasChanged()) {
+                                $structuralChange = true;
+                            }
+                        }
                     } else {
-                        // New row (or unlocked mode): insert / upsert.
-                        $indicator->setTranslation('text', 'en', $indicatorDto->text);
-                        $indicator->setTranslation('anchor_5', 'en', $indicatorDto->anchor5);
-                        $indicator->setTranslation('anchor_3', 'en', $indicatorDto->anchor3);
-                        $indicator->setTranslation('anchor_1', 'en', $indicatorDto->anchor1);
+                        // New row (or unlocked mode): insert / upsert. Every locale present in
+                        // the source map is written — not `en` only (design D4).
+                        $this->setAllLocales($indicator, 'text', $indicatorDto->text);
+                        $this->setAllLocales($indicator, 'anchor_5', $indicatorDto->anchor5);
+                        $this->setAllLocales($indicator, 'anchor_3', $indicatorDto->anchor3);
+                        $this->setAllLocales($indicator, 'anchor_1', $indicatorDto->anchor1);
                         $indicator->save();
                         $presentPositions[] = $indicatorDto->position;
 
-                        if ($indicator->wasRecentlyCreated) {
+                        if ($indicator->wasRecentlyCreated || $indicator->wasChanged()) {
                             $structuralChange = true;
                         }
                     }
@@ -420,6 +517,14 @@ class FrameworkCatalogSeeder extends Seeder
                         ->delete();
                 }
                 // In locked mode: delete-stale-positions block is SKIPPED entirely.
+
+                // Per-pair `missing_translation` gap resolution (design D5), evaluated at PAIR
+                // granularity from the SOURCE JSON (via $dto, already validated) — ALL 12
+                // strings (3 indicators × {text, anchor_5, anchor_3, anchor_1}) must carry a
+                // non-empty `it` value before this pair counts as translated. 11 of 12 is
+                // treated as 0 (mirrors the scoring-engine per-competency hard-fail unit).
+                // Computed from JSON, not DB state, so this proceeds even under lock.
+                $this->resolveOrRecordTranslationGap($roleCode, $competencyCode, $dto->indicators);
             }
 
             // 3d. Record competency_no_bars gaps for assigned competencies absent from BARS file;
@@ -447,6 +552,15 @@ class FrameworkCatalogSeeder extends Seeder
                 ->where('status', 'pending_authoring')
                 ->whereNotIn('competency_code', $assignedCodes)
                 ->update(['status' => 'resolved']);
+
+            // Orphan sweep (design D5) for missing_translation, same shape as
+            // competency_no_bars above: a per-pair gap whose pair is no longer assigned to
+            // this role at all is moot.
+            FrameworkGap::where('kind', 'missing_translation')
+                ->where('role_code', $roleCode)
+                ->where('status', 'pending_authoring')
+                ->whereNotIn('competency_code', $assignedCodes)
+                ->update(['status' => 'resolved']);
         }
 
         // ─── 4. Record MTG/LAT potential competency gaps ──────────────────────
@@ -457,15 +571,32 @@ class FrameworkCatalogSeeder extends Seeder
             );
         }
 
-        // ─── 5. Record global IT translation gap ─────────────────────────────
+        // ─── 5. Record global IT translation gap (design D5) ──────────────────
+        // Computed from the per-pair rows just written above: resolves only once
+        // every anchored pair's 12 strings are translated; otherwise the note
+        // states exactly how many of the total are still pending.
+        $totalTranslationPairs = FrameworkGap::where('kind', 'missing_translation')
+            ->whereNotNull('role_code')
+            ->count();
+        $pendingTranslationPairs = FrameworkGap::where('kind', 'missing_translation')
+            ->whereNotNull('role_code')
+            ->where('status', 'pending_authoring')
+            ->count();
+
         FrameworkGap::updateOrCreate(
             ['kind' => 'missing_translation', 'role_code' => null, 'competency_code' => null],
-            ['note' => 'it locale not yet authored', 'status' => 'pending_authoring'],
+            [
+                'note' => $pendingTranslationPairs === 0
+                    ? "it locale: all {$totalTranslationPairs} of {$totalTranslationPairs} role×competency pairs translated"
+                    : "it locale: {$pendingTranslationPairs} of {$totalTranslationPairs} role×competency pairs pending",
+                'status' => $pendingTranslationPairs === 0 && $totalTranslationPairs > 0 ? 'resolved' : 'pending_authoring',
+            ],
         );
 
         // ─── 6. Bump catalog_meta revision if structural changes occurred ─────
         // CatalogMeta::bump() is EXEMPT from lock-guard suppression (operational table).
-        // It fires only when genuinely new rows were inserted — NOT when mutations are suppressed.
+        // It fires for a genuinely new row OR an actual mutation of an existing one
+        // (design D4 — see the widened predicate applied at every save() call site above).
         if ($structuralChange) {
             CatalogMeta::bump();
         }
@@ -483,5 +614,184 @@ class FrameworkCatalogSeeder extends Seeder
     private function hasLockedVersions(): bool
     {
         return FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->exists();
+    }
+
+    /**
+     * Validate and read one translatable field's raw JSON value as a locale
+     * map (framework-catalog-it-translations design D1). Fails closed
+     * (throws) on any shape that is not an explicit `{"en": "...", ...}`
+     * object with a mandatory `en` string and no keys outside the
+     * known-locale set — mirrors `CompetencyNormalizer::normalizeLocaleMap()`,
+     * duplicated here (not shared) because this reads `roles.json` /
+     * `competencies.json` fields the normalizer's own contract never covered
+     * (it has always been BARS-entry-scoped; see its class docblock).
+     *
+     * `$allowBlankEn` exists ONLY for `roles.json`'s `responsibilities`
+     * field: an empty EN string is a legitimate, pre-existing sentinel for
+     * "not yet authored" (see the `missing_role_meta` gap immediately below
+     * this method's call sites) — every other translatable field in the
+     * catalogue treats a blank `en` as malformed content
+     * (`catalog_malformed_bars_entries`'s own `isBlank` rule).
+     *
+     * @return array<string, string>
+     */
+    private function readLocaleMap(mixed $value, string $context, bool $allowBlankEn = false): array
+    {
+        if (! is_array($value) || array_is_list($value)) {
+            $got = is_array($value) ? 'a list/array' : get_debug_type($value);
+
+            throw new RuntimeException(
+                "FrameworkCatalogSeeder: {$context} must be a locale-map object (e.g. {\"en\": \"...\"}), got {$got}."
+            );
+        }
+
+        if (! array_key_exists('en', $value) || ! is_string($value['en'])) {
+            throw new RuntimeException(
+                "FrameworkCatalogSeeder: {$context} is missing a mandatory 'en' locale value."
+            );
+        }
+
+        if (! $allowBlankEn && $value['en'] === '') {
+            throw new RuntimeException(
+                "FrameworkCatalogSeeder: {$context} has a blank 'en' locale value."
+            );
+        }
+
+        $knownLocales = $this->knownLocales();
+
+        foreach ($value as $locale => $text) {
+            if (! is_string($locale) || ! in_array($locale, $knownLocales, true)) {
+                throw new RuntimeException(
+                    "FrameworkCatalogSeeder: {$context} has an unknown locale key [{$locale}]. Known locales: ".implode(', ', $knownLocales).'.'
+                );
+            }
+
+            if (! is_string($text)) {
+                throw new RuntimeException(
+                    "FrameworkCatalogSeeder: {$context} locale [{$locale}] must be a string, got ".get_debug_type($text).'.'
+                );
+            }
+        }
+
+        /** @var array<string, string> $value */
+        return $value;
+    }
+
+    /**
+     * The known-locale allowlist — sourced from `config('app.supported_locales')`,
+     * the SAME single source of truth `CompetencyNormalizer::knownLocales()` reads.
+     *
+     * @return list<string>
+     */
+    private function knownLocales(): array
+    {
+        /** @var list<string> $configured */
+        $configured = config('app.supported_locales', ['en']);
+
+        return in_array('en', $configured, true) ? $configured : [...$configured, 'en'];
+    }
+
+    /**
+     * Unlocked-mode (or new-row) write: set EVERY locale present in the
+     * source map — not `en` only. This is the single code path an authored
+     * `it` value and the existing `en` value both flow through.
+     *
+     * @param  array<string, string>  $localeMap
+     */
+    private function setAllLocales(Role|Competency|BarsIndicator $model, string $field, array $localeMap): void
+    {
+        foreach ($localeMap as $locale => $value) {
+            $model->setTranslation($field, $locale, $value);
+        }
+    }
+
+    /**
+     * Locked-mode fill-empty-locale exception (design D4). For a PRE-EXISTING
+     * row under a locked FrameworkVersion, a NON-`en` locale MAY be written
+     * iff the model does not already carry a translation for it. `en` is
+     * NEVER touched via this method — the caller never even passes `en`
+     * through here for the byte-for-byte-preservation guarantee the lock
+     * exists to protect. A pre-existing non-empty non-`en` value is NEVER
+     * overwritten.
+     *
+     * @param  array<string, string>  $localeMap
+     * @return bool Whether the model was actually modified in memory (the caller must still save()).
+     */
+    private function fillEmptyLocalesUnderLock(Role|Competency|BarsIndicator $model, string $field, array $localeMap): bool
+    {
+        $changed = false;
+
+        foreach ($localeMap as $locale => $value) {
+            if ($locale === 'en') {
+                continue;
+            }
+
+            if (! $model->hasTranslation($field, $locale)) {
+                $model->setTranslation($field, $locale, $value);
+                $changed = true;
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Emit the `locked_fill_empty_locale` signal (design D4) — a
+     * `FrameworkGap` record AND a `Log::warning`, exactly like the existing
+     * `locked_fill_empty_role_meta` precedent. This suppression MUST NOT be
+     * silent: an operator re-running the seeder against a locked FV must be
+     * able to tell, without reading source, that a locale was (or was not)
+     * filled.
+     */
+    private function recordLockedFillEmptyLocaleGap(?string $roleCode, ?string $competencyCode, string $context): void
+    {
+        FrameworkGap::updateOrCreate(
+            ['kind' => 'locked_fill_empty_locale', 'role_code' => $roleCode, 'competency_code' => $competencyCode],
+            ['note' => "{$context}: a non-EN locale was filled under a locked FrameworkVersion (fill-empty-locale exception)", 'status' => 'info'],
+        );
+        Log::warning('FrameworkCatalogSeeder: filled an empty non-EN locale under a locked FrameworkVersion (fill-empty-locale exception).', [
+            'role' => $roleCode,
+            'competency' => $competencyCode,
+            'context' => $context,
+        ]);
+    }
+
+    /**
+     * Per-pair `missing_translation` gap resolution (design D5), evaluated at
+     * role×competency PAIR granularity: ALL 12 strings across the pair's 3
+     * indicators must carry a non-empty `it` value before the pair counts as
+     * translated. Computed from the (already-normalized, already-validated)
+     * DTO — i.e. from the SOURCE JSON, never DB state — so this proceeds
+     * identically whether or not a FrameworkVersion is locked.
+     *
+     * @param  list<IndicatorDTO>  $indicators
+     */
+    private function resolveOrRecordTranslationGap(string $roleCode, string $competencyCode, array $indicators): void
+    {
+        $itComplete = true;
+
+        foreach ($indicators as $indicatorDto) {
+            foreach ([$indicatorDto->text, $indicatorDto->anchor5, $indicatorDto->anchor3, $indicatorDto->anchor1] as $localeMap) {
+                if (($localeMap['it'] ?? '') === '') {
+                    $itComplete = false;
+                    break 2;
+                }
+            }
+        }
+
+        if ($itComplete) {
+            FrameworkGap::where('kind', 'missing_translation')
+                ->where('role_code', $roleCode)
+                ->where('competency_code', $competencyCode)
+                ->where('status', 'pending_authoring')
+                ->update(['status' => 'resolved']);
+
+            return;
+        }
+
+        FrameworkGap::updateOrCreate(
+            ['kind' => 'missing_translation', 'role_code' => $roleCode, 'competency_code' => $competencyCode],
+            ['note' => "{$roleCode}×{$competencyCode}: it locale not fully translated (12 strings required, 11 of 12 counts as 0)", 'status' => 'pending_authoring'],
+        );
     }
 }
