@@ -39,6 +39,59 @@ use RuntimeException;
  *   - framework_gaps upserts and CatalogMeta::bump() are EXEMPT (operational tables)
  *   - seeder_lock_guard_active signal emitted ONCE (as FrameworkGap + Log::warning)
  *
+ * Atomicity (post-verification hardening, finding #1): the whole run, INCLUDING
+ * CatalogMeta::bump(), executes inside a single DB::transaction(). Before this,
+ * every write committed as it happened while bump() was gated on an in-memory
+ * $structuralChange flag computed across the whole method. A throw partway
+ * through (a malformed bars/{ROLE}.json — json_decode(..., JSON_THROW_ON_ERROR)
+ * — is the natural example, but any exception anywhere in the method has the
+ * same shape) left everything already processed committed, while bump() was
+ * never reached. A clean retry then found every structurally-new row from that
+ * partial run ALREADY EXISTING, so nothing looked newly created THAT run, so
+ * $structuralChange stayed false, so bump() was skipped again — permanently.
+ * There was no self-healing path and no operator-visible signal.
+ *
+ * A transaction closes this cleanly rather than requiring a second mechanism
+ * (e.g. deriving "did the catalog change" from a before/after content hash or
+ * row-count diff instead of the flag): once the entire method is one atomic
+ * unit, "rows exist but bump() did not run" becomes unreachable by
+ * construction — either the run (all writes + bump) commits together, or a
+ * throw rolls back EVERYTHING it did, including any rows a partial attempt
+ * had "committed" before the throw. The in-memory flag is then trustworthy
+ * again, because it is computed within the same execution that determines
+ * what actually lands in the DB — there is no window where the flag says
+ * false while something is nonetheless persisted. This holds for every path
+ * through this method, INCLUDING the locked-FrameworkVersion additive-only
+ * branch (it still sets $structuralChange for genuinely new rows, still
+ * inside the same transaction) and INCLUDING a hypothetical failure AFTER
+ * bump() (bump() is the last statement in the same transaction, so such a
+ * failure would roll the bump back together with the rows that justified it
+ * — retry then recomputes cleanly from a truly empty diff, not a corrupted
+ * one).
+ *
+ * A before/after state-diff (hash the catalog, bump if it moved, in a
+ * finally-block that runs even on exception) was considered and rejected: it
+ * does not fix the root cause (non-atomic writes), it is strictly more
+ * expensive (a full-catalog scan/hash on every run instead of O(1)
+ * bookkeeping already threaded through the mutation sites), and — worse — it
+ * would bump the revision for a PARTIAL, crashed catalog state and make it
+ * visible to caches/ETags as if it were a completed seed. That directly
+ * contradicts this seeder's own discipline elsewhere (C4 lock-guard: purely
+ * additive, never partial) — a half-written catalog going live with a fresh
+ * revision number is a worse outcome than the seed command exiting non-zero
+ * with nothing changed.
+ *
+ * NOT everything in this method is DB work, and none of the non-DB work
+ * needs to be excluded from the transaction: Log::warning() calls write to
+ * the log channel immediately and are NOT affected by a DB rollback either
+ * way (a rolled-back attempt's log lines are a record of that attempt, not a
+ * promise about final DB state — which is already how Log:: and DB writes
+ * relate everywhere else in Laravel). file_get_contents()/json_decode() are
+ * plain reads with no DB locks to hold. There is no queue dispatch, cache
+ * write, or outbound HTTP call in this method, and the surrounding
+ * `php artisan db:seed` command does not depend on this seeder's internal
+ * statement ordering — so nothing here needs to run outside the transaction.
+ *
  * @param  string|null  $rolesFile  Override path to roles.json (for testing)
  * @param  string|null  $competenciesFile  Override path to competencies.json (for testing)
  * @param  string|null  $barsDir  Override path to bars/ directory (for testing)
@@ -79,6 +132,21 @@ class FrameworkCatalogSeeder extends Seeder
     }
 
     public function run(): void
+    {
+        // The ENTIRE method body — every write plus the final bump() — runs
+        // as one atomic unit. See the class docblock ("Atomicity") for why
+        // this is what makes $structuralChange trustworthy again after a
+        // mid-run crash. DB::transaction() composes correctly whether or not
+        // this seeder is itself invoked from inside another transaction
+        // (Laravel uses a SAVEPOINT for the nested case), so no special
+        // handling is needed for `$this->call(FrameworkCatalogSeeder::class)`
+        // from DatabaseSeeder.
+        DB::transaction(function (): void {
+            $this->syncCatalog();
+        });
+    }
+
+    private function syncCatalog(): void
     {
         $normalizer = new CompetencyNormalizer;
         $structuralChange = false;
@@ -140,8 +208,21 @@ class FrameworkCatalogSeeder extends Seeder
                 $competencyIdsByCode[$code] = $competency->id;
 
                 if ($locked && ! $competency->wasRecentlyCreated) {
-                    // Already existed — in unlocked mode we just re-saved; that's fine.
-                    // In locked mode we only reach here for new rows (exists was false above).
+                    // This branch is reachable, not merely theoretical: the
+                    // `$competency->exists` check above and this save() are
+                    // two separate statements, and nothing between them holds
+                    // a DB lock (no lockForUpdate, no unique-constraint
+                    // upsert, no advisory lock). A CONCURRENT seeder run that
+                    // inserts this same competency row in that window makes
+                    // `firstOrNew` above see exists=false (this branch's own
+                    // guard), yet `wasRecentlyCreated` come back false here
+                    // too — the other process's insert won the race, and this
+                    // one silently re-saved a row it did not create. Left
+                    // unguarded on purpose for this fix: the seeder is not run
+                    // concurrently in any deploy path today, and this is a
+                    // no-op either way, but the invariant this comment used to
+                    // assert ("we only reach here for new rows") does not
+                    // actually hold — do not rely on it.
                 }
 
                 // Track structural change only for genuinely new rows.
@@ -157,7 +238,28 @@ class FrameworkCatalogSeeder extends Seeder
             $role = Role::firstOrNew(['code' => $roleCode]);
 
             if ($locked && $role->exists) {
-                // Pre-existing role row in locked mode: capture only, do NOT save.
+                // Pre-existing role row in locked mode: `name` is NEVER touched under lock.
+                //
+                // Fill-empty-only exception (fix 5b): `responsibilities` is display-only
+                // (its one consumer is RoleResource — it feeds no scoring, no prompt), so
+                // filling an EMPTY stored value from the JSON cannot move a score in a
+                // locked version, which is what the lock exists to protect. A non-empty
+                // stored value is NEVER overwritten, even under this exception.
+                $storedResponsibilities = $role->getTranslation('responsibilities', 'en');
+                $jsonResponsibilities = $roleData['responsibilities'];
+
+                if (($storedResponsibilities === null || $storedResponsibilities === '') && $jsonResponsibilities !== '') {
+                    $role->setTranslation('responsibilities', 'en', $jsonResponsibilities);
+                    $role->save();
+
+                    FrameworkGap::updateOrCreate(
+                        ['kind' => 'locked_fill_empty_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
+                        ['note' => "Role {$roleCode} responsibilities filled under a locked FrameworkVersion (fill-empty-only exception)", 'status' => 'info'],
+                    );
+                    Log::warning("FrameworkCatalogSeeder: filled empty responsibilities for role {$roleCode} under a locked FrameworkVersion (fill-empty-only exception).", [
+                        'role' => $roleCode,
+                    ]);
+                }
             } else {
                 $role->setTranslation('name', 'en', $roleData['name']);
                 $role->setTranslation('responsibilities', 'en', $roleData['responsibilities']);
@@ -174,6 +276,14 @@ class FrameworkCatalogSeeder extends Seeder
                     ['kind' => 'missing_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
                     ['note' => "Role {$roleCode} responsibilities is empty string — pending authoring", 'status' => 'pending_authoring'],
                 );
+            } else {
+                // Gap resolution (fix 5a): responsibilities is now authored in the JSON —
+                // resolve any pending gap. Computed from the JSON, not DB state, so this
+                // proceeds even while a FrameworkVersion is locked.
+                FrameworkGap::where('kind', 'missing_role_meta')
+                    ->where('role_code', $roleCode)
+                    ->where('status', 'pending_authoring')
+                    ->update(['status' => 'resolved']);
             }
 
             // 3b. Sync pivot
@@ -224,6 +334,14 @@ class FrameworkCatalogSeeder extends Seeder
 
                 continue;
             }
+
+            // Gap resolution (fix 5a): bars file now exists — resolve any pending
+            // role_no_bars gap. Computed from the filesystem, not DB state, so this
+            // proceeds even while a FrameworkVersion is locked.
+            FrameworkGap::where('kind', 'role_no_bars')
+                ->where('role_code', $roleCode)
+                ->where('status', 'pending_authoring')
+                ->update(['status' => 'resolved']);
 
             /** @var array<string, list<array{indicator: string, scale: array{5: string, 3: string, 1: string}}>> $barsJson */
             $barsJson = json_decode(file_get_contents($barsFile), true, 512, JSON_THROW_ON_ERROR);
@@ -304,15 +422,31 @@ class FrameworkCatalogSeeder extends Seeder
                 // In locked mode: delete-stale-positions block is SKIPPED entirely.
             }
 
-            // 3d. Record competency_no_bars gaps for assigned competencies absent from BARS file
+            // 3d. Record competency_no_bars gaps for assigned competencies absent from BARS file;
+            // resolve any pending gap for a pair that is now covered (fix 5a).
             foreach ($assignedCodes as $competencyCode) {
                 if (! in_array($competencyCode, $coveredCompetencyCodes, true)) {
                     FrameworkGap::updateOrCreate(
                         ['kind' => 'competency_no_bars', 'role_code' => $roleCode, 'competency_code' => $competencyCode],
                         ['note' => "Competency {$competencyCode} assigned to {$roleCode} but absent from BARS file", 'status' => 'pending_authoring'],
                     );
+                } else {
+                    FrameworkGap::where('kind', 'competency_no_bars')
+                        ->where('role_code', $roleCode)
+                        ->where('competency_code', $competencyCode)
+                        ->where('status', 'pending_authoring')
+                        ->update(['status' => 'resolved']);
                 }
             }
+
+            // Gap resolution (fix 5a), orphan case: a competency_no_bars gap whose pair
+            // roles.json no longer assigns to this role at all is moot — resolve it too.
+            // Mirrors CI Direction 2 of catalog_stale_competency_gap_exemptions.
+            FrameworkGap::where('kind', 'competency_no_bars')
+                ->where('role_code', $roleCode)
+                ->where('status', 'pending_authoring')
+                ->whereNotIn('competency_code', $assignedCodes)
+                ->update(['status' => 'resolved']);
         }
 
         // ─── 4. Record MTG/LAT potential competency gaps ──────────────────────

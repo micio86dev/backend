@@ -1,0 +1,470 @@
+{
+  "PRS": [
+    {
+      "indicator": "Trace a consolidated P&L problem back to the business unit or country actually driving it",
+      "scale": {
+        "5": "Traces a consolidated P&L problem to the unit or country actually driving it, not just where it surfaces.",
+        "3": "Traces a consolidated P&L problem to the unit closest to the symptom, not the one actually driving it.",
+        "1": "Overlooks which business unit or country actually drives a consolidated P&L problem, acting on the visible symptom instead."
+      }
+    },
+    {
+      "indicator": "Integrate data from across business units before diagnosing a problem that spans the organization",
+      "scale": {
+        "5": "Integrates data from across business units before diagnosing an organization-wide problem, closing gaps a narrower view would miss.",
+        "3": "Integrates data from the units closest to the problem, leaving other units' data unchecked when diagnosing organization-wide issues.",
+        "1": "Neglects to integrate data across business units before diagnosing an organization-wide problem, working from one unit's numbers alone."
+      }
+    },
+    {
+      "indicator": "Weigh competing explanations from business unit leaders before settling on an organization-wide problem's root cause",
+      "scale": {
+        "5": "Weighs competing explanations from business unit leaders before settling on an organization-wide problem's true root cause.",
+        "3": "Weighs competing explanations from business unit leaders but settles on whichever aligns with the prior year's plan.",
+        "1": "Overlooks competing explanations from business unit leaders, settling on an organization-wide problem's root cause without weighing them."
+      }
+    }
+  ],
+  "STG": [
+    {
+      "indicator": "Set organizational direction that aligns priorities across business units and countries",
+      "scale": {
+        "5": "Sets organizational direction that aligns priorities across every business unit and country over the multi-year horizon.",
+        "3": "Sets organizational direction that aligns priorities for business units already on plan but defers when countries diverge.",
+        "1": "Neglects to set organizational direction across business units, leaving countries without shared priorities."
+      }
+    },
+    {
+      "indicator": "Weigh long-term tradeoffs against the organization's direction before committing resources",
+      "scale": {
+        "5": "Weighs long-term tradeoffs against the organization's direction before committing capital across business units.",
+        "3": "Weighs tradeoffs for the current planning cycle but defers the organization's longer-term direction.",
+        "1": "Overlooks long-term tradeoffs when committing resources, leaving the organization's direction exposed."
+      }
+    },
+    {
+      "indicator": "Translate long-term direction into priorities other senior leaders can act on",
+      "scale": {
+        "5": "Translates long-term direction into clear priorities other senior leaders can act on without further guidance.",
+        "3": "Translates long-term direction into priorities for senior leaders but leaves the sequencing for them to work out.",
+        "1": "Fails to translate long-term direction into priorities, leaving other senior leaders without a clear plan."
+      }
+    }
+  ],
+  "INN": [
+    {
+      "indicator": "Champion new ventures that require backing across multiple business units",
+      "scale": {
+        "5": "Champions new ventures that require backing across multiple business units, absorbing the risk of early missteps.",
+        "3": "Champions new ventures within a single business unit but hesitates to back ones spanning several.",
+        "1": "Resists championing new ventures, leaving promising ideas without organizational backing."
+      }
+    },
+    {
+      "indicator": "Question established practices that no longer serve the organization's direction",
+      "scale": {
+        "5": "Proactively questions established practices that no longer serve the organization's direction, retiring them before they cost more.",
+        "3": "Questions established practices only after a business unit raises the cost of keeping them.",
+        "1": "Accepts established practices without question, letting outdated methods persist across the organization."
+      }
+    },
+    {
+      "indicator": "Support other leaders who take a risk on an unproven idea",
+      "scale": {
+        "5": "Actively supports other leaders who take a risk on an unproven idea, shielding them if it fails.",
+        "3": "Supports other leaders who take a risk once the idea already shows early results.",
+        "1": "Neglects to support other leaders who take a risk, leaving them exposed if it fails."
+      }
+    }
+  ],
+  "JDG": [
+    {
+      "indicator": "Base capital allocation decisions on rigorous financial and strategic analysis",
+      "scale": {
+        "5": "Anchors every capital allocation decision in rigorous financial and strategic analysis, protecting consolidated P&L integrity.",
+        "3": "Reviews financial analysis for major allocation calls but defers to precedent across smaller ones.",
+        "1": "Neglects rigorous analysis before capital allocation calls, exposing consolidated P&L to avoidable risk."
+      }
+    },
+    {
+      "indicator": "Set organizational direction despite sustained uncertainty across multiple countries",
+      "scale": {
+        "5": "Sets a clear organizational direction despite sustained multi-country uncertainty, giving every business unit a stable reference point.",
+        "3": "Sets direction for countries with a clearer outlook but defers where uncertainty remains widest.",
+        "1": "Resists setting organizational direction while multi-country uncertainty persists, leaving business units without a reference point."
+      }
+    },
+    {
+      "indicator": "Weigh long-term tradeoffs across business units before committing capital",
+      "scale": {
+        "5": "Weighs long-term tradeoffs across business units rigorously before committing capital, protecting consolidated P&L over the multi-year horizon.",
+        "3": "Compares tradeoffs across business units before committing capital but underweights the long-term horizon.",
+        "1": "Does not weigh long-term tradeoffs across business units before committing capital, exposing consolidated P&L to avoidable risk."
+      }
+    }
+  ],
+  "DRV": [
+    {
+      "indicator": "Push the organization toward multi-year strategic targets despite setbacks in one business unit or country",
+      "scale": {
+        "5": "Pushes the organization toward multi-year strategic targets despite setbacks in one business unit or country.",
+        "3": "Pushes the organization toward multi-year strategic targets when every business unit performs.",
+        "1": "Neglects organization-wide strategic targets once one business unit sets back, letting the whole plan slip."
+      }
+    },
+    {
+      "indicator": "Set a personal bar for the organization's results above what the capital plan strictly requires",
+      "scale": {
+        "5": "Sets a personal bar for the organization's results above what the capital plan strictly requires.",
+        "3": "Sets a personal bar for the organization's results that matches the capital plan.",
+        "1": "Does not set a personal bar above the capital plan's minimum for the organization's results."
+      }
+    },
+    {
+      "indicator": "Sustain organization-wide pace across a multi-year plan rather than a single strong business unit",
+      "scale": {
+        "5": "Sustains organization-wide pace across the full multi-year plan rather than one strong business unit, avoiding a late-stage fade.",
+        "3": "Sustains organization-wide pace through a strong opening year but fades as the multi-year plan continues.",
+        "1": "Struggles to sustain organization-wide pace beyond one strong business unit, fading well before the multi-year plan ends."
+      }
+    }
+  ],
+  "CSF": [
+    {
+      "indicator": "Understand which strategic accounts most affect consolidated P&L outcomes",
+      "scale": {
+        "5": "Understands which strategic accounts most affect consolidated P&L outcomes, prioritizing attention accordingly.",
+        "3": "Understands which strategic accounts affect a single business unit's results but not the consolidated picture.",
+        "1": "Overlooks which strategic accounts most affect consolidated P&L, spreading attention too thin."
+      }
+    },
+    {
+      "indicator": "Keep commitments made to major customers across business units",
+      "scale": {
+        "5": "Consistently keeps commitments made to major customers across business units, protecting the organization's reputation.",
+        "3": "Keeps commitments made to major customers in one business unit but loses track across others.",
+        "1": "Fails to keep commitments made to major customers, damaging trust across business units."
+      }
+    },
+    {
+      "indicator": "Build strategic partnerships that strengthen the organization's competitive position",
+      "scale": {
+        "5": "Builds strategic partnerships that strengthen the organization's competitive position across multiple countries.",
+        "3": "Builds strategic partnerships within one country but rarely extends them to others.",
+        "1": "Neglects to build strategic partnerships, leaving the organization's competitive position weaker."
+      }
+    }
+  ],
+  "SLF": [
+    {
+      "indicator": "Set sales and partnership targets across business units that balance growth against consolidated P&L",
+      "scale": {
+        "5": "Sets sales and partnership targets across business units that balance growth against consolidated P&L.",
+        "3": "Sets sales and partnership targets across business units based on growth alone, without weighing them against consolidated P&L.",
+        "1": "Overlooks consolidated P&L when setting sales and partnership targets across business units, chasing growth without a check."
+      }
+    },
+    {
+      "indicator": "Explain the organization's value proposition in terms that match different major account segments",
+      "scale": {
+        "5": "Explains the organization's value proposition in terms that match different major account segments, tailoring the pitch to each.",
+        "3": "Explains the organization's value proposition with the same pitch across every major account segment.",
+        "1": "Struggles to explain the organization's value proposition across major account segments, relying on a single generic pitch."
+      }
+    },
+    {
+      "indicator": "Negotiate a major partnership that protects consolidated margin while meeting the partner's core need",
+      "scale": {
+        "5": "Negotiates a major partnership that protects consolidated margin while meeting the partner's core need.",
+        "3": "Negotiates a major partnership that meets the partner's core need but gives up consolidated margin to close it.",
+        "1": "Struggles to negotiate a major partnership that protects consolidated margin, giving up terms rather than working toward them."
+      }
+    }
+  ],
+  "OPX": [
+    {
+      "indicator": "Set operating standards that hold consistently across every business unit",
+      "scale": {
+        "5": "Sets operating standards that hold consistently across every business unit, closing gaps before they compound.",
+        "3": "Sets operating standards for the units already performing well but leaves the rest inconsistent.",
+        "1": "Overlooks inconsistent operating standards across business units, letting gaps compound unchecked."
+      }
+    },
+    {
+      "indicator": "Use consolidated data to detect operational patterns across countries",
+      "scale": {
+        "5": "Uses consolidated data to detect operational patterns across countries before they become P&L problems.",
+        "3": "Uses country-level data to detect operational patterns but rarely consolidates it across countries.",
+        "1": "Neglects to use consolidated data, missing operational patterns until they surface as P&L problems."
+      }
+    },
+    {
+      "indicator": "Remove structural obstacles that slow execution across business units",
+      "scale": {
+        "5": "Removes structural obstacles that slow execution across business units, unblocking progress at the source.",
+        "3": "Removes structural obstacles once a business unit escalates them but rarely looks for them first.",
+        "1": "Fails to remove structural obstacles, letting execution stall across business units."
+      }
+    }
+  ],
+  "TMG": [
+    {
+      "indicator": "Set organization-wide priorities and delegate accountability to other senior leaders",
+      "scale": {
+        "5": "Sets organization-wide priorities and delegates real accountability to other senior leaders, freeing them to lead their own units.",
+        "3": "Sets organization-wide priorities but retains accountability rather than delegating it to other senior leaders.",
+        "1": "Neglects to delegate accountability alongside organization-wide priorities, forcing other senior leaders to escalate decisions upward."
+      }
+    },
+    {
+      "indicator": "Give other senior leaders candid, specific feedback on organizational performance",
+      "scale": {
+        "5": "Gives other senior leaders candid, specific feedback on organizational performance, linking it directly to consolidated results.",
+        "3": "Gives other senior leaders feedback on organizational performance but keeps it diplomatic rather than specific.",
+        "1": "Avoids giving other senior leaders candid feedback, letting organizational underperformance go unaddressed."
+      }
+    },
+    {
+      "indicator": "Sustain engagement and collaboration among senior leaders across the organization",
+      "scale": {
+        "5": "Sustains strong engagement and collaboration among senior leaders across the organization, turning competing agendas into shared strategy.",
+        "3": "Sustains collaboration among senior leaders across the organization but leaves engagement uneven across business units.",
+        "1": "Neglects engagement and collaboration among senior leaders, letting competing agendas fragment organizational strategy."
+      }
+    }
+  ],
+  "INS": [
+    {
+      "indicator": "Coach other senior leaders to build succession depth in their units",
+      "scale": {
+        "5": "Coaches other senior leaders to build succession depth in their units, reducing single-person risk.",
+        "3": "Coaches other senior leaders informally but does not build succession depth in their units.",
+        "1": "Neglects to coach other senior leaders, leaving succession depth thin across business units."
+      }
+    },
+    {
+      "indicator": "Recognize other senior leaders' contributions in front of the organization",
+      "scale": {
+        "5": "Consistently recognizes other senior leaders' contributions in front of the organization, reinforcing what good looks like.",
+        "3": "Recognizes other senior leaders' contributions privately but rarely does so in front of the organization.",
+        "1": "Overlooks other senior leaders' contributions, leaving strong performance unacknowledged across the organization."
+      }
+    },
+    {
+      "indicator": "Build a culture where senior leaders push each other toward top performance",
+      "scale": {
+        "5": "Builds a culture where senior leaders push each other toward top performance across every business unit.",
+        "3": "Builds this culture among senior leaders who already perform well but not among the rest.",
+        "1": "Neglects to build this culture, leaving senior leaders to push performance on their own."
+      }
+    }
+  ],
+  "COM": [
+    {
+      "indicator": "Explain organizational strategy to business unit leaders in terms that connect it to each unit's priorities",
+      "scale": {
+        "5": "Explains organizational strategy to business unit leaders in terms that connect it to each unit's priorities.",
+        "3": "Explains organizational strategy to business unit leaders by stating the directive without connecting it to each unit's priorities.",
+        "1": "Struggles to explain organizational strategy to business unit leaders, leaving them with the directive but no reasoning."
+      }
+    },
+    {
+      "indicator": "Listen to concerns raised by business unit leaders fully before responding",
+      "scale": {
+        "5": "Listens to concerns raised by business unit leaders fully before responding, letting what they say shape the strategy.",
+        "3": "Listens to concerns raised by business unit leaders partway before responding, missing points raised later.",
+        "1": "Resists letting business unit leaders finish raising a concern, responding to only part of what was said."
+      }
+    },
+    {
+      "indicator": "Keep business unit leaders engaged through a strategy update rather than losing their attention",
+      "scale": {
+        "5": "Keeps business unit leaders engaged through a strategy update by tying it to what matters to each unit.",
+        "3": "Delivers a strategy update to business unit leaders but loses their attention partway through.",
+        "1": "Struggles to keep business unit leaders engaged through a strategy update, losing their attention from the start."
+      }
+    }
+  ],
+  "COL": [
+    {
+      "indicator": "Bring business unit leaders across the organization into a joint plan before it affects their units",
+      "scale": {
+        "5": "Brings business unit leaders across the organization into a joint plan before it affects their units.",
+        "3": "Brings business unit leaders across the organization into a joint plan after it is set.",
+        "1": "Neglects to bring business unit leaders into a joint plan before it affects their units."
+      }
+    },
+    {
+      "indicator": "Split shared organizational initiatives evenly across business units rather than let one carry them",
+      "scale": {
+        "5": "Splits shared organizational initiatives evenly across business units, watching for early signs one unit is carrying too much.",
+        "3": "Splits shared organizational initiatives evenly across business units at the outset but leaves them uneven once priorities shift.",
+        "1": "Avoids redistributing shared organizational initiatives across business units, letting one unit carry them."
+      }
+    },
+    {
+      "indicator": "Work through a disagreement between business unit leaders rather than decide for them",
+      "scale": {
+        "5": "Works through a disagreement between business unit leaders, reaching a shared resolution every unit can act on.",
+        "3": "Works through a disagreement between business unit leaders on operational matters but decides on larger strategic ones.",
+        "1": "Resists working through a disagreement between business unit leaders, deciding for them instead."
+      }
+    }
+  ],
+  "INF": [
+    {
+      "indicator": "Win business unit leaders' support for a capital allocation decision",
+      "scale": {
+        "5": "Wins business unit leaders' support for a capital allocation decision by addressing each one's concerns directly.",
+        "3": "Wins support from business unit leaders who already favor the decision but not from the rest.",
+        "1": "Fails to win business unit leaders' support, stalling the capital allocation decision."
+      }
+    },
+    {
+      "indicator": "Argue for own position with evidence that spans multiple business units",
+      "scale": {
+        "5": "Argues for own position with evidence that spans multiple business units, making the case irrefutable.",
+        "3": "Argues for own position with evidence from a single business unit rather than across all of them.",
+        "1": "Struggles to argue for own position, relying on assertion rather than evidence across business units."
+      }
+    },
+    {
+      "indicator": "Stand firm on a decision when a business unit leader pushes back",
+      "scale": {
+        "5": "Stands firm on a decision when a business unit leader pushes back, holding the line without damaging trust.",
+        "3": "Stands firm on a decision only until a business unit leader pushes back a second time.",
+        "1": "Concedes a decision as soon as a business unit leader pushes back, undermining organizational direction."
+      }
+    }
+  ],
+  "NET": [
+    {
+      "indicator": "Build a working relationship with industry contacts and external stakeholders before the organization needs their help",
+      "scale": {
+        "5": "Builds a working relationship with industry contacts and external stakeholders before the organization needs their help.",
+        "3": "Builds a working relationship with industry contacts and external stakeholders only once the organization already needs their help.",
+        "1": "Neglects to build a working relationship with industry contacts and external stakeholders."
+      }
+    },
+    {
+      "indicator": "Adjust own communication style to fit stakeholders across the organization, the industry and outside it",
+      "scale": {
+        "5": "Adjusts own communication style to fit stakeholders across the organization, the industry and outside it.",
+        "3": "Adjusts own communication style for internal senior leaders but uses the same approach with external industry contacts.",
+        "1": "Resists adjusting own communication style across the organization and the industry, using the same approach with every stakeholder."
+      }
+    },
+    {
+      "indicator": "Use an existing industry relationship to unblock a strategic initiative for the organization",
+      "scale": {
+        "5": "Uses an existing industry relationship to unblock a strategic initiative for the organization.",
+        "3": "Uses an existing industry relationship to unblock a strategic initiative only after a formal request stalls.",
+        "1": "Overlooks existing industry relationships, routing every strategic request through formal channels alone."
+      }
+    }
+  ],
+  "RES": [
+    {
+      "indicator": "Sustain organizational focus through sustained multi-country uncertainty",
+      "scale": {
+        "5": "Sustains organizational focus through sustained multi-country uncertainty, keeping every business unit oriented on the plan.",
+        "3": "Sustains organizational focus while uncertainty is confined to one country but wavers once it spreads.",
+        "1": "Loses organizational focus once multi-country uncertainty sets in, leaving business units without direction."
+      }
+    },
+    {
+      "indicator": "Handle a consolidated P&L setback without shifting blame to a business unit",
+      "scale": {
+        "5": "Handles a consolidated P&L setback without shifting blame to a business unit, owning the outcome directly.",
+        "3": "Handles a consolidated P&L setback calmly but privately holds one business unit responsible.",
+        "1": "Shifts blame to a business unit after a consolidated P&L setback, eroding trust across the organization."
+      }
+    },
+    {
+      "indicator": "Model composure for other senior leaders during an organization-wide crisis",
+      "scale": {
+        "5": "Models composure for other senior leaders during an organization-wide crisis, steadying the room when it matters most.",
+        "3": "Models composure for other senior leaders during a single business unit's crisis but not an organization-wide one.",
+        "1": "Loses composure during an organization-wide crisis, leaving other senior leaders without a steady reference point."
+      }
+    }
+  ],
+  "LRN": [
+    {
+      "indicator": "Seek feedback from other senior leaders on own strategic decisions",
+      "scale": {
+        "5": "Actively seeks feedback from other senior leaders on own strategic decisions, adjusting direction when the case is strong.",
+        "3": "Seeks feedback from other senior leaders only after a strategic decision has already been announced.",
+        "1": "Avoids seeking feedback on own strategic decisions, missing early signals from other senior leaders."
+      }
+    },
+    {
+      "indicator": "Reflect on which strategic decisions worked across business units and why",
+      "scale": {
+        "5": "Reflects on which strategic decisions worked across business units and why, applying the pattern to the next one.",
+        "3": "Reflects on which strategic decisions worked in one business unit but rarely compares across others.",
+        "1": "Neglects to reflect on which strategic decisions worked, repeating the same mistakes across business units."
+      }
+    },
+    {
+      "indicator": "Apply lessons from one business unit's experience to organization-wide decisions",
+      "scale": {
+        "5": "Applies lessons from one business unit's experience to organization-wide decisions, avoiding the same setback elsewhere.",
+        "3": "Applies lessons from one business unit's experience back to that same unit but rarely elsewhere.",
+        "1": "Overlooks lessons from one business unit's experience, repeating the same setback in others."
+      }
+    }
+  ],
+  "ITG": [
+    {
+      "indicator": "Follow through on an organization-wide commitment even when it becomes costly across business units",
+      "scale": {
+        "5": "Follows through on an organization-wide commitment even when it becomes costly across business units.",
+        "3": "Follows through on an organization-wide commitment when low-cost but lets it slide across business units.",
+        "1": "Neglects an organization-wide commitment once it becomes costly, leaving business units to absorb the consequence."
+      }
+    },
+    {
+      "indicator": "Admit a mistake to the organization rather than let a business unit take the blame",
+      "scale": {
+        "5": "Admits a mistake to the organization rather than let a business unit take the blame.",
+        "3": "Admits a mistake to the organization once it is already obvious but stays quiet otherwise.",
+        "1": "Avoids admitting a mistake to the organization, letting a business unit take the blame."
+      }
+    },
+    {
+      "indicator": "Apply organization-wide standards the same way across every business unit regardless of results pressure",
+      "scale": {
+        "5": "Applies organization-wide standards the same way across every business unit regardless of results pressure.",
+        "3": "Applies organization-wide standards when results are on track but relaxes them under results pressure.",
+        "1": "Resists applying organization-wide standards evenly, relaxing them under results pressure."
+      }
+    }
+  ],
+  "INC": [
+    {
+      "indicator": "Give business unit leaders from different backgrounds equal airtime in an organization-wide discussion",
+      "scale": {
+        "5": "Gives business unit leaders from different backgrounds equal airtime in an organization-wide discussion.",
+        "3": "Gives business unit leaders airtime when they speak up but does not draw out quieter ones.",
+        "1": "Overlooks business unit leaders from different backgrounds, letting the same few voices dominate every organization-wide discussion."
+      }
+    },
+    {
+      "indicator": "Adjust organization-wide policy to accommodate a specific need raised by a business unit",
+      "scale": {
+        "5": "Adjusts organization-wide policy to accommodate a specific need raised by a business unit.",
+        "3": "Accommodates a specific need raised by a business unit once but leaves organization-wide policy unchanged.",
+        "1": "Resists adjusting organization-wide policy for a business unit's specific need, expecting it to fit the existing policy instead."
+      }
+    },
+    {
+      "indicator": "Draw on a business unit leader's different perspective when it conflicts with the majority view",
+      "scale": {
+        "5": "Draws on a business unit leader's different perspective when it conflicts with the majority view.",
+        "3": "Draws on a business unit leader's perspective when it agrees with the majority but sets it aside otherwise.",
+        "1": "Overlooks a business unit leader's different perspective whenever it conflicts with the majority view, dismissing it without consideration."
+      }
+    }
+  ]
+}
