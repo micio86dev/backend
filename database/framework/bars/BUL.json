@@ -1,4 +1,30 @@
 {
+  "PRS": [
+    {
+      "indicator": "Trace a P&L shortfall back to the business function actually driving it",
+      "scale": {
+        "5": "Traces a P&L shortfall to the business function actually driving it, even when early numbers point elsewhere.",
+        "3": "Traces a P&L shortfall to the function closest to the symptom, without checking whether another function drives it.",
+        "1": "Overlooks which function actually drives a P&L shortfall, assigning it to the nearest one instead."
+      }
+    },
+    {
+      "indicator": "Pull together data from multiple functions before diagnosing a region-wide performance problem",
+      "scale": {
+        "5": "Pulls together data from multiple functions before diagnosing a region-wide problem, exposing causes a narrow view would hide.",
+        "3": "Pulls together data from the function closest to the problem, leaving other functions' data out of the diagnosis.",
+        "1": "Neglects to pull data from other functions before diagnosing a region-wide problem, working from one function's numbers alone."
+      }
+    },
+    {
+      "indicator": "Weigh conflicting explanations from different functions before settling on a root cause for a P&L problem",
+      "scale": {
+        "5": "Weighs conflicting explanations from different functions before settling on a P&L problem's root cause, resolving disputes with evidence.",
+        "3": "Weighs conflicting explanations from different functions but settles on whichever came from the highest-ranking source.",
+        "1": "Overlooks the conflicting explanations from different functions, settling on a P&L problem's root cause without weighing them."
+      }
+    }
+  ],
   "STG": [
     {
       "indicator": "Align the strategic priorities of own area with the broader priorities of the organization",
@@ -48,6 +74,58 @@
         "5": "Identifies, evaluates, and successfully executes new business opportunities with measurable returns.",
         "3": "Occasionally pursues opportunities, though some lack follow-through or impact.",
         "1": "Rarely seeks or executes new business opportunities, missing growth potential."
+      }
+    }
+  ],
+  "JDG": [
+    {
+      "indicator": "Base regional P&L decisions on verified financial and operational data",
+      "scale": {
+        "5": "Anchors every regional P&L decision in verified financial and operational data, exposing hidden risk early.",
+        "3": "Reviews financial data for major P&L calls but defers to prior-year precedent for smaller ones.",
+        "1": "Fails to verify financial data before regional P&L decisions, exposing the business to avoidable risk."
+      }
+    },
+    {
+      "indicator": "Commit to a decision for own region despite conflicting or incomplete signals",
+      "scale": {
+        "5": "Commits decisively to a regional decision despite conflicting or incomplete signals, absorbing the risk personally.",
+        "3": "Decides once conflicting signals are resolved but defers when signals remain genuinely mixed.",
+        "1": "Avoids committing to a regional decision while signals conflict, leaving the business without direction."
+      }
+    },
+    {
+      "indicator": "Weigh P&L tradeoffs and resource limits before choosing among strategic options",
+      "scale": {
+        "5": "Weighs P&L tradeoffs and resource limits rigorously before choosing the strategic option with the strongest regional return.",
+        "3": "Compares P&L impact across strategic options but treats resource limits as a secondary factor.",
+        "1": "Overlooks P&L tradeoffs and resource limits, choosing strategic options on precedent alone."
+      }
+    }
+  ],
+  "DRV": [
+    {
+      "indicator": "Push own country or region toward multi-year P&L targets despite setbacks in one business function",
+      "scale": {
+        "5": "Pushes own country or region toward multi-year P&L targets despite setbacks in one business function.",
+        "3": "Pushes own country or region toward multi-year P&L targets when all functions perform.",
+        "1": "Neglects own region's multi-year P&L targets once one business function sets back, letting the whole region's pace slip."
+      }
+    },
+    {
+      "indicator": "Set a personal bar for own region's results above what the P&L plan strictly requires",
+      "scale": {
+        "5": "Sets a personal bar for own region's results above what the P&L plan strictly requires.",
+        "3": "Sets a personal bar for own region's results that matches the P&L plan, without pushing functions past it.",
+        "1": "Does not set a personal bar above the P&L plan's minimum for own region's results."
+      }
+    },
+    {
+      "indicator": "Sustain own region's pace across a multi-year plan rather than a single strong year",
+      "scale": {
+        "5": "Sustains own region's pace across the full multi-year plan rather than a single strong year.",
+        "3": "Sustains own region's pace through a strong opening year but fades as the multi-year plan continues.",
+        "1": "Struggles to sustain own region's pace beyond a single year, fading well before the multi-year plan ends."
       }
     }
   ],
@@ -103,6 +181,32 @@
       }
     }
   ],
+  "TMG": [
+    {
+      "indicator": "Set functional goals and delegate execution authority to own region's leaders",
+      "scale": {
+        "5": "Sets functional goals and delegates real execution authority to own region's leaders, freeing them to act.",
+        "3": "Sets functional goals for own region's leaders but retains execution authority rather than delegating it.",
+        "1": "Fails to delegate execution authority alongside functional goals, forcing own region's leaders to escalate routine decisions."
+      }
+    },
+    {
+      "indicator": "Give functional leaders across own region candid, specific feedback on performance",
+      "scale": {
+        "5": "Gives functional leaders across own region candid, specific feedback on performance, tying it to concrete regional results.",
+        "3": "Gives functional leaders across own region feedback on performance but stops short of specifics.",
+        "1": "Avoids giving functional leaders across own region candid feedback, letting underperformance persist unchecked."
+      }
+    },
+    {
+      "indicator": "Sustain engagement and collaboration among functional leaders across own region",
+      "scale": {
+        "5": "Sustains strong engagement and collaboration among functional leaders across own region, turning rivalry into shared wins.",
+        "3": "Sustains collaboration among functional leaders across own region but leaves engagement uneven.",
+        "1": "Neglects engagement and collaboration among functional leaders across own region, letting functional rivalry fester."
+      }
+    }
+  ],
   "INS": [
     {
       "indicator": "Provides coaching and guidance to foster skills development within the organizational unit",
@@ -129,6 +233,32 @@
       }
     }
   ],
+  "COL": [
+    {
+      "indicator": "Bring functional leaders from across own region into a joint plan before it affects their work",
+      "scale": {
+        "5": "Brings functional leaders from across own region into a joint plan before it affects their work.",
+        "3": "Brings functional leaders from across own region into a joint plan after it is set.",
+        "1": "Neglects to bring functional leaders from across own region into a joint plan before it affects their work."
+      }
+    },
+    {
+      "indicator": "Split shared initiatives evenly across own region's business functions rather than let one carry them",
+      "scale": {
+        "5": "Splits shared initiatives evenly across own region's functions, watching for early strain.",
+        "3": "Splits shared initiatives evenly across own region's functions at the outset but leaves them uneven later.",
+        "1": "Avoids redistributing shared initiatives across own region's business functions, letting one function carry them."
+      }
+    },
+    {
+      "indicator": "Work through a disagreement between own region's functional leaders rather than decide for them",
+      "scale": {
+        "5": "Works through a disagreement between own region's functional leaders, reaching a shared resolution both can act on.",
+        "3": "Works through a disagreement between own region's functional leaders on operational matters but decides on larger ones.",
+        "1": "Resists working through a disagreement between own region's functional leaders, deciding for them instead."
+      }
+    }
+  ],
   "INF": [
     {
       "indicator": "Support own positions with compelling business arguments, addressing all relevant factors",
@@ -152,6 +282,32 @@
         "5": "Achieves favorable outcomes while ensuring others feel heard and respected.",
         "3": "Reaches acceptable deals, though may miss opportunities for mutual benefit.",
         "1": "Negotiations often end in conflict, dissatisfaction, or imbalanced outcomes."
+      }
+    }
+  ],
+  "NET": [
+    {
+      "indicator": "Build a working relationship with peers and external stakeholders before own region needs their help",
+      "scale": {
+        "5": "Builds a working relationship with peers and external stakeholders before own region needs their help.",
+        "3": "Builds a working relationship with peers and external stakeholders only once own region already needs their help.",
+        "1": "Neglects to build a working relationship with peers and external stakeholders."
+      }
+    },
+    {
+      "indicator": "Adjust own communication style to fit stakeholders across own region and outside it",
+      "scale": {
+        "5": "Adjusts own communication style to fit stakeholders across own region and outside it.",
+        "3": "Adjusts own communication style for internal peers but uses the same approach with external stakeholders.",
+        "1": "Resists adjusting own communication style across own region and outside it, using the same approach with every stakeholder."
+      }
+    },
+    {
+      "indicator": "Use an existing relationship with an external stakeholder to unblock own region's plan",
+      "scale": {
+        "5": "Uses an existing relationship with an external stakeholder to unblock own region's plan.",
+        "3": "Uses an existing relationship with an external stakeholder to unblock own region's plan after a request stalls.",
+        "1": "Overlooks existing relationships with external stakeholders, routing every request for own region through formal channels alone."
       }
     }
   ],

@@ -45,10 +45,10 @@ test('per-role pivot counts match JSON definitions', function (): void {
 test('per-role BARS-covered competency counts match design', function (): void {
     $covered = [
         'ICO' => 15,
-        'FLL' => 8,
-        'MLL' => 8,
-        'BUL' => 8,
-        'SRX' => 0,
+        'FLL' => 18,
+        'MLL' => 18,
+        'BUL' => 14,
+        'SRX' => 18,
     ];
 
     foreach ($covered as $code => $expected) {
@@ -63,10 +63,10 @@ test('per-role BARS-covered competency counts match design', function (): void {
 test('total bars_indicators rows per role match design (3 indicators per covered competency)', function (): void {
     $barsRows = [
         'ICO' => 45, // 15 × 3
-        'FLL' => 24, // 8 × 3
-        'MLL' => 24, // 8 × 3
-        'BUL' => 24, // 8 × 3
-        'SRX' => 0,
+        'FLL' => 54, // 18 × 3
+        'MLL' => 54, // 18 × 3
+        'BUL' => 42, // 14 × 3
+        'SRX' => 54, // 18 × 3
     ];
 
     foreach ($barsRows as $code => $expected) {
