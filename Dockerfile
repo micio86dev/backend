@@ -7,14 +7,14 @@
 FROM php:8.5.8-fpm-alpine AS builder
 
 # Robust PHP extension installer (handles system deps + PHP 8.5 build quirks)
-COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=mlocati/php-extension-installer:2.11.12 /usr/bin/install-php-extensions /usr/local/bin/
 
 # Build tools + PHP extensions (pdo_pgsql required; zip for composer; opcache; pcov for coverage)
 RUN apk add --no-cache unzip git \
     && install-php-extensions pdo_pgsql zip opcache pcov
 
 # Install Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2.10.2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
 
@@ -39,7 +39,7 @@ LABEL org.opencontainers.image.title="BEAI API" \
       org.opencontainers.image.version="0.1.0"
 
 # Robust extension installer (also pulls the correct runtime libs and cleans up build deps)
-COPY --from=mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=mlocati/php-extension-installer:2.11.12 /usr/bin/install-php-extensions /usr/local/bin/
 
 # Runtime-only system deps + PHP extensions needed in production.
 # pcntl + posix: required for graceful worker shutdown (SIGTERM handling,
