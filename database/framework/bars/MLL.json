@@ -1,4 +1,30 @@
 {
+  "PRS": [
+    {
+      "indicator": "Trace a problem spanning two functions back to which function actually owns the root cause",
+      "scale": {
+        "5": "Traces cross-functional problems to the function that actually owns the root cause, ending finger-pointing between teams.",
+        "3": "Identifies which function a cross-functional problem touches but stops short of naming which one owns the root cause.",
+        "1": "Overlooks the cross-functional root cause of a problem, treating it as one function's issue alone."
+      }
+    },
+    {
+      "indicator": "Combine data from own functions with input from other units before diagnosing a cross-functional issue",
+      "scale": {
+        "5": "Combines data from own functions with input from other units, catching gaps a single-function view would miss.",
+        "3": "Combines data from own functions when diagnosing but leaves other units' input ungathered.",
+        "1": "Neglects to gather input from other units when diagnosing a cross-functional issue, working from own functions' data alone."
+      }
+    },
+    {
+      "indicator": "Test a proposed fix against both functions' numbers before rolling it out",
+      "scale": {
+        "5": "Tests a proposed fix against both functions' numbers before rolling it out, catching hidden tradeoffs early.",
+        "3": "Tests a proposed fix against one function's numbers before rolling it out, leaving the other function unchecked.",
+        "1": "Fails to test a proposed fix against either function's numbers before rolling it out."
+      }
+    }
+  ],
   "STG": [
     {
       "indicator": "Translate business strategies into clear goals and tactics for own team",
@@ -51,6 +77,58 @@
       }
     }
   ],
+  "JDG": [
+    {
+      "indicator": "Base unit decisions on data that balances revenue growth against cost",
+      "scale": {
+        "5": "Builds every unit decision on data that weighs revenue growth against cost, sharpening the tradeoff each time.",
+        "3": "Checks revenue and cost data for major decisions but relies on instinct for smaller ones.",
+        "1": "Rarely checks revenue or cost data before unit decisions, leaving tradeoffs unexamined."
+      }
+    },
+    {
+      "indicator": "Resolve ambiguous situations across own functions with a workable course of action",
+      "scale": {
+        "5": "Resolves ambiguous cross-functional situations with a workable course of action, keeping both functions aligned and moving.",
+        "3": "Resolves clear-cut cross-functional issues quickly but stalls on genuinely ambiguous ones.",
+        "1": "Struggles to resolve ambiguous cross-functional situations, leaving both functions without direction."
+      }
+    },
+    {
+      "indicator": "Weigh revenue, cost and timing tradeoffs before choosing among options for own functions",
+      "scale": {
+        "5": "Weighs revenue, cost and timing tradeoffs rigorously before choosing the option that best serves own functions.",
+        "3": "Compares revenue and cost tradeoffs before choosing but leaves timing as an afterthought.",
+        "1": "Overlooks revenue, cost and timing tradeoffs, choosing options for own functions on gut feel alone."
+      }
+    }
+  ],
+  "DRV": [
+    {
+      "indicator": "Push own unit toward yearly targets despite growth-versus-cost pressure",
+      "scale": {
+        "5": "Pushes own unit toward its yearly targets even when growth and cost pressures pull in opposite directions.",
+        "3": "Pushes own unit toward its yearly targets when growth and cost pressures align but eases off otherwise.",
+        "1": "Neglects own unit's yearly targets once growth and cost pressures pull in opposite directions, letting one slide."
+      }
+    },
+    {
+      "indicator": "Set a personal bar for own unit's output above what the annual plan strictly requires",
+      "scale": {
+        "5": "Sets a personal bar for own unit's output above what the annual plan strictly requires.",
+        "3": "Sets a personal bar for own unit's output that matches the annual plan, without exceeding it.",
+        "1": "Does not set a personal bar above the annual plan's minimum for own unit's output."
+      }
+    },
+    {
+      "indicator": "Sustain own unit's pace through a full year rather than concentrating effort near deadlines",
+      "scale": {
+        "5": "Sustains own unit's pace through the full year rather than concentrating effort near deadlines, avoiding late scrambles.",
+        "3": "Sustains own unit's pace through the first three quarters but concentrates effort near deadlines in the fourth.",
+        "1": "Rarely sustains own unit's pace through the year, concentrating all effort into a scramble near deadlines."
+      }
+    }
+  ],
   "CSF": [
     {
       "indicator": "Anticipate customer needs and expectations and lead the team to meet them",
@@ -74,6 +152,32 @@
         "5": "Regularly uses customer expectations to assess and improve team performance.",
         "3": "Occasionally aligns performance measures with customer expectations.",
         "1": "Rarely considers customer expectations in performance evaluations."
+      }
+    }
+  ],
+  "SLF": [
+    {
+      "indicator": "Set sales targets across own country's functions that balance growth against cost",
+      "scale": {
+        "5": "Sets sales targets across own country's functions that balance growth against cost, adjusting the mix as conditions change.",
+        "3": "Sets sales targets across own country's functions based on growth alone, without weighing them against cost.",
+        "1": "Overlooks the cost side when setting sales targets across own country's functions, chasing growth without a check."
+      }
+    },
+    {
+      "indicator": "Explain own products or services' value in terms that match different customer segments across own country",
+      "scale": {
+        "5": "Explains own products or services' value in terms that match different customer segments across own country.",
+        "3": "Explains own products or services' value with the same pitch across every customer segment in own country.",
+        "1": "Struggles to explain own products or services' value across different customer segments, relying on a single generic pitch."
+      }
+    },
+    {
+      "indicator": "Negotiate a deal across own country's functions that protects margin",
+      "scale": {
+        "5": "Negotiates a deal across own country's functions that protects margin while meeting a key account's core need.",
+        "3": "Negotiates a deal across own country's functions that meets a key account's core need but gives up margin.",
+        "1": "Struggles to negotiate a deal across own country's functions that protects margin."
       }
     }
   ],
@@ -103,6 +207,32 @@
       }
     }
   ],
+  "TMG": [
+    {
+      "indicator": "Translate unit goals into delegated assignments for team leads across own functions",
+      "scale": {
+        "5": "Translates unit goals into delegated assignments precisely, giving each team lead across own functions clear ownership.",
+        "3": "Translates unit goals into assignments for team leads but leaves ownership boundaries unclear.",
+        "1": "Neglects to translate unit goals into assignments, leaving team leads across own functions without direction."
+      }
+    },
+    {
+      "indicator": "Give team leads across own functions candid, specific feedback on results",
+      "scale": {
+        "5": "Gives team leads across own functions candid, specific feedback on results as soon as trends emerge.",
+        "3": "Gives team leads across own functions feedback on results but softens it to avoid friction.",
+        "1": "Avoids giving team leads across own functions candid feedback, letting underperformance go unaddressed."
+      }
+    },
+    {
+      "indicator": "Sustain motivation and engagement among team leads across own functions",
+      "scale": {
+        "5": "Sustains strong motivation and engagement among team leads across own functions, even through cross-functional friction.",
+        "3": "Sustains motivation among team leads across own functions but leaves engagement inconsistent.",
+        "1": "Neglects motivation and engagement among team leads across own functions, letting cross-functional friction fester."
+      }
+    }
+  ],
   "INS": [
     {
       "indicator": "Help direct reports define their development goals",
@@ -129,6 +259,58 @@
       }
     }
   ],
+  "COM": [
+    {
+      "indicator": "Explain a plan to own country's functions in terms that connect it to each function's priorities",
+      "scale": {
+        "5": "Explains a plan to own country's functions in terms that connect it to each function's priorities.",
+        "3": "Explains a plan to own country's functions by stating the directive without connecting it to each function's priorities.",
+        "1": "Struggles to explain a plan to own country's functions, leaving them with the directive but no reasoning."
+      }
+    },
+    {
+      "indicator": "Listen to concerns raised by own country's team leads fully before responding",
+      "scale": {
+        "5": "Listens to concerns raised by own country's team leads fully before responding.",
+        "3": "Listens to concerns raised by own country's team leads partway before responding, missing points raised later.",
+        "1": "Resists letting own country's team leads finish raising a concern, responding to only part of what was said."
+      }
+    },
+    {
+      "indicator": "Keep own country's functions engaged through a strategy update rather than losing their attention",
+      "scale": {
+        "5": "Keeps own country's functions engaged through a strategy update by tying it to what matters to each.",
+        "3": "Delivers a strategy update to own country's functions but loses their attention partway through.",
+        "1": "Struggles to keep own country's functions engaged through a strategy update, losing their attention from the start."
+      }
+    }
+  ],
+  "COL": [
+    {
+      "indicator": "Bring team leads from own two functions into a joint plan before it affects their work",
+      "scale": {
+        "5": "Brings team leads from own functions into a joint plan before it affects their work.",
+        "3": "Brings team leads from own functions into a joint plan after it is set.",
+        "1": "Neglects to bring team leads from own functions into a joint plan before it affects their work."
+      }
+    },
+    {
+      "indicator": "Split shared initiatives evenly across own functions rather than let one function carry them",
+      "scale": {
+        "5": "Splits shared initiatives evenly across own functions, watching for early signs one function is carrying too much.",
+        "3": "Splits shared initiatives evenly across own functions at the outset but leaves them uneven once priorities shift.",
+        "1": "Avoids redistributing shared initiatives across own functions, letting one function carry them."
+      }
+    },
+    {
+      "indicator": "Work through a disagreement between own functions' team leads rather than decide for them",
+      "scale": {
+        "5": "Works through a disagreement between own functions' team leads, reaching a shared resolution both functions can act on.",
+        "3": "Works through a disagreement between own functions' team leads on operational matters but decides on larger ones.",
+        "1": "Resists working through a disagreement between own functions' team leads, deciding for them instead."
+      }
+    }
+  ],
   "INF": [
     {
       "indicator": "Express own positions with strong rationality, confidence and enthusiasm",
@@ -152,6 +334,32 @@
         "5": "Effectively expresses dissent respectfully and constructively, preserving relationships.",
         "3": "Usually expresses disagreement acceptably, but may occasionally cause discomfort.",
         "1": "Expresses disagreement bluntly or insensitively, damaging rapport or trust."
+      }
+    }
+  ],
+  "NET": [
+    {
+      "indicator": "Build a working relationship with peers across own country's functions before own unit needs their help",
+      "scale": {
+        "5": "Builds a working relationship with peers across own country's functions before own unit needs their help.",
+        "3": "Builds a working relationship with peers across own country's functions only once own unit already needs their help.",
+        "1": "Neglects to build a working relationship with peers across own country's functions."
+      }
+    },
+    {
+      "indicator": "Adjust own communication style to fit stakeholders across own country's functions",
+      "scale": {
+        "5": "Adjusts own communication style to fit stakeholders across own country's functions, building rapport across very different audiences.",
+        "3": "Adjusts own communication style for peers within own function but uses the same approach with stakeholders outside it.",
+        "1": "Resists adjusting own communication style across own country's functions, using the same approach with every stakeholder."
+      }
+    },
+    {
+      "indicator": "Use an existing cross-functional relationship to unblock own unit's plan",
+      "scale": {
+        "5": "Uses an existing cross-functional relationship to unblock own unit's plan, resolving it faster than a formal request would.",
+        "3": "Uses an existing cross-functional relationship to unblock own unit's plan only after a formal request stalls.",
+        "1": "Overlooks existing cross-functional relationships, routing every request for own unit through formal channels alone."
       }
     }
   ],
@@ -204,6 +412,58 @@
         "5": "Eagerly pursues and thrives on new challenges and growth opportunities.",
         "3": "Accepts challenges when required but shows some reluctance or hesitation.",
         "1": "Avoids challenging tasks or career growth opportunities, preferring comfort zones."
+      }
+    }
+  ],
+  "ITG": [
+    {
+      "indicator": "Follow through on a commitment made across own country's functions even when it becomes costly",
+      "scale": {
+        "5": "Follows through on a commitment made across own country's functions even when it becomes costly.",
+        "3": "Follows through on a commitment made across own country's functions when low-cost but lets it slide otherwise.",
+        "1": "Neglects a commitment made across own country's functions once it becomes costly."
+      }
+    },
+    {
+      "indicator": "Admit a mistake to own country's functions rather than let another function take the blame",
+      "scale": {
+        "5": "Admits a mistake to own country's functions rather than let another function take the blame.",
+        "3": "Admits a mistake to own country's functions once it is already obvious but stays quiet otherwise.",
+        "1": "Avoids admitting a mistake to own country's functions, letting another function take the blame."
+      }
+    },
+    {
+      "indicator": "Apply own country's standards the same way across every function regardless of results pressure",
+      "scale": {
+        "5": "Applies own country's standards the same way across every function regardless of results pressure.",
+        "3": "Applies own country's standards when results are on track but relaxes them under results pressure.",
+        "1": "Resists applying own country's standards evenly, relaxing them under results pressure."
+      }
+    }
+  ],
+  "INC": [
+    {
+      "indicator": "Give team leads from different backgrounds across own country equal airtime in a discussion",
+      "scale": {
+        "5": "Gives team leads from different backgrounds across own country equal airtime in a discussion.",
+        "3": "Gives team leads from different backgrounds airtime when they speak up but does not draw out quieter ones.",
+        "1": "Overlooks team leads from different backgrounds across own country, letting the same few voices dominate every discussion."
+      }
+    },
+    {
+      "indicator": "Adjust own country's functions' routines to accommodate a specific need raised by a team lead",
+      "scale": {
+        "5": "Adjusts own country's functions' routines to accommodate a specific need raised by a team lead.",
+        "3": "Accommodates a specific need raised by a team lead once but leaves own country's routines unchanged.",
+        "1": "Resists adjusting own country's functions' routines for a team lead's specific need."
+      }
+    },
+    {
+      "indicator": "Draw on a team lead's perspective when it conflicts with the majority view across own functions",
+      "scale": {
+        "5": "Draws on a team lead's perspective when it conflicts with the majority view across own functions.",
+        "3": "Draws on a team lead's perspective when it agrees with the majority view but sets it aside otherwise.",
+        "1": "Overlooks a team lead's perspective whenever it conflicts with the majority view across own functions."
       }
     }
   ]

@@ -1,4 +1,30 @@
 {
+  "PRS": [
+    {
+      "indicator": "Trace recurring problems in own area to their underlying cause, not just the symptom",
+      "scale": {
+        "5": "Traces recurring problems in own area to their root cause, preventing the same issue from resurfacing.",
+        "3": "Identifies the symptom of a recurring problem in own area without tracing it to the root cause.",
+        "1": "Overlooks recurring problems in own area, letting the same issue resurface unaddressed."
+      }
+    },
+    {
+      "indicator": "Pull together input from own team before settling on a solution",
+      "scale": {
+        "5": "Pulls together input from own team and outside sources before settling on a solution for own area.",
+        "3": "Pulls together input from own team before deciding for own area, without checking outside sources.",
+        "1": "Fails to pull together input before deciding for own area, leaving gaps in the solution."
+      }
+    },
+    {
+      "indicator": "Spot flaws in a plan before committing own area's resources",
+      "scale": {
+        "5": "Spots flaws in a plan before committing own area's resources, avoiding costly rework later.",
+        "3": "Reviews own plans for flaws before acting but does not review plans handed down from above.",
+        "1": "Overlooks flaws in a plan before committing own area's resources, causing avoidable rework."
+      }
+    }
+  ],
   "STG": [
     {
       "indicator": "Have a plan to achieve own team's goals",
@@ -51,6 +77,58 @@
       }
     }
   ],
+  "JDG": [
+    {
+      "indicator": "Base day-to-day decisions for own area on facts rather than assumptions",
+      "scale": {
+        "5": "Grounds every area decision in verified facts, catching and correcting flawed assumptions before they affect outcomes.",
+        "3": "Checks the facts behind routine decisions but leans on assumptions for less familiar situations.",
+        "1": "Neglects to verify facts before area decisions, relying on assumption and creating avoidable rework."
+      }
+    },
+    {
+      "indicator": "Decide on a course of action for own area despite incomplete information",
+      "scale": {
+        "5": "Commits to a clear course of action for own area even when information is incomplete, keeping work moving.",
+        "3": "Chooses a course of action once the situation stabilizes but stalls while genuine gaps remain.",
+        "1": "Avoids committing to a course of action while any information is missing, stalling own area's progress."
+      }
+    },
+    {
+      "indicator": "Weigh timing and resource limits before choosing among options for own area",
+      "scale": {
+        "5": "Weighs timing and resource limits carefully before choosing among options, selecting the one own area can actually execute.",
+        "3": "Compares two or three options on timing and resources before picking one for own area.",
+        "1": "Does not weigh timing or resource limits, picking the first workable option for own area."
+      }
+    }
+  ],
+  "DRV": [
+    {
+      "indicator": "Push own area to hit weekly targets even when the first approach stalls",
+      "scale": {
+        "5": "Pushes own area to hit weekly targets even when the first approach stalls, switching tactics without losing momentum.",
+        "3": "Pushes own area toward weekly targets but slows down once the first approach stalls.",
+        "1": "Neglects own area's weekly targets once the first approach stalls, letting momentum drop."
+      }
+    },
+    {
+      "indicator": "Set a personal bar for own work above what own area strictly requires",
+      "scale": {
+        "5": "Sets a personal bar for own work above what own area strictly requires, raising the standard others follow.",
+        "3": "Sets a personal bar for own work that matches what own area strictly requires, without pushing beyond it.",
+        "1": "Does not set a personal bar above own area's minimum requirements, doing only what is asked."
+      }
+    },
+    {
+      "indicator": "Keep pace on own area's deadlines when priorities shift midweek",
+      "scale": {
+        "5": "Keeps pace on own area's deadlines when priorities shift midweek, re-sequencing tasks without losing ground.",
+        "3": "Keeps pace on own area's original deadlines but loses ground when priorities shift midweek.",
+        "1": "Struggles to keep pace on own area's deadlines whenever priorities shift midweek, falling further behind each time."
+      }
+    }
+  ],
   "CSF": [
     {
       "indicator": "Solve customer problems, involving others when needed",
@@ -74,6 +152,32 @@
         "5": "Proactively seeks detailed feedback from customers and uses it to implement effective changes.",
         "3": "Occasionally asks for feedback and considers it for improvements.",
         "1": "Rarely or never requests feedback from customers; ignores input."
+      }
+    }
+  ],
+  "SLF": [
+    {
+      "indicator": "Set sales targets for own area's accounts based on realistic account potential",
+      "scale": {
+        "5": "Sets sales targets for own area's accounts based on realistic account potential, adjusting them as account conditions change.",
+        "3": "Sets sales targets for own area's accounts based on last year's numbers rather than current account potential.",
+        "1": "Overlooks account potential when setting sales targets for own area, leaving them arbitrary."
+      }
+    },
+    {
+      "indicator": "Explain own product or service's value in terms that match a specific customer's needs",
+      "scale": {
+        "5": "Explains own product or service's value in terms that match a specific customer's needs.",
+        "3": "Explains own product or service's features to a specific customer without tying them to that customer's actual needs.",
+        "1": "Struggles to explain own product or service's value to a specific customer, relying on a generic pitch."
+      }
+    },
+    {
+      "indicator": "Negotiate a deal for own area that protects margin while meeting the customer's core need",
+      "scale": {
+        "5": "Negotiates a deal for own area that protects margin while meeting the customer's core need.",
+        "3": "Negotiates a deal for own area that meets the customer's core need but gives up margin.",
+        "1": "Struggles to negotiate a deal for own area that protects margin."
       }
     }
   ],
@@ -103,6 +207,32 @@
       }
     }
   ],
+  "TMG": [
+    {
+      "indicator": "Set clear goals for own team and delegate tasks to get results",
+      "scale": {
+        "5": "Sets clear, specific goals for own team and delegates tasks that match each member's strengths.",
+        "3": "Sets general goals for own team but delegates tasks without matching them to strengths.",
+        "1": "Fails to set clear goals for own team, leaving members to delegate tasks to themselves."
+      }
+    },
+    {
+      "indicator": "Give own team members candid, specific feedback on their performance",
+      "scale": {
+        "5": "Gives own team members candid, specific feedback on performance as soon as issues arise.",
+        "3": "Gives own team members feedback on performance but keeps it general rather than specific.",
+        "1": "Avoids giving own team members candid feedback, letting performance issues go unaddressed."
+      }
+    },
+    {
+      "indicator": "Build teamwork and sustain own team members' motivation and engagement",
+      "scale": {
+        "5": "Builds strong teamwork and actively sustains own team members' motivation, keeping engagement high through daily changes.",
+        "3": "Builds teamwork within own team but leaves motivation and engagement to individual members.",
+        "1": "Neglects teamwork and own team members' motivation, letting engagement drop unchecked."
+      }
+    }
+  ],
   "INS": [
     {
       "indicator": "Shadow younger team memebers to support their professional growth",
@@ -129,6 +259,58 @@
       }
     }
   ],
+  "COM": [
+    {
+      "indicator": "Explain a decision to own team in terms that connect it to their day-to-day work",
+      "scale": {
+        "5": "Explains a decision to own team in terms that connect it to their day-to-day work.",
+        "3": "Explains a decision to own team by stating the outcome without connecting it to their day-to-day work.",
+        "1": "Struggles to explain a decision to own team, leaving them with the outcome but no reasoning."
+      }
+    },
+    {
+      "indicator": "Listen to own team's concerns fully before responding",
+      "scale": {
+        "5": "Listens to own team's concerns fully before responding, letting what they say shape the response.",
+        "3": "Listens to own team's concerns partway before responding, missing points raised later in the conversation.",
+        "1": "Resists letting own team finish raising a concern, responding to only part of what was said."
+      }
+    },
+    {
+      "indicator": "Keep own team engaged through a routine update rather than losing their attention",
+      "scale": {
+        "5": "Keeps own team engaged through a routine update by tying it to what matters to them specifically.",
+        "3": "Delivers a routine update to own team but loses their attention partway through.",
+        "1": "Struggles to keep own team engaged through a routine update, losing their attention from the start."
+      }
+    }
+  ],
+  "COL": [
+    {
+      "indicator": "Bring own team members into a plan before it affects their work",
+      "scale": {
+        "5": "Brings own team members into a plan before it affects their work.",
+        "3": "Brings own team members into a plan after it is set, only to inform them of what changed.",
+        "1": "Neglects to bring own team members into a plan before it affects their work."
+      }
+    },
+    {
+      "indicator": "Split own team's workload evenly rather than let it fall on the same few people",
+      "scale": {
+        "5": "Splits own team's workload evenly across all members, watching for early signs one person is overloaded.",
+        "3": "Splits own team's workload evenly at the start but leaves it uneven once new tasks arrive.",
+        "1": "Avoids redistributing own team's workload, letting it settle on the same few people."
+      }
+    },
+    {
+      "indicator": "Work through a disagreement with another team lead rather than escalate it",
+      "scale": {
+        "5": "Works through a disagreement with another team lead directly, reaching a shared resolution both can act on.",
+        "3": "Works through a disagreement with another team lead on small matters but escalates larger ones.",
+        "1": "Avoids working through a disagreement with another team lead, escalating it instead."
+      }
+    }
+  ],
   "INF": [
     {
       "indicator": "Provide comprehensive and convincing rational arguments to support own ideas and proposals",
@@ -152,6 +334,32 @@
         "5": "Engages others early in the idea process, building broad support and collaboration.",
         "3": "Seeks input when necessary but may not actively involve others.",
         "1": "Pursues ideas alone without consulting or involving stakeholders."
+      }
+    }
+  ],
+  "NET": [
+    {
+      "indicator": "Build a working relationship with peers in other areas before own area needs their help",
+      "scale": {
+        "5": "Builds a working relationship with peers in other areas before own area needs their help.",
+        "3": "Builds a working relationship with peers in other areas only once own area already needs their help.",
+        "1": "Neglects to build a working relationship with peers in other areas."
+      }
+    },
+    {
+      "indicator": "Adjust own communication style to fit the stakeholder in front of them",
+      "scale": {
+        "5": "Adjusts own communication style to fit the stakeholder in front of them, building rapport across very different audiences.",
+        "3": "Adjusts own communication style for peers but uses the same approach with more senior stakeholders.",
+        "1": "Resists adjusting own communication style to fit the stakeholder in front of them."
+      }
+    },
+    {
+      "indicator": "Use an existing relationship with another area to unblock own team's work",
+      "scale": {
+        "5": "Uses an existing relationship with another area to unblock own team's work.",
+        "3": "Uses an existing relationship with another area to unblock own team's work only after a formal request stalls.",
+        "1": "Overlooks existing relationships with other areas, routing every request for own team through formal channels alone."
       }
     }
   ],
@@ -204,6 +412,58 @@
         "5": "Frequently takes on new challenges and uses them to build relevant skills.",
         "3": "Accepts new tasks when assigned, with occasional interest in learning.",
         "1": "Avoids taking on additional responsibilities or resists skill development."
+      }
+    }
+  ],
+  "ITG": [
+    {
+      "indicator": "Follow through on a commitment made to own team even when it becomes inconvenient",
+      "scale": {
+        "5": "Follows through on a commitment made to own team even when it becomes inconvenient.",
+        "3": "Follows through on a commitment made to own team when convenient but lets it slide otherwise.",
+        "1": "Neglects a commitment made to own team once it becomes inconvenient, leaving own team to absorb the consequence."
+      }
+    },
+    {
+      "indicator": "Admit a mistake to own team rather than let someone else take the blame",
+      "scale": {
+        "5": "Admits a mistake to own team rather than let someone else take the blame.",
+        "3": "Admits a mistake to own team once it is already obvious but stays quiet otherwise.",
+        "1": "Avoids admitting a mistake to own team, letting someone else take the blame."
+      }
+    },
+    {
+      "indicator": "Apply own area's standards the same way regardless of who is involved",
+      "scale": {
+        "5": "Applies own area's standards the same way regardless of who is involved.",
+        "3": "Applies own area's standards for junior team members but relaxes them for senior ones.",
+        "1": "Resists applying own area's standards evenly, favoring some people over others depending on who is involved."
+      }
+    }
+  ],
+  "INC": [
+    {
+      "indicator": "Give own team members from different backgrounds equal airtime in a discussion",
+      "scale": {
+        "5": "Gives own team members from different backgrounds equal airtime in a discussion.",
+        "3": "Gives own team members airtime when they speak up but does not draw out quieter ones.",
+        "1": "Overlooks own team members from different backgrounds, letting the same few voices dominate every discussion."
+      }
+    },
+    {
+      "indicator": "Adjust own area's routines to accommodate a team member's specific need",
+      "scale": {
+        "5": "Adjusts own area's routines to accommodate a team member's specific need.",
+        "3": "Accommodates a team member's specific need once but does not build the adjustment into own area's ongoing routines.",
+        "1": "Resists adjusting own area's routines for a team member's specific need."
+      }
+    },
+    {
+      "indicator": "Draw on a team member's different perspective when it conflicts with the majority view",
+      "scale": {
+        "5": "Draws on a team member's different perspective when it conflicts with the majority view.",
+        "3": "Draws on a team member's perspective when it agrees with the majority view but sets it aside otherwise.",
+        "1": "Overlooks a team member's different perspective whenever it conflicts with the majority view, dismissing it without consideration."
       }
     }
   ]
