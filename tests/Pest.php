@@ -422,3 +422,11 @@ pest()->extend(TestCase::class)
 // end-to-end (auth:api + TenantContext + ParticipantPolicy + real Project rows).
 pest()->use(RefreshDatabase::class)
     ->in('Feature/EntryLink');
+
+// ─── admin-password-reset ─────────────────────────────────────────────────────
+
+// Feature/PasswordRecovery — RefreshDatabase: the command's guards (not-found,
+// deactivated), transaction/rollback and revocation assertions all need a real
+// migrated schema and real User rows, not mocks.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PasswordRecovery');
