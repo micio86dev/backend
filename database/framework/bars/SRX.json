@@ -1,469 +1,1117 @@
 {
   "PRS": [
     {
-      "indicator": "Trace a consolidated P&L problem back to the business unit or country actually driving it",
+      "indicator": {
+        "en": "Trace a consolidated P&L problem back to the business unit or country actually driving it",
+        "it": "Ricondurre un problema di P&L consolidato alla business unit o al paese che effettivamente lo determina"
+      },
       "scale": {
-        "5": "Traces a consolidated P&L problem to the unit or country actually driving it, not just where it surfaces.",
-        "3": "Traces a consolidated P&L problem to the unit closest to the symptom, not the one actually driving it.",
-        "1": "Overlooks which business unit or country actually drives a consolidated P&L problem, acting on the visible symptom instead."
+        "1": {
+          "en": "Overlooks which business unit or country actually drives a consolidated P&L problem, acting on the visible symptom instead.",
+          "it": "Trascura quale business unit o paese determini effettivamente un problema di P&L consolidato, agendo invece sul sintomo visibile."
+        },
+        "3": {
+          "en": "Traces a consolidated P&L problem to the unit closest to the symptom, not the one actually driving it.",
+          "it": "Riconduce un problema di P&L consolidato all'unità più vicina al sintomo, non a quella che effettivamente lo determina."
+        },
+        "5": {
+          "en": "Traces a consolidated P&L problem to the unit or country actually driving it, not just where it surfaces.",
+          "it": "Riconduce un problema di P&L consolidato all'unità o al paese che effettivamente lo determina, non solo al punto in cui emerge."
+        }
       }
     },
     {
-      "indicator": "Integrate data from across business units before diagnosing a problem that spans the organization",
+      "indicator": {
+        "en": "Integrate data from across business units before diagnosing a problem that spans the organization",
+        "it": "Integrare i dati provenienti dalle diverse business unit prima di diagnosticare un problema che coinvolge l'intera organizzazione"
+      },
       "scale": {
-        "5": "Integrates data from across business units before diagnosing an organization-wide problem, closing gaps a narrower view would miss.",
-        "3": "Integrates data from the units closest to the problem, leaving other units' data unchecked when diagnosing organization-wide issues.",
-        "1": "Neglects to integrate data across business units before diagnosing an organization-wide problem, working from one unit's numbers alone."
+        "1": {
+          "en": "Neglects to integrate data across business units before diagnosing an organization-wide problem, working from one unit's numbers alone.",
+          "it": "Omette di integrare i dati tra le business unit prima di diagnosticare un problema a livello di organizzazione, lavorando solo sui numeri di una sola unità."
+        },
+        "3": {
+          "en": "Integrates data from the units closest to the problem, leaving other units' data unchecked when diagnosing organization-wide issues.",
+          "it": "Integra i dati delle unità più vicine al problema, lasciando non verificati i dati delle altre unità nella diagnosi dei problemi a livello di organizzazione."
+        },
+        "5": {
+          "en": "Integrates data from across business units before diagnosing an organization-wide problem, closing gaps a narrower view would miss.",
+          "it": "Integra i dati provenienti dalle diverse business unit prima di diagnosticare un problema a livello di organizzazione, colmando lacune che una visione più ristretta non rileverebbe."
+        }
       }
     },
     {
-      "indicator": "Weigh competing explanations from business unit leaders before settling on an organization-wide problem's root cause",
+      "indicator": {
+        "en": "Weigh competing explanations from business unit leaders before settling on an organization-wide problem's root cause",
+        "it": "Ponderare le spiegazioni concorrenti dei responsabili delle business unit prima di definire la causa radice di un problema a livello di organizzazione"
+      },
       "scale": {
-        "5": "Weighs competing explanations from business unit leaders before settling on an organization-wide problem's true root cause.",
-        "3": "Weighs competing explanations from business unit leaders but settles on whichever aligns with the prior year's plan.",
-        "1": "Overlooks competing explanations from business unit leaders, settling on an organization-wide problem's root cause without weighing them."
+        "1": {
+          "en": "Overlooks competing explanations from business unit leaders, settling on an organization-wide problem's root cause without weighing them.",
+          "it": "Trascura le spiegazioni concorrenti dei responsabili delle business unit, definendo la causa radice di un problema a livello di organizzazione senza ponderarle."
+        },
+        "3": {
+          "en": "Weighs competing explanations from business unit leaders but settles on whichever aligns with the prior year's plan.",
+          "it": "Pondera le spiegazioni concorrenti dei responsabili delle business unit, ma si attesta su quella allineata al piano dell'anno precedente."
+        },
+        "5": {
+          "en": "Weighs competing explanations from business unit leaders before settling on an organization-wide problem's true root cause.",
+          "it": "Pondera le spiegazioni concorrenti dei responsabili delle business unit prima di definire la vera causa radice di un problema a livello di organizzazione."
+        }
       }
     }
   ],
   "STG": [
     {
-      "indicator": "Set organizational direction that aligns priorities across business units and countries",
+      "indicator": {
+        "en": "Set organizational direction that aligns priorities across business units and countries",
+        "it": "Definire una direzione organizzativa che allinei le priorità tra business unit e paesi"
+      },
       "scale": {
-        "5": "Sets organizational direction that aligns priorities across every business unit and country over the multi-year horizon.",
-        "3": "Sets organizational direction that aligns priorities for business units already on plan but defers when countries diverge.",
-        "1": "Neglects to set organizational direction across business units, leaving countries without shared priorities."
+        "1": {
+          "en": "Neglects to set organizational direction across business units, leaving countries without shared priorities.",
+          "it": "Omette di definire una direzione organizzativa per le business unit, lasciando i paesi senza priorità condivise."
+        },
+        "3": {
+          "en": "Sets organizational direction that aligns priorities for business units already on plan but defers when countries diverge.",
+          "it": "Definisce una direzione organizzativa che allinea le priorità delle business unit già in linea con il piano, ma rinvia quando i paesi divergono."
+        },
+        "5": {
+          "en": "Sets organizational direction that aligns priorities across every business unit and country over the multi-year horizon.",
+          "it": "Definisce una direzione organizzativa che allinea le priorità di ogni business unit e paese lungo l'orizzonte pluriennale."
+        }
       }
     },
     {
-      "indicator": "Weigh long-term tradeoffs against the organization's direction before committing resources",
+      "indicator": {
+        "en": "Weigh long-term tradeoffs against the organization's direction before committing resources",
+        "it": "Ponderare i compromessi di lungo termine rispetto alla direzione dell'organizzazione prima di impegnare risorse"
+      },
       "scale": {
-        "5": "Weighs long-term tradeoffs against the organization's direction before committing capital across business units.",
-        "3": "Weighs tradeoffs for the current planning cycle but defers the organization's longer-term direction.",
-        "1": "Overlooks long-term tradeoffs when committing resources, leaving the organization's direction exposed."
+        "1": {
+          "en": "Overlooks long-term tradeoffs when committing resources, leaving the organization's direction exposed.",
+          "it": "Trascura i compromessi di lungo termine quando impegna risorse, lasciando esposta la direzione dell'organizzazione."
+        },
+        "3": {
+          "en": "Weighs tradeoffs for the current planning cycle but defers the organization's longer-term direction.",
+          "it": "Pondera i compromessi per il ciclo di pianificazione corrente, ma rinvia la direzione di più lungo termine dell'organizzazione."
+        },
+        "5": {
+          "en": "Weighs long-term tradeoffs against the organization's direction before committing capital across business units.",
+          "it": "Pondera i compromessi di lungo termine rispetto alla direzione dell'organizzazione prima di impegnare capitale tra le business unit."
+        }
       }
     },
     {
-      "indicator": "Translate long-term direction into priorities other senior leaders can act on",
+      "indicator": {
+        "en": "Translate long-term direction into priorities other senior leaders can act on",
+        "it": "Tradurre la direzione di lungo termine in priorità su cui gli altri leader senior possano agire"
+      },
       "scale": {
-        "5": "Translates long-term direction into clear priorities other senior leaders can act on without further guidance.",
-        "3": "Translates long-term direction into priorities for senior leaders but leaves the sequencing for them to work out.",
-        "1": "Fails to translate long-term direction into priorities, leaving other senior leaders without a clear plan."
+        "1": {
+          "en": "Fails to translate long-term direction into priorities, leaving other senior leaders without a clear plan.",
+          "it": "Non traduce la direzione di lungo termine in priorità, lasciando gli altri leader senior senza un piano chiaro."
+        },
+        "3": {
+          "en": "Translates long-term direction into priorities for senior leaders but leaves the sequencing for them to work out.",
+          "it": "Traduce la direzione di lungo termine in priorità per i leader senior, ma lascia a loro la definizione della sequenza."
+        },
+        "5": {
+          "en": "Translates long-term direction into clear priorities other senior leaders can act on without further guidance.",
+          "it": "Traduce la direzione di lungo termine in priorità chiare su cui gli altri leader senior possono agire senza ulteriori indicazioni."
+        }
       }
     }
   ],
   "INN": [
     {
-      "indicator": "Champion new ventures that require backing across multiple business units",
+      "indicator": {
+        "en": "Champion new ventures that require backing across multiple business units",
+        "it": "Promuovere nuove iniziative che richiedono il sostegno di più business unit"
+      },
       "scale": {
-        "5": "Champions new ventures that require backing across multiple business units, absorbing the risk of early missteps.",
-        "3": "Champions new ventures within a single business unit but hesitates to back ones spanning several.",
-        "1": "Resists championing new ventures, leaving promising ideas without organizational backing."
+        "1": {
+          "en": "Resists championing new ventures, leaving promising ideas without organizational backing.",
+          "it": "Fa resistenza a promuovere nuove iniziative, lasciando idee promettenti senza il sostegno dell'organizzazione."
+        },
+        "3": {
+          "en": "Champions new ventures within a single business unit but hesitates to back ones spanning several.",
+          "it": "Promuove nuove iniziative all'interno di una singola business unit, ma esita a sostenere quelle che ne coinvolgono diverse."
+        },
+        "5": {
+          "en": "Champions new ventures that require backing across multiple business units, absorbing the risk of early missteps.",
+          "it": "Promuove nuove iniziative che richiedono il sostegno di più business unit, assorbendo il rischio dei primi passi falsi."
+        }
       }
     },
     {
-      "indicator": "Question established practices that no longer serve the organization's direction",
+      "indicator": {
+        "en": "Question established practices that no longer serve the organization's direction",
+        "it": "Mettere in discussione le pratiche consolidate che non servono più la direzione dell'organizzazione"
+      },
       "scale": {
-        "5": "Proactively questions established practices that no longer serve the organization's direction, retiring them before they cost more.",
-        "3": "Questions established practices only after a business unit raises the cost of keeping them.",
-        "1": "Accepts established practices without question, letting outdated methods persist across the organization."
+        "1": {
+          "en": "Accepts established practices without question, letting outdated methods persist across the organization.",
+          "it": "Accetta le pratiche consolidate senza metterle in discussione, lasciando persistere metodi superati in tutta l'organizzazione."
+        },
+        "3": {
+          "en": "Questions established practices only after a business unit raises the cost of keeping them.",
+          "it": "Mette in discussione le pratiche consolidate solo dopo che una business unit segnala il costo di mantenerle."
+        },
+        "5": {
+          "en": "Proactively questions established practices that no longer serve the organization's direction, retiring them before they cost more.",
+          "it": "Mette in discussione in modo proattivo le pratiche consolidate che non servono più la direzione dell'organizzazione, dismettendole prima che costino di più."
+        }
       }
     },
     {
-      "indicator": "Support other leaders who take a risk on an unproven idea",
+      "indicator": {
+        "en": "Support other leaders who take a risk on an unproven idea",
+        "it": "Sostenere gli altri leader che si assumono un rischio su un'idea non collaudata"
+      },
       "scale": {
-        "5": "Actively supports other leaders who take a risk on an unproven idea, shielding them if it fails.",
-        "3": "Supports other leaders who take a risk once the idea already shows early results.",
-        "1": "Neglects to support other leaders who take a risk, leaving them exposed if it fails."
+        "1": {
+          "en": "Neglects to support other leaders who take a risk, leaving them exposed if it fails.",
+          "it": "Omette di sostenere gli altri leader che si assumono un rischio, lasciandoli esposti in caso di fallimento."
+        },
+        "3": {
+          "en": "Supports other leaders who take a risk once the idea already shows early results.",
+          "it": "Sostiene gli altri leader che si assumono un rischio solo quando l'idea mostra già i primi risultati."
+        },
+        "5": {
+          "en": "Actively supports other leaders who take a risk on an unproven idea, shielding them if it fails.",
+          "it": "Sostiene attivamente gli altri leader che si assumono un rischio su un'idea non collaudata, proteggendoli se fallisce."
+        }
       }
     }
   ],
   "JDG": [
     {
-      "indicator": "Base capital allocation decisions on rigorous financial and strategic analysis",
+      "indicator": {
+        "en": "Base capital allocation decisions on rigorous financial and strategic analysis",
+        "it": "Basare le decisioni di allocazione del capitale su un'analisi finanziaria e strategica rigorosa"
+      },
       "scale": {
-        "5": "Anchors every capital allocation decision in rigorous financial and strategic analysis, protecting consolidated P&L integrity.",
-        "3": "Reviews financial analysis for major allocation calls but defers to precedent across smaller ones.",
-        "1": "Neglects rigorous analysis before capital allocation calls, exposing consolidated P&L to avoidable risk."
+        "1": {
+          "en": "Neglects rigorous analysis before capital allocation calls, exposing consolidated P&L to avoidable risk.",
+          "it": "Trascura l'analisi rigorosa prima delle decisioni di allocazione del capitale, esponendo il P&L consolidato a rischi evitabili."
+        },
+        "3": {
+          "en": "Reviews financial analysis for major allocation calls but defers to precedent across smaller ones.",
+          "it": "Esamina l'analisi finanziaria per le decisioni di allocazione principali, ma si rimette ai precedenti per quelle minori."
+        },
+        "5": {
+          "en": "Anchors every capital allocation decision in rigorous financial and strategic analysis, protecting consolidated P&L integrity.",
+          "it": "Ancora ogni decisione di allocazione del capitale a un'analisi finanziaria e strategica rigorosa, proteggendo l'integrità del P&L consolidato."
+        }
       }
     },
     {
-      "indicator": "Set organizational direction despite sustained uncertainty across multiple countries",
+      "indicator": {
+        "en": "Set organizational direction despite sustained uncertainty across multiple countries",
+        "it": "Definire una direzione organizzativa nonostante un'incertezza prolungata in più paesi"
+      },
       "scale": {
-        "5": "Sets a clear organizational direction despite sustained multi-country uncertainty, giving every business unit a stable reference point.",
-        "3": "Sets direction for countries with a clearer outlook but defers where uncertainty remains widest.",
-        "1": "Resists setting organizational direction while multi-country uncertainty persists, leaving business units without a reference point."
+        "1": {
+          "en": "Resists setting organizational direction while multi-country uncertainty persists, leaving business units without a reference point.",
+          "it": "Fa resistenza a definire una direzione organizzativa finché persiste l'incertezza in più paesi, lasciando le business unit senza un punto di riferimento."
+        },
+        "3": {
+          "en": "Sets direction for countries with a clearer outlook but defers where uncertainty remains widest.",
+          "it": "Definisce la direzione per i paesi con prospettive più chiare, ma rinvia dove l'incertezza resta più ampia."
+        },
+        "5": {
+          "en": "Sets a clear organizational direction despite sustained multi-country uncertainty, giving every business unit a stable reference point.",
+          "it": "Definisce una direzione organizzativa chiara nonostante un'incertezza prolungata in più paesi, offrendo a ogni business unit un punto di riferimento stabile."
+        }
       }
     },
     {
-      "indicator": "Weigh long-term tradeoffs across business units before committing capital",
+      "indicator": {
+        "en": "Weigh long-term tradeoffs across business units before committing capital",
+        "it": "Ponderare i compromessi di lungo termine tra le business unit prima di impegnare capitale"
+      },
       "scale": {
-        "5": "Weighs long-term tradeoffs across business units rigorously before committing capital, protecting consolidated P&L over the multi-year horizon.",
-        "3": "Compares tradeoffs across business units before committing capital but underweights the long-term horizon.",
-        "1": "Does not weigh long-term tradeoffs across business units before committing capital, exposing consolidated P&L to avoidable risk."
+        "1": {
+          "en": "Does not weigh long-term tradeoffs across business units before committing capital, exposing consolidated P&L to avoidable risk.",
+          "it": "Non pondera i compromessi di lungo termine tra le business unit prima di impegnare capitale, esponendo il P&L consolidato a rischi evitabili."
+        },
+        "3": {
+          "en": "Compares tradeoffs across business units before committing capital but underweights the long-term horizon.",
+          "it": "Confronta i compromessi tra le business unit prima di impegnare capitale, ma sottopesa l'orizzonte di lungo termine."
+        },
+        "5": {
+          "en": "Weighs long-term tradeoffs across business units rigorously before committing capital, protecting consolidated P&L over the multi-year horizon.",
+          "it": "Pondera rigorosamente i compromessi di lungo termine tra le business unit prima di impegnare capitale, proteggendo il P&L consolidato lungo l'orizzonte pluriennale."
+        }
       }
     }
   ],
   "DRV": [
     {
-      "indicator": "Push the organization toward multi-year strategic targets despite setbacks in one business unit or country",
+      "indicator": {
+        "en": "Push the organization toward multi-year strategic targets despite setbacks in one business unit or country",
+        "it": "Spingere l'organizzazione verso gli obiettivi strategici pluriennali nonostante le battute d'arresto in una business unit o in un paese"
+      },
       "scale": {
-        "5": "Pushes the organization toward multi-year strategic targets despite setbacks in one business unit or country.",
-        "3": "Pushes the organization toward multi-year strategic targets when every business unit performs.",
-        "1": "Neglects organization-wide strategic targets once one business unit sets back, letting the whole plan slip."
+        "1": {
+          "en": "Neglects organization-wide strategic targets once one business unit sets back, letting the whole plan slip.",
+          "it": "Trascura gli obiettivi strategici a livello di organizzazione quando una business unit subisce una battuta d'arresto, lasciando scivolare l'intero piano."
+        },
+        "3": {
+          "en": "Pushes the organization toward multi-year strategic targets when every business unit performs.",
+          "it": "Spinge l'organizzazione verso gli obiettivi strategici pluriennali quando tutte le business unit performano."
+        },
+        "5": {
+          "en": "Pushes the organization toward multi-year strategic targets despite setbacks in one business unit or country.",
+          "it": "Spinge l'organizzazione verso gli obiettivi strategici pluriennali nonostante le battute d'arresto in una business unit o in un paese."
+        }
       }
     },
     {
-      "indicator": "Set a personal bar for the organization's results above what the capital plan strictly requires",
+      "indicator": {
+        "en": "Set a personal bar for the organization's results above what the capital plan strictly requires",
+        "it": "Fissare un'asticella personale per i risultati dell'organizzazione al di sopra di quanto il piano di capitale richiede strettamente"
+      },
       "scale": {
-        "5": "Sets a personal bar for the organization's results above what the capital plan strictly requires.",
-        "3": "Sets a personal bar for the organization's results that matches the capital plan.",
-        "1": "Does not set a personal bar above the capital plan's minimum for the organization's results."
+        "1": {
+          "en": "Does not set a personal bar above the capital plan's minimum for the organization's results.",
+          "it": "Non fissa un'asticella personale al di sopra del minimo previsto dal piano di capitale per i risultati dell'organizzazione."
+        },
+        "3": {
+          "en": "Sets a personal bar for the organization's results that matches the capital plan.",
+          "it": "Fissa un'asticella personale per i risultati dell'organizzazione pari al piano di capitale."
+        },
+        "5": {
+          "en": "Sets a personal bar for the organization's results above what the capital plan strictly requires.",
+          "it": "Fissa un'asticella personale per i risultati dell'organizzazione al di sopra di quanto il piano di capitale richiede strettamente."
+        }
       }
     },
     {
-      "indicator": "Sustain organization-wide pace across a multi-year plan rather than a single strong business unit",
+      "indicator": {
+        "en": "Sustain organization-wide pace across a multi-year plan rather than a single strong business unit",
+        "it": "Mantenere il ritmo a livello di organizzazione lungo un piano pluriennale anziché in una sola business unit forte"
+      },
       "scale": {
-        "5": "Sustains organization-wide pace across the full multi-year plan rather than one strong business unit, avoiding a late-stage fade.",
-        "3": "Sustains organization-wide pace through a strong opening year but fades as the multi-year plan continues.",
-        "1": "Struggles to sustain organization-wide pace beyond one strong business unit, fading well before the multi-year plan ends."
+        "1": {
+          "en": "Struggles to sustain organization-wide pace beyond one strong business unit, fading well before the multi-year plan ends.",
+          "it": "Fatica a mantenere il ritmo a livello di organizzazione oltre una sola business unit forte, affievolendosi ben prima della fine del piano pluriennale."
+        },
+        "3": {
+          "en": "Sustains organization-wide pace through a strong opening year but fades as the multi-year plan continues.",
+          "it": "Mantiene il ritmo a livello di organizzazione in un primo anno forte, ma si affievolisce con il proseguire del piano pluriennale."
+        },
+        "5": {
+          "en": "Sustains organization-wide pace across the full multi-year plan rather than one strong business unit, avoiding a late-stage fade.",
+          "it": "Mantiene il ritmo a livello di organizzazione lungo l'intero piano pluriennale anziché in una sola business unit forte, evitando un affievolimento nella fase finale."
+        }
       }
     }
   ],
   "CSF": [
     {
-      "indicator": "Understand which strategic accounts most affect consolidated P&L outcomes",
+      "indicator": {
+        "en": "Understand which strategic accounts most affect consolidated P&L outcomes",
+        "it": "Comprendere quali clienti strategici incidono maggiormente sui risultati del P&L consolidato"
+      },
       "scale": {
-        "5": "Understands which strategic accounts most affect consolidated P&L outcomes, prioritizing attention accordingly.",
-        "3": "Understands which strategic accounts affect a single business unit's results but not the consolidated picture.",
-        "1": "Overlooks which strategic accounts most affect consolidated P&L, spreading attention too thin."
+        "1": {
+          "en": "Overlooks which strategic accounts most affect consolidated P&L, spreading attention too thin.",
+          "it": "Trascura quali clienti strategici incidono maggiormente sul P&L consolidato, distribuendo l'attenzione in modo troppo dispersivo."
+        },
+        "3": {
+          "en": "Understands which strategic accounts affect a single business unit's results but not the consolidated picture.",
+          "it": "Comprende quali clienti strategici incidono sui risultati di una singola business unit, ma non sul quadro consolidato."
+        },
+        "5": {
+          "en": "Understands which strategic accounts most affect consolidated P&L outcomes, prioritizing attention accordingly.",
+          "it": "Comprende quali clienti strategici incidono maggiormente sui risultati del P&L consolidato, dando priorità all'attenzione di conseguenza."
+        }
       }
     },
     {
-      "indicator": "Keep commitments made to major customers across business units",
+      "indicator": {
+        "en": "Keep commitments made to major customers across business units",
+        "it": "Mantenere gli impegni assunti verso i grandi clienti tra le business unit"
+      },
       "scale": {
-        "5": "Consistently keeps commitments made to major customers across business units, protecting the organization's reputation.",
-        "3": "Keeps commitments made to major customers in one business unit but loses track across others.",
-        "1": "Fails to keep commitments made to major customers, damaging trust across business units."
+        "1": {
+          "en": "Fails to keep commitments made to major customers, damaging trust across business units.",
+          "it": "Non mantiene gli impegni assunti verso i grandi clienti, danneggiando la fiducia tra le business unit."
+        },
+        "3": {
+          "en": "Keeps commitments made to major customers in one business unit but loses track across others.",
+          "it": "Mantiene gli impegni assunti verso i grandi clienti in una business unit, ma ne perde il controllo nelle altre."
+        },
+        "5": {
+          "en": "Consistently keeps commitments made to major customers across business units, protecting the organization's reputation.",
+          "it": "Mantiene con costanza gli impegni assunti verso i grandi clienti tra le business unit, proteggendo la reputazione dell'organizzazione."
+        }
       }
     },
     {
-      "indicator": "Build strategic partnerships that strengthen the organization's competitive position",
+      "indicator": {
+        "en": "Build strategic partnerships that strengthen the organization's competitive position",
+        "it": "Costruire partnership strategiche che rafforzino la posizione competitiva dell'organizzazione"
+      },
       "scale": {
-        "5": "Builds strategic partnerships that strengthen the organization's competitive position across multiple countries.",
-        "3": "Builds strategic partnerships within one country but rarely extends them to others.",
-        "1": "Neglects to build strategic partnerships, leaving the organization's competitive position weaker."
+        "1": {
+          "en": "Neglects to build strategic partnerships, leaving the organization's competitive position weaker.",
+          "it": "Omette di costruire partnership strategiche, lasciando più debole la posizione competitiva dell'organizzazione."
+        },
+        "3": {
+          "en": "Builds strategic partnerships within one country but rarely extends them to others.",
+          "it": "Costruisce partnership strategiche all'interno di un solo paese, ma raramente le estende ad altri."
+        },
+        "5": {
+          "en": "Builds strategic partnerships that strengthen the organization's competitive position across multiple countries.",
+          "it": "Costruisce partnership strategiche che rafforzano la posizione competitiva dell'organizzazione in più paesi."
+        }
       }
     }
   ],
   "SLF": [
     {
-      "indicator": "Set sales and partnership targets across business units that balance growth against consolidated P&L",
+      "indicator": {
+        "en": "Set sales and partnership targets across business units that balance growth against consolidated P&L",
+        "it": "Definire obiettivi di vendita e di partnership per le business unit che bilancino la crescita rispetto al P&L consolidato"
+      },
       "scale": {
-        "5": "Sets sales and partnership targets across business units that balance growth against consolidated P&L.",
-        "3": "Sets sales and partnership targets across business units based on growth alone, without weighing them against consolidated P&L.",
-        "1": "Overlooks consolidated P&L when setting sales and partnership targets across business units, chasing growth without a check."
+        "1": {
+          "en": "Overlooks consolidated P&L when setting sales and partnership targets across business units, chasing growth without a check.",
+          "it": "Trascura il P&L consolidato quando definisce obiettivi di vendita e di partnership per le business unit, inseguendo la crescita senza alcun controllo."
+        },
+        "3": {
+          "en": "Sets sales and partnership targets across business units based on growth alone, without weighing them against consolidated P&L.",
+          "it": "Definisce obiettivi di vendita e di partnership per le business unit basati solo sulla crescita, senza ponderarli rispetto al P&L consolidato."
+        },
+        "5": {
+          "en": "Sets sales and partnership targets across business units that balance growth against consolidated P&L.",
+          "it": "Definisce obiettivi di vendita e di partnership per le business unit che bilanciano la crescita rispetto al P&L consolidato."
+        }
       }
     },
     {
-      "indicator": "Explain the organization's value proposition in terms that match different major account segments",
+      "indicator": {
+        "en": "Explain the organization's value proposition in terms that match different major account segments",
+        "it": "Spiegare la proposta di valore dell'organizzazione in termini adatti ai diversi segmenti di grandi clienti"
+      },
       "scale": {
-        "5": "Explains the organization's value proposition in terms that match different major account segments, tailoring the pitch to each.",
-        "3": "Explains the organization's value proposition with the same pitch across every major account segment.",
-        "1": "Struggles to explain the organization's value proposition across major account segments, relying on a single generic pitch."
+        "1": {
+          "en": "Struggles to explain the organization's value proposition across major account segments, relying on a single generic pitch.",
+          "it": "Fatica a spiegare la proposta di valore dell'organizzazione ai segmenti di grandi clienti, affidandosi a un'unica argomentazione generica."
+        },
+        "3": {
+          "en": "Explains the organization's value proposition with the same pitch across every major account segment.",
+          "it": "Spiega la proposta di valore dell'organizzazione con la stessa argomentazione per ogni segmento di grandi clienti."
+        },
+        "5": {
+          "en": "Explains the organization's value proposition in terms that match different major account segments, tailoring the pitch to each.",
+          "it": "Spiega la proposta di valore dell'organizzazione in termini adatti ai diversi segmenti di grandi clienti, calibrando l'argomentazione su ciascuno."
+        }
       }
     },
     {
-      "indicator": "Negotiate a major partnership that protects consolidated margin while meeting the partner's core need",
+      "indicator": {
+        "en": "Negotiate a major partnership that protects consolidated margin while meeting the partner's core need",
+        "it": "Negoziare una partnership importante che protegga il margine consolidato soddisfacendo al contempo l'esigenza centrale del partner"
+      },
       "scale": {
-        "5": "Negotiates a major partnership that protects consolidated margin while meeting the partner's core need.",
-        "3": "Negotiates a major partnership that meets the partner's core need but gives up consolidated margin to close it.",
-        "1": "Struggles to negotiate a major partnership that protects consolidated margin, giving up terms rather than working toward them."
+        "1": {
+          "en": "Struggles to negotiate a major partnership that protects consolidated margin, giving up terms rather than working toward them.",
+          "it": "Fatica a negoziare una partnership importante che protegga il margine consolidato, cedendo sulle condizioni anziché lavorare per ottenerle."
+        },
+        "3": {
+          "en": "Negotiates a major partnership that meets the partner's core need but gives up consolidated margin to close it.",
+          "it": "Negozia una partnership importante che soddisfa l'esigenza centrale del partner, ma rinuncia al margine consolidato per chiuderla."
+        },
+        "5": {
+          "en": "Negotiates a major partnership that protects consolidated margin while meeting the partner's core need.",
+          "it": "Negozia una partnership importante che protegge il margine consolidato soddisfacendo al contempo l'esigenza centrale del partner."
+        }
       }
     }
   ],
   "OPX": [
     {
-      "indicator": "Set operating standards that hold consistently across every business unit",
+      "indicator": {
+        "en": "Set operating standards that hold consistently across every business unit",
+        "it": "Definire standard operativi che valgano in modo uniforme in ogni business unit"
+      },
       "scale": {
-        "5": "Sets operating standards that hold consistently across every business unit, closing gaps before they compound.",
-        "3": "Sets operating standards for the units already performing well but leaves the rest inconsistent.",
-        "1": "Overlooks inconsistent operating standards across business units, letting gaps compound unchecked."
+        "1": {
+          "en": "Overlooks inconsistent operating standards across business units, letting gaps compound unchecked.",
+          "it": "Trascura la disomogeneità degli standard operativi tra le business unit, lasciando che le lacune si sommino senza controllo."
+        },
+        "3": {
+          "en": "Sets operating standards for the units already performing well but leaves the rest inconsistent.",
+          "it": "Definisce standard operativi per le unità che già performano bene, ma lascia le altre disomogenee."
+        },
+        "5": {
+          "en": "Sets operating standards that hold consistently across every business unit, closing gaps before they compound.",
+          "it": "Definisce standard operativi che valgono in modo uniforme in ogni business unit, colmando le lacune prima che si sommino."
+        }
       }
     },
     {
-      "indicator": "Use consolidated data to detect operational patterns across countries",
+      "indicator": {
+        "en": "Use consolidated data to detect operational patterns across countries",
+        "it": "Utilizzare dati consolidati per individuare pattern operativi tra i paesi"
+      },
       "scale": {
-        "5": "Uses consolidated data to detect operational patterns across countries before they become P&L problems.",
-        "3": "Uses country-level data to detect operational patterns but rarely consolidates it across countries.",
-        "1": "Neglects to use consolidated data, missing operational patterns until they surface as P&L problems."
+        "1": {
+          "en": "Neglects to use consolidated data, missing operational patterns until they surface as P&L problems.",
+          "it": "Omette di utilizzare dati consolidati, non rilevando i pattern operativi finché non emergono come problemi di P&L."
+        },
+        "3": {
+          "en": "Uses country-level data to detect operational patterns but rarely consolidates it across countries.",
+          "it": "Utilizza dati a livello di paese per individuare pattern operativi, ma raramente li consolida tra i paesi."
+        },
+        "5": {
+          "en": "Uses consolidated data to detect operational patterns across countries before they become P&L problems.",
+          "it": "Utilizza dati consolidati per individuare pattern operativi tra i paesi prima che diventino problemi di P&L."
+        }
       }
     },
     {
-      "indicator": "Remove structural obstacles that slow execution across business units",
+      "indicator": {
+        "en": "Remove structural obstacles that slow execution across business units",
+        "it": "Rimuovere gli ostacoli strutturali che rallentano l'esecuzione tra le business unit"
+      },
       "scale": {
-        "5": "Removes structural obstacles that slow execution across business units, unblocking progress at the source.",
-        "3": "Removes structural obstacles once a business unit escalates them but rarely looks for them first.",
-        "1": "Fails to remove structural obstacles, letting execution stall across business units."
+        "1": {
+          "en": "Fails to remove structural obstacles, letting execution stall across business units.",
+          "it": "Non rimuove gli ostacoli strutturali, lasciando che l'esecuzione si areni tra le business unit."
+        },
+        "3": {
+          "en": "Removes structural obstacles once a business unit escalates them but rarely looks for them first.",
+          "it": "Rimuove gli ostacoli strutturali quando una business unit li porta ai livelli superiori, ma raramente li cerca in anticipo."
+        },
+        "5": {
+          "en": "Removes structural obstacles that slow execution across business units, unblocking progress at the source.",
+          "it": "Rimuove gli ostacoli strutturali che rallentano l'esecuzione tra le business unit, sbloccando l'avanzamento alla fonte."
+        }
       }
     }
   ],
   "TMG": [
     {
-      "indicator": "Set organization-wide priorities and delegate accountability to other senior leaders",
+      "indicator": {
+        "en": "Set organization-wide priorities and delegate accountability to other senior leaders",
+        "it": "Definire priorità a livello di organizzazione e delegare la responsabilità agli altri leader senior"
+      },
       "scale": {
-        "5": "Sets organization-wide priorities and delegates real accountability to other senior leaders, freeing them to lead their own units.",
-        "3": "Sets organization-wide priorities but retains accountability rather than delegating it to other senior leaders.",
-        "1": "Neglects to delegate accountability alongside organization-wide priorities, forcing other senior leaders to escalate decisions upward."
+        "1": {
+          "en": "Neglects to delegate accountability alongside organization-wide priorities, forcing other senior leaders to escalate decisions upward.",
+          "it": "Omette di delegare la responsabilità insieme alle priorità a livello di organizzazione, costringendo gli altri leader senior a portare le decisioni ai livelli superiori."
+        },
+        "3": {
+          "en": "Sets organization-wide priorities but retains accountability rather than delegating it to other senior leaders.",
+          "it": "Definisce priorità a livello di organizzazione, ma trattiene la responsabilità anziché delegarla agli altri leader senior."
+        },
+        "5": {
+          "en": "Sets organization-wide priorities and delegates real accountability to other senior leaders, freeing them to lead their own units.",
+          "it": "Definisce priorità a livello di organizzazione e delega una reale responsabilità agli altri leader senior, lasciandoli liberi di guidare le proprie unità."
+        }
       }
     },
     {
-      "indicator": "Give other senior leaders candid, specific feedback on organizational performance",
+      "indicator": {
+        "en": "Give other senior leaders candid, specific feedback on organizational performance",
+        "it": "Dare agli altri leader senior un feedback franco e specifico sulla performance organizzativa"
+      },
       "scale": {
-        "5": "Gives other senior leaders candid, specific feedback on organizational performance, linking it directly to consolidated results.",
-        "3": "Gives other senior leaders feedback on organizational performance but keeps it diplomatic rather than specific.",
-        "1": "Avoids giving other senior leaders candid feedback, letting organizational underperformance go unaddressed."
+        "1": {
+          "en": "Avoids giving other senior leaders candid feedback, letting organizational underperformance go unaddressed.",
+          "it": "Evita di dare agli altri leader senior un feedback franco, lasciando le prestazioni organizzative insufficienti senza intervento."
+        },
+        "3": {
+          "en": "Gives other senior leaders feedback on organizational performance but keeps it diplomatic rather than specific.",
+          "it": "Dà agli altri leader senior un feedback sulla performance organizzativa, ma lo mantiene diplomatico anziché specifico."
+        },
+        "5": {
+          "en": "Gives other senior leaders candid, specific feedback on organizational performance, linking it directly to consolidated results.",
+          "it": "Dà agli altri leader senior un feedback franco e specifico sulla performance organizzativa, collegandolo direttamente ai risultati consolidati."
+        }
       }
     },
     {
-      "indicator": "Sustain engagement and collaboration among senior leaders across the organization",
+      "indicator": {
+        "en": "Sustain engagement and collaboration among senior leaders across the organization",
+        "it": "Sostenere il coinvolgimento e la collaborazione tra i leader senior dell'organizzazione"
+      },
       "scale": {
-        "5": "Sustains strong engagement and collaboration among senior leaders across the organization, turning competing agendas into shared strategy.",
-        "3": "Sustains collaboration among senior leaders across the organization but leaves engagement uneven across business units.",
-        "1": "Neglects engagement and collaboration among senior leaders, letting competing agendas fragment organizational strategy."
+        "1": {
+          "en": "Neglects engagement and collaboration among senior leaders, letting competing agendas fragment organizational strategy.",
+          "it": "Trascura il coinvolgimento e la collaborazione tra i leader senior, lasciando che le agende concorrenti frammentino la strategia organizzativa."
+        },
+        "3": {
+          "en": "Sustains collaboration among senior leaders across the organization but leaves engagement uneven across business units.",
+          "it": "Sostiene la collaborazione tra i leader senior dell'organizzazione, ma lascia il coinvolgimento disomogeneo tra le business unit."
+        },
+        "5": {
+          "en": "Sustains strong engagement and collaboration among senior leaders across the organization, turning competing agendas into shared strategy.",
+          "it": "Sostiene un forte coinvolgimento e una forte collaborazione tra i leader senior dell'organizzazione, trasformando le agende concorrenti in una strategia condivisa."
+        }
       }
     }
   ],
   "INS": [
     {
-      "indicator": "Coach other senior leaders to build succession depth in their units",
+      "indicator": {
+        "en": "Coach other senior leaders to build succession depth in their units",
+        "it": "Fornire coaching agli altri leader senior per costruire profondità di successione nelle loro unità"
+      },
       "scale": {
-        "5": "Coaches other senior leaders to build succession depth in their units, reducing single-person risk.",
-        "3": "Coaches other senior leaders informally but does not build succession depth in their units.",
-        "1": "Neglects to coach other senior leaders, leaving succession depth thin across business units."
+        "1": {
+          "en": "Neglects to coach other senior leaders, leaving succession depth thin across business units.",
+          "it": "Omette di fornire coaching agli altri leader senior, lasciando esile la profondità di successione tra le business unit."
+        },
+        "3": {
+          "en": "Coaches other senior leaders informally but does not build succession depth in their units.",
+          "it": "Fornisce coaching agli altri leader senior in modo informale, ma non costruisce profondità di successione nelle loro unità."
+        },
+        "5": {
+          "en": "Coaches other senior leaders to build succession depth in their units, reducing single-person risk.",
+          "it": "Fornisce coaching agli altri leader senior per costruire profondità di successione nelle loro unità, riducendo il rischio legato alla singola persona."
+        }
       }
     },
     {
-      "indicator": "Recognize other senior leaders' contributions in front of the organization",
+      "indicator": {
+        "en": "Recognize other senior leaders' contributions in front of the organization",
+        "it": "Riconoscere i contributi degli altri leader senior di fronte all'organizzazione"
+      },
       "scale": {
-        "5": "Consistently recognizes other senior leaders' contributions in front of the organization, reinforcing what good looks like.",
-        "3": "Recognizes other senior leaders' contributions privately but rarely does so in front of the organization.",
-        "1": "Overlooks other senior leaders' contributions, leaving strong performance unacknowledged across the organization."
+        "1": {
+          "en": "Overlooks other senior leaders' contributions, leaving strong performance unacknowledged across the organization.",
+          "it": "Trascura i contributi degli altri leader senior, lasciando le prestazioni elevate senza riconoscimento in tutta l'organizzazione."
+        },
+        "3": {
+          "en": "Recognizes other senior leaders' contributions privately but rarely does so in front of the organization.",
+          "it": "Riconosce i contributi degli altri leader senior in privato, ma raramente lo fa di fronte all'organizzazione."
+        },
+        "5": {
+          "en": "Consistently recognizes other senior leaders' contributions in front of the organization, reinforcing what good looks like.",
+          "it": "Riconosce con costanza i contributi degli altri leader senior di fronte all'organizzazione, rafforzando il modello di cosa significhi fare bene."
+        }
       }
     },
     {
-      "indicator": "Build a culture where senior leaders push each other toward top performance",
+      "indicator": {
+        "en": "Build a culture where senior leaders push each other toward top performance",
+        "it": "Costruire una cultura in cui i leader senior si spingono a vicenda verso prestazioni di vertice"
+      },
       "scale": {
-        "5": "Builds a culture where senior leaders push each other toward top performance across every business unit.",
-        "3": "Builds this culture among senior leaders who already perform well but not among the rest.",
-        "1": "Neglects to build this culture, leaving senior leaders to push performance on their own."
+        "1": {
+          "en": "Neglects to build this culture, leaving senior leaders to push performance on their own.",
+          "it": "Omette di costruire questa cultura, lasciando i leader senior a spingere le prestazioni da soli."
+        },
+        "3": {
+          "en": "Builds this culture among senior leaders who already perform well but not among the rest.",
+          "it": "Costruisce questa cultura tra i leader senior che già performano bene, ma non tra gli altri."
+        },
+        "5": {
+          "en": "Builds a culture where senior leaders push each other toward top performance across every business unit.",
+          "it": "Costruisce una cultura in cui i leader senior si spingono a vicenda verso prestazioni di vertice in ogni business unit."
+        }
       }
     }
   ],
   "COM": [
     {
-      "indicator": "Explain organizational strategy to business unit leaders in terms that connect it to each unit's priorities",
+      "indicator": {
+        "en": "Explain organizational strategy to business unit leaders in terms that connect it to each unit's priorities",
+        "it": "Spiegare la strategia organizzativa ai responsabili delle business unit in termini che la colleghino alle priorità di ciascuna unità"
+      },
       "scale": {
-        "5": "Explains organizational strategy to business unit leaders in terms that connect it to each unit's priorities.",
-        "3": "Explains organizational strategy to business unit leaders by stating the directive without connecting it to each unit's priorities.",
-        "1": "Struggles to explain organizational strategy to business unit leaders, leaving them with the directive but no reasoning."
+        "1": {
+          "en": "Struggles to explain organizational strategy to business unit leaders, leaving them with the directive but no reasoning.",
+          "it": "Fatica a spiegare la strategia organizzativa ai responsabili delle business unit, lasciando loro la direttiva ma non le motivazioni."
+        },
+        "3": {
+          "en": "Explains organizational strategy to business unit leaders by stating the directive without connecting it to each unit's priorities.",
+          "it": "Spiega la strategia organizzativa ai responsabili delle business unit enunciando la direttiva senza collegarla alle priorità di ciascuna unità."
+        },
+        "5": {
+          "en": "Explains organizational strategy to business unit leaders in terms that connect it to each unit's priorities.",
+          "it": "Spiega la strategia organizzativa ai responsabili delle business unit in termini che la collegano alle priorità di ciascuna unità."
+        }
       }
     },
     {
-      "indicator": "Listen to concerns raised by business unit leaders fully before responding",
+      "indicator": {
+        "en": "Listen to concerns raised by business unit leaders fully before responding",
+        "it": "Ascoltare fino in fondo le preoccupazioni sollevate dai responsabili delle business unit prima di rispondere"
+      },
       "scale": {
-        "5": "Listens to concerns raised by business unit leaders fully before responding, letting what they say shape the strategy.",
-        "3": "Listens to concerns raised by business unit leaders partway before responding, missing points raised later.",
-        "1": "Resists letting business unit leaders finish raising a concern, responding to only part of what was said."
+        "1": {
+          "en": "Resists letting business unit leaders finish raising a concern, responding to only part of what was said.",
+          "it": "Fa resistenza a lasciare che i responsabili delle business unit finiscano di esporre una preoccupazione, rispondendo solo a una parte di quanto detto."
+        },
+        "3": {
+          "en": "Listens to concerns raised by business unit leaders partway before responding, missing points raised later.",
+          "it": "Ascolta solo in parte le preoccupazioni sollevate dai responsabili delle business unit prima di rispondere, perdendo i punti sollevati successivamente."
+        },
+        "5": {
+          "en": "Listens to concerns raised by business unit leaders fully before responding, letting what they say shape the strategy.",
+          "it": "Ascolta fino in fondo le preoccupazioni sollevate dai responsabili delle business unit prima di rispondere, lasciando che quanto dicono orienti la strategia."
+        }
       }
     },
     {
-      "indicator": "Keep business unit leaders engaged through a strategy update rather than losing their attention",
+      "indicator": {
+        "en": "Keep business unit leaders engaged through a strategy update rather than losing their attention",
+        "it": "Mantenere coinvolti i responsabili delle business unit durante un aggiornamento strategico anziché perderne l'attenzione"
+      },
       "scale": {
-        "5": "Keeps business unit leaders engaged through a strategy update by tying it to what matters to each unit.",
-        "3": "Delivers a strategy update to business unit leaders but loses their attention partway through.",
-        "1": "Struggles to keep business unit leaders engaged through a strategy update, losing their attention from the start."
+        "1": {
+          "en": "Struggles to keep business unit leaders engaged through a strategy update, losing their attention from the start.",
+          "it": "Fatica a mantenere coinvolti i responsabili delle business unit durante un aggiornamento strategico, perdendone l'attenzione fin dall'inizio."
+        },
+        "3": {
+          "en": "Delivers a strategy update to business unit leaders but loses their attention partway through.",
+          "it": "Presenta un aggiornamento strategico ai responsabili delle business unit, ma ne perde l'attenzione a metà strada."
+        },
+        "5": {
+          "en": "Keeps business unit leaders engaged through a strategy update by tying it to what matters to each unit.",
+          "it": "Mantiene coinvolti i responsabili delle business unit durante un aggiornamento strategico collegandolo a ciò che conta per ciascuna unità."
+        }
       }
     }
   ],
   "COL": [
     {
-      "indicator": "Bring business unit leaders across the organization into a joint plan before it affects their units",
+      "indicator": {
+        "en": "Bring business unit leaders across the organization into a joint plan before it affects their units",
+        "it": "Coinvolgere i responsabili delle business unit di tutta l'organizzazione in un piano congiunto prima che incida sulle loro unità"
+      },
       "scale": {
-        "5": "Brings business unit leaders across the organization into a joint plan before it affects their units.",
-        "3": "Brings business unit leaders across the organization into a joint plan after it is set.",
-        "1": "Neglects to bring business unit leaders into a joint plan before it affects their units."
+        "1": {
+          "en": "Neglects to bring business unit leaders into a joint plan before it affects their units.",
+          "it": "Omette di coinvolgere i responsabili delle business unit in un piano congiunto prima che incida sulle loro unità."
+        },
+        "3": {
+          "en": "Brings business unit leaders across the organization into a joint plan after it is set.",
+          "it": "Coinvolge i responsabili delle business unit di tutta l'organizzazione in un piano congiunto dopo che è stato definito."
+        },
+        "5": {
+          "en": "Brings business unit leaders across the organization into a joint plan before it affects their units.",
+          "it": "Coinvolge i responsabili delle business unit di tutta l'organizzazione in un piano congiunto prima che incida sulle loro unità."
+        }
       }
     },
     {
-      "indicator": "Split shared organizational initiatives evenly across business units rather than let one carry them",
+      "indicator": {
+        "en": "Split shared organizational initiatives evenly across business units rather than let one carry them",
+        "it": "Ripartire equamente le iniziative organizzative condivise tra le business unit anziché lasciare che una sola le sostenga"
+      },
       "scale": {
-        "5": "Splits shared organizational initiatives evenly across business units, watching for early signs one unit is carrying too much.",
-        "3": "Splits shared organizational initiatives evenly across business units at the outset but leaves them uneven once priorities shift.",
-        "1": "Avoids redistributing shared organizational initiatives across business units, letting one unit carry them."
+        "1": {
+          "en": "Avoids redistributing shared organizational initiatives across business units, letting one unit carry them.",
+          "it": "Evita di ridistribuire le iniziative organizzative condivise tra le business unit, lasciando che una sola unità le sostenga."
+        },
+        "3": {
+          "en": "Splits shared organizational initiatives evenly across business units at the outset but leaves them uneven once priorities shift.",
+          "it": "Ripartisce equamente le iniziative organizzative condivise tra le business unit all'inizio, ma le lascia sbilanciate quando le priorità cambiano."
+        },
+        "5": {
+          "en": "Splits shared organizational initiatives evenly across business units, watching for early signs one unit is carrying too much.",
+          "it": "Ripartisce equamente le iniziative organizzative condivise tra le business unit, prestando attenzione ai primi segnali che un'unità ne stia sostenendo troppe."
+        }
       }
     },
     {
-      "indicator": "Work through a disagreement between business unit leaders rather than decide for them",
+      "indicator": {
+        "en": "Work through a disagreement between business unit leaders rather than decide for them",
+        "it": "Affrontare fino in fondo un disaccordo tra i responsabili delle business unit anziché decidere al posto loro"
+      },
       "scale": {
-        "5": "Works through a disagreement between business unit leaders, reaching a shared resolution every unit can act on.",
-        "3": "Works through a disagreement between business unit leaders on operational matters but decides on larger strategic ones.",
-        "1": "Resists working through a disagreement between business unit leaders, deciding for them instead."
+        "1": {
+          "en": "Resists working through a disagreement between business unit leaders, deciding for them instead.",
+          "it": "Fa resistenza ad affrontare fino in fondo un disaccordo tra i responsabili delle business unit, decidendo invece al posto loro."
+        },
+        "3": {
+          "en": "Works through a disagreement between business unit leaders on operational matters but decides on larger strategic ones.",
+          "it": "Affronta fino in fondo un disaccordo tra i responsabili delle business unit sulle questioni operative, ma decide su quelle strategiche più rilevanti."
+        },
+        "5": {
+          "en": "Works through a disagreement between business unit leaders, reaching a shared resolution every unit can act on.",
+          "it": "Affronta fino in fondo un disaccordo tra i responsabili delle business unit, raggiungendo una soluzione condivisa su cui ogni unità può agire."
+        }
       }
     }
   ],
   "INF": [
     {
-      "indicator": "Win business unit leaders' support for a capital allocation decision",
+      "indicator": {
+        "en": "Win business unit leaders' support for a capital allocation decision",
+        "it": "Ottenere il sostegno dei responsabili delle business unit per una decisione di allocazione del capitale"
+      },
       "scale": {
-        "5": "Wins business unit leaders' support for a capital allocation decision by addressing each one's concerns directly.",
-        "3": "Wins support from business unit leaders who already favor the decision but not from the rest.",
-        "1": "Fails to win business unit leaders' support, stalling the capital allocation decision."
+        "1": {
+          "en": "Fails to win business unit leaders' support, stalling the capital allocation decision.",
+          "it": "Non ottiene il sostegno dei responsabili delle business unit, bloccando la decisione di allocazione del capitale."
+        },
+        "3": {
+          "en": "Wins support from business unit leaders who already favor the decision but not from the rest.",
+          "it": "Ottiene il sostegno dei responsabili delle business unit già favorevoli alla decisione, ma non quello degli altri."
+        },
+        "5": {
+          "en": "Wins business unit leaders' support for a capital allocation decision by addressing each one's concerns directly.",
+          "it": "Ottiene il sostegno dei responsabili delle business unit per una decisione di allocazione del capitale affrontando direttamente le preoccupazioni di ciascuno."
+        }
       }
     },
     {
-      "indicator": "Argue for own position with evidence that spans multiple business units",
+      "indicator": {
+        "en": "Argue for own position with evidence that spans multiple business units",
+        "it": "Argomentare la propria posizione con evidenze che spaziano su più business unit"
+      },
       "scale": {
-        "5": "Argues for own position with evidence that spans multiple business units, making the case irrefutable.",
-        "3": "Argues for own position with evidence from a single business unit rather than across all of them.",
-        "1": "Struggles to argue for own position, relying on assertion rather than evidence across business units."
+        "1": {
+          "en": "Struggles to argue for own position, relying on assertion rather than evidence across business units.",
+          "it": "Fatica ad argomentare la propria posizione, affidandosi all'affermazione anziché a evidenze provenienti dalle business unit."
+        },
+        "3": {
+          "en": "Argues for own position with evidence from a single business unit rather than across all of them.",
+          "it": "Argomenta la propria posizione con evidenze provenienti da una sola business unit anziché da tutte."
+        },
+        "5": {
+          "en": "Argues for own position with evidence that spans multiple business units, making the case irrefutable.",
+          "it": "Argomenta la propria posizione con evidenze che spaziano su più business unit, rendendo la tesi inconfutabile."
+        }
       }
     },
     {
-      "indicator": "Stand firm on a decision when a business unit leader pushes back",
+      "indicator": {
+        "en": "Stand firm on a decision when a business unit leader pushes back",
+        "it": "Mantenere ferma una decisione quando un responsabile di business unit oppone resistenza"
+      },
       "scale": {
-        "5": "Stands firm on a decision when a business unit leader pushes back, holding the line without damaging trust.",
-        "3": "Stands firm on a decision only until a business unit leader pushes back a second time.",
-        "1": "Concedes a decision as soon as a business unit leader pushes back, undermining organizational direction."
+        "1": {
+          "en": "Concedes a decision as soon as a business unit leader pushes back, undermining organizational direction.",
+          "it": "Cede su una decisione non appena un responsabile di business unit oppone resistenza, minando la direzione organizzativa."
+        },
+        "3": {
+          "en": "Stands firm on a decision only until a business unit leader pushes back a second time.",
+          "it": "Mantiene ferma una decisione solo finché un responsabile di business unit non oppone resistenza una seconda volta."
+        },
+        "5": {
+          "en": "Stands firm on a decision when a business unit leader pushes back, holding the line without damaging trust.",
+          "it": "Mantiene ferma una decisione quando un responsabile di business unit oppone resistenza, tenendo il punto senza danneggiare la fiducia."
+        }
       }
     }
   ],
   "NET": [
     {
-      "indicator": "Build a working relationship with industry contacts and external stakeholders before the organization needs their help",
+      "indicator": {
+        "en": "Build a working relationship with industry contacts and external stakeholders before the organization needs their help",
+        "it": "Costruire un rapporto di lavoro con i contatti del settore e gli stakeholder esterni prima che l'organizzazione abbia bisogno del loro aiuto"
+      },
       "scale": {
-        "5": "Builds a working relationship with industry contacts and external stakeholders before the organization needs their help.",
-        "3": "Builds a working relationship with industry contacts and external stakeholders only once the organization already needs their help.",
-        "1": "Neglects to build a working relationship with industry contacts and external stakeholders."
+        "1": {
+          "en": "Neglects to build a working relationship with industry contacts and external stakeholders.",
+          "it": "Omette di costruire un rapporto di lavoro con i contatti del settore e gli stakeholder esterni."
+        },
+        "3": {
+          "en": "Builds a working relationship with industry contacts and external stakeholders only once the organization already needs their help.",
+          "it": "Costruisce un rapporto di lavoro con i contatti del settore e gli stakeholder esterni solo quando l'organizzazione ha già bisogno del loro aiuto."
+        },
+        "5": {
+          "en": "Builds a working relationship with industry contacts and external stakeholders before the organization needs their help.",
+          "it": "Costruisce un rapporto di lavoro con i contatti del settore e gli stakeholder esterni prima che l'organizzazione abbia bisogno del loro aiuto."
+        }
       }
     },
     {
-      "indicator": "Adjust own communication style to fit stakeholders across the organization, the industry and outside it",
+      "indicator": {
+        "en": "Adjust own communication style to fit stakeholders across the organization, the industry and outside it",
+        "it": "Adattare il proprio stile comunicativo agli stakeholder dell'organizzazione, del settore e a quelli esterni"
+      },
       "scale": {
-        "5": "Adjusts own communication style to fit stakeholders across the organization, the industry and outside it.",
-        "3": "Adjusts own communication style for internal senior leaders but uses the same approach with external industry contacts.",
-        "1": "Resists adjusting own communication style across the organization and the industry, using the same approach with every stakeholder."
+        "1": {
+          "en": "Resists adjusting own communication style across the organization and the industry, using the same approach with every stakeholder.",
+          "it": "Fa resistenza ad adattare il proprio stile comunicativo all'organizzazione e al settore, usando lo stesso approccio con ogni stakeholder."
+        },
+        "3": {
+          "en": "Adjusts own communication style for internal senior leaders but uses the same approach with external industry contacts.",
+          "it": "Adatta il proprio stile comunicativo con i leader senior interni, ma usa lo stesso approccio con i contatti esterni del settore."
+        },
+        "5": {
+          "en": "Adjusts own communication style to fit stakeholders across the organization, the industry and outside it.",
+          "it": "Adatta il proprio stile comunicativo agli stakeholder dell'organizzazione, del settore e a quelli esterni."
+        }
       }
     },
     {
-      "indicator": "Use an existing industry relationship to unblock a strategic initiative for the organization",
+      "indicator": {
+        "en": "Use an existing industry relationship to unblock a strategic initiative for the organization",
+        "it": "Utilizzare un rapporto esistente nel settore per sbloccare un'iniziativa strategica per l'organizzazione"
+      },
       "scale": {
-        "5": "Uses an existing industry relationship to unblock a strategic initiative for the organization.",
-        "3": "Uses an existing industry relationship to unblock a strategic initiative only after a formal request stalls.",
-        "1": "Overlooks existing industry relationships, routing every strategic request through formal channels alone."
+        "1": {
+          "en": "Overlooks existing industry relationships, routing every strategic request through formal channels alone.",
+          "it": "Trascura i rapporti esistenti nel settore, convogliando ogni richiesta strategica esclusivamente attraverso i canali formali."
+        },
+        "3": {
+          "en": "Uses an existing industry relationship to unblock a strategic initiative only after a formal request stalls.",
+          "it": "Utilizza un rapporto esistente nel settore per sbloccare un'iniziativa strategica solo dopo che una richiesta formale si è arenata."
+        },
+        "5": {
+          "en": "Uses an existing industry relationship to unblock a strategic initiative for the organization.",
+          "it": "Utilizza un rapporto esistente nel settore per sbloccare un'iniziativa strategica per l'organizzazione."
+        }
       }
     }
   ],
   "RES": [
     {
-      "indicator": "Sustain organizational focus through sustained multi-country uncertainty",
+      "indicator": {
+        "en": "Sustain organizational focus through sustained multi-country uncertainty",
+        "it": "Mantenere il focus organizzativo attraverso un'incertezza prolungata in più paesi"
+      },
       "scale": {
-        "5": "Sustains organizational focus through sustained multi-country uncertainty, keeping every business unit oriented on the plan.",
-        "3": "Sustains organizational focus while uncertainty is confined to one country but wavers once it spreads.",
-        "1": "Loses organizational focus once multi-country uncertainty sets in, leaving business units without direction."
+        "1": {
+          "en": "Loses organizational focus once multi-country uncertainty sets in, leaving business units without direction.",
+          "it": "Perde il focus organizzativo quando si instaura un'incertezza in più paesi, lasciando le business unit senza direzione."
+        },
+        "3": {
+          "en": "Sustains organizational focus while uncertainty is confined to one country but wavers once it spreads.",
+          "it": "Mantiene il focus organizzativo finché l'incertezza è confinata a un solo paese, ma vacilla quando si diffonde."
+        },
+        "5": {
+          "en": "Sustains organizational focus through sustained multi-country uncertainty, keeping every business unit oriented on the plan.",
+          "it": "Mantiene il focus organizzativo attraverso un'incertezza prolungata in più paesi, tenendo ogni business unit orientata sul piano."
+        }
       }
     },
     {
-      "indicator": "Handle a consolidated P&L setback without shifting blame to a business unit",
+      "indicator": {
+        "en": "Handle a consolidated P&L setback without shifting blame to a business unit",
+        "it": "Gestire una battuta d'arresto del P&L consolidato senza scaricare la colpa su una business unit"
+      },
       "scale": {
-        "5": "Handles a consolidated P&L setback without shifting blame to a business unit, owning the outcome directly.",
-        "3": "Handles a consolidated P&L setback calmly but privately holds one business unit responsible.",
-        "1": "Shifts blame to a business unit after a consolidated P&L setback, eroding trust across the organization."
+        "1": {
+          "en": "Shifts blame to a business unit after a consolidated P&L setback, eroding trust across the organization.",
+          "it": "Scarica la colpa su una business unit dopo una battuta d'arresto del P&L consolidato, erodendo la fiducia in tutta l'organizzazione."
+        },
+        "3": {
+          "en": "Handles a consolidated P&L setback calmly but privately holds one business unit responsible.",
+          "it": "Gestisce con calma una battuta d'arresto del P&L consolidato, ma in privato ritiene responsabile una business unit."
+        },
+        "5": {
+          "en": "Handles a consolidated P&L setback without shifting blame to a business unit, owning the outcome directly.",
+          "it": "Gestisce una battuta d'arresto del P&L consolidato senza scaricare la colpa su una business unit, assumendosi direttamente il risultato."
+        }
       }
     },
     {
-      "indicator": "Model composure for other senior leaders during an organization-wide crisis",
+      "indicator": {
+        "en": "Model composure for other senior leaders during an organization-wide crisis",
+        "it": "Incarnare la compostezza per gli altri leader senior durante una crisi a livello di organizzazione"
+      },
       "scale": {
-        "5": "Models composure for other senior leaders during an organization-wide crisis, steadying the room when it matters most.",
-        "3": "Models composure for other senior leaders during a single business unit's crisis but not an organization-wide one.",
-        "1": "Loses composure during an organization-wide crisis, leaving other senior leaders without a steady reference point."
+        "1": {
+          "en": "Loses composure during an organization-wide crisis, leaving other senior leaders without a steady reference point.",
+          "it": "Perde la compostezza durante una crisi a livello di organizzazione, lasciando gli altri leader senior senza un punto di riferimento stabile."
+        },
+        "3": {
+          "en": "Models composure for other senior leaders during a single business unit's crisis but not an organization-wide one.",
+          "it": "Incarna la compostezza per gli altri leader senior durante la crisi di una singola business unit, ma non durante una crisi a livello di organizzazione."
+        },
+        "5": {
+          "en": "Models composure for other senior leaders during an organization-wide crisis, steadying the room when it matters most.",
+          "it": "Incarna la compostezza per gli altri leader senior durante una crisi a livello di organizzazione, dando stabilità ai presenti nel momento in cui più conta."
+        }
       }
     }
   ],
   "LRN": [
     {
-      "indicator": "Seek feedback from other senior leaders on own strategic decisions",
+      "indicator": {
+        "en": "Seek feedback from other senior leaders on own strategic decisions",
+        "it": "Cercare feedback dagli altri leader senior sulle proprie decisioni strategiche"
+      },
       "scale": {
-        "5": "Actively seeks feedback from other senior leaders on own strategic decisions, adjusting direction when the case is strong.",
-        "3": "Seeks feedback from other senior leaders only after a strategic decision has already been announced.",
-        "1": "Avoids seeking feedback on own strategic decisions, missing early signals from other senior leaders."
+        "1": {
+          "en": "Avoids seeking feedback on own strategic decisions, missing early signals from other senior leaders.",
+          "it": "Evita di cercare feedback sulle proprie decisioni strategiche, perdendo i segnali precoci degli altri leader senior."
+        },
+        "3": {
+          "en": "Seeks feedback from other senior leaders only after a strategic decision has already been announced.",
+          "it": "Cerca feedback dagli altri leader senior solo dopo che una decisione strategica è già stata annunciata."
+        },
+        "5": {
+          "en": "Actively seeks feedback from other senior leaders on own strategic decisions, adjusting direction when the case is strong.",
+          "it": "Cerca attivamente feedback dagli altri leader senior sulle proprie decisioni strategiche, correggendo la direzione quando le argomentazioni sono solide."
+        }
       }
     },
     {
-      "indicator": "Reflect on which strategic decisions worked across business units and why",
+      "indicator": {
+        "en": "Reflect on which strategic decisions worked across business units and why",
+        "it": "Riflettere su quali decisioni strategiche hanno funzionato nelle business unit e perché"
+      },
       "scale": {
-        "5": "Reflects on which strategic decisions worked across business units and why, applying the pattern to the next one.",
-        "3": "Reflects on which strategic decisions worked in one business unit but rarely compares across others.",
-        "1": "Neglects to reflect on which strategic decisions worked, repeating the same mistakes across business units."
+        "1": {
+          "en": "Neglects to reflect on which strategic decisions worked, repeating the same mistakes across business units.",
+          "it": "Omette di riflettere su quali decisioni strategiche hanno funzionato, ripetendo gli stessi errori nelle business unit."
+        },
+        "3": {
+          "en": "Reflects on which strategic decisions worked in one business unit but rarely compares across others.",
+          "it": "Riflette su quali decisioni strategiche hanno funzionato in una business unit, ma raramente le confronta con le altre."
+        },
+        "5": {
+          "en": "Reflects on which strategic decisions worked across business units and why, applying the pattern to the next one.",
+          "it": "Riflette su quali decisioni strategiche hanno funzionato nelle business unit e perché, applicando lo schema a quella successiva."
+        }
       }
     },
     {
-      "indicator": "Apply lessons from one business unit's experience to organization-wide decisions",
+      "indicator": {
+        "en": "Apply lessons from one business unit's experience to organization-wide decisions",
+        "it": "Applicare le lezioni tratte dall'esperienza di una business unit alle decisioni a livello di organizzazione"
+      },
       "scale": {
-        "5": "Applies lessons from one business unit's experience to organization-wide decisions, avoiding the same setback elsewhere.",
-        "3": "Applies lessons from one business unit's experience back to that same unit but rarely elsewhere.",
-        "1": "Overlooks lessons from one business unit's experience, repeating the same setback in others."
+        "1": {
+          "en": "Overlooks lessons from one business unit's experience, repeating the same setback in others.",
+          "it": "Trascura le lezioni tratte dall'esperienza di una business unit, ripetendo la stessa battuta d'arresto nelle altre."
+        },
+        "3": {
+          "en": "Applies lessons from one business unit's experience back to that same unit but rarely elsewhere.",
+          "it": "Applica le lezioni tratte dall'esperienza di una business unit alla stessa unità, ma raramente altrove."
+        },
+        "5": {
+          "en": "Applies lessons from one business unit's experience to organization-wide decisions, avoiding the same setback elsewhere.",
+          "it": "Applica le lezioni tratte dall'esperienza di una business unit alle decisioni a livello di organizzazione, evitando la stessa battuta d'arresto altrove."
+        }
       }
     }
   ],
   "ITG": [
     {
-      "indicator": "Follow through on an organization-wide commitment even when it becomes costly across business units",
+      "indicator": {
+        "en": "Follow through on an organization-wide commitment even when it becomes costly across business units",
+        "it": "Dare seguito a un impegno a livello di organizzazione anche quando diventa oneroso per le business unit"
+      },
       "scale": {
-        "5": "Follows through on an organization-wide commitment even when it becomes costly across business units.",
-        "3": "Follows through on an organization-wide commitment when low-cost but lets it slide across business units.",
-        "1": "Neglects an organization-wide commitment once it becomes costly, leaving business units to absorb the consequence."
+        "1": {
+          "en": "Neglects an organization-wide commitment once it becomes costly, leaving business units to absorb the consequence.",
+          "it": "Trascura un impegno a livello di organizzazione quando diventa oneroso, lasciando alle business unit il compito di assorbirne le conseguenze."
+        },
+        "3": {
+          "en": "Follows through on an organization-wide commitment when low-cost but lets it slide across business units.",
+          "it": "Dà seguito a un impegno a livello di organizzazione quando è poco oneroso, ma lo lascia scivolare tra le business unit."
+        },
+        "5": {
+          "en": "Follows through on an organization-wide commitment even when it becomes costly across business units.",
+          "it": "Dà seguito a un impegno a livello di organizzazione anche quando diventa oneroso per le business unit."
+        }
       }
     },
     {
-      "indicator": "Admit a mistake to the organization rather than let a business unit take the blame",
+      "indicator": {
+        "en": "Admit a mistake to the organization rather than let a business unit take the blame",
+        "it": "Ammettere un errore all'organizzazione anziché lasciare che una business unit se ne prenda la colpa"
+      },
       "scale": {
-        "5": "Admits a mistake to the organization rather than let a business unit take the blame.",
-        "3": "Admits a mistake to the organization once it is already obvious but stays quiet otherwise.",
-        "1": "Avoids admitting a mistake to the organization, letting a business unit take the blame."
+        "1": {
+          "en": "Avoids admitting a mistake to the organization, letting a business unit take the blame.",
+          "it": "Evita di ammettere un errore all'organizzazione, lasciando che una business unit se ne prenda la colpa."
+        },
+        "3": {
+          "en": "Admits a mistake to the organization once it is already obvious but stays quiet otherwise.",
+          "it": "Ammette un errore all'organizzazione quando è già evidente, ma altrimenti tace."
+        },
+        "5": {
+          "en": "Admits a mistake to the organization rather than let a business unit take the blame.",
+          "it": "Ammette un errore all'organizzazione anziché lasciare che una business unit se ne prenda la colpa."
+        }
       }
     },
     {
-      "indicator": "Apply organization-wide standards the same way across every business unit regardless of results pressure",
+      "indicator": {
+        "en": "Apply organization-wide standards the same way across every business unit regardless of results pressure",
+        "it": "Applicare gli standard a livello di organizzazione allo stesso modo in ogni business unit indipendentemente dalla pressione sui risultati"
+      },
       "scale": {
-        "5": "Applies organization-wide standards the same way across every business unit regardless of results pressure.",
-        "3": "Applies organization-wide standards when results are on track but relaxes them under results pressure.",
-        "1": "Resists applying organization-wide standards evenly, relaxing them under results pressure."
+        "1": {
+          "en": "Resists applying organization-wide standards evenly, relaxing them under results pressure.",
+          "it": "Fa resistenza ad applicare in modo uniforme gli standard a livello di organizzazione, allentandoli sotto la pressione sui risultati."
+        },
+        "3": {
+          "en": "Applies organization-wide standards when results are on track but relaxes them under results pressure.",
+          "it": "Applica gli standard a livello di organizzazione quando i risultati sono in linea, ma li allenta sotto la pressione sui risultati."
+        },
+        "5": {
+          "en": "Applies organization-wide standards the same way across every business unit regardless of results pressure.",
+          "it": "Applica gli standard a livello di organizzazione allo stesso modo in ogni business unit indipendentemente dalla pressione sui risultati."
+        }
       }
     }
   ],
   "INC": [
     {
-      "indicator": "Give business unit leaders from different backgrounds equal airtime in an organization-wide discussion",
+      "indicator": {
+        "en": "Give business unit leaders from different backgrounds equal airtime in an organization-wide discussion",
+        "it": "Dare ai responsabili delle business unit di provenienze diverse pari spazio di parola in una discussione a livello di organizzazione"
+      },
       "scale": {
-        "5": "Gives business unit leaders from different backgrounds equal airtime in an organization-wide discussion.",
-        "3": "Gives business unit leaders airtime when they speak up but does not draw out quieter ones.",
-        "1": "Overlooks business unit leaders from different backgrounds, letting the same few voices dominate every organization-wide discussion."
+        "1": {
+          "en": "Overlooks business unit leaders from different backgrounds, letting the same few voices dominate every organization-wide discussion.",
+          "it": "Trascura i responsabili delle business unit di provenienze diverse, lasciando che le stesse poche voci dominino ogni discussione a livello di organizzazione."
+        },
+        "3": {
+          "en": "Gives business unit leaders airtime when they speak up but does not draw out quieter ones.",
+          "it": "Dà ai responsabili delle business unit spazio di parola quando intervengono, ma non sollecita i più silenziosi."
+        },
+        "5": {
+          "en": "Gives business unit leaders from different backgrounds equal airtime in an organization-wide discussion.",
+          "it": "Dà ai responsabili delle business unit di provenienze diverse pari spazio di parola in una discussione a livello di organizzazione."
+        }
       }
     },
     {
-      "indicator": "Adjust organization-wide policy to accommodate a specific need raised by a business unit",
+      "indicator": {
+        "en": "Adjust organization-wide policy to accommodate a specific need raised by a business unit",
+        "it": "Adattare una policy a livello di organizzazione per accogliere un'esigenza specifica sollevata da una business unit"
+      },
       "scale": {
-        "5": "Adjusts organization-wide policy to accommodate a specific need raised by a business unit.",
-        "3": "Accommodates a specific need raised by a business unit once but leaves organization-wide policy unchanged.",
-        "1": "Resists adjusting organization-wide policy for a business unit's specific need, expecting it to fit the existing policy instead."
+        "1": {
+          "en": "Resists adjusting organization-wide policy for a business unit's specific need, expecting it to fit the existing policy instead.",
+          "it": "Fa resistenza ad adattare la policy a livello di organizzazione all'esigenza specifica di una business unit, aspettandosi invece che si adegui alla policy esistente."
+        },
+        "3": {
+          "en": "Accommodates a specific need raised by a business unit once but leaves organization-wide policy unchanged.",
+          "it": "Accoglie una volta un'esigenza specifica sollevata da una business unit, ma lascia invariata la policy a livello di organizzazione."
+        },
+        "5": {
+          "en": "Adjusts organization-wide policy to accommodate a specific need raised by a business unit.",
+          "it": "Adatta una policy a livello di organizzazione per accogliere un'esigenza specifica sollevata da una business unit."
+        }
       }
     },
     {
-      "indicator": "Draw on a business unit leader's different perspective when it conflicts with the majority view",
+      "indicator": {
+        "en": "Draw on a business unit leader's different perspective when it conflicts with the majority view",
+        "it": "Attingere alla prospettiva diversa di un responsabile di business unit quando è in contrasto con l'opinione della maggioranza"
+      },
       "scale": {
-        "5": "Draws on a business unit leader's different perspective when it conflicts with the majority view.",
-        "3": "Draws on a business unit leader's perspective when it agrees with the majority but sets it aside otherwise.",
-        "1": "Overlooks a business unit leader's different perspective whenever it conflicts with the majority view, dismissing it without consideration."
+        "1": {
+          "en": "Overlooks a business unit leader's different perspective whenever it conflicts with the majority view, dismissing it without consideration.",
+          "it": "Trascura la prospettiva diversa di un responsabile di business unit ogni volta che è in contrasto con l'opinione della maggioranza, liquidandola senza considerazione."
+        },
+        "3": {
+          "en": "Draws on a business unit leader's perspective when it agrees with the majority but sets it aside otherwise.",
+          "it": "Attinge alla prospettiva di un responsabile di business unit quando concorda con la maggioranza, ma altrimenti la mette da parte."
+        },
+        "5": {
+          "en": "Draws on a business unit leader's different perspective when it conflicts with the majority view.",
+          "it": "Attinge alla prospettiva diversa di un responsabile di business unit quando è in contrasto con l'opinione della maggioranza."
+        }
       }
     }
   ]

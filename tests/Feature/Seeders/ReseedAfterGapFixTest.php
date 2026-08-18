@@ -40,8 +40,8 @@ test('re-seeding after adding SRX bars inserts SRX indicators', function (): voi
     $srxBars = [
         'PRS' => [
             [
-                'indicator' => 'SRX test indicator',
-                'scale' => ['5' => 'SRX A5', '3' => 'SRX A3', '1' => 'SRX A1'],
+                'indicator' => ['en' => 'SRX test indicator'],
+                'scale' => ['5' => ['en' => 'SRX A5'], '3' => ['en' => 'SRX A3'], '1' => ['en' => 'SRX A1']],
             ],
         ],
     ];

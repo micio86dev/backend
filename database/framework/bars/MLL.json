@@ -1,469 +1,1117 @@
 {
   "PRS": [
     {
-      "indicator": "Trace a problem spanning two functions back to which function actually owns the root cause",
+      "indicator": {
+        "en": "Trace a problem spanning two functions back to which function actually owns the root cause",
+        "it": "Ricondurre un problema che coinvolge due funzioni alla funzione a cui appartiene effettivamente la causa radice"
+      },
       "scale": {
-        "5": "Traces cross-functional problems to the function that actually owns the root cause, ending finger-pointing between teams.",
-        "3": "Identifies which function a cross-functional problem touches but stops short of naming which one owns the root cause.",
-        "1": "Overlooks the cross-functional root cause of a problem, treating it as one function's issue alone."
+        "1": {
+          "en": "Overlooks the cross-functional root cause of a problem, treating it as one function's issue alone.",
+          "it": "Trascura la causa radice interfunzionale di un problema, trattandolo come un problema di una sola funzione."
+        },
+        "3": {
+          "en": "Identifies which function a cross-functional problem touches but stops short of naming which one owns the root cause.",
+          "it": "Identifica quale funzione è toccata da un problema interfunzionale, ma non arriva a indicare a quale funzione appartenga la causa radice."
+        },
+        "5": {
+          "en": "Traces cross-functional problems to the function that actually owns the root cause, ending finger-pointing between teams.",
+          "it": "Riconduce i problemi interfunzionali alla funzione a cui appartiene effettivamente la causa radice, ponendo fine agli scambi di accuse tra i team."
+        }
       }
     },
     {
-      "indicator": "Combine data from own functions with input from other units before diagnosing a cross-functional issue",
+      "indicator": {
+        "en": "Combine data from own functions with input from other units before diagnosing a cross-functional issue",
+        "it": "Combinare i dati delle proprie funzioni con i contributi di altre unità prima di diagnosticare un problema interfunzionale"
+      },
       "scale": {
-        "5": "Combines data from own functions with input from other units, catching gaps a single-function view would miss.",
-        "3": "Combines data from own functions when diagnosing but leaves other units' input ungathered.",
-        "1": "Neglects to gather input from other units when diagnosing a cross-functional issue, working from own functions' data alone."
+        "1": {
+          "en": "Neglects to gather input from other units when diagnosing a cross-functional issue, working from own functions' data alone.",
+          "it": "Omette di raccogliere i contributi di altre unità quando diagnostica un problema interfunzionale, lavorando solo sui dati delle proprie funzioni."
+        },
+        "3": {
+          "en": "Combines data from own functions when diagnosing but leaves other units' input ungathered.",
+          "it": "Combina i dati delle proprie funzioni nella diagnosi, ma non raccoglie i contributi delle altre unità."
+        },
+        "5": {
+          "en": "Combines data from own functions with input from other units, catching gaps a single-function view would miss.",
+          "it": "Combina i dati delle proprie funzioni con i contributi di altre unità, cogliendo lacune che una visione limitata a una sola funzione non rileverebbe."
+        }
       }
     },
     {
-      "indicator": "Test a proposed fix against both functions' numbers before rolling it out",
+      "indicator": {
+        "en": "Test a proposed fix against both functions' numbers before rolling it out",
+        "it": "Verificare un intervento correttivo proposto rispetto ai numeri di entrambe le funzioni prima di implementarlo"
+      },
       "scale": {
-        "5": "Tests a proposed fix against both functions' numbers before rolling it out, catching hidden tradeoffs early.",
-        "3": "Tests a proposed fix against one function's numbers before rolling it out, leaving the other function unchecked.",
-        "1": "Fails to test a proposed fix against either function's numbers before rolling it out."
+        "1": {
+          "en": "Fails to test a proposed fix against either function's numbers before rolling it out.",
+          "it": "Non verifica un intervento correttivo proposto rispetto ai numeri di nessuna delle due funzioni prima di implementarlo."
+        },
+        "3": {
+          "en": "Tests a proposed fix against one function's numbers before rolling it out, leaving the other function unchecked.",
+          "it": "Verifica un intervento correttivo proposto rispetto ai numeri di una funzione prima di implementarlo, lasciando l'altra funzione non verificata."
+        },
+        "5": {
+          "en": "Tests a proposed fix against both functions' numbers before rolling it out, catching hidden tradeoffs early.",
+          "it": "Verifica un intervento correttivo proposto rispetto ai numeri di entrambe le funzioni prima di implementarlo, cogliendo per tempo i compromessi nascosti."
+        }
       }
     }
   ],
   "STG": [
     {
-      "indicator": "Translate business strategies into clear goals and tactics for own team",
+      "indicator": {
+        "en": "Translate business strategies into clear goals and tactics for own team",
+        "it": "Tradurre le strategie aziendali in obiettivi e tattiche chiari per il proprio team"
+      },
       "scale": {
-        "5": "Consistently translates complex business strategies into actionable, clear goals and tactics aligned with team capabilities.",
-        "3": "Usually provides goals aligned with business strategies, though sometimes lacks clarity or full alignment.",
-        "1": "Fails to connect business strategies to team goals; often leaves team without direction or misaligned objectives."
+        "1": {
+          "en": "Fails to connect business strategies to team goals; often leaves team without direction or misaligned objectives.",
+          "it": "Non collega le strategie aziendali agli obiettivi del team; spesso lascia il team senza direzione o con obiettivi disallineati."
+        },
+        "3": {
+          "en": "Usually provides goals aligned with business strategies, though sometimes lacks clarity or full alignment.",
+          "it": "Di norma fornisce obiettivi allineati alle strategie aziendali, anche se talvolta manca di chiarezza o di pieno allineamento."
+        },
+        "5": {
+          "en": "Consistently translates complex business strategies into actionable, clear goals and tactics aligned with team capabilities.",
+          "it": "Traduce con costanza strategie aziendali complesse in obiettivi e tattiche chiari e attuabili, allineati alle capacità del team."
+        }
       }
     },
     {
-      "indicator": "Effectively balance day-to-day activities with the pursuit of long-term goals",
+      "indicator": {
+        "en": "Effectively balance day-to-day activities with the pursuit of long-term goals",
+        "it": "Bilanciare efficacemente le attività quotidiane con il perseguimento degli obiettivi di lungo termine"
+      },
       "scale": {
-        "5": "Seamlessly balances short-term tasks with strategic long-term planning, ensuring sustained team performance.",
-        "3": "Manages most daily tasks and long-term goals, though occasional imbalance may hinder one or the other.",
-        "1": "Focuses primarily on immediate tasks or long-term plans, neglecting the other and affecting team success."
+        "1": {
+          "en": "Focuses primarily on immediate tasks or long-term plans, neglecting the other and affecting team success.",
+          "it": "Si concentra principalmente sui compiti immediati oppure sui piani di lungo termine, trascurando l'altro aspetto e compromettendo il successo del team."
+        },
+        "3": {
+          "en": "Manages most daily tasks and long-term goals, though occasional imbalance may hinder one or the other.",
+          "it": "Gestisce la maggior parte dei compiti quotidiani e degli obiettivi di lungo termine, anche se occasionali squilibri possono penalizzare gli uni o gli altri."
+        },
+        "5": {
+          "en": "Seamlessly balances short-term tasks with strategic long-term planning, ensuring sustained team performance.",
+          "it": "Bilancia senza soluzione di continuità i compiti di breve termine con la pianificazione strategica di lungo termine, assicurando una performance del team costante nel tempo."
+        }
       }
     },
     {
-      "indicator": "Understand and clearly communicate own area's priorities",
+      "indicator": {
+        "en": "Understand and clearly communicate own area's priorities",
+        "it": "Comprendere e comunicare con chiarezza le priorità della propria area"
+      },
       "scale": {
-        "5": "Clearly articulates team priorities and ensures full understanding across stakeholders and team members.",
-        "3": "Usually communicates priorities, though sometimes lacks consistency or clarity.",
-        "1": "Seldom communicates area priorities, leading to confusion and misalignment within the team."
+        "1": {
+          "en": "Seldom communicates area priorities, leading to confusion and misalignment within the team.",
+          "it": "Comunica raramente le priorità dell'area, generando confusione e disallineamento all'interno del team."
+        },
+        "3": {
+          "en": "Usually communicates priorities, though sometimes lacks consistency or clarity.",
+          "it": "Di norma comunica le priorità, anche se talvolta manca di coerenza o di chiarezza."
+        },
+        "5": {
+          "en": "Clearly articulates team priorities and ensures full understanding across stakeholders and team members.",
+          "it": "Illustra con chiarezza le priorità del team e assicura una piena comprensione tra stakeholder e membri del team."
+        }
       }
     }
   ],
   "INN": [
     {
-      "indicator": "Constantly push for professional and technological innovation",
+      "indicator": {
+        "en": "Constantly push for professional and technological innovation",
+        "it": "Spingere costantemente verso l'innovazione professionale e tecnologica"
+      },
       "scale": {
-        "5": "Champions continuous innovation, proactively implementing new professional and technological approaches.",
-        "3": "Supports innovation but often waits for direction or shows limited initiative.",
-        "1": "Resists change and rarely seeks or promotes new professional or technological improvements."
+        "1": {
+          "en": "Resists change and rarely seeks or promotes new professional or technological improvements.",
+          "it": "Resiste al cambiamento e raramente ricerca o promuove nuovi miglioramenti professionali o tecnologici."
+        },
+        "3": {
+          "en": "Supports innovation but often waits for direction or shows limited initiative.",
+          "it": "Sostiene l'innovazione, ma spesso attende indicazioni o mostra un'iniziativa limitata."
+        },
+        "5": {
+          "en": "Champions continuous innovation, proactively implementing new professional and technological approaches.",
+          "it": "Promuove l'innovazione continua, implementando in modo proattivo nuovi approcci professionali e tecnologici."
+        }
       }
     },
     {
-      "indicator": "Identify new cost saving or revenue opportunities",
+      "indicator": {
+        "en": "Identify new cost saving or revenue opportunities",
+        "it": "Identificare nuove opportunità di riduzione dei costi o di ricavo"
+      },
       "scale": {
-        "5": "Routinely identifies and implements impactful cost-saving or revenue-generating opportunities.",
-        "3": "Occasionally identifies savings or revenue opportunities with moderate impact.",
-        "1": "Fails to seek or recognize opportunities for cost savings or revenue growth."
+        "1": {
+          "en": "Fails to seek or recognize opportunities for cost savings or revenue growth.",
+          "it": "Non ricerca né riconosce opportunità di riduzione dei costi o di crescita dei ricavi."
+        },
+        "3": {
+          "en": "Occasionally identifies savings or revenue opportunities with moderate impact.",
+          "it": "Identifica occasionalmente opportunità di risparmio o di ricavo con impatto moderato."
+        },
+        "5": {
+          "en": "Routinely identifies and implements impactful cost-saving or revenue-generating opportunities.",
+          "it": "Identifica e realizza abitualmente opportunità di riduzione dei costi o di generazione di ricavi ad alto impatto."
+        }
       }
     },
     {
-      "indicator": "Routinely promote continuous process improvement",
+      "indicator": {
+        "en": "Routinely promote continuous process improvement",
+        "it": "Promuovere abitualmente il miglioramento continuo dei processi"
+      },
       "scale": {
-        "5": "Continuously evaluates and improves processes, embedding a culture of efficiency and optimization.",
-        "3": "Supports process improvements when issues arise but lacks ongoing initiative.",
-        "1": "Avoids process change and maintains inefficient systems despite issues."
+        "1": {
+          "en": "Avoids process change and maintains inefficient systems despite issues.",
+          "it": "Evita il cambiamento dei processi e mantiene sistemi inefficienti nonostante i problemi."
+        },
+        "3": {
+          "en": "Supports process improvements when issues arise but lacks ongoing initiative.",
+          "it": "Sostiene i miglioramenti di processo quando emergono problemi, ma manca di iniziativa continuativa."
+        },
+        "5": {
+          "en": "Continuously evaluates and improves processes, embedding a culture of efficiency and optimization.",
+          "it": "Valuta e migliora continuamente i processi, radicando una cultura di efficienza e ottimizzazione."
+        }
       }
     }
   ],
   "JDG": [
     {
-      "indicator": "Base unit decisions on data that balances revenue growth against cost",
+      "indicator": {
+        "en": "Base unit decisions on data that balances revenue growth against cost",
+        "it": "Basare le decisioni dell'unità su dati che bilanciano la crescita dei ricavi rispetto ai costi"
+      },
       "scale": {
-        "5": "Builds every unit decision on data that weighs revenue growth against cost, sharpening the tradeoff each time.",
-        "3": "Checks revenue and cost data for major decisions but relies on instinct for smaller ones.",
-        "1": "Rarely checks revenue or cost data before unit decisions, leaving tradeoffs unexamined."
+        "1": {
+          "en": "Rarely checks revenue or cost data before unit decisions, leaving tradeoffs unexamined.",
+          "it": "Verifica raramente i dati di ricavi o costi prima delle decisioni dell'unità, lasciando i compromessi non esaminati."
+        },
+        "3": {
+          "en": "Checks revenue and cost data for major decisions but relies on instinct for smaller ones.",
+          "it": "Verifica i dati di ricavi e costi per le decisioni principali, ma si affida all'istinto per quelle minori."
+        },
+        "5": {
+          "en": "Builds every unit decision on data that weighs revenue growth against cost, sharpening the tradeoff each time.",
+          "it": "Costruisce ogni decisione dell'unità su dati che ponderano la crescita dei ricavi rispetto ai costi, affinando ogni volta il compromesso."
+        }
       }
     },
     {
-      "indicator": "Resolve ambiguous situations across own functions with a workable course of action",
+      "indicator": {
+        "en": "Resolve ambiguous situations across own functions with a workable course of action",
+        "it": "Risolvere le situazioni ambigue tra le proprie funzioni con una linea d'azione praticabile"
+      },
       "scale": {
-        "5": "Resolves ambiguous cross-functional situations with a workable course of action, keeping both functions aligned and moving.",
-        "3": "Resolves clear-cut cross-functional issues quickly but stalls on genuinely ambiguous ones.",
-        "1": "Struggles to resolve ambiguous cross-functional situations, leaving both functions without direction."
+        "1": {
+          "en": "Struggles to resolve ambiguous cross-functional situations, leaving both functions without direction.",
+          "it": "Fatica a risolvere le situazioni interfunzionali ambigue, lasciando entrambe le funzioni senza direzione."
+        },
+        "3": {
+          "en": "Resolves clear-cut cross-functional issues quickly but stalls on genuinely ambiguous ones.",
+          "it": "Risolve rapidamente i problemi interfunzionali chiari, ma si blocca su quelli realmente ambigui."
+        },
+        "5": {
+          "en": "Resolves ambiguous cross-functional situations with a workable course of action, keeping both functions aligned and moving.",
+          "it": "Risolve le situazioni interfunzionali ambigue con una linea d'azione praticabile, mantenendo entrambe le funzioni allineate e in movimento."
+        }
       }
     },
     {
-      "indicator": "Weigh revenue, cost and timing tradeoffs before choosing among options for own functions",
+      "indicator": {
+        "en": "Weigh revenue, cost and timing tradeoffs before choosing among options for own functions",
+        "it": "Ponderare i compromessi tra ricavi, costi e tempistiche prima di scegliere tra le opzioni per le proprie funzioni"
+      },
       "scale": {
-        "5": "Weighs revenue, cost and timing tradeoffs rigorously before choosing the option that best serves own functions.",
-        "3": "Compares revenue and cost tradeoffs before choosing but leaves timing as an afterthought.",
-        "1": "Overlooks revenue, cost and timing tradeoffs, choosing options for own functions on gut feel alone."
+        "1": {
+          "en": "Overlooks revenue, cost and timing tradeoffs, choosing options for own functions on gut feel alone.",
+          "it": "Trascura i compromessi tra ricavi, costi e tempistiche, scegliendo le opzioni per le proprie funzioni solo di istinto."
+        },
+        "3": {
+          "en": "Compares revenue and cost tradeoffs before choosing but leaves timing as an afterthought.",
+          "it": "Confronta i compromessi tra ricavi e costi prima di scegliere, ma relega le tempistiche a un ripensamento successivo."
+        },
+        "5": {
+          "en": "Weighs revenue, cost and timing tradeoffs rigorously before choosing the option that best serves own functions.",
+          "it": "Pondera rigorosamente i compromessi tra ricavi, costi e tempistiche prima di scegliere l'opzione che meglio serve le proprie funzioni."
+        }
       }
     }
   ],
   "DRV": [
     {
-      "indicator": "Push own unit toward yearly targets despite growth-versus-cost pressure",
+      "indicator": {
+        "en": "Push own unit toward yearly targets despite growth-versus-cost pressure",
+        "it": "Spingere la propria unità verso gli obiettivi annuali nonostante la pressione tra crescita e costi"
+      },
       "scale": {
-        "5": "Pushes own unit toward its yearly targets even when growth and cost pressures pull in opposite directions.",
-        "3": "Pushes own unit toward its yearly targets when growth and cost pressures align but eases off otherwise.",
-        "1": "Neglects own unit's yearly targets once growth and cost pressures pull in opposite directions, letting one slide."
+        "1": {
+          "en": "Neglects own unit's yearly targets once growth and cost pressures pull in opposite directions, letting one slide.",
+          "it": "Trascura gli obiettivi annuali della propria unità quando le pressioni di crescita e di costo tirano in direzioni opposte, lasciandone scivolare uno."
+        },
+        "3": {
+          "en": "Pushes own unit toward its yearly targets when growth and cost pressures align but eases off otherwise.",
+          "it": "Spinge la propria unità verso i suoi obiettivi annuali quando le pressioni di crescita e di costo sono allineate, ma altrimenti allenta."
+        },
+        "5": {
+          "en": "Pushes own unit toward its yearly targets even when growth and cost pressures pull in opposite directions.",
+          "it": "Spinge la propria unità verso i suoi obiettivi annuali anche quando le pressioni di crescita e di costo tirano in direzioni opposte."
+        }
       }
     },
     {
-      "indicator": "Set a personal bar for own unit's output above what the annual plan strictly requires",
+      "indicator": {
+        "en": "Set a personal bar for own unit's output above what the annual plan strictly requires",
+        "it": "Fissare un'asticella personale per l'output della propria unità al di sopra di quanto il piano annuale richiede strettamente"
+      },
       "scale": {
-        "5": "Sets a personal bar for own unit's output above what the annual plan strictly requires.",
-        "3": "Sets a personal bar for own unit's output that matches the annual plan, without exceeding it.",
-        "1": "Does not set a personal bar above the annual plan's minimum for own unit's output."
+        "1": {
+          "en": "Does not set a personal bar above the annual plan's minimum for own unit's output.",
+          "it": "Non fissa un'asticella personale al di sopra del minimo previsto dal piano annuale per l'output della propria unità."
+        },
+        "3": {
+          "en": "Sets a personal bar for own unit's output that matches the annual plan, without exceeding it.",
+          "it": "Fissa un'asticella personale per l'output della propria unità pari al piano annuale, senza superarlo."
+        },
+        "5": {
+          "en": "Sets a personal bar for own unit's output above what the annual plan strictly requires.",
+          "it": "Fissa un'asticella personale per l'output della propria unità al di sopra di quanto il piano annuale richiede strettamente."
+        }
       }
     },
     {
-      "indicator": "Sustain own unit's pace through a full year rather than concentrating effort near deadlines",
+      "indicator": {
+        "en": "Sustain own unit's pace through a full year rather than concentrating effort near deadlines",
+        "it": "Mantenere il ritmo della propria unità per un intero anno anziché concentrare lo sforzo in prossimità delle scadenze"
+      },
       "scale": {
-        "5": "Sustains own unit's pace through the full year rather than concentrating effort near deadlines, avoiding late scrambles.",
-        "3": "Sustains own unit's pace through the first three quarters but concentrates effort near deadlines in the fourth.",
-        "1": "Rarely sustains own unit's pace through the year, concentrating all effort into a scramble near deadlines."
+        "1": {
+          "en": "Rarely sustains own unit's pace through the year, concentrating all effort into a scramble near deadlines.",
+          "it": "Mantiene raramente il ritmo della propria unità durante l'anno, concentrando tutto lo sforzo in una corsa affannosa in prossimità delle scadenze."
+        },
+        "3": {
+          "en": "Sustains own unit's pace through the first three quarters but concentrates effort near deadlines in the fourth.",
+          "it": "Mantiene il ritmo della propria unità per i primi tre trimestri, ma concentra lo sforzo in prossimità delle scadenze nel quarto."
+        },
+        "5": {
+          "en": "Sustains own unit's pace through the full year rather than concentrating effort near deadlines, avoiding late scrambles.",
+          "it": "Mantiene il ritmo della propria unità per tutto l'anno anziché concentrare lo sforzo in prossimità delle scadenze, evitando corse affannose finali."
+        }
       }
     }
   ],
   "CSF": [
     {
-      "indicator": "Anticipate customer needs and expectations and lead the team to meet them",
+      "indicator": {
+        "en": "Anticipate customer needs and expectations and lead the team to meet them",
+        "it": "Anticipare i bisogni e le aspettative dei clienti e guidare il team a soddisfarli"
+      },
       "scale": {
-        "5": "Proactively anticipates customer needs and guides team to exceed expectations.",
-        "3": "Addresses customer needs when apparent, but may not anticipate them effectively.",
-        "1": "Responds reactively or inadequately to customer needs, often falling short of expectations."
+        "1": {
+          "en": "Responds reactively or inadequately to customer needs, often falling short of expectations.",
+          "it": "Risponde in modo reattivo o inadeguato ai bisogni dei clienti, spesso restando al di sotto delle aspettative."
+        },
+        "3": {
+          "en": "Addresses customer needs when apparent, but may not anticipate them effectively.",
+          "it": "Affronta i bisogni dei clienti quando sono evidenti, ma può non anticiparli efficacemente."
+        },
+        "5": {
+          "en": "Proactively anticipates customer needs and guides team to exceed expectations.",
+          "it": "Anticipa in modo proattivo i bisogni dei clienti e guida il team a superare le aspettative."
+        }
       }
     },
     {
-      "indicator": "Ensure that customer problems are solved and their expectations met",
+      "indicator": {
+        "en": "Ensure that customer problems are solved and their expectations met",
+        "it": "Assicurare che i problemi dei clienti siano risolti e le loro aspettative soddisfatte"
+      },
       "scale": {
-        "5": "Drives timely, effective resolution of customer issues, ensuring satisfaction.",
-        "3": "Resolves most customer issues but may require prompting or assistance.",
-        "1": "Neglects or mishandles customer problems, leading to dissatisfaction."
+        "1": {
+          "en": "Neglects or mishandles customer problems, leading to dissatisfaction.",
+          "it": "Trascura o gestisce male i problemi dei clienti, generando insoddisfazione."
+        },
+        "3": {
+          "en": "Resolves most customer issues but may require prompting or assistance.",
+          "it": "Risolve la maggior parte dei problemi dei clienti, ma può richiedere sollecitazioni o assistenza."
+        },
+        "5": {
+          "en": "Drives timely, effective resolution of customer issues, ensuring satisfaction.",
+          "it": "Guida una risoluzione tempestiva ed efficace dei problemi dei clienti, assicurandone la soddisfazione."
+        }
       }
     },
     {
-      "indicator": "Measures own team's performance against customer expectations",
+      "indicator": {
+        "en": "Measures own team's performance against customer expectations",
+        "it": "Misura la performance del proprio team rispetto alle aspettative dei clienti"
+      },
       "scale": {
-        "5": "Regularly uses customer expectations to assess and improve team performance.",
-        "3": "Occasionally aligns performance measures with customer expectations.",
-        "1": "Rarely considers customer expectations in performance evaluations."
+        "1": {
+          "en": "Rarely considers customer expectations in performance evaluations.",
+          "it": "Considera raramente le aspettative dei clienti nelle valutazioni della performance."
+        },
+        "3": {
+          "en": "Occasionally aligns performance measures with customer expectations.",
+          "it": "Allinea occasionalmente le misure di performance alle aspettative dei clienti."
+        },
+        "5": {
+          "en": "Regularly uses customer expectations to assess and improve team performance.",
+          "it": "Utilizza regolarmente le aspettative dei clienti per valutare e migliorare la performance del team."
+        }
       }
     }
   ],
   "SLF": [
     {
-      "indicator": "Set sales targets across own country's functions that balance growth against cost",
+      "indicator": {
+        "en": "Set sales targets across own country's functions that balance growth against cost",
+        "it": "Definire obiettivi di vendita per le funzioni del proprio paese che bilancino la crescita rispetto ai costi"
+      },
       "scale": {
-        "5": "Sets sales targets across own country's functions that balance growth against cost, adjusting the mix as conditions change.",
-        "3": "Sets sales targets across own country's functions based on growth alone, without weighing them against cost.",
-        "1": "Overlooks the cost side when setting sales targets across own country's functions, chasing growth without a check."
+        "1": {
+          "en": "Overlooks the cost side when setting sales targets across own country's functions, chasing growth without a check.",
+          "it": "Trascura il lato dei costi quando definisce obiettivi di vendita per le funzioni del proprio paese, inseguendo la crescita senza alcun controllo."
+        },
+        "3": {
+          "en": "Sets sales targets across own country's functions based on growth alone, without weighing them against cost.",
+          "it": "Definisce obiettivi di vendita per le funzioni del proprio paese basati solo sulla crescita, senza ponderarli rispetto ai costi."
+        },
+        "5": {
+          "en": "Sets sales targets across own country's functions that balance growth against cost, adjusting the mix as conditions change.",
+          "it": "Definisce obiettivi di vendita per le funzioni del proprio paese che bilanciano la crescita rispetto ai costi, adeguando il mix al variare delle condizioni."
+        }
       }
     },
     {
-      "indicator": "Explain own products or services' value in terms that match different customer segments across own country",
+      "indicator": {
+        "en": "Explain own products or services' value in terms that match different customer segments across own country",
+        "it": "Spiegare il valore dei propri prodotti o servizi in termini adatti ai diversi segmenti di clientela del proprio paese"
+      },
       "scale": {
-        "5": "Explains own products or services' value in terms that match different customer segments across own country.",
-        "3": "Explains own products or services' value with the same pitch across every customer segment in own country.",
-        "1": "Struggles to explain own products or services' value across different customer segments, relying on a single generic pitch."
+        "1": {
+          "en": "Struggles to explain own products or services' value across different customer segments, relying on a single generic pitch.",
+          "it": "Fatica a spiegare il valore dei propri prodotti o servizi ai diversi segmenti di clientela, affidandosi a un'unica argomentazione generica."
+        },
+        "3": {
+          "en": "Explains own products or services' value with the same pitch across every customer segment in own country.",
+          "it": "Spiega il valore dei propri prodotti o servizi con la stessa argomentazione per ogni segmento di clientela del proprio paese."
+        },
+        "5": {
+          "en": "Explains own products or services' value in terms that match different customer segments across own country.",
+          "it": "Spiega il valore dei propri prodotti o servizi in termini adatti ai diversi segmenti di clientela del proprio paese."
+        }
       }
     },
     {
-      "indicator": "Negotiate a deal across own country's functions that protects margin",
+      "indicator": {
+        "en": "Negotiate a deal across own country's functions that protects margin",
+        "it": "Negoziare un accordo tra le funzioni del proprio paese che protegga il margine"
+      },
       "scale": {
-        "5": "Negotiates a deal across own country's functions that protects margin while meeting a key account's core need.",
-        "3": "Negotiates a deal across own country's functions that meets a key account's core need but gives up margin.",
-        "1": "Struggles to negotiate a deal across own country's functions that protects margin."
+        "1": {
+          "en": "Struggles to negotiate a deal across own country's functions that protects margin.",
+          "it": "Fatica a negoziare un accordo tra le funzioni del proprio paese che protegga il margine."
+        },
+        "3": {
+          "en": "Negotiates a deal across own country's functions that meets a key account's core need but gives up margin.",
+          "it": "Negozia un accordo tra le funzioni del proprio paese che soddisfa l'esigenza centrale di un key account, ma rinuncia al margine."
+        },
+        "5": {
+          "en": "Negotiates a deal across own country's functions that protects margin while meeting a key account's core need.",
+          "it": "Negozia un accordo tra le funzioni del proprio paese che protegge il margine soddisfacendo al contempo l'esigenza centrale di un key account."
+        }
       }
     }
   ],
   "OPX": [
     {
-      "indicator": "Identify the action steps to accomplish  objectives and the resources needed to implement them",
+      "indicator": {
+        "en": "Identify the action steps to accomplish  objectives and the resources needed to implement them",
+        "it": "Identificare i passi operativi per realizzare gli obiettivi e le risorse necessarie ad attuarli"
+      },
       "scale": {
-        "5": "Breaks down objectives into detailed steps and secures all necessary resources for execution.",
-        "3": "Identifies basic steps and resources but may miss key elements or details.",
-        "1": "Fails to define actionable steps or resource needs, leading to execution delays or failures."
+        "1": {
+          "en": "Fails to define actionable steps or resource needs, leading to execution delays or failures.",
+          "it": "Non definisce passi attuabili né fabbisogni di risorse, generando ritardi o fallimenti nell'esecuzione."
+        },
+        "3": {
+          "en": "Identifies basic steps and resources but may miss key elements or details.",
+          "it": "Identifica i passi e le risorse essenziali, ma può tralasciare elementi o dettagli chiave."
+        },
+        "5": {
+          "en": "Breaks down objectives into detailed steps and secures all necessary resources for execution.",
+          "it": "Scompone gli obiettivi in passi dettagliati e assicura tutte le risorse necessarie all'esecuzione."
+        }
       }
     },
     {
-      "indicator": "Monitor team's performance and take action promptly when people don't achieve their goals",
+      "indicator": {
+        "en": "Monitor team's performance and take action promptly when people don't achieve their goals",
+        "it": "Monitorare la performance del team e intervenire tempestivamente quando le persone non raggiungono i propri obiettivi"
+      },
       "scale": {
-        "5": "Actively tracks team performance and swiftly addresses underperformance.",
-        "3": "Monitors team results and acts when issues are evident, though delays occur.",
-        "1": "Rarely monitors team progress or delays response to underperformance."
+        "1": {
+          "en": "Rarely monitors team progress or delays response to underperformance.",
+          "it": "Monitora raramente i progressi del team o ritarda la risposta alle prestazioni insufficienti."
+        },
+        "3": {
+          "en": "Monitors team results and acts when issues are evident, though delays occur.",
+          "it": "Monitora i risultati del team e interviene quando i problemi sono evidenti, anche se con ritardi."
+        },
+        "5": {
+          "en": "Actively tracks team performance and swiftly addresses underperformance.",
+          "it": "Monitora attivamente la performance del team e affronta rapidamente le prestazioni insufficienti."
+        }
       }
     },
     {
-      "indicator": "Delegate assignments and responsibilities at the lowest appropriate level",
+      "indicator": {
+        "en": "Delegate assignments and responsibilities at the lowest appropriate level",
+        "it": "Delegare incarichi e responsabilità al livello appropriato più basso"
+      },
       "scale": {
-        "5": "Effectively delegates tasks, empowering team members at the right level of responsibility.",
-        "3": "Delegates some responsibilities appropriately, but misses opportunities for empowerment.",
-        "1": "Micromanages or delegates ineffectively, leading to inefficiency and disengagement."
+        "1": {
+          "en": "Micromanages or delegates ineffectively, leading to inefficiency and disengagement.",
+          "it": "Ricorre alla microgestione o delega in modo inefficace, generando inefficienza e disimpegno."
+        },
+        "3": {
+          "en": "Delegates some responsibilities appropriately, but misses opportunities for empowerment.",
+          "it": "Delega alcune responsabilità in modo appropriato, ma perde occasioni di responsabilizzazione."
+        },
+        "5": {
+          "en": "Effectively delegates tasks, empowering team members at the right level of responsibility.",
+          "it": "Delega efficacemente i compiti, responsabilizzando i membri del team al giusto livello di responsabilità."
+        }
       }
     }
   ],
   "TMG": [
     {
-      "indicator": "Translate unit goals into delegated assignments for team leads across own functions",
+      "indicator": {
+        "en": "Translate unit goals into delegated assignments for team leads across own functions",
+        "it": "Tradurre gli obiettivi dell'unità in incarichi delegati ai responsabili dei team delle proprie funzioni"
+      },
       "scale": {
-        "5": "Translates unit goals into delegated assignments precisely, giving each team lead across own functions clear ownership.",
-        "3": "Translates unit goals into assignments for team leads but leaves ownership boundaries unclear.",
-        "1": "Neglects to translate unit goals into assignments, leaving team leads across own functions without direction."
+        "1": {
+          "en": "Neglects to translate unit goals into assignments, leaving team leads across own functions without direction.",
+          "it": "Omette di tradurre gli obiettivi dell'unità in incarichi, lasciando i responsabili dei team delle proprie funzioni senza direzione."
+        },
+        "3": {
+          "en": "Translates unit goals into assignments for team leads but leaves ownership boundaries unclear.",
+          "it": "Traduce gli obiettivi dell'unità in incarichi per i responsabili dei team, ma lascia poco chiari i confini di titolarità."
+        },
+        "5": {
+          "en": "Translates unit goals into delegated assignments precisely, giving each team lead across own functions clear ownership.",
+          "it": "Traduce con precisione gli obiettivi dell'unità in incarichi delegati, attribuendo a ciascun responsabile dei team delle proprie funzioni una chiara titolarità."
+        }
       }
     },
     {
-      "indicator": "Give team leads across own functions candid, specific feedback on results",
+      "indicator": {
+        "en": "Give team leads across own functions candid, specific feedback on results",
+        "it": "Dare ai responsabili dei team delle proprie funzioni un feedback franco e specifico sui risultati"
+      },
       "scale": {
-        "5": "Gives team leads across own functions candid, specific feedback on results as soon as trends emerge.",
-        "3": "Gives team leads across own functions feedback on results but softens it to avoid friction.",
-        "1": "Avoids giving team leads across own functions candid feedback, letting underperformance go unaddressed."
+        "1": {
+          "en": "Avoids giving team leads across own functions candid feedback, letting underperformance go unaddressed.",
+          "it": "Evita di dare ai responsabili dei team delle proprie funzioni un feedback franco, lasciando le prestazioni insufficienti senza intervento."
+        },
+        "3": {
+          "en": "Gives team leads across own functions feedback on results but softens it to avoid friction.",
+          "it": "Dà ai responsabili dei team delle proprie funzioni un feedback sui risultati, ma lo attenua per evitare attriti."
+        },
+        "5": {
+          "en": "Gives team leads across own functions candid, specific feedback on results as soon as trends emerge.",
+          "it": "Dà ai responsabili dei team delle proprie funzioni un feedback franco e specifico sui risultati non appena emergono le tendenze."
+        }
       }
     },
     {
-      "indicator": "Sustain motivation and engagement among team leads across own functions",
+      "indicator": {
+        "en": "Sustain motivation and engagement among team leads across own functions",
+        "it": "Sostenere la motivazione e il coinvolgimento dei responsabili dei team delle proprie funzioni"
+      },
       "scale": {
-        "5": "Sustains strong motivation and engagement among team leads across own functions, even through cross-functional friction.",
-        "3": "Sustains motivation among team leads across own functions but leaves engagement inconsistent.",
-        "1": "Neglects motivation and engagement among team leads across own functions, letting cross-functional friction fester."
+        "1": {
+          "en": "Neglects motivation and engagement among team leads across own functions, letting cross-functional friction fester.",
+          "it": "Trascura la motivazione e il coinvolgimento dei responsabili dei team delle proprie funzioni, lasciando incancrenire gli attriti interfunzionali."
+        },
+        "3": {
+          "en": "Sustains motivation among team leads across own functions but leaves engagement inconsistent.",
+          "it": "Sostiene la motivazione dei responsabili dei team delle proprie funzioni, ma lascia il coinvolgimento discontinuo."
+        },
+        "5": {
+          "en": "Sustains strong motivation and engagement among team leads across own functions, even through cross-functional friction.",
+          "it": "Sostiene una forte motivazione e un forte coinvolgimento dei responsabili dei team delle proprie funzioni, anche attraverso gli attriti interfunzionali."
+        }
       }
     }
   ],
   "INS": [
     {
-      "indicator": "Help direct reports define their development goals",
+      "indicator": {
+        "en": "Help direct reports define their development goals",
+        "it": "Aiutare i propri riporti diretti a definire i loro obiettivi di sviluppo"
+      },
       "scale": {
-        "5": "Actively supports direct reports in setting and pursuing meaningful development goals.",
-        "3": "Encourages development planning, though does not always follow up or provide guidance.",
-        "1": "Neglects employee development or fails to engage in goal-setting."
+        "1": {
+          "en": "Neglects employee development or fails to engage in goal-setting.",
+          "it": "Trascura lo sviluppo dei collaboratori o non si impegna nella definizione degli obiettivi."
+        },
+        "3": {
+          "en": "Encourages development planning, though does not always follow up or provide guidance.",
+          "it": "Incoraggia la pianificazione dello sviluppo, anche se non sempre dà seguito o fornisce indicazioni."
+        },
+        "5": {
+          "en": "Actively supports direct reports in setting and pursuing meaningful development goals.",
+          "it": "Sostiene attivamente i riporti diretti nel definire e perseguire obiettivi di sviluppo significativi."
+        }
       }
     },
     {
-      "indicator": "Promote the sharing of skills and continuous learning in the team",
+      "indicator": {
+        "en": "Promote the sharing of skills and continuous learning in the team",
+        "it": "Promuovere la condivisione delle competenze e l'apprendimento continuo nel team"
+      },
       "scale": {
-        "5": "Fosters a strong culture of learning and knowledge sharing within the team.",
-        "3": "Encourages learning when prompted but doesn’t actively drive knowledge exchange.",
-        "1": "Discourages or ignores team learning opportunities and knowledge sharing."
+        "1": {
+          "en": "Discourages or ignores team learning opportunities and knowledge sharing.",
+          "it": "Scoraggia o ignora le opportunità di apprendimento del team e la condivisione delle conoscenze."
+        },
+        "3": {
+          "en": "Encourages learning when prompted but doesn’t actively drive knowledge exchange.",
+          "it": "Incoraggia l'apprendimento quando sollecitato, ma non promuove attivamente lo scambio di conoscenze."
+        },
+        "5": {
+          "en": "Fosters a strong culture of learning and knowledge sharing within the team.",
+          "it": "Alimenta una solida cultura dell'apprendimento e della condivisione delle conoscenze all'interno del team."
+        }
       }
     },
     {
-      "indicator": "Celebrate and reward significant achievements of others",
+      "indicator": {
+        "en": "Celebrate and reward significant achievements of others",
+        "it": "Celebrare e premiare i risultati significativi degli altri"
+      },
       "scale": {
-        "5": "Consistently recognizes and rewards team accomplishments, boosting morale and motivation.",
-        "3": "Acknowledges achievements occasionally, but without consistency or impact.",
-        "1": "Rarely or never recognizes team success, missing morale-building opportunities."
+        "1": {
+          "en": "Rarely or never recognizes team success, missing morale-building opportunities.",
+          "it": "Riconosce raramente o mai i successi del team, perdendo occasioni di rafforzare il morale."
+        },
+        "3": {
+          "en": "Acknowledges achievements occasionally, but without consistency or impact.",
+          "it": "Riconosce occasionalmente i risultati, ma senza costanza né impatto."
+        },
+        "5": {
+          "en": "Consistently recognizes and rewards team accomplishments, boosting morale and motivation.",
+          "it": "Riconosce e premia con costanza i risultati del team, rafforzando il morale e la motivazione."
+        }
       }
     }
   ],
   "COM": [
     {
-      "indicator": "Explain a plan to own country's functions in terms that connect it to each function's priorities",
+      "indicator": {
+        "en": "Explain a plan to own country's functions in terms that connect it to each function's priorities",
+        "it": "Spiegare un piano alle funzioni del proprio paese in termini che lo colleghino alle priorità di ciascuna funzione"
+      },
       "scale": {
-        "5": "Explains a plan to own country's functions in terms that connect it to each function's priorities.",
-        "3": "Explains a plan to own country's functions by stating the directive without connecting it to each function's priorities.",
-        "1": "Struggles to explain a plan to own country's functions, leaving them with the directive but no reasoning."
+        "1": {
+          "en": "Struggles to explain a plan to own country's functions, leaving them with the directive but no reasoning.",
+          "it": "Fatica a spiegare un piano alle funzioni del proprio paese, lasciando loro la direttiva ma non le motivazioni."
+        },
+        "3": {
+          "en": "Explains a plan to own country's functions by stating the directive without connecting it to each function's priorities.",
+          "it": "Spiega un piano alle funzioni del proprio paese enunciando la direttiva senza collegarla alle priorità di ciascuna funzione."
+        },
+        "5": {
+          "en": "Explains a plan to own country's functions in terms that connect it to each function's priorities.",
+          "it": "Spiega un piano alle funzioni del proprio paese in termini che lo collegano alle priorità di ciascuna funzione."
+        }
       }
     },
     {
-      "indicator": "Listen to concerns raised by own country's team leads fully before responding",
+      "indicator": {
+        "en": "Listen to concerns raised by own country's team leads fully before responding",
+        "it": "Ascoltare fino in fondo le preoccupazioni sollevate dai responsabili dei team del proprio paese prima di rispondere"
+      },
       "scale": {
-        "5": "Listens to concerns raised by own country's team leads fully before responding.",
-        "3": "Listens to concerns raised by own country's team leads partway before responding, missing points raised later.",
-        "1": "Resists letting own country's team leads finish raising a concern, responding to only part of what was said."
+        "1": {
+          "en": "Resists letting own country's team leads finish raising a concern, responding to only part of what was said.",
+          "it": "Fa resistenza a lasciare che i responsabili dei team del proprio paese finiscano di esporre una preoccupazione, rispondendo solo a una parte di quanto detto."
+        },
+        "3": {
+          "en": "Listens to concerns raised by own country's team leads partway before responding, missing points raised later.",
+          "it": "Ascolta solo in parte le preoccupazioni sollevate dai responsabili dei team del proprio paese prima di rispondere, perdendo i punti sollevati successivamente."
+        },
+        "5": {
+          "en": "Listens to concerns raised by own country's team leads fully before responding.",
+          "it": "Ascolta fino in fondo le preoccupazioni sollevate dai responsabili dei team del proprio paese prima di rispondere."
+        }
       }
     },
     {
-      "indicator": "Keep own country's functions engaged through a strategy update rather than losing their attention",
+      "indicator": {
+        "en": "Keep own country's functions engaged through a strategy update rather than losing their attention",
+        "it": "Mantenere coinvolte le funzioni del proprio paese durante un aggiornamento strategico anziché perderne l'attenzione"
+      },
       "scale": {
-        "5": "Keeps own country's functions engaged through a strategy update by tying it to what matters to each.",
-        "3": "Delivers a strategy update to own country's functions but loses their attention partway through.",
-        "1": "Struggles to keep own country's functions engaged through a strategy update, losing their attention from the start."
+        "1": {
+          "en": "Struggles to keep own country's functions engaged through a strategy update, losing their attention from the start.",
+          "it": "Fatica a mantenere coinvolte le funzioni del proprio paese durante un aggiornamento strategico, perdendone l'attenzione fin dall'inizio."
+        },
+        "3": {
+          "en": "Delivers a strategy update to own country's functions but loses their attention partway through.",
+          "it": "Presenta un aggiornamento strategico alle funzioni del proprio paese, ma ne perde l'attenzione a metà strada."
+        },
+        "5": {
+          "en": "Keeps own country's functions engaged through a strategy update by tying it to what matters to each.",
+          "it": "Mantiene coinvolte le funzioni del proprio paese durante un aggiornamento strategico collegandolo a ciò che conta per ciascuna."
+        }
       }
     }
   ],
   "COL": [
     {
-      "indicator": "Bring team leads from own two functions into a joint plan before it affects their work",
+      "indicator": {
+        "en": "Bring team leads from own two functions into a joint plan before it affects their work",
+        "it": "Coinvolgere i responsabili dei team delle proprie due funzioni in un piano congiunto prima che incida sul loro lavoro"
+      },
       "scale": {
-        "5": "Brings team leads from own functions into a joint plan before it affects their work.",
-        "3": "Brings team leads from own functions into a joint plan after it is set.",
-        "1": "Neglects to bring team leads from own functions into a joint plan before it affects their work."
+        "1": {
+          "en": "Neglects to bring team leads from own functions into a joint plan before it affects their work.",
+          "it": "Omette di coinvolgere i responsabili dei team delle proprie funzioni in un piano congiunto prima che incida sul loro lavoro."
+        },
+        "3": {
+          "en": "Brings team leads from own functions into a joint plan after it is set.",
+          "it": "Coinvolge i responsabili dei team delle proprie funzioni in un piano congiunto dopo che è stato definito."
+        },
+        "5": {
+          "en": "Brings team leads from own functions into a joint plan before it affects their work.",
+          "it": "Coinvolge i responsabili dei team delle proprie funzioni in un piano congiunto prima che incida sul loro lavoro."
+        }
       }
     },
     {
-      "indicator": "Split shared initiatives evenly across own functions rather than let one function carry them",
+      "indicator": {
+        "en": "Split shared initiatives evenly across own functions rather than let one function carry them",
+        "it": "Ripartire equamente le iniziative condivise tra le proprie funzioni anziché lasciare che una sola funzione le sostenga"
+      },
       "scale": {
-        "5": "Splits shared initiatives evenly across own functions, watching for early signs one function is carrying too much.",
-        "3": "Splits shared initiatives evenly across own functions at the outset but leaves them uneven once priorities shift.",
-        "1": "Avoids redistributing shared initiatives across own functions, letting one function carry them."
+        "1": {
+          "en": "Avoids redistributing shared initiatives across own functions, letting one function carry them.",
+          "it": "Evita di ridistribuire le iniziative condivise tra le proprie funzioni, lasciando che una sola funzione le sostenga."
+        },
+        "3": {
+          "en": "Splits shared initiatives evenly across own functions at the outset but leaves them uneven once priorities shift.",
+          "it": "Ripartisce equamente le iniziative condivise tra le proprie funzioni all'inizio, ma le lascia sbilanciate quando le priorità cambiano."
+        },
+        "5": {
+          "en": "Splits shared initiatives evenly across own functions, watching for early signs one function is carrying too much.",
+          "it": "Ripartisce equamente le iniziative condivise tra le proprie funzioni, prestando attenzione ai primi segnali che una funzione ne stia sostenendo troppe."
+        }
       }
     },
     {
-      "indicator": "Work through a disagreement between own functions' team leads rather than decide for them",
+      "indicator": {
+        "en": "Work through a disagreement between own functions' team leads rather than decide for them",
+        "it": "Affrontare fino in fondo un disaccordo tra i responsabili dei team delle proprie funzioni anziché decidere al posto loro"
+      },
       "scale": {
-        "5": "Works through a disagreement between own functions' team leads, reaching a shared resolution both functions can act on.",
-        "3": "Works through a disagreement between own functions' team leads on operational matters but decides on larger ones.",
-        "1": "Resists working through a disagreement between own functions' team leads, deciding for them instead."
+        "1": {
+          "en": "Resists working through a disagreement between own functions' team leads, deciding for them instead.",
+          "it": "Fa resistenza ad affrontare fino in fondo un disaccordo tra i responsabili dei team delle proprie funzioni, decidendo invece al posto loro."
+        },
+        "3": {
+          "en": "Works through a disagreement between own functions' team leads on operational matters but decides on larger ones.",
+          "it": "Affronta fino in fondo un disaccordo tra i responsabili dei team delle proprie funzioni sulle questioni operative, ma decide su quelle più rilevanti."
+        },
+        "5": {
+          "en": "Works through a disagreement between own functions' team leads, reaching a shared resolution both functions can act on.",
+          "it": "Affronta fino in fondo un disaccordo tra i responsabili dei team delle proprie funzioni, raggiungendo una soluzione condivisa su cui entrambe le funzioni possono agire."
+        }
       }
     }
   ],
   "INF": [
     {
-      "indicator": "Express own positions with strong rationality, confidence and enthusiasm",
+      "indicator": {
+        "en": "Express own positions with strong rationality, confidence and enthusiasm",
+        "it": "Esprimere le proprie posizioni con forte razionalità, sicurezza ed entusiasmo"
+      },
       "scale": {
-        "5": "Communicates positions confidently with clear logic and positive energy that inspires others.",
-        "3": "Generally explains positions well but may lack consistency in clarity or conviction.",
-        "1": "Struggles to express viewpoints convincingly, often appearing uncertain or unclear."
+        "1": {
+          "en": "Struggles to express viewpoints convincingly, often appearing uncertain or unclear.",
+          "it": "Fatica a esprimere i punti di vista in modo convincente, apparendo spesso incerto o poco chiaro."
+        },
+        "3": {
+          "en": "Generally explains positions well but may lack consistency in clarity or conviction.",
+          "it": "In generale spiega bene le posizioni, ma può mancare di costanza nella chiarezza o nella convinzione."
+        },
+        "5": {
+          "en": "Communicates positions confidently with clear logic and positive energy that inspires others.",
+          "it": "Comunica le posizioni con sicurezza, con una logica chiara e un'energia positiva che ispira gli altri."
+        }
       }
     },
     {
-      "indicator": "Identify the motives and objectives of the interlocutors and use them to argue own positions",
+      "indicator": {
+        "en": "Identify the motives and objectives of the interlocutors and use them to argue own positions",
+        "it": "Identificare le motivazioni e gli obiettivi degli interlocutori e utilizzarli per argomentare le proprie posizioni"
+      },
       "scale": {
-        "5": "Accurately understands others' motives and uses them to frame persuasive arguments.",
-        "3": "Sometimes identifies motives but struggles to use them effectively in argumentation.",
-        "1": "Fails to consider others' objectives, resulting in ineffective or disconnected arguments."
+        "1": {
+          "en": "Fails to consider others' objectives, resulting in ineffective or disconnected arguments.",
+          "it": "Non considera gli obiettivi altrui, con il risultato di argomentazioni inefficaci o scollegate."
+        },
+        "3": {
+          "en": "Sometimes identifies motives but struggles to use them effectively in argumentation.",
+          "it": "Talvolta identifica le motivazioni, ma fatica a utilizzarle efficacemente nell'argomentazione."
+        },
+        "5": {
+          "en": "Accurately understands others' motives and uses them to frame persuasive arguments.",
+          "it": "Comprende accuratamente le motivazioni altrui e le utilizza per costruire argomentazioni persuasive."
+        }
       }
     },
     {
-      "indicator": "Express disagreement with tact and sensitivity, being clear without hurting the interlocutors",
+      "indicator": {
+        "en": "Express disagreement with tact and sensitivity, being clear without hurting the interlocutors",
+        "it": "Esprimere il disaccordo con tatto e sensibilità, essendo chiaro senza ferire gli interlocutori"
+      },
       "scale": {
-        "5": "Effectively expresses dissent respectfully and constructively, preserving relationships.",
-        "3": "Usually expresses disagreement acceptably, but may occasionally cause discomfort.",
-        "1": "Expresses disagreement bluntly or insensitively, damaging rapport or trust."
+        "1": {
+          "en": "Expresses disagreement bluntly or insensitively, damaging rapport or trust.",
+          "it": "Esprime il disaccordo in modo brusco o insensibile, danneggiando il rapporto o la fiducia."
+        },
+        "3": {
+          "en": "Usually expresses disagreement acceptably, but may occasionally cause discomfort.",
+          "it": "Di norma esprime il disaccordo in modo accettabile, ma occasionalmente può causare disagio."
+        },
+        "5": {
+          "en": "Effectively expresses dissent respectfully and constructively, preserving relationships.",
+          "it": "Esprime efficacemente il dissenso in modo rispettoso e costruttivo, preservando le relazioni."
+        }
       }
     }
   ],
   "NET": [
     {
-      "indicator": "Build a working relationship with peers across own country's functions before own unit needs their help",
+      "indicator": {
+        "en": "Build a working relationship with peers across own country's functions before own unit needs their help",
+        "it": "Costruire un rapporto di lavoro con i pari delle funzioni del proprio paese prima che la propria unità abbia bisogno del loro aiuto"
+      },
       "scale": {
-        "5": "Builds a working relationship with peers across own country's functions before own unit needs their help.",
-        "3": "Builds a working relationship with peers across own country's functions only once own unit already needs their help.",
-        "1": "Neglects to build a working relationship with peers across own country's functions."
+        "1": {
+          "en": "Neglects to build a working relationship with peers across own country's functions.",
+          "it": "Omette di costruire un rapporto di lavoro con i pari delle funzioni del proprio paese."
+        },
+        "3": {
+          "en": "Builds a working relationship with peers across own country's functions only once own unit already needs their help.",
+          "it": "Costruisce un rapporto di lavoro con i pari delle funzioni del proprio paese solo quando la propria unità ha già bisogno del loro aiuto."
+        },
+        "5": {
+          "en": "Builds a working relationship with peers across own country's functions before own unit needs their help.",
+          "it": "Costruisce un rapporto di lavoro con i pari delle funzioni del proprio paese prima che la propria unità abbia bisogno del loro aiuto."
+        }
       }
     },
     {
-      "indicator": "Adjust own communication style to fit stakeholders across own country's functions",
+      "indicator": {
+        "en": "Adjust own communication style to fit stakeholders across own country's functions",
+        "it": "Adattare il proprio stile comunicativo agli stakeholder delle funzioni del proprio paese"
+      },
       "scale": {
-        "5": "Adjusts own communication style to fit stakeholders across own country's functions, building rapport across very different audiences.",
-        "3": "Adjusts own communication style for peers within own function but uses the same approach with stakeholders outside it.",
-        "1": "Resists adjusting own communication style across own country's functions, using the same approach with every stakeholder."
+        "1": {
+          "en": "Resists adjusting own communication style across own country's functions, using the same approach with every stakeholder.",
+          "it": "Fa resistenza ad adattare il proprio stile comunicativo alle funzioni del proprio paese, usando lo stesso approccio con ogni stakeholder."
+        },
+        "3": {
+          "en": "Adjusts own communication style for peers within own function but uses the same approach with stakeholders outside it.",
+          "it": "Adatta il proprio stile comunicativo con i pari della propria funzione, ma usa lo stesso approccio con gli stakeholder esterni a essa."
+        },
+        "5": {
+          "en": "Adjusts own communication style to fit stakeholders across own country's functions, building rapport across very different audiences.",
+          "it": "Adatta il proprio stile comunicativo agli stakeholder delle funzioni del proprio paese, costruendo sintonia con interlocutori molto diversi tra loro."
+        }
       }
     },
     {
-      "indicator": "Use an existing cross-functional relationship to unblock own unit's plan",
+      "indicator": {
+        "en": "Use an existing cross-functional relationship to unblock own unit's plan",
+        "it": "Utilizzare un rapporto interfunzionale esistente per sbloccare il piano della propria unità"
+      },
       "scale": {
-        "5": "Uses an existing cross-functional relationship to unblock own unit's plan, resolving it faster than a formal request would.",
-        "3": "Uses an existing cross-functional relationship to unblock own unit's plan only after a formal request stalls.",
-        "1": "Overlooks existing cross-functional relationships, routing every request for own unit through formal channels alone."
+        "1": {
+          "en": "Overlooks existing cross-functional relationships, routing every request for own unit through formal channels alone.",
+          "it": "Trascura i rapporti interfunzionali esistenti, convogliando ogni richiesta della propria unità esclusivamente attraverso i canali formali."
+        },
+        "3": {
+          "en": "Uses an existing cross-functional relationship to unblock own unit's plan only after a formal request stalls.",
+          "it": "Utilizza un rapporto interfunzionale esistente per sbloccare il piano della propria unità solo dopo che una richiesta formale si è arenata."
+        },
+        "5": {
+          "en": "Uses an existing cross-functional relationship to unblock own unit's plan, resolving it faster than a formal request would.",
+          "it": "Utilizza un rapporto interfunzionale esistente per sbloccare il piano della propria unità, risolvendo la situazione più rapidamente di quanto farebbe una richiesta formale."
+        }
       }
     }
   ],
   "RES": [
     {
-      "indicator": "Find creative ways to adapt quickly and effectively to unexpected or unclear situations",
+      "indicator": {
+        "en": "Find creative ways to adapt quickly and effectively to unexpected or unclear situations",
+        "it": "Trovare modi creativi per adattarsi rapidamente ed efficacemente a situazioni impreviste o poco chiare"
+      },
       "scale": {
-        "5": "Demonstrates exceptional creativity and agility in ambiguous or changing environments.",
-        "3": "Manages change adequately with some creative thinking when needed.",
-        "1": "Struggles to adapt to change, relying on rigid approaches or becoming overwhelmed."
+        "1": {
+          "en": "Struggles to adapt to change, relying on rigid approaches or becoming overwhelmed.",
+          "it": "Fatica ad adattarsi al cambiamento, affidandosi ad approcci rigidi o lasciandosi sopraffare."
+        },
+        "3": {
+          "en": "Manages change adequately with some creative thinking when needed.",
+          "it": "Gestisce il cambiamento in modo adeguato, con un certo pensiero creativo quando necessario."
+        },
+        "5": {
+          "en": "Demonstrates exceptional creativity and agility in ambiguous or changing environments.",
+          "it": "Dimostra creatività e agilità eccezionali in contesti ambigui o in evoluzione."
+        }
       }
     },
     {
-      "indicator": "Demonstrate strength and confidence in difficult situations, maintaining excellent emotional control",
+      "indicator": {
+        "en": "Demonstrate strength and confidence in difficult situations, maintaining excellent emotional control",
+        "it": "Dimostrare forza e sicurezza nelle situazioni difficili, mantenendo un eccellente controllo emotivo"
+      },
       "scale": {
-        "5": "Remains composed and confident under pressure, providing stability to others.",
-        "3": "Maintains basic emotional control but may show signs of stress or uncertainty.",
-        "1": "Loses composure in tough situations, affecting decisions and team confidence."
+        "1": {
+          "en": "Loses composure in tough situations, affecting decisions and team confidence.",
+          "it": "Perde la compostezza nelle situazioni difficili, compromettendo le decisioni e la fiducia del team."
+        },
+        "3": {
+          "en": "Maintains basic emotional control but may show signs of stress or uncertainty.",
+          "it": "Mantiene un controllo emotivo di base, ma può mostrare segni di stress o incertezza."
+        },
+        "5": {
+          "en": "Remains composed and confident under pressure, providing stability to others.",
+          "it": "Resta composto e sicuro sotto pressione, offrendo stabilità agli altri."
+        }
       }
     },
     {
-      "indicator": "Constructively handle mistakes, accepting responsibility and learning from experience",
+      "indicator": {
+        "en": "Constructively handle mistakes, accepting responsibility and learning from experience",
+        "it": "Gestire costruttivamente gli errori, assumendosi la responsabilità e imparando dall'esperienza"
+      },
       "scale": {
-        "5": "Owns mistakes fully, learns quickly, and models accountability for others.",
-        "3": "Acknowledges errors and makes some effort to improve based on them.",
-        "1": "Denies or deflects responsibility for mistakes, missing learning opportunities."
+        "1": {
+          "en": "Denies or deflects responsibility for mistakes, missing learning opportunities.",
+          "it": "Nega o scarica la responsabilità degli errori, perdendo opportunità di apprendimento."
+        },
+        "3": {
+          "en": "Acknowledges errors and makes some effort to improve based on them.",
+          "it": "Riconosce gli errori e compie qualche sforzo per migliorare sulla base di essi."
+        },
+        "5": {
+          "en": "Owns mistakes fully, learns quickly, and models accountability for others.",
+          "it": "Si assume pienamente i propri errori, impara rapidamente e rappresenta un modello di responsabilità per gli altri."
+        }
       }
     }
   ],
   "LRN": [
     {
-      "indicator": "Demonstrate awareness of their strengths and weaknesses",
+      "indicator": {
+        "en": "Demonstrate awareness of their strengths and weaknesses",
+        "it": "Dimostrare consapevolezza dei propri punti di forza e di debolezza"
+      },
       "scale": {
-        "5": "Shows deep self-awareness, leveraging strengths and actively addressing weaknesses.",
-        "3": "Has some awareness but doesn’t consistently act on self-insight.",
-        "1": "Lacks insight into own strengths and weaknesses, leading to repeated issues."
+        "1": {
+          "en": "Lacks insight into own strengths and weaknesses, leading to repeated issues.",
+          "it": "Manca di consapevolezza dei propri punti di forza e di debolezza, con il ripetersi degli stessi problemi."
+        },
+        "3": {
+          "en": "Has some awareness but doesn’t consistently act on self-insight.",
+          "it": "Ha una certa consapevolezza, ma non agisce con costanza sulla base della propria autoanalisi."
+        },
+        "5": {
+          "en": "Shows deep self-awareness, leveraging strengths and actively addressing weaknesses.",
+          "it": "Mostra una profonda autoconsapevolezza, facendo leva sui punti di forza e affrontando attivamente quelli di debolezza."
+        }
       }
     },
     {
-      "indicator": "Know the expectations and success criteria of the organization",
+      "indicator": {
+        "en": "Know the expectations and success criteria of the organization",
+        "it": "Conoscere le aspettative e i criteri di successo dell'organizzazione"
+      },
       "scale": {
-        "5": "Fully understands and aligns actions with the organization's strategic expectations.",
-        "3": "Generally aware of success criteria but may not always act in alignment.",
-        "1": "Unclear on organizational goals, leading to misaligned or ineffective work."
+        "1": {
+          "en": "Unclear on organizational goals, leading to misaligned or ineffective work.",
+          "it": "Non ha chiari gli obiettivi organizzativi, con un lavoro disallineato o inefficace."
+        },
+        "3": {
+          "en": "Generally aware of success criteria but may not always act in alignment.",
+          "it": "In generale è consapevole dei criteri di successo, ma non sempre agisce in modo allineato."
+        },
+        "5": {
+          "en": "Fully understands and aligns actions with the organization's strategic expectations.",
+          "it": "Comprende pienamente le aspettative strategiche dell'organizzazione e vi allinea le proprie azioni."
+        }
       }
     },
     {
-      "indicator": "Gladly accept challenging assignments and new career opportunities",
+      "indicator": {
+        "en": "Gladly accept challenging assignments and new career opportunities",
+        "it": "Accettare volentieri incarichi sfidanti e nuove opportunità di carriera"
+      },
       "scale": {
-        "5": "Eagerly pursues and thrives on new challenges and growth opportunities.",
-        "3": "Accepts challenges when required but shows some reluctance or hesitation.",
-        "1": "Avoids challenging tasks or career growth opportunities, preferring comfort zones."
+        "1": {
+          "en": "Avoids challenging tasks or career growth opportunities, preferring comfort zones.",
+          "it": "Evita i compiti sfidanti o le opportunità di crescita professionale, preferendo la propria zona di comfort."
+        },
+        "3": {
+          "en": "Accepts challenges when required but shows some reluctance or hesitation.",
+          "it": "Accetta le sfide quando richiesto, ma mostra una certa riluttanza o esitazione."
+        },
+        "5": {
+          "en": "Eagerly pursues and thrives on new challenges and growth opportunities.",
+          "it": "Persegue con entusiasmo nuove sfide e opportunità di crescita, traendone slancio."
+        }
       }
     }
   ],
   "ITG": [
     {
-      "indicator": "Follow through on a commitment made across own country's functions even when it becomes costly",
+      "indicator": {
+        "en": "Follow through on a commitment made across own country's functions even when it becomes costly",
+        "it": "Dare seguito a un impegno assunto verso le funzioni del proprio paese anche quando diventa oneroso"
+      },
       "scale": {
-        "5": "Follows through on a commitment made across own country's functions even when it becomes costly.",
-        "3": "Follows through on a commitment made across own country's functions when low-cost but lets it slide otherwise.",
-        "1": "Neglects a commitment made across own country's functions once it becomes costly."
+        "1": {
+          "en": "Neglects a commitment made across own country's functions once it becomes costly.",
+          "it": "Trascura un impegno assunto verso le funzioni del proprio paese quando diventa oneroso."
+        },
+        "3": {
+          "en": "Follows through on a commitment made across own country's functions when low-cost but lets it slide otherwise.",
+          "it": "Dà seguito a un impegno assunto verso le funzioni del proprio paese quando è poco oneroso, ma altrimenti lo lascia scivolare."
+        },
+        "5": {
+          "en": "Follows through on a commitment made across own country's functions even when it becomes costly.",
+          "it": "Dà seguito a un impegno assunto verso le funzioni del proprio paese anche quando diventa oneroso."
+        }
       }
     },
     {
-      "indicator": "Admit a mistake to own country's functions rather than let another function take the blame",
+      "indicator": {
+        "en": "Admit a mistake to own country's functions rather than let another function take the blame",
+        "it": "Ammettere un errore verso le funzioni del proprio paese anziché lasciare che un'altra funzione se ne prenda la colpa"
+      },
       "scale": {
-        "5": "Admits a mistake to own country's functions rather than let another function take the blame.",
-        "3": "Admits a mistake to own country's functions once it is already obvious but stays quiet otherwise.",
-        "1": "Avoids admitting a mistake to own country's functions, letting another function take the blame."
+        "1": {
+          "en": "Avoids admitting a mistake to own country's functions, letting another function take the blame.",
+          "it": "Evita di ammettere un errore verso le funzioni del proprio paese, lasciando che un'altra funzione se ne prenda la colpa."
+        },
+        "3": {
+          "en": "Admits a mistake to own country's functions once it is already obvious but stays quiet otherwise.",
+          "it": "Ammette un errore verso le funzioni del proprio paese quando è già evidente, ma altrimenti tace."
+        },
+        "5": {
+          "en": "Admits a mistake to own country's functions rather than let another function take the blame.",
+          "it": "Ammette un errore verso le funzioni del proprio paese anziché lasciare che un'altra funzione se ne prenda la colpa."
+        }
       }
     },
     {
-      "indicator": "Apply own country's standards the same way across every function regardless of results pressure",
+      "indicator": {
+        "en": "Apply own country's standards the same way across every function regardless of results pressure",
+        "it": "Applicare gli standard del proprio paese allo stesso modo in ogni funzione indipendentemente dalla pressione sui risultati"
+      },
       "scale": {
-        "5": "Applies own country's standards the same way across every function regardless of results pressure.",
-        "3": "Applies own country's standards when results are on track but relaxes them under results pressure.",
-        "1": "Resists applying own country's standards evenly, relaxing them under results pressure."
+        "1": {
+          "en": "Resists applying own country's standards evenly, relaxing them under results pressure.",
+          "it": "Fa resistenza ad applicare in modo uniforme gli standard del proprio paese, allentandoli sotto la pressione sui risultati."
+        },
+        "3": {
+          "en": "Applies own country's standards when results are on track but relaxes them under results pressure.",
+          "it": "Applica gli standard del proprio paese quando i risultati sono in linea, ma li allenta sotto la pressione sui risultati."
+        },
+        "5": {
+          "en": "Applies own country's standards the same way across every function regardless of results pressure.",
+          "it": "Applica gli standard del proprio paese allo stesso modo in ogni funzione indipendentemente dalla pressione sui risultati."
+        }
       }
     }
   ],
   "INC": [
     {
-      "indicator": "Give team leads from different backgrounds across own country equal airtime in a discussion",
+      "indicator": {
+        "en": "Give team leads from different backgrounds across own country equal airtime in a discussion",
+        "it": "Dare ai responsabili dei team di provenienze diverse del proprio paese pari spazio di parola in una discussione"
+      },
       "scale": {
-        "5": "Gives team leads from different backgrounds across own country equal airtime in a discussion.",
-        "3": "Gives team leads from different backgrounds airtime when they speak up but does not draw out quieter ones.",
-        "1": "Overlooks team leads from different backgrounds across own country, letting the same few voices dominate every discussion."
+        "1": {
+          "en": "Overlooks team leads from different backgrounds across own country, letting the same few voices dominate every discussion.",
+          "it": "Trascura i responsabili dei team di provenienze diverse del proprio paese, lasciando che le stesse poche voci dominino ogni discussione."
+        },
+        "3": {
+          "en": "Gives team leads from different backgrounds airtime when they speak up but does not draw out quieter ones.",
+          "it": "Dà ai responsabili dei team di provenienze diverse spazio di parola quando intervengono, ma non sollecita i più silenziosi."
+        },
+        "5": {
+          "en": "Gives team leads from different backgrounds across own country equal airtime in a discussion.",
+          "it": "Dà ai responsabili dei team di provenienze diverse del proprio paese pari spazio di parola in una discussione."
+        }
       }
     },
     {
-      "indicator": "Adjust own country's functions' routines to accommodate a specific need raised by a team lead",
+      "indicator": {
+        "en": "Adjust own country's functions' routines to accommodate a specific need raised by a team lead",
+        "it": "Adattare le routine delle funzioni del proprio paese per accogliere un'esigenza specifica sollevata da un responsabile di team"
+      },
       "scale": {
-        "5": "Adjusts own country's functions' routines to accommodate a specific need raised by a team lead.",
-        "3": "Accommodates a specific need raised by a team lead once but leaves own country's routines unchanged.",
-        "1": "Resists adjusting own country's functions' routines for a team lead's specific need."
+        "1": {
+          "en": "Resists adjusting own country's functions' routines for a team lead's specific need.",
+          "it": "Fa resistenza ad adattare le routine delle funzioni del proprio paese all'esigenza specifica di un responsabile di team."
+        },
+        "3": {
+          "en": "Accommodates a specific need raised by a team lead once but leaves own country's routines unchanged.",
+          "it": "Accoglie una volta un'esigenza specifica sollevata da un responsabile di team, ma lascia invariate le routine del proprio paese."
+        },
+        "5": {
+          "en": "Adjusts own country's functions' routines to accommodate a specific need raised by a team lead.",
+          "it": "Adatta le routine delle funzioni del proprio paese per accogliere un'esigenza specifica sollevata da un responsabile di team."
+        }
       }
     },
     {
-      "indicator": "Draw on a team lead's perspective when it conflicts with the majority view across own functions",
+      "indicator": {
+        "en": "Draw on a team lead's perspective when it conflicts with the majority view across own functions",
+        "it": "Attingere alla prospettiva di un responsabile di team quando è in contrasto con l'opinione della maggioranza nelle proprie funzioni"
+      },
       "scale": {
-        "5": "Draws on a team lead's perspective when it conflicts with the majority view across own functions.",
-        "3": "Draws on a team lead's perspective when it agrees with the majority view but sets it aside otherwise.",
-        "1": "Overlooks a team lead's perspective whenever it conflicts with the majority view across own functions."
+        "1": {
+          "en": "Overlooks a team lead's perspective whenever it conflicts with the majority view across own functions.",
+          "it": "Trascura la prospettiva di un responsabile di team ogni volta che è in contrasto con l'opinione della maggioranza nelle proprie funzioni."
+        },
+        "3": {
+          "en": "Draws on a team lead's perspective when it agrees with the majority view but sets it aside otherwise.",
+          "it": "Attinge alla prospettiva di un responsabile di team quando concorda con l'opinione della maggioranza, ma altrimenti la mette da parte."
+        },
+        "5": {
+          "en": "Draws on a team lead's perspective when it conflicts with the majority view across own functions.",
+          "it": "Attinge alla prospettiva di un responsabile di team quando è in contrasto con l'opinione della maggioranza nelle proprie funzioni."
+        }
       }
     }
   ]

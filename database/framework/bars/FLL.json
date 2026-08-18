@@ -1,469 +1,1117 @@
 {
   "PRS": [
     {
-      "indicator": "Trace recurring problems in own area to their underlying cause, not just the symptom",
+      "indicator": {
+        "en": "Trace recurring problems in own area to their underlying cause, not just the symptom",
+        "it": "Ricondurre i problemi ricorrenti della propria area alla loro causa profonda, non solo al sintomo"
+      },
       "scale": {
-        "5": "Traces recurring problems in own area to their root cause, preventing the same issue from resurfacing.",
-        "3": "Identifies the symptom of a recurring problem in own area without tracing it to the root cause.",
-        "1": "Overlooks recurring problems in own area, letting the same issue resurface unaddressed."
+        "1": {
+          "en": "Overlooks recurring problems in own area, letting the same issue resurface unaddressed.",
+          "it": "Trascura i problemi ricorrenti della propria area, lasciando che lo stesso problema si ripresenti senza essere affrontato."
+        },
+        "3": {
+          "en": "Identifies the symptom of a recurring problem in own area without tracing it to the root cause.",
+          "it": "Identifica il sintomo di un problema ricorrente della propria area senza ricondurlo alla causa radice."
+        },
+        "5": {
+          "en": "Traces recurring problems in own area to their root cause, preventing the same issue from resurfacing.",
+          "it": "Riconduce i problemi ricorrenti della propria area alla loro causa radice, impedendo che lo stesso problema si ripresenti."
+        }
       }
     },
     {
-      "indicator": "Pull together input from own team before settling on a solution",
+      "indicator": {
+        "en": "Pull together input from own team before settling on a solution",
+        "it": "Raccogliere i contributi del proprio team prima di definire una soluzione"
+      },
       "scale": {
-        "5": "Pulls together input from own team and outside sources before settling on a solution for own area.",
-        "3": "Pulls together input from own team before deciding for own area, without checking outside sources.",
-        "1": "Fails to pull together input before deciding for own area, leaving gaps in the solution."
+        "1": {
+          "en": "Fails to pull together input before deciding for own area, leaving gaps in the solution.",
+          "it": "Non raccoglie i contributi prima di decidere per la propria area, lasciando lacune nella soluzione."
+        },
+        "3": {
+          "en": "Pulls together input from own team before deciding for own area, without checking outside sources.",
+          "it": "Raccoglie i contributi del proprio team prima di decidere per la propria area, senza consultare fonti esterne."
+        },
+        "5": {
+          "en": "Pulls together input from own team and outside sources before settling on a solution for own area.",
+          "it": "Raccoglie i contributi del proprio team e di fonti esterne prima di definire una soluzione per la propria area."
+        }
       }
     },
     {
-      "indicator": "Spot flaws in a plan before committing own area's resources",
+      "indicator": {
+        "en": "Spot flaws in a plan before committing own area's resources",
+        "it": "Individuare i difetti di un piano prima di impegnare le risorse della propria area"
+      },
       "scale": {
-        "5": "Spots flaws in a plan before committing own area's resources, avoiding costly rework later.",
-        "3": "Reviews own plans for flaws before acting but does not review plans handed down from above.",
-        "1": "Overlooks flaws in a plan before committing own area's resources, causing avoidable rework."
+        "1": {
+          "en": "Overlooks flaws in a plan before committing own area's resources, causing avoidable rework.",
+          "it": "Trascura i difetti di un piano prima di impegnare le risorse della propria area, causando rilavorazioni evitabili."
+        },
+        "3": {
+          "en": "Reviews own plans for flaws before acting but does not review plans handed down from above.",
+          "it": "Esamina i propri piani alla ricerca di difetti prima di agire, ma non esamina i piani ricevuti dall'alto."
+        },
+        "5": {
+          "en": "Spots flaws in a plan before committing own area's resources, avoiding costly rework later.",
+          "it": "Individua i difetti di un piano prima di impegnare le risorse della propria area, evitando costose rilavorazioni successive."
+        }
       }
     }
   ],
   "STG": [
     {
-      "indicator": "Have a plan to achieve own team's goals",
+      "indicator": {
+        "en": "Have a plan to achieve own team's goals",
+        "it": "Avere un piano per raggiungere gli obiettivi del proprio team"
+      },
       "scale": {
-        "5": "Consistently develops and communicates clear, actionable plans aligned with team and organizational goals, ensuring team focus and accountability.",
-        "3": "Creates basic plans to achieve team goals but may lack clarity or follow-through.",
-        "1": "Does not create plans or goals for the team, leading to confusion or misalignment."
+        "1": {
+          "en": "Does not create plans or goals for the team, leading to confusion or misalignment.",
+          "it": "Non crea piani o obiettivi per il team, generando confusione o disallineamento."
+        },
+        "3": {
+          "en": "Creates basic plans to achieve team goals but may lack clarity or follow-through.",
+          "it": "Crea piani essenziali per raggiungere gli obiettivi del team, ma può mancare di chiarezza o di costanza nell'esecuzione."
+        },
+        "5": {
+          "en": "Consistently develops and communicates clear, actionable plans aligned with team and organizational goals, ensuring team focus and accountability.",
+          "it": "Sviluppa e comunica costantemente piani chiari e attuabili, allineati agli obiettivi del team e dell'organizzazione, garantendo focalizzazione e responsabilità del team."
+        }
       }
     },
     {
-      "indicator": "Demonstrate an understanding of the organization's mission and strategies",
+      "indicator": {
+        "en": "Demonstrate an understanding of the organization's mission and strategies",
+        "it": "Dimostrare di comprendere la missione e le strategie dell'organizzazione"
+      },
       "scale": {
-        "5": "Clearly articulates how team objectives align with the organization’s mission and incorporates strategic priorities in decisions.",
-        "3": "Understands the mission and strategies but inconsistently applies them in daily work.",
-        "1": "Lacks awareness of or disregards the organization’s mission and strategies."
+        "1": {
+          "en": "Lacks awareness of or disregards the organization’s mission and strategies.",
+          "it": "Non ha consapevolezza della missione e delle strategie dell'organizzazione o le ignora."
+        },
+        "3": {
+          "en": "Understands the mission and strategies but inconsistently applies them in daily work.",
+          "it": "Comprende la missione e le strategie, ma le applica in modo discontinuo nel lavoro quotidiano."
+        },
+        "5": {
+          "en": "Clearly articulates how team objectives align with the organization’s mission and incorporates strategic priorities in decisions.",
+          "it": "Illustra con chiarezza come gli obiettivi del team si allineino alla missione dell'organizzazione e integra le priorità strategiche nelle decisioni."
+        }
       }
     },
     {
-      "indicator": "Understand the overall picture of the situation (general themes, trends, goals)",
+      "indicator": {
+        "en": "Understand the overall picture of the situation (general themes, trends, goals)",
+        "it": "Comprendere il quadro complessivo della situazione (temi generali, tendenze, obiettivi)"
+      },
       "scale": {
-        "5": "Anticipates changes and identifies patterns or trends that guide proactive decision-making.",
-        "3": "Recognizes general themes or trends but rarely uses them to inform decisions.",
-        "1": "Focuses only on immediate issues without grasping broader context."
+        "1": {
+          "en": "Focuses only on immediate issues without grasping broader context.",
+          "it": "Si concentra solo sulle questioni immediate senza cogliere il contesto più ampio."
+        },
+        "3": {
+          "en": "Recognizes general themes or trends but rarely uses them to inform decisions.",
+          "it": "Riconosce temi generali o tendenze, ma raramente li utilizza per orientare le decisioni."
+        },
+        "5": {
+          "en": "Anticipates changes and identifies patterns or trends that guide proactive decision-making.",
+          "it": "Anticipa i cambiamenti e identifica schemi o tendenze che guidano un processo decisionale proattivo."
+        }
       }
     }
   ],
   "INN": [
     {
-      "indicator": "Encourage others to look at problems and processes in new ways",
+      "indicator": {
+        "en": "Encourage others to look at problems and processes in new ways",
+        "it": "Incoraggiare gli altri a guardare a problemi e processi in modi nuovi"
+      },
       "scale": {
-        "5": "Inspires and facilitates creative thinking among team members, regularly leading to innovative improvements.",
-        "3": "Occasionally promotes alternative thinking but without consistent follow-up.",
-        "1": "Discourages or ignores novel approaches and sticks rigidly to existing methods."
+        "1": {
+          "en": "Discourages or ignores novel approaches and sticks rigidly to existing methods.",
+          "it": "Scoraggia o ignora gli approcci innovativi e si attiene rigidamente ai metodi esistenti."
+        },
+        "3": {
+          "en": "Occasionally promotes alternative thinking but without consistent follow-up.",
+          "it": "Occasionalmente promuove modi di pensare alternativi, ma senza un seguito costante."
+        },
+        "5": {
+          "en": "Inspires and facilitates creative thinking among team members, regularly leading to innovative improvements.",
+          "it": "Ispira e facilita il pensiero creativo tra i membri del team, generando regolarmente miglioramenti innovativi."
+        }
       }
     },
     {
-      "indicator": "Find ways to increase productivity or streamline processes",
+      "indicator": {
+        "en": "Find ways to increase productivity or streamline processes",
+        "it": "Trovare modi per aumentare la produttività o snellire i processi"
+      },
       "scale": {
-        "5": "Proactively identifies and implements efficient processes, significantly improving team output.",
-        "3": "Suggests or adopts minor improvements in productivity or workflow.",
-        "1": "Fails to recognize inefficiencies or resists changes to established processes."
+        "1": {
+          "en": "Fails to recognize inefficiencies or resists changes to established processes.",
+          "it": "Non riconosce le inefficienze o resiste ai cambiamenti dei processi consolidati."
+        },
+        "3": {
+          "en": "Suggests or adopts minor improvements in productivity or workflow.",
+          "it": "Suggerisce o adotta miglioramenti minori nella produttività o nel flusso di lavoro."
+        },
+        "5": {
+          "en": "Proactively identifies and implements efficient processes, significantly improving team output.",
+          "it": "Identifica e implementa in modo proattivo processi efficienti, migliorando significativamente i risultati del team."
+        }
       }
     },
     {
-      "indicator": "Challenge \"the way it has always been done\"",
+      "indicator": {
+        "en": "Challenge \"the way it has always been done\"",
+        "it": "Mettere in discussione \"il modo in cui si è sempre fatto\""
+      },
       "scale": {
-        "5": "Proactively questions outdated practices, proposes innovative alternatives, and leads change initiatives with measurable benefits.",
-        "3": "Occasionally challenges existing methods and suggests alternatives but may not always follow through.",
-        "1": "Accepts current practices without question and resists considering new approaches."
+        "1": {
+          "en": "Accepts current practices without question and resists considering new approaches.",
+          "it": "Accetta le prassi attuali senza metterle in discussione e resiste a considerare nuovi approcci."
+        },
+        "3": {
+          "en": "Occasionally challenges existing methods and suggests alternatives but may not always follow through.",
+          "it": "Occasionalmente mette in discussione i metodi esistenti e propone alternative, ma non sempre porta avanti l'iniziativa."
+        },
+        "5": {
+          "en": "Proactively questions outdated practices, proposes innovative alternatives, and leads change initiatives with measurable benefits.",
+          "it": "Mette in discussione in modo proattivo le prassi obsolete, propone alternative innovative e guida iniziative di cambiamento con benefici misurabili."
+        }
       }
     }
   ],
   "JDG": [
     {
-      "indicator": "Base day-to-day decisions for own area on facts rather than assumptions",
+      "indicator": {
+        "en": "Base day-to-day decisions for own area on facts rather than assumptions",
+        "it": "Basare le decisioni quotidiane per la propria area su fatti anziché su supposizioni"
+      },
       "scale": {
-        "5": "Grounds every area decision in verified facts, catching and correcting flawed assumptions before they affect outcomes.",
-        "3": "Checks the facts behind routine decisions but leans on assumptions for less familiar situations.",
-        "1": "Neglects to verify facts before area decisions, relying on assumption and creating avoidable rework."
+        "1": {
+          "en": "Neglects to verify facts before area decisions, relying on assumption and creating avoidable rework.",
+          "it": "Omette di verificare i fatti prima delle decisioni sull'area, affidandosi a supposizioni e generando rilavorazioni evitabili."
+        },
+        "3": {
+          "en": "Checks the facts behind routine decisions but leans on assumptions for less familiar situations.",
+          "it": "Verifica i fatti alla base delle decisioni di routine, ma si affida a supposizioni nelle situazioni meno familiari."
+        },
+        "5": {
+          "en": "Grounds every area decision in verified facts, catching and correcting flawed assumptions before they affect outcomes.",
+          "it": "Fonda ogni decisione sull'area su fatti verificati, cogliendo e correggendo le supposizioni errate prima che incidano sui risultati."
+        }
       }
     },
     {
-      "indicator": "Decide on a course of action for own area despite incomplete information",
+      "indicator": {
+        "en": "Decide on a course of action for own area despite incomplete information",
+        "it": "Decidere una linea d'azione per la propria area nonostante informazioni incomplete"
+      },
       "scale": {
-        "5": "Commits to a clear course of action for own area even when information is incomplete, keeping work moving.",
-        "3": "Chooses a course of action once the situation stabilizes but stalls while genuine gaps remain.",
-        "1": "Avoids committing to a course of action while any information is missing, stalling own area's progress."
+        "1": {
+          "en": "Avoids committing to a course of action while any information is missing, stalling own area's progress.",
+          "it": "Evita di impegnarsi su una linea d'azione finché manca qualsiasi informazione, bloccando i progressi della propria area."
+        },
+        "3": {
+          "en": "Chooses a course of action once the situation stabilizes but stalls while genuine gaps remain.",
+          "it": "Sceglie una linea d'azione una volta che la situazione si stabilizza, ma si blocca finché permangono lacune reali."
+        },
+        "5": {
+          "en": "Commits to a clear course of action for own area even when information is incomplete, keeping work moving.",
+          "it": "Si impegna su una chiara linea d'azione per la propria area anche quando le informazioni sono incomplete, mantenendo il lavoro in movimento."
+        }
       }
     },
     {
-      "indicator": "Weigh timing and resource limits before choosing among options for own area",
+      "indicator": {
+        "en": "Weigh timing and resource limits before choosing among options for own area",
+        "it": "Ponderare i limiti di tempo e di risorse prima di scegliere tra le opzioni per la propria area"
+      },
       "scale": {
-        "5": "Weighs timing and resource limits carefully before choosing among options, selecting the one own area can actually execute.",
-        "3": "Compares two or three options on timing and resources before picking one for own area.",
-        "1": "Does not weigh timing or resource limits, picking the first workable option for own area."
+        "1": {
+          "en": "Does not weigh timing or resource limits, picking the first workable option for own area.",
+          "it": "Non pondera i limiti di tempo o di risorse, scegliendo la prima opzione praticabile per la propria area."
+        },
+        "3": {
+          "en": "Compares two or three options on timing and resources before picking one for own area.",
+          "it": "Confronta due o tre opzioni su tempi e risorse prima di sceglierne una per la propria area."
+        },
+        "5": {
+          "en": "Weighs timing and resource limits carefully before choosing among options, selecting the one own area can actually execute.",
+          "it": "Pondera attentamente i limiti di tempo e di risorse prima di scegliere tra le opzioni, selezionando quella che la propria area può effettivamente realizzare."
+        }
       }
     }
   ],
   "DRV": [
     {
-      "indicator": "Push own area to hit weekly targets even when the first approach stalls",
+      "indicator": {
+        "en": "Push own area to hit weekly targets even when the first approach stalls",
+        "it": "Spingere la propria area a centrare gli obiettivi settimanali anche quando il primo approccio si blocca"
+      },
       "scale": {
-        "5": "Pushes own area to hit weekly targets even when the first approach stalls, switching tactics without losing momentum.",
-        "3": "Pushes own area toward weekly targets but slows down once the first approach stalls.",
-        "1": "Neglects own area's weekly targets once the first approach stalls, letting momentum drop."
+        "1": {
+          "en": "Neglects own area's weekly targets once the first approach stalls, letting momentum drop.",
+          "it": "Trascura gli obiettivi settimanali della propria area quando il primo approccio si blocca, lasciando calare lo slancio."
+        },
+        "3": {
+          "en": "Pushes own area toward weekly targets but slows down once the first approach stalls.",
+          "it": "Spinge la propria area verso gli obiettivi settimanali, ma rallenta quando il primo approccio si blocca."
+        },
+        "5": {
+          "en": "Pushes own area to hit weekly targets even when the first approach stalls, switching tactics without losing momentum.",
+          "it": "Spinge la propria area a centrare gli obiettivi settimanali anche quando il primo approccio si blocca, cambiando tattica senza perdere slancio."
+        }
       }
     },
     {
-      "indicator": "Set a personal bar for own work above what own area strictly requires",
+      "indicator": {
+        "en": "Set a personal bar for own work above what own area strictly requires",
+        "it": "Fissare per il proprio lavoro uno standard personale superiore a quanto la propria area richiede strettamente"
+      },
       "scale": {
-        "5": "Sets a personal bar for own work above what own area strictly requires, raising the standard others follow.",
-        "3": "Sets a personal bar for own work that matches what own area strictly requires, without pushing beyond it.",
-        "1": "Does not set a personal bar above own area's minimum requirements, doing only what is asked."
+        "1": {
+          "en": "Does not set a personal bar above own area's minimum requirements, doing only what is asked.",
+          "it": "Non fissa uno standard personale superiore ai requisiti minimi della propria area, facendo solo quanto richiesto."
+        },
+        "3": {
+          "en": "Sets a personal bar for own work that matches what own area strictly requires, without pushing beyond it.",
+          "it": "Fissa per il proprio lavoro uno standard personale pari a quanto la propria area richiede strettamente, senza spingersi oltre."
+        },
+        "5": {
+          "en": "Sets a personal bar for own work above what own area strictly requires, raising the standard others follow.",
+          "it": "Fissa per il proprio lavoro uno standard personale superiore a quanto la propria area richiede strettamente, innalzando lo standard che gli altri seguono."
+        }
       }
     },
     {
-      "indicator": "Keep pace on own area's deadlines when priorities shift midweek",
+      "indicator": {
+        "en": "Keep pace on own area's deadlines when priorities shift midweek",
+        "it": "Tenere il passo sulle scadenze della propria area quando le priorità cambiano a metà settimana"
+      },
       "scale": {
-        "5": "Keeps pace on own area's deadlines when priorities shift midweek, re-sequencing tasks without losing ground.",
-        "3": "Keeps pace on own area's original deadlines but loses ground when priorities shift midweek.",
-        "1": "Struggles to keep pace on own area's deadlines whenever priorities shift midweek, falling further behind each time."
+        "1": {
+          "en": "Struggles to keep pace on own area's deadlines whenever priorities shift midweek, falling further behind each time.",
+          "it": "Fatica a tenere il passo sulle scadenze della propria area ogni volta che le priorità cambiano a metà settimana, accumulando ulteriore ritardo ogni volta."
+        },
+        "3": {
+          "en": "Keeps pace on own area's original deadlines but loses ground when priorities shift midweek.",
+          "it": "Tiene il passo sulle scadenze originarie della propria area, ma perde terreno quando le priorità cambiano a metà settimana."
+        },
+        "5": {
+          "en": "Keeps pace on own area's deadlines when priorities shift midweek, re-sequencing tasks without losing ground.",
+          "it": "Tiene il passo sulle scadenze della propria area quando le priorità cambiano a metà settimana, riordinando le attività senza perdere terreno."
+        }
       }
     }
   ],
   "CSF": [
     {
-      "indicator": "Solve customer problems, involving others when needed",
+      "indicator": {
+        "en": "Solve customer problems, involving others when needed",
+        "it": "Risolvere i problemi dei clienti, coinvolgendo altri quando necessario"
+      },
       "scale": {
-        "5": "Quickly resolves complex customer issues by leveraging team expertise and cross-functional collaboration.",
-        "3": "Handles standard problems and seeks help for more complex issues.",
-        "1": "Struggles to resolve customer problems or fails to seek help when necessary."
+        "1": {
+          "en": "Struggles to resolve customer problems or fails to seek help when necessary.",
+          "it": "Fatica a risolvere i problemi dei clienti o non chiede aiuto quando necessario."
+        },
+        "3": {
+          "en": "Handles standard problems and seeks help for more complex issues.",
+          "it": "Gestisce i problemi standard e chiede aiuto per le questioni più complesse."
+        },
+        "5": {
+          "en": "Quickly resolves complex customer issues by leveraging team expertise and cross-functional collaboration.",
+          "it": "Risolve rapidamente le questioni complesse dei clienti facendo leva sulle competenze del team e sulla collaborazione interfunzionale."
+        }
       }
     },
     {
-      "indicator": "Make sure customers are satisfied with the solution provided",
+      "indicator": {
+        "en": "Make sure customers are satisfied with the solution provided",
+        "it": "Assicurarsi che i clienti siano soddisfatti della soluzione fornita"
+      },
       "scale": {
-        "5": "Follows up and ensures complete customer satisfaction with proactive communication and resolution.",
-        "3": "Delivers appropriate solutions but limited in follow-up.",
-        "1": "Does not check if the customer is satisfied or fails to address concerns fully."
+        "1": {
+          "en": "Does not check if the customer is satisfied or fails to address concerns fully.",
+          "it": "Non verifica se il cliente è soddisfatto o non affronta pienamente le sue preoccupazioni."
+        },
+        "3": {
+          "en": "Delivers appropriate solutions but limited in follow-up.",
+          "it": "Fornisce soluzioni appropriate, ma con un follow-up limitato."
+        },
+        "5": {
+          "en": "Follows up and ensures complete customer satisfaction with proactive communication and resolution.",
+          "it": "Effettua il follow-up e garantisce la piena soddisfazione del cliente con comunicazione e risoluzione proattive."
+        }
       }
     },
     {
-      "indicator": "Ask for feedback from customers to identify opportunities for improvement",
+      "indicator": {
+        "en": "Ask for feedback from customers to identify opportunities for improvement",
+        "it": "Chiedere feedback ai clienti per identificare opportunità di miglioramento"
+      },
       "scale": {
-        "5": "Proactively seeks detailed feedback from customers and uses it to implement effective changes.",
-        "3": "Occasionally asks for feedback and considers it for improvements.",
-        "1": "Rarely or never requests feedback from customers; ignores input."
+        "1": {
+          "en": "Rarely or never requests feedback from customers; ignores input.",
+          "it": "Raramente o mai chiede feedback ai clienti; ignora i contributi."
+        },
+        "3": {
+          "en": "Occasionally asks for feedback and considers it for improvements.",
+          "it": "Occasionalmente chiede feedback e lo considera per apportare miglioramenti."
+        },
+        "5": {
+          "en": "Proactively seeks detailed feedback from customers and uses it to implement effective changes.",
+          "it": "Ricerca in modo proattivo feedback dettagliati dai clienti e li utilizza per attuare cambiamenti efficaci."
+        }
       }
     }
   ],
   "SLF": [
     {
-      "indicator": "Set sales targets for own area's accounts based on realistic account potential",
+      "indicator": {
+        "en": "Set sales targets for own area's accounts based on realistic account potential",
+        "it": "Definire obiettivi di vendita per gli account della propria area sulla base del potenziale realistico dell'account"
+      },
       "scale": {
-        "5": "Sets sales targets for own area's accounts based on realistic account potential, adjusting them as account conditions change.",
-        "3": "Sets sales targets for own area's accounts based on last year's numbers rather than current account potential.",
-        "1": "Overlooks account potential when setting sales targets for own area, leaving them arbitrary."
+        "1": {
+          "en": "Overlooks account potential when setting sales targets for own area, leaving them arbitrary.",
+          "it": "Trascura il potenziale dell'account quando definisce gli obiettivi di vendita per la propria area, lasciandoli arbitrari."
+        },
+        "3": {
+          "en": "Sets sales targets for own area's accounts based on last year's numbers rather than current account potential.",
+          "it": "Definisce gli obiettivi di vendita per gli account della propria area sulla base dei numeri dell'anno precedente anziché del potenziale attuale dell'account."
+        },
+        "5": {
+          "en": "Sets sales targets for own area's accounts based on realistic account potential, adjusting them as account conditions change.",
+          "it": "Definisce gli obiettivi di vendita per gli account della propria area sulla base del potenziale realistico dell'account, adeguandoli al mutare delle condizioni dell'account."
+        }
       }
     },
     {
-      "indicator": "Explain own product or service's value in terms that match a specific customer's needs",
+      "indicator": {
+        "en": "Explain own product or service's value in terms that match a specific customer's needs",
+        "it": "Spiegare il valore del proprio prodotto o servizio in termini che corrispondano alle esigenze di uno specifico cliente"
+      },
       "scale": {
-        "5": "Explains own product or service's value in terms that match a specific customer's needs.",
-        "3": "Explains own product or service's features to a specific customer without tying them to that customer's actual needs.",
-        "1": "Struggles to explain own product or service's value to a specific customer, relying on a generic pitch."
+        "1": {
+          "en": "Struggles to explain own product or service's value to a specific customer, relying on a generic pitch.",
+          "it": "Fatica a spiegare il valore del proprio prodotto o servizio a uno specifico cliente, affidandosi a una presentazione generica."
+        },
+        "3": {
+          "en": "Explains own product or service's features to a specific customer without tying them to that customer's actual needs.",
+          "it": "Spiega le caratteristiche del proprio prodotto o servizio a uno specifico cliente senza collegarle alle sue esigenze reali."
+        },
+        "5": {
+          "en": "Explains own product or service's value in terms that match a specific customer's needs.",
+          "it": "Spiega il valore del proprio prodotto o servizio in termini che corrispondono alle esigenze di uno specifico cliente."
+        }
       }
     },
     {
-      "indicator": "Negotiate a deal for own area that protects margin while meeting the customer's core need",
+      "indicator": {
+        "en": "Negotiate a deal for own area that protects margin while meeting the customer's core need",
+        "it": "Negoziare per la propria area un accordo che tuteli il margine soddisfacendo al contempo l'esigenza principale del cliente"
+      },
       "scale": {
-        "5": "Negotiates a deal for own area that protects margin while meeting the customer's core need.",
-        "3": "Negotiates a deal for own area that meets the customer's core need but gives up margin.",
-        "1": "Struggles to negotiate a deal for own area that protects margin."
+        "1": {
+          "en": "Struggles to negotiate a deal for own area that protects margin.",
+          "it": "Fatica a negoziare per la propria area un accordo che tuteli il margine."
+        },
+        "3": {
+          "en": "Negotiates a deal for own area that meets the customer's core need but gives up margin.",
+          "it": "Negozia per la propria area un accordo che soddisfa l'esigenza principale del cliente ma cede margine."
+        },
+        "5": {
+          "en": "Negotiates a deal for own area that protects margin while meeting the customer's core need.",
+          "it": "Negozia per la propria area un accordo che tutela il margine soddisfacendo al contempo l'esigenza principale del cliente."
+        }
       }
     }
   ],
   "OPX": [
     {
-      "indicator": "Convey expectations for assignments clearly and precisely",
+      "indicator": {
+        "en": "Convey expectations for assignments clearly and precisely",
+        "it": "Comunicare le aspettative sugli incarichi in modo chiaro e preciso"
+      },
       "scale": {
-        "5": "Consistently provides clear, detailed instructions and expectations, reducing misunderstandings.",
-        "3": "Communicates expectations with general clarity but may miss important details.",
-        "1": "Gives vague or incomplete directions, causing confusion."
+        "1": {
+          "en": "Gives vague or incomplete directions, causing confusion.",
+          "it": "Fornisce indicazioni vaghe o incomplete, causando confusione."
+        },
+        "3": {
+          "en": "Communicates expectations with general clarity but may miss important details.",
+          "it": "Comunica le aspettative con chiarezza generale, ma può tralasciare dettagli importanti."
+        },
+        "5": {
+          "en": "Consistently provides clear, detailed instructions and expectations, reducing misunderstandings.",
+          "it": "Fornisce costantemente istruzioni e aspettative chiare e dettagliate, riducendo le incomprensioni."
+        }
       }
     },
     {
-      "indicator": "Routinely check work outcomes to ensure quality",
+      "indicator": {
+        "en": "Routinely check work outcomes to ensure quality",
+        "it": "Verificare regolarmente gli esiti del lavoro per garantirne la qualità"
+      },
       "scale": {
-        "5": "Implements regular quality checks and follows up to maintain high standards.",
-        "3": "Checks work occasionally and addresses issues when noticed.",
-        "1": "Neglects to review work outcomes; problems often go unnoticed."
+        "1": {
+          "en": "Neglects to review work outcomes; problems often go unnoticed.",
+          "it": "Omette di rivedere gli esiti del lavoro; i problemi spesso passano inosservati."
+        },
+        "3": {
+          "en": "Checks work occasionally and addresses issues when noticed.",
+          "it": "Verifica il lavoro occasionalmente e affronta i problemi quando li nota."
+        },
+        "5": {
+          "en": "Implements regular quality checks and follows up to maintain high standards.",
+          "it": "Introduce controlli di qualità regolari e ne segue l'esito per mantenere standard elevati."
+        }
       }
     },
     {
-      "indicator": "Remove obstacles in order to move the work forward and/or get efforts back on track",
+      "indicator": {
+        "en": "Remove obstacles in order to move the work forward and/or get efforts back on track",
+        "it": "Rimuovere gli ostacoli per far avanzare il lavoro e/o riportare in carreggiata le attività"
+      },
       "scale": {
-        "5": "Quickly identifies and removes roadblocks, ensuring timely progress.",
-        "3": "Addresses issues when raised but may not anticipate obstacles.",
-        "1": "Fails to act on or recognize blockers, delaying progress."
+        "1": {
+          "en": "Fails to act on or recognize blockers, delaying progress.",
+          "it": "Non interviene sui blocchi né li riconosce, ritardando i progressi."
+        },
+        "3": {
+          "en": "Addresses issues when raised but may not anticipate obstacles.",
+          "it": "Affronta i problemi quando vengono sollevati, ma può non anticipare gli ostacoli."
+        },
+        "5": {
+          "en": "Quickly identifies and removes roadblocks, ensuring timely progress.",
+          "it": "Identifica e rimuove rapidamente gli ostacoli, garantendo progressi tempestivi."
+        }
       }
     }
   ],
   "TMG": [
     {
-      "indicator": "Set clear goals for own team and delegate tasks to get results",
+      "indicator": {
+        "en": "Set clear goals for own team and delegate tasks to get results",
+        "it": "Definire obiettivi chiari per il proprio team e delegare le attività per ottenere risultati"
+      },
       "scale": {
-        "5": "Sets clear, specific goals for own team and delegates tasks that match each member's strengths.",
-        "3": "Sets general goals for own team but delegates tasks without matching them to strengths.",
-        "1": "Fails to set clear goals for own team, leaving members to delegate tasks to themselves."
+        "1": {
+          "en": "Fails to set clear goals for own team, leaving members to delegate tasks to themselves.",
+          "it": "Non definisce obiettivi chiari per il proprio team, lasciando che i membri si assegnino le attività da soli."
+        },
+        "3": {
+          "en": "Sets general goals for own team but delegates tasks without matching them to strengths.",
+          "it": "Definisce obiettivi generici per il proprio team, ma delega le attività senza abbinarle ai punti di forza."
+        },
+        "5": {
+          "en": "Sets clear, specific goals for own team and delegates tasks that match each member's strengths.",
+          "it": "Definisce obiettivi chiari e specifici per il proprio team e delega attività che corrispondono ai punti di forza di ciascun membro."
+        }
       }
     },
     {
-      "indicator": "Give own team members candid, specific feedback on their performance",
+      "indicator": {
+        "en": "Give own team members candid, specific feedback on their performance",
+        "it": "Dare ai membri del proprio team un feedback franco e specifico sulla loro prestazione"
+      },
       "scale": {
-        "5": "Gives own team members candid, specific feedback on performance as soon as issues arise.",
-        "3": "Gives own team members feedback on performance but keeps it general rather than specific.",
-        "1": "Avoids giving own team members candid feedback, letting performance issues go unaddressed."
+        "1": {
+          "en": "Avoids giving own team members candid feedback, letting performance issues go unaddressed.",
+          "it": "Evita di dare ai membri del proprio team un feedback franco, lasciando i problemi di prestazione senza risposta."
+        },
+        "3": {
+          "en": "Gives own team members feedback on performance but keeps it general rather than specific.",
+          "it": "Dà ai membri del proprio team un feedback sulla prestazione, ma lo mantiene generico anziché specifico."
+        },
+        "5": {
+          "en": "Gives own team members candid, specific feedback on performance as soon as issues arise.",
+          "it": "Dà ai membri del proprio team un feedback franco e specifico sulla prestazione non appena emergono problemi."
+        }
       }
     },
     {
-      "indicator": "Build teamwork and sustain own team members' motivation and engagement",
+      "indicator": {
+        "en": "Build teamwork and sustain own team members' motivation and engagement",
+        "it": "Costruire il lavoro di squadra e sostenere la motivazione e il coinvolgimento dei membri del proprio team"
+      },
       "scale": {
-        "5": "Builds strong teamwork and actively sustains own team members' motivation, keeping engagement high through daily changes.",
-        "3": "Builds teamwork within own team but leaves motivation and engagement to individual members.",
-        "1": "Neglects teamwork and own team members' motivation, letting engagement drop unchecked."
+        "1": {
+          "en": "Neglects teamwork and own team members' motivation, letting engagement drop unchecked.",
+          "it": "Trascura il lavoro di squadra e la motivazione dei membri del proprio team, lasciando calare il coinvolgimento senza intervenire."
+        },
+        "3": {
+          "en": "Builds teamwork within own team but leaves motivation and engagement to individual members.",
+          "it": "Costruisce il lavoro di squadra all'interno del proprio team, ma lascia motivazione e coinvolgimento ai singoli membri."
+        },
+        "5": {
+          "en": "Builds strong teamwork and actively sustains own team members' motivation, keeping engagement high through daily changes.",
+          "it": "Costruisce un solido lavoro di squadra e sostiene attivamente la motivazione dei membri del proprio team, mantenendo alto il coinvolgimento attraverso i cambiamenti quotidiani."
+        }
       }
     }
   ],
   "INS": [
     {
-      "indicator": "Shadow younger team memebers to support their professional growth",
+      "indicator": {
+        "en": "Shadow younger team memebers to support their professional growth",
+        "it": "Affiancare i membri più giovani del team per sostenerne la crescita professionale"
+      },
       "scale": {
-        "5": "Regularly mentors juniors, providing guidance and learning opportunities.",
-        "3": "Offers occasional support or guidance to younger team members.",
-        "1": "Shows little interest in mentoring or supporting junior staff."
+        "1": {
+          "en": "Shows little interest in mentoring or supporting junior staff.",
+          "it": "Mostra scarso interesse nel fare da mentore o nel sostenere il personale junior."
+        },
+        "3": {
+          "en": "Offers occasional support or guidance to younger team members.",
+          "it": "Offre supporto o guida occasionali ai membri più giovani del team."
+        },
+        "5": {
+          "en": "Regularly mentors juniors, providing guidance and learning opportunities.",
+          "it": "Fa regolarmente da mentore ai junior, offrendo guida e opportunità di apprendimento."
+        }
       }
     },
     {
-      "indicator": "Openly and proactively share own knowledge and expertise",
+      "indicator": {
+        "en": "Openly and proactively share own knowledge and expertise",
+        "it": "Condividere apertamente e in modo proattivo le proprie conoscenze e competenze"
+      },
       "scale": {
-        "5": "Freely shares knowledge, encourages learning, and is seen as a go-to expert.",
-        "3": "Shares knowledge when asked but not consistently proactive.",
-        "1": "Withholds information or avoids sharing expertise."
+        "1": {
+          "en": "Withholds information or avoids sharing expertise.",
+          "it": "Trattiene le informazioni o evita di condividere le proprie competenze."
+        },
+        "3": {
+          "en": "Shares knowledge when asked but not consistently proactive.",
+          "it": "Condivide le conoscenze quando richiesto, ma non è costantemente proattivo."
+        },
+        "5": {
+          "en": "Freely shares knowledge, encourages learning, and is seen as a go-to expert.",
+          "it": "Condivide liberamente le conoscenze, incoraggia l'apprendimento ed è considerato un esperto di riferimento."
+        }
       }
     },
     {
-      "indicator": "Help employees develop awareness of their strengths and weaknesses",
+      "indicator": {
+        "en": "Help employees develop awareness of their strengths and weaknesses",
+        "it": "Aiutare i collaboratori a sviluppare consapevolezza dei propri punti di forza e di debolezza"
+      },
       "scale": {
-        "5": "Regularly coaches others in a constructive way to build self-awareness and growth.",
-        "3": "Provides occasional feedback to help others reflect on their performance.",
-        "1": "Avoids giving feedback or offers only vague praise or criticism."
+        "1": {
+          "en": "Avoids giving feedback or offers only vague praise or criticism.",
+          "it": "Evita di dare feedback oppure offre solo lodi o critiche vaghe."
+        },
+        "3": {
+          "en": "Provides occasional feedback to help others reflect on their performance.",
+          "it": "Fornisce feedback occasionali per aiutare gli altri a riflettere sulla propria prestazione."
+        },
+        "5": {
+          "en": "Regularly coaches others in a constructive way to build self-awareness and growth.",
+          "it": "Fa regolarmente coaching agli altri in modo costruttivo per sviluppare consapevolezza di sé e crescita."
+        }
       }
     }
   ],
   "COM": [
     {
-      "indicator": "Explain a decision to own team in terms that connect it to their day-to-day work",
+      "indicator": {
+        "en": "Explain a decision to own team in terms that connect it to their day-to-day work",
+        "it": "Spiegare una decisione al proprio team in termini che la colleghino al loro lavoro quotidiano"
+      },
       "scale": {
-        "5": "Explains a decision to own team in terms that connect it to their day-to-day work.",
-        "3": "Explains a decision to own team by stating the outcome without connecting it to their day-to-day work.",
-        "1": "Struggles to explain a decision to own team, leaving them with the outcome but no reasoning."
+        "1": {
+          "en": "Struggles to explain a decision to own team, leaving them with the outcome but no reasoning.",
+          "it": "Fatica a spiegare una decisione al proprio team, lasciandogli l'esito ma non il ragionamento."
+        },
+        "3": {
+          "en": "Explains a decision to own team by stating the outcome without connecting it to their day-to-day work.",
+          "it": "Spiega una decisione al proprio team enunciandone l'esito senza collegarla al loro lavoro quotidiano."
+        },
+        "5": {
+          "en": "Explains a decision to own team in terms that connect it to their day-to-day work.",
+          "it": "Spiega una decisione al proprio team in termini che la collegano al loro lavoro quotidiano."
+        }
       }
     },
     {
-      "indicator": "Listen to own team's concerns fully before responding",
+      "indicator": {
+        "en": "Listen to own team's concerns fully before responding",
+        "it": "Ascoltare pienamente le preoccupazioni del proprio team prima di rispondere"
+      },
       "scale": {
-        "5": "Listens to own team's concerns fully before responding, letting what they say shape the response.",
-        "3": "Listens to own team's concerns partway before responding, missing points raised later in the conversation.",
-        "1": "Resists letting own team finish raising a concern, responding to only part of what was said."
+        "1": {
+          "en": "Resists letting own team finish raising a concern, responding to only part of what was said.",
+          "it": "Resiste a lasciare che il proprio team finisca di esporre una preoccupazione, rispondendo solo a una parte di quanto detto."
+        },
+        "3": {
+          "en": "Listens to own team's concerns partway before responding, missing points raised later in the conversation.",
+          "it": "Ascolta solo in parte le preoccupazioni del proprio team prima di rispondere, perdendo i punti sollevati più avanti nella conversazione."
+        },
+        "5": {
+          "en": "Listens to own team's concerns fully before responding, letting what they say shape the response.",
+          "it": "Ascolta pienamente le preoccupazioni del proprio team prima di rispondere, lasciando che quanto detto orienti la risposta."
+        }
       }
     },
     {
-      "indicator": "Keep own team engaged through a routine update rather than losing their attention",
+      "indicator": {
+        "en": "Keep own team engaged through a routine update rather than losing their attention",
+        "it": "Mantenere il proprio team coinvolto durante un aggiornamento di routine anziché perderne l'attenzione"
+      },
       "scale": {
-        "5": "Keeps own team engaged through a routine update by tying it to what matters to them specifically.",
-        "3": "Delivers a routine update to own team but loses their attention partway through.",
-        "1": "Struggles to keep own team engaged through a routine update, losing their attention from the start."
+        "1": {
+          "en": "Struggles to keep own team engaged through a routine update, losing their attention from the start.",
+          "it": "Fatica a mantenere il proprio team coinvolto durante un aggiornamento di routine, perdendone l'attenzione fin dall'inizio."
+        },
+        "3": {
+          "en": "Delivers a routine update to own team but loses their attention partway through.",
+          "it": "Presenta un aggiornamento di routine al proprio team, ma ne perde l'attenzione a metà."
+        },
+        "5": {
+          "en": "Keeps own team engaged through a routine update by tying it to what matters to them specifically.",
+          "it": "Mantiene il proprio team coinvolto durante un aggiornamento di routine collegandolo a ciò che conta specificamente per loro."
+        }
       }
     }
   ],
   "COL": [
     {
-      "indicator": "Bring own team members into a plan before it affects their work",
+      "indicator": {
+        "en": "Bring own team members into a plan before it affects their work",
+        "it": "Coinvolgere i membri del proprio team in un piano prima che incida sul loro lavoro"
+      },
       "scale": {
-        "5": "Brings own team members into a plan before it affects their work.",
-        "3": "Brings own team members into a plan after it is set, only to inform them of what changed.",
-        "1": "Neglects to bring own team members into a plan before it affects their work."
+        "1": {
+          "en": "Neglects to bring own team members into a plan before it affects their work.",
+          "it": "Omette di coinvolgere i membri del proprio team in un piano prima che incida sul loro lavoro."
+        },
+        "3": {
+          "en": "Brings own team members into a plan after it is set, only to inform them of what changed.",
+          "it": "Coinvolge i membri del proprio team in un piano dopo che è stato definito, solo per informarli di ciò che è cambiato."
+        },
+        "5": {
+          "en": "Brings own team members into a plan before it affects their work.",
+          "it": "Coinvolge i membri del proprio team in un piano prima che incida sul loro lavoro."
+        }
       }
     },
     {
-      "indicator": "Split own team's workload evenly rather than let it fall on the same few people",
+      "indicator": {
+        "en": "Split own team's workload evenly rather than let it fall on the same few people",
+        "it": "Ripartire equamente il carico di lavoro del proprio team anziché lasciarlo ricadere sempre sulle stesse poche persone"
+      },
       "scale": {
-        "5": "Splits own team's workload evenly across all members, watching for early signs one person is overloaded.",
-        "3": "Splits own team's workload evenly at the start but leaves it uneven once new tasks arrive.",
-        "1": "Avoids redistributing own team's workload, letting it settle on the same few people."
+        "1": {
+          "en": "Avoids redistributing own team's workload, letting it settle on the same few people.",
+          "it": "Evita di ridistribuire il carico di lavoro del proprio team, lasciandolo ricadere sempre sulle stesse poche persone."
+        },
+        "3": {
+          "en": "Splits own team's workload evenly at the start but leaves it uneven once new tasks arrive.",
+          "it": "Ripartisce equamente il carico di lavoro del proprio team all'inizio, ma lo lascia sbilanciato quando arrivano nuove attività."
+        },
+        "5": {
+          "en": "Splits own team's workload evenly across all members, watching for early signs one person is overloaded.",
+          "it": "Ripartisce equamente il carico di lavoro del proprio team fra tutti i membri, cogliendo i primi segnali di sovraccarico di una persona."
+        }
       }
     },
     {
-      "indicator": "Work through a disagreement with another team lead rather than escalate it",
+      "indicator": {
+        "en": "Work through a disagreement with another team lead rather than escalate it",
+        "it": "Affrontare un disaccordo con un altro responsabile di team anziché ricorrere all'escalation"
+      },
       "scale": {
-        "5": "Works through a disagreement with another team lead directly, reaching a shared resolution both can act on.",
-        "3": "Works through a disagreement with another team lead on small matters but escalates larger ones.",
-        "1": "Avoids working through a disagreement with another team lead, escalating it instead."
+        "1": {
+          "en": "Avoids working through a disagreement with another team lead, escalating it instead.",
+          "it": "Evita di affrontare un disaccordo con un altro responsabile di team, ricorrendo invece all'escalation."
+        },
+        "3": {
+          "en": "Works through a disagreement with another team lead on small matters but escalates larger ones.",
+          "it": "Affronta un disaccordo con un altro responsabile di team sulle questioni minori, ma ricorre all'escalation per quelle più rilevanti."
+        },
+        "5": {
+          "en": "Works through a disagreement with another team lead directly, reaching a shared resolution both can act on.",
+          "it": "Affronta direttamente un disaccordo con un altro responsabile di team, raggiungendo una soluzione condivisa su cui entrambi possono agire."
+        }
       }
     }
   ],
   "INF": [
     {
-      "indicator": "Provide comprehensive and convincing rational arguments to support own ideas and proposals",
+      "indicator": {
+        "en": "Provide comprehensive and convincing rational arguments to support own ideas and proposals",
+        "it": "Fornire argomentazioni razionali complete e convincenti a sostegno delle proprie idee e proposte"
+      },
       "scale": {
-        "5": "Consistently presents well-structured arguments that win support and drive decisions.",
-        "3": "Presents logical arguments but may lack depth or clarity.",
-        "1": "Struggles to justify proposals or ideas clearly."
+        "1": {
+          "en": "Struggles to justify proposals or ideas clearly.",
+          "it": "Fatica a giustificare con chiarezza proposte o idee."
+        },
+        "3": {
+          "en": "Presents logical arguments but may lack depth or clarity.",
+          "it": "Presenta argomentazioni logiche, ma può mancare di profondità o chiarezza."
+        },
+        "5": {
+          "en": "Consistently presents well-structured arguments that win support and drive decisions.",
+          "it": "Presenta costantemente argomentazioni ben strutturate che ottengono consenso e orientano le decisioni."
+        }
       }
     },
     {
-      "indicator": "Express own positions taking into account the interests and concerns of the interlocutors",
+      "indicator": {
+        "en": "Express own positions taking into account the interests and concerns of the interlocutors",
+        "it": "Esprimere le proprie posizioni tenendo conto degli interessi e delle preoccupazioni degli interlocutori"
+      },
       "scale": {
-        "5": "Balances own views with empathy and adapts approach based on audience needs.",
-        "3": "Generally considers others’ views but may lack flexibility in discussion.",
-        "1": "Disregards others’ concerns and insists solely on own viewpoint."
+        "1": {
+          "en": "Disregards others’ concerns and insists solely on own viewpoint.",
+          "it": "Ignora le preoccupazioni degli altri e insiste unicamente sul proprio punto di vista."
+        },
+        "3": {
+          "en": "Generally considers others’ views but may lack flexibility in discussion.",
+          "it": "In genere considera i punti di vista degli altri, ma può mancare di flessibilità nella discussione."
+        },
+        "5": {
+          "en": "Balances own views with empathy and adapts approach based on audience needs.",
+          "it": "Bilancia i propri punti di vista con empatia e adatta l'approccio alle esigenze degli interlocutori."
+        }
       }
     },
     {
-      "indicator": "Actively solicit support for ideas and proposals from others",
+      "indicator": {
+        "en": "Actively solicit support for ideas and proposals from others",
+        "it": "Sollecitare attivamente il sostegno degli altri per idee e proposte"
+      },
       "scale": {
-        "5": "Engages others early in the idea process, building broad support and collaboration.",
-        "3": "Seeks input when necessary but may not actively involve others.",
-        "1": "Pursues ideas alone without consulting or involving stakeholders."
+        "1": {
+          "en": "Pursues ideas alone without consulting or involving stakeholders.",
+          "it": "Persegue le idee da solo senza consultare o coinvolgere gli stakeholder."
+        },
+        "3": {
+          "en": "Seeks input when necessary but may not actively involve others.",
+          "it": "Ricerca contributi quando necessario, ma può non coinvolgere attivamente gli altri."
+        },
+        "5": {
+          "en": "Engages others early in the idea process, building broad support and collaboration.",
+          "it": "Coinvolge gli altri fin dalle prime fasi del processo ideativo, costruendo ampio sostegno e collaborazione."
+        }
       }
     }
   ],
   "NET": [
     {
-      "indicator": "Build a working relationship with peers in other areas before own area needs their help",
+      "indicator": {
+        "en": "Build a working relationship with peers in other areas before own area needs their help",
+        "it": "Costruire una relazione di lavoro con i colleghi di altre aree prima che la propria area abbia bisogno del loro aiuto"
+      },
       "scale": {
-        "5": "Builds a working relationship with peers in other areas before own area needs their help.",
-        "3": "Builds a working relationship with peers in other areas only once own area already needs their help.",
-        "1": "Neglects to build a working relationship with peers in other areas."
+        "1": {
+          "en": "Neglects to build a working relationship with peers in other areas.",
+          "it": "Omette di costruire una relazione di lavoro con i colleghi di altre aree."
+        },
+        "3": {
+          "en": "Builds a working relationship with peers in other areas only once own area already needs their help.",
+          "it": "Costruisce una relazione di lavoro con i colleghi di altre aree solo quando la propria area ha già bisogno del loro aiuto."
+        },
+        "5": {
+          "en": "Builds a working relationship with peers in other areas before own area needs their help.",
+          "it": "Costruisce una relazione di lavoro con i colleghi di altre aree prima che la propria area abbia bisogno del loro aiuto."
+        }
       }
     },
     {
-      "indicator": "Adjust own communication style to fit the stakeholder in front of them",
+      "indicator": {
+        "en": "Adjust own communication style to fit the stakeholder in front of them",
+        "it": "Adattare il proprio stile comunicativo allo stakeholder che si ha di fronte"
+      },
       "scale": {
-        "5": "Adjusts own communication style to fit the stakeholder in front of them, building rapport across very different audiences.",
-        "3": "Adjusts own communication style for peers but uses the same approach with more senior stakeholders.",
-        "1": "Resists adjusting own communication style to fit the stakeholder in front of them."
+        "1": {
+          "en": "Resists adjusting own communication style to fit the stakeholder in front of them.",
+          "it": "Resiste ad adattare il proprio stile comunicativo allo stakeholder che ha di fronte."
+        },
+        "3": {
+          "en": "Adjusts own communication style for peers but uses the same approach with more senior stakeholders.",
+          "it": "Adatta il proprio stile comunicativo con i colleghi di pari livello, ma usa lo stesso approccio con gli stakeholder più senior."
+        },
+        "5": {
+          "en": "Adjusts own communication style to fit the stakeholder in front of them, building rapport across very different audiences.",
+          "it": "Adatta il proprio stile comunicativo allo stakeholder che ha di fronte, costruendo un rapporto con interlocutori molto diversi tra loro."
+        }
       }
     },
     {
-      "indicator": "Use an existing relationship with another area to unblock own team's work",
+      "indicator": {
+        "en": "Use an existing relationship with another area to unblock own team's work",
+        "it": "Utilizzare una relazione esistente con un'altra area per sbloccare il lavoro del proprio team"
+      },
       "scale": {
-        "5": "Uses an existing relationship with another area to unblock own team's work.",
-        "3": "Uses an existing relationship with another area to unblock own team's work only after a formal request stalls.",
-        "1": "Overlooks existing relationships with other areas, routing every request for own team through formal channels alone."
+        "1": {
+          "en": "Overlooks existing relationships with other areas, routing every request for own team through formal channels alone.",
+          "it": "Trascura le relazioni esistenti con altre aree, incanalando ogni richiesta per il proprio team esclusivamente attraverso i canali formali."
+        },
+        "3": {
+          "en": "Uses an existing relationship with another area to unblock own team's work only after a formal request stalls.",
+          "it": "Utilizza una relazione esistente con un'altra area per sbloccare il lavoro del proprio team solo dopo che una richiesta formale si è arenata."
+        },
+        "5": {
+          "en": "Uses an existing relationship with another area to unblock own team's work.",
+          "it": "Utilizza una relazione esistente con un'altra area per sbloccare il lavoro del proprio team."
+        }
       }
     }
   ],
   "RES": [
     {
-      "indicator": "Work productively in the face of ambiguity or uncertainty",
+      "indicator": {
+        "en": "Work productively in the face of ambiguity or uncertainty",
+        "it": "Lavorare in modo produttivo di fronte ad ambiguità o incertezza"
+      },
       "scale": {
-        "5": "Thrives in unclear environments, making sound decisions and maintaining output.",
-        "3": "Maintains productivity in ambiguity but may seek frequent reassurance.",
-        "1": "Struggles to act without clear guidance; becomes unproductive."
+        "1": {
+          "en": "Struggles to act without clear guidance; becomes unproductive.",
+          "it": "Fatica ad agire senza indicazioni chiare; diventa improduttivo."
+        },
+        "3": {
+          "en": "Maintains productivity in ambiguity but may seek frequent reassurance.",
+          "it": "Mantiene la produttività nell'ambiguità, ma può cercare frequenti rassicurazioni."
+        },
+        "5": {
+          "en": "Thrives in unclear environments, making sound decisions and maintaining output.",
+          "it": "Rende al meglio in contesti poco chiari, prendendo decisioni solide e mantenendo i risultati."
+        }
       }
     },
     {
-      "indicator": "Maintain clariry of mind and optimism even in the most unfavorable circumstances",
+      "indicator": {
+        "en": "Maintain clariry of mind and optimism even in the most unfavorable circumstances",
+        "it": "Mantenere lucidità e ottimismo anche nelle circostanze più sfavorevoli"
+      },
       "scale": {
-        "5": "Remains calm, focused, and inspires confidence in others under pressure.",
-        "3": "Stays composed but may show signs of stress in difficult times.",
-        "1": "Panics or becomes negative, affecting team morale."
+        "1": {
+          "en": "Panics or becomes negative, affecting team morale.",
+          "it": "Si fa prendere dal panico o assume un atteggiamento negativo, incidendo sul morale del team."
+        },
+        "3": {
+          "en": "Stays composed but may show signs of stress in difficult times.",
+          "it": "Resta composto, ma può mostrare segnali di stress nei momenti difficili."
+        },
+        "5": {
+          "en": "Remains calm, focused, and inspires confidence in others under pressure.",
+          "it": "Resta calmo e concentrato e ispira fiducia negli altri sotto pressione."
+        }
       }
     },
     {
-      "indicator": "Constructively handle mistakes, accepting responsibility and learning from experience",
+      "indicator": {
+        "en": "Constructively handle mistakes, accepting responsibility and learning from experience",
+        "it": "Gestire costruttivamente gli errori, assumendosi la responsabilità e imparando dall'esperienza"
+      },
       "scale": {
-        "5": "Openly acknowledges errors, learns quickly, and shares lessons with others.",
-        "3": "Admits to mistakes and adjusts behavior when prompted.",
-        "1": "Avoids accountability or repeats the same mistakes."
+        "1": {
+          "en": "Avoids accountability or repeats the same mistakes.",
+          "it": "Evita di assumersi la responsabilità o ripete gli stessi errori."
+        },
+        "3": {
+          "en": "Admits to mistakes and adjusts behavior when prompted.",
+          "it": "Ammette gli errori e corregge il proprio comportamento quando sollecitato."
+        },
+        "5": {
+          "en": "Openly acknowledges errors, learns quickly, and shares lessons with others.",
+          "it": "Riconosce apertamente gli errori, impara rapidamente e condivide gli insegnamenti con gli altri."
+        }
       }
     }
   ],
   "LRN": [
     {
-      "indicator": "Ask for feedback to improve own performance",
+      "indicator": {
+        "en": "Ask for feedback to improve own performance",
+        "it": "Chiedere feedback per migliorare la propria prestazione"
+      },
       "scale": {
-        "5": "Regularly seeks out feedback and implements changes to improve performance.",
-        "3": "Open to feedback when offered, but rarely initiates requests.",
-        "1": "Avoids or dismisses feedback; shows little interest in self-improvement."
+        "1": {
+          "en": "Avoids or dismisses feedback; shows little interest in self-improvement.",
+          "it": "Evita o liquida il feedback; mostra scarso interesse per il miglioramento personale."
+        },
+        "3": {
+          "en": "Open to feedback when offered, but rarely initiates requests.",
+          "it": "È aperto al feedback quando viene offerto, ma raramente lo richiede spontaneamente."
+        },
+        "5": {
+          "en": "Regularly seeks out feedback and implements changes to improve performance.",
+          "it": "Ricerca regolarmente feedback e attua cambiamenti per migliorare la propria prestazione."
+        }
       }
     },
     {
-      "indicator": "Show interest and energy regarding their growth in the organization",
+      "indicator": {
+        "en": "Show interest and energy regarding their growth in the organization",
+        "it": "Mostrare interesse ed energia riguardo alla propria crescita nell'organizzazione"
+      },
       "scale": {
-        "5": "Actively seeks growth opportunities and demonstrates commitment to career progression.",
-        "3": "Shows general interest in growth but takes limited initiative.",
-        "1": "Displays little enthusiasm or effort toward personal development."
+        "1": {
+          "en": "Displays little enthusiasm or effort toward personal development.",
+          "it": "Mostra scarso entusiasmo o impegno verso lo sviluppo personale."
+        },
+        "3": {
+          "en": "Shows general interest in growth but takes limited initiative.",
+          "it": "Mostra un interesse generico per la crescita, ma prende iniziativa in misura limitata."
+        },
+        "5": {
+          "en": "Actively seeks growth opportunities and demonstrates commitment to career progression.",
+          "it": "Ricerca attivamente opportunità di crescita e dimostra impegno verso la progressione di carriera."
+        }
       }
     },
     {
-      "indicator": "Look for additional responsibilities that allow them to develop new skills",
+      "indicator": {
+        "en": "Look for additional responsibilities that allow them to develop new skills",
+        "it": "Cercare responsabilità aggiuntive che consentano di sviluppare nuove competenze"
+      },
       "scale": {
-        "5": "Frequently takes on new challenges and uses them to build relevant skills.",
-        "3": "Accepts new tasks when assigned, with occasional interest in learning.",
-        "1": "Avoids taking on additional responsibilities or resists skill development."
+        "1": {
+          "en": "Avoids taking on additional responsibilities or resists skill development.",
+          "it": "Evita di assumersi responsabilità aggiuntive o resiste allo sviluppo delle competenze."
+        },
+        "3": {
+          "en": "Accepts new tasks when assigned, with occasional interest in learning.",
+          "it": "Accetta nuove attività quando vengono assegnate, con occasionale interesse per l'apprendimento."
+        },
+        "5": {
+          "en": "Frequently takes on new challenges and uses them to build relevant skills.",
+          "it": "Assume frequentemente nuove sfide e le utilizza per sviluppare competenze rilevanti."
+        }
       }
     }
   ],
   "ITG": [
     {
-      "indicator": "Follow through on a commitment made to own team even when it becomes inconvenient",
+      "indicator": {
+        "en": "Follow through on a commitment made to own team even when it becomes inconvenient",
+        "it": "Onorare un impegno preso con il proprio team anche quando diventa scomodo"
+      },
       "scale": {
-        "5": "Follows through on a commitment made to own team even when it becomes inconvenient.",
-        "3": "Follows through on a commitment made to own team when convenient but lets it slide otherwise.",
-        "1": "Neglects a commitment made to own team once it becomes inconvenient, leaving own team to absorb the consequence."
+        "1": {
+          "en": "Neglects a commitment made to own team once it becomes inconvenient, leaving own team to absorb the consequence.",
+          "it": "Trascura un impegno preso con il proprio team quando diventa scomodo, lasciando che sia il proprio team ad assorbirne le conseguenze."
+        },
+        "3": {
+          "en": "Follows through on a commitment made to own team when convenient but lets it slide otherwise.",
+          "it": "Onora un impegno preso con il proprio team quando è conveniente, ma altrimenti lo lascia cadere."
+        },
+        "5": {
+          "en": "Follows through on a commitment made to own team even when it becomes inconvenient.",
+          "it": "Onora un impegno preso con il proprio team anche quando diventa scomodo."
+        }
       }
     },
     {
-      "indicator": "Admit a mistake to own team rather than let someone else take the blame",
+      "indicator": {
+        "en": "Admit a mistake to own team rather than let someone else take the blame",
+        "it": "Ammettere un errore davanti al proprio team anziché lasciare che sia un altro a prendersi la colpa"
+      },
       "scale": {
-        "5": "Admits a mistake to own team rather than let someone else take the blame.",
-        "3": "Admits a mistake to own team once it is already obvious but stays quiet otherwise.",
-        "1": "Avoids admitting a mistake to own team, letting someone else take the blame."
+        "1": {
+          "en": "Avoids admitting a mistake to own team, letting someone else take the blame.",
+          "it": "Evita di ammettere un errore davanti al proprio team, lasciando che sia un altro a prendersi la colpa."
+        },
+        "3": {
+          "en": "Admits a mistake to own team once it is already obvious but stays quiet otherwise.",
+          "it": "Ammette un errore davanti al proprio team quando è già evidente, ma altrimenti resta in silenzio."
+        },
+        "5": {
+          "en": "Admits a mistake to own team rather than let someone else take the blame.",
+          "it": "Ammette un errore davanti al proprio team anziché lasciare che sia un altro a prendersi la colpa."
+        }
       }
     },
     {
-      "indicator": "Apply own area's standards the same way regardless of who is involved",
+      "indicator": {
+        "en": "Apply own area's standards the same way regardless of who is involved",
+        "it": "Applicare gli standard della propria area allo stesso modo indipendentemente da chi è coinvolto"
+      },
       "scale": {
-        "5": "Applies own area's standards the same way regardless of who is involved.",
-        "3": "Applies own area's standards for junior team members but relaxes them for senior ones.",
-        "1": "Resists applying own area's standards evenly, favoring some people over others depending on who is involved."
+        "1": {
+          "en": "Resists applying own area's standards evenly, favoring some people over others depending on who is involved.",
+          "it": "Resiste ad applicare in modo uniforme gli standard della propria area, favorendo alcune persone rispetto ad altre a seconda di chi è coinvolto."
+        },
+        "3": {
+          "en": "Applies own area's standards for junior team members but relaxes them for senior ones.",
+          "it": "Applica gli standard della propria area ai membri junior del team, ma li allenta per quelli senior."
+        },
+        "5": {
+          "en": "Applies own area's standards the same way regardless of who is involved.",
+          "it": "Applica gli standard della propria area allo stesso modo indipendentemente da chi è coinvolto."
+        }
       }
     }
   ],
   "INC": [
     {
-      "indicator": "Give own team members from different backgrounds equal airtime in a discussion",
+      "indicator": {
+        "en": "Give own team members from different backgrounds equal airtime in a discussion",
+        "it": "Dare ai membri del proprio team con background diversi pari spazio di parola in una discussione"
+      },
       "scale": {
-        "5": "Gives own team members from different backgrounds equal airtime in a discussion.",
-        "3": "Gives own team members airtime when they speak up but does not draw out quieter ones.",
-        "1": "Overlooks own team members from different backgrounds, letting the same few voices dominate every discussion."
+        "1": {
+          "en": "Overlooks own team members from different backgrounds, letting the same few voices dominate every discussion.",
+          "it": "Trascura i membri del proprio team con background diversi, lasciando che le stesse poche voci dominino ogni discussione."
+        },
+        "3": {
+          "en": "Gives own team members airtime when they speak up but does not draw out quieter ones.",
+          "it": "Dà spazio di parola ai membri del proprio team quando intervengono, ma non sollecita i più silenziosi."
+        },
+        "5": {
+          "en": "Gives own team members from different backgrounds equal airtime in a discussion.",
+          "it": "Dà ai membri del proprio team con background diversi pari spazio di parola in una discussione."
+        }
       }
     },
     {
-      "indicator": "Adjust own area's routines to accommodate a team member's specific need",
+      "indicator": {
+        "en": "Adjust own area's routines to accommodate a team member's specific need",
+        "it": "Adeguare le routine della propria area per accogliere l'esigenza specifica di un membro del team"
+      },
       "scale": {
-        "5": "Adjusts own area's routines to accommodate a team member's specific need.",
-        "3": "Accommodates a team member's specific need once but does not build the adjustment into own area's ongoing routines.",
-        "1": "Resists adjusting own area's routines for a team member's specific need."
+        "1": {
+          "en": "Resists adjusting own area's routines for a team member's specific need.",
+          "it": "Resiste ad adeguare le routine della propria area all'esigenza specifica di un membro del team."
+        },
+        "3": {
+          "en": "Accommodates a team member's specific need once but does not build the adjustment into own area's ongoing routines.",
+          "it": "Accoglie una volta l'esigenza specifica di un membro del team, ma non integra l'adeguamento nelle routine correnti della propria area."
+        },
+        "5": {
+          "en": "Adjusts own area's routines to accommodate a team member's specific need.",
+          "it": "Adegua le routine della propria area per accogliere l'esigenza specifica di un membro del team."
+        }
       }
     },
     {
-      "indicator": "Draw on a team member's different perspective when it conflicts with the majority view",
+      "indicator": {
+        "en": "Draw on a team member's different perspective when it conflicts with the majority view",
+        "it": "Attingere alla prospettiva diversa di un membro del team quando è in contrasto con l'opinione della maggioranza"
+      },
       "scale": {
-        "5": "Draws on a team member's different perspective when it conflicts with the majority view.",
-        "3": "Draws on a team member's perspective when it agrees with the majority view but sets it aside otherwise.",
-        "1": "Overlooks a team member's different perspective whenever it conflicts with the majority view, dismissing it without consideration."
+        "1": {
+          "en": "Overlooks a team member's different perspective whenever it conflicts with the majority view, dismissing it without consideration.",
+          "it": "Trascura la prospettiva diversa di un membro del team ogni volta che è in contrasto con l'opinione della maggioranza, liquidandola senza considerazione."
+        },
+        "3": {
+          "en": "Draws on a team member's perspective when it agrees with the majority view but sets it aside otherwise.",
+          "it": "Attinge alla prospettiva di un membro del team quando concorda con l'opinione della maggioranza, ma altrimenti la mette da parte."
+        },
+        "5": {
+          "en": "Draws on a team member's different perspective when it conflicts with the majority view.",
+          "it": "Attinge alla prospettiva diversa di un membro del team quando è in contrasto con l'opinione della maggioranza."
+        }
       }
     }
   ]

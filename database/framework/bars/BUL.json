@@ -1,365 +1,869 @@
 {
   "PRS": [
     {
-      "indicator": "Trace a P&L shortfall back to the business function actually driving it",
+      "indicator": {
+        "en": "Trace a P&L shortfall back to the business function actually driving it",
+        "it": "Ricondurre uno scostamento negativo del P&L alla funzione aziendale che effettivamente lo determina"
+      },
       "scale": {
-        "5": "Traces a P&L shortfall to the business function actually driving it, even when early numbers point elsewhere.",
-        "3": "Traces a P&L shortfall to the function closest to the symptom, without checking whether another function drives it.",
-        "1": "Overlooks which function actually drives a P&L shortfall, assigning it to the nearest one instead."
+        "1": {
+          "en": "Overlooks which function actually drives a P&L shortfall, assigning it to the nearest one instead.",
+          "it": "Trascura quale funzione determini effettivamente uno scostamento negativo del P&L, attribuendolo invece a quella più vicina."
+        },
+        "3": {
+          "en": "Traces a P&L shortfall to the function closest to the symptom, without checking whether another function drives it.",
+          "it": "Riconduce uno scostamento negativo del P&L alla funzione più vicina al sintomo, senza verificare se sia un'altra funzione a determinarlo."
+        },
+        "5": {
+          "en": "Traces a P&L shortfall to the business function actually driving it, even when early numbers point elsewhere.",
+          "it": "Riconduce uno scostamento negativo del P&L alla funzione aziendale che effettivamente lo determina, anche quando i primi numeri indicano altro."
+        }
       }
     },
     {
-      "indicator": "Pull together data from multiple functions before diagnosing a region-wide performance problem",
+      "indicator": {
+        "en": "Pull together data from multiple functions before diagnosing a region-wide performance problem",
+        "it": "Raccogliere i dati di più funzioni prima di diagnosticare un problema di performance a livello di regione"
+      },
       "scale": {
-        "5": "Pulls together data from multiple functions before diagnosing a region-wide problem, exposing causes a narrow view would hide.",
-        "3": "Pulls together data from the function closest to the problem, leaving other functions' data out of the diagnosis.",
-        "1": "Neglects to pull data from other functions before diagnosing a region-wide problem, working from one function's numbers alone."
+        "1": {
+          "en": "Neglects to pull data from other functions before diagnosing a region-wide problem, working from one function's numbers alone.",
+          "it": "Omette di raccogliere i dati di altre funzioni prima di diagnosticare un problema a livello di regione, lavorando solo sui numeri di una sola funzione."
+        },
+        "3": {
+          "en": "Pulls together data from the function closest to the problem, leaving other functions' data out of the diagnosis.",
+          "it": "Raccoglie i dati della funzione più vicina al problema, lasciando i dati delle altre funzioni fuori dalla diagnosi."
+        },
+        "5": {
+          "en": "Pulls together data from multiple functions before diagnosing a region-wide problem, exposing causes a narrow view would hide.",
+          "it": "Raccoglie i dati di più funzioni prima di diagnosticare un problema a livello di regione, portando alla luce cause che una visione ristretta nasconderebbe."
+        }
       }
     },
     {
-      "indicator": "Weigh conflicting explanations from different functions before settling on a root cause for a P&L problem",
+      "indicator": {
+        "en": "Weigh conflicting explanations from different functions before settling on a root cause for a P&L problem",
+        "it": "Ponderare le spiegazioni contrastanti provenienti da funzioni diverse prima di definire la causa radice di un problema di P&L"
+      },
       "scale": {
-        "5": "Weighs conflicting explanations from different functions before settling on a P&L problem's root cause, resolving disputes with evidence.",
-        "3": "Weighs conflicting explanations from different functions but settles on whichever came from the highest-ranking source.",
-        "1": "Overlooks the conflicting explanations from different functions, settling on a P&L problem's root cause without weighing them."
+        "1": {
+          "en": "Overlooks the conflicting explanations from different functions, settling on a P&L problem's root cause without weighing them.",
+          "it": "Trascura le spiegazioni contrastanti provenienti da funzioni diverse, definendo la causa radice di un problema di P&L senza ponderarle."
+        },
+        "3": {
+          "en": "Weighs conflicting explanations from different functions but settles on whichever came from the highest-ranking source.",
+          "it": "Pondera le spiegazioni contrastanti provenienti da funzioni diverse, ma si attesta su quella proveniente dalla fonte di grado più elevato."
+        },
+        "5": {
+          "en": "Weighs conflicting explanations from different functions before settling on a P&L problem's root cause, resolving disputes with evidence.",
+          "it": "Pondera le spiegazioni contrastanti provenienti da funzioni diverse prima di definire la causa radice di un problema di P&L, risolvendo le controversie con le evidenze."
+        }
       }
     }
   ],
   "STG": [
     {
-      "indicator": "Align the strategic priorities of own area with the broader priorities of the organization",
+      "indicator": {
+        "en": "Align the strategic priorities of own area with the broader priorities of the organization",
+        "it": "Allineare le priorità strategiche della propria area alle priorità più ampie dell'organizzazione"
+      },
       "scale": {
-        "5": "Fully aligns area priorities with organizational strategy, ensuring cohesive and synergistic outcomes.",
-        "3": "Generally aligns area priorities, though some disconnects or inefficiencies may occur.",
-        "1": "Fails to align area activities with organizational goals, creating misdirection and wasted effort."
+        "1": {
+          "en": "Fails to align area activities with organizational goals, creating misdirection and wasted effort.",
+          "it": "Non allinea le attività dell'area agli obiettivi organizzativi, creando errori di direzione e sforzi sprecati."
+        },
+        "3": {
+          "en": "Generally aligns area priorities, though some disconnects or inefficiencies may occur.",
+          "it": "In generale allinea le priorità dell'area, anche se possono verificarsi alcuni scollegamenti o inefficienze."
+        },
+        "5": {
+          "en": "Fully aligns area priorities with organizational strategy, ensuring cohesive and synergistic outcomes.",
+          "it": "Allinea pienamente le priorità dell'area alla strategia organizzativa, assicurando risultati coesi e sinergici."
+        }
       }
     },
     {
-      "indicator": "Convey a thorough understanding of own area's strengths, weaknesses, opportunities, and threats",
+      "indicator": {
+        "en": "Convey a thorough understanding of own area's strengths, weaknesses, opportunities, and threats",
+        "it": "Trasmettere una comprensione approfondita dei punti di forza, di debolezza, delle opportunità e delle minacce della propria area"
+      },
       "scale": {
-        "5": "Clearly articulates a nuanced SWOT analysis, using insights to drive informed decisions.",
-        "3": "Has a basic grasp of SWOT but may miss deeper implications or changes.",
-        "1": "Lacks understanding of key internal/external factors, leading to reactive or misguided decisions."
+        "1": {
+          "en": "Lacks understanding of key internal/external factors, leading to reactive or misguided decisions.",
+          "it": "Manca di comprensione dei principali fattori interni ed esterni, con decisioni reattive o mal indirizzate."
+        },
+        "3": {
+          "en": "Has a basic grasp of SWOT but may miss deeper implications or changes.",
+          "it": "Ha una padronanza di base della SWOT, ma può non cogliere implicazioni più profonde o cambiamenti."
+        },
+        "5": {
+          "en": "Clearly articulates a nuanced SWOT analysis, using insights to drive informed decisions.",
+          "it": "Illustra con chiarezza un'analisi SWOT articolata, utilizzandone gli spunti per guidare decisioni informate."
+        }
       }
     },
     {
-      "indicator": "Stay abreast of key competitor actions and their implications or threats to the business",
+      "indicator": {
+        "en": "Stay abreast of key competitor actions and their implications or threats to the business",
+        "it": "Mantenersi aggiornato sulle principali azioni dei concorrenti e sulle loro implicazioni o minacce per il business"
+      },
       "scale": {
-        "5": "Proactively tracks competitor moves, adapting strategies to mitigate threats or seize advantages.",
-        "3": "Monitors competitors occasionally but may miss important changes or insights.",
-        "1": "Unaware of competitor developments, resulting in strategic surprises or losses."
+        "1": {
+          "en": "Unaware of competitor developments, resulting in strategic surprises or losses.",
+          "it": "Non è consapevole degli sviluppi dei concorrenti, con conseguenti sorprese strategiche o perdite."
+        },
+        "3": {
+          "en": "Monitors competitors occasionally but may miss important changes or insights.",
+          "it": "Monitora occasionalmente i concorrenti, ma può non cogliere cambiamenti o spunti importanti."
+        },
+        "5": {
+          "en": "Proactively tracks competitor moves, adapting strategies to mitigate threats or seize advantages.",
+          "it": "Monitora in modo proattivo le mosse dei concorrenti, adattando le strategie per mitigare le minacce o cogliere i vantaggi."
+        }
       }
     }
   ],
   "INN": [
     {
-      "indicator": "Create an environment that encourages innovation and experimentation",
+      "indicator": {
+        "en": "Create an environment that encourages innovation and experimentation",
+        "it": "Creare un ambiente che incoraggi l'innovazione e la sperimentazione"
+      },
       "scale": {
-        "5": "Builds a culture of experimentation and psychological safety, where innovation flourishes.",
-        "3": "Supports innovation occasionally, though risk aversion may limit experimentation.",
-        "1": "Discourages innovation, creating a fear of failure or resistance to change."
+        "1": {
+          "en": "Discourages innovation, creating a fear of failure or resistance to change.",
+          "it": "Scoraggia l'innovazione, generando paura del fallimento o resistenza al cambiamento."
+        },
+        "3": {
+          "en": "Supports innovation occasionally, though risk aversion may limit experimentation.",
+          "it": "Sostiene occasionalmente l'innovazione, anche se l'avversione al rischio può limitare la sperimentazione."
+        },
+        "5": {
+          "en": "Builds a culture of experimentation and psychological safety, where innovation flourishes.",
+          "it": "Costruisce una cultura di sperimentazione e sicurezza psicologica, in cui l'innovazione prospera."
+        }
       }
     },
     {
-      "indicator": "Leverage innovative ideas and unconventional approaches to generate value for the organization",
+      "indicator": {
+        "en": "Leverage innovative ideas and unconventional approaches to generate value for the organization",
+        "it": "Fare leva su idee innovative e approcci non convenzionali per generare valore per l'organizzazione"
+      },
       "scale": {
-        "5": "Frequently applies creative, unconventional solutions that lead to measurable business value.",
-        "3": "Sometimes adopts new ideas but impact or follow-through may be limited.",
-        "1": "Relies solely on traditional methods, missing opportunities for innovation."
+        "1": {
+          "en": "Relies solely on traditional methods, missing opportunities for innovation.",
+          "it": "Si affida esclusivamente a metodi tradizionali, perdendo opportunità di innovazione."
+        },
+        "3": {
+          "en": "Sometimes adopts new ideas but impact or follow-through may be limited.",
+          "it": "Talvolta adotta nuove idee, ma l'impatto o la loro attuazione possono essere limitati."
+        },
+        "5": {
+          "en": "Frequently applies creative, unconventional solutions that lead to measurable business value.",
+          "it": "Applica di frequente soluzioni creative e non convenzionali che portano a un valore di business misurabile."
+        }
       }
     },
     {
-      "indicator": "Pursue new business opportunities and implement them",
+      "indicator": {
+        "en": "Pursue new business opportunities and implement them",
+        "it": "Perseguire nuove opportunità di business e realizzarle"
+      },
       "scale": {
-        "5": "Identifies, evaluates, and successfully executes new business opportunities with measurable returns.",
-        "3": "Occasionally pursues opportunities, though some lack follow-through or impact.",
-        "1": "Rarely seeks or executes new business opportunities, missing growth potential."
+        "1": {
+          "en": "Rarely seeks or executes new business opportunities, missing growth potential.",
+          "it": "Raramente ricerca o realizza nuove opportunità di business, perdendo potenziale di crescita."
+        },
+        "3": {
+          "en": "Occasionally pursues opportunities, though some lack follow-through or impact.",
+          "it": "Persegue occasionalmente le opportunità, anche se ad alcune manca attuazione o impatto."
+        },
+        "5": {
+          "en": "Identifies, evaluates, and successfully executes new business opportunities with measurable returns.",
+          "it": "Identifica, valuta ed esegue con successo nuove opportunità di business con ritorni misurabili."
+        }
       }
     }
   ],
   "JDG": [
     {
-      "indicator": "Base regional P&L decisions on verified financial and operational data",
+      "indicator": {
+        "en": "Base regional P&L decisions on verified financial and operational data",
+        "it": "Basare le decisioni sul P&L regionale su dati finanziari e operativi verificati"
+      },
       "scale": {
-        "5": "Anchors every regional P&L decision in verified financial and operational data, exposing hidden risk early.",
-        "3": "Reviews financial data for major P&L calls but defers to prior-year precedent for smaller ones.",
-        "1": "Fails to verify financial data before regional P&L decisions, exposing the business to avoidable risk."
+        "1": {
+          "en": "Fails to verify financial data before regional P&L decisions, exposing the business to avoidable risk.",
+          "it": "Non verifica i dati finanziari prima delle decisioni sul P&L regionale, esponendo il business a rischi evitabili."
+        },
+        "3": {
+          "en": "Reviews financial data for major P&L calls but defers to prior-year precedent for smaller ones.",
+          "it": "Esamina i dati finanziari per le decisioni principali di P&L, ma si rimette al precedente dell'anno prima per quelle minori."
+        },
+        "5": {
+          "en": "Anchors every regional P&L decision in verified financial and operational data, exposing hidden risk early.",
+          "it": "Ancora ogni decisione sul P&L regionale a dati finanziari e operativi verificati, portando alla luce per tempo i rischi nascosti."
+        }
       }
     },
     {
-      "indicator": "Commit to a decision for own region despite conflicting or incomplete signals",
+      "indicator": {
+        "en": "Commit to a decision for own region despite conflicting or incomplete signals",
+        "it": "Assumere una decisione per la propria regione nonostante segnali contrastanti o incompleti"
+      },
       "scale": {
-        "5": "Commits decisively to a regional decision despite conflicting or incomplete signals, absorbing the risk personally.",
-        "3": "Decides once conflicting signals are resolved but defers when signals remain genuinely mixed.",
-        "1": "Avoids committing to a regional decision while signals conflict, leaving the business without direction."
+        "1": {
+          "en": "Avoids committing to a regional decision while signals conflict, leaving the business without direction.",
+          "it": "Evita di assumere una decisione regionale finché i segnali sono contrastanti, lasciando il business senza direzione."
+        },
+        "3": {
+          "en": "Decides once conflicting signals are resolved but defers when signals remain genuinely mixed.",
+          "it": "Decide una volta risolti i segnali contrastanti, ma rinvia quando i segnali restano realmente contraddittori."
+        },
+        "5": {
+          "en": "Commits decisively to a regional decision despite conflicting or incomplete signals, absorbing the risk personally.",
+          "it": "Assume con decisione una decisione regionale nonostante segnali contrastanti o incompleti, assorbendone personalmente il rischio."
+        }
       }
     },
     {
-      "indicator": "Weigh P&L tradeoffs and resource limits before choosing among strategic options",
+      "indicator": {
+        "en": "Weigh P&L tradeoffs and resource limits before choosing among strategic options",
+        "it": "Ponderare i compromessi di P&L e i limiti di risorse prima di scegliere tra le opzioni strategiche"
+      },
       "scale": {
-        "5": "Weighs P&L tradeoffs and resource limits rigorously before choosing the strategic option with the strongest regional return.",
-        "3": "Compares P&L impact across strategic options but treats resource limits as a secondary factor.",
-        "1": "Overlooks P&L tradeoffs and resource limits, choosing strategic options on precedent alone."
+        "1": {
+          "en": "Overlooks P&L tradeoffs and resource limits, choosing strategic options on precedent alone.",
+          "it": "Trascura i compromessi di P&L e i limiti di risorse, scegliendo le opzioni strategiche solo sulla base dei precedenti."
+        },
+        "3": {
+          "en": "Compares P&L impact across strategic options but treats resource limits as a secondary factor.",
+          "it": "Confronta l'impatto sul P&L tra le opzioni strategiche, ma tratta i limiti di risorse come un fattore secondario."
+        },
+        "5": {
+          "en": "Weighs P&L tradeoffs and resource limits rigorously before choosing the strategic option with the strongest regional return.",
+          "it": "Pondera rigorosamente i compromessi di P&L e i limiti di risorse prima di scegliere l'opzione strategica con il ritorno regionale più elevato."
+        }
       }
     }
   ],
   "DRV": [
     {
-      "indicator": "Push own country or region toward multi-year P&L targets despite setbacks in one business function",
+      "indicator": {
+        "en": "Push own country or region toward multi-year P&L targets despite setbacks in one business function",
+        "it": "Spingere il proprio paese o la propria regione verso gli obiettivi di P&L pluriennali nonostante le battute d'arresto in una funzione aziendale"
+      },
       "scale": {
-        "5": "Pushes own country or region toward multi-year P&L targets despite setbacks in one business function.",
-        "3": "Pushes own country or region toward multi-year P&L targets when all functions perform.",
-        "1": "Neglects own region's multi-year P&L targets once one business function sets back, letting the whole region's pace slip."
+        "1": {
+          "en": "Neglects own region's multi-year P&L targets once one business function sets back, letting the whole region's pace slip.",
+          "it": "Trascura gli obiettivi di P&L pluriennali della propria regione quando una funzione aziendale subisce una battuta d'arresto, lasciando scivolare il ritmo dell'intera regione."
+        },
+        "3": {
+          "en": "Pushes own country or region toward multi-year P&L targets when all functions perform.",
+          "it": "Spinge il proprio paese o la propria regione verso gli obiettivi di P&L pluriennali quando tutte le funzioni performano."
+        },
+        "5": {
+          "en": "Pushes own country or region toward multi-year P&L targets despite setbacks in one business function.",
+          "it": "Spinge il proprio paese o la propria regione verso gli obiettivi di P&L pluriennali nonostante le battute d'arresto in una funzione aziendale."
+        }
       }
     },
     {
-      "indicator": "Set a personal bar for own region's results above what the P&L plan strictly requires",
+      "indicator": {
+        "en": "Set a personal bar for own region's results above what the P&L plan strictly requires",
+        "it": "Fissare un'asticella personale per i risultati della propria regione al di sopra di quanto il piano di P&L richiede strettamente"
+      },
       "scale": {
-        "5": "Sets a personal bar for own region's results above what the P&L plan strictly requires.",
-        "3": "Sets a personal bar for own region's results that matches the P&L plan, without pushing functions past it.",
-        "1": "Does not set a personal bar above the P&L plan's minimum for own region's results."
+        "1": {
+          "en": "Does not set a personal bar above the P&L plan's minimum for own region's results.",
+          "it": "Non fissa un'asticella personale al di sopra del minimo previsto dal piano di P&L per i risultati della propria regione."
+        },
+        "3": {
+          "en": "Sets a personal bar for own region's results that matches the P&L plan, without pushing functions past it.",
+          "it": "Fissa un'asticella personale per i risultati della propria regione pari al piano di P&L, senza spingere le funzioni oltre di esso."
+        },
+        "5": {
+          "en": "Sets a personal bar for own region's results above what the P&L plan strictly requires.",
+          "it": "Fissa un'asticella personale per i risultati della propria regione al di sopra di quanto il piano di P&L richiede strettamente."
+        }
       }
     },
     {
-      "indicator": "Sustain own region's pace across a multi-year plan rather than a single strong year",
+      "indicator": {
+        "en": "Sustain own region's pace across a multi-year plan rather than a single strong year",
+        "it": "Mantenere il ritmo della propria regione lungo un piano pluriennale anziché in un solo anno forte"
+      },
       "scale": {
-        "5": "Sustains own region's pace across the full multi-year plan rather than a single strong year.",
-        "3": "Sustains own region's pace through a strong opening year but fades as the multi-year plan continues.",
-        "1": "Struggles to sustain own region's pace beyond a single year, fading well before the multi-year plan ends."
+        "1": {
+          "en": "Struggles to sustain own region's pace beyond a single year, fading well before the multi-year plan ends.",
+          "it": "Fatica a mantenere il ritmo della propria regione oltre un solo anno, affievolendosi ben prima della fine del piano pluriennale."
+        },
+        "3": {
+          "en": "Sustains own region's pace through a strong opening year but fades as the multi-year plan continues.",
+          "it": "Mantiene il ritmo della propria regione in un primo anno forte, ma si affievolisce con il proseguire del piano pluriennale."
+        },
+        "5": {
+          "en": "Sustains own region's pace across the full multi-year plan rather than a single strong year.",
+          "it": "Mantiene il ritmo della propria regione lungo l'intero piano pluriennale anziché in un solo anno forte."
+        }
       }
     }
   ],
   "CSF": [
     {
-      "indicator": "Understand how customers' needs and expectations are evolving and which trends drive the evolution",
+      "indicator": {
+        "en": "Understand how customers' needs and expectations are evolving and which trends drive the evolution",
+        "it": "Comprendere come evolvono i bisogni e le aspettative dei clienti e quali tendenze ne guidano l'evoluzione"
+      },
       "scale": {
-        "5": "Anticipates customer trends and integrates them into planning and service design.",
-        "3": "Responds to evident customer trends but may lack forward-looking insights.",
-        "1": "Fails to consider customer evolution, resulting in outdated offerings or services."
+        "1": {
+          "en": "Fails to consider customer evolution, resulting in outdated offerings or services.",
+          "it": "Non considera l'evoluzione della clientela, con offerte o servizi superati."
+        },
+        "3": {
+          "en": "Responds to evident customer trends but may lack forward-looking insights.",
+          "it": "Risponde alle tendenze evidenti della clientela, ma può mancare di visione prospettica."
+        },
+        "5": {
+          "en": "Anticipates customer trends and integrates them into planning and service design.",
+          "it": "Anticipa le tendenze della clientela e le integra nella pianificazione e nella progettazione dei servizi."
+        }
       }
     },
     {
-      "indicator": "Foster a customer-focused environment where people at all levels are committed to maximizing customer satisfaction and loyalty",
+      "indicator": {
+        "en": "Foster a customer-focused environment where people at all levels are committed to maximizing customer satisfaction and loyalty",
+        "it": "Alimentare un ambiente orientato al cliente in cui le persone a tutti i livelli si impegnano a massimizzare la soddisfazione e la fedeltà dei clienti"
+      },
       "scale": {
-        "5": "Instills deep customer focus at all levels, consistently driving satisfaction and loyalty.",
-        "3": "Supports customer service efforts, but commitment varies across the team.",
-        "1": "Customer needs are not prioritized, leading to inconsistent or poor service."
+        "1": {
+          "en": "Customer needs are not prioritized, leading to inconsistent or poor service.",
+          "it": "I bisogni dei clienti non sono considerati prioritari, con un servizio discontinuo o scadente."
+        },
+        "3": {
+          "en": "Supports customer service efforts, but commitment varies across the team.",
+          "it": "Sostiene gli sforzi di servizio al cliente, ma l'impegno varia all'interno del team."
+        },
+        "5": {
+          "en": "Instills deep customer focus at all levels, consistently driving satisfaction and loyalty.",
+          "it": "Radica un profondo orientamento al cliente a tutti i livelli, favorendo con costanza soddisfazione e fedeltà."
+        }
       }
     },
     {
-      "indicator": "Create systems and processes that make it easy for customers to work with own organizational unit",
+      "indicator": {
+        "en": "Create systems and processes that make it easy for customers to work with own organizational unit",
+        "it": "Creare sistemi e processi che rendano facile per i clienti lavorare con la propria unità organizzativa"
+      },
       "scale": {
-        "5": "Designs seamless, customer-friendly systems that enhance accessibility and satisfaction.",
-        "3": "Implements some improvements but may retain inefficient processes.",
-        "1": "Processes are cumbersome and unfriendly, creating barriers for customers."
+        "1": {
+          "en": "Processes are cumbersome and unfriendly, creating barriers for customers.",
+          "it": "I processi sono macchinosi e ostili, creando barriere per i clienti."
+        },
+        "3": {
+          "en": "Implements some improvements but may retain inefficient processes.",
+          "it": "Realizza alcuni miglioramenti, ma può mantenere processi inefficienti."
+        },
+        "5": {
+          "en": "Designs seamless, customer-friendly systems that enhance accessibility and satisfaction.",
+          "it": "Progetta sistemi fluidi e orientati al cliente che migliorano l'accessibilità e la soddisfazione."
+        }
       }
     }
   ],
   "OPX": [
     {
-      "indicator": "Establish ambitious but realistic plans to achieve the unit's strategic objectives",
+      "indicator": {
+        "en": "Establish ambitious but realistic plans to achieve the unit's strategic objectives",
+        "it": "Stabilire piani ambiziosi ma realistici per raggiungere gli obiettivi strategici dell'unità"
+      },
       "scale": {
-        "5": "Sets high-reaching yet attainable strategic goals, with clear execution plans.",
-        "3": "Sets goals but may struggle with feasibility or detailed planning.",
-        "1": "Plans lack ambition or realism, leading to poor execution or abandonment."
+        "1": {
+          "en": "Plans lack ambition or realism, leading to poor execution or abandonment.",
+          "it": "Ai piani manca ambizione o realismo, con un'esecuzione carente o il loro abbandono."
+        },
+        "3": {
+          "en": "Sets goals but may struggle with feasibility or detailed planning.",
+          "it": "Definisce obiettivi, ma può avere difficoltà con la fattibilità o la pianificazione di dettaglio."
+        },
+        "5": {
+          "en": "Sets high-reaching yet attainable strategic goals, with clear execution plans.",
+          "it": "Definisce obiettivi strategici elevati ma raggiungibili, con piani di esecuzione chiari."
+        }
       }
     },
     {
-      "indicator": "Constantly monitor the progress of the organizational unit and intervene decisively on who causes negative deviations",
+      "indicator": {
+        "en": "Constantly monitor the progress of the organizational unit and intervene decisively on who causes negative deviations",
+        "it": "Monitorare costantemente l'andamento dell'unità organizzativa e intervenire con decisione su chi causa scostamenti negativi"
+      },
       "scale": {
-        "5": "Actively monitors progress and promptly addresses root causes of underperformance.",
-        "3": "Tracks results periodically and intervenes when problems become evident.",
-        "1": "Rarely monitors performance or avoids difficult corrective actions."
+        "1": {
+          "en": "Rarely monitors performance or avoids difficult corrective actions.",
+          "it": "Monitora raramente la performance o evita le azioni correttive difficili."
+        },
+        "3": {
+          "en": "Tracks results periodically and intervenes when problems become evident.",
+          "it": "Monitora i risultati periodicamente e interviene quando i problemi diventano evidenti."
+        },
+        "5": {
+          "en": "Actively monitors progress and promptly addresses root causes of underperformance.",
+          "it": "Monitora attivamente l'andamento e affronta tempestivamente le cause radice delle prestazioni insufficienti."
+        }
       }
     },
     {
-      "indicator": "Ensure subordinates have the resources, authority, and support they need to achieve goals",
+      "indicator": {
+        "en": "Ensure subordinates have the resources, authority, and support they need to achieve goals",
+        "it": "Assicurare che i collaboratori dispongano delle risorse, dell'autorità e del supporto necessari per raggiungere gli obiettivi"
+      },
       "scale": {
-        "5": "Proactively removes barriers and secures everything the team needs to succeed.",
-        "3": "Provides basic support but may overlook key needs or constraints.",
-        "1": "Neglects to support subordinates, hindering their ability to deliver results."
+        "1": {
+          "en": "Neglects to support subordinates, hindering their ability to deliver results.",
+          "it": "Omette di supportare i collaboratori, ostacolandone la capacità di produrre risultati."
+        },
+        "3": {
+          "en": "Provides basic support but may overlook key needs or constraints.",
+          "it": "Fornisce un supporto di base, ma può trascurare esigenze o vincoli chiave."
+        },
+        "5": {
+          "en": "Proactively removes barriers and secures everything the team needs to succeed.",
+          "it": "Rimuove in modo proattivo le barriere e assicura tutto ciò di cui il team ha bisogno per riuscire."
+        }
       }
     }
   ],
   "TMG": [
     {
-      "indicator": "Set functional goals and delegate execution authority to own region's leaders",
+      "indicator": {
+        "en": "Set functional goals and delegate execution authority to own region's leaders",
+        "it": "Definire obiettivi funzionali e delegare l'autorità di esecuzione ai responsabili della propria regione"
+      },
       "scale": {
-        "5": "Sets functional goals and delegates real execution authority to own region's leaders, freeing them to act.",
-        "3": "Sets functional goals for own region's leaders but retains execution authority rather than delegating it.",
-        "1": "Fails to delegate execution authority alongside functional goals, forcing own region's leaders to escalate routine decisions."
+        "1": {
+          "en": "Fails to delegate execution authority alongside functional goals, forcing own region's leaders to escalate routine decisions.",
+          "it": "Non delega l'autorità di esecuzione insieme agli obiettivi funzionali, costringendo i responsabili della propria regione a portare ai livelli superiori le decisioni di routine."
+        },
+        "3": {
+          "en": "Sets functional goals for own region's leaders but retains execution authority rather than delegating it.",
+          "it": "Definisce obiettivi funzionali per i responsabili della propria regione, ma trattiene l'autorità di esecuzione anziché delegarla."
+        },
+        "5": {
+          "en": "Sets functional goals and delegates real execution authority to own region's leaders, freeing them to act.",
+          "it": "Definisce obiettivi funzionali e delega una reale autorità di esecuzione ai responsabili della propria regione, lasciandoli liberi di agire."
+        }
       }
     },
     {
-      "indicator": "Give functional leaders across own region candid, specific feedback on performance",
+      "indicator": {
+        "en": "Give functional leaders across own region candid, specific feedback on performance",
+        "it": "Dare ai responsabili di funzione della propria regione un feedback franco e specifico sulla performance"
+      },
       "scale": {
-        "5": "Gives functional leaders across own region candid, specific feedback on performance, tying it to concrete regional results.",
-        "3": "Gives functional leaders across own region feedback on performance but stops short of specifics.",
-        "1": "Avoids giving functional leaders across own region candid feedback, letting underperformance persist unchecked."
+        "1": {
+          "en": "Avoids giving functional leaders across own region candid feedback, letting underperformance persist unchecked.",
+          "it": "Evita di dare ai responsabili di funzione della propria regione un feedback franco, lasciando che le prestazioni insufficienti persistano senza controllo."
+        },
+        "3": {
+          "en": "Gives functional leaders across own region feedback on performance but stops short of specifics.",
+          "it": "Dà ai responsabili di funzione della propria regione un feedback sulla performance, ma non arriva agli aspetti specifici."
+        },
+        "5": {
+          "en": "Gives functional leaders across own region candid, specific feedback on performance, tying it to concrete regional results.",
+          "it": "Dà ai responsabili di funzione della propria regione un feedback franco e specifico sulla performance, collegandolo a risultati regionali concreti."
+        }
       }
     },
     {
-      "indicator": "Sustain engagement and collaboration among functional leaders across own region",
+      "indicator": {
+        "en": "Sustain engagement and collaboration among functional leaders across own region",
+        "it": "Sostenere il coinvolgimento e la collaborazione tra i responsabili di funzione della propria regione"
+      },
       "scale": {
-        "5": "Sustains strong engagement and collaboration among functional leaders across own region, turning rivalry into shared wins.",
-        "3": "Sustains collaboration among functional leaders across own region but leaves engagement uneven.",
-        "1": "Neglects engagement and collaboration among functional leaders across own region, letting functional rivalry fester."
+        "1": {
+          "en": "Neglects engagement and collaboration among functional leaders across own region, letting functional rivalry fester.",
+          "it": "Trascura il coinvolgimento e la collaborazione tra i responsabili di funzione della propria regione, lasciando incancrenire la rivalità tra funzioni."
+        },
+        "3": {
+          "en": "Sustains collaboration among functional leaders across own region but leaves engagement uneven.",
+          "it": "Sostiene la collaborazione tra i responsabili di funzione della propria regione, ma lascia il coinvolgimento disomogeneo."
+        },
+        "5": {
+          "en": "Sustains strong engagement and collaboration among functional leaders across own region, turning rivalry into shared wins.",
+          "it": "Sostiene un forte coinvolgimento e una forte collaborazione tra i responsabili di funzione della propria regione, trasformando la rivalità in successi condivisi."
+        }
       }
     }
   ],
   "INS": [
     {
-      "indicator": "Provides coaching and guidance to foster skills development within the organizational unit",
+      "indicator": {
+        "en": "Provides coaching and guidance to foster skills development within the organizational unit",
+        "it": "Fornisce coaching e orientamento per favorire lo sviluppo delle competenze all'interno dell'unità organizzativa"
+      },
       "scale": {
-        "5": "Regularly coaches team members, driving clear improvement in skills and confidence.",
-        "3": "Offers coaching when asked or during formal reviews.",
-        "1": "Avoids developmental feedback or coaching, leaving team growth stagnant."
+        "1": {
+          "en": "Avoids developmental feedback or coaching, leaving team growth stagnant.",
+          "it": "Evita il feedback di sviluppo o il coaching, lasciando stagnante la crescita del team."
+        },
+        "3": {
+          "en": "Offers coaching when asked or during formal reviews.",
+          "it": "Offre coaching quando richiesto o durante le valutazioni formali."
+        },
+        "5": {
+          "en": "Regularly coaches team members, driving clear improvement in skills and confidence.",
+          "it": "Fornisce regolarmente coaching ai membri del team, determinando un chiaro miglioramento nelle competenze e nella sicurezza."
+        }
       }
     },
     {
-      "indicator": "Shape roles and assignments in ways that develop people's capabilities",
+      "indicator": {
+        "en": "Shape roles and assignments in ways that develop people's capabilities",
+        "it": "Modellare ruoli e incarichi in modo da sviluppare le capacità delle persone"
+      },
       "scale": {
-        "5": "Strategically shapes roles to stretch abilities and foster growth.",
-        "3": "Occasionally aligns tasks with development, but inconsistently.",
-        "1": "Makes assignments based only on immediate needs, ignoring development potential."
+        "1": {
+          "en": "Makes assignments based only on immediate needs, ignoring development potential.",
+          "it": "Assegna gli incarichi solo in base alle esigenze immediate, ignorando il potenziale di sviluppo."
+        },
+        "3": {
+          "en": "Occasionally aligns tasks with development, but inconsistently.",
+          "it": "Allinea occasionalmente i compiti allo sviluppo, ma in modo discontinuo."
+        },
+        "5": {
+          "en": "Strategically shapes roles to stretch abilities and foster growth.",
+          "it": "Modella strategicamente i ruoli per mettere alla prova le capacità e favorire la crescita."
+        }
       }
     },
     {
-      "indicator": "Identify successors for key positions, and arrange for appropriate development opportunities for them",
+      "indicator": {
+        "en": "Identify successors for key positions, and arrange for appropriate development opportunities for them",
+        "it": "Identificare i successori per le posizioni chiave e predisporre per loro opportunità di sviluppo adeguate"
+      },
       "scale": {
-        "5": "Proactively identifies talent and prepares them for succession through tailored development.",
-        "3": "Identifies potential successors informally but without structured development.",
-        "1": "Ignores succession planning, leaving key roles vulnerable."
+        "1": {
+          "en": "Ignores succession planning, leaving key roles vulnerable.",
+          "it": "Ignora la pianificazione della successione, lasciando vulnerabili i ruoli chiave."
+        },
+        "3": {
+          "en": "Identifies potential successors informally but without structured development.",
+          "it": "Identifica informalmente i potenziali successori, ma senza uno sviluppo strutturato."
+        },
+        "5": {
+          "en": "Proactively identifies talent and prepares them for succession through tailored development.",
+          "it": "Identifica in modo proattivo i talenti e li prepara alla successione attraverso percorsi di sviluppo su misura."
+        }
       }
     }
   ],
   "COL": [
     {
-      "indicator": "Bring functional leaders from across own region into a joint plan before it affects their work",
+      "indicator": {
+        "en": "Bring functional leaders from across own region into a joint plan before it affects their work",
+        "it": "Coinvolgere i responsabili di funzione della propria regione in un piano congiunto prima che incida sul loro lavoro"
+      },
       "scale": {
-        "5": "Brings functional leaders from across own region into a joint plan before it affects their work.",
-        "3": "Brings functional leaders from across own region into a joint plan after it is set.",
-        "1": "Neglects to bring functional leaders from across own region into a joint plan before it affects their work."
+        "1": {
+          "en": "Neglects to bring functional leaders from across own region into a joint plan before it affects their work.",
+          "it": "Omette di coinvolgere i responsabili di funzione della propria regione in un piano congiunto prima che incida sul loro lavoro."
+        },
+        "3": {
+          "en": "Brings functional leaders from across own region into a joint plan after it is set.",
+          "it": "Coinvolge i responsabili di funzione della propria regione in un piano congiunto dopo che è stato definito."
+        },
+        "5": {
+          "en": "Brings functional leaders from across own region into a joint plan before it affects their work.",
+          "it": "Coinvolge i responsabili di funzione della propria regione in un piano congiunto prima che incida sul loro lavoro."
+        }
       }
     },
     {
-      "indicator": "Split shared initiatives evenly across own region's business functions rather than let one carry them",
+      "indicator": {
+        "en": "Split shared initiatives evenly across own region's business functions rather than let one carry them",
+        "it": "Ripartire equamente le iniziative condivise tra le funzioni aziendali della propria regione anziché lasciare che una sola le sostenga"
+      },
       "scale": {
-        "5": "Splits shared initiatives evenly across own region's functions, watching for early strain.",
-        "3": "Splits shared initiatives evenly across own region's functions at the outset but leaves them uneven later.",
-        "1": "Avoids redistributing shared initiatives across own region's business functions, letting one function carry them."
+        "1": {
+          "en": "Avoids redistributing shared initiatives across own region's business functions, letting one function carry them.",
+          "it": "Evita di ridistribuire le iniziative condivise tra le funzioni aziendali della propria regione, lasciando che una sola funzione le sostenga."
+        },
+        "3": {
+          "en": "Splits shared initiatives evenly across own region's functions at the outset but leaves them uneven later.",
+          "it": "Ripartisce equamente le iniziative condivise tra le funzioni della propria regione all'inizio, ma le lascia sbilanciate in seguito."
+        },
+        "5": {
+          "en": "Splits shared initiatives evenly across own region's functions, watching for early strain.",
+          "it": "Ripartisce equamente le iniziative condivise tra le funzioni della propria regione, prestando attenzione ai primi segnali di sovraccarico."
+        }
       }
     },
     {
-      "indicator": "Work through a disagreement between own region's functional leaders rather than decide for them",
+      "indicator": {
+        "en": "Work through a disagreement between own region's functional leaders rather than decide for them",
+        "it": "Affrontare fino in fondo un disaccordo tra i responsabili di funzione della propria regione anziché decidere al posto loro"
+      },
       "scale": {
-        "5": "Works through a disagreement between own region's functional leaders, reaching a shared resolution both can act on.",
-        "3": "Works through a disagreement between own region's functional leaders on operational matters but decides on larger ones.",
-        "1": "Resists working through a disagreement between own region's functional leaders, deciding for them instead."
+        "1": {
+          "en": "Resists working through a disagreement between own region's functional leaders, deciding for them instead.",
+          "it": "Fa resistenza ad affrontare fino in fondo un disaccordo tra i responsabili di funzione della propria regione, decidendo invece al posto loro."
+        },
+        "3": {
+          "en": "Works through a disagreement between own region's functional leaders on operational matters but decides on larger ones.",
+          "it": "Affronta fino in fondo un disaccordo tra i responsabili di funzione della propria regione sulle questioni operative, ma decide su quelle più rilevanti."
+        },
+        "5": {
+          "en": "Works through a disagreement between own region's functional leaders, reaching a shared resolution both can act on.",
+          "it": "Affronta fino in fondo un disaccordo tra i responsabili di funzione della propria regione, raggiungendo una soluzione condivisa su cui entrambi possono agire."
+        }
       }
     }
   ],
   "INF": [
     {
-      "indicator": "Support own positions with compelling business arguments, addressing all relevant factors",
+      "indicator": {
+        "en": "Support own positions with compelling business arguments, addressing all relevant factors",
+        "it": "Sostenere le proprie posizioni con argomentazioni di business convincenti, affrontando tutti i fattori rilevanti"
+      },
       "scale": {
-        "5": "Presents positions with strong data, logic, and strategic relevance.",
-        "3": "Arguments are logical but may overlook some key factors.",
-        "1": "Arguments lack substance or relevance, weakening credibility."
+        "1": {
+          "en": "Arguments lack substance or relevance, weakening credibility.",
+          "it": "Alle argomentazioni manca sostanza o rilevanza, indebolendo la credibilità."
+        },
+        "3": {
+          "en": "Arguments are logical but may overlook some key factors.",
+          "it": "Le argomentazioni sono logiche, ma possono trascurare alcuni fattori chiave."
+        },
+        "5": {
+          "en": "Presents positions with strong data, logic, and strategic relevance.",
+          "it": "Presenta le posizioni con dati solidi, logica e rilevanza strategica."
+        }
       }
     },
     {
-      "indicator": "Identify the motives and objectives of the interlocutors and use them to argue own positions",
+      "indicator": {
+        "en": "Identify the motives and objectives of the interlocutors and use them to argue own positions",
+        "it": "Identificare le motivazioni e gli obiettivi degli interlocutori e utilizzarli per argomentare le proprie posizioni"
+      },
       "scale": {
-        "5": "Skilfully tailors arguments to others' motives, increasing influence and buy-in.",
-        "3": "Occasionally considers others' interests but struggles to integrate them effectively.",
-        "1": "Disregards others' views, leading to ineffective communication."
+        "1": {
+          "en": "Disregards others' views, leading to ineffective communication.",
+          "it": "Ignora i punti di vista altrui, con una comunicazione inefficace."
+        },
+        "3": {
+          "en": "Occasionally considers others' interests but struggles to integrate them effectively.",
+          "it": "Considera occasionalmente gli interessi altrui, ma fatica a integrarli efficacemente."
+        },
+        "5": {
+          "en": "Skilfully tailors arguments to others' motives, increasing influence and buy-in.",
+          "it": "Adatta abilmente le argomentazioni alle motivazioni altrui, aumentando l'influenza e l'adesione."
+        }
       }
     },
     {
-      "indicator": "Negotiate persuasively, creating \"win-win\" solutions for all stakeholders",
+      "indicator": {
+        "en": "Negotiate persuasively, creating \"win-win\" solutions for all stakeholders",
+        "it": "Negoziare in modo persuasivo, creando soluzioni \"win-win\" per tutti gli stakeholder"
+      },
       "scale": {
-        "5": "Achieves favorable outcomes while ensuring others feel heard and respected.",
-        "3": "Reaches acceptable deals, though may miss opportunities for mutual benefit.",
-        "1": "Negotiations often end in conflict, dissatisfaction, or imbalanced outcomes."
+        "1": {
+          "en": "Negotiations often end in conflict, dissatisfaction, or imbalanced outcomes.",
+          "it": "Le negoziazioni finiscono spesso in conflitto, insoddisfazione o risultati sbilanciati."
+        },
+        "3": {
+          "en": "Reaches acceptable deals, though may miss opportunities for mutual benefit.",
+          "it": "Raggiunge accordi accettabili, anche se può perdere opportunità di beneficio reciproco."
+        },
+        "5": {
+          "en": "Achieves favorable outcomes while ensuring others feel heard and respected.",
+          "it": "Ottiene risultati favorevoli assicurando al contempo che gli altri si sentano ascoltati e rispettati."
+        }
       }
     }
   ],
   "NET": [
     {
-      "indicator": "Build a working relationship with peers and external stakeholders before own region needs their help",
+      "indicator": {
+        "en": "Build a working relationship with peers and external stakeholders before own region needs their help",
+        "it": "Costruire un rapporto di lavoro con i pari e gli stakeholder esterni prima che la propria regione abbia bisogno del loro aiuto"
+      },
       "scale": {
-        "5": "Builds a working relationship with peers and external stakeholders before own region needs their help.",
-        "3": "Builds a working relationship with peers and external stakeholders only once own region already needs their help.",
-        "1": "Neglects to build a working relationship with peers and external stakeholders."
+        "1": {
+          "en": "Neglects to build a working relationship with peers and external stakeholders.",
+          "it": "Omette di costruire un rapporto di lavoro con i pari e gli stakeholder esterni."
+        },
+        "3": {
+          "en": "Builds a working relationship with peers and external stakeholders only once own region already needs their help.",
+          "it": "Costruisce un rapporto di lavoro con i pari e gli stakeholder esterni solo quando la propria regione ha già bisogno del loro aiuto."
+        },
+        "5": {
+          "en": "Builds a working relationship with peers and external stakeholders before own region needs their help.",
+          "it": "Costruisce un rapporto di lavoro con i pari e gli stakeholder esterni prima che la propria regione abbia bisogno del loro aiuto."
+        }
       }
     },
     {
-      "indicator": "Adjust own communication style to fit stakeholders across own region and outside it",
+      "indicator": {
+        "en": "Adjust own communication style to fit stakeholders across own region and outside it",
+        "it": "Adattare il proprio stile comunicativo agli stakeholder della propria regione e a quelli esterni a essa"
+      },
       "scale": {
-        "5": "Adjusts own communication style to fit stakeholders across own region and outside it.",
-        "3": "Adjusts own communication style for internal peers but uses the same approach with external stakeholders.",
-        "1": "Resists adjusting own communication style across own region and outside it, using the same approach with every stakeholder."
+        "1": {
+          "en": "Resists adjusting own communication style across own region and outside it, using the same approach with every stakeholder.",
+          "it": "Fa resistenza ad adattare il proprio stile comunicativo alla propria regione e all'esterno di essa, usando lo stesso approccio con ogni stakeholder."
+        },
+        "3": {
+          "en": "Adjusts own communication style for internal peers but uses the same approach with external stakeholders.",
+          "it": "Adatta il proprio stile comunicativo con i pari interni, ma usa lo stesso approccio con gli stakeholder esterni."
+        },
+        "5": {
+          "en": "Adjusts own communication style to fit stakeholders across own region and outside it.",
+          "it": "Adatta il proprio stile comunicativo agli stakeholder della propria regione e a quelli esterni a essa."
+        }
       }
     },
     {
-      "indicator": "Use an existing relationship with an external stakeholder to unblock own region's plan",
+      "indicator": {
+        "en": "Use an existing relationship with an external stakeholder to unblock own region's plan",
+        "it": "Utilizzare un rapporto esistente con uno stakeholder esterno per sbloccare il piano della propria regione"
+      },
       "scale": {
-        "5": "Uses an existing relationship with an external stakeholder to unblock own region's plan.",
-        "3": "Uses an existing relationship with an external stakeholder to unblock own region's plan after a request stalls.",
-        "1": "Overlooks existing relationships with external stakeholders, routing every request for own region through formal channels alone."
+        "1": {
+          "en": "Overlooks existing relationships with external stakeholders, routing every request for own region through formal channels alone.",
+          "it": "Trascura i rapporti esistenti con gli stakeholder esterni, convogliando ogni richiesta della propria regione esclusivamente attraverso i canali formali."
+        },
+        "3": {
+          "en": "Uses an existing relationship with an external stakeholder to unblock own region's plan after a request stalls.",
+          "it": "Utilizza un rapporto esistente con uno stakeholder esterno per sbloccare il piano della propria regione dopo che una richiesta si è arenata."
+        },
+        "5": {
+          "en": "Uses an existing relationship with an external stakeholder to unblock own region's plan.",
+          "it": "Utilizza un rapporto esistente con uno stakeholder esterno per sbloccare il piano della propria regione."
+        }
       }
     }
   ],
   "RES": [
     {
-      "indicator": "Respond constructively and resourcefully to changes in context and strategy",
+      "indicator": {
+        "en": "Respond constructively and resourcefully to changes in context and strategy",
+        "it": "Rispondere in modo costruttivo e ricco di risorse ai cambiamenti di contesto e di strategia"
+      },
       "scale": {
-        "5": "Adapts quickly and guides others through change with clear, resourceful plans.",
-        "3": "Handles change when required, but may need support or direction.",
-        "1": "Struggles with change, resisting or reacting ineffectively."
+        "1": {
+          "en": "Struggles with change, resisting or reacting ineffectively.",
+          "it": "Fatica di fronte al cambiamento, resistendovi o reagendo in modo inefficace."
+        },
+        "3": {
+          "en": "Handles change when required, but may need support or direction.",
+          "it": "Gestisce il cambiamento quando richiesto, ma può avere bisogno di supporto o indicazioni."
+        },
+        "5": {
+          "en": "Adapts quickly and guides others through change with clear, resourceful plans.",
+          "it": "Si adatta rapidamente e guida gli altri attraverso il cambiamento con piani chiari e ricchi di risorse."
+        }
       }
     },
     {
-      "indicator": "Quickly recover from failures and disappointments, maintaining a positive and future-oriented attitude",
+      "indicator": {
+        "en": "Quickly recover from failures and disappointments, maintaining a positive and future-oriented attitude",
+        "it": "Riprendersi rapidamente da fallimenti e delusioni, mantenendo un atteggiamento positivo e orientato al futuro"
+      },
       "scale": {
-        "5": "Bounces back swiftly from setbacks with positivity and renewed focus.",
-        "3": "Recovers from setbacks but may linger on negatives temporarily.",
-        "1": "Dwells on failure, losing motivation or momentum."
+        "1": {
+          "en": "Dwells on failure, losing motivation or momentum.",
+          "it": "Si sofferma sul fallimento, perdendo motivazione o slancio."
+        },
+        "3": {
+          "en": "Recovers from setbacks but may linger on negatives temporarily.",
+          "it": "Si riprende dalle battute d'arresto, ma può soffermarsi temporaneamente sugli aspetti negativi."
+        },
+        "5": {
+          "en": "Bounces back swiftly from setbacks with positivity and renewed focus.",
+          "it": "Si riprende rapidamente dalle battute d'arresto con positività e rinnovata concentrazione."
+        }
       }
     },
     {
-      "indicator": "Demostrate resilience when dealing with \"political\" difficulties within the organization",
+      "indicator": {
+        "en": "Demostrate resilience when dealing with \"political\" difficulties within the organization",
+        "it": "Dimostrare resilienza nell'affrontare le difficoltà \"politiche\" all'interno dell'organizzazione"
+      },
       "scale": {
-        "5": "Maintains integrity and effectiveness in politically sensitive environments.",
-        "3": "Navigates politics with some discomfort or inconsistency.",
-        "1": "Avoids or mishandles political dynamics, damaging credibility or results."
+        "1": {
+          "en": "Avoids or mishandles political dynamics, damaging credibility or results.",
+          "it": "Evita o gestisce male le dinamiche politiche, danneggiando la credibilità o i risultati."
+        },
+        "3": {
+          "en": "Navigates politics with some discomfort or inconsistency.",
+          "it": "Si muove nelle dinamiche politiche con un certo disagio o in modo discontinuo."
+        },
+        "5": {
+          "en": "Maintains integrity and effectiveness in politically sensitive environments.",
+          "it": "Mantiene integrità ed efficacia in contesti politicamente sensibili."
+        }
       }
     }
   ],
   "LRN": [
     {
-      "indicator": "Look for challenging assignments and career opportunities that force them to grow",
+      "indicator": {
+        "en": "Look for challenging assignments and career opportunities that force them to grow",
+        "it": "Cercare incarichi sfidanti e opportunità di carriera che costringano a crescere"
+      },
       "scale": {
-        "5": "Actively seeks stretch roles that drive significant personal and professional growth.",
-        "3": "Accepts challenges when presented but may hesitate to pursue them.",
-        "1": "Avoids challenging assignments, preferring comfort and routine."
+        "1": {
+          "en": "Avoids challenging assignments, preferring comfort and routine.",
+          "it": "Evita gli incarichi sfidanti, preferendo comodità e routine."
+        },
+        "3": {
+          "en": "Accepts challenges when presented but may hesitate to pursue them.",
+          "it": "Accetta le sfide quando vengono proposte, ma può esitare a perseguirle."
+        },
+        "5": {
+          "en": "Actively seeks stretch roles that drive significant personal and professional growth.",
+          "it": "Cerca attivamente ruoli sfidanti che determinano una significativa crescita personale e professionale."
+        }
       }
     },
     {
-      "indicator": "Show strong interest in trying new things, even at the risk of possible failures",
+      "indicator": {
+        "en": "Show strong interest in trying new things, even at the risk of possible failures",
+        "it": "Mostrare forte interesse a sperimentare cose nuove, anche a rischio di possibili fallimenti"
+      },
       "scale": {
-        "5": "Embraces experimentation, understanding that failure is part of learning.",
-        "3": "Open to new experiences when stakes are low or risk is manageable.",
-        "1": "Resists new approaches due to fear of failure or discomfort with change."
+        "1": {
+          "en": "Resists new approaches due to fear of failure or discomfort with change.",
+          "it": "Resiste ai nuovi approcci per paura del fallimento o per disagio verso il cambiamento."
+        },
+        "3": {
+          "en": "Open to new experiences when stakes are low or risk is manageable.",
+          "it": "È aperto a nuove esperienze quando la posta in gioco è bassa o il rischio è gestibile."
+        },
+        "5": {
+          "en": "Embraces experimentation, understanding that failure is part of learning.",
+          "it": "Abbraccia la sperimentazione, comprendendo che il fallimento fa parte dell'apprendimento."
+        }
       }
     },
     {
-      "indicator": "Look for people who are different from oneselves to learn from them",
+      "indicator": {
+        "en": "Look for people who are different from oneselves to learn from them",
+        "it": "Cercare persone diverse da sé per imparare da loro"
+      },
       "scale": {
-        "5": "Seeks diverse perspectives actively to broaden thinking and improve outcomes.",
-        "3": "Open to other viewpoints but tends to stay in familiar circles.",
-        "1": "Avoids engaging with those who are different, limiting personal growth."
+        "1": {
+          "en": "Avoids engaging with those who are different, limiting personal growth.",
+          "it": "Evita il confronto con chi è diverso, limitando la crescita personale."
+        },
+        "3": {
+          "en": "Open to other viewpoints but tends to stay in familiar circles.",
+          "it": "È aperto ad altri punti di vista, ma tende a restare in cerchie familiari."
+        },
+        "5": {
+          "en": "Seeks diverse perspectives actively to broaden thinking and improve outcomes.",
+          "it": "Cerca attivamente prospettive diverse per ampliare il pensiero e migliorare i risultati."
+        }
       }
     }
   ]

@@ -1,27 +1,135 @@
 {
   "ICO": {
-    "name": "Individual Contributor",
-    "responsibilities": "Responsible for executing tasks with a short-term focus (daily to weekly) within their own area, following budget guidelines, and contributing to functional goals without direct managerial duties.",
-    "competencies": ["PRS", "STG", "INN", "DRV", "CSF", "SLF", "OPX", "COM", "COL", "INF", "NET", "RES", "LRN", "ITG", "INC"]
+    "name": {
+      "en": "Individual Contributor"
+    },
+    "responsibilities": {
+      "en": "Responsible for executing tasks with a short-term focus (daily to weekly) within their own area, following budget guidelines, and contributing to functional goals without direct managerial duties."
+    },
+    "competencies": [
+      "PRS",
+      "STG",
+      "INN",
+      "DRV",
+      "CSF",
+      "SLF",
+      "OPX",
+      "COM",
+      "COL",
+      "INF",
+      "NET",
+      "RES",
+      "LRN",
+      "ITG",
+      "INC"
+    ]
   },
   "FLL": {
-    "name": "Front Line Leader",
-    "responsibilities": "Responsible for coordinating the execution of operational goals with a medium-term focus (weekly to monthly) within a small area or department, managing operating costs, and overseeing one functional unit.",
-    "competencies": ["PRS", "STG", "INN", "JDG", "DRV", "CSF", "SLF", "OPX", "TMG", "INS", "COM", "COL", "INF", "NET", "RES", "LRN", "ITG", "INC"]
+    "name": {
+      "en": "Front Line Leader"
+    },
+    "responsibilities": {
+      "en": "Responsible for coordinating the execution of operational goals with a medium-term focus (weekly to monthly) within a small area or department, managing operating costs, and overseeing one functional unit."
+    },
+    "competencies": [
+      "PRS",
+      "STG",
+      "INN",
+      "JDG",
+      "DRV",
+      "CSF",
+      "SLF",
+      "OPX",
+      "TMG",
+      "INS",
+      "COM",
+      "COL",
+      "INF",
+      "NET",
+      "RES",
+      "LRN",
+      "ITG",
+      "INC"
+    ]
   },
   "MLL": {
-    "name": "Mid-Level Leader",
-    "responsibilities": "Responsible for aligning unit plans with organizational strategy with a long-term focus (1 year) within a small country, balancing revenue growth with cost management, and managing one or two closely related functions.",
-    "competencies": ["PRS", "STG", "INN", "JDG", "DRV", "CSF", "SLF", "OPX", "TMG", "INS", "COM", "COL", "INF", "NET", "RES", "LRN", "ITG", "INC"]
+    "name": {
+      "en": "Mid-Level Leader"
+    },
+    "responsibilities": {
+      "en": "Responsible for aligning unit plans with organizational strategy with a long-term focus (1 year) within a small country, balancing revenue growth with cost management, and managing one or two closely related functions."
+    },
+    "competencies": [
+      "PRS",
+      "STG",
+      "INN",
+      "JDG",
+      "DRV",
+      "CSF",
+      "SLF",
+      "OPX",
+      "TMG",
+      "INS",
+      "COM",
+      "COL",
+      "INF",
+      "NET",
+      "RES",
+      "LRN",
+      "ITG",
+      "INC"
+    ]
   },
   "BUL": {
-    "name": "Business Unit Leader",
-    "responsibilities": "Responsible for executing organizational strategy with a long-term focus (1-2 years) across an entire country or region, handling full P&L responsibilities, and overseeing multiple business functions.",
-    "competencies": ["PRS", "STG", "INN", "JDG", "DRV", "CSF", "OPX", "TMG", "INS", "COL", "INF", "NET", "RES", "LRN"]
+    "name": {
+      "en": "Business Unit Leader"
+    },
+    "responsibilities": {
+      "en": "Responsible for executing organizational strategy with a long-term focus (1-2 years) across an entire country or region, handling full P&L responsibilities, and overseeing multiple business functions."
+    },
+    "competencies": [
+      "PRS",
+      "STG",
+      "INN",
+      "JDG",
+      "DRV",
+      "CSF",
+      "OPX",
+      "TMG",
+      "INS",
+      "COL",
+      "INF",
+      "NET",
+      "RES",
+      "LRN"
+    ]
   },
   "SRX": {
-    "name": "Senior Executive",
-    "responsibilities": "Responsible for setting organizational direction and long-term strategy with a multi-year focus (3-5 years) across the entire organization or a multi-country region, owning capital allocation and consolidated P&L across business units, and leading other senior leaders across all business functions.",
-    "competencies": ["PRS", "STG", "INN", "JDG", "DRV", "CSF", "SLF", "OPX", "TMG", "INS", "COM", "COL", "INF", "NET", "RES", "LRN", "ITG", "INC"]
+    "name": {
+      "en": "Senior Executive"
+    },
+    "responsibilities": {
+      "en": "Responsible for setting organizational direction and long-term strategy with a multi-year focus (3-5 years) across the entire organization or a multi-country region, owning capital allocation and consolidated P&L across business units, and leading other senior leaders across all business functions."
+    },
+    "competencies": [
+      "PRS",
+      "STG",
+      "INN",
+      "JDG",
+      "DRV",
+      "CSF",
+      "SLF",
+      "OPX",
+      "TMG",
+      "INS",
+      "COM",
+      "COL",
+      "INF",
+      "NET",
+      "RES",
+      "LRN",
+      "ITG",
+      "INC"
+    ]
   }
 }

@@ -36,7 +36,7 @@ function buildLockedRoleMetaFixtures(string $tmpDir, string $roleCode, string $r
 {
     $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
     $roles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
-    $roles[$roleCode]['responsibilities'] = $responsibilities;
+    $roles[$roleCode]['responsibilities'] = ['en' => $responsibilities];
 
     @mkdir("{$tmpDir}/bars", 0755, true);
     file_put_contents("{$tmpDir}/roles.json", json_encode($roles));
@@ -79,7 +79,7 @@ test('locked FV: empty stored responsibilities is filled from JSON (fill-empty-o
 
     // Author responsibilities in the JSON, then re-seed while locked.
     $roles = json_decode(file_get_contents($rolesFile), true, 512, JSON_THROW_ON_ERROR);
-    $roles['SRX']['responsibilities'] = 'Now authored under lock.';
+    $roles['SRX']['responsibilities'] = ['en' => 'Now authored under lock.'];
     file_put_contents($rolesFile, json_encode($roles));
 
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
@@ -101,7 +101,7 @@ test('locked FV: non-empty stored responsibilities is never overwritten', functi
     lockAFrameworkVersion();
 
     $roles = json_decode(file_get_contents($rolesFile), true, 512, JSON_THROW_ON_ERROR);
-    $roles['ICO']['responsibilities'] = 'Attempted overwrite.';
+    $roles['ICO']['responsibilities'] = ['en' => 'Attempted overwrite.'];
     file_put_contents($rolesFile, json_encode($roles));
 
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
@@ -123,8 +123,8 @@ test('locked FV: role name is never touched even when responsibilities is filled
     lockAFrameworkVersion();
 
     $roles = json_decode(file_get_contents($rolesFile), true, 512, JSON_THROW_ON_ERROR);
-    $roles['SRX']['responsibilities'] = 'Filled under lock.';
-    $roles['SRX']['name'] = 'Attempted name overwrite';
+    $roles['SRX']['responsibilities'] = ['en' => 'Filled under lock.'];
+    $roles['SRX']['name'] = ['en' => 'Attempted name overwrite'];
     file_put_contents($rolesFile, json_encode($roles));
 
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
@@ -143,7 +143,7 @@ test('locked FV: filling empty responsibilities emits locked_fill_empty_role_met
     lockAFrameworkVersion();
 
     $roles = json_decode(file_get_contents($rolesFile), true, 512, JSON_THROW_ON_ERROR);
-    $roles['SRX']['responsibilities'] = 'Filled under lock, with signal.';
+    $roles['SRX']['responsibilities'] = ['en' => 'Filled under lock, with signal.'];
     file_put_contents($rolesFile, json_encode($roles));
 
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();

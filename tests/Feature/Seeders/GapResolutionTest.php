@@ -60,7 +60,7 @@ test('missing_role_meta gap resolves once responsibilities becomes non-empty', f
 
     // First seed — SRX responsibilities forced empty (pre-change production state).
     [$rolesFile, $competenciesFile, $barsDir] = buildGapResolutionFixtures($tmpDir, [
-        'SRX' => ['responsibilities' => ''],
+        'SRX' => ['responsibilities' => ['en' => '']],
     ]);
     $seeder = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
     $seeder->run();
@@ -74,7 +74,7 @@ test('missing_role_meta gap resolves once responsibilities becomes non-empty', f
 
     // Author responsibilities in the JSON and re-seed.
     $roles = json_decode(file_get_contents($rolesFile), true, 512, JSON_THROW_ON_ERROR);
-    $roles['SRX']['responsibilities'] = 'Now authored.';
+    $roles['SRX']['responsibilities'] = ['en' => 'Now authored.'];
     file_put_contents($rolesFile, json_encode($roles));
 
     $seeder->run();
@@ -116,8 +116,8 @@ test('role_no_bars gap resolves once bars/{ROLE}.json exists', function (): void
     // Author a minimal SRX.json and re-seed.
     file_put_contents("{$barsDir}/SRX.json", json_encode([
         'PRS' => [[
-            'indicator' => 'Test indicator',
-            'scale' => ['5' => 'A5', '3' => 'A3', '1' => 'A1'],
+            'indicator' => ['en' => 'Test indicator'],
+            'scale' => ['5' => ['en' => 'A5'], '3' => ['en' => 'A3'], '1' => ['en' => 'A1']],
         ]],
     ]));
 
@@ -162,8 +162,8 @@ test('competency_no_bars gap resolves once the pair is covered', function (): vo
     // Author the pair into the fixture copy and re-seed.
     $fllBars = json_decode(file_get_contents("{$barsDir}/FLL.json"), true, 512, JSON_THROW_ON_ERROR);
     $fllBars['PRS'] = [[
-        'indicator' => 'Test indicator',
-        'scale' => ['5' => 'A5', '3' => 'A3', '1' => 'A1'],
+        'indicator' => ['en' => 'Test indicator'],
+        'scale' => ['5' => ['en' => 'A5'], '3' => ['en' => 'A3'], '1' => ['en' => 'A1']],
     ]];
     file_put_contents("{$barsDir}/FLL.json", json_encode($fllBars));
 
@@ -213,8 +213,8 @@ test('competency_no_bars gap preserves row identity through a reopen after resol
     // Author the pair and re-seed — the row must be marked resolved, not replaced.
     $fllBarsAuthored = json_decode(file_get_contents("{$barsDir}/FLL.json"), true, 512, JSON_THROW_ON_ERROR);
     $fllBarsAuthored['PRS'] = [[
-        'indicator' => 'Test indicator',
-        'scale' => ['5' => 'A5', '3' => 'A3', '1' => 'A1'],
+        'indicator' => ['en' => 'Test indicator'],
+        'scale' => ['5' => ['en' => 'A5'], '3' => ['en' => 'A3'], '1' => ['en' => 'A1']],
     ]];
     file_put_contents("{$barsDir}/FLL.json", json_encode($fllBarsAuthored));
 
