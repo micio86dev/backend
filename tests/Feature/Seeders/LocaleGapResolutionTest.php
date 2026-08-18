@@ -171,6 +171,76 @@ test('missing_translation global row resolves only once every anchored pair is f
     cleanupLocaleGapResolutionFixtureTree($tmpDir);
 });
 
+test('missing_translation global row transitions from pending (accurate count) to resolved once every remaining pair is translated', function (): void {
+    // The reverse direction of the "from scratch" scenario above: start with
+    // a partially-translated catalogue (accurate pending count, per-pair
+    // gap ROWS already exist for every pair), then translate every
+    // remaining pair and confirm the global row actually reaches
+    // `resolved` — not just "stays pending with one fewer pending pair",
+    // which the pre-existing sibling test above already covered.
+    $tmpDir = sys_get_temp_dir().'/c_locale_gap_partial_to_full_'.uniqid();
+    $sourceBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
+    [$rolesFile, $competenciesFile, $barsDir] = buildLocaleGapResolutionFixtureTree($tmpDir);
+
+    (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
+
+    $globalGap = FrameworkGap::where('kind', 'missing_translation')
+        ->whereNull('role_code')->whereNull('competency_code')->firstOrFail();
+    expect($globalGap->status)->toBe('pending_authoring')
+        ->and($globalGap->note)->toContain('83 of 83'); // accurate count: every one of the 83 anchored pairs is pending with zero it strings authored yet
+
+    // Translate the remainder: restore every bars file to the REAL,
+    // already-fully-it-translated source (bars-catalogue-completion) —
+    // i.e. every pair the stripped fixture above zeroed out is now complete.
+    foreach (glob("{$sourceBase}/bars/*.json") as $barsFile) {
+        copy($barsFile, "{$barsDir}/".basename($barsFile));
+    }
+    (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
+
+    $globalGap = $globalGap->fresh();
+    expect($globalGap->status)->toBe('resolved', 'every pair is now fully translated — the global row must resolve');
+    expect($globalGap->note)->toBe('it locale: all 83 of 83 role×competency pairs translated');
+
+    cleanupLocaleGapResolutionFixtureTree($tmpDir);
+});
+
+test('missing_translation global row resolves on a from-scratch seed of a fully-translated catalogue with no pre-existing gap rows', function (): void {
+    // Reproduces the production defect: seed the REAL wrapper catalogue
+    // (already 100% it-translated, per bars-catalogue-completion) against a
+    // database with NO pre-existing framework_gaps rows at all — exactly the
+    // first-ever seed of a fully-translated catalogue. The old denominator
+    // was derived from missing_translation gap ROWS, and
+    // resolveOrRecordTranslationGap() only ever creates a row for a pair
+    // that is NOT fully translated — so a catalogue complete from the start
+    // creates zero rows, total=0, pending=0, and the `$total > 0` guard kept
+    // the global row `pending_authoring` forever, with a self-contradicting
+    // "all 0 of 0 translated" note.
+    $tmpDir = sys_get_temp_dir().'/c_locale_gap_fresh_full_'.uniqid();
+    $sourceBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
+    @mkdir("{$tmpDir}/bars", 0755, true);
+    copy("{$sourceBase}/roles.json", "{$tmpDir}/roles.json");
+    copy("{$sourceBase}/competencies.json", "{$tmpDir}/competencies.json");
+    foreach (glob("{$sourceBase}/bars/*.json") as $barsFile) {
+        copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
+    }
+
+    expect(FrameworkGap::where('kind', 'missing_translation')->count())
+        ->toBe(0, 'precondition: no pre-existing missing_translation gap rows of any kind');
+
+    (new FrameworkCatalogSeeder("{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars"))->run();
+
+    $globalGap = FrameworkGap::where('kind', 'missing_translation')
+        ->whereNull('role_code')->whereNull('competency_code')->firstOrFail();
+
+    expect($globalGap->status)->toBe('resolved', 'the real catalogue ships fully it-translated — the global row must resolve on the FIRST seed run, exactly as production expects');
+    // The note must never claim "all 0 of 0 translated" — self-contradictory beside a truthful count.
+    expect($globalGap->note)->not->toContain('0 of 0');
+    // The note must state the TRUE total (every anchored, currently-assigned pair), not the count of gap rows ever created.
+    expect($globalGap->note)->toMatch('/^it locale: all \d+ of \d+ role×competency pairs translated$/');
+
+    cleanupLocaleGapResolutionFixtureTree($tmpDir);
+});
+
 test('missing_translation per-pair gap resolves (orphan sweep) once its pair is no longer assigned to the role', function (): void {
     $tmpDir = sys_get_temp_dir().'/c_locale_gap_orphan_'.uniqid();
     [$rolesFile, $competenciesFile, $barsDir] = buildLocaleGapResolutionFixtureTree($tmpDir);

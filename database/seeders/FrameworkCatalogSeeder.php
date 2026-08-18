@@ -177,6 +177,13 @@ class FrameworkCatalogSeeder extends Seeder
         $normalizer = new CompetencyNormalizer;
         $structuralChange = false;
 
+        // Global IT translation-gap counters (step 5, design D5), accumulated
+        // WHILE walking the catalogue below — NOT queried afterwards from
+        // framework_gaps rows. See resolveOrRecordTranslationGap()'s own
+        // docblock for why a gap-row-derived denominator undercounts.
+        $translationPairsTotal = 0;
+        $translationPairsPending = 0;
+
         // ─── C4 Lock-Guard ────────────────────────────────────────────────────
         // Must use withoutGlobalScopes() — no HTTP request / tenant context during artisan seeding.
         // This is a cross-tenant aggregate check ("does ANY locked FV exist?") — intentionally unscoped.
@@ -524,7 +531,18 @@ class FrameworkCatalogSeeder extends Seeder
                 // non-empty `it` value before this pair counts as translated. 11 of 12 is
                 // treated as 0 (mirrors the scoring-engine per-competency hard-fail unit).
                 // Computed from JSON, not DB state, so this proceeds even under lock.
-                $this->resolveOrRecordTranslationGap($roleCode, $competencyCode, $dto->indicators);
+                //
+                // This is ALSO where the global-row denominator (step 5) is accumulated:
+                // every pair that reaches this line is a currently-assigned, anchored pair
+                // (it has a BARS entry AND is in the JSON-derived assigned set — see the two
+                // `continue`s above), so it is unconditionally counted in the total, whether
+                // or not it is itself translated. That is the fix for the production defect:
+                // the total must include pairs that were NEVER missing anything, not just
+                // pairs that at some point had a gap row recorded for them.
+                $translationPairsTotal++;
+                if (! $this->resolveOrRecordTranslationGap($roleCode, $competencyCode, $dto->indicators)) {
+                    $translationPairsPending++;
+                }
             }
 
             // 3d. Record competency_no_bars gaps for assigned competencies absent from BARS file;
@@ -572,24 +590,57 @@ class FrameworkCatalogSeeder extends Seeder
         }
 
         // ─── 5. Record global IT translation gap (design D5) ──────────────────
-        // Computed from the per-pair rows just written above: resolves only once
-        // every anchored pair's 12 strings are translated; otherwise the note
-        // states exactly how many of the total are still pending.
-        $totalTranslationPairs = FrameworkGap::where('kind', 'missing_translation')
-            ->whereNotNull('role_code')
-            ->count();
-        $pendingTranslationPairs = FrameworkGap::where('kind', 'missing_translation')
-            ->whereNotNull('role_code')
-            ->where('status', 'pending_authoring')
-            ->count();
+        // Denominator fix (post-production incident): $translationPairsTotal /
+        // $translationPairsPending are accumulated WHILE walking the catalogue
+        // above (see the call site of resolveOrRecordTranslationGap()), NOT
+        // derived from framework_gaps rows here. A gap ROW is only ever
+        // written for a pair that is NOT fully translated
+        // (resolveOrRecordTranslationGap never inserts a row for a complete
+        // pair — it only resolves-or-no-ops one). Querying rows for the total
+        // therefore silently excludes every pair that was translated from the
+        // very first run: seeding a catalogue that is 100% `it`-translated
+        // from scratch created zero rows, so total=0, pending=0, and this
+        // global row stayed `pending_authoring` forever — production's actual
+        // failure ("0 of 0 ... translated" beside `pending_authoring`).
+        //
+        // What is counted, and why:
+        //   - Counted: every currently-assigned, anchored role×competency pair
+        //     — i.e. every pair that reaches resolveOrRecordTranslationGap()'s
+        //     call site. That requires (a) the role has a BARS file, (b) the
+        //     competency appears in that file, and (c) the competency is in
+        //     the CURRENT JSON-derived assignment list — see the two
+        //     `continue`s in the bars-indicator loop above. This is unaffected
+        //     by the C4 lock-guard: resolveOrRecordTranslationGap() runs
+        //     unconditionally (not inside `if (! $locked)`), so a locked
+        //     FrameworkVersion never drops a pair from this count either —
+        //     both counters and the per-pair write are always computed from
+        //     the source JSON, never from what was or wasn't allowed to be
+        //     persisted this run.
+        //   - Excluded: a role with no BARS file at all (tracked separately as
+        //     `role_no_bars`) and an assigned competency absent from a role's
+        //     BARS file (tracked separately as `competency_no_bars`). Neither
+        //     has any indicator text to translate in the first place, so
+        //     "translated" is not a meaningful predicate for them — counting
+        //     them here would conflate "nothing to translate" with "pending
+        //     translation" and reintroduce a silently-wrong denominator in a
+        //     different shape.
+        //
+        // Status and note are both derived from the SAME boolean below, so
+        // "all N of N translated" beside `pending_authoring` is not
+        // expressible — the exact self-contradiction production exposed.
+        $translationGapResolved = $translationPairsPending === 0;
+
+        $translationGapNote = match (true) {
+            $translationGapResolved && $translationPairsTotal === 0 => 'it locale: no role×competency pairs are anchored — nothing to translate',
+            $translationGapResolved => "it locale: all {$translationPairsTotal} of {$translationPairsTotal} role×competency pairs translated",
+            default => "it locale: {$translationPairsPending} of {$translationPairsTotal} role×competency pairs pending",
+        };
 
         FrameworkGap::updateOrCreate(
             ['kind' => 'missing_translation', 'role_code' => null, 'competency_code' => null],
             [
-                'note' => $pendingTranslationPairs === 0
-                    ? "it locale: all {$totalTranslationPairs} of {$totalTranslationPairs} role×competency pairs translated"
-                    : "it locale: {$pendingTranslationPairs} of {$totalTranslationPairs} role×competency pairs pending",
-                'status' => $pendingTranslationPairs === 0 && $totalTranslationPairs > 0 ? 'resolved' : 'pending_authoring',
+                'note' => $translationGapNote,
+                'status' => $translationGapResolved ? 'resolved' : 'pending_authoring',
             ],
         );
 
@@ -765,8 +816,11 @@ class FrameworkCatalogSeeder extends Seeder
      * identically whether or not a FrameworkVersion is locked.
      *
      * @param  list<IndicatorDTO>  $indicators
+     * @return bool Whether this pair's `it` locale is fully translated (12 of 12 strings).
+     *              The caller uses this to accumulate the global-row denominator (step 5)
+     *              instead of re-deriving it from framework_gaps rows afterwards.
      */
-    private function resolveOrRecordTranslationGap(string $roleCode, string $competencyCode, array $indicators): void
+    private function resolveOrRecordTranslationGap(string $roleCode, string $competencyCode, array $indicators): bool
     {
         $itComplete = true;
 
@@ -786,12 +840,14 @@ class FrameworkCatalogSeeder extends Seeder
                 ->where('status', 'pending_authoring')
                 ->update(['status' => 'resolved']);
 
-            return;
+            return true;
         }
 
         FrameworkGap::updateOrCreate(
             ['kind' => 'missing_translation', 'role_code' => $roleCode, 'competency_code' => $competencyCode],
             ['note' => "{$roleCode}×{$competencyCode}: it locale not fully translated (12 strings required, 11 of 12 counts as 0)", 'status' => 'pending_authoring'],
         );
+
+        return false;
     }
 }
