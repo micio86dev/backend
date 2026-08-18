@@ -1,391 +1,931 @@
 {
   "PRS": [
     {
-      "indicator": "Recognizes symptoms that indicate problems.",
+      "indicator": {
+        "en": "Recognizes symptoms that indicate problems.",
+        "it": "Riconosce i sintomi che indicano problemi."
+      },
       "scale": {
-        "5": "Consistently utilizes symptoms and ongoing patterns as clues to look more deeply at the underlying, related, or ongoing causes of problems and issues.",
-        "3": "Searches for and recognizes symptoms that indicate problems; accurately differentiates the problems from the symptoms.",
-        "1": "Focuses on surface symptoms, rather than the underlying source of problems."
+        "1": {
+          "en": "Focuses on surface symptoms, rather than the underlying source of problems.",
+          "it": "Si concentra sui sintomi superficiali, anziché sull'origine profonda dei problemi."
+        },
+        "3": {
+          "en": "Searches for and recognizes symptoms that indicate problems; accurately differentiates the problems from the symptoms.",
+          "it": "Ricerca e riconosce i sintomi che indicano problemi; distingue accuratamente i problemi dai sintomi."
+        },
+        "5": {
+          "en": "Consistently utilizes symptoms and ongoing patterns as clues to look more deeply at the underlying, related, or ongoing causes of problems and issues.",
+          "it": "Utilizza costantemente i sintomi e gli schemi ricorrenti come indizi per approfondire le cause profonde, correlate o persistenti di problemi e criticità."
+        }
       }
     },
     {
-      "indicator": "Come up with solution hypotheses for problems",
+      "indicator": {
+        "en": "Come up with solution hypotheses for problems",
+        "it": "Formulare ipotesi di soluzione per i problemi"
+      },
       "scale": {
-        "5": "Consistently generates multiple well-reasoned, innovative solution hypotheses for complex problems. Uses data and insights to validate ideas before implementation.",
-        "3": "Proposes reasonable solution hypotheses based on available information but may require refinement. Occasionally needs guidance to validate and improve solutions.",
-        "1": "Struggles to generate viable solution hypotheses. Offers vague or impractical ideas, often relying on others to drive problem-solving efforts."
+        "1": {
+          "en": "Struggles to generate viable solution hypotheses. Offers vague or impractical ideas, often relying on others to drive problem-solving efforts.",
+          "it": "Fatica a generare ipotesi di soluzione praticabili. Propone idee vaghe o non applicabili, affidandosi spesso ad altri per guidare la risoluzione dei problemi."
+        },
+        "3": {
+          "en": "Proposes reasonable solution hypotheses based on available information but may require refinement. Occasionally needs guidance to validate and improve solutions.",
+          "it": "Propone ipotesi di soluzione ragionevoli sulla base delle informazioni disponibili, ma possono richiedere affinamento. Occasionalmente necessita di guida per validare e migliorare le soluzioni."
+        },
+        "5": {
+          "en": "Consistently generates multiple well-reasoned, innovative solution hypotheses for complex problems. Uses data and insights to validate ideas before implementation.",
+          "it": "Genera costantemente molteplici ipotesi di soluzione innovative e ben argomentate per problemi complessi. Utilizza dati e insight per validare le idee prima dell'implementazione."
+        }
       }
     },
     {
-      "indicator": "Analyzes, incorporates and applies new information and concepts.",
+      "indicator": {
+        "en": "Analyzes, incorporates and applies new information and concepts.",
+        "it": "Analizza, integra e applica nuove informazioni e concetti."
+      },
       "scale": {
-        "5": "Immediately recognizes when new information or concepts are relevant, understands the implications, and appropriately incorporates all new inputs into current thinking.",
-        "3": "Analyzes, incorporates, and applies new information and concepts.",
-        "1": "Acknowledges new pieces of information and concepts, but may be slow to do so, or may have trouble applying them effectively."
+        "1": {
+          "en": "Acknowledges new pieces of information and concepts, but may be slow to do so, or may have trouble applying them effectively.",
+          "it": "Prende atto di nuove informazioni e concetti, ma può farlo con lentezza o avere difficoltà ad applicarli efficacemente."
+        },
+        "3": {
+          "en": "Analyzes, incorporates, and applies new information and concepts.",
+          "it": "Analizza, integra e applica nuove informazioni e concetti."
+        },
+        "5": {
+          "en": "Immediately recognizes when new information or concepts are relevant, understands the implications, and appropriately incorporates all new inputs into current thinking.",
+          "it": "Riconosce immediatamente quando nuove informazioni o concetti sono rilevanti, ne comprende le implicazioni e integra opportunamente tutti i nuovi input nel proprio ragionamento attuale."
+        }
       }
     }
   ],
   "STG": [
     {
-      "indicator": "Understand the short- and medium-term consequences of own actions",
+      "indicator": {
+        "en": "Understand the short- and medium-term consequences of own actions",
+        "it": "Comprendere le conseguenze a breve e medio termine delle proprie azioni"
+      },
       "scale": {
-        "5": "Consistently anticipates and evaluates the impact of own actions on tasks, colleagues, and the organization, taking proactive steps to enhance positive outcomes and mitigate risks.",
-        "3": "Understands the consequences of own actions in most situations but may need occasional guidance to assess broader implications.",
-        "1": "Rarely considers the consequences of own actions, often leading to unforeseen issues or disruptions."
+        "1": {
+          "en": "Rarely considers the consequences of own actions, often leading to unforeseen issues or disruptions.",
+          "it": "Considera raramente le conseguenze delle proprie azioni, generando spesso problemi imprevisti o interruzioni."
+        },
+        "3": {
+          "en": "Understands the consequences of own actions in most situations but may need occasional guidance to assess broader implications.",
+          "it": "Comprende le conseguenze delle proprie azioni nella maggior parte delle situazioni, ma può necessitare di guida occasionale per valutarne le implicazioni più ampie."
+        },
+        "5": {
+          "en": "Consistently anticipates and evaluates the impact of own actions on tasks, colleagues, and the organization, taking proactive steps to enhance positive outcomes and mitigate risks.",
+          "it": "Anticipa e valuta costantemente l'impatto delle proprie azioni su attività, colleghi e organizzazione, agendo in modo proattivo per accrescere i risultati positivi e mitigare i rischi."
+        }
       }
     },
     {
-      "indicator": "Understand hierarchical and organizational relationships",
+      "indicator": {
+        "en": "Understand hierarchical and organizational relationships",
+        "it": "Comprendere le relazioni gerarchiche e organizzative"
+      },
       "scale": {
-        "5": "Clearly understands and effectively navigates hierarchical structures, leveraging organizational relationships to improve collaboration and decision-making.",
-        "3": "Has a functional understanding of organizational hierarchy and relationships but may struggle to use them effectively in complex situations.",
-        "1": "Lacks awareness of hierarchical structures and organizational relationships, leading to ineffective communication and poor decision-making."
+        "1": {
+          "en": "Lacks awareness of hierarchical structures and organizational relationships, leading to ineffective communication and poor decision-making.",
+          "it": "Non ha consapevolezza delle strutture gerarchiche e delle relazioni organizzative, con conseguente comunicazione inefficace e decisioni di scarsa qualità."
+        },
+        "3": {
+          "en": "Has a functional understanding of organizational hierarchy and relationships but may struggle to use them effectively in complex situations.",
+          "it": "Ha una comprensione funzionale della gerarchia e delle relazioni organizzative, ma può faticare a utilizzarle efficacemente in situazioni complesse."
+        },
+        "5": {
+          "en": "Clearly understands and effectively navigates hierarchical structures, leveraging organizational relationships to improve collaboration and decision-making.",
+          "it": "Comprende chiaramente e si muove efficacemente all'interno delle strutture gerarchiche, facendo leva sulle relazioni organizzative per migliorare la collaborazione e il processo decisionale."
+        }
       }
     },
     {
-      "indicator": "Know the purpose of the organization and how the main processes work",
+      "indicator": {
+        "en": "Know the purpose of the organization and how the main processes work",
+        "it": "Conoscere la finalità dell'organizzazione e il funzionamento dei processi principali"
+      },
       "scale": {
-        "5": "Demonstrates deep understanding of the organization’s purpose, mission, and processes, aligning work effectively with business goals and identifying opportunities for improvement.",
-        "3": "Has a general awareness of the organization’s purpose and main processes but may not always see how their role contributes to broader objectives.",
-        "1": "Lacks understanding of the organization’s purpose and processes, resulting in misalignment with company goals and inefficiencies in work."
+        "1": {
+          "en": "Lacks understanding of the organization’s purpose and processes, resulting in misalignment with company goals and inefficiencies in work.",
+          "it": "Non comprende la finalità e i processi dell'organizzazione, con conseguente disallineamento rispetto agli obiettivi aziendali e inefficienze nel lavoro."
+        },
+        "3": {
+          "en": "Has a general awareness of the organization’s purpose and main processes but may not always see how their role contributes to broader objectives.",
+          "it": "Ha una consapevolezza generale della finalità e dei processi principali dell'organizzazione, ma non sempre coglie come il proprio ruolo contribuisca a obiettivi più ampi."
+        },
+        "5": {
+          "en": "Demonstrates deep understanding of the organization’s purpose, mission, and processes, aligning work effectively with business goals and identifying opportunities for improvement.",
+          "it": "Dimostra una profonda comprensione della finalità, della missione e dei processi dell'organizzazione, allineando efficacemente il lavoro agli obiettivi di business e individuando opportunità di miglioramento."
+        }
       }
     }
   ],
   "INN": [
     {
-      "indicator": "Approaches problems with curiosity and open-mindedness.",
+      "indicator": {
+        "en": "Approaches problems with curiosity and open-mindedness.",
+        "it": "Affronta i problemi con curiosità e apertura mentale."
+      },
       "scale": {
-        "5": "Consistently approaches problems with strong curiosity and open-mindedness.",
-        "3": "Demonstrates openness and curiosity when approaching problems.",
-        "1": "Displays little curiosity or open-mindedness when presented with problems to resolve."
+        "1": {
+          "en": "Displays little curiosity or open-mindedness when presented with problems to resolve.",
+          "it": "Mostra scarsa curiosità o apertura mentale di fronte ai problemi da risolvere."
+        },
+        "3": {
+          "en": "Demonstrates openness and curiosity when approaching problems.",
+          "it": "Dimostra apertura e curiosità nell'affrontare i problemi."
+        },
+        "5": {
+          "en": "Consistently approaches problems with strong curiosity and open-mindedness.",
+          "it": "Affronta costantemente i problemi con forte curiosità e apertura mentale."
+        }
       }
     },
     {
-      "indicator": "Generates innovative ideas and solutions to problems.",
+      "indicator": {
+        "en": "Generates innovative ideas and solutions to problems.",
+        "it": "Genera idee e soluzioni innovative per i problemi."
+      },
       "scale": {
-        "5": "Generates highly innovative ideas, solutions, and opportunities that challenge status quo thinking and assumptions.",
-        "3": "Generates innovative ideas, solutions, and new perspectives in reaction to issues; is open to challenging current processes and procedures.",
-        "1": "Generates status-quo ideas and solutions, and/or resists others' efforts to challenge current processes and procedures."
+        "1": {
+          "en": "Generates status-quo ideas and solutions, and/or resists others' efforts to challenge current processes and procedures.",
+          "it": "Genera idee e soluzioni conformi allo status quo e/o resiste ai tentativi altrui di mettere in discussione processi e procedure attuali."
+        },
+        "3": {
+          "en": "Generates innovative ideas, solutions, and new perspectives in reaction to issues; is open to challenging current processes and procedures.",
+          "it": "Genera idee, soluzioni e nuove prospettive innovative in risposta alle criticità; è aperto a mettere in discussione processi e procedure attuali."
+        },
+        "5": {
+          "en": "Generates highly innovative ideas, solutions, and opportunities that challenge status quo thinking and assumptions.",
+          "it": "Genera idee, soluzioni e opportunità altamente innovative che mettono in discussione il pensiero e gli assunti dello status quo."
+        }
       }
     },
     {
-      "indicator": "Quickly adapt to new ways of doing things",
+      "indicator": {
+        "en": "Quickly adapt to new ways of doing things",
+        "it": "Adattarsi rapidamente a nuovi modi di operare"
+      },
       "scale": {
-        "5": "Embraces change proactively, quickly adjusting to new methods with minimal disruption. Encourages others to adapt and finds innovative ways to optimize transitions.",
-        "3": "Adapts to new methods with some hesitation but eventually aligns with changes. Requires some support or guidance to fully implement new ways of working.",
-        "1": "Resists change, struggles to adapt to new methods, and requires excessive support. Often reverts to old ways, slowing down team progress."
+        "1": {
+          "en": "Resists change, struggles to adapt to new methods, and requires excessive support. Often reverts to old ways, slowing down team progress.",
+          "it": "Resiste al cambiamento, fatica ad adattarsi a nuovi metodi e richiede un supporto eccessivo. Torna spesso ai vecchi modi di operare, rallentando i progressi del team."
+        },
+        "3": {
+          "en": "Adapts to new methods with some hesitation but eventually aligns with changes. Requires some support or guidance to fully implement new ways of working.",
+          "it": "Si adatta ai nuovi metodi con qualche esitazione, ma alla fine si allinea ai cambiamenti. Richiede un certo supporto o guida per applicare pienamente i nuovi modi di lavorare."
+        },
+        "5": {
+          "en": "Embraces change proactively, quickly adjusting to new methods with minimal disruption. Encourages others to adapt and finds innovative ways to optimize transitions.",
+          "it": "Accoglie il cambiamento in modo proattivo, adattandosi rapidamente ai nuovi metodi con impatti minimi. Incoraggia gli altri ad adattarsi e trova modi innovativi per ottimizzare le transizioni."
+        }
       }
     }
   ],
   "DRV": [
     {
-      "indicator": "Maintain a consistent, high level of productivity",
+      "indicator": {
+        "en": "Maintain a consistent, high level of productivity",
+        "it": "Mantenere un livello di produttività costante ed elevato"
+      },
       "scale": {
-        "5": "Consistently exceeds productivity expectations, delivering high-quality work efficiently. Effectively manages workload even under pressure.",
-        "3": "Meets productivity expectations, completing tasks in a timely and competent manner. Occasionally struggles with workload balance.",
-        "1": "Frequently falls short of productivity expectations, requiring reminders or interventions to complete tasks on time. Struggles to maintain efficiency."
+        "1": {
+          "en": "Frequently falls short of productivity expectations, requiring reminders or interventions to complete tasks on time. Struggles to maintain efficiency.",
+          "it": "Non raggiunge frequentemente le aspettative di produttività, richiedendo solleciti o interventi per completare le attività nei tempi previsti. Fatica a mantenere l'efficienza."
+        },
+        "3": {
+          "en": "Meets productivity expectations, completing tasks in a timely and competent manner. Occasionally struggles with workload balance.",
+          "it": "Soddisfa le aspettative di produttività, completando le attività in modo tempestivo e competente. Occasionalmente fatica a bilanciare il carico di lavoro."
+        },
+        "5": {
+          "en": "Consistently exceeds productivity expectations, delivering high-quality work efficiently. Effectively manages workload even under pressure.",
+          "it": "Supera costantemente le aspettative di produttività, realizzando lavoro di alta qualità in modo efficiente. Gestisce efficacemente il carico di lavoro anche sotto pressione."
+        }
       }
     },
     {
-      "indicator": "Organize own work and manage time wisely",
+      "indicator": {
+        "en": "Organize own work and manage time wisely",
+        "it": "Organizzare il proprio lavoro e gestire il tempo con criterio"
+      },
       "scale": {
-        "5": "Demonstrates exceptional time management and organizational skills, prioritizing tasks effectively and completing work ahead of deadlines.",
-        "3": "Organizes work adequately and manages time well, though occasional prioritization issues may arise. Meets most deadlines without significant intervention.",
-        "1": "Struggles to organize work, often missing deadlines or requiring constant supervision. Poor prioritization leads to inefficiencies."
+        "1": {
+          "en": "Struggles to organize work, often missing deadlines or requiring constant supervision. Poor prioritization leads to inefficiencies.",
+          "it": "Fatica a organizzare il lavoro, mancando spesso le scadenze o richiedendo supervisione costante. Una scarsa definizione delle priorità genera inefficienze."
+        },
+        "3": {
+          "en": "Organizes work adequately and manages time well, though occasional prioritization issues may arise. Meets most deadlines without significant intervention.",
+          "it": "Organizza il lavoro in modo adeguato e gestisce bene il tempo, sebbene possano emergere occasionali problemi di definizione delle priorità. Rispetta la maggior parte delle scadenze senza interventi significativi."
+        },
+        "5": {
+          "en": "Demonstrates exceptional time management and organizational skills, prioritizing tasks effectively and completing work ahead of deadlines.",
+          "it": "Dimostra eccezionali capacità di gestione del tempo e di organizzazione, definendo efficacemente le priorità delle attività e completando il lavoro in anticipo rispetto alle scadenze."
+        }
       }
     },
     {
-      "indicator": "Respond promptly to requests also managing conflicting priorities",
+      "indicator": {
+        "en": "Respond promptly to requests also managing conflicting priorities",
+        "it": "Rispondere prontamente alle richieste gestendo anche priorità in conflitto"
+      },
       "scale": {
-        "5": "Handles multiple requests efficiently, responding promptly while balancing conflicting priorities with minimal disruption. Proactively communicates if adjustments are needed.",
-        "3": "Responds to requests in a timely manner but may struggle to balance multiple priorities effectively at times. Requires occasional guidance to manage workload.",
-        "1": "Frequently delays responses or fails to manage conflicting priorities, leading to missed deadlines and frustration for stakeholders."
+        "1": {
+          "en": "Frequently delays responses or fails to manage conflicting priorities, leading to missed deadlines and frustration for stakeholders.",
+          "it": "Ritarda frequentemente le risposte o non gestisce le priorità in conflitto, con conseguenti scadenze mancate e frustrazione per gli stakeholder."
+        },
+        "3": {
+          "en": "Responds to requests in a timely manner but may struggle to balance multiple priorities effectively at times. Requires occasional guidance to manage workload.",
+          "it": "Risponde alle richieste in modo tempestivo, ma a volte può faticare a bilanciare efficacemente priorità multiple. Richiede guida occasionale per gestire il carico di lavoro."
+        },
+        "5": {
+          "en": "Handles multiple requests efficiently, responding promptly while balancing conflicting priorities with minimal disruption. Proactively communicates if adjustments are needed.",
+          "it": "Gestisce con efficienza richieste multiple, rispondendo prontamente e bilanciando le priorità in conflitto con impatti minimi. Comunica in modo proattivo se sono necessari aggiustamenti."
+        }
       }
     }
   ],
   "CSF": [
     {
-      "indicator": "Understand customer needs and interests",
+      "indicator": {
+        "en": "Understand customer needs and interests",
+        "it": "Comprendere le esigenze e gli interessi del cliente"
+      },
       "scale": {
-        "5": "Proactively seeks to understand customer needs and interests, anticipating and addressing concerns effectively. Provides tailored solutions that exceed expectations.",
-        "3": "Understands customer needs and interests at a basic level, responding appropriately to requests but may not always anticipate needs.",
-        "1": "Demonstrates little effort to understand customer needs, often providing generic or ineffective responses. May cause frustration due to lack of attention to detail."
+        "1": {
+          "en": "Demonstrates little effort to understand customer needs, often providing generic or ineffective responses. May cause frustration due to lack of attention to detail.",
+          "it": "Dimostra scarso impegno nel comprendere le esigenze del cliente, fornendo spesso risposte generiche o inefficaci. Può generare frustrazione per la mancanza di attenzione al dettaglio."
+        },
+        "3": {
+          "en": "Understands customer needs and interests at a basic level, responding appropriately to requests but may not always anticipate needs.",
+          "it": "Comprende le esigenze e gli interessi del cliente a un livello di base, rispondendo in modo appropriato alle richieste, ma non sempre anticipa le esigenze."
+        },
+        "5": {
+          "en": "Proactively seeks to understand customer needs and interests, anticipating and addressing concerns effectively. Provides tailored solutions that exceed expectations.",
+          "it": "Cerca in modo proattivo di comprendere le esigenze e gli interessi del cliente, anticipando e affrontando efficacemente le sue preoccupazioni. Fornisce soluzioni su misura che superano le aspettative."
+        }
       }
     },
     {
-      "indicator": "Keep commitments to customers",
+      "indicator": {
+        "en": "Keep commitments to customers",
+        "it": "Mantenere gli impegni presi con i clienti"
+      },
       "scale": {
-        "5": "Consistently follows through on commitments to customers, ensuring reliability and trust. Proactively communicates any necessary adjustments.",
-        "3": "Generally keeps commitments to customers but may occasionally require reminders or extensions. Communicates when delays occur.",
-        "1": "Frequently fails to meet commitments, leading to customer dissatisfaction. Does not communicate effectively when unable to fulfill obligations."
+        "1": {
+          "en": "Frequently fails to meet commitments, leading to customer dissatisfaction. Does not communicate effectively when unable to fulfill obligations.",
+          "it": "Non rispetta frequentemente gli impegni, generando insoddisfazione nel cliente. Non comunica efficacemente quando non è in grado di adempiere agli obblighi."
+        },
+        "3": {
+          "en": "Generally keeps commitments to customers but may occasionally require reminders or extensions. Communicates when delays occur.",
+          "it": "In genere mantiene gli impegni presi con i clienti, ma occasionalmente può richiedere solleciti o proroghe. Comunica quando si verificano ritardi."
+        },
+        "5": {
+          "en": "Consistently follows through on commitments to customers, ensuring reliability and trust. Proactively communicates any necessary adjustments.",
+          "it": "Onora costantemente gli impegni presi con i clienti, garantendo affidabilità e fiducia. Comunica in modo proattivo eventuali aggiustamenti necessari."
+        }
       }
     },
     {
-      "indicator": "Establish effective working relationships with internal and external customers",
+      "indicator": {
+        "en": "Establish effective working relationships with internal and external customers",
+        "it": "Stabilire relazioni di lavoro efficaci con clienti interni ed esterni"
+      },
       "scale": {
-        "5": "Builds and maintains strong, professional relationships with internal and external customers. Communicates effectively, fostering collaboration and trust.",
-        "3": "Maintains satisfactory relationships with customers, though interactions may sometimes lack consistency or engagement.",
-        "1": "Struggles to establish or maintain effective relationships, often leading to misunderstandings or conflicts with customers."
+        "1": {
+          "en": "Struggles to establish or maintain effective relationships, often leading to misunderstandings or conflicts with customers.",
+          "it": "Fatica a stabilire o mantenere relazioni efficaci, generando spesso incomprensioni o conflitti con i clienti."
+        },
+        "3": {
+          "en": "Maintains satisfactory relationships with customers, though interactions may sometimes lack consistency or engagement.",
+          "it": "Mantiene relazioni soddisfacenti con i clienti, sebbene le interazioni possano talvolta risultare poco costanti o poco coinvolgenti."
+        },
+        "5": {
+          "en": "Builds and maintains strong, professional relationships with internal and external customers. Communicates effectively, fostering collaboration and trust.",
+          "it": "Costruisce e mantiene relazioni solide e professionali con clienti interni ed esterni. Comunica efficacemente, favorendo collaborazione e fiducia."
+        }
       }
     }
   ],
   "SLF": [
     {
-      "indicator": "Describe products and services accurately",
+      "indicator": {
+        "en": "Describe products and services accurately",
+        "it": "Descrivere prodotti e servizi in modo accurato"
+      },
       "scale": {
-        "5": "Provides detailed, precise, and engaging descriptions of products and services, ensuring customers fully understand their value and benefits. Tailors explanations to different audiences.",
-        "3": "Describes products and services correctly but may lack depth or adaptation to different customer needs. Occasionally needs support for complex details.",
-        "1": "Provides vague, incorrect, or misleading descriptions of products and services, leading to confusion or dissatisfaction. Lacks product knowledge."
+        "1": {
+          "en": "Provides vague, incorrect, or misleading descriptions of products and services, leading to confusion or dissatisfaction. Lacks product knowledge.",
+          "it": "Fornisce descrizioni vaghe, errate o fuorvianti di prodotti e servizi, generando confusione o insoddisfazione. Non ha conoscenza del prodotto."
+        },
+        "3": {
+          "en": "Describes products and services correctly but may lack depth or adaptation to different customer needs. Occasionally needs support for complex details.",
+          "it": "Descrive correttamente prodotti e servizi, ma può mancare di approfondimento o di adattamento alle diverse esigenze dei clienti. Occasionalmente necessita di supporto per i dettagli complessi."
+        },
+        "5": {
+          "en": "Provides detailed, precise, and engaging descriptions of products and services, ensuring customers fully understand their value and benefits. Tailors explanations to different audiences.",
+          "it": "Fornisce descrizioni dettagliate, precise e coinvolgenti di prodotti e servizi, assicurando che i clienti ne comprendano pienamente il valore e i benefici. Adatta le spiegazioni ai diversi interlocutori."
+        }
       }
     },
     {
-      "indicator": "Link own arguments to customer needs and priorities",
+      "indicator": {
+        "en": "Link own arguments to customer needs and priorities",
+        "it": "Collegare le proprie argomentazioni alle esigenze e alle priorità del cliente"
+      },
       "scale": {
-        "5": "Skillfully aligns arguments with customer needs, demonstrating deep understanding and persuasive communication. Uses data and insights to strengthen connections.",
-        "3": "Makes an effort to connect arguments with customer needs but may not always be compelling or fully aligned. Can improve customization of messaging.",
-        "1": "Fails to link arguments to customer priorities, providing generic or irrelevant points. Struggles to engage or persuade customers effectively."
+        "1": {
+          "en": "Fails to link arguments to customer priorities, providing generic or irrelevant points. Struggles to engage or persuade customers effectively.",
+          "it": "Non collega le argomentazioni alle priorità del cliente, fornendo punti generici o non pertinenti. Fatica a coinvolgere o persuadere efficacemente i clienti."
+        },
+        "3": {
+          "en": "Makes an effort to connect arguments with customer needs but may not always be compelling or fully aligned. Can improve customization of messaging.",
+          "it": "Si impegna a collegare le argomentazioni alle esigenze del cliente, ma non sempre risulta convincente o pienamente allineato. Può migliorare la personalizzazione dei messaggi."
+        },
+        "5": {
+          "en": "Skillfully aligns arguments with customer needs, demonstrating deep understanding and persuasive communication. Uses data and insights to strengthen connections.",
+          "it": "Allinea abilmente le argomentazioni alle esigenze del cliente, dimostrando profonda comprensione e comunicazione persuasiva. Utilizza dati e insight per rafforzare i collegamenti."
+        }
       }
     },
     {
-      "indicator": "Negotiate to reach solutions that meet the primary interests of customers",
+      "indicator": {
+        "en": "Negotiate to reach solutions that meet the primary interests of customers",
+        "it": "Negoziare per raggiungere soluzioni che rispondano agli interessi primari dei clienti"
+      },
       "scale": {
-        "5": "Effectively negotiates win-win solutions, balancing customer needs with business objectives. Demonstrates patience, active listening, and creative problem-solving.",
-        "3": "Engages in negotiation and reaches acceptable solutions, though may require additional support or refinement in handling complex situations.",
-        "1": "Struggles with negotiation, often failing to reach mutually beneficial solutions. May come across as inflexible or unable to address customer concerns."
+        "1": {
+          "en": "Struggles with negotiation, often failing to reach mutually beneficial solutions. May come across as inflexible or unable to address customer concerns.",
+          "it": "Fatica nella negoziazione, spesso senza raggiungere soluzioni reciprocamente vantaggiose. Può apparire inflessibile o incapace di affrontare le preoccupazioni del cliente."
+        },
+        "3": {
+          "en": "Engages in negotiation and reaches acceptable solutions, though may require additional support or refinement in handling complex situations.",
+          "it": "Conduce la negoziazione e raggiunge soluzioni accettabili, sebbene possa richiedere supporto aggiuntivo o affinamento nella gestione di situazioni complesse."
+        },
+        "5": {
+          "en": "Effectively negotiates win-win solutions, balancing customer needs with business objectives. Demonstrates patience, active listening, and creative problem-solving.",
+          "it": "Negozia efficacemente soluzioni win-win, bilanciando le esigenze del cliente con gli obiettivi di business. Dimostra pazienza, ascolto attivo e problem solving creativo."
+        }
       }
     }
   ],
   "OPX": [
     {
-      "indicator": "Perform tasks correctly and on time",
+      "indicator": {
+        "en": "Perform tasks correctly and on time",
+        "it": "Svolgere le attività correttamente e nei tempi previsti"
+      },
       "scale": {
-        "5": "Consistently completes tasks with high accuracy and ahead of deadlines. Manages workload efficiently, even under pressure.",
-        "3": "Completes tasks correctly and on time most of the time but may require occasional follow-ups or reminders.",
-        "1": "Frequently misses deadlines or submits work with errors. Requires constant supervision to complete tasks."
+        "1": {
+          "en": "Frequently misses deadlines or submits work with errors. Requires constant supervision to complete tasks.",
+          "it": "Manca frequentemente le scadenze o consegna lavoro con errori. Richiede supervisione costante per completare le attività."
+        },
+        "3": {
+          "en": "Completes tasks correctly and on time most of the time but may require occasional follow-ups or reminders.",
+          "it": "Completa le attività correttamente e nei tempi previsti nella maggior parte dei casi, ma può richiedere occasionali verifiche o solleciti."
+        },
+        "5": {
+          "en": "Consistently completes tasks with high accuracy and ahead of deadlines. Manages workload efficiently, even under pressure.",
+          "it": "Completa costantemente le attività con elevata accuratezza e in anticipo rispetto alle scadenze. Gestisce il carico di lavoro in modo efficiente, anche sotto pressione."
+        }
       }
     },
     {
-      "indicator": "Check own work to ensure accuracy and quality",
+      "indicator": {
+        "en": "Check own work to ensure accuracy and quality",
+        "it": "Verificare il proprio lavoro per garantirne accuratezza e qualità"
+      },
       "scale": {
-        "5": "Regularly reviews work thoroughly, identifying and correcting errors before submission. Ensures high-quality results with minimal oversight.",
-        "3": "Occasionally checks work for accuracy and quality but may overlook minor errors. Requires some guidance to improve attention to detail.",
-        "1": "Rarely reviews work, leading to frequent mistakes and quality issues. Requires significant intervention to ensure accuracy."
+        "1": {
+          "en": "Rarely reviews work, leading to frequent mistakes and quality issues. Requires significant intervention to ensure accuracy.",
+          "it": "Rivede raramente il lavoro, con conseguenti errori frequenti e problemi di qualità. Richiede interventi significativi per garantire l'accuratezza."
+        },
+        "3": {
+          "en": "Occasionally checks work for accuracy and quality but may overlook minor errors. Requires some guidance to improve attention to detail.",
+          "it": "Verifica occasionalmente l'accuratezza e la qualità del lavoro, ma può trascurare errori minori. Richiede una certa guida per migliorare l'attenzione al dettaglio."
+        },
+        "5": {
+          "en": "Regularly reviews work thoroughly, identifying and correcting errors before submission. Ensures high-quality results with minimal oversight.",
+          "it": "Rivede regolarmente il lavoro in modo approfondito, identificando e correggendo gli errori prima della consegna. Garantisce risultati di alta qualità con una supervisione minima."
+        }
       }
     },
     {
-      "indicator": "Contribute to the achievement of own team goals",
+      "indicator": {
+        "en": "Contribute to the achievement of own team goals",
+        "it": "Contribuire al raggiungimento degli obiettivi del proprio team"
+      },
       "scale": {
-        "5": "Actively collaborates with team members, takes initiative, and contributes innovative ideas to achieve team goals. Supports others when needed.",
-        "3": "Participates in team efforts and completes assigned responsibilities but may not always go beyond basic expectations.",
-        "1": "Contributes minimally to team goals, often focusing only on individual tasks without considering team success. May cause delays or conflicts."
+        "1": {
+          "en": "Contributes minimally to team goals, often focusing only on individual tasks without considering team success. May cause delays or conflicts.",
+          "it": "Contribuisce minimamente agli obiettivi del team, concentrandosi spesso solo sulle attività individuali senza considerare il successo del team. Può causare ritardi o conflitti."
+        },
+        "3": {
+          "en": "Participates in team efforts and completes assigned responsibilities but may not always go beyond basic expectations.",
+          "it": "Partecipa alle attività del team e porta a termine le responsabilità assegnate, ma non sempre va oltre le aspettative di base."
+        },
+        "5": {
+          "en": "Actively collaborates with team members, takes initiative, and contributes innovative ideas to achieve team goals. Supports others when needed.",
+          "it": "Collabora attivamente con i membri del team, prende iniziativa e apporta idee innovative per raggiungere gli obiettivi del team. Supporta gli altri quando necessario."
+        }
       }
     }
   ],
   "COM": [
     {
-      "indicator": "Get the point across clearly and concisely",
+      "indicator": {
+        "en": "Get the point across clearly and concisely",
+        "it": "Trasmettere il proprio messaggio in modo chiaro e conciso"
+      },
       "scale": {
-        "5": "Communicates messages with clarity and precision, ensuring understanding with minimal repetition. Uses well-structured and concise language suited to the audience.",
-        "3": "Expresses thoughts clearly but may sometimes provide unnecessary details or require clarification. Generally effective but could improve conciseness.",
-        "1": "Struggles to communicate clearly, often using vague or confusing language. Requires frequent clarification, leading to misunderstandings."
+        "1": {
+          "en": "Struggles to communicate clearly, often using vague or confusing language. Requires frequent clarification, leading to misunderstandings.",
+          "it": "Fatica a comunicare in modo chiaro, utilizzando spesso un linguaggio vago o confuso. Richiede frequenti chiarimenti, generando incomprensioni."
+        },
+        "3": {
+          "en": "Expresses thoughts clearly but may sometimes provide unnecessary details or require clarification. Generally effective but could improve conciseness.",
+          "it": "Esprime i propri pensieri con chiarezza, ma a volte può fornire dettagli superflui o richiedere chiarimenti. In genere efficace, ma può migliorare la concisione."
+        },
+        "5": {
+          "en": "Communicates messages with clarity and precision, ensuring understanding with minimal repetition. Uses well-structured and concise language suited to the audience.",
+          "it": "Comunica i messaggi con chiarezza e precisione, assicurando la comprensione con ripetizioni minime. Utilizza un linguaggio ben strutturato e conciso, adatto agli interlocutori."
+        }
       }
     },
     {
-      "indicator": "Keep people interested when speaking",
+      "indicator": {
+        "en": "Keep people interested when speaking",
+        "it": "Mantenere l'interesse delle persone quando si parla"
+      },
       "scale": {
-        "5": "Engages the audience effectively through confident delivery, relevant examples, and dynamic tone. Adapts to audience reactions to maintain interest.",
-        "3": "Keeps listeners engaged but may rely on standard delivery techniques. Occasionally struggles to hold attention in longer discussions.",
-        "1": "Fails to maintain audience interest, often speaking in a monotone or lacking structure. Listeners become disengaged or distracted."
+        "1": {
+          "en": "Fails to maintain audience interest, often speaking in a monotone or lacking structure. Listeners become disengaged or distracted.",
+          "it": "Non mantiene l'interesse dell'uditorio, parlando spesso in modo monotono o poco strutturato. Gli ascoltatori si disimpegnano o si distraggono."
+        },
+        "3": {
+          "en": "Keeps listeners engaged but may rely on standard delivery techniques. Occasionally struggles to hold attention in longer discussions.",
+          "it": "Mantiene gli ascoltatori coinvolti, ma può affidarsi a tecniche espositive standard. Occasionalmente fatica a tenere viva l'attenzione nelle discussioni più lunghe."
+        },
+        "5": {
+          "en": "Engages the audience effectively through confident delivery, relevant examples, and dynamic tone. Adapts to audience reactions to maintain interest.",
+          "it": "Coinvolge efficacemente l'uditorio con un'esposizione sicura, esempi pertinenti e un tono dinamico. Si adatta alle reazioni dell'uditorio per mantenere l'interesse."
+        }
       }
     },
     {
-      "indicator": "Speak effectively in a group",
+      "indicator": {
+        "en": "Speak effectively in a group",
+        "it": "Intervenire efficacemente in gruppo"
+      },
       "scale": {
-        "5": "Contributes confidently and articulately in group settings, ensuring ideas are well-received. Encourages dialogue and integrates diverse viewpoints.",
-        "3": "Participates effectively in group discussions but may occasionally struggle with clarity, confidence, or engagement.",
-        "1": "Has difficulty expressing ideas in group settings, either remaining silent or dominating conversations without consideration for others."
+        "1": {
+          "en": "Has difficulty expressing ideas in group settings, either remaining silent or dominating conversations without consideration for others.",
+          "it": "Ha difficoltà a esprimere le proprie idee in contesti di gruppo, restando in silenzio oppure dominando le conversazioni senza considerazione per gli altri."
+        },
+        "3": {
+          "en": "Participates effectively in group discussions but may occasionally struggle with clarity, confidence, or engagement.",
+          "it": "Partecipa efficacemente alle discussioni di gruppo, ma occasionalmente può faticare in termini di chiarezza, sicurezza o coinvolgimento."
+        },
+        "5": {
+          "en": "Contributes confidently and articulately in group settings, ensuring ideas are well-received. Encourages dialogue and integrates diverse viewpoints.",
+          "it": "Contribuisce con sicurezza e proprietà di linguaggio nei contesti di gruppo, assicurando che le idee siano ben accolte. Incoraggia il dialogo e integra punti di vista diversi."
+        }
       }
     }
   ],
   "COL": [
     {
-      "indicator": "Work effectively with others",
+      "indicator": {
+        "en": "Work effectively with others",
+        "it": "Lavorare efficacemente con gli altri"
+      },
       "scale": {
-        "5": "Collaborates seamlessly with colleagues, fostering a positive and productive work environment. Listens actively and values input from others.",
-        "3": "Works well with colleagues but may encounter occasional difficulties in teamwork. Open to feedback and willing to contribute.",
-        "1": "Struggles to collaborate, often working in isolation or causing conflicts within the team. Resists feedback."
+        "1": {
+          "en": "Struggles to collaborate, often working in isolation or causing conflicts within the team. Resists feedback.",
+          "it": "Fatica a collaborare, lavorando spesso in isolamento o causando conflitti all'interno del team. Resiste al feedback."
+        },
+        "3": {
+          "en": "Works well with colleagues but may encounter occasional difficulties in teamwork. Open to feedback and willing to contribute.",
+          "it": "Lavora bene con i colleghi, ma può incontrare occasionali difficoltà nel lavoro di squadra. È aperto al feedback e disponibile a contribuire."
+        },
+        "5": {
+          "en": "Collaborates seamlessly with colleagues, fostering a positive and productive work environment. Listens actively and values input from others.",
+          "it": "Collabora in modo fluido con i colleghi, favorendo un ambiente di lavoro positivo e produttivo. Ascolta attivamente e valorizza i contributi degli altri."
+        }
       }
     },
     {
-      "indicator": "Willingly help colleagues in trouble",
+      "indicator": {
+        "en": "Willingly help colleagues in trouble",
+        "it": "Aiutare volentieri i colleghi in difficoltà"
+      },
       "scale": {
-        "5": "Proactively offers assistance to colleagues, even before being asked. Provides support with a positive attitude and fosters a culture of teamwork.",
-        "3": "Helps colleagues when requested but may not always take the initiative to offer support.",
-        "1": "Avoids helping colleagues, showing reluctance or lack of concern for team challenges."
+        "1": {
+          "en": "Avoids helping colleagues, showing reluctance or lack of concern for team challenges.",
+          "it": "Evita di aiutare i colleghi, mostrando riluttanza o disinteresse per le difficoltà del team."
+        },
+        "3": {
+          "en": "Helps colleagues when requested but may not always take the initiative to offer support.",
+          "it": "Aiuta i colleghi quando richiesto, ma non sempre prende l'iniziativa di offrire supporto."
+        },
+        "5": {
+          "en": "Proactively offers assistance to colleagues, even before being asked. Provides support with a positive attitude and fosters a culture of teamwork.",
+          "it": "Offre assistenza ai colleghi in modo proattivo, anche prima che venga richiesta. Fornisce supporto con atteggiamento positivo e promuove una cultura di lavoro di squadra."
+        }
       }
     },
     {
-      "indicator": "Demonstrate commitment and dedication to team goals",
+      "indicator": {
+        "en": "Demonstrate commitment and dedication to team goals",
+        "it": "Dimostrare impegno e dedizione verso gli obiettivi del team"
+      },
       "scale": {
-        "5": "Consistently prioritizes team goals, actively contributing to shared success. Shows enthusiasm and persistence in overcoming obstacles.",
-        "3": "Supports team goals and contributes to objectives but may not take a proactive role in ensuring success.",
-        "1": "Shows little commitment to team goals, focusing only on personal tasks or disengaging from team efforts."
+        "1": {
+          "en": "Shows little commitment to team goals, focusing only on personal tasks or disengaging from team efforts.",
+          "it": "Mostra scarso impegno verso gli obiettivi del team, concentrandosi solo sulle attività personali o disimpegnandosi dalle attività di squadra."
+        },
+        "3": {
+          "en": "Supports team goals and contributes to objectives but may not take a proactive role in ensuring success.",
+          "it": "Sostiene gli obiettivi del team e contribuisce al loro raggiungimento, ma può non assumere un ruolo proattivo nel garantire il successo."
+        },
+        "5": {
+          "en": "Consistently prioritizes team goals, actively contributing to shared success. Shows enthusiasm and persistence in overcoming obstacles.",
+          "it": "Dà costantemente priorità agli obiettivi del team, contribuendo attivamente al successo condiviso. Mostra entusiasmo e perseveranza nel superare gli ostacoli."
+        }
       }
     }
   ],
   "INF": [
     {
-      "indicator": "Win support from others",
+      "indicator": {
+        "en": "Win support from others",
+        "it": "Ottenere il sostegno degli altri"
+      },
       "scale": {
-        "5": "Effectively persuades and influences others through logical reasoning, empathy, and strong communication. Gains enthusiastic support for ideas.",
-        "3": "Gains support from others but may struggle in challenging situations. Uses basic persuasion techniques but could improve influence.",
-        "1": "Fails to gain support due to unclear communication, lack of credibility, or inability to address concerns. Often faces resistance."
+        "1": {
+          "en": "Fails to gain support due to unclear communication, lack of credibility, or inability to address concerns. Often faces resistance.",
+          "it": "Non ottiene sostegno a causa di comunicazione poco chiara, mancanza di credibilità o incapacità di affrontare le preoccupazioni. Incontra spesso resistenze."
+        },
+        "3": {
+          "en": "Gains support from others but may struggle in challenging situations. Uses basic persuasion techniques but could improve influence.",
+          "it": "Ottiene il sostegno degli altri, ma può faticare in situazioni difficili. Utilizza tecniche di persuasione di base, ma può migliorare la propria capacità di influenza."
+        },
+        "5": {
+          "en": "Effectively persuades and influences others through logical reasoning, empathy, and strong communication. Gains enthusiastic support for ideas.",
+          "it": "Persuade e influenza efficacemente gli altri attraverso ragionamento logico, empatia e una comunicazione incisiva. Ottiene un sostegno entusiasta per le proprie idee."
+        }
       }
     },
     {
-      "indicator": "Ensure that own positions address others' needs and priorities.",
+      "indicator": {
+        "en": "Ensure that own positions address others' needs and priorities.",
+        "it": "Assicurarsi che le proprie posizioni rispondano alle esigenze e alle priorità degli altri."
+      },
       "scale": {
-        "5": "Consistently tailors arguments and decisions to align with others' needs and priorities, fostering mutual understanding and cooperation.",
-        "3": "Attempts to consider others’ needs when presenting positions but may not always address them effectively.",
-        "1": "Rarely considers others’ needs, presenting positions in a one-sided manner that leads to resistance or disengagement."
+        "1": {
+          "en": "Rarely considers others’ needs, presenting positions in a one-sided manner that leads to resistance or disengagement.",
+          "it": "Considera raramente le esigenze degli altri, presentando le proprie posizioni in modo unilaterale, il che genera resistenza o disimpegno."
+        },
+        "3": {
+          "en": "Attempts to consider others’ needs when presenting positions but may not always address them effectively.",
+          "it": "Cerca di considerare le esigenze degli altri quando presenta le proprie posizioni, ma non sempre riesce ad affrontarle efficacemente."
+        },
+        "5": {
+          "en": "Consistently tailors arguments and decisions to align with others' needs and priorities, fostering mutual understanding and cooperation.",
+          "it": "Adatta costantemente argomentazioni e decisioni per allinearle alle esigenze e alle priorità degli altri, favorendo comprensione reciproca e cooperazione."
+        }
       }
     },
     {
-      "indicator": "Provide sound rationale to support opinions and proposals",
+      "indicator": {
+        "en": "Provide sound rationale to support opinions and proposals",
+        "it": "Fornire motivazioni solide a sostegno di opinioni e proposte"
+      },
       "scale": {
-        "5": "Backs up opinions and proposals with strong, well-researched arguments, data, and logical reasoning, making a compelling case.",
-        "3": "Provides some rationale for opinions but may lack depth or supporting evidence. Can explain reasoning but not always persuasively.",
-        "1": "Struggles to justify opinions or proposals with logic or evidence, often leading to weak arguments that fail to convince others."
+        "1": {
+          "en": "Struggles to justify opinions or proposals with logic or evidence, often leading to weak arguments that fail to convince others.",
+          "it": "Fatica a giustificare opinioni o proposte con logica o evidenze, producendo spesso argomentazioni deboli che non convincono gli altri."
+        },
+        "3": {
+          "en": "Provides some rationale for opinions but may lack depth or supporting evidence. Can explain reasoning but not always persuasively.",
+          "it": "Fornisce alcune motivazioni a sostegno delle opinioni, ma può mancare di approfondimento o di evidenze a supporto. Sa spiegare il proprio ragionamento, ma non sempre in modo persuasivo."
+        },
+        "5": {
+          "en": "Backs up opinions and proposals with strong, well-researched arguments, data, and logical reasoning, making a compelling case.",
+          "it": "Sostiene opinioni e proposte con argomentazioni solide e ben documentate, dati e ragionamento logico, costruendo una tesi convincente."
+        }
       }
     }
   ],
   "NET": [
     {
-      "indicator": "Easily connect with people at all organizational levels",
+      "indicator": {
+        "en": "Easily connect with people at all organizational levels",
+        "it": "Entrare facilmente in relazione con persone di tutti i livelli organizzativi"
+      },
       "scale": {
-        "5": "Builds rapport effortlessly with individuals at all levels, adapting communication style appropriately and fostering trust.",
-        "3": "Connects well with most people but may struggle with higher-level stakeholders or unfamiliar audiences.",
-        "1": "Has difficulty engaging with others, leading to ineffective interactions or strained relationships."
+        "1": {
+          "en": "Has difficulty engaging with others, leading to ineffective interactions or strained relationships.",
+          "it": "Ha difficoltà a entrare in relazione con gli altri, con conseguenti interazioni inefficaci o rapporti tesi."
+        },
+        "3": {
+          "en": "Connects well with most people but may struggle with higher-level stakeholders or unfamiliar audiences.",
+          "it": "Entra bene in relazione con la maggior parte delle persone, ma può faticare con stakeholder di livello più elevato o interlocutori poco familiari."
+        },
+        "5": {
+          "en": "Builds rapport effortlessly with individuals at all levels, adapting communication style appropriately and fostering trust.",
+          "it": "Costruisce con naturalezza un rapporto con persone di tutti i livelli, adattando in modo appropriato lo stile comunicativo e favorendo la fiducia."
+        }
       }
     },
     {
-      "indicator": "Listen to others carefully and without interrupting",
+      "indicator": {
+        "en": "Listen to others carefully and without interrupting",
+        "it": "Ascoltare gli altri con attenzione e senza interrompere"
+      },
       "scale": {
-        "5": "Actively listens, demonstrating full attention and patience. Responds thoughtfully and respectfully, making others feel valued.",
-        "3": "Listens attentively but may occasionally interrupt or get distracted. Usually responds appropriately.",
-        "1": "Frequently interrupts, appears disengaged, or fails to acknowledge others’ input, leading to frustration."
+        "1": {
+          "en": "Frequently interrupts, appears disengaged, or fails to acknowledge others’ input, leading to frustration.",
+          "it": "Interrompe frequentemente, appare disimpegnato o non riconosce i contributi degli altri, generando frustrazione."
+        },
+        "3": {
+          "en": "Listens attentively but may occasionally interrupt or get distracted. Usually responds appropriately.",
+          "it": "Ascolta con attenzione, ma occasionalmente può interrompere o distrarsi. Di norma risponde in modo appropriato."
+        },
+        "5": {
+          "en": "Actively listens, demonstrating full attention and patience. Responds thoughtfully and respectfully, making others feel valued.",
+          "it": "Ascolta attivamente, dimostrando piena attenzione e pazienza. Risponde in modo ponderato e rispettoso, facendo sentire gli altri valorizzati."
+        }
       }
     },
     {
-      "indicator": "Establish and maintain effective working relationships with people from own organizational unit",
+      "indicator": {
+        "en": "Establish and maintain effective working relationships with people from own organizational unit",
+        "it": "Stabilire e mantenere relazioni di lavoro efficaci con le persone della propria unità organizzativa"
+      },
       "scale": {
-        "5": "Consistently fosters strong, collaborative relationships with colleagues, contributing to a supportive and productive work environment.",
-        "3": "Maintains functional working relationships with team members but may not proactively strengthen them.",
-        "1": "Struggles to build or sustain working relationships, leading to misunderstandings, conflicts, or isolation."
+        "1": {
+          "en": "Struggles to build or sustain working relationships, leading to misunderstandings, conflicts, or isolation.",
+          "it": "Fatica a costruire o sostenere relazioni di lavoro, generando incomprensioni, conflitti o isolamento."
+        },
+        "3": {
+          "en": "Maintains functional working relationships with team members but may not proactively strengthen them.",
+          "it": "Mantiene relazioni di lavoro funzionali con i membri del team, ma può non rafforzarle in modo proattivo."
+        },
+        "5": {
+          "en": "Consistently fosters strong, collaborative relationships with colleagues, contributing to a supportive and productive work environment.",
+          "it": "Favorisce costantemente relazioni solide e collaborative con i colleghi, contribuendo a un ambiente di lavoro di supporto e produttivo."
+        }
       }
     }
   ],
   "RES": [
     {
-      "indicator": "Demonstrate flexibility and adaptability when priorities change",
+      "indicator": {
+        "en": "Demonstrate flexibility and adaptability when priorities change",
+        "it": "Dimostrare flessibilità e adattabilità quando le priorità cambiano"
+      },
       "scale": {
-        "5": "Quickly adjusts to shifting priorities with a positive attitude, maintaining productivity and helping others adapt. Seeks solutions to challenges proactively.",
-        "3": "Adapts to changing priorities with some initial hesitation but eventually aligns with new directions. May require occasional support.",
-        "1": "Resists change, struggles to adjust, and often slows down team progress when priorities shift. Needs constant guidance to adapt."
+        "1": {
+          "en": "Resists change, struggles to adjust, and often slows down team progress when priorities shift. Needs constant guidance to adapt.",
+          "it": "Resiste al cambiamento, fatica ad adeguarsi e rallenta spesso i progressi del team quando le priorità cambiano. Necessita di guida costante per adattarsi."
+        },
+        "3": {
+          "en": "Adapts to changing priorities with some initial hesitation but eventually aligns with new directions. May require occasional support.",
+          "it": "Si adatta al cambiamento delle priorità con qualche esitazione iniziale, ma alla fine si allinea alle nuove indicazioni. Può richiedere supporto occasionale."
+        },
+        "5": {
+          "en": "Quickly adjusts to shifting priorities with a positive attitude, maintaining productivity and helping others adapt. Seeks solutions to challenges proactively.",
+          "it": "Si adegua rapidamente al mutare delle priorità con atteggiamento positivo, mantenendo la produttività e aiutando gli altri ad adattarsi. Cerca soluzioni alle difficoltà in modo proattivo."
+        }
       }
     },
     {
-      "indicator": "Keep calm under pressure",
+      "indicator": {
+        "en": "Keep calm under pressure",
+        "it": "Mantenere la calma sotto pressione"
+      },
       "scale": {
-        "5": "Maintains composure and focus even in high-pressure situations. Thinks clearly, makes rational decisions, and reassures others.",
-        "3": "Handles pressure adequately but may show occasional signs of stress. Manages tasks but could improve emotional control.",
-        "1": "Easily overwhelmed under pressure, leading to panic, errors, or negative interactions with others."
+        "1": {
+          "en": "Easily overwhelmed under pressure, leading to panic, errors, or negative interactions with others.",
+          "it": "Si lascia sopraffare facilmente dalla pressione, con conseguente panico, errori o interazioni negative con gli altri."
+        },
+        "3": {
+          "en": "Handles pressure adequately but may show occasional signs of stress. Manages tasks but could improve emotional control.",
+          "it": "Gestisce adeguatamente la pressione, ma può mostrare occasionali segnali di stress. Porta avanti le attività, ma può migliorare il controllo emotivo."
+        },
+        "5": {
+          "en": "Maintains composure and focus even in high-pressure situations. Thinks clearly, makes rational decisions, and reassures others.",
+          "it": "Mantiene compostezza e concentrazione anche in situazioni di forte pressione. Ragiona con lucidità, prende decisioni razionali e rassicura gli altri."
+        }
       }
     },
     {
-      "indicator": "Acknowledge own mistakes",
+      "indicator": {
+        "en": "Acknowledge own mistakes",
+        "it": "Riconoscere i propri errori"
+      },
       "scale": {
-        "5": "Takes full ownership of mistakes, proactively addressing them and implementing corrective actions. Uses mistakes as learning opportunities.",
-        "3": "Admits mistakes when confronted and works on improvements but may not always take initiative in addressing them.",
-        "1": "Avoids or denies mistakes, shifts blame, or makes excuses, leading to repeated errors and lost trust."
+        "1": {
+          "en": "Avoids or denies mistakes, shifts blame, or makes excuses, leading to repeated errors and lost trust.",
+          "it": "Evita o nega gli errori, attribuisce la colpa ad altri o accampa scuse, con conseguenti errori ripetuti e perdita di fiducia."
+        },
+        "3": {
+          "en": "Admits mistakes when confronted and works on improvements but may not always take initiative in addressing them.",
+          "it": "Ammette gli errori quando vengono contestati e lavora per migliorare, ma non sempre prende l'iniziativa di affrontarli."
+        },
+        "5": {
+          "en": "Takes full ownership of mistakes, proactively addressing them and implementing corrective actions. Uses mistakes as learning opportunities.",
+          "it": "Si assume piena responsabilità dei propri errori, affrontandoli in modo proattivo e attuando azioni correttive. Utilizza gli errori come occasioni di apprendimento."
+        }
       }
     }
   ],
   "LRN": [
     {
-      "indicator": "Accept feedback openly, without getting defensive",
+      "indicator": {
+        "en": "Accept feedback openly, without getting defensive",
+        "it": "Accettare il feedback con apertura, senza mettersi sulla difensiva"
+      },
       "scale": {
-        "5": "Seeks out feedback proactively, listens attentively, and applies constructive criticism to improve performance.",
-        "3": "Accepts feedback with some hesitation but makes an effort to improve. Occasionally needs reminders to remain receptive.",
-        "1": "Reacts defensively or dismisses feedback, refusing to acknowledge areas for improvement."
+        "1": {
+          "en": "Reacts defensively or dismisses feedback, refusing to acknowledge areas for improvement.",
+          "it": "Reagisce mettendosi sulla difensiva o liquida il feedback, rifiutando di riconoscere le aree di miglioramento."
+        },
+        "3": {
+          "en": "Accepts feedback with some hesitation but makes an effort to improve. Occasionally needs reminders to remain receptive.",
+          "it": "Accetta il feedback con qualche esitazione, ma si impegna a migliorare. Occasionalmente necessita di solleciti per restare ricettivo."
+        },
+        "5": {
+          "en": "Seeks out feedback proactively, listens attentively, and applies constructive criticism to improve performance.",
+          "it": "Ricerca il feedback in modo proattivo, ascolta con attenzione e applica le critiche costruttive per migliorare la propria prestazione."
+        }
       }
     },
     {
-      "indicator": "Seeks opportunities to acquire new knowledge and skills.",
+      "indicator": {
+        "en": "Seeks opportunities to acquire new knowledge and skills.",
+        "it": "Ricerca opportunità per acquisire nuove conoscenze e competenze."
+      },
       "scale": {
-        "5": "Actively pursues learning opportunities, staying ahead of trends and continuously expanding knowledge and skills.",
-        "3": "Engages in learning when required but does not consistently seek out new opportunities independently.",
-        "1": "Shows little interest in learning, relying only on existing knowledge and avoiding opportunities for growth."
+        "1": {
+          "en": "Shows little interest in learning, relying only on existing knowledge and avoiding opportunities for growth.",
+          "it": "Mostra scarso interesse per l'apprendimento, basandosi solo sulle conoscenze esistenti ed evitando le opportunità di crescita."
+        },
+        "3": {
+          "en": "Engages in learning when required but does not consistently seek out new opportunities independently.",
+          "it": "Si dedica all'apprendimento quando richiesto, ma non ricerca costantemente nuove opportunità in autonomia."
+        },
+        "5": {
+          "en": "Actively pursues learning opportunities, staying ahead of trends and continuously expanding knowledge and skills.",
+          "it": "Persegue attivamente le opportunità di apprendimento, anticipando le tendenze e ampliando di continuo conoscenze e competenze."
+        }
       }
     },
     {
-      "indicator": "Prove \"hungry\" to learn new things",
+      "indicator": {
+        "en": "Prove \"hungry\" to learn new things",
+        "it": "Dimostrarsi \"affamato\" di imparare cose nuove"
+      },
       "scale": {
-        "5": "Demonstrates strong curiosity and enthusiasm for learning, taking initiative to explore new topics and apply knowledge.",
-        "3": "Willing to learn when prompted but does not always take initiative. Shows interest in learning but may need encouragement.",
-        "1": "Lacks curiosity and motivation to learn new things. Avoids challenges and resists new information."
+        "1": {
+          "en": "Lacks curiosity and motivation to learn new things. Avoids challenges and resists new information.",
+          "it": "Non ha curiosità né motivazione a imparare cose nuove. Evita le sfide e resiste alle nuove informazioni."
+        },
+        "3": {
+          "en": "Willing to learn when prompted but does not always take initiative. Shows interest in learning but may need encouragement.",
+          "it": "È disponibile a imparare quando sollecitato, ma non sempre prende l'iniziativa. Mostra interesse per l'apprendimento, ma può necessitare di incoraggiamento."
+        },
+        "5": {
+          "en": "Demonstrates strong curiosity and enthusiasm for learning, taking initiative to explore new topics and apply knowledge.",
+          "it": "Dimostra forte curiosità ed entusiasmo per l'apprendimento, prendendo l'iniziativa di esplorare nuovi argomenti e applicare le conoscenze."
+        }
       }
     }
   ],
   "ITG": [
     {
-      "indicator": "Know and respect the organization's values and standards of conduct",
+      "indicator": {
+        "en": "Know and respect the organization's values and standards of conduct",
+        "it": "Conoscere e rispettare i valori e gli standard di condotta dell'organizzazione"
+      },
       "scale": {
-        "5": "Fully understands, upholds, and promotes the organization’s values and conduct standards. Acts as a role model and encourages others to follow them.",
-        "3": "Follows organizational values and standards but may need occasional reminders. Does not actively promote them.",
-        "1": "Disregards or violates organizational values and conduct standards, creating ethical or reputational risks."
+        "1": {
+          "en": "Disregards or violates organizational values and conduct standards, creating ethical or reputational risks.",
+          "it": "Ignora o viola i valori e gli standard di condotta dell'organizzazione, creando rischi etici o reputazionali."
+        },
+        "3": {
+          "en": "Follows organizational values and standards but may need occasional reminders. Does not actively promote them.",
+          "it": "Segue i valori e gli standard dell'organizzazione, ma può necessitare di solleciti occasionali. Non li promuove attivamente."
+        },
+        "5": {
+          "en": "Fully understands, upholds, and promotes the organization’s values and conduct standards. Acts as a role model and encourages others to follow them.",
+          "it": "Comprende, sostiene e promuove pienamente i valori e gli standard di condotta dell'organizzazione. Agisce come modello di riferimento e incoraggia gli altri a seguirli."
+        }
       }
     },
     {
-      "indicator": "Behave with honesty and sincerity",
+      "indicator": {
+        "en": "Behave with honesty and sincerity",
+        "it": "Comportarsi con onestà e sincerità"
+      },
       "scale": {
-        "5": "Consistently acts with integrity, transparency, and sincerity. Earns trust by being truthful and fair in all interactions.",
-        "3": "Generally honest and sincere but may occasionally withhold information or be unclear in difficult situations.",
-        "1": "Engages in dishonest or insincere behavior, misleading others or failing to maintain trust."
+        "1": {
+          "en": "Engages in dishonest or insincere behavior, misleading others or failing to maintain trust.",
+          "it": "Assume comportamenti disonesti o insinceri, traendo in inganno gli altri o non riuscendo a mantenere la fiducia."
+        },
+        "3": {
+          "en": "Generally honest and sincere but may occasionally withhold information or be unclear in difficult situations.",
+          "it": "In genere è onesto e sincero, ma occasionalmente può trattenere informazioni o risultare poco chiaro in situazioni difficili."
+        },
+        "5": {
+          "en": "Consistently acts with integrity, transparency, and sincerity. Earns trust by being truthful and fair in all interactions.",
+          "it": "Agisce costantemente con integrità, trasparenza e sincerità. Conquista la fiducia essendo veritiero e corretto in tutte le interazioni."
+        }
       }
     },
     {
-      "indicator": "Keep commitments and promises",
+      "indicator": {
+        "en": "Keep commitments and promises",
+        "it": "Mantenere gli impegni e le promesse"
+      },
       "scale": {
-        "5": "Always follows through on commitments, ensuring reliability and accountability. Proactively communicates if adjustments are needed.",
-        "3": "Keeps most commitments but may occasionally fail to meet expectations or require reminders.",
-        "1": "Frequently breaks commitments, causing delays, mistrust, or frustration among colleagues and stakeholders."
+        "1": {
+          "en": "Frequently breaks commitments, causing delays, mistrust, or frustration among colleagues and stakeholders.",
+          "it": "Viene meno frequentemente agli impegni, causando ritardi, sfiducia o frustrazione tra colleghi e stakeholder."
+        },
+        "3": {
+          "en": "Keeps most commitments but may occasionally fail to meet expectations or require reminders.",
+          "it": "Mantiene la maggior parte degli impegni, ma occasionalmente può non soddisfare le aspettative o richiedere solleciti."
+        },
+        "5": {
+          "en": "Always follows through on commitments, ensuring reliability and accountability. Proactively communicates if adjustments are needed.",
+          "it": "Onora sempre gli impegni, garantendo affidabilità e responsabilità. Comunica in modo proattivo se sono necessari aggiustamenti."
+        }
       }
     }
   ],
   "INC": [
     {
-      "indicator": "Build constructive relationships with people different of self",
+      "indicator": {
+        "en": "Build constructive relationships with people different of self",
+        "it": "Costruire relazioni costruttive con persone diverse da sé"
+      },
       "scale": {
-        "5": "Actively seeks to understand and collaborate with diverse individuals. Values different perspectives and fosters an inclusive environment.",
-        "3": "Works well with different people but may not actively seek out diverse perspectives or relationships.",
-        "1": "Struggles to connect with people different from self, showing little interest in understanding or engaging with them."
+        "1": {
+          "en": "Struggles to connect with people different from self, showing little interest in understanding or engaging with them.",
+          "it": "Fatica a entrare in relazione con persone diverse da sé, mostrando scarso interesse a comprenderle o a coinvolgerle."
+        },
+        "3": {
+          "en": "Works well with different people but may not actively seek out diverse perspectives or relationships.",
+          "it": "Lavora bene con persone diverse, ma può non ricercare attivamente prospettive o relazioni diverse."
+        },
+        "5": {
+          "en": "Actively seeks to understand and collaborate with diverse individuals. Values different perspectives and fosters an inclusive environment.",
+          "it": "Cerca attivamente di comprendere e di collaborare con persone diverse. Valorizza le prospettive differenti e favorisce un ambiente inclusivo."
+        }
       }
     },
     {
-      "indicator": "Avoid using cultural stereotypes to make judgments about people.",
+      "indicator": {
+        "en": "Avoid using cultural stereotypes to make judgments about people.",
+        "it": "Evitare di ricorrere a stereotipi culturali per formulare giudizi sulle persone."
+      },
       "scale": {
-        "5": "Treats individuals with respect and fairness, avoiding assumptions based on stereotypes. Actively challenges bias in oneself and others.",
-        "3": "Generally avoids stereotypes but may occasionally make assumptions unconsciously. Open to learning and improving.",
-        "1": "Frequently relies on cultural stereotypes to judge others, leading to biased decisions and strained relationships."
+        "1": {
+          "en": "Frequently relies on cultural stereotypes to judge others, leading to biased decisions and strained relationships.",
+          "it": "Ricorre frequentemente a stereotipi culturali per giudicare gli altri, con conseguenti decisioni influenzate da pregiudizi e rapporti tesi."
+        },
+        "3": {
+          "en": "Generally avoids stereotypes but may occasionally make assumptions unconsciously. Open to learning and improving.",
+          "it": "In genere evita gli stereotipi, ma occasionalmente può formulare assunti in modo inconsapevole. È aperto ad apprendere e a migliorare."
+        },
+        "5": {
+          "en": "Treats individuals with respect and fairness, avoiding assumptions based on stereotypes. Actively challenges bias in oneself and others.",
+          "it": "Tratta le persone con rispetto ed equità, evitando assunti basati su stereotipi. Mette attivamente in discussione i pregiudizi propri e altrui."
+        }
       }
     },
     {
-      "indicator": "Adapt to basic cultural differences",
+      "indicator": {
+        "en": "Adapt to basic cultural differences",
+        "it": "Adattarsi alle differenze culturali di base"
+      },
       "scale": {
-        "5": "Demonstrates strong cultural awareness, adapting communication and behavior to work effectively across cultures. Shows deep respect for different traditions and norms.",
-        "3": "Acknowledges cultural differences and makes an effort to adapt, though may need guidance in unfamiliar situations.",
-        "1": "Struggles to recognize or adapt to cultural differences, leading to misunderstandings or ineffective interactions."
+        "1": {
+          "en": "Struggles to recognize or adapt to cultural differences, leading to misunderstandings or ineffective interactions.",
+          "it": "Fatica a riconoscere le differenze culturali o ad adattarvisi, generando incomprensioni o interazioni inefficaci."
+        },
+        "3": {
+          "en": "Acknowledges cultural differences and makes an effort to adapt, though may need guidance in unfamiliar situations.",
+          "it": "Riconosce le differenze culturali e si impegna ad adattarsi, sebbene possa necessitare di guida in situazioni non familiari."
+        },
+        "5": {
+          "en": "Demonstrates strong cultural awareness, adapting communication and behavior to work effectively across cultures. Shows deep respect for different traditions and norms.",
+          "it": "Dimostra una forte consapevolezza culturale, adattando comunicazione e comportamento per lavorare efficacemente tra culture diverse. Mostra profondo rispetto per tradizioni e norme differenti."
+        }
       }
     }
   ]

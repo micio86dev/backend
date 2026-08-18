@@ -101,14 +101,14 @@ test('locked FV: anchor text and competency name edits are suppressed on re-seed
     $barsFilePath = "{$barsDir}/ICO.json";
     $barsData = json_decode(file_get_contents($barsFilePath), true, 512, JSON_THROW_ON_ERROR);
     if (isset($barsData[$competencyCode])) {
-        $barsData[$competencyCode][0]['scale']['5'] = 'MODIFIED ANCHOR TEXT';
+        $barsData[$competencyCode][0]['scale']['5']['en'] = 'MODIFIED ANCHOR TEXT';
     }
     file_put_contents($barsFilePath, json_encode($barsData));
 
     // Edit competency name in competencies.json
     $compData = json_decode(file_get_contents($competenciesFile), true, 512, JSON_THROW_ON_ERROR);
     if (isset($compData[$competencyCode])) {
-        $compData[$competencyCode]['name'] = 'MODIFIED NAME';
+        $compData[$competencyCode]['name']['en'] = 'MODIFIED NAME';
     }
     file_put_contents($competenciesFile, json_encode($compData));
 
@@ -147,7 +147,7 @@ test('locked FV: new competency Z added to JSON is inserted (additive)', functio
 
     $tmpDir = sys_get_temp_dir().'/c4_lock_guard_z_'.uniqid();
     [$rolesFile, $competenciesFile, $barsDir] = buildSeederFixtures($tmpDir, [
-        'ZZZ' => ['name' => 'Test Competency Z', 'definition' => 'Test definition'],
+        'ZZZ' => ['name' => ['en' => 'Test Competency Z'], 'definition' => ['en' => 'Test definition']],
     ]);
 
     $seeder2 = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
