@@ -1,10 +1,12 @@
 {
   "ICO": {
     "name": {
-      "en": "Individual Contributor"
+      "en": "Individual Contributor",
+      "it": "Contributore individuale"
     },
     "responsibilities": {
-      "en": "Responsible for executing tasks with a short-term focus (daily to weekly) within their own area, following budget guidelines, and contributing to functional goals without direct managerial duties."
+      "en": "Responsible for executing tasks with a short-term focus (daily to weekly) within their own area, following budget guidelines, and contributing to functional goals without direct managerial duties.",
+      "it": "Responsabile dell'esecuzione delle attività con un focus di breve termine (da giornaliero a settimanale) nell'ambito della propria area, del rispetto delle linee guida di budget e del contributo agli obiettivi funzionali, senza compiti manageriali diretti."
     },
     "competencies": [
       "PRS",
@@ -26,10 +28,12 @@
   },
   "FLL": {
     "name": {
-      "en": "Front Line Leader"
+      "en": "Front Line Leader",
+      "it": "Responsabile di prima linea"
     },
     "responsibilities": {
-      "en": "Responsible for coordinating the execution of operational goals with a medium-term focus (weekly to monthly) within a small area or department, managing operating costs, and overseeing one functional unit."
+      "en": "Responsible for coordinating the execution of operational goals with a medium-term focus (weekly to monthly) within a small area or department, managing operating costs, and overseeing one functional unit.",
+      "it": "Responsabile del coordinamento dell'esecuzione degli obiettivi operativi con un focus di medio termine (da settimanale a mensile) nell'ambito di una piccola area o di un reparto, della gestione dei costi operativi e della supervisione di una singola unità funzionale."
     },
     "competencies": [
       "PRS",
@@ -54,10 +58,12 @@
   },
   "MLL": {
     "name": {
-      "en": "Mid-Level Leader"
+      "en": "Mid-Level Leader",
+      "it": "Responsabile di livello intermedio"
     },
     "responsibilities": {
-      "en": "Responsible for aligning unit plans with organizational strategy with a long-term focus (1 year) within a small country, balancing revenue growth with cost management, and managing one or two closely related functions."
+      "en": "Responsible for aligning unit plans with organizational strategy with a long-term focus (1 year) within a small country, balancing revenue growth with cost management, and managing one or two closely related functions.",
+      "it": "Responsabile dell'allineamento dei piani dell'unità alla strategia organizzativa con un focus di lungo termine (1 anno) nell'ambito di un paese di piccole dimensioni, del bilanciamento tra crescita dei ricavi e gestione dei costi e della gestione di una o due funzioni strettamente correlate."
     },
     "competencies": [
       "PRS",
@@ -82,10 +88,12 @@
   },
   "BUL": {
     "name": {
-      "en": "Business Unit Leader"
+      "en": "Business Unit Leader",
+      "it": "Responsabile di business unit"
     },
     "responsibilities": {
-      "en": "Responsible for executing organizational strategy with a long-term focus (1-2 years) across an entire country or region, handling full P&L responsibilities, and overseeing multiple business functions."
+      "en": "Responsible for executing organizational strategy with a long-term focus (1-2 years) across an entire country or region, handling full P&L responsibilities, and overseeing multiple business functions.",
+      "it": "Responsabile dell'esecuzione della strategia organizzativa con un focus di lungo termine (1-2 anni) su un intero paese o un'intera regione, della gestione delle piene responsabilità di P&L e della supervisione di molteplici funzioni aziendali."
     },
     "competencies": [
       "PRS",
@@ -106,10 +114,12 @@
   },
   "SRX": {
     "name": {
-      "en": "Senior Executive"
+      "en": "Senior Executive",
+      "it": "Dirigente senior"
     },
     "responsibilities": {
-      "en": "Responsible for setting organizational direction and long-term strategy with a multi-year focus (3-5 years) across the entire organization or a multi-country region, owning capital allocation and consolidated P&L across business units, and leading other senior leaders across all business functions."
+      "en": "Responsible for setting organizational direction and long-term strategy with a multi-year focus (3-5 years) across the entire organization or a multi-country region, owning capital allocation and consolidated P&L across business units, and leading other senior leaders across all business functions.",
+      "it": "Responsabile della definizione della direzione organizzativa e della strategia di lungo termine con un focus pluriennale (3-5 anni) sull'intera organizzazione o su una regione multi-paese, della titolarità dell'allocazione del capitale e del P&L consolidato tra le business unit e della guida di altri leader senior in tutte le funzioni aziendali."
     },
     "competencies": [
       "PRS",
