@@ -57,10 +57,14 @@ class CatalogMeta extends Model
      */
     public static function bump(): void
     {
-        $row = static::find(1);
+        $row = self::query()->find(1);
 
         if ($row === null) {
-            $row = new static;
+            // `new self`, not `new static`: this is a singleton keyed on a
+            // literal id of 1, so a subclass pointed at the same row would be
+            // the bug, not a use case. PHPStan flags `new static()` on a
+            // non-final class for exactly that reason.
+            $row = new self;
             $row->forceFill(['id' => 1, 'revision' => 0]);
             $row->save();
         }
