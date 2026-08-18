@@ -4,7 +4,8 @@
  * RED — 8.5: Per-role BARS gap assertions (C3).
  *
  * After seeder run: asserts BUL/FLL/MLL bars_indicators row counts and
- * that ALL gap rows have status='pending_authoring'.
+ * that every gap row NOT about `it` translation completeness has
+ * status='pending_authoring'.
  *
  * Refs spec: BUL 42 + FLL 54 + MLL 54 bars_indicators rows, ZERO
  * competency_no_bars gaps for all three (bumped in
@@ -13,6 +14,17 @@
  * scripts/framework-competency-gaps.txt (now empty) and
  * SeededCountCorrectnessTest.php's own bumped counts). FLL and MLL are
  * fully covered at 18/18 assigned competencies; BUL at 14/14.
+ *
+ * "all gap rows are pending_authoring" stopped being true once the wrapper
+ * catalogue's `it` locale reached 100% coverage (bars-catalogue-completion):
+ * seeding the real catalogue now legitimately RESOLVES the global
+ * `missing_translation` row (see FrameworkCatalogSeeder step 5 / design D5).
+ * The prior version of this test unintentionally encoded the production
+ * defect it was meant to guard against — a catalogue complete from the
+ * start could never actually reach `resolved`, so "every gap row is
+ * pending" always held BY ACCIDENT, not by design. Only
+ * `missing_potential_competency` (MTG, LAT — no expert-authored definition
+ * exists yet) legitimately stays pending against today's real catalogue.
  */
 
 use App\Models\BarsIndicator;
@@ -54,10 +66,25 @@ test('MLL has 54 bars_indicators rows and 0 competency_no_bars gaps', function (
     )->toBe(0);
 });
 
-test('all seeded gap rows have status=pending_authoring', function (): void {
+test('all seeded gap rows are pending_authoring, except missing_translation which resolves against the fully it-translated catalogue', function (): void {
     $total = FrameworkGap::count();
-    $pending = FrameworkGap::where('status', 'pending_authoring')->count();
+    $nonTranslationTotal = FrameworkGap::where('kind', '!=', 'missing_translation')->count();
+    $nonTranslationPending = FrameworkGap::where('kind', '!=', 'missing_translation')
+        ->where('status', 'pending_authoring')
+        ->count();
 
     expect($total)->toBeGreaterThan(0)
-        ->and($pending)->toBe($total);
+        ->and($nonTranslationTotal)->toBeGreaterThan(0)
+        ->and($nonTranslationPending)->toBe($nonTranslationTotal, 'every non-translation gap kind (e.g. missing_potential_competency) must still be pending');
+
+    // The real catalogue ships 100% it-translated (bars-catalogue-completion),
+    // so the global missing_translation row must be resolved, with a note
+    // that truthfully states the total — never "0 of 0", which would be the
+    // symptom of the production defect this scenario guards against.
+    $globalTranslationGap = FrameworkGap::where('kind', 'missing_translation')
+        ->whereNull('role_code')->whereNull('competency_code')->first();
+
+    expect($globalTranslationGap)->not->toBeNull()
+        ->and($globalTranslationGap->status)->toBe('resolved')
+        ->and($globalTranslationGap->note)->not->toContain('0 of 0');
 });
