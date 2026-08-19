@@ -105,3 +105,16 @@ test('a message with both the real complaint and the key preserves the complaint
     expect($result)->toContain('prompt is required');
     expect($result)->not->toContain('LIVE_KEY_999');
 });
+
+test('a key straddling the truncation boundary never leaks a partial prefix', function (): void {
+    // Redaction MUST run before truncation. Truncating first splits the key, so
+    // neither str_replace nor the assert-and-drop check (both of which look for
+    // the WHOLE key) can see it — and the surviving prefix escapes in clear text.
+    $apiKey = str_repeat('K', 40);
+    $message = str_repeat('x', 290).$apiKey.' tail';
+
+    $result = ProviderErrorMessage::extract(['message' => $message], $apiKey);
+
+    // Any non-empty run of the key's own characters surviving in the output is a leak.
+    expect($result)->not->toContain(mb_substr($apiKey, 0, 4));
+});

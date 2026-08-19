@@ -48,20 +48,23 @@ final class ProviderErrorMessage
             return null;
         }
 
-        $message = mb_substr((string) $raw, 0, self::MAX_LENGTH);
+        $message = (string) $raw;
 
-        if ($apiKey === '') {
-            return $message;
+        // Redaction MUST happen BEFORE truncation, on the WHOLE message.
+        // Truncating first can split the key across the cutoff, leaving only a
+        // prefix behind: str_replace and the assert-and-drop check below both
+        // search for the COMPLETE key, so neither sees the fragment, and the
+        // surviving prefix escapes in clear text.
+        if ($apiKey !== '') {
+            $message = str_replace($apiKey, '[REDACTED]', $message);
+
+            // Assert-and-drop: fail closed if the key somehow survives redaction.
+            if (str_contains($message, $apiKey)) {
+                return null;
+            }
         }
 
-        $message = str_replace($apiKey, '[REDACTED]', $message);
-
-        // Assert-and-drop: fail closed if the key somehow survives redaction.
-        if (str_contains($message, $apiKey)) {
-            return null;
-        }
-
-        return $message;
+        return mb_substr($message, 0, self::MAX_LENGTH);
     }
 
     /**
