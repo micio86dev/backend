@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Provider;
 
+use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\AvatarTemplates\TemplatePayload;
+use App\Support\Provider\ProviderErrorMessage;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -72,14 +75,17 @@ class TavusProvider implements ProviderSessionService
             ->post(self::BASE_URL.'/conversations', $conversationBody);
 
         if (! $response->successful()) {
-            $this->throwRedacted($apiKey, $response->status(), 'conversation creation failed');
+            $this->throwRedacted($apiKey, $response, 'conversation creation failed');
         }
 
         $conversationId = $response->json('conversation_id');
         $conversationUrl = $response->json('conversation_url');
 
         if ($conversationId === null || $conversationUrl === null) {
-            throw new ProviderException('Tavus: malformed response (missing conversation_id or conversation_url)', false);
+            throw new ProviderException(
+                'Tavus: malformed response (missing conversation_id or conversation_url)',
+                ProviderFailureClass::Upstream,
+            );
         }
 
         return new ProviderToken(
@@ -128,24 +134,45 @@ class TavusProvider implements ProviderSessionService
     }
 
     /**
-     * Throw a ProviderException with the raw response body REDACTED.
+     * Throw a ProviderException, classified by HTTP status, with the raw response
+     * body REDACTED — but the provider's own diagnostic message PRESERVED (PR1 D4, D6).
      *
-     * Security (task 14.3): the key and raw body are stripped before re-throwing.
+     * Security (task 14.3): the key MUST be stripped before logging or re-throwing;
+     * the full raw body is NEVER logged. See `HeygenProvider::throwRedacted()` for the
+     * shared extraction contract (`ProviderErrorMessage::extract()`).
      */
-    private function throwRedacted(string $apiKey, int $status, string $context): never
+    private function throwRedacted(string $apiKey, Response $response, string $context): never
     {
-        $retryable = $status === 429;
+        $status = $response->status();
+        $class = self::classify($status);
+        $extracted = ProviderErrorMessage::extract($response->json(), $apiKey);
 
         Log::warning('Tavus: provider call failed', [
             'context' => $context,
             'status' => $status,
+            'class' => $class->value,
+            'provider_message' => $extracted,
             // Deliberately NO 'response_body' — may contain TAVUS_API_KEY
         ]);
 
+        $suffix = $extracted !== null ? " — {$extracted}" : ' — provider response redacted';
+
         throw new ProviderException(
-            "Tavus: {$context} (HTTP {$status}) — provider response redacted",
-            $retryable,
+            "Tavus: {$context} (HTTP {$status}){$suffix}",
+            $class,
         );
+    }
+
+    /**
+     * Classify an HTTP status into the three-way provider failure taxonomy (PR1 D4).
+     */
+    private static function classify(int $status): ProviderFailureClass
+    {
+        return match (true) {
+            $status === 429 => ProviderFailureClass::Throttle,
+            $status >= 500 => ProviderFailureClass::Upstream,
+            default => ProviderFailureClass::ClientError,
+        };
     }
 
     /**

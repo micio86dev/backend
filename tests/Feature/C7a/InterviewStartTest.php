@@ -383,6 +383,72 @@ test('POST /start provider 429 → 429 provider_busy; participant NOT → errore
     }
 });
 
+test('POST /start provider 4xx (HeyGen) → 500; session status = error; participant.status UNCHANGED (PR1 D4)', function (): void {
+    // 422: HeyGen correctly rejected a request WE malformed — a client contract error,
+    // not an upstream failure. Before PR1 this was classified identically to a 5xx
+    // (502 + participant permanently → errore). This is the acceptance test for D4's
+    // three-way split: a bug in OUR payload must not permanently burn the candidate.
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['message' => 'prompt is required'], 422),
+    ]);
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(500);
+    $response->assertJson(['error' => 'provider_error']);
+
+    // Session marked error (same write as the 5xx path — only the HTTP status differs)
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::where('participant_id', $participant->id)->first();
+    expect($session)->not->toBeNull();
+    expect($session->status)->toBe('error');
+
+    // Participant MUST NOT be transitioned to errore — this is the whole point of D4
+    $participant->refresh();
+    expect($participant->status)->not->toBe('errore');
+    expect($participant->status)->toBe('in_attesa');
+});
+
+test('POST /start provider 4xx (Tavus) → 500; session status = error; participant.status UNCHANGED (PR1 D4)', function (): void {
+    Http::fake([
+        '*tavusapi*/v2/conversations*' => Http::response(['error' => 'replica_id is invalid'], 400),
+    ]);
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1, 'tavus');
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(500);
+    $response->assertJson(['error' => 'provider_error']);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::where('participant_id', $participant->id)->first();
+    expect($session)->not->toBeNull();
+    expect($session->status)->toBe('error');
+
+    $participant->refresh();
+    expect($participant->status)->not->toBe('errore');
+    expect($participant->status)->toBe('in_attesa');
+});
+
 test('POST /start no remaining competency → 422', function (): void {
     Http::fake(heygenSuccessResponse());
     Queue::fake();

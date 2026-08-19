@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ProviderException;
@@ -584,28 +585,73 @@ class InterviewController extends Controller
     /**
      * Handle provider HTTP failure (ProviderException).
      *
-     * (4b) 5xx/timeout → session error + participant errore + 502.
-     * (4c) 429 → session stays pending + 429 provider_busy (NOT errore).
+     * PR1 (delta spec D4) — three-way classification, switched ONLY here:
+     * (4c) Throttle (429)     → session stays pending, 429 provider_busy (NOT errore).
+     * (4d) ClientError (4xx)  → session error, participant UNCHANGED, HTTP 500 (our bug,
+     *                           not the provider's — see `markParticipantFailed()` below).
+     * (4b) Upstream (5xx/timeout/malformed) → session error, participant → errore, 502.
+     *      Unchanged from pre-PR1 behavior.
      */
     private function handleProviderFailure(
         ProviderException $e,
         InterviewSession $session,
         Participant $participant,
     ): JsonResponse {
-        if ($e->isRetryable()) {
+        return match ($e->failureClass()) {
             // (4c) 429 — retryable; DO NOT flip participant to errore; session stays pending
-            return response()->json(['error' => 'provider_busy'], Response::HTTP_TOO_MANY_REQUESTS);
-        }
+            ProviderFailureClass::Throttle => response()->json(['error' => 'provider_busy'], Response::HTTP_TOO_MANY_REQUESTS),
 
-        // (4b) 5xx/timeout — update session to error + participant to errore
+            // (4d) A 4xx WE caused (the provider correctly rejected a malformed request).
+            // Session is marked error for visibility, but the participant is left
+            // UNCHANGED — a payload bug on our side must not permanently burn the
+            // candidate. HTTP 500 (our fault), not 502 (which would blame the upstream).
+            ProviderFailureClass::ClientError => $this->markSessionError($session, Response::HTTP_INTERNAL_SERVER_ERROR),
+
+            // (4b) Genuine provider failure — unchanged from pre-PR1 behavior.
+            ProviderFailureClass::Upstream => $this->markSessionError($session, Response::HTTP_BAD_GATEWAY, $participant),
+        };
+    }
+
+    /**
+     * Mark the session as errored and return the provider_error response.
+     *
+     * When `$participant` is given, also runs `markParticipantFailed()` — the
+     * Upstream-only path. ClientError calls this WITHOUT a participant, so the
+     * candidate's status is never touched for a bug on our own side.
+     */
+    private function markSessionError(
+        InterviewSession $session,
+        int $httpStatus,
+        ?Participant $participant = null,
+    ): JsonResponse {
         try {
             $session->status = 'error';
             $session->ended_reason = 'error';
             $session->save();
         } catch (\Throwable) {
-            // Best-effort — if even the error update fails, still return 502
+            // Best-effort — if even the error update fails, still return the failure status
         }
 
+        if ($participant !== null) {
+            $this->markParticipantFailed($participant);
+        }
+
+        return response()->json(['error' => 'provider_error'], $httpStatus);
+    }
+
+    /**
+     * Flip a participant to the terminal `errore` status after a genuine (Upstream)
+     * provider failure.
+     *
+     * SEAM with `participant-error-recovery` (design D5): this method is extracted
+     * VERBATIM from the pre-PR1 `handleProviderFailure()` body (formerly :609-617).
+     * This change (`liveavatar-contract-alignment`) only CREATES the method and calls
+     * it from the Upstream branch above — it does not change what happens inside it.
+     * `participant-error-recovery` owns and edits ONLY this method's body (recoverable
+     * status, audit log, admin retry) and must not re-shape the classification switch.
+     */
+    private function markParticipantFailed(Participant $participant): void
+    {
         try {
             // in_attesa → errore and in_corso → errore are both allowed (CRITICAL-1)
             if (! in_array($participant->status, ['completato', 'errore'], true)) {
@@ -615,8 +661,6 @@ class InterviewController extends Controller
         } catch (\Throwable) {
             // Best-effort
         }
-
-        return response()->json(['error' => 'provider_error'], Response::HTTP_BAD_GATEWAY);
     }
 
     /**

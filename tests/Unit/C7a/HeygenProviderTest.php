@@ -16,6 +16,7 @@ declare(strict_types=1);
  * REQ: HeygenProvider — provider secret non-exposure (C7a task 14.3)
  */
 
+use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
@@ -106,6 +107,89 @@ test('HeygenProvider::issue() on 429 throws ProviderException with retryable sig
         $provider->issue($session, $ctx);
     } catch (ProviderException $e) {
         expect($e->isRetryable())->toBeTrue();
+    }
+});
+
+test('HeygenProvider::issue() on a client-side 4xx classifies as ClientError, not retryable (PR1 D4)', function (): void {
+    // 422: LiveAvatar rejected OUR request body — a client contract error, not an
+    // upstream failure. This did NOT exist as a distinct class before PR1: prior
+    // code folded every non-429 status (4xx and 5xx alike) into "not retryable",
+    // which the controller then treated identically to a genuine 5xx (502 + participant
+    // errore). This test pins the new three-way split at the provider layer.
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['error' => 'prompt is required'], 422),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+
+    try {
+        $provider->issue($session, $ctx);
+        $this->fail('Expected ProviderException to be thrown');
+    } catch (ProviderException $e) {
+        expect($e->failureClass())->toBe(ProviderFailureClass::ClientError);
+        expect($e->isRetryable())->toBeFalse();
+    }
+});
+
+test('HeygenProvider::issue() on 5xx still classifies as Upstream (PR1 D4 — unchanged)', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['error' => 'Internal Server Error'], 503),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+
+    try {
+        $provider->issue($session, $ctx);
+        $this->fail('Expected ProviderException to be thrown');
+    } catch (ProviderException $e) {
+        expect($e->failureClass())->toBe(ProviderFailureClass::Upstream);
+        expect($e->isRetryable())->toBeFalse();
+    }
+});
+
+test('HeygenProvider::issue() on 429 still classifies as Throttle (PR1 D4 — unchanged)', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['error' => 'Too Many Requests'], 429),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+
+    try {
+        $provider->issue($session, $ctx);
+        $this->fail('Expected ProviderException to be thrown');
+    } catch (ProviderException $e) {
+        expect($e->failureClass())->toBe(ProviderFailureClass::Throttle);
+        expect($e->isRetryable())->toBeTrue();
+    }
+});
+
+test('HeygenProvider::issue() on a 4xx preserves the provider message AND redacts the key — one test, both halves (PR1 D6)', function (): void {
+    // The message contains BOTH a genuine diagnostic AND the API key (the worst case:
+    // the provider echoed it back). Redaction must not throw away the diagnostic to
+    // achieve safety — it must keep one and drop the other.
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(
+            ['message' => 'prompt is required (caller key: SUPER_SECRET_HEYGEN_KEY_12345)'],
+            422
+        ),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+
+    try {
+        $provider->issue($session, $ctx);
+        $this->fail('Expected ProviderException to be thrown');
+    } catch (ProviderException $e) {
+        expect($e->getMessage())->toContain('prompt is required');
+        expect($e->getMessage())->not->toContain('SUPER_SECRET_HEYGEN_KEY_12345');
     }
 });
 

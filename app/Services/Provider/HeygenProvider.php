@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Provider;
 
+use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
 use App\Models\InterviewSession;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\AvatarTemplates\TemplatePayload;
+use App\Support\Provider\ProviderErrorMessage;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -86,7 +89,7 @@ class HeygenProvider implements ProviderSessionService
             ->post(self::BASE_URL.'/contexts', $contextBody);
 
         if (! $ctxResponse->successful()) {
-            $this->throwRedacted($apiKey, $ctxResponse->status(), 'context creation failed');
+            $this->throwRedacted($apiKey, $ctxResponse, 'context creation failed');
         }
 
         $contextId = $ctxResponse->json('data.context_id', '');
@@ -98,7 +101,7 @@ class HeygenProvider implements ProviderSessionService
             ]);
 
         if (! $tokenResponse->successful()) {
-            $this->throwRedacted($apiKey, $tokenResponse->status(), 'session token issuance failed');
+            $this->throwRedacted($apiKey, $tokenResponse, 'session token issuance failed');
         }
 
         $data = $tokenResponse->json('data', []);
@@ -106,7 +109,10 @@ class HeygenProvider implements ProviderSessionService
         $sessionId = $data['session_id'] ?? null;
 
         if ($accessToken === null || $sessionId === null) {
-            throw new ProviderException('HeyGen: malformed token response (missing access_token or session_id)', false);
+            throw new ProviderException(
+                'HeyGen: malformed token response (missing access_token or session_id)',
+                ProviderFailureClass::Upstream,
+            );
         }
 
         return new ProviderToken(
@@ -188,27 +194,48 @@ class HeygenProvider implements ProviderSessionService
     }
 
     /**
-     * Throw a ProviderException with the raw response body REDACTED.
+     * Throw a ProviderException, classified by HTTP status, with the raw response
+     * body REDACTED — but the provider's own diagnostic message PRESERVED (PR1 D4, D6).
      *
      * Security (task 14.3): the raw provider response may echo the API key or contain
-     * internal endpoint details. The key and raw body MUST be stripped before logging or
-     * re-throwing. Only a generic error message with the HTTP status is safe to surface.
+     * internal endpoint details. The key MUST be stripped before logging or re-throwing;
+     * the full raw body is NEVER logged. `ProviderErrorMessage::extract()` pulls out only
+     * the provider's own complaint (`message` ?? `error` ?? `data.message`), redacts the
+     * key within it, and fails closed (returns null) if the key would otherwise survive.
      */
-    private function throwRedacted(string $apiKey, int $status, string $context): never
+    private function throwRedacted(string $apiKey, Response $response, string $context): never
     {
-        $retryable = $status === 429;
+        $status = $response->status();
+        $class = self::classify($status);
+        $extracted = ProviderErrorMessage::extract($response->json(), $apiKey);
 
-        // Log at WARNING level with REDACTED body — never include raw response or key
+        // Log at WARNING level with the extracted (already-redacted) message —
+        // never the raw response body, which may still contain HEYGEN_API_KEY.
         Log::warning('HeyGen: provider call failed', [
             'context' => $context,
             'status' => $status,
-            // Deliberately NO 'response_body' — may contain HEYGEN_API_KEY
+            'class' => $class->value,
+            'provider_message' => $extracted,
         ]);
 
+        $suffix = $extracted !== null ? " — {$extracted}" : ' — provider response redacted';
+
         throw new ProviderException(
-            "HeyGen: {$context} (HTTP {$status}) — provider response redacted",
-            $retryable,
+            "HeyGen: {$context} (HTTP {$status}){$suffix}",
+            $class,
         );
+    }
+
+    /**
+     * Classify an HTTP status into the three-way provider failure taxonomy (PR1 D4).
+     */
+    private static function classify(int $status): ProviderFailureClass
+    {
+        return match (true) {
+            $status === 429 => ProviderFailureClass::Throttle,
+            $status >= 500 => ProviderFailureClass::Upstream,
+            default => ProviderFailureClass::ClientError,
+        };
     }
 
     /**
