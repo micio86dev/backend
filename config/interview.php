@@ -62,6 +62,18 @@ return [
     */
     'tavus' => [
         'api_key' => env('TAVUS_API_KEY'),
+
+        /*
+         * Concurrency self-heal (PR6, design D8). On a Tavus concurrency-limit
+         * rejection, `TavusConcurrencyGuard` retries `_retries` times,
+         * `_backoff_ms` apart, before the request degrades to a client-facing
+         * 429 `provider_busy`. Ported from `legacy-demo` in HALF: the retry
+         * only — the blind account-wide reap is deliberately NOT ported (see
+         * `TavusConcurrencyGuard`'s class docblock). Settable to 0 to disable
+         * retrying entirely (fails straight to 429 on the first rejection).
+         */
+        'concurrency_retries' => (int) env('TAVUS_CONCURRENCY_RETRIES', 3),
+        'concurrency_backoff_ms' => (int) env('TAVUS_CONCURRENCY_BACKOFF_MS', 2000),
     ],
 
     /*

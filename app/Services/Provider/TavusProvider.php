@@ -84,10 +84,27 @@ class TavusProvider implements ProviderSessionService
             $conversationBody,
         );
 
-        $response = Http::withHeaders(['x-api-key' => $apiKey])
-            ->post(self::BASE_URL.'/conversations', $conversationBody);
+        // PR6 (design D8): retry-with-backoff ONLY on a concurrency-limit
+        // rejection, before surfacing 429 to the candidate. See
+        // TavusConcurrencyGuard's docblock for why the demo's account-wide
+        // reap is deliberately NOT ported alongside it.
+        $guard = app(TavusConcurrencyGuard::class);
+        $response = $guard->attempt(
+            fn () => Http::withHeaders(['x-api-key' => $apiKey])->post(self::BASE_URL.'/conversations', $conversationBody),
+            $apiKey,
+        );
 
         if (! $response->successful()) {
+            if ($guard->isConcurrencyLimited($response, $apiKey)) {
+                // Retries exhausted (or disabled via config) and the rejection is
+                // STILL a concurrency limit — surface 429, regardless of the raw
+                // status Tavus returned for this specific rejection reason.
+                throw new ProviderException(
+                    "Tavus: conversation creation failed (HTTP {$response->status()}) — concurrency limit exhausted after retries",
+                    ProviderFailureClass::Throttle,
+                );
+            }
+
             $this->throwRedacted($apiKey, $response, 'conversation creation failed');
         }
 

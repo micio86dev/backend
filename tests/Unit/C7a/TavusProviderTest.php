@@ -125,6 +125,52 @@ test('TavusProvider::teardown() calls provider endpoint with ProviderToken', fun
     expect(true)->toBeTrue(); // teardown succeeded
 });
 
+test('TavusProvider::issue() self-heals via retry on a concurrency-limit rejection, then succeeds (PR6)', function (): void {
+    config([
+        'interview.tavus.concurrency_retries' => 3,
+        'interview.tavus.concurrency_backoff_ms' => 0,
+    ]);
+
+    Http::fake([
+        '*tavusapi*/v2/conversations' => Http::sequence()
+            ->push(['error' => 'Maximum concurrent conversations reached'], 400)
+            ->push(['conversation_id' => 'conv-retried', 'conversation_url' => 'https://tavus.io/conv-retried'], 200),
+    ]);
+
+    $session = tavusMockSession();
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new TavusProvider;
+
+    $token = $provider->issue($session, $ctx);
+
+    Http::assertSentCount(2);
+    expect($token->provider_session_ref)->toBe('conv-retried');
+});
+
+test('TavusProvider::issue() exhausts retries and surfaces 429 provider_busy, not 500/502 (PR6)', function (): void {
+    config([
+        'interview.tavus.concurrency_retries' => 3,
+        'interview.tavus.concurrency_backoff_ms' => 0,
+    ]);
+
+    Http::fake([
+        '*tavusapi*/v2/conversations' => Http::response(['error' => 'Maximum concurrent conversations reached'], 400),
+    ]);
+
+    $session = tavusMockSession();
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new TavusProvider;
+
+    try {
+        $provider->issue($session, $ctx);
+        $this->fail('Expected a ProviderException');
+    } catch (ProviderException $e) {
+        // 1 initial attempt + 3 retries = 4 total calls before giving up.
+        Http::assertSentCount(4);
+        expect($e->isRetryable())->toBeTrue();
+    }
+});
+
 test('TavusProvider::teardown() calls POST /v2/conversations/{id}/end, not DELETE /v2/conversations/{id} (PR5)', function (): void {
     // @wire-source legacy-demo/src/pages/api/interview/end.ts:59-62 — the real Tavus
     // teardown contract is POST .../end; DELETE .../conversations/{id} is not a
