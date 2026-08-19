@@ -64,7 +64,7 @@ class HeygenProvider implements ProviderSessionService
      * Issue a new HeyGen LiveAvatar session token.
      *
      * Steps (two calls, DIFFERENT bodies — @wire-source start.ts:246-267 + :206-221):
-     *   1. POST /contexts       → {name, prompt} → reads data.id
+     *   1. POST /contexts       → {name, prompt, opening_text} → reads data.id
      *   2. POST /sessions/token → avatar identity + data.id → access_token + session_id
      *
      * Called OUTSIDE any DB transaction.
@@ -115,9 +115,10 @@ class HeygenProvider implements ProviderSessionService
     /**
      * Build the `POST /v1/contexts` body — exactly `{name, prompt, opening_text}`.
      *
-     * `opening_text` is intentionally OMITTED in this PR: `QuestionContext` carries no
-     * opening-greeting field yet. PR3's `OpeningTextComposer` fills it (design D9/D11) —
-     * this is a deliberate interim state, not a permanent shape.
+     * `opening_text` (PR3, design D9/D11): sourced from `QuestionContext.openingText`,
+     * composed by `App\Services\Conversation\OpeningTextComposer`. Omitted (not null)
+     * when the caller passes no opening text — same "unset means absent" convention
+     * `prompt` already uses.
      *
      * @wire-source legacy-demo/src/pages/api/interview/start.ts:246-267
      *
@@ -142,6 +143,15 @@ class HeygenProvider implements ProviderSessionService
         // "unset means absent" convention.
         if ($ctx->systemPrompt !== null) {
             $body['prompt'] = $ctx->systemPrompt;
+        }
+
+        // @wire-source start.ts:255 (`opening_text`, the avatar's first spoken line,
+        // composed SEPARATELY from `prompt` — PR3, design D9). Omitted when the caller
+        // has no composed greeting (e.g. the RESUME-degraded path never fails to
+        // compose an opening — only the system prompt can degrade — but the null
+        // path is kept for symmetry and defensive callers).
+        if ($ctx->openingText !== null) {
+            $body['opening_text'] = $ctx->openingText;
         }
 
         return $body;

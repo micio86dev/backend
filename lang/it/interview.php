@@ -15,8 +15,18 @@ declare(strict_types=1);
  *
  * Adding a new language = adding lang/{locale}/interview.php. Missing languages fall
  * back to the platform default language (config app.fallback_locale) at resolution time.
+ *
+ * `opening.*` (PR3, design D9): il saluto iniziale pronunciato dall'avatar per
+ * ciascuna variante, composto da App\Services\Conversation\OpeningTextComposer.
+ * `:competency` viene sostituito con il nome visualizzato della competenza.
  */
 return [
     'end_phrase' => 'Passiamo alla prossima domanda.',
     'final_phrase' => 'Grazie per il tuo tempo.',
+
+    'opening' => [
+        'first' => 'Ciao, e benvenuto! Iniziamo parlando di :competency.',
+        'next' => 'Bene, passiamo ora a parlare di :competency.',
+        'resume' => 'Riprendiamo da dove eravamo rimasti, parlando di :competency.',
+    ],
 ];

@@ -18,6 +18,7 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Role;
+use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
@@ -51,6 +52,7 @@ class InterviewController extends Controller
 
     public function __construct(
         private readonly SystemPromptComposer $composer,
+        private readonly OpeningTextComposer $openingComposer,
     ) {}
 
     // =========================================================================
@@ -123,6 +125,15 @@ class InterviewController extends Controller
         // without creating any row or making any provider call.
         $isResumeInCorso = $this->hasActiveInCorsoSession($pid, $nextCompetency['competency_code']);
 
+        // (PR3) Hoisted here (was previously computed only on the non-resume path, just
+        // before handleIssuePending()): both flags are needed to select the opening-greeting
+        // VARIANT below, before QuestionContext is built — participant->status cannot change
+        // between here and its prior use site, so hoisting is safe (design D9).
+        // Only the FIRST competency of any participant's interview triggers the started_at
+        // stamp AND the 'first' greeting variant. First competency ≡ participant.status =
+        // 'in_attesa' (not yet started any interview).
+        $isFirst = $participant->status === 'in_attesa';
+
         $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
         if ($compositionResult instanceof JsonResponse) {
             if (! $isResumeInCorso) {
@@ -154,6 +165,17 @@ class InterviewController extends Controller
             ? (string) config('conversation.prompt_version')
             : $compositionResult->version;
 
+        // (PR3, design D9) Compose the opening greeting — INDEPENDENT of the composed
+        // system prompt's success/failure. The avatar must never go silent, even on the
+        // degraded RESUME path (only the system prompt degrades there, never the greeting).
+        // Variant: 'resume' on RESUME in_corso, else 'first' on the participant's very
+        // first competency, else 'next'. Locale = $project->language (matches the system
+        // prompt, per D9).
+        $openingVariant = $isResumeInCorso ? 'resume' : ($isFirst ? 'first' : 'next');
+        $competencyName = Competency::where('code', $nextCompetency['competency_code'])->first()
+            ?->getTranslation('name', $project->language) ?? $nextCompetency['competency_code'];
+        $openingText = $this->openingComposer->compose($openingVariant, $competencyName, $project->language)->text;
+
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
@@ -162,6 +184,8 @@ class InterviewController extends Controller
             // body), but promptVersion is restored from config (FIX C1) — never null in a 201.
             systemPrompt: $systemPrompt,
             promptVersion: $promptVersion,
+            // PR3: opening greeting, always composed (never null on this path — see above).
+            openingText: $openingText,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -172,11 +196,7 @@ class InterviewController extends Controller
 
         // ─── All pending paths (new, resume-pending, UniqueConstraint recovery) ─
         // The isFirstCompetency flag drives whether participant.started_at + status is stamped.
-        // Only the FIRST competency of any participant's interview triggers the started_at stamp.
-        // First competency ≡ participant.status = 'in_attesa' (not yet started any interview).
         // If participant.status is already 'in_corso', this is a subsequent competency.
-        $isFirst = $participant->status === 'in_attesa';
-
         return $this->handleIssuePending($session, $participant, $providerService, $ctx, isFirstCompetency: $isFirst);
     }
 

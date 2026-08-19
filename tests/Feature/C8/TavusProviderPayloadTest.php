@@ -115,3 +115,65 @@ test('6.4 TavusProvider::issue() with null systemPrompt → POST /conversations 
     // Legacy path: null systemPrompt → no conversational_context key in the outbound body.
     expect($capturedBody)->not->toHaveKey('conversational_context');
 });
+
+test('6.7 TavusProvider::issue() with openingText → POST /conversations body includes custom_greeting (PR3)', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/conversations')) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-opening',
+                'conversation_url' => 'https://tavus.io/conv-opening',
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = c8TavusMockSession();
+    $ctx = new QuestionContext(
+        competencyCode: 'COL',
+        questionIndex: 0,
+        systemPrompt: 'TEST_PROMPT',
+        promptVersion: 'conv-2026-07-23',
+        openingText: "Let's talk about Collaboration.",
+    );
+
+    $provider = new TavusProvider;
+    $provider->issue($session, $ctx);
+
+    // @wire-source start.ts:300-322 — `custom_greeting` sourced from the PR3
+    // OpeningTextComposer via QuestionContext.openingText.
+    expect($capturedBody)->toHaveKey('custom_greeting', "Let's talk about Collaboration.");
+});
+
+test('6.8 TavusProvider::issue() with null openingText → POST /conversations body has no custom_greeting key', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/conversations')) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-no-opening',
+                'conversation_url' => 'https://tavus.io/conv-no-opening',
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = c8TavusMockSession();
+    $ctx = new QuestionContext(
+        competencyCode: 'COL',
+        questionIndex: 0,
+        // openingText defaults to null
+    );
+
+    $provider = new TavusProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedBody)->not->toHaveKey('custom_greeting');
+});

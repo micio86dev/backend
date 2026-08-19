@@ -14,10 +14,12 @@ declare(strict_types=1);
  * Asserts:
  * (6.1) issue() with systemPrompt='TEST_PROMPT' → intercepted POST /contexts body
  *       is EXACTLY `{name, prompt}` — `prompt` === 'TEST_PROMPT'. `opening_text` is
- *       omitted in this PR (no data source yet; QuestionContext.openingText and
- *       OpeningTextComposer land in PR3, per design D11).
+ *       omitted when QuestionContext.openingText is null (unset means absent).
  * (6.2) issue() with systemPrompt=null → `prompt` key is absent (legacy path); body
  *       is `{name}` only.
+ * (6.5) PR3: issue() with openingText set → `opening_text` key present and equal
+ *       to the composed greeting (design D9/D11 — QuestionContext.openingText and
+ *       OpeningTextComposer land in PR3).
  *
  * @wire-source legacy-demo/src/pages/api/interview/start.ts:246-267 (`createHeygenContext`)
  *
@@ -130,4 +132,68 @@ test('6.2 HeygenProvider::issue() with null systemPrompt → POST /contexts body
     expect($capturedBody)->toHaveKey('name');
     expect($capturedBody)->not->toHaveKey('prompt');
     expect($capturedBody)->not->toHaveKey('system_prompt');
+});
+
+test('6.5 HeygenProvider::issue() with openingText → POST /contexts body includes opening_text (PR3)', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-opening']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'sid-opening', 'access_token' => 'tok-opening']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = heygenMockSession();
+    $ctx = new QuestionContext(
+        competencyCode: 'PRS',
+        questionIndex: 0,
+        systemPrompt: 'TEST_PROMPT',
+        promptVersion: 'conv-2026-07-23',
+        openingText: "Let's talk about Problem Solving.",
+    );
+
+    $provider = new HeygenProvider;
+    $provider->issue($session, $ctx);
+
+    // @wire-source start.ts:246-267 — `opening_text` IS a real field on /contexts,
+    // sourced from the PR3 OpeningTextComposer via QuestionContext.openingText.
+    expect($capturedBody)->toHaveKey('opening_text', "Let's talk about Problem Solving.");
+    expect($capturedBody)->toHaveKey('prompt', 'TEST_PROMPT');
+    expect($capturedBody)->toHaveKey('name');
+});
+
+test('6.6 HeygenProvider::issue() with null openingText → POST /contexts body has no opening_text key', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-no-opening']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'sid-no-opening', 'access_token' => 'tok-no-opening']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = heygenMockSession();
+    $ctx = new QuestionContext(
+        competencyCode: 'PRS',
+        questionIndex: 0,
+        // openingText defaults to null — unset means absent, mirrors `prompt`'s convention.
+    );
+
+    $provider = new HeygenProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedBody)->not->toHaveKey('opening_text');
 });

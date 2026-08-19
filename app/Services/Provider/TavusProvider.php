@@ -63,6 +63,14 @@ class TavusProvider implements ProviderSessionService
             $conversationBody['conversational_context'] = $ctx->systemPrompt;
         }
 
+        // PR3 (design D9/D11): `custom_greeting` — the avatar's first spoken line,
+        // sourced from `QuestionContext.openingText` (composed by OpeningTextComposer,
+        // same value HeygenProvider sends as `opening_text`). Omitted when null.
+        // @wire-source legacy-demo/src/pages/api/interview/start.ts:300-322
+        if ($ctx->openingText !== null) {
+            $conversationBody['custom_greeting'] = $ctx->openingText;
+        }
+
         // C14: see HeygenProvider for the merge-not-assign reasoning. Persona
         // knobs are deliberately NOT here — they belong to the PAL, and sent on
         // a conversation Tavus ignores them silently.
