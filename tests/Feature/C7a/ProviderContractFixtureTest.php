@@ -166,3 +166,42 @@ test('L2: HeyGen /contexts outbound body matches the golden JSON verified agains
     // belongs to L3 (`interview:smoke-check`, gated, never run in CI).
     $this->assertEqualsCanonicalizing($golden, $capturedBody);
 });
+
+test('L2: Tavus /conversations outbound body matches the golden JSON verified against start.ts:300-322 (PR5)', function (): void {
+    // PR4 scoped this test OUT because Tavus's body still carried PR5's invented
+    // `competency_code`/`question_index` keys — asserting a golden body known to
+    // be wrong would have encoded the bug. PR5 corrects the body; this closes
+    // that gap (design D10, L2).
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/conversations')) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-golden',
+                'conversation_url' => 'https://tavus.io/conv-golden',
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = fixtureContractSession('tavus');
+    $ctx = new QuestionContext(
+        competencyCode: 'PRS',
+        questionIndex: 0,
+        systemPrompt: 'TEST_PROMPT',
+        promptVersion: 'v1',
+        openingText: 'TEST_OPENING',
+    );
+
+    (new TavusProvider)->issue($session, $ctx);
+
+    $golden = loadProviderFixture('tavus/conversations_request_golden.json');
+
+    // No active avatar template exists in this test (C14: empty config → empty
+    // payload), so `replica_id`/`persona_id`/`properties.*` are legitimately
+    // absent — the golden body covers only the fields Tavus always receives.
+    $this->assertEqualsCanonicalizing($golden, $capturedBody);
+});

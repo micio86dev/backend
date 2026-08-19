@@ -91,6 +91,12 @@ test('6.3 TavusProvider::issue() with systemPrompt → POST /conversations body 
     // If the field is renamed or omitted, this assertion fails on PR.
     expect($capturedBody)->toHaveKey('conversational_context');
     expect($capturedBody['conversational_context'])->toBe('TEST_PROMPT');
+
+    // PR5 (design D8): `competency_code`/`question_index` were never accepted by the
+    // real Tavus contract (@wire-source legacy-demo/.../start.ts:300-322) — invented
+    // top-level keys that must NOT appear on the outbound /conversations body.
+    expect($capturedBody)->not->toHaveKey('competency_code');
+    expect($capturedBody)->not->toHaveKey('question_index');
 });
 
 test('6.4 TavusProvider::issue() with null systemPrompt → POST /conversations body does NOT include conversational_context key', function (): void {
@@ -121,6 +127,10 @@ test('6.4 TavusProvider::issue() with null systemPrompt → POST /conversations 
 
     // Legacy path: null systemPrompt → no conversational_context key in the outbound body.
     expect($capturedBody)->not->toHaveKey('conversational_context');
+
+    // PR5 (design D8): invented keys must be absent on this path too.
+    expect($capturedBody)->not->toHaveKey('competency_code');
+    expect($capturedBody)->not->toHaveKey('question_index');
 });
 
 test('6.7 TavusProvider::issue() with openingText → POST /conversations body includes custom_greeting (PR3)', function (): void {

@@ -125,6 +125,29 @@ test('TavusProvider::teardown() calls provider endpoint with ProviderToken', fun
     expect(true)->toBeTrue(); // teardown succeeded
 });
 
+test('TavusProvider::teardown() calls POST /v2/conversations/{id}/end, not DELETE /v2/conversations/{id} (PR5)', function (): void {
+    // @wire-source legacy-demo/src/pages/api/interview/end.ts:59-62 — the real Tavus
+    // teardown contract is POST .../end; DELETE .../conversations/{id} is not a
+    // documented endpoint anywhere in the reconstructed contract (PR5, design D8).
+    Http::fake([
+        '*tavusapi*/v2/conversations/*/end' => Http::response([], 200),
+    ]);
+
+    $token = ProviderToken::fromRef('tavus', 'conv-to-end');
+    $provider = new TavusProvider;
+
+    $provider->teardown($token);
+
+    Http::assertSent(function ($request): bool {
+        return $request->method() === 'POST'
+            && str_ends_with($request->url(), '/v2/conversations/conv-to-end/end');
+    });
+
+    Http::assertNotSent(function ($request): bool {
+        return $request->method() === 'DELETE';
+    });
+});
+
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
 function tavusMockSession(?string $ref = null): InterviewSession

@@ -18,8 +18,15 @@ use Illuminate\Support\Facades\Log;
  * Tavus provider implementation (C7a Phase 7.6).
  *
  * Endpoints (Tavus API v2):
- *   POST   https://tavusapi.com/v2/conversations        — create conversation
- *   DELETE https://tavusapi.com/v2/conversations/{id}   — end/teardown conversation
+ *   POST https://tavusapi.com/v2/conversations           — create conversation
+ *   POST https://tavusapi.com/v2/conversations/{id}/end  — end/teardown conversation
+ *
+ * @wire-source legacy-demo/src/pages/api/interview/start.ts:300-322 (create),
+ *   legacy-demo/src/pages/api/interview/end.ts:59-62 (teardown) — PR5, design D8.
+ *   The create body carries ONLY {replica_id, persona_id, conversational_context,
+ *   custom_greeting, properties} (plus the C14 template merge below) — the
+ *   `competency_code`/`question_index` keys sent by earlier revisions of this
+ *   class were INVENTED and never accepted by the real Tavus contract.
  *
  * reconcileTranscript() returns [] — Tavus does NOT provide a server-side transcript.
  * Live /utterance rows are kept as-is at /end (no REPLACE step).
@@ -50,14 +57,12 @@ class TavusProvider implements ProviderSessionService
         // C8 (RV-3): conditionally include conversational_context when the composed prompt is available.
         // When systemPrompt is null (C7a backward-compatible path), the key is OMITTED entirely —
         // the outbound body is identical to the pre-C8 shape.
-        // NOTE: 'conversational_context' field name and the tavusapi.com/v2/conversations endpoint
-        // are INFERRED from the C7a scaffold and are NOT verified against live provider docs. Client
-        // confirmation of the real provider contract is required before live deploy. The PR-gated
-        // TavusProviderPayloadTest.php assertion catches any rename immediately (RV-3).
-        $conversationBody = [
-            'competency_code' => $ctx->competencyCode,
-            'question_index' => $ctx->questionIndex,
-        ];
+        // @wire-source legacy-demo/src/pages/api/interview/start.ts:300-322 — CONFIRMED
+        // (design/exploration phase, liveavatar-contract-alignment). `conversational_context`
+        // is the real field name and the tavusapi.com/v2/conversations endpoint is correct.
+        // PR5 (design D8): `competency_code`/`question_index` REMOVED — invented top-level
+        // keys never accepted by the real Tavus contract (they do not appear in start.ts).
+        $conversationBody = [];
 
         if ($ctx->systemPrompt !== null) {
             $conversationBody['conversational_context'] = $ctx->systemPrompt;
@@ -121,6 +126,12 @@ class TavusProvider implements ProviderSessionService
      *
      * Best-effort — failure is logged but non-fatal.
      * ALWAYS takes a typed ProviderToken (no raw-string overload) per WARNING-6.
+     *
+     * PR5 (design D8): the real Tavus teardown contract is
+     * `POST /v2/conversations/{id}/end` — NOT `DELETE /v2/conversations/{id}`,
+     * which is not a documented endpoint anywhere in the reconstructed contract.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/end.ts:59-62
      */
     public function teardown(ProviderToken $token): void
     {
@@ -132,7 +143,7 @@ class TavusProvider implements ProviderSessionService
 
         try {
             Http::withHeaders(['x-api-key' => $apiKey])
-                ->delete(self::BASE_URL.'/conversations/'.$token->provider_session_ref);
+                ->post(self::BASE_URL.'/conversations/'.$token->provider_session_ref.'/end');
         } catch (\Throwable $e) {
             Log::warning('Tavus: teardown failed', [
                 'provider_session_ref' => $token->provider_session_ref,
