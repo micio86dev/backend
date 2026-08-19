@@ -18,10 +18,12 @@ declare(strict_types=1);
 
 use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
+use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
+use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -31,15 +33,23 @@ beforeEach(function (): void {
 });
 
 test('HeygenProvider::issue() on 200 returns ProviderToken with non-null token and provider_session_ref', function (): void {
+    // PR2 (D1): the real LiveAvatar response reads the context id from `data.id`,
+    // NOT `data.context_id` (a field that does not exist in the real contract —
+    // @wire-source legacy-demo/src/pages/api/interview/start.ts:265).
+    $capturedTokenBody = [];
     Http::fake([
-        '*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-abc']], 200),
-        '*liveavatar*/sessions/token*' => Http::response([
-            'data' => [
-                'session_id' => 'session-xyz',
-                'access_token' => 'token-abc',
-                'url' => 'https://webrtc.heygen.com/session-xyz',
-            ],
-        ], 200),
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-abc']], 200),
+        '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
+            $capturedTokenBody = $request->data();
+
+            return Http::response([
+                'data' => [
+                    'session_id' => 'session-xyz',
+                    'access_token' => 'token-abc',
+                    'url' => 'https://webrtc.heygen.com/session-xyz',
+                ],
+            ], 200);
+        },
     ]);
 
     $session = mockSession('heygen');
@@ -54,6 +64,146 @@ test('HeygenProvider::issue() on 200 returns ProviderToken with non-null token a
     expect($token->provider_session_ref)->not->toBeNull();
     // API key MUST NOT appear in the token
     expect($token->token)->not->toContain('SUPER_SECRET_HEYGEN_KEY_12345');
+
+    // PR2 (D1): the context id read from `data.id` MUST reach /sessions/token under
+    // avatar_persona.context_id — proves the response-key rename actually threads through.
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.context_id', 'ctx-abc');
+});
+
+test('HeygenProvider::issue() names the context beai-{session_id}-{ulid}; two consecutive calls are distinct (PR2 D3, F3)', function (): void {
+    // F3: handleResumeInCorso() calls issue() again for the SAME interview_session_id
+    // on resume. A session-id-only name (`beai-{id}`) collides on the SECOND call
+    // exactly like legacy-demo/src/pages/api/interview/start.ts:250-252 documents.
+    // The ULID suffix is what makes each issue() call distinct.
+    $capturedNames = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => function ($request) use (&$capturedNames) {
+            $capturedNames[] = $request->data()['name'];
+
+            return Http::response(['data' => ['id' => 'ctx-'.count($capturedNames)]], 200);
+        },
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => 'sid', 'access_token' => 'tok'],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+
+    $provider->issue($session, $ctx);
+    $provider->issue($session, $ctx); // simulates the resume re-issue (same session)
+
+    expect($capturedNames)->toHaveCount(2);
+    // No candidate PII — only the opaque interview_session_id and a ULID.
+    expect($capturedNames[0])->toStartWith("beai-{$session->id}-");
+    expect($capturedNames[1])->toStartWith("beai-{$session->id}-");
+    // The two names are distinct, even for the SAME session id.
+    expect($capturedNames[0])->not->toBe($capturedNames[1]);
+});
+
+test('HeygenProvider::issue() merges the template into /sessions/token recursively — voice_id, language, and context_id all survive together (PR2 D1)', function (): void {
+    $template = new AvatarTemplate;
+    $template->forceFill([
+        'config' => [
+            'avatarId' => 'av-template-1',
+            'voiceId' => 'voice-template-1',
+            'language' => 'it',
+        ],
+    ]);
+
+    app()->instance(
+        ActiveTemplateResolver::class,
+        new class($template)
+        {
+            public function __construct(private readonly AvatarTemplate $template) {}
+
+            public function resolve(): AvatarTemplate
+            {
+                return $this->template;
+            }
+        },
+    );
+
+    $capturedTokenBody = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-merge']], 200),
+        '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
+            $capturedTokenBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-merge', 'access_token' => 'tok-merge']], 200);
+        },
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+    $provider->issue($session, $ctx);
+
+    // D1 invariant: array_replace_recursive, NOT array_merge. A shallow merge would
+    // replace the whole avatar_persona node with {context_id} alone and silently
+    // drop voice_id/language — the C14 "operator sets a voice, hears no difference"
+    // failure at a new address.
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.voice_id', 'voice-template-1');
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.language', 'it');
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.context_id', 'ctx-merge');
+    expect($capturedTokenBody)->toHaveKey('avatar_id', 'av-template-1');
+
+    app()->forgetInstance(ActiveTemplateResolver::class);
+});
+
+test('HeygenProvider::issue() drops unproven template fields from /sessions/token by default (PR2 D2)', function (): void {
+    $template = new AvatarTemplate;
+    $template->forceFill([
+        'config' => [
+            'avatarId' => 'av-1',
+            'voiceId' => 'voice-1',
+            'language' => 'it',
+            // Unproven — from avatar-tester, no demonstrated-working call.
+            'voiceSpeed' => 1.2,
+            'maxSessionDurationSec' => 600,
+            'videoEncoding' => 'h264',
+        ],
+    ]);
+
+    app()->instance(
+        ActiveTemplateResolver::class,
+        new class($template)
+        {
+            public function __construct(private readonly AvatarTemplate $template) {}
+
+            public function resolve(): AvatarTemplate
+            {
+                return $this->template;
+            }
+        },
+    );
+
+    $capturedTokenBody = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-allowlist']], 200),
+        '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
+            $capturedTokenBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-allowlist', 'access_token' => 'tok-allowlist']], 200);
+        },
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+    $provider->issue($session, $ctx);
+
+    // Demo-proven fields present
+    expect($capturedTokenBody)->toHaveKey('avatar_id', 'av-1');
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.voice_id', 'voice-1');
+
+    // Unproven fields dropped by default — config('interview.heygen.extra_token_fields') is []
+    expect($capturedTokenBody)->not->toHaveKey('voice_settings');
+    expect($capturedTokenBody)->not->toHaveKey('max_session_duration');
+    expect($capturedTokenBody)->not->toHaveKey('video_settings.encoding');
+
+    app()->forgetInstance(ActiveTemplateResolver::class);
 });
 
 test('HeygenProvider::issue() on 5xx throws ProviderException with API key REDACTED from message', function (): void {

@@ -185,7 +185,7 @@ test('5.5 /start response never leaks composed system_prompt; provider body carr
         if (str_contains($request->url(), '/contexts')) {
             $capturedContextBody = $request->data();
 
-            return Http::response(['data' => ['context_id' => 'ctx-c8']], 200);
+            return Http::response(['data' => ['id' => 'ctx-c8']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'heygen-session-c8', 'access_token' => 'heygen-token-c8']], 200);
@@ -213,9 +213,11 @@ test('5.5 /start response never leaks composed system_prompt; provider body carr
     expect($body)->not->toContain('Indicator text');
     expect($body)->not->toContain('Ask at most');
 
-    // (c) The composed system_prompt MUST still reach the provider server-to-server.
-    expect($capturedContextBody)->toHaveKey('system_prompt');
-    expect($capturedContextBody['system_prompt'])->toContain('Excellent anchor');
+    // (c) The composed system prompt MUST still reach the provider server-to-server,
+    //     under the REAL wire field name `prompt` (PR2 — `system_prompt` never existed
+    //     in the real LiveAvatar contract; @wire-source start.ts:255).
+    expect($capturedContextBody)->toHaveKey('prompt');
+    expect($capturedContextBody['prompt'])->toContain('Excellent anchor');
 });
 
 test('5.2 /start missing IT anchor translation → 422 anchor_translation_missing; no session; no provider call', function (): void {
@@ -400,16 +402,16 @@ function c8SeedResumeInCorsoScenario(): array
     return compact('org', 'project', 'participant', 'session');
 }
 
-test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider session issued, NO system_prompt in body (degraded), warning logged', function (): void {
-    // Capture the outbound HeyGen /contexts body to verify system_prompt is absent (degraded path)
+test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider session issued, NO prompt in body (degraded), warning logged', function (): void {
+    // Capture the outbound HeyGen /contexts body to verify `prompt` is absent (degraded path)
     $capturedContextBody = null;
     Http::fake(function ($request) use (&$capturedContextBody) {
         if (str_contains($request->url(), '/contexts')) {
-            // On degraded path the contexts call should NOT happen (no system_prompt → no context)
-            // OR if called: body must NOT have system_prompt
+            // On degraded path the contexts call should NOT happen (no prompt → no context)
+            // OR if called: body must NOT have `prompt`
             $capturedContextBody = $request->data();
 
-            return Http::response(['data' => ['context_id' => 'ctx-resume-degrade']], 200);
+            return Http::response(['data' => ['id' => 'ctx-resume-degrade']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'heygen-session-resume', 'access_token' => 'heygen-token-resume']], 200);
@@ -443,11 +445,12 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
     expect($data['session']->provider_session_ref)->toBe('heygen-session-resume');
     expect($data['session']->status)->toBe('in_corso');
 
-    // Provider body for /contexts must NOT contain system_prompt (degraded = null systemPrompt → no contexts call, OR contexts called without system_prompt)
-    // On degraded path: QuestionContext.systemPrompt=null → HeyGen provider skips the contexts call entirely
-    // So either $capturedContextBody is null (no contexts call) OR it has no system_prompt key
+    // Provider body for /contexts must NOT contain `prompt` (degraded = null systemPrompt → no
+    // contexts call, OR contexts called without `prompt`).
+    // On degraded path: QuestionContext.systemPrompt=null → HeyGen provider omits the key entirely.
+    // So either $capturedContextBody is null (no contexts call) OR it has no `prompt` key.
     if ($capturedContextBody !== null) {
-        expect($capturedContextBody)->not->toHaveKey('system_prompt');
+        expect($capturedContextBody)->not->toHaveKey('prompt');
     }
 
     // A warning must have been logged about the composition failure
@@ -459,13 +462,13 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
     expect($response->json('question_context.prompt_version'))->toBe(config('conversation.prompt_version'));
 });
 
-test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains system_prompt (adaptive resume)', function (): void {
+test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains prompt (adaptive resume)', function (): void {
     $capturedContextBody = null;
     Http::fake(function ($request) use (&$capturedContextBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedContextBody = $request->data();
 
-            return Http::response(['data' => ['context_id' => 'ctx-resume-adaptive']], 200);
+            return Http::response(['data' => ['id' => 'ctx-resume-adaptive']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'heygen-session-adaptive', 'access_token' => 'heygen-token-adaptive']], 200);
@@ -531,9 +534,9 @@ test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains
     $session->refresh();
     expect($session->provider_session_ref)->toBe('heygen-session-adaptive');
 
-    // Provider contexts call MUST carry system_prompt (adaptive path)
-    expect($capturedContextBody)->toHaveKey('system_prompt');
-    expect($capturedContextBody['system_prompt'])->not->toBeEmpty();
+    // Provider contexts call MUST carry `prompt` (adaptive path; real wire field, not `system_prompt`)
+    expect($capturedContextBody)->toHaveKey('prompt');
+    expect($capturedContextBody['prompt'])->not->toBeEmpty();
 
     // prompt_version in response must be non-null (composed)
     $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);

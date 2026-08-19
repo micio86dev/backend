@@ -3,26 +3,33 @@
 declare(strict_types=1);
 
 /**
- * RED — Tasks 6.1–6.2: HeygenProvider payload shape assertion (C8 Phase 6).
+ * PR2 (2.2) — HeygenProvider payload shape assertion, rewritten off the real
+ * LiveAvatar contract (delta spec `interview-session`, "HeyGen Context Creation
+ * Wire Contract").
  *
- * PR-gated: a missing or renamed `system_prompt` field in the HeyGen
- * /contexts POST body MUST fail this suite.
+ * PR-gated: a missing or renamed `prompt` field in the HeyGen /contexts POST body
+ * MUST fail this suite. `system_prompt` is NOT a real wire field — it never
+ * existed in the demo-proven contract; the real field name is `prompt`.
  *
  * Asserts:
  * (6.1) issue() with systemPrompt='TEST_PROMPT' → intercepted POST /contexts body
- *       CONTAINS 'system_prompt' => 'TEST_PROMPT'.
- * (6.2) issue() with systemPrompt=null → POST /contexts body does NOT include
- *       'system_prompt' key (legacy C7a shape preserved).
+ *       is EXACTLY `{name, prompt}` — `prompt` === 'TEST_PROMPT'. `opening_text` is
+ *       omitted in this PR (no data source yet; QuestionContext.openingText and
+ *       OpeningTextComposer land in PR3, per design D11).
+ * (6.2) issue() with systemPrompt=null → `prompt` key is absent (legacy path); body
+ *       is `{name}` only.
  *
- * RV-3 NOTE: 'system_prompt' field name and the liveavatar.com/v1/contexts
- * endpoint are INFERRED from the C7a scaffold. Client confirmation of the live
- * provider contract is required before live deploy. This PR-gated assertion
- * catches any rename immediately.
+ * @wire-source legacy-demo/src/pages/api/interview/start.ts:246-267 (`createHeygenContext`)
+ *
+ * NOTE: this test proves our OWN request body shape, not that LiveAvatar accepts
+ * it — that claim belongs to the fixture (L1/L2) and gated live smoke (L3) layers
+ * added in PR4, per delta spec "Provider Wire Contracts Are Pinned Against
+ * Recorded Real Responses".
  *
  * @group feature
  *
- * Spec: REQ Provider Payload Contract (C-1) · RV-3 PR-gated assertion.
- * REQ: HeygenProvider::issue() system_prompt forwarding (C8 Phase 6 — task 6.5)
+ * Spec: REQ HeyGen Context Creation Wire Contract (delta spec, interview-session)
+ * REQ: HeygenProvider::issue() prompt forwarding (C8 Phase 6 — task 6.5, PR2 task 2.2)
  */
 
 use App\Models\InterviewSession;
@@ -53,14 +60,14 @@ function heygenMockSession(): InterviewSession
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-test('6.1 HeygenProvider::issue() with systemPrompt → POST /contexts body CONTAINS system_prompt key', function (): void {
+test('6.1 HeygenProvider::issue() with systemPrompt → POST /contexts body is exactly {name, prompt}', function (): void {
     $capturedBody = [];
 
     Http::fake(function ($request) use (&$capturedBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedBody = $request->data();
 
-            return Http::response(['data' => ['context_id' => 'ctx-sp']], 200);
+            return Http::response(['data' => ['id' => 'ctx-sp']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'sid-sp', 'access_token' => 'tok-sp']], 200);
@@ -80,20 +87,26 @@ test('6.1 HeygenProvider::issue() with systemPrompt → POST /contexts body CONT
     $provider = new HeygenProvider;
     $provider->issue($session, $ctx);
 
-    // RV-3 PR-gated assertion: system_prompt MUST be present and equal to the composed prompt.
-    // If the field is renamed or omitted, this assertion fails on PR.
-    expect($capturedBody)->toHaveKey('system_prompt');
-    expect($capturedBody['system_prompt'])->toBe('TEST_PROMPT');
+    // PR-gated assertion: `prompt` (the REAL wire field — @wire-source start.ts:255)
+    // MUST be present and equal to the composed prompt. If the field is renamed or
+    // omitted, this assertion fails on PR.
+    expect($capturedBody)->toHaveKey('prompt', 'TEST_PROMPT');
+    expect($capturedBody)->toHaveKey('name');
+    expect($capturedBody)->not->toHaveKey('system_prompt');
+    expect($capturedBody)->not->toHaveKey('competency_code');
+    expect($capturedBody)->not->toHaveKey('question_index');
+    // opening_text is omitted this PR — no data source until PR3's OpeningTextComposer.
+    expect($capturedBody)->not->toHaveKey('opening_text');
 });
 
-test('6.2 HeygenProvider::issue() with null systemPrompt → POST /contexts body does NOT include system_prompt key', function (): void {
+test('6.2 HeygenProvider::issue() with null systemPrompt → POST /contexts body has no prompt key', function (): void {
     $capturedBody = [];
 
     Http::fake(function ($request) use (&$capturedBody) {
         if (str_contains($request->url(), '/contexts')) {
             $capturedBody = $request->data();
 
-            return Http::response(['data' => ['context_id' => 'ctx-null']], 200);
+            return Http::response(['data' => ['id' => 'ctx-null']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
             return Http::response(['data' => ['session_id' => 'sid-null', 'access_token' => 'tok-null']], 200);
@@ -112,6 +125,9 @@ test('6.2 HeygenProvider::issue() with null systemPrompt → POST /contexts body
     $provider = new HeygenProvider;
     $provider->issue($session, $ctx);
 
-    // Legacy path: null systemPrompt → no system_prompt key in the outbound body.
+    // Legacy path: null systemPrompt → no `prompt` key in the outbound body.
+    // `name` is always present (LiveAvatar uniqueness requirement, PR2 task 2.6).
+    expect($capturedBody)->toHaveKey('name');
+    expect($capturedBody)->not->toHaveKey('prompt');
     expect($capturedBody)->not->toHaveKey('system_prompt');
 });

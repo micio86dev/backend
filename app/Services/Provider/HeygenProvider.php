@@ -13,6 +13,7 @@ use App\Support\Provider\ProviderErrorMessage;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * HeyGen LiveAvatar provider implementation (C7a Phase 7.4).
@@ -39,11 +40,32 @@ class HeygenProvider implements ProviderSessionService
     private const BASE_URL = 'https://api.liveavatar.com/v1';
 
     /**
+     * Demo-proven `POST /sessions/token` template fields (PR2 D2, delta spec
+     * "Avatar Identity Belongs to the Session-Token Call").
+     *
+     * `TemplatePayload::heygen()` also emits `max_session_duration`,
+     * `video_settings.encoding`, and `voice_settings.*` — those came from
+     * `avatar-tester`, a testbed, and have NO demonstrated-working call behind
+     * them. Sending them risks a second 422 on every /start; they stay OFF by
+     * default and are widened only via `interview.heygen.extra_token_fields`
+     * (a config change, never a deploy) once smoke-verified.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
+     */
+    private const TOKEN_FIELD_ALLOWLIST = [
+        'avatar_id',
+        'avatar_persona.voice_id',
+        'avatar_persona.language',
+        'interactivity_type',
+        'video_settings.quality',
+    ];
+
+    /**
      * Issue a new HeyGen LiveAvatar session token.
      *
-     * Steps:
-     *   1. POST /contexts → context_id
-     *   2. POST /sessions/token → access_token + session_id (= provider_session_ref)
+     * Steps (two calls, DIFFERENT bodies — @wire-source start.ts:246-267 + :206-221):
+     *   1. POST /contexts       → {name, prompt} → reads data.id
+     *   2. POST /sessions/token → avatar identity + data.id → access_token + session_id
      *
      * Called OUTSIDE any DB transaction.
      *
@@ -53,52 +75,19 @@ class HeygenProvider implements ProviderSessionService
     {
         $apiKey = (string) config('interview.heygen.api_key', '');
 
-        // Step 1: create context
-        // C8 (RV-3): conditionally include system_prompt when the composed prompt is available.
-        // When systemPrompt is null (C7a backward-compatible path), the key is OMITTED entirely —
-        // the outbound body is identical to the pre-C8 shape.
-        // NOTE: 'system_prompt' field name and the liveavatar.com/v1/contexts endpoint are INFERRED
-        // from the C7a scaffold and are NOT verified against live provider docs. Client confirmation
-        // of the real provider contract is required before live deploy. The PR-gated
-        // HeygenProviderPayloadTest.php assertion catches any rename immediately (RV-3).
-        $contextBody = [
-            'competency_code' => $ctx->competencyCode,
-            'question_index' => $ctx->questionIndex,
-        ];
-
-        if ($ctx->systemPrompt !== null) {
-            $contextBody['system_prompt'] = $ctx->systemPrompt;
-        }
-
-        // C14: the organization's active avatar template, if it has one.
-        //
-        // Merged rather than assigned, so an organization with NO active
-        // template sends exactly the body it sent before templates existed —
-        // which is the state every tenant is in on the day this ships.
-        //
-        // The template's keys are additive: it can only add avatar_id,
-        // avatar_persona, voice_settings and friends. It cannot overwrite
-        // competency_code, question_index or system_prompt, because those are
-        // the interview, not its appearance.
-        $contextBody = array_merge(
-            TemplatePayload::heygen($this->activeTemplateConfig()),
-            $contextBody,
-        );
-
         $ctxResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/contexts', $contextBody);
+            ->post(self::BASE_URL.'/contexts', $this->buildContextBody($session, $ctx));
 
         if (! $ctxResponse->successful()) {
             $this->throwRedacted($apiKey, $ctxResponse, 'context creation failed');
         }
 
-        $contextId = $ctxResponse->json('data.context_id', '');
+        // @wire-source legacy-demo/src/pages/api/interview/start.ts:265 — the id is
+        // read from `data.id`. `data.context_id` does NOT exist in the real contract.
+        $contextId = (string) $ctxResponse->json('data.id', '');
 
-        // Step 2: issue session token
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/sessions/token', [
-                'context_id' => $contextId,
-            ]);
+            ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($contextId));
 
         if (! $tokenResponse->successful()) {
             $this->throwRedacted($apiKey, $tokenResponse, 'session token issuance failed');
@@ -121,6 +110,101 @@ class HeygenProvider implements ProviderSessionService
             conversation_url: null,
             provider_session_ref: $sessionId,
         );
+    }
+
+    /**
+     * Build the `POST /v1/contexts` body — exactly `{name, prompt, opening_text}`.
+     *
+     * `opening_text` is intentionally OMITTED in this PR: `QuestionContext` carries no
+     * opening-greeting field yet. PR3's `OpeningTextComposer` fills it (design D9/D11) —
+     * this is a deliberate interim state, not a permanent shape.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:246-267
+     *
+     * @return array<string, string>
+     */
+    private function buildContextBody(InterviewSession $session, QuestionContext $ctx): array
+    {
+        $body = [
+            // Unique per LiveAvatar account (@wire-source start.ts:250-253 — a stable
+            // name collided on every interview after the first). F3: a RESUME re-issues
+            // this call for the SAME interview_session_id (handleResumeInCorso ->
+            // ProviderSessionService::issue()), so the id alone is not enough — the ULID
+            // makes every issue() call distinct even within the same millisecond.
+            // No candidate PII: interview_session_id is BEAI's own opaque internal id,
+            // never candidate_ref (ratified decision #8).
+            'name' => sprintf('beai-%d-%s', $session->id, (string) Str::ulid()),
+        ];
+
+        // @wire-source start.ts:255 — the real field name is `prompt`, NOT
+        // `system_prompt` (which was never a real LiveAvatar field). Omitted (not
+        // null) when there is no composed prompt yet, matching TemplatePayload's
+        // "unset means absent" convention.
+        if ($ctx->systemPrompt !== null) {
+            $body['prompt'] = $ctx->systemPrompt;
+        }
+
+        return $body;
+    }
+
+    /**
+     * Build the `POST /v1/sessions/token` body — avatar identity lives HERE, never
+     * on `/contexts` (PR2 D1/D2, delta spec "Avatar Identity Belongs to the
+     * Session-Token Call").
+     *
+     * `array_replace_recursive`, NOT `array_merge`: the template emits
+     * `avatar_persona.{voice_id, language}`; this method owns
+     * `avatar_persona.context_id`. A shallow merge would replace the whole
+     * `avatar_persona` node and silently drop voice/language — the C14
+     * "operator sets a voice, hears no difference" failure at a new address.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
+     *
+     * @return array<string, mixed>
+     */
+    private function buildSessionTokenBody(string $contextId): array
+    {
+        $templateFields = $this->allowlistedTemplateFields($this->activeTemplateConfig());
+
+        $providerOwned = [
+            'mode' => 'FULL',
+            'is_sandbox' => false,
+            'avatar_persona' => [
+                'context_id' => $contextId,
+            ],
+        ];
+
+        return array_replace_recursive($templateFields, $providerOwned);
+    }
+
+    /**
+     * Filter `TemplatePayload::heygen()`'s output down to the demo-proven field set
+     * (PR2 D2). Everything outside `TOKEN_FIELD_ALLOWLIST` — union'd with
+     * `config('interview.heygen.extra_token_fields', [])` — is dropped, not sent.
+     *
+     * @param  array<string, mixed>  $templateConfig
+     * @return array<string, mixed>
+     */
+    private function allowlistedTemplateFields(array $templateConfig): array
+    {
+        $mapped = TemplatePayload::heygen($templateConfig);
+
+        $allowlist = array_unique(array_merge(
+            self::TOKEN_FIELD_ALLOWLIST,
+            (array) config('interview.heygen.extra_token_fields', []),
+        ));
+
+        $filtered = [];
+
+        foreach ($allowlist as $path) {
+            $value = data_get($mapped, $path);
+
+            if ($value !== null) {
+                data_set($filtered, $path, $value);
+            }
+        }
+
+        return $filtered;
     }
 
     /**

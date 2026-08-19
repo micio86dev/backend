@@ -40,6 +40,19 @@ return [
     */
     'heygen' => [
         'api_key' => env('HEYGEN_API_KEY'),
+
+        /*
+         * Dot-path allowlist widening for POST /sessions/token template fields
+         * beyond HeygenProvider::TOKEN_FIELD_ALLOWLIST (PR2 D2, liveavatar-contract-
+         * alignment). `voice_settings.*`, `video_settings.encoding`, and
+         * `max_session_duration` came from `avatar-tester` (a testbed), NOT the
+         * demo-proven call — they stay OFF until smoke-verified against the real
+         * LiveAvatar API. Empty by default: sending an unproven field risks a 422
+         * on every /start, the exact defect this change fixes.
+         *
+         * Example: ['voice_settings.speed', 'video_settings.encoding']
+         */
+        'extra_token_fields' => array_filter(explode(',', (string) env('HEYGEN_EXTRA_TOKEN_FIELDS', ''))),
     ],
 
     /*
