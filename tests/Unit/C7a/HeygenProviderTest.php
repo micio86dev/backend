@@ -18,6 +18,7 @@ declare(strict_types=1);
 
 use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
+use App\Exceptions\ProviderTranscriptShapeException;
 use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
@@ -345,10 +346,15 @@ test('HeygenProvider::issue() on a 4xx preserves the provider message AND redact
 
 test('HeygenProvider::reconcileTranscript() returns array', function (): void {
     Http::fake([
+        // @wire-source legacy-demo/src/pages/api/interview/end.ts:76-84 — real shape
+        // is `data.transcript_data`, rows keyed `role`/`transcript` (PR4 — not the
+        // invented `data`/`role`/`content` shape this test previously pinned).
         '*liveavatar*/sessions/*/transcript*' => Http::response([
             'data' => [
-                ['role' => 'user',      'content' => 'Hello', 'time_ms' => 1000],
-                ['role' => 'assistant', 'content' => 'Hi',    'time_ms' => 2000],
+                'transcript_data' => [
+                    ['role' => 'user',      'transcript' => 'Hello', 'time_ms' => 1000],
+                    ['role' => 'assistant', 'transcript' => 'Hi',    'time_ms' => 2000],
+                ],
             ],
         ], 200),
     ]);
@@ -358,6 +364,101 @@ test('HeygenProvider::reconcileTranscript() returns array', function (): void {
     $result = $provider->reconcileTranscript($session);
 
     expect($result)->toBeArray();
+    expect($result)->toHaveCount(2);
+});
+
+test('HeygenProvider::reconcileTranscript() maps role → speaker: user/candidate → candidate, assistant/avatar/agent → avatar', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response([
+            'data' => [
+                'transcript_data' => [
+                    ['role' => 'user',      'transcript' => 'A', 'time_ms' => 1000],
+                    ['role' => 'candidate', 'transcript' => 'B', 'time_ms' => 2000],
+                    ['role' => 'assistant', 'transcript' => 'C', 'time_ms' => 3000],
+                    ['role' => 'avatar',    'transcript' => 'D', 'time_ms' => 4000],
+                    ['role' => 'agent',     'transcript' => 'E', 'time_ms' => 5000],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen', 'ref-session-roles');
+    $provider = new HeygenProvider;
+    $result = $provider->reconcileTranscript($session);
+
+    expect($result[0]['speaker'])->toBe('candidate');
+    expect($result[1]['speaker'])->toBe('candidate');
+    expect($result[2]['speaker'])->toBe('avatar');
+    expect($result[3]['speaker'])->toBe('avatar');
+    expect($result[4]['speaker'])->toBe('avatar');
+    expect($result[0]['text'])->toBe('A');
+});
+
+test('HeygenProvider::reconcileTranscript() with a genuinely empty transcript_data returns []', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
+    ]);
+
+    $session = mockSession('heygen', 'ref-session-empty');
+    $provider = new HeygenProvider;
+    $result = $provider->reconcileTranscript($session);
+
+    expect($result)->toBe([]);
+});
+
+test('HeygenProvider::reconcileTranscript() throws ProviderTranscriptShapeException when data.transcript_data is absent', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+    ]);
+
+    $session = mockSession('heygen', 'ref-session-drifted');
+    $provider = new HeygenProvider;
+
+    expect(fn () => $provider->reconcileTranscript($session))
+        ->toThrow(ProviderTranscriptShapeException::class);
+});
+
+test('HeygenProvider::reconcileTranscript() throws ProviderTranscriptShapeException when a row is missing role or transcript', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response([
+            'data' => ['transcript_data' => [['role' => 'user']]],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen', 'ref-session-malformed-row');
+    $provider = new HeygenProvider;
+
+    expect(fn () => $provider->reconcileTranscript($session))
+        ->toThrow(ProviderTranscriptShapeException::class);
+});
+
+test('HeygenProvider::reconcileTranscript() throws ProviderTranscriptShapeException on an unknown role', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response([
+            'data' => ['transcript_data' => [['role' => 'system', 'transcript' => 'Unexpected role']]],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen', 'ref-session-unknown-role');
+    $provider = new HeygenProvider;
+
+    expect(fn () => $provider->reconcileTranscript($session))
+        ->toThrow(ProviderTranscriptShapeException::class);
+});
+
+test('HeygenProvider::reconcileTranscript() with time_ms absent falls back to now() (@wire-source none — inferred)', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response([
+            'data' => ['transcript_data' => [['role' => 'user', 'transcript' => 'No timestamp']]],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen', 'ref-session-no-time');
+    $provider = new HeygenProvider;
+    $result = $provider->reconcileTranscript($session);
+
+    expect($result)->toHaveCount(1);
+    expect($result[0]['ts'])->toBeString();
 });
 
 test('HeygenProvider::teardown() accepts ProviderToken (typed — no raw-string overload)', function (): void {

@@ -6,6 +6,7 @@ namespace App\Services\Provider;
 
 use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
+use App\Exceptions\ProviderTranscriptShapeException;
 use App\Models\InterviewSession;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\AvatarTemplates\TemplatePayload;
@@ -223,7 +224,18 @@ class HeygenProvider implements ProviderSessionService
      * Returns an array of utterance-like rows for REPLACE reconciliation at /end.
      * Each row: ['speaker' => 'candidate'|'avatar', 'text' => string, 'ts' => ISO8601 string].
      *
+     * Fail-loud on shape drift (PR4, design D7): HTTP non-2xx stays soft (unchanged
+     * — log + return `[]`, best-effort transcript). But a 2xx whose body does NOT
+     * match the real contract (`data.transcript_data`, rows keyed `role`/`transcript`)
+     * THROWS `ProviderTranscriptShapeException` instead of silently degrading to `[]`
+     * — see `InterviewController::replaceUtterances()` (F1): a silently-empty
+     * transcript here used to DELETE every persisted utterance and insert nothing.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/end.ts:76-84
+     *
      * @return array<int, array{speaker: string, text: string, ts: string}>
+     *
+     * @throws ProviderTranscriptShapeException When the 2xx body does not match the real shape.
      */
     public function reconcileTranscript(InterviewSession $session): array
     {
@@ -248,17 +260,46 @@ class HeygenProvider implements ProviderSessionService
             return [];
         }
 
-        $rows = $response->json('data', []);
+        // @wire-source end.ts:76-84 — the real field is `data.transcript_data`,
+        // NOT `data` directly. Absent/not-array = a genuine contract drift, not a
+        // valid "no transcript yet" empty state (that's `[]` present UNDER
+        // transcript_data — checked below by array_map simply having nothing to do).
+        $rows = $response->json('data.transcript_data');
 
-        return array_map(function (array $row): array {
+        if (! is_array($rows)) {
+            throw new ProviderTranscriptShapeException(
+                "HeyGen: transcript response missing or malformed 'data.transcript_data' (session {$session->id})",
+            );
+        }
+
+        return array_map(function (mixed $row) use ($session): array {
+            if (! is_array($row) || ! isset($row['role'], $row['transcript']) || ! is_string($row['transcript'])) {
+                throw new ProviderTranscriptShapeException(
+                    "HeyGen: transcript row missing 'role' or 'transcript' (session {$session->id})",
+                );
+            }
+
+            // @wire-source none — inferred: the demo never reads a role beyond
+            // user/assistant; candidate/avatar/agent are defensive synonyms.
+            // Any OTHER role is a genuine contract drift — today's code silently
+            // misattributed every unknown role to the avatar; that is now a throw.
+            $speaker = match ($row['role']) {
+                'user', 'candidate' => 'candidate',
+                'assistant', 'avatar', 'agent' => 'avatar',
+                default => throw new ProviderTranscriptShapeException(
+                    "HeyGen: unrecognized transcript role [{$row['role']}] (session {$session->id})",
+                ),
+            };
+
             return [
-                'speaker' => $row['role'] === 'user' ? 'candidate' : 'avatar',
-                'text' => (string) ($row['content'] ?? ''),
+                'speaker' => $speaker,
+                'text' => $row['transcript'],
+                // time_ms absent → tolerate, fall back to now() (@wire-source none — inferred).
                 'ts' => isset($row['time_ms'])
                     ? now()->subMilliseconds((int) $row['time_ms'])->toIso8601String()
                     : now()->toIso8601String(),
             ];
-        }, is_array($rows) ? $rows : []);
+        }, $rows);
     }
 
     /**

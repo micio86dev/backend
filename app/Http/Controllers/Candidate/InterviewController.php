@@ -218,6 +218,14 @@ class InterviewController extends Controller
      * (8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).
      *     Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().
      * (9) COMMIT. Return 200.
+     *
+     * PR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS
+     * `ProviderTranscriptShapeException` on a shape-mismatched transcript response
+     * instead of silently degrading to `[]`. Because the throw happens BEFORE
+     * `replaceUtterances()` runs its DELETE, and propagates out of THIS transaction
+     * closure, `DB::transaction()` rolls back the ENTIRE txn automatically — the
+     * DELETE never commits, ended_at is never stamped, and FinalizeInterview is
+     * never dispatched. Caught below and surfaced as 502 (Upstream classification).
      */
     public function end(Request $request): JsonResponse
     {
@@ -243,68 +251,84 @@ class InterviewController extends Controller
         $progress = null;
 
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
-        DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress): void {
-            // Lock the session row (scope MUST cover the status UPDATE in step 6)
-            $locked = InterviewSession::lockForUpdate()->find($session->id);
+        try {
+            DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress): void {
+                // Lock the session row (scope MUST cover the status UPDATE in step 6)
+                $locked = InterviewSession::lockForUpdate()->find($session->id);
 
-            if ($locked === null) {
-                // Session disappeared under us (very rare) — treat as 404
-                abort(404);
-            }
-
-            // (4) FIX-3 guard: idempotency guard inside the FOR UPDATE lock
-            if ($locked->status !== 'in_corso') {
-                // NOT re-stamping ended_at, NOT re-dispatching FinalizeInterview
-                abort(Response::HTTP_CONFLICT);
-            }
-
-            // (5) HeyGen: replaceUtterances inside the txn (inside the lock)
-            if ($locked->provider === 'heygen') {
-                $transcript = $providerService->reconcileTranscript($locked);
-                $this->replaceUtterances($locked, $transcript);
-            }
-            // Tavus: no reconcile — live /utterance rows are kept as-is.
-
-            // (6) UPDATE session status + ended_at
-            $locked->status = $endedReason;
-            $locked->ended_at = now();
-            $locked->ended_reason = $endedReason;
-            $locked->save();
-
-            // (7) Count ended sessions (completed, timeout, skipped) for this participant + project
-            $endedCount = InterviewSession::where('participant_id', $pid)
-                ->where('project_id', $projectId)
-                ->whereIn('status', ['completed', 'timeout', 'skipped'])
-                ->count();
-            $totalCompetencies = DB::table('project_competencies')
-                ->where('project_id', $projectId)
-                ->count();
-
-            // (8) Last-question CAS single-winner
-            if ($endedCount === $totalCompetencies && $totalCompetencies > 0) {
-                $won = Participant::where('id', $pid)
-                    ->where('status', 'in_corso')
-                    ->update(['status' => 'in_valutazione']);
-
-                if ($won === 1) {
-                    // afterCommit() attaches to THIS explicit transaction
-                    FinalizeInterview::dispatch($pid)->afterCommit();
+                if ($locked === null) {
+                    // Session disappeared under us (very rare) — treat as 404
+                    abort(404);
                 }
-            }
 
-            // C10 D5: set ONLY on the success path — every abort() above (:225,
-            // :231) throws past this point, so reaching it means the write
-            // committed. Captured here (not re-derived after the closure returns)
-            // so the emitted competency_code is exactly the one this /end call
-            // just ended, even if a later request changes state before the event
-            // fires.
-            $progress = [
-                'participant_id' => $pid,
-                'project_id' => $projectId,
-                'competency_code' => $session->competency_code,
-            ];
-            // (9) COMMIT happens at end of DB::transaction closure
-        });
+                // (4) FIX-3 guard: idempotency guard inside the FOR UPDATE lock
+                if ($locked->status !== 'in_corso') {
+                    // NOT re-stamping ended_at, NOT re-dispatching FinalizeInterview
+                    abort(Response::HTTP_CONFLICT);
+                }
+
+                // (5) HeyGen: replaceUtterances inside the txn (inside the lock)
+                if ($locked->provider === 'heygen') {
+                    $transcript = $providerService->reconcileTranscript($locked);
+                    $this->replaceUtterances($locked, $transcript);
+                }
+                // Tavus: no reconcile — live /utterance rows are kept as-is.
+
+                // (6) UPDATE session status + ended_at
+                $locked->status = $endedReason;
+                $locked->ended_at = now();
+                $locked->ended_reason = $endedReason;
+                $locked->save();
+
+                // (7) Count ended sessions (completed, timeout, skipped) for this participant + project
+                $endedCount = InterviewSession::where('participant_id', $pid)
+                    ->where('project_id', $projectId)
+                    ->whereIn('status', ['completed', 'timeout', 'skipped'])
+                    ->count();
+                $totalCompetencies = DB::table('project_competencies')
+                    ->where('project_id', $projectId)
+                    ->count();
+
+                // (8) Last-question CAS single-winner
+                if ($endedCount === $totalCompetencies && $totalCompetencies > 0) {
+                    $won = Participant::where('id', $pid)
+                        ->where('status', 'in_corso')
+                        ->update(['status' => 'in_valutazione']);
+
+                    if ($won === 1) {
+                        // afterCommit() attaches to THIS explicit transaction
+                        FinalizeInterview::dispatch($pid)->afterCommit();
+                    }
+                }
+
+                // C10 D5: set ONLY on the success path — every abort() above (:225,
+                // :231) throws past this point, so reaching it means the write
+                // committed. Captured here (not re-derived after the closure returns)
+                // so the emitted competency_code is exactly the one this /end call
+                // just ended, even if a later request changes state before the event
+                // fires.
+                $progress = [
+                    'participant_id' => $pid,
+                    'project_id' => $projectId,
+                    'competency_code' => $session->competency_code,
+                ];
+                // (9) COMMIT happens at end of DB::transaction closure
+            });
+        } catch (ProviderException $e) {
+            // PR4 (F1 fix): a shape-mismatched transcript (ProviderTranscriptShapeException,
+            // class Upstream) rolled the WHOLE transaction back — the DELETE never
+            // committed, existing utterances are untouched, ended_at was never stamped.
+            // Classified Upstream → 502 (same status a genuine 5xx transcript-fetch
+            // failure would carry via handleProviderFailure(), kept consistent here
+            // even though /end has no participant-touching branch to route through).
+            Log::warning('C7a: /end aborted — provider transcript reconciliation failed', [
+                'session_id' => $session->id,
+                'class' => $e->failureClass()->value,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['error' => 'provider_error'], Response::HTTP_BAD_GATEWAY);
+        }
 
         if ($progress !== null) {
             event(new CompetencySessionEnded(
@@ -771,18 +795,37 @@ class InterviewController extends Controller
      * This runs INSIDE the explicit DB transaction + FOR UPDATE lock from /end,
      * preventing a concurrent /utterance from interleaving between DELETE and INSERT.
      *
+     * PR4 (design finding F1, delta spec D7) — CRITICAL fix: the empty-guard used to
+     * sit AFTER the unconditional DELETE, so ANY empty `$transcript` (a transport
+     * failure, OR — before this PR — a silently-mismatched response shape) deleted
+     * every already-persisted utterance row and inserted nothing. Data destruction,
+     * not merely an empty transcript.
+     *
+     * Fixed by REORDERING the guard before the DELETE, not by adding a nested
+     * transaction: `HeygenProvider::reconcileTranscript()` (PR4) now THROWS
+     * `ProviderTranscriptShapeException` on any shape mismatch instead of returning
+     * `[]` for that reason — so by the time control reaches this method, an empty
+     * `$transcript` is ALWAYS a legitimate case (HTTP fetch failure, soft-logged;
+     * or a genuinely empty-but-valid `transcript_data: []`), never a parsing bug in
+     * disguise. That invariant makes reordering sufficient: DELETE and INSERT stay
+     * adjacent and uninterrupted, so they only ever run TOGETHER (never DELETE
+     * alone) — the atomic-replace guarantee, without a redundant nested transaction
+     * (this method already runs inside the /end explicit transaction + FOR UPDATE
+     * lock, which already makes DELETE+INSERT atomic from any concurrent reader's
+     * perspective).
+     *
      * @param  array<int, array{speaker: string, text: string, ts: string}>  $transcript
      */
     private function replaceUtterances(InterviewSession $session, array $transcript): void
     {
-        // DELETE all existing utterances for this session
-        DB::table('utterances')->where('interview_session_id', $session->id)->delete();
-
         if (empty($transcript)) {
             return;
         }
 
-        // INSERT the authoritative server transcript
+        // DELETE all existing utterances for this session, then INSERT the
+        // authoritative server transcript — only ever reached together (see above).
+        DB::table('utterances')->where('interview_session_id', $session->id)->delete();
+
         $rows = array_map(fn (array $row) => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,

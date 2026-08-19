@@ -159,4 +159,17 @@ return [
 
     'frontend_locales' => ['it', 'en'],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Provider Smoke Check Gate (PR4 — design D10, layer L3)
+    |--------------------------------------------------------------------------
+    |
+    | `php artisan interview:smoke-check` refuses to run unless this is true.
+    | Costs real provider credits/quota on every invocation — never set true in
+    | CI or normal deploys; only export it manually in the shell that runs the
+    | command deliberately.
+    |
+    */
+    'smoke_enabled' => (bool) env('INTERVIEW_SMOKE_ENABLED', false),
+
 ];

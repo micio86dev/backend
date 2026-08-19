@@ -23,10 +23,14 @@ declare(strict_types=1);
  *
  * @wire-source legacy-demo/src/pages/api/interview/start.ts:246-267 (`createHeygenContext`)
  *
- * NOTE: this test proves our OWN request body shape, not that LiveAvatar accepts
- * it — that claim belongs to the fixture (L1/L2) and gated live smoke (L3) layers
- * added in PR4, per delta spec "Provider Wire Contracts Are Pinned Against
- * Recorded Real Responses".
+ * REVOKED CLAIM (PR4, design D10): this test proves our OWN request body shape
+ * only, NEVER that LiveAvatar accepts it. That claim belongs to
+ * `tests/Feature/C7a/ProviderContractFixtureTest.php` — L1 (response fixtures,
+ * proves parsing) and L2 (outbound golden body, proves "unchanged since verified"
+ * not "correct") — and to the gated live smoke check (L3,
+ * `php artisan interview:smoke-check`, never run in CI, the ONLY layer that can
+ * actually prove acceptance), per delta spec "Provider Wire Contracts Are Pinned
+ * Against Recorded Real Responses".
  *
  * @group feature
  *
