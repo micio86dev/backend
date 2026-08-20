@@ -11,10 +11,46 @@ declare(strict_types=1);
  * Doubles as the worker HEALTHCHECK (wrapper PR5).
  */
 
+use App\Contracts\RedisEvictionPolicyProbe;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+
+// RED — 3.9 (backoffice-session-refresh-hardening D3): the resolved Redis
+// maxmemory-policy is surfaced on this payload so drift is observable, not
+// archaeological.
+test('redis_eviction_policy reflects the probe, ok status', function (): void {
+    app()->instance(RedisEvictionPolicyProbe::class, new class implements RedisEvictionPolicyProbe
+    {
+        public function resolve(): string
+        {
+            return 'noeviction';
+        }
+    });
+
+    Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
+
+    $this->getJson('/api/health/queue')
+        ->assertStatus(200)
+        ->assertJsonPath('redis_eviction_policy', 'noeviction');
+});
+
+test('redis_eviction_policy surfaces a wrong policy even on an otherwise-ok payload', function (): void {
+    app()->instance(RedisEvictionPolicyProbe::class, new class implements RedisEvictionPolicyProbe
+    {
+        public function resolve(): string
+        {
+            return 'allkeys-lru';
+        }
+    });
+
+    Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
+
+    $this->getJson('/api/health/queue')
+        ->assertStatus(200)
+        ->assertJsonPath('redis_eviction_policy', 'allkeys-lru');
+});
 
 test('200 ok when heartbeat is fresh, queue is not stalled, and there are no failed jobs', function (): void {
     Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
