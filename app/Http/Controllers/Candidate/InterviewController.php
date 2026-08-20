@@ -201,7 +201,19 @@ class InterviewController extends Controller
         // Variant: 'resume' on RESUME in_corso, else 'first' on the participant's very
         // first competency, else 'next'. Locale = $project->language (matches the system
         // prompt, per D9).
-        $openingVariant = $isResumeInCorso ? 'resume' : ($isFirst ? 'first' : 'next');
+        // 'retry' takes precedence over 'first'/'next' (D10): a re-offered competency
+        // is being asked AGAIN, and the candidate must be told so. Without it the
+        // avatar repeats the same question with no explanation, which reads as not
+        // having listened. It cannot collide with 'resume': that variant means an
+        // in-progress conversation is continuing, while a re-offer starts over after
+        // a failure on our side.
+        $isReoffer = ($nextCompetency['reoffer'] ?? false) === true;
+        $openingVariant = match (true) {
+            $isResumeInCorso => 'resume',
+            $isReoffer => 'retry',
+            $isFirst => 'first',
+            default => 'next',
+        };
         $competencyName = Competency::where('code', $nextCompetency['competency_code'])->first()
             ?->getTranslation('name', $project->language) ?? $nextCompetency['competency_code'];
         $openingText = $this->openingComposer->compose($openingVariant, $competencyName, $project->language)->text;

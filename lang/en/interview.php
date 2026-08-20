@@ -30,5 +30,6 @@ return [
         'first' => "Hi, and welcome! Let's start by talking about :competency.",
         'next' => "Great, let's move on and talk about :competency.",
         'resume' => "Let's pick up where we left off, talking about :competency.",
+        'retry' => 'Sorry, we had a technical problem on our side. Let us start :competency again.',
     ],
 ];

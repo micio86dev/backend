@@ -423,3 +423,57 @@ test('the tally never counts another organization sessions', function (): void {
         'one competency of two is terminal, so A is not finished'
     );
 });
+
+// ─── The candidate is told they are re-attempting (D10) ──────────────────────
+
+test('a re-offered competency is announced with the retry greeting, not next', function (): void {
+    // Ratified decision 6. The re-offer exists because something failed on OUR
+    // side; repeating the question with the ordinary greeting reads to the
+    // candidate as the avatar not having listened.
+    Queue::fake();
+
+    // One fake for both attempts: a second Http::fake() MERGES with the first
+    // rather than replacing it, so the 422 stub would keep winning.
+    $attempt = 0;
+    Http::fake(function ($request) use (&$attempt) {
+        if (str_contains($request->url(), '/contexts')) {
+            $attempt++;
+
+            if ($attempt === 1) {
+                return Http::response(['message' => 'malformed request'], 422);
+            }
+
+            return Http::response(['data' => ['id' => 'ctx-retry']], 200);
+        }
+
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => [
+                'session_id' => 'heygen-session-retry',
+                'session_token' => 'heygen-token-retry',
+            ]], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $org = casOrg();
+    [$project, $comps] = casProject($org, 2);
+    $participant = casParticipant($org, $project);
+    $token = casBearer($participant);
+
+    // Attempt 1 fails, leaving the competency re-offerable.
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')->assertStatus(500);
+
+    // Attempt 2 — the re-offer. The context body carries the spoken greeting.
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')->assertStatus(201);
+
+    $competencyName = $comps[0]->getTranslation('name', $project->language) ?? $comps[0]->code;
+    $expected = trans('interview.opening.retry', ['competency' => $competencyName], $project->language);
+
+    Http::assertSent(function ($request) use ($expected) {
+        return str_contains($request->url(), '/contexts')
+            && ($request->data()['opening_text'] ?? null) === $expected;
+    });
+});
