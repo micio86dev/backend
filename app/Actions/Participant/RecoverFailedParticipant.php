@@ -34,12 +34,24 @@ use Illuminate\Support\Facades\Log;
  * (D1), but cannot reuse that reader: this is a WRITE with its own row lock
  * and its own 403-before-404 failure order (D4), not a read.
  *
- * THE CRUX (design D2): a status-only flip is NOT enough and is actively
- * worse than today's lockout — `resolveNextCompetency()` treats `error` as
- * terminal-completed (silently skipping the failed competency forever) and
- * `/end`'s completion CAS can then never reach `totalCompetencies`, stranding
- * the candidate in `in_corso` permanently with scoring never dispatched. The
- * session reset below is what makes the failed competency reachable again.
+ * THE CRUX (design D2): a status-only flip is NOT enough — the session reset
+ * below is what makes the failed competency reachable again.
+ *
+ * This paragraph used to justify that by describing what `error` cost the
+ * candidate: the resolver skipped it forever and the completion CAS could never
+ * reach `totalCompetencies`, so the participant stayed `in_corso` with scoring
+ * never dispatched. Both halves of that were true, and both were fixed by
+ * `interview-continuous-flow` (api v0.23.0): an errored competency is now
+ * re-offered once automatically, and the CAS counts one that has spent its
+ * attempts. The description is kept here, marked as history, because it is an
+ * accurate account of a real production defect that lived in this docblock as
+ * a rationale for a *different* feature long before anyone connected it to the
+ * participants who were disappearing without an evaluation.
+ *
+ * What still holds, and is why this action remains necessary: the automatic
+ * re-offer is bounded at `InterviewSession::MAX_ERROR_ATTEMPTS`. Once a
+ * competency has spent its attempts it is closed to the candidate, and only
+ * this operator path can give it back. That asymmetry is deliberate (D4).
  *
  * REQ: Atomic Participant and Session Recovery from Errore,
  *      Recovery Refusal Guards,
