@@ -16,14 +16,17 @@ declare(strict_types=1);
  * `/start`'s provider-failure path, and `/end` is never called for that competency.
  * The repair is the two additional call sites.
  *
- * SCOPE NOTE (PR 1 of 4): the automatic re-offer does not exist yet, so EVERY
- * `error` is terminal here and every `error` counts. PR 2 adds the re-offer branch
- * to `resolveNextCompetency()` and narrows this tally to
- * `error_count >= MAX_ERROR_ATTEMPTS` in the same commit — narrowing it earlier
- * would leave a session at `error_count = 1` skipped by the resolver but uncounted
- * by the tally, which is the same stranding under a new name.
+ * The tally and the re-offer are ONE behaviour, and these tests are why we know.
+ * An `error` counts only once it has spent its re-offer:
+ *   - count it earlier and a single transient 4xx — our own payload bug — ends the
+ *     interview with no second chance. `InterviewStartTest`'s ratified "participant
+ *     status UNCHANGED" guard goes red on exactly that.
+ *   - count it later and a competency the resolver skips is never tallied, which is
+ *     the original stranding wearing a different name.
+ * Both halves shipped together in `api` v0.23.0.
  */
 
+use App\Actions\Participant\RecoverFailedParticipant;
 use App\Jobs\FinalizeInterview;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
@@ -126,6 +129,21 @@ function casBearer(Participant $participant): string
 function casClientErrorFake(): array
 {
     return ['*liveavatar*' => Http::response(['message' => 'malformed request'], 422)];
+}
+
+/** A provider call that succeeds, for the paths where the failure is not the subject. */
+function heygenOkFake(): array
+{
+    return [
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-'.uniqid()]], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => [
+                'session_id' => 'heygen-session-'.uniqid(),
+                'session_token' => 'heygen-token-'.uniqid(),
+            ],
+        ], 200),
+        '*liveavatar*/sessions/*' => Http::response([], 200),
+    ];
 }
 
 /** Provider returns 5xx → ProviderFailureClass::Upstream → session error AND participant errore. */
@@ -355,6 +373,137 @@ test('the settle is idempotent — a second /start does not dispatch scoring twi
     // The CAS predicate is the single-winner guard: the second pass finds the
     // participant already at `in_valutazione` and updates zero rows.
     Queue::assertPushed(FinalizeInterview::class, 1);
+});
+
+// ─── The destructive step, asserted where it happens ─────────────────────────
+
+test('the re-offer discards the first attempt transcript at /start, before the provider is called', function (): void {
+    // The ratified destructive step. Asserted directly at /start rather than
+    // inferred from a later transcript read, because the later read is exactly
+    // where it can hide: replaceUtterances() returns early on an empty provider
+    // transcript, which is what a still-degraded provider returns — so a stale
+    // first attempt would survive and be scored as the second one's answer.
+    Http::fake(casClientErrorFake());
+    Queue::fake();
+
+    $org = casOrg();
+    [$project, $comps] = casProject($org, 1);
+    $participant = casParticipant($org, $project);
+
+    // Attempt 1 fails and leaves a transcript behind.
+    $this->withHeaders(['Authorization' => 'Bearer '.casBearer($participant)])
+        ->postJson('/api/candidate/interview/start')->assertStatus(500);
+
+    $session = casInTenant($org, fn () => InterviewSession::where('participant_id', $participant->id)->first());
+
+    foreach (['candidate', 'avatar'] as $i => $speaker) {
+        DB::table('utterances')->insert([
+            'interview_session_id' => $session->id,
+            'organization_id' => $org->id,
+            'speaker' => $speaker,
+            'text' => "attempt one turn {$i}",
+            'ts' => now(),
+        ]);
+    }
+
+    expect(DB::table('utterances')->where('interview_session_id', $session->id)->count())->toBe(2);
+
+    // Attempt 2 — the re-offer. The provider fails again, so nothing downstream
+    // could have cleaned up: whatever is gone was deleted by the reset itself.
+    $this->withHeaders(['Authorization' => 'Bearer '.casBearer($participant)])
+        ->postJson('/api/candidate/interview/start')->assertStatus(500);
+
+    expect(DB::table('utterances')->where('interview_session_id', $session->id)->count())
+        ->toBe(0, 'the previous attempt must not survive into the re-offer');
+
+    expect($comps)->toHaveCount(1);
+});
+
+// ─── The operator path is deliberately different ─────────────────────────────
+
+test('operator recovery stays UNBOUNDED — it does not consult error_count', function (): void {
+    // D4. An operator acting on a known incident is not the failure mode the
+    // candidate-facing ceiling exists to contain. This asymmetry is deliberate;
+    // pinned so a future reader does not "harmonise" it away.
+    $org = casOrg();
+    [$project, $comps] = casProject($org, 1);
+    $participant = casParticipant($org, $project, 'errore');
+
+    $session = casInTenant($org, function () use ($org, $project, $participant, $comps) {
+        $s = new InterviewSession;
+        $s->forceFill([
+            'organization_id' => $org->id,
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => 0,
+            'competency_code' => $comps[0]->code,
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'heygen',
+            'status' => 'error',
+            'ended_reason' => 'error',
+            // Already at the ceiling: the automatic path would refuse.
+            'error_count' => InterviewSession::MAX_ERROR_ATTEMPTS,
+            'ended_at' => now(),
+        ]);
+        $s->save();
+
+        return $s;
+    });
+
+    casInTenant($org, fn () => app(RecoverFailedParticipant::class)
+        ->handle($participant->id, null, 'operator recovery under test'));
+
+    expect($session->fresh()->status)->toBe(
+        'pending',
+        'the operator path recovers a session the automatic bound has already closed'
+    );
+});
+
+test('a session reset by operator recovery is RESUMED, not re-offered — participant-sso holds verbatim', function (): void {
+    // The ratified "Resume, not restart" scenario justifies its reset by asserting
+    // that resolveNextCompetency() keeps skipping already-answered competencies.
+    // The new re-offer branch changes how that method treats `error`, so this pins
+    // that the two do not collide: a reset session is `pending`, and `pending` is
+    // caught by the RESUME branch ordered ABOVE the re-offer branch. It never
+    // reaches the re-offer path, and no second attempt is consumed.
+    Http::fake(heygenOkFake());
+    Queue::fake();
+
+    $org = casOrg();
+    [$project, $comps] = casProject($org, 1);
+    $participant = casParticipant($org, $project, 'errore');
+
+    $session = casInTenant($org, function () use ($org, $project, $participant, $comps) {
+        $s = new InterviewSession;
+        $s->forceFill([
+            'organization_id' => $org->id,
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => 0,
+            'competency_code' => $comps[0]->code,
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'heygen',
+            'status' => 'error',
+            'ended_reason' => 'error',
+            'error_count' => 1,
+            'ended_at' => now(),
+        ]);
+        $s->save();
+
+        return $s;
+    });
+
+    casInTenant($org, fn () => app(RecoverFailedParticipant::class)
+        ->handle($participant->id, null, 'operator recovery under test'));
+
+    $this->withHeaders(['Authorization' => 'Bearer '.casBearer($participant->fresh())])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    expect($session->fresh()->error_count)->toBe(
+        1,
+        'resuming a pending session must not spend another attempt'
+    );
 });
 
 // ─── Tenancy ──────────────────────────────────────────────────────────────────
