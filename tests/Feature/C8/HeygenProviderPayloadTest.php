@@ -76,7 +76,7 @@ test('6.1 HeygenProvider::issue() with systemPrompt → POST /contexts body is e
             return Http::response(['data' => ['id' => 'ctx-sp']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'sid-sp', 'access_token' => 'tok-sp']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-sp', 'session_token' => 'tok-sp']], 200);
         }
 
         return Http::response([], 200);
@@ -115,7 +115,7 @@ test('6.2 HeygenProvider::issue() with null systemPrompt → POST /contexts body
             return Http::response(['data' => ['id' => 'ctx-null']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'sid-null', 'access_token' => 'tok-null']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-null', 'session_token' => 'tok-null']], 200);
         }
 
         return Http::response([], 200);
@@ -148,7 +148,7 @@ test('6.5 HeygenProvider::issue() with openingText → POST /contexts body inclu
             return Http::response(['data' => ['id' => 'ctx-opening']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'sid-opening', 'access_token' => 'tok-opening']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-opening', 'session_token' => 'tok-opening']], 200);
         }
 
         return Http::response([], 200);
@@ -183,7 +183,7 @@ test('6.6 HeygenProvider::issue() with null openingText → POST /contexts body 
             return Http::response(['data' => ['id' => 'ctx-no-opening']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'sid-no-opening', 'access_token' => 'tok-no-opening']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-no-opening', 'session_token' => 'tok-no-opening']], 200);
         }
 
         return Http::response([], 200);

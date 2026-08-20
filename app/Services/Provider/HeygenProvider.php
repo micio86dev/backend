@@ -66,7 +66,7 @@ class HeygenProvider implements ProviderSessionService
      *
      * Steps (two calls, DIFFERENT bodies — @wire-source start.ts:246-267 + :206-221):
      *   1. POST /contexts       → {name, prompt, opening_text} → reads data.id
-     *   2. POST /sessions/token → avatar identity + data.id → access_token + session_id
+     *   2. POST /sessions/token → avatar identity + data.id → session_token + session_id
      *
      * Called OUTSIDE any DB transaction.
      *
@@ -88,26 +88,40 @@ class HeygenProvider implements ProviderSessionService
         $contextId = (string) $ctxResponse->json('data.id', '');
 
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($contextId));
+            ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($ctx, $contextId));
 
         if (! $tokenResponse->successful()) {
             $this->throwRedacted($apiKey, $tokenResponse, 'session token issuance failed');
         }
 
         $data = $tokenResponse->json('data', []);
-        $accessToken = $data['access_token'] ?? null;
+
+        // @wire-source legacy-demo/src/pages/api/interview/start.ts:222-227 — the
+        // real field is `data.session_token`. `data.access_token` does NOT exist
+        // in the real contract (hotfix 0.22.1: this was the second latent bug —
+        // it would have fired immediately after the missing-avatar_id 422 was fixed).
+        $sessionToken = $data['session_token'] ?? null;
+
+        // @wire-source start.ts:227 (`data.session_id ?? null`) — session_id is
+        // NULLABLE in the real contract. `provider_session_ref` is already nullable
+        // end-to-end (DB column, ProviderToken, reconcileTranscript()'s `$ref === null`
+        // guard, and the RESUME teardown path's `$oldRef` null-check) — a null
+        // session_id degrades exactly like an already-supported "no ref" session:
+        // transcript reconciliation returns [] (best-effort) and a later resume's
+        // teardown is skipped. Requiring it here would turn a benign, already-handled
+        // case into a fatal malformed-response error it is not.
         $sessionId = $data['session_id'] ?? null;
 
-        if ($accessToken === null || $sessionId === null) {
+        if ($sessionToken === null) {
             throw new ProviderException(
-                'HeyGen: malformed token response (missing access_token or session_id)',
+                'HeyGen: malformed token response (missing session_token)',
                 ProviderFailureClass::Upstream,
             );
         }
 
         return new ProviderToken(
             provider: 'heygen',
-            token: $accessToken,
+            token: $sessionToken,
             conversation_url: null,
             provider_session_ref: $sessionId,
         );
@@ -163,9 +177,26 @@ class HeygenProvider implements ProviderSessionService
      * on `/contexts` (PR2 D1/D2, delta spec "Avatar Identity Belongs to the
      * Session-Token Call").
      *
-     * `array_replace_recursive`, NOT `array_merge`: the template emits
-     * `avatar_persona.{voice_id, language}`; this method owns
-     * `avatar_persona.context_id`. A shallow merge would replace the whole
+     * Hotfix 0.22.1 — root cause of the production 422 ("avatar_id: Field
+     * required"): avatar identity previously came ONLY from the org's active
+     * `AvatarTemplate`. No org has one today, so `$templateFields` was `[]` and
+     * `avatar_id` was never sent. Three-layer precedence, weakest to strongest:
+     *   1. `$platformDefault` — this method's own floor. Always supplies
+     *      avatar_id/voice_id/language (from `interview.heygen.*` config /
+     *      `$ctx->language`) and the two proven-constant fields
+     *      `interactivity_type`/`video_settings.quality` (@wire-source start.ts:
+     *      216-220 — hardcoded "CONVERSATIONAL"/"low" in the demonstrated-working
+     *      call, NOT template-sourced there).
+     *   2. `$templateFields` — an org's active `AvatarTemplate`, when it sets a
+     *      value. Overrides the platform default on a per-key basis: a template
+     *      that customizes `videoQuality` still wins over the "low" floor. C14
+     *      avatar-template customization is preserved, not regressed by this fix.
+     *   3. `$providerOwned` — `mode`/`is_sandbox`/`avatar_persona.context_id`.
+     *      Technical protocol constants; never template-overridable.
+     *
+     * `array_replace_recursive` (not `array_merge`) across all three: the template
+     * emits `avatar_persona.{voice_id, language}` and the platform default emits
+     * the same two keys plus `avatar_id`; a shallow merge would replace the whole
      * `avatar_persona` node and silently drop voice/language — the C14
      * "operator sets a voice, hears no difference" failure at a new address.
      *
@@ -173,8 +204,9 @@ class HeygenProvider implements ProviderSessionService
      *
      * @return array<string, mixed>
      */
-    private function buildSessionTokenBody(string $contextId): array
+    private function buildSessionTokenBody(QuestionContext $ctx, string $contextId): array
     {
+        $platformDefault = $this->platformDefaultTokenFields($ctx);
         $templateFields = $this->allowlistedTemplateFields($this->activeTemplateConfig());
 
         $providerOwned = [
@@ -185,7 +217,65 @@ class HeygenProvider implements ProviderSessionService
             ],
         ];
 
-        return array_replace_recursive($templateFields, $providerOwned);
+        return array_replace_recursive($platformDefault, $templateFields, $providerOwned);
+    }
+
+    /**
+     * The platform-default `/sessions/token` fields (hotfix 0.22.1) — the floor
+     * every request gets when the org has no active `AvatarTemplate`, or when its
+     * template leaves a field unset.
+     *
+     * `avatar_id`/`avatar_persona.voice_id` come from `interview.heygen.{avatar_id,
+     * voice_id}` config (env `HEYGEN_AVATAR_ID`/`HEYGEN_VOICE_ID`, `LIVEAVATAR_*`
+     * alias) — omitted (not sent as `""`) when unset, matching TemplatePayload's
+     * "unset means absent" convention.
+     *
+     * `avatar_persona.language` — BEAI is multi-tenant/multilingual (CLAUDE.md i18n
+     * mandate); the avatar must speak the PROJECT's language, not a fixed env
+     * value like the single-tenant demo used. Sourced from `$ctx->language`
+     * (threaded by the controller from `$project->language`, the same locale PR3/
+     * D9 already uses for the opening greeting), falling back to
+     * `interview.heygen.language` only when the caller passes no language
+     * (e.g. `ProviderSmokeCheck`'s standalone, unsaved fake session).
+     *
+     * `interactivity_type`/`video_settings.quality` — proven-constant values from
+     * the demonstrated-working call (@wire-source start.ts:216-220), NOT
+     * config-driven: always present unless an org's template explicitly overrides
+     * them via the existing `TOKEN_FIELD_ALLOWLIST` mechanism (merged in AFTER
+     * this method's return value, see `buildSessionTokenBody()`).
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
+     *
+     * @return array<string, mixed>
+     */
+    private function platformDefaultTokenFields(QuestionContext $ctx): array
+    {
+        $body = [
+            'interactivity_type' => 'CONVERSATIONAL',
+            'video_settings' => [
+                'quality' => 'low',
+            ],
+        ];
+
+        $avatarId = config('interview.heygen.avatar_id');
+
+        if (is_string($avatarId) && $avatarId !== '') {
+            $body['avatar_id'] = $avatarId;
+        }
+
+        $voiceId = config('interview.heygen.voice_id');
+
+        if (is_string($voiceId) && $voiceId !== '') {
+            $body['avatar_persona']['voice_id'] = $voiceId;
+        }
+
+        $language = $ctx->language ?? config('interview.heygen.language');
+
+        if (is_string($language) && $language !== '') {
+            $body['avatar_persona']['language'] = $language;
+        }
+
+        return $body;
     }
 
     /**

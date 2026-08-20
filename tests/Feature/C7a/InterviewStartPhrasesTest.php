@@ -106,7 +106,7 @@ function phrasesHeygenSuccess(): array
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-'.uniqid(),
-                'access_token' => 'heygen-token-'.uniqid(),
+                'session_token' => 'heygen-token-'.uniqid(),
                 'url' => 'https://webrtc.heygen.com/test',
             ],
         ], 200),

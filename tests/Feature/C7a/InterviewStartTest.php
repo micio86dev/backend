@@ -124,7 +124,7 @@ function heygenSuccessResponse(): array
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-'.uniqid(),
-                'access_token' => 'heygen-token-'.uniqid(),
+                'session_token' => 'heygen-token-'.uniqid(),
                 'url' => 'https://webrtc.heygen.com/test',
             ],
         ], 200),
@@ -239,7 +239,7 @@ test('POST /start resume in_corso: no duplicate row, fresh token issued, old ses
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-fresh',
-                'access_token' => 'heygen-token-fresh',
+                'session_token' => 'heygen-token-fresh',
             ],
         ], 200),
         '*liveavatar*/sessions/*' => Http::response([], 200), // teardown old

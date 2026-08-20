@@ -192,6 +192,10 @@ class InterviewController extends Controller
             promptVersion: $promptVersion,
             // PR3: opening greeting, always composed (never null on this path — see above).
             openingText: $openingText,
+            // Hotfix 0.22.1: HeyGen's avatar_persona.language must match the
+            // project's configured language (i18n mandate), same source PR3/D9
+            // already uses for the opening greeting — never a static env default.
+            language: $project->language,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────

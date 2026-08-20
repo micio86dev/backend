@@ -112,7 +112,7 @@ test('14.3: /start response body does NOT contain HEYGEN_API_KEY value', functio
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-001',
-                'access_token' => 'ephemeral-token-001',
+                'session_token' => 'ephemeral-token-001',
             ],
         ], 200),
     ]);
