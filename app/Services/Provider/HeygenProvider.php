@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\Provider;
 
+use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
+use App\Exceptions\ProviderTranscriptShapeException;
 use App\Models\InterviewSession;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\AvatarTemplates\TemplatePayload;
+use App\Support\Provider\ProviderErrorMessage;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * HeyGen LiveAvatar provider implementation (C7a Phase 7.4).
@@ -36,11 +41,32 @@ class HeygenProvider implements ProviderSessionService
     private const BASE_URL = 'https://api.liveavatar.com/v1';
 
     /**
+     * Demo-proven `POST /sessions/token` template fields (PR2 D2, delta spec
+     * "Avatar Identity Belongs to the Session-Token Call").
+     *
+     * `TemplatePayload::heygen()` also emits `max_session_duration`,
+     * `video_settings.encoding`, and `voice_settings.*` — those came from
+     * `avatar-tester`, a testbed, and have NO demonstrated-working call behind
+     * them. Sending them risks a second 422 on every /start; they stay OFF by
+     * default and are widened only via `interview.heygen.extra_token_fields`
+     * (a config change, never a deploy) once smoke-verified.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
+     */
+    private const TOKEN_FIELD_ALLOWLIST = [
+        'avatar_id',
+        'avatar_persona.voice_id',
+        'avatar_persona.language',
+        'interactivity_type',
+        'video_settings.quality',
+    ];
+
+    /**
      * Issue a new HeyGen LiveAvatar session token.
      *
-     * Steps:
-     *   1. POST /contexts → context_id
-     *   2. POST /sessions/token → access_token + session_id (= provider_session_ref)
+     * Steps (two calls, DIFFERENT bodies — @wire-source start.ts:246-267 + :206-221):
+     *   1. POST /contexts       → {name, prompt, opening_text} → reads data.id
+     *   2. POST /sessions/token → avatar identity + data.id → access_token + session_id
      *
      * Called OUTSIDE any DB transaction.
      *
@@ -50,55 +76,22 @@ class HeygenProvider implements ProviderSessionService
     {
         $apiKey = (string) config('interview.heygen.api_key', '');
 
-        // Step 1: create context
-        // C8 (RV-3): conditionally include system_prompt when the composed prompt is available.
-        // When systemPrompt is null (C7a backward-compatible path), the key is OMITTED entirely —
-        // the outbound body is identical to the pre-C8 shape.
-        // NOTE: 'system_prompt' field name and the liveavatar.com/v1/contexts endpoint are INFERRED
-        // from the C7a scaffold and are NOT verified against live provider docs. Client confirmation
-        // of the real provider contract is required before live deploy. The PR-gated
-        // HeygenProviderPayloadTest.php assertion catches any rename immediately (RV-3).
-        $contextBody = [
-            'competency_code' => $ctx->competencyCode,
-            'question_index' => $ctx->questionIndex,
-        ];
-
-        if ($ctx->systemPrompt !== null) {
-            $contextBody['system_prompt'] = $ctx->systemPrompt;
-        }
-
-        // C14: the organization's active avatar template, if it has one.
-        //
-        // Merged rather than assigned, so an organization with NO active
-        // template sends exactly the body it sent before templates existed —
-        // which is the state every tenant is in on the day this ships.
-        //
-        // The template's keys are additive: it can only add avatar_id,
-        // avatar_persona, voice_settings and friends. It cannot overwrite
-        // competency_code, question_index or system_prompt, because those are
-        // the interview, not its appearance.
-        $contextBody = array_merge(
-            TemplatePayload::heygen($this->activeTemplateConfig()),
-            $contextBody,
-        );
-
         $ctxResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/contexts', $contextBody);
+            ->post(self::BASE_URL.'/contexts', $this->buildContextBody($session, $ctx));
 
         if (! $ctxResponse->successful()) {
-            $this->throwRedacted($apiKey, $ctxResponse->status(), 'context creation failed');
+            $this->throwRedacted($apiKey, $ctxResponse, 'context creation failed');
         }
 
-        $contextId = $ctxResponse->json('data.context_id', '');
+        // @wire-source legacy-demo/src/pages/api/interview/start.ts:265 — the id is
+        // read from `data.id`. `data.context_id` does NOT exist in the real contract.
+        $contextId = (string) $ctxResponse->json('data.id', '');
 
-        // Step 2: issue session token
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/sessions/token', [
-                'context_id' => $contextId,
-            ]);
+            ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($contextId));
 
         if (! $tokenResponse->successful()) {
-            $this->throwRedacted($apiKey, $tokenResponse->status(), 'session token issuance failed');
+            $this->throwRedacted($apiKey, $tokenResponse, 'session token issuance failed');
         }
 
         $data = $tokenResponse->json('data', []);
@@ -106,7 +99,10 @@ class HeygenProvider implements ProviderSessionService
         $sessionId = $data['session_id'] ?? null;
 
         if ($accessToken === null || $sessionId === null) {
-            throw new ProviderException('HeyGen: malformed token response (missing access_token or session_id)', false);
+            throw new ProviderException(
+                'HeyGen: malformed token response (missing access_token or session_id)',
+                ProviderFailureClass::Upstream,
+            );
         }
 
         return new ProviderToken(
@@ -118,12 +114,128 @@ class HeygenProvider implements ProviderSessionService
     }
 
     /**
+     * Build the `POST /v1/contexts` body — exactly `{name, prompt, opening_text}`.
+     *
+     * `opening_text` (PR3, design D9/D11): sourced from `QuestionContext.openingText`,
+     * composed by `App\Services\Conversation\OpeningTextComposer`. Omitted (not null)
+     * when the caller passes no opening text — same "unset means absent" convention
+     * `prompt` already uses.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:246-267
+     *
+     * @return array<string, string>
+     */
+    private function buildContextBody(InterviewSession $session, QuestionContext $ctx): array
+    {
+        $body = [
+            // Unique per LiveAvatar account (@wire-source start.ts:250-253 — a stable
+            // name collided on every interview after the first). F3: a RESUME re-issues
+            // this call for the SAME interview_session_id (handleResumeInCorso ->
+            // ProviderSessionService::issue()), so the id alone is not enough — the ULID
+            // makes every issue() call distinct even within the same millisecond.
+            // No candidate PII: interview_session_id is BEAI's own opaque internal id,
+            // never candidate_ref (ratified decision #8).
+            'name' => sprintf('beai-%d-%s', $session->id, (string) Str::ulid()),
+        ];
+
+        // @wire-source start.ts:255 — the real field name is `prompt`, NOT
+        // `system_prompt` (which was never a real LiveAvatar field). Omitted (not
+        // null) when there is no composed prompt yet, matching TemplatePayload's
+        // "unset means absent" convention.
+        if ($ctx->systemPrompt !== null) {
+            $body['prompt'] = $ctx->systemPrompt;
+        }
+
+        // @wire-source start.ts:255 (`opening_text`, the avatar's first spoken line,
+        // composed SEPARATELY from `prompt` — PR3, design D9). Omitted when the caller
+        // has no composed greeting (e.g. the RESUME-degraded path never fails to
+        // compose an opening — only the system prompt can degrade — but the null
+        // path is kept for symmetry and defensive callers).
+        if ($ctx->openingText !== null) {
+            $body['opening_text'] = $ctx->openingText;
+        }
+
+        return $body;
+    }
+
+    /**
+     * Build the `POST /v1/sessions/token` body — avatar identity lives HERE, never
+     * on `/contexts` (PR2 D1/D2, delta spec "Avatar Identity Belongs to the
+     * Session-Token Call").
+     *
+     * `array_replace_recursive`, NOT `array_merge`: the template emits
+     * `avatar_persona.{voice_id, language}`; this method owns
+     * `avatar_persona.context_id`. A shallow merge would replace the whole
+     * `avatar_persona` node and silently drop voice/language — the C14
+     * "operator sets a voice, hears no difference" failure at a new address.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
+     *
+     * @return array<string, mixed>
+     */
+    private function buildSessionTokenBody(string $contextId): array
+    {
+        $templateFields = $this->allowlistedTemplateFields($this->activeTemplateConfig());
+
+        $providerOwned = [
+            'mode' => 'FULL',
+            'is_sandbox' => false,
+            'avatar_persona' => [
+                'context_id' => $contextId,
+            ],
+        ];
+
+        return array_replace_recursive($templateFields, $providerOwned);
+    }
+
+    /**
+     * Filter `TemplatePayload::heygen()`'s output down to the demo-proven field set
+     * (PR2 D2). Everything outside `TOKEN_FIELD_ALLOWLIST` — union'd with
+     * `config('interview.heygen.extra_token_fields', [])` — is dropped, not sent.
+     *
+     * @param  array<string, mixed>  $templateConfig
+     * @return array<string, mixed>
+     */
+    private function allowlistedTemplateFields(array $templateConfig): array
+    {
+        $mapped = TemplatePayload::heygen($templateConfig);
+
+        $allowlist = array_unique(array_merge(
+            self::TOKEN_FIELD_ALLOWLIST,
+            (array) config('interview.heygen.extra_token_fields', []),
+        ));
+
+        $filtered = [];
+
+        foreach ($allowlist as $path) {
+            $value = data_get($mapped, $path);
+
+            if ($value !== null) {
+                data_set($filtered, $path, $value);
+            }
+        }
+
+        return $filtered;
+    }
+
+    /**
      * Fetch the authoritative HeyGen server-side transcript.
      *
      * Returns an array of utterance-like rows for REPLACE reconciliation at /end.
      * Each row: ['speaker' => 'candidate'|'avatar', 'text' => string, 'ts' => ISO8601 string].
      *
+     * Fail-loud on shape drift (PR4, design D7): HTTP non-2xx stays soft (unchanged
+     * — log + return `[]`, best-effort transcript). But a 2xx whose body does NOT
+     * match the real contract (`data.transcript_data`, rows keyed `role`/`transcript`)
+     * THROWS `ProviderTranscriptShapeException` instead of silently degrading to `[]`
+     * — see `InterviewController::replaceUtterances()` (F1): a silently-empty
+     * transcript here used to DELETE every persisted utterance and insert nothing.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/end.ts:76-84
+     *
      * @return array<int, array{speaker: string, text: string, ts: string}>
+     *
+     * @throws ProviderTranscriptShapeException When the 2xx body does not match the real shape.
      */
     public function reconcileTranscript(InterviewSession $session): array
     {
@@ -148,17 +260,46 @@ class HeygenProvider implements ProviderSessionService
             return [];
         }
 
-        $rows = $response->json('data', []);
+        // @wire-source end.ts:76-84 — the real field is `data.transcript_data`,
+        // NOT `data` directly. Absent/not-array = a genuine contract drift, not a
+        // valid "no transcript yet" empty state (that's `[]` present UNDER
+        // transcript_data — checked below by array_map simply having nothing to do).
+        $rows = $response->json('data.transcript_data');
 
-        return array_map(function (array $row): array {
+        if (! is_array($rows)) {
+            throw new ProviderTranscriptShapeException(
+                "HeyGen: transcript response missing or malformed 'data.transcript_data' (session {$session->id})",
+            );
+        }
+
+        return array_map(function (mixed $row) use ($session): array {
+            if (! is_array($row) || ! isset($row['role'], $row['transcript']) || ! is_string($row['transcript'])) {
+                throw new ProviderTranscriptShapeException(
+                    "HeyGen: transcript row missing 'role' or 'transcript' (session {$session->id})",
+                );
+            }
+
+            // @wire-source none — inferred: the demo never reads a role beyond
+            // user/assistant; candidate/avatar/agent are defensive synonyms.
+            // Any OTHER role is a genuine contract drift — today's code silently
+            // misattributed every unknown role to the avatar; that is now a throw.
+            $speaker = match ($row['role']) {
+                'user', 'candidate' => 'candidate',
+                'assistant', 'avatar', 'agent' => 'avatar',
+                default => throw new ProviderTranscriptShapeException(
+                    "HeyGen: unrecognized transcript role [{$row['role']}] (session {$session->id})",
+                ),
+            };
+
             return [
-                'speaker' => $row['role'] === 'user' ? 'candidate' : 'avatar',
-                'text' => (string) ($row['content'] ?? ''),
+                'speaker' => $speaker,
+                'text' => $row['transcript'],
+                // time_ms absent → tolerate, fall back to now() (@wire-source none — inferred).
                 'ts' => isset($row['time_ms'])
                     ? now()->subMilliseconds((int) $row['time_ms'])->toIso8601String()
                     : now()->toIso8601String(),
             ];
-        }, is_array($rows) ? $rows : []);
+        }, $rows);
     }
 
     /**
@@ -188,27 +329,48 @@ class HeygenProvider implements ProviderSessionService
     }
 
     /**
-     * Throw a ProviderException with the raw response body REDACTED.
+     * Throw a ProviderException, classified by HTTP status, with the raw response
+     * body REDACTED — but the provider's own diagnostic message PRESERVED (PR1 D4, D6).
      *
      * Security (task 14.3): the raw provider response may echo the API key or contain
-     * internal endpoint details. The key and raw body MUST be stripped before logging or
-     * re-throwing. Only a generic error message with the HTTP status is safe to surface.
+     * internal endpoint details. The key MUST be stripped before logging or re-throwing;
+     * the full raw body is NEVER logged. `ProviderErrorMessage::extract()` pulls out only
+     * the provider's own complaint (`message` ?? `error` ?? `data.message`), redacts the
+     * key within it, and fails closed (returns null) if the key would otherwise survive.
      */
-    private function throwRedacted(string $apiKey, int $status, string $context): never
+    private function throwRedacted(string $apiKey, Response $response, string $context): never
     {
-        $retryable = $status === 429;
+        $status = $response->status();
+        $class = self::classify($status);
+        $extracted = ProviderErrorMessage::extract($response->json(), $apiKey);
 
-        // Log at WARNING level with REDACTED body — never include raw response or key
+        // Log at WARNING level with the extracted (already-redacted) message —
+        // never the raw response body, which may still contain HEYGEN_API_KEY.
         Log::warning('HeyGen: provider call failed', [
             'context' => $context,
             'status' => $status,
-            // Deliberately NO 'response_body' — may contain HEYGEN_API_KEY
+            'class' => $class->value,
+            'provider_message' => $extracted,
         ]);
 
+        $suffix = $extracted !== null ? " — {$extracted}" : ' — provider response redacted';
+
         throw new ProviderException(
-            "HeyGen: {$context} (HTTP {$status}) — provider response redacted",
-            $retryable,
+            "HeyGen: {$context} (HTTP {$status}){$suffix}",
+            $class,
         );
+    }
+
+    /**
+     * Classify an HTTP status into the three-way provider failure taxonomy (PR1 D4).
+     */
+    private static function classify(int $status): ProviderFailureClass
+    {
+        return match (true) {
+            $status === 429 => ProviderFailureClass::Throttle,
+            $status >= 500 => ProviderFailureClass::Upstream,
+            default => ProviderFailureClass::ClientError,
+        };
     }
 
     /**

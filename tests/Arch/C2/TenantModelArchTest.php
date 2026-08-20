@@ -15,6 +15,7 @@ use App\Models\Competency;
 use App\Models\FrameworkGap;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Models\RefreshToken;
 use App\Models\Role;
 use App\Models\TenantModel;
 use App\Models\User;
@@ -68,6 +69,15 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // is enforced at the controller layer (forceFill organization_id from project)
         // and via the TenantContextCandidate middleware. See C6 design invariants.
         Participant::class,
+        // backoffice-session-refresh-hardening — RefreshToken intentionally does
+        // NOT extend TenantModel. App\Support\Auth\RefreshTokenStore is reached
+        // from POST /api/auth/refresh, which runs OUTSIDE auth:api (by design —
+        // an expired access token is exactly when this endpoint must still
+        // work) and therefore BEFORE any tenant context is established. A
+        // TenantModel global scope would filter by org_id before that context
+        // exists, breaking every rotation. RefreshToken has no organization_id
+        // column at all — it is user-scoped via the `user_id` foreign key only.
+        RefreshToken::class,
     ];
 
     $violations = [];

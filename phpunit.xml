@@ -68,5 +68,8 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="XDEBUG_MODE" value="off"/>
+        <!-- backoffice-session-refresh-hardening D1: deterministic allowlist for
+             CORS preflight/config tests — both Nuxt dev origins, never a wildcard. -->
+        <env name="CORS_ALLOWED_ORIGINS" value="http://localhost:3001,http://localhost:3000"/>
     </php>
 </phpunit>

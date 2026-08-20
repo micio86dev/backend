@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ProviderException;
@@ -17,6 +18,7 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Role;
+use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
@@ -50,6 +52,7 @@ class InterviewController extends Controller
 
     public function __construct(
         private readonly SystemPromptComposer $composer,
+        private readonly OpeningTextComposer $openingComposer,
     ) {}
 
     // =========================================================================
@@ -122,6 +125,21 @@ class InterviewController extends Controller
         // without creating any row or making any provider call.
         $isResumeInCorso = $this->hasActiveInCorsoSession($pid, $nextCompetency['competency_code']);
 
+        // (PR3) Hoisted here (was previously computed only on the non-resume path, just
+        // before handleIssuePending()): both flags are needed to select the opening-greeting
+        // VARIANT below, before QuestionContext is built — participant->status cannot change
+        // between here and its prior use site, so hoisting is safe (design D9).
+        // Only the FIRST competency of any participant's interview triggers the started_at
+        // stamp AND the 'first' greeting variant.
+        //
+        // (participant-error-recovery D2b) First competency ≡ participant.started_at
+        // === null — NOT participant.status === 'in_attesa'. A participant recovered
+        // from `errore` is flipped back to `in_attesa` by the recovery action but
+        // KEEPS its original started_at (it is resuming, not starting fresh). Keying
+        // this off status alone would re-greet a recovered candidate as brand new AND
+        // silently overwrite started_at to now() below, destroying the true start time.
+        $isFirst = $participant->started_at === null;
+
         $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
         if ($compositionResult instanceof JsonResponse) {
             if (! $isResumeInCorso) {
@@ -153,6 +171,17 @@ class InterviewController extends Controller
             ? (string) config('conversation.prompt_version')
             : $compositionResult->version;
 
+        // (PR3, design D9) Compose the opening greeting — INDEPENDENT of the composed
+        // system prompt's success/failure. The avatar must never go silent, even on the
+        // degraded RESUME path (only the system prompt degrades there, never the greeting).
+        // Variant: 'resume' on RESUME in_corso, else 'first' on the participant's very
+        // first competency, else 'next'. Locale = $project->language (matches the system
+        // prompt, per D9).
+        $openingVariant = $isResumeInCorso ? 'resume' : ($isFirst ? 'first' : 'next');
+        $competencyName = Competency::where('code', $nextCompetency['competency_code'])->first()
+            ?->getTranslation('name', $project->language) ?? $nextCompetency['competency_code'];
+        $openingText = $this->openingComposer->compose($openingVariant, $competencyName, $project->language)->text;
+
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
@@ -161,6 +190,8 @@ class InterviewController extends Controller
             // body), but promptVersion is restored from config (FIX C1) — never null in a 201.
             systemPrompt: $systemPrompt,
             promptVersion: $promptVersion,
+            // PR3: opening greeting, always composed (never null on this path — see above).
+            openingText: $openingText,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -171,11 +202,7 @@ class InterviewController extends Controller
 
         // ─── All pending paths (new, resume-pending, UniqueConstraint recovery) ─
         // The isFirstCompetency flag drives whether participant.started_at + status is stamped.
-        // Only the FIRST competency of any participant's interview triggers the started_at stamp.
-        // First competency ≡ participant.status = 'in_attesa' (not yet started any interview).
         // If participant.status is already 'in_corso', this is a subsequent competency.
-        $isFirst = $participant->status === 'in_attesa';
-
         return $this->handleIssuePending($session, $participant, $providerService, $ctx, isFirstCompetency: $isFirst);
     }
 
@@ -197,6 +224,14 @@ class InterviewController extends Controller
      * (8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).
      *     Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().
      * (9) COMMIT. Return 200.
+     *
+     * PR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS
+     * `ProviderTranscriptShapeException` on a shape-mismatched transcript response
+     * instead of silently degrading to `[]`. Because the throw happens BEFORE
+     * `replaceUtterances()` runs its DELETE, and propagates out of THIS transaction
+     * closure, `DB::transaction()` rolls back the ENTIRE txn automatically — the
+     * DELETE never commits, ended_at is never stamped, and FinalizeInterview is
+     * never dispatched. Caught below and surfaced as 502 (Upstream classification).
      */
     public function end(Request $request): JsonResponse
     {
@@ -222,68 +257,84 @@ class InterviewController extends Controller
         $progress = null;
 
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
-        DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress): void {
-            // Lock the session row (scope MUST cover the status UPDATE in step 6)
-            $locked = InterviewSession::lockForUpdate()->find($session->id);
+        try {
+            DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress): void {
+                // Lock the session row (scope MUST cover the status UPDATE in step 6)
+                $locked = InterviewSession::lockForUpdate()->find($session->id);
 
-            if ($locked === null) {
-                // Session disappeared under us (very rare) — treat as 404
-                abort(404);
-            }
-
-            // (4) FIX-3 guard: idempotency guard inside the FOR UPDATE lock
-            if ($locked->status !== 'in_corso') {
-                // NOT re-stamping ended_at, NOT re-dispatching FinalizeInterview
-                abort(Response::HTTP_CONFLICT);
-            }
-
-            // (5) HeyGen: replaceUtterances inside the txn (inside the lock)
-            if ($locked->provider === 'heygen') {
-                $transcript = $providerService->reconcileTranscript($locked);
-                $this->replaceUtterances($locked, $transcript);
-            }
-            // Tavus: no reconcile — live /utterance rows are kept as-is.
-
-            // (6) UPDATE session status + ended_at
-            $locked->status = $endedReason;
-            $locked->ended_at = now();
-            $locked->ended_reason = $endedReason;
-            $locked->save();
-
-            // (7) Count ended sessions (completed, timeout, skipped) for this participant + project
-            $endedCount = InterviewSession::where('participant_id', $pid)
-                ->where('project_id', $projectId)
-                ->whereIn('status', ['completed', 'timeout', 'skipped'])
-                ->count();
-            $totalCompetencies = DB::table('project_competencies')
-                ->where('project_id', $projectId)
-                ->count();
-
-            // (8) Last-question CAS single-winner
-            if ($endedCount === $totalCompetencies && $totalCompetencies > 0) {
-                $won = Participant::where('id', $pid)
-                    ->where('status', 'in_corso')
-                    ->update(['status' => 'in_valutazione']);
-
-                if ($won === 1) {
-                    // afterCommit() attaches to THIS explicit transaction
-                    FinalizeInterview::dispatch($pid)->afterCommit();
+                if ($locked === null) {
+                    // Session disappeared under us (very rare) — treat as 404
+                    abort(404);
                 }
-            }
 
-            // C10 D5: set ONLY on the success path — every abort() above (:225,
-            // :231) throws past this point, so reaching it means the write
-            // committed. Captured here (not re-derived after the closure returns)
-            // so the emitted competency_code is exactly the one this /end call
-            // just ended, even if a later request changes state before the event
-            // fires.
-            $progress = [
-                'participant_id' => $pid,
-                'project_id' => $projectId,
-                'competency_code' => $session->competency_code,
-            ];
-            // (9) COMMIT happens at end of DB::transaction closure
-        });
+                // (4) FIX-3 guard: idempotency guard inside the FOR UPDATE lock
+                if ($locked->status !== 'in_corso') {
+                    // NOT re-stamping ended_at, NOT re-dispatching FinalizeInterview
+                    abort(Response::HTTP_CONFLICT);
+                }
+
+                // (5) HeyGen: replaceUtterances inside the txn (inside the lock)
+                if ($locked->provider === 'heygen') {
+                    $transcript = $providerService->reconcileTranscript($locked);
+                    $this->replaceUtterances($locked, $transcript);
+                }
+                // Tavus: no reconcile — live /utterance rows are kept as-is.
+
+                // (6) UPDATE session status + ended_at
+                $locked->status = $endedReason;
+                $locked->ended_at = now();
+                $locked->ended_reason = $endedReason;
+                $locked->save();
+
+                // (7) Count ended sessions (completed, timeout, skipped) for this participant + project
+                $endedCount = InterviewSession::where('participant_id', $pid)
+                    ->where('project_id', $projectId)
+                    ->whereIn('status', ['completed', 'timeout', 'skipped'])
+                    ->count();
+                $totalCompetencies = DB::table('project_competencies')
+                    ->where('project_id', $projectId)
+                    ->count();
+
+                // (8) Last-question CAS single-winner
+                if ($endedCount === $totalCompetencies && $totalCompetencies > 0) {
+                    $won = Participant::where('id', $pid)
+                        ->where('status', 'in_corso')
+                        ->update(['status' => 'in_valutazione']);
+
+                    if ($won === 1) {
+                        // afterCommit() attaches to THIS explicit transaction
+                        FinalizeInterview::dispatch($pid)->afterCommit();
+                    }
+                }
+
+                // C10 D5: set ONLY on the success path — every abort() above (:225,
+                // :231) throws past this point, so reaching it means the write
+                // committed. Captured here (not re-derived after the closure returns)
+                // so the emitted competency_code is exactly the one this /end call
+                // just ended, even if a later request changes state before the event
+                // fires.
+                $progress = [
+                    'participant_id' => $pid,
+                    'project_id' => $projectId,
+                    'competency_code' => $session->competency_code,
+                ];
+                // (9) COMMIT happens at end of DB::transaction closure
+            });
+        } catch (ProviderException $e) {
+            // PR4 (F1 fix): a shape-mismatched transcript (ProviderTranscriptShapeException,
+            // class Upstream) rolled the WHOLE transaction back — the DELETE never
+            // committed, existing utterances are untouched, ended_at was never stamped.
+            // Classified Upstream → 502 (same status a genuine 5xx transcript-fetch
+            // failure would carry via handleProviderFailure(), kept consistent here
+            // even though /end has no participant-touching branch to route through).
+            Log::warning('C7a: /end aborted — provider transcript reconciliation failed', [
+                'session_id' => $session->id,
+                'class' => $e->failureClass()->value,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['error' => 'provider_error'], Response::HTTP_BAD_GATEWAY);
+        }
 
         if ($progress !== null) {
             event(new CompetencySessionEnded(
@@ -557,11 +608,27 @@ class InterviewController extends Controller
                 $session->status = 'in_corso';
                 $session->save();
 
-                // On first competency only: stamp participant.started_at + status (direct property)
+                // started_at is NOT in $fillable → direct property assignment is
+                // mandatory. Stamped ONLY on the participant's true first
+                // competency (isFirstCompetency, keyed off started_at === null —
+                // see D2b above), never on a resumed/recovered competency.
                 if ($isFirstCompetency) {
-                    // started_at is NOT in $fillable → direct property assignment is mandatory
                     $participant->started_at = now();
+                }
+
+                // (participant-error-recovery D2b) The status transition to
+                // in_corso is a SEPARATE concern from the started_at stamp: a
+                // recovered participant (status=in_attesa, started_at already
+                // set, isFirstCompetency=false) must STILL move to in_corso
+                // here, or it is stranded at in_attesa forever — /end's later
+                // completion CAS requires status='in_corso' to reach
+                // in_valutazione. Guarded so an already in_corso participant
+                // (the normal 2nd+ competency path) triggers no redundant write.
+                if ($participant->status !== 'in_corso') {
                     $participant->status = 'in_corso';
+                }
+
+                if ($participant->isDirty()) {
                     $participant->save();
                 }
             });
@@ -584,28 +651,73 @@ class InterviewController extends Controller
     /**
      * Handle provider HTTP failure (ProviderException).
      *
-     * (4b) 5xx/timeout → session error + participant errore + 502.
-     * (4c) 429 → session stays pending + 429 provider_busy (NOT errore).
+     * PR1 (delta spec D4) — three-way classification, switched ONLY here:
+     * (4c) Throttle (429)     → session stays pending, 429 provider_busy (NOT errore).
+     * (4d) ClientError (4xx)  → session error, participant UNCHANGED, HTTP 500 (our bug,
+     *                           not the provider's — see `markParticipantFailed()` below).
+     * (4b) Upstream (5xx/timeout/malformed) → session error, participant → errore, 502.
+     *      Unchanged from pre-PR1 behavior.
      */
     private function handleProviderFailure(
         ProviderException $e,
         InterviewSession $session,
         Participant $participant,
     ): JsonResponse {
-        if ($e->isRetryable()) {
+        return match ($e->failureClass()) {
             // (4c) 429 — retryable; DO NOT flip participant to errore; session stays pending
-            return response()->json(['error' => 'provider_busy'], Response::HTTP_TOO_MANY_REQUESTS);
-        }
+            ProviderFailureClass::Throttle => response()->json(['error' => 'provider_busy'], Response::HTTP_TOO_MANY_REQUESTS),
 
-        // (4b) 5xx/timeout — update session to error + participant to errore
+            // (4d) A 4xx WE caused (the provider correctly rejected a malformed request).
+            // Session is marked error for visibility, but the participant is left
+            // UNCHANGED — a payload bug on our side must not permanently burn the
+            // candidate. HTTP 500 (our fault), not 502 (which would blame the upstream).
+            ProviderFailureClass::ClientError => $this->markSessionError($session, Response::HTTP_INTERNAL_SERVER_ERROR),
+
+            // (4b) Genuine provider failure — unchanged from pre-PR1 behavior.
+            ProviderFailureClass::Upstream => $this->markSessionError($session, Response::HTTP_BAD_GATEWAY, $participant),
+        };
+    }
+
+    /**
+     * Mark the session as errored and return the provider_error response.
+     *
+     * When `$participant` is given, also runs `markParticipantFailed()` — the
+     * Upstream-only path. ClientError calls this WITHOUT a participant, so the
+     * candidate's status is never touched for a bug on our own side.
+     */
+    private function markSessionError(
+        InterviewSession $session,
+        int $httpStatus,
+        ?Participant $participant = null,
+    ): JsonResponse {
         try {
             $session->status = 'error';
             $session->ended_reason = 'error';
             $session->save();
         } catch (\Throwable) {
-            // Best-effort — if even the error update fails, still return 502
+            // Best-effort — if even the error update fails, still return the failure status
         }
 
+        if ($participant !== null) {
+            $this->markParticipantFailed($participant);
+        }
+
+        return response()->json(['error' => 'provider_error'], $httpStatus);
+    }
+
+    /**
+     * Flip a participant to the terminal `errore` status after a genuine (Upstream)
+     * provider failure.
+     *
+     * SEAM with `participant-error-recovery` (design D5): this method is extracted
+     * VERBATIM from the pre-PR1 `handleProviderFailure()` body (formerly :609-617).
+     * This change (`liveavatar-contract-alignment`) only CREATES the method and calls
+     * it from the Upstream branch above — it does not change what happens inside it.
+     * `participant-error-recovery` owns and edits ONLY this method's body (recoverable
+     * status, audit log, admin retry) and must not re-shape the classification switch.
+     */
+    private function markParticipantFailed(Participant $participant): void
+    {
         try {
             // in_attesa → errore and in_corso → errore are both allowed (CRITICAL-1)
             if (! in_array($participant->status, ['completato', 'errore'], true)) {
@@ -615,8 +727,6 @@ class InterviewController extends Controller
         } catch (\Throwable) {
             // Best-effort
         }
-
-        return response()->json(['error' => 'provider_error'], Response::HTTP_BAD_GATEWAY);
     }
 
     /**
@@ -707,18 +817,37 @@ class InterviewController extends Controller
      * This runs INSIDE the explicit DB transaction + FOR UPDATE lock from /end,
      * preventing a concurrent /utterance from interleaving between DELETE and INSERT.
      *
+     * PR4 (design finding F1, delta spec D7) — CRITICAL fix: the empty-guard used to
+     * sit AFTER the unconditional DELETE, so ANY empty `$transcript` (a transport
+     * failure, OR — before this PR — a silently-mismatched response shape) deleted
+     * every already-persisted utterance row and inserted nothing. Data destruction,
+     * not merely an empty transcript.
+     *
+     * Fixed by REORDERING the guard before the DELETE, not by adding a nested
+     * transaction: `HeygenProvider::reconcileTranscript()` (PR4) now THROWS
+     * `ProviderTranscriptShapeException` on any shape mismatch instead of returning
+     * `[]` for that reason — so by the time control reaches this method, an empty
+     * `$transcript` is ALWAYS a legitimate case (HTTP fetch failure, soft-logged;
+     * or a genuinely empty-but-valid `transcript_data: []`), never a parsing bug in
+     * disguise. That invariant makes reordering sufficient: DELETE and INSERT stay
+     * adjacent and uninterrupted, so they only ever run TOGETHER (never DELETE
+     * alone) — the atomic-replace guarantee, without a redundant nested transaction
+     * (this method already runs inside the /end explicit transaction + FOR UPDATE
+     * lock, which already makes DELETE+INSERT atomic from any concurrent reader's
+     * perspective).
+     *
      * @param  array<int, array{speaker: string, text: string, ts: string}>  $transcript
      */
     private function replaceUtterances(InterviewSession $session, array $transcript): void
     {
-        // DELETE all existing utterances for this session
-        DB::table('utterances')->where('interview_session_id', $session->id)->delete();
-
         if (empty($transcript)) {
             return;
         }
 
-        // INSERT the authoritative server transcript
+        // DELETE all existing utterances for this session, then INSERT the
+        // authoritative server transcript — only ever reached together (see above).
+        DB::table('utterances')->where('interview_session_id', $session->id)->delete();
+
         $rows = array_map(fn (array $row) => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,

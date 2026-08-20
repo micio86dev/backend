@@ -431,6 +431,22 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PasswordRecovery');
 
+// ─── backoffice-session-refresh-hardening ──────────────────────────────────────
+
+// Unit/Auth — needs TestCase + RefreshDatabase: App\Support\Auth\RefreshTokenStore
+// is backed by the `refresh_tokens` table (storage corrected from Redis to
+// PostgreSQL — durable auth state does not belong on the shared, evictable
+// cache Redis instance), so RefreshTokenStoreTest exercises a real migrated
+// schema, not a Cache facade fake.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Auth');
+
+// Feature/Auth — RefreshDatabase: rotation/reuse/CORS/candidate-isolation
+// feature tests mint real Users/Participants via factories.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Auth');
+
 // ─── framework-catalog-it-translations ─────────────────────────────────────────
 
 // Feature/Console — RefreshDatabase: ForgetLocaleCommandTest seeds real

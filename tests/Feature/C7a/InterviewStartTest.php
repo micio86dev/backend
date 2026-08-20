@@ -383,6 +383,165 @@ test('POST /start provider 429 → 429 provider_busy; participant NOT → errore
     }
 });
 
+test('POST /start provider 429 on a SUBSEQUENT (in_corso-origin) competency → 429 provider_busy; participant stays in_corso (participant-error-recovery regression guard)', function (): void {
+    // Extends the in_attesa-origin 429 test above to the in_corso origin —
+    // the SAME ClientError/Throttle-never-marks-the-participant guarantee
+    // must also hold for a candidate already mid-interview (already-shipped
+    // liveavatar-contract-alignment behavior; pinned here against silent
+    // regression per the participant-error-recovery task list).
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['error' => 'Too Many Requests'], 429),
+    ]);
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 2);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'status' => 'completed',
+    ]);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(429);
+    $response->assertJson(['error' => 'provider_busy']);
+
+    $participant->refresh();
+    expect($participant->status)->toBe('in_corso');
+    expect($participant->status)->not->toBe('errore');
+
+    $resolver->setOrgId($org->id);
+    $session = InterviewSession::where('participant_id', $participant->id)
+        ->where('competency_code', $comps[1]->code)
+        ->first();
+    expect($session)->not->toBeNull();
+    expect($session->status)->toBe('pending');
+});
+
+test('POST /start provider 4xx on a SUBSEQUENT (in_corso-origin) competency → 500; session status = error; participant.status UNCHANGED (participant-error-recovery regression guard)', function (): void {
+    // Extends the in_attesa-origin 4xx test below to the in_corso origin —
+    // same D4 guarantee, already-shipped behavior, pinned against regression.
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['message' => 'prompt is required'], 422),
+    ]);
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 2);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'status' => 'completed',
+    ]);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(500);
+    $response->assertJson(['error' => 'provider_error']);
+
+    $resolver->setOrgId($org->id);
+    $session = InterviewSession::where('participant_id', $participant->id)
+        ->where('competency_code', $comps[1]->code)
+        ->first();
+    expect($session)->not->toBeNull();
+    expect($session->status)->toBe('error');
+
+    $participant->refresh();
+    expect($participant->status)->not->toBe('errore');
+    expect($participant->status)->toBe('in_corso');
+});
+
+test('POST /start provider 4xx (HeyGen) → 500; session status = error; participant.status UNCHANGED (PR1 D4)', function (): void {
+    // 422: HeyGen correctly rejected a request WE malformed — a client contract error,
+    // not an upstream failure. Before PR1 this was classified identically to a 5xx
+    // (502 + participant permanently → errore). This is the acceptance test for D4's
+    // three-way split: a bug in OUR payload must not permanently burn the candidate.
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['message' => 'prompt is required'], 422),
+    ]);
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(500);
+    $response->assertJson(['error' => 'provider_error']);
+
+    // Session marked error (same write as the 5xx path — only the HTTP status differs)
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::where('participant_id', $participant->id)->first();
+    expect($session)->not->toBeNull();
+    expect($session->status)->toBe('error');
+
+    // Participant MUST NOT be transitioned to errore — this is the whole point of D4
+    $participant->refresh();
+    expect($participant->status)->not->toBe('errore');
+    expect($participant->status)->toBe('in_attesa');
+});
+
+test('POST /start provider 4xx (Tavus) → 500; session status = error; participant.status UNCHANGED (PR1 D4)', function (): void {
+    Http::fake([
+        '*tavusapi*/v2/conversations*' => Http::response(['error' => 'replica_id is invalid'], 400),
+    ]);
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1, 'tavus');
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(500);
+    $response->assertJson(['error' => 'provider_error']);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::where('participant_id', $participant->id)->first();
+    expect($session)->not->toBeNull();
+    expect($session->status)->toBe('error');
+
+    $participant->refresh();
+    expect($participant->status)->not->toBe('errore');
+    expect($participant->status)->toBe('in_attesa');
+});
+
 test('POST /start no remaining competency → 422', function (): void {
     Http::fake(heygenSuccessResponse());
     Queue::fake();
@@ -510,4 +669,47 @@ test('POST /start FIX-8: session + participant writes are in one transaction (bo
     expect($session->status)->toBe('in_corso');
     expect($participant->status)->toBe('in_corso');
     expect($participant->started_at)->not->toBeNull();
+});
+
+test('POST /start on a recovered participant (status=in_attesa, started_at already set) does NOT clobber started_at and greets with the "next" variant, not "first" (participant-error-recovery D2b)', function (): void {
+    // A recovered participant is flipped errore -> in_attesa (D2 recovery action)
+    // but keeps its ORIGINAL started_at — it is resuming, not starting fresh.
+    // $isFirst must key off started_at === null, NOT status === 'in_attesa',
+    // otherwise this candidate is greeted as brand new AND started_at is
+    // silently overwritten to now(), destroying the true interview start time.
+    Http::fake(heygenSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+
+    $participant->started_at = now()->subMinutes(20);
+    $participant->save();
+    $originalStartedAt = $participant->fresh()->started_at;
+
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+
+    // started_at is UNCHANGED — not overwritten to "now"
+    $participant->refresh();
+    expect($participant->started_at->getTimestamp())->toBe($originalStartedAt->getTimestamp());
+
+    // The avatar context was composed with the "next" opening greeting
+    // ("Great, let's move on...") — NOT the "first" one ("Hi, and welcome!").
+    Http::assertSent(function ($req) {
+        if (! str_contains($req->url(), '/contexts')) {
+            return false;
+        }
+
+        $body = $req->data();
+
+        return str_contains($body['opening_text'] ?? '', "Great, let's move on")
+            && ! str_contains($body['opening_text'] ?? '', 'Hi, and welcome');
+    });
 });

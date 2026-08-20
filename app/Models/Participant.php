@@ -30,12 +30,13 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * - booted() updating guard: rejects illegal status transitions via
  *   ParticipantTransitionException (→ HTTP 422).
  *
- * Allowed transitions (CRITICAL-1 complete map, C6+C7a):
+ * Allowed transitions (CRITICAL-1 complete map, C6+C7a; participant-error-recovery
+ * adds the errore → in_attesa recovery edge):
  *   in_attesa → in_corso | errore
  *   in_corso  → in_valutazione | errore
  *   in_valutazione → completato | errore
  *   completato → [] (terminal)
- *   errore     → [] (terminal)
+ *   errore     → in_attesa (ONLY via App\Actions\Participant\RecoverFailedParticipant)
  *
  * REQ: Participant Model and Schema, Participant Model Lifecycle Guard
  *
@@ -94,10 +95,12 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
      * C7a adds:   in_attesa→errore (hard-fail on first competency /start)
      *             in_corso→errore  (hard-fail on subsequent competency)
      *
-     * Both terminal states ('completato', 'errore') are EXPLICIT keys with empty arrays.
-     * The ?? [] fallback exists only as a last resort for unrecognized states; known
-     * terminal states MUST appear explicitly so the intent is visible and auditable.
-     * Neither terminal key may be removed or replaced with ?? [] fallthrough.
+     * 'completato' is an EXPLICIT key with an empty array — genuinely terminal, no
+     * outbound edge, ever. 'errore' carries exactly ONE outbound edge (in_attesa) —
+     * the participant-error-recovery recovery action; it is otherwise still terminal
+     * for every other target (in_corso/in_valutazione/completato all rejected). The
+     * ?? [] fallback exists only as a last resort for unrecognized states; both known
+     * keys MUST appear explicitly so the intent is visible and auditable.
      *
      * IMPORTANT: 'started_at' is NOT in $fillable — use direct property assignment:
      *   $participant->started_at = now();
@@ -112,7 +115,10 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
         'in_corso' => ['in_valutazione', 'errore'],
         'in_valutazione' => ['completato', 'errore'],
         'completato' => [],   // terminal — no outbound transitions (FIX-5)
-        'errore' => [],   // terminal — no outbound transitions
+        // (participant-error-recovery D2) ONE authorized recovery edge — written
+        // ONLY by App\Actions\Participant\RecoverFailedParticipant. Still terminal
+        // for every other transition target.
+        'errore' => ['in_attesa'],
     ];
 
     /**

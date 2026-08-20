@@ -40,6 +40,19 @@ return [
     */
     'heygen' => [
         'api_key' => env('HEYGEN_API_KEY'),
+
+        /*
+         * Dot-path allowlist widening for POST /sessions/token template fields
+         * beyond HeygenProvider::TOKEN_FIELD_ALLOWLIST (PR2 D2, liveavatar-contract-
+         * alignment). `voice_settings.*`, `video_settings.encoding`, and
+         * `max_session_duration` came from `avatar-tester` (a testbed), NOT the
+         * demo-proven call — they stay OFF until smoke-verified against the real
+         * LiveAvatar API. Empty by default: sending an unproven field risks a 422
+         * on every /start, the exact defect this change fixes.
+         *
+         * Example: ['voice_settings.speed', 'video_settings.encoding']
+         */
+        'extra_token_fields' => array_filter(explode(',', (string) env('HEYGEN_EXTRA_TOKEN_FIELDS', ''))),
     ],
 
     /*
@@ -49,6 +62,18 @@ return [
     */
     'tavus' => [
         'api_key' => env('TAVUS_API_KEY'),
+
+        /*
+         * Concurrency self-heal (PR6, design D8). On a Tavus concurrency-limit
+         * rejection, `TavusConcurrencyGuard` retries `_retries` times,
+         * `_backoff_ms` apart, before the request degrades to a client-facing
+         * 429 `provider_busy`. Ported from `legacy-demo` in HALF: the retry
+         * only — the blind account-wide reap is deliberately NOT ported (see
+         * `TavusConcurrencyGuard`'s class docblock). Settable to 0 to disable
+         * retrying entirely (fails straight to 429 on the first rejection).
+         */
+        'concurrency_retries' => (int) env('TAVUS_CONCURRENCY_RETRIES', 3),
+        'concurrency_backoff_ms' => (int) env('TAVUS_CONCURRENCY_BACKOFF_MS', 2000),
     ],
 
     /*
@@ -145,5 +170,18 @@ return [
     'frontend_default_locale' => 'it',
 
     'frontend_locales' => ['it', 'en'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Provider Smoke Check Gate (PR4 — design D10, layer L3)
+    |--------------------------------------------------------------------------
+    |
+    | `php artisan interview:smoke-check` refuses to run unless this is true.
+    | Costs real provider credits/quota on every invocation — never set true in
+    | CI or normal deploys; only export it manually in the shell that runs the
+    | command deliberately.
+    |
+    */
+    'smoke_enabled' => (bool) env('INTERVIEW_SMOKE_ENABLED', false),
 
 ];

@@ -43,13 +43,19 @@ final class TenantContext
         // backoffice-missing-pages D5 — the live-token kill switch. A
         // deactivated user can hold a valid JWT for up to 30 minutes
         // (config/jwt.php's ttl) with no token registry to revoke against,
-        // so this is the ONE enforcement point: every /api/* request
-        // (including /auth/refresh and /auth/me) already loads the user
-        // from the DB here. 403, not 401 — a 401 would trigger the
-        // backoffice's single-flight refresh (C11 D11) and read as "your
-        // session expired", which misrepresents an account someone
-        // deliberately disabled. Machine-facing, non-localized body,
-        // matching the adjacent fail-closed branch below.
+        // so this is the enforcement point for every auth:api-guarded
+        // request (including /auth/me). POST /api/auth/refresh no longer
+        // runs auth:api (backoffice-session-refresh-hardening D8 — it must
+        // work even when the access token has already expired), so
+        // $request->user() is null there and this branch does not run for
+        // it; AuthController::refresh() re-checks isDeactivated() itself
+        // before minting a new access token, so the kill switch still holds
+        // on that route, just enforced at a different layer. 403, not 401 —
+        // a 401 would trigger the backoffice's single-flight refresh (C11
+        // D11) and read as "your session expired", which misrepresents an
+        // account someone deliberately disabled. Machine-facing,
+        // non-localized body, matching the adjacent fail-closed branch
+        // below.
         if ($user->isDeactivated()) {
             return response()->json(['error' => 'account_deactivated'], Response::HTTP_FORBIDDEN);
         }

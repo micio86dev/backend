@@ -15,8 +15,20 @@ declare(strict_types=1);
  *
  * English is the platform default language (config app.fallback_locale), so these
  * strings are also the fallback for any project language without its own phrase file.
+ *
+ * `opening.*` (PR3, design D9): the avatar's spoken opening greeting per variant,
+ * composed by App\Services\Conversation\OpeningTextComposer. `:competency` is
+ * interpolated with the competency's display name. Interim/replaceable wording —
+ * changing it is a lang-file + `conversation.prompt_version` bump, never a
+ * provider wire-contract change.
  */
 return [
     'end_phrase' => "Let's move on to the next question.",
     'final_phrase' => 'Thank you for your time.',
+
+    'opening' => [
+        'first' => "Hi, and welcome! Let's start by talking about :competency.",
+        'next' => "Great, let's move on and talk about :competency.",
+        'resume' => "Let's pick up where we left off, talking about :competency.",
+    ],
 ];

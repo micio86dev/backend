@@ -102,7 +102,7 @@ test('a role_code mismatch refuses the mint with 422', function (): void {
     ])->assertStatus(422);
 });
 
-test('a terminal-status participant refuses the mint with 409', function (): void {
+test('a completed participant refuses the mint with 409 and reason completed', function (): void {
     config(['interview.candidate_app_url' => 'https://interview.example.com']);
     $org = Organization::factory()->create();
     $project = mintTestProject($org);
@@ -123,7 +123,39 @@ test('a terminal-status participant refuses the mint with 409', function (): voi
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-terminal',
         'display_name' => 'Done',
-    ])->assertStatus(409);
+    ])
+        ->assertStatus(409)
+        ->assertJson([
+            'message' => 'Conflict: participant has already completed this assessment.',
+            'reason' => 'completed',
+        ]);
+});
+
+test('a failed (errore) participant refuses the mint with 409, reason failed, and never says completed', function (): void {
+    config(['interview.candidate_app_url' => 'https://interview.example.com']);
+    $org = Organization::factory()->create();
+    $project = mintTestProject($org);
+    $token = mintTestOperator($org);
+
+    $p = new Participant;
+    $p->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'mint-cand-failed',
+        'display_name' => 'Errored',
+        'status' => 'in_attesa',
+    ]);
+    $p->save();
+    DB::table('participants')->where('id', $p->id)->update(['status' => 'errore']);
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'mint-cand-failed',
+        'display_name' => 'Errored',
+    ]);
+
+    $response->assertStatus(409)->assertJson(['reason' => 'failed']);
+    expect($response->json('message'))->not->toContain('completed');
 });
 
 test('lang omitted resolves end-to-end through the composer: project.language=en produces an /en/-prefixed entry_url', function (): void {

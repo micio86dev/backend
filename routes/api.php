@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
+use App\Http\Controllers\Api\ParticipantRecoveryController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
@@ -36,6 +37,7 @@ use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
 use App\Http\Middleware\RejectStaleCredentials;
+use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\TenantContext;
 use App\Http\Middleware\TenantContextCandidate;
 use App\Http\Middleware\TenantContextM2m;
@@ -50,16 +52,22 @@ Route::get('/health', HealthController::class);
 // as the worker HEALTHCHECK (wrapper PR5).
 Route::get('/health/queue', QueueHealthController::class);
 
-// ─── Auth routes (C2) ────────────────────────────────────────────────────────
+// ─── Auth routes (C2, refresh flow hardened by backoffice-session-refresh-hardening D8) ──
 // POST /api/auth/login is public (no auth middleware).
-// All other auth routes use auth:api explicitly — NEVER bare `auth` middleware,
+// POST /api/auth/refresh is PUBLIC too — authenticated by the httpOnly
+// refresh cookie + the refresh.csrf middleware, NEVER auth:api. This is
+// deliberate and load-bearing: tymon's auth:api guard rejects an EXPIRED
+// access token before the controller runs, so refreshing an expired session
+// would be structurally impossible behind auth:api (D8's second, independent
+// fix for the operator's "logged out constantly" complaint).
+// /logout and /me keep auth:api explicitly — NEVER bare `auth` middleware,
 // which would silently fall back to the `web` session guard.
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware(RequireRefreshCsrfHeader::class);
 
     Route::middleware('auth:api')->group(function (): void {
-        Route::post('/refresh', [AuthController::class, 'refresh']);
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
     });
@@ -226,6 +234,18 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/entry-links', [EntryLinkController::class, 'store']);
+});
+
+// ─── Participant Recovery (participant-error-recovery) ────────────────────
+// POST /api/participants/{id}/recover — the SOLE authorized path back out of
+// `errore`. Own route group, adjacent to (NOT inside) the Admin Read API
+// block above — it is a WRITE (atomically resets the participant + its
+// errored session(s)), not a read. ParticipantPolicy::recover denies viewer;
+// RecoverFailedParticipant resolves the participant scoped by TenantContext
+// (cross-org -> 404) under a row lock (design D1/D4/D6).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::post('/participants/{id}/recover', [ParticipantRecoveryController::class, 'store']);
 });
 
 // ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────
