@@ -1,0 +1,21 @@
+{
+    "data": {
+        "transcript_data": [
+            {
+                "role": "user",
+                "transcript": "I once led a cross-functional team through a tight deadline.",
+                "time_ms": 1200
+            },
+            {
+                "role": "assistant",
+                "transcript": "That's a great example. Can you tell me more about the outcome?",
+                "time_ms": 8400
+            },
+            {
+                "role": "user",
+                "transcript": "We shipped two days early and the client was very satisfied.",
+                "time_ms": 15600
+            }
+        ]
+    }
+}

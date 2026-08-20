@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.14.1"
+        "version": "0.21.0"
     },
     "servers": [
         {
@@ -381,10 +381,7 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ],
+                                                    "type": "string",
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 },
                                                 "photo_url": {
@@ -832,25 +829,20 @@
                                                         "type": "string"
                                                     },
                                                     "description": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ]
+                                                        "type": "string"
                                                     },
                                                     "provider": {
                                                         "type": "string"
                                                     },
                                                     "config": {
-                                                        "type": "array",
-                                                        "items": {}
+                                                        "type": "string"
                                                     },
                                                     "persona": {
                                                         "type": [
-                                                            "array",
+                                                            "string",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config.",
-                                                        "items": {}
+                                                        "description": "Persona is optional: a template may be pure provider config."
                                                     }
                                                 },
                                                 "required": [
@@ -1090,15 +1082,41 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "const": "Conflict: participant has already completed this assessment."
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "Conflict: participant has already completed this assessment."
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "completed"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "Conflict: this participant's assessment failed and must be re-opened by an operator before a new link can be issued."
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "failed"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "message"
                                     ]
                                 }
                             }
@@ -1768,7 +1786,7 @@
         "/candidate/interview/end": {
             "post": {
                 "operationId": "interview.end",
-                "description": "Sequence (CRITICAL-3 atomicity boundary = steps 3\u20136 in ONE explicit txn):\n(1) resolveOwnedSession \u2192 404 if not owned.\n(2) Validate ended_reason \u2208 {completed, timeout, skipped}; reject 'error' \u2192 422 (FIX-11).\n(3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.\n(4) FIX-3 guard: if session.status !== 'in_corso' \u2192 ROLLBACK \u2192 409.\n(5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.\n(6) UPDATE session status = ended_reason, ended_at = now().\n(7) Count ended sessions (status \u2208 {completed, timeout, skipped}) for this participant+project.\n(8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).\n    Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().\n(9) COMMIT. Return 200.",
+                "description": "Sequence (CRITICAL-3 atomicity boundary = steps 3\u20136 in ONE explicit txn):\n(1) resolveOwnedSession \u2192 404 if not owned.\n(2) Validate ended_reason \u2208 {completed, timeout, skipped}; reject 'error' \u2192 422 (FIX-11).\n(3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.\n(4) FIX-3 guard: if session.status !== 'in_corso' \u2192 ROLLBACK \u2192 409.\n(5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.\n(6) UPDATE session status = ended_reason, ended_at = now().\n(7) Count ended sessions (status \u2208 {completed, timeout, skipped}) for this participant+project.\n(8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).\n    Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().\n(9) COMMIT. Return 200.\n\nPR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS\n`ProviderTranscriptShapeException` on a shape-mismatched transcript response\ninstead of silently degrading to `[]`. Because the throw happens BEFORE\n`replaceUtterances()` runs its DELETE, and propagates out of THIS transaction\nclosure, `DB::transaction()` rolls back the ENTIRE txn automatically \u2014 the\nDELETE never commits, ended_at is never stamped, and FinalizeInterview is\nnever dispatched. Caught below and surfaced as 502 (Upstream classification).",
                 "summary": "End a provider session, reconcile the transcript, and (on last question) dispatch scoring",
                 "tags": [
                     "Interview"
@@ -1803,6 +1821,25 @@
                 "responses": {
                     "200": {
                         "description": ""
+                    },
+                    "502": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "const": "provider_error"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
@@ -2533,6 +2570,104 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/participants/{id}/recover": {
+            "post": {
+                "operationId": "participantRecovery.store",
+                "tags": [
+                    "ParticipantRecovery"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "in_attesa"
+                                        },
+                                        "competencies_reset": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "utterances_discarded": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "competencies_reset",
+                                        "utterances_discarded"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "reason"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -3485,15 +3620,41 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "const": "Conflict: participant has already completed this assessment."
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "Conflict: participant has already completed this assessment."
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "completed"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "Conflict: this participant's assessment failed and must be re-opened by an operator before a new link can be issued."
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "failed"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "message"
                                     ]
                                 }
                             }
@@ -4849,34 +5010,28 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "participant_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "provider_session_ref": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [
@@ -5057,13 +5212,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
@@ -5072,10 +5227,7 @@
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [

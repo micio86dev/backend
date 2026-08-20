@@ -122,7 +122,9 @@ function endBearer(Participant $participant): string
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('POST /end non-last question: 200; session.status=completed; participant stays in_corso; no FinalizeInterview', function (): void {
-    Http::fake();
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
+    ]);
     Queue::fake();
 
     $org = endOrg();
@@ -157,7 +159,7 @@ test('POST /end non-last question: 200; session.status=completed; participant st
 
 test('POST /end last question: 200; participant.status=in_valutazione; FinalizeInterview dispatched once', function (): void {
     Http::fake([
-        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
     ]);
     Queue::fake();
 
@@ -252,10 +254,15 @@ test('POST /end ended_reason=error → 422 (FIX-11 validation — error is serve
 
 test('POST /end with HeyGen provider: replaceUtterances — prior utterances deleted, server transcript inserted', function (): void {
     Http::fake([
+        // @wire-source legacy-demo/src/pages/api/interview/end.ts:76-84 — the real
+        // shape is `data.transcript_data`, rows keyed `role`/`transcript` (NOT the
+        // invented `data`/`role`/`content` shape this test previously pinned).
         '*liveavatar*/sessions/*/transcript*' => Http::response([
             'data' => [
-                ['role' => 'user',      'content' => 'My answer.',   'time_ms' => 1000],
-                ['role' => 'assistant', 'content' => 'Good answer.', 'time_ms' => 2000],
+                'transcript_data' => [
+                    ['role' => 'user',      'transcript' => 'My answer.',   'time_ms' => 1000],
+                    ['role' => 'assistant', 'transcript' => 'Good answer.', 'time_ms' => 2000],
+                ],
             ],
         ], 200),
     ]);
@@ -298,6 +305,74 @@ test('POST /end with HeyGen provider: replaceUtterances — prior utterances del
     expect($utterances->count())->toBe(2);
     expect($utterances->pluck('text')->toArray())->toContain('My answer.');
     expect($utterances->pluck('text')->toArray())->toContain('Good answer.');
+});
+
+/**
+ * F1 REGRESSION (design finding F1, PR4 task 4.2) — new test, not a correction.
+ *
+ * `InterviewController::replaceUtterances()` DELETEs unconditionally BEFORE the
+ * `if (empty($transcript)) return;` guard runs. So a shape-mismatched transcript
+ * response — which today's `reconcileTranscript()` silently degrades to `[]` for
+ * (exactly the same as a genuinely empty transcript, no distinction) — DESTROYS
+ * every already-persisted utterance row and inserts nothing.
+ *
+ * This test MUST FAIL against today's code: the guard sits after the DELETE, so
+ * the seeded utterance is gone and /end still returns 200. After the PR4 fix,
+ * a shape-mismatched response MUST throw `ProviderTranscriptShapeException`
+ * (class Upstream) BEFORE any DELETE runs, the whole /end transaction rolls
+ * back, and the seeded utterance survives untouched — with HTTP 502 returned.
+ */
+test('F1: a shape-mismatched transcript response must NOT delete already-persisted utterances', function (): void {
+    Http::fake([
+        // `data` present but NOT `{transcript_data: [...]}` — a genuine contract
+        // drift (e.g. a future LiveAvatar response shape change), not a valid
+        // "no transcript yet" empty state.
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+    ]);
+    Queue::fake();
+
+    $org = endOrg();
+    [$project, $comps] = endProjectWithCompetencies($org, 1);
+    $participant = endParticipant($org, $project, 'in_corso');
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso', 'heygen');
+    $token = endBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    Utterance::create([
+        'interview_session_id' => $session->id,
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => 'This must survive a shape-mismatched transcript response.',
+        'ts' => now()->subMinutes(2)->toIso8601String(),
+    ]);
+
+    expect(Utterance::where('interview_session_id', $session->id)->count())->toBe(1);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/end', [
+            'session_id' => $session->id,
+            'ended_reason' => 'completed',
+        ]);
+
+    // Fail loud (D7): a shape-mismatched transcript is a provider Upstream
+    // failure, not a silent empty transcript — 502, not 200.
+    $response->assertStatus(502);
+
+    // The pre-existing utterance MUST NOT have been deleted.
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $utterances = Utterance::where('interview_session_id', $session->id)->get();
+    expect($utterances->count())->toBe(1);
+    expect($utterances->first()->text)->toBe('This must survive a shape-mismatched transcript response.');
+
+    // The session must NOT have been marked ended — the whole /end transaction
+    // rolled back (CRITICAL-3 atomicity boundary covers this failure too).
+    $session->refresh();
+    expect($session->status)->toBe('in_corso');
 });
 
 test('POST /end with Tavus provider: existing utterances unchanged after /end', function (): void {
@@ -370,7 +445,10 @@ test('POST /end session_id from non-owned session → 404', function (): void {
 
 test('POST /end with timeout ended_reason: session.status=timeout, session.ended_at set', function (): void {
     Http::fake([
-        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+        // @wire-source legacy-demo/src/pages/api/interview/end.ts:76-84 — the real
+        // shape is `data.transcript_data` (an empty array here = genuinely no
+        // transcript yet, NOT a shape drift — this must NOT throw).
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
     ]);
     Queue::fake();
 
@@ -396,7 +474,7 @@ test('POST /end with timeout ended_reason: session.status=timeout, session.ended
 
 test('POST /end with skipped ended_reason: session.status=skipped', function (): void {
     Http::fake([
-        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
     ]);
     Queue::fake();
 
@@ -421,7 +499,7 @@ test('POST /end with skipped ended_reason: session.status=skipped', function ():
 
 test('POST /end CRITICAL-3 atomicity: session + count + CAS in one txn — last-question dispatches FinalizeInterview once', function (): void {
     Http::fake([
-        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
     ]);
     Queue::fake();
 

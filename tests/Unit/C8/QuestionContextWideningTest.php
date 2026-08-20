@@ -51,3 +51,40 @@ test('(c) QuestionContext is backward-compatible: positional two-arg call still 
     expect($ctx->systemPrompt)->toBeNull();
     expect($ctx->promptVersion)->toBeNull();
 });
+
+// ─── PR3 widening: openingText (design D9) ───────────────────────────────────
+
+test('(d) QuestionContext with five args: openingText is accessible', function (): void {
+    $ctx = new QuestionContext(
+        competencyCode: 'PRS',
+        questionIndex: 0,
+        systemPrompt: 'You are an adaptive interviewer.',
+        promptVersion: 'conv-2026-07-23',
+        openingText: "Let's talk about Problem Solving.",
+    );
+
+    expect($ctx->openingText)->toBe("Let's talk about Problem Solving.");
+});
+
+test('(e) QuestionContext without openingText: defaults to null (backward-compatible)', function (): void {
+    $ctx = new QuestionContext(
+        competencyCode: 'COL',
+        questionIndex: 2,
+        systemPrompt: 'prompt',
+        promptVersion: 'v1',
+    );
+
+    expect($ctx->openingText)->toBeNull();
+});
+
+test('(f) QuestionContext four-arg C8 construction remains backward-compatible after the PR3 widening', function (): void {
+    // Mirrors the C8-era four-arg call sites — must still compile and default openingText to null.
+    $ctx = new QuestionContext(
+        competencyCode: 'STG',
+        questionIndex: 1,
+        systemPrompt: null,
+        promptVersion: null,
+    );
+
+    expect($ctx->openingText)->toBeNull();
+});

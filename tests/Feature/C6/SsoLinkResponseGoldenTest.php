@@ -86,7 +86,7 @@ test('golden: 403 gate refusal body is exactly the literal Access denied message
     $response->assertExactJson(['message' => 'Access denied.']);
 });
 
-test('golden: 409 mint-gate refusal body is exactly the literal Conflict message', function (): void {
+test('golden: 409 mint-gate refusal body is exactly the literal Conflict message plus reason (participant-error-recovery D3)', function (): void {
     $org = Organization::factory()->create();
     $project = goldenActiveProject($org);
     $m2m = goldenM2mClient($org);
@@ -109,8 +109,13 @@ test('golden: 409 mint-gate refusal body is exactly the literal Conflict message
     ]);
 
     $response->assertStatus(409);
+    // (participant-error-recovery D3) The Terminal reason was split into
+    // Completed/Failed — the machine-facing `reason` field is a deliberate,
+    // additive wire-shape change: an `errore` participant is now recoverable,
+    // so the calling system needs to tell the two 409s apart.
     $response->assertExactJson([
         'message' => 'Conflict: participant has already completed this assessment.',
+        'reason' => 'completed',
     ]);
 });
 

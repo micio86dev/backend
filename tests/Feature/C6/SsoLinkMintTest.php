@@ -225,7 +225,7 @@ test('before goes_live_at → 403', function (): void {
 // Mint gate (terminal status)
 // ---------------------------------------------------------------------------
 
-test('mint gate: participant status=completato → 409', function (): void {
+test('mint gate: participant status=completato → 409, reason completed', function (): void {
     $org = Organization::factory()->create();
     $project = makeActiveProject($org);
     $m2m = makeM2mClient($org);
@@ -251,10 +251,14 @@ test('mint gate: participant status=completato → 409', function (): void {
             'candidate_ref' => 'done-cand',
             'display_name' => 'Done',
         ])
-        ->assertStatus(409);
+        ->assertStatus(409)
+        ->assertJson([
+            'message' => 'Conflict: participant has already completed this assessment.',
+            'reason' => 'completed',
+        ]);
 });
 
-test('mint gate: participant status=errore → 409', function (): void {
+test('mint gate: participant status=errore → 409, reason failed, message never says completed', function (): void {
     $org = Organization::factory()->create();
     $project = makeActiveProject($org);
     $m2m = makeM2mClient($org);
@@ -272,13 +276,15 @@ test('mint gate: participant status=errore → 409', function (): void {
         ->where('id', $p->id)
         ->update(['status' => 'errore']);
 
-    $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
         ->postJson('/api/m2m/sso-link', [
             'project_id' => $project->id,
             'candidate_ref' => 'errored-cand',
             'display_name' => 'Errored',
-        ])
-        ->assertStatus(409);
+        ]);
+
+    $response->assertStatus(409)->assertJson(['reason' => 'failed']);
+    expect($response->json('message'))->not->toContain('completed');
 });
 
 test('mint gate: participant status=in_attesa → mints normally (201)', function (): void {

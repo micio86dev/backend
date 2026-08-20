@@ -58,8 +58,15 @@ final class EntryLinkMinter
             ->where('candidate_ref', $candidateRef)
             ->value('status');
 
-        if ($existingStatus !== null && in_array($existingStatus, ['completato', 'errore'], true)) {
-            throw new EntryLinkRefused(EntryLinkRefusalReason::Terminal);
+        // (participant-error-recovery D3) split by which terminal status:
+        // 'completato' really is done; 'errore' is now recoverable by an
+        // operator, so it must not be reported as completed.
+        if ($existingStatus === 'completato') {
+            throw new EntryLinkRefused(EntryLinkRefusalReason::Completed);
+        }
+
+        if ($existingStatus === 'errore') {
+            throw new EntryLinkRefused(EntryLinkRefusalReason::Failed);
         }
 
         $resolvedLang = $lang ?? $project->language ?? config('app.fallback_locale', 'en');

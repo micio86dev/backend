@@ -15,9 +15,16 @@ declare(strict_types=1);
  *       'conversational_context' key (legacy C7a shape preserved).
  *
  * RV-3 NOTE: 'conversational_context' field name and the tavusapi.com/v2/conversations
- * endpoint are INFERRED from the C7a scaffold. Client confirmation of the live
- * provider contract is required before live deploy. This PR-gated assertion
- * catches any rename immediately.
+ * endpoint are CONFIRMED against `legacy-demo/src/pages/api/interview/start.ts:300-322`
+ * (design/exploration phase, liveavatar-contract-alignment) — no longer merely inferred.
+ *
+ * PR4 (design D10) — REVOKED CLAIM: this file proves OUR OWN outbound request body
+ * only. It does NOT prove Tavus ACCEPTS that body — a passing assertion here means
+ * "our code sends what we think it should," never "the real provider agrees." That
+ * claim belongs to the fixture layer (L1, `ProviderContractFixtureTest.php`) for
+ * response PARSING, and to the gated live smoke check (L3, `interview:smoke-check`,
+ * never run in CI) for actual acceptance. This PR-gated assertion still catches any
+ * accidental rename immediately — that value is real, just narrower than "correct."
  *
  * @group feature
  *
@@ -84,6 +91,12 @@ test('6.3 TavusProvider::issue() with systemPrompt → POST /conversations body 
     // If the field is renamed or omitted, this assertion fails on PR.
     expect($capturedBody)->toHaveKey('conversational_context');
     expect($capturedBody['conversational_context'])->toBe('TEST_PROMPT');
+
+    // PR5 (design D8): `competency_code`/`question_index` were never accepted by the
+    // real Tavus contract (@wire-source legacy-demo/.../start.ts:300-322) — invented
+    // top-level keys that must NOT appear on the outbound /conversations body.
+    expect($capturedBody)->not->toHaveKey('competency_code');
+    expect($capturedBody)->not->toHaveKey('question_index');
 });
 
 test('6.4 TavusProvider::issue() with null systemPrompt → POST /conversations body does NOT include conversational_context key', function (): void {
@@ -114,4 +127,70 @@ test('6.4 TavusProvider::issue() with null systemPrompt → POST /conversations 
 
     // Legacy path: null systemPrompt → no conversational_context key in the outbound body.
     expect($capturedBody)->not->toHaveKey('conversational_context');
+
+    // PR5 (design D8): invented keys must be absent on this path too.
+    expect($capturedBody)->not->toHaveKey('competency_code');
+    expect($capturedBody)->not->toHaveKey('question_index');
+});
+
+test('6.7 TavusProvider::issue() with openingText → POST /conversations body includes custom_greeting (PR3)', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/conversations')) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-opening',
+                'conversation_url' => 'https://tavus.io/conv-opening',
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = c8TavusMockSession();
+    $ctx = new QuestionContext(
+        competencyCode: 'COL',
+        questionIndex: 0,
+        systemPrompt: 'TEST_PROMPT',
+        promptVersion: 'conv-2026-07-23',
+        openingText: "Let's talk about Collaboration.",
+    );
+
+    $provider = new TavusProvider;
+    $provider->issue($session, $ctx);
+
+    // @wire-source start.ts:300-322 — `custom_greeting` sourced from the PR3
+    // OpeningTextComposer via QuestionContext.openingText.
+    expect($capturedBody)->toHaveKey('custom_greeting', "Let's talk about Collaboration.");
+});
+
+test('6.8 TavusProvider::issue() with null openingText → POST /conversations body has no custom_greeting key', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/conversations')) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-no-opening',
+                'conversation_url' => 'https://tavus.io/conv-no-opening',
+            ], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = c8TavusMockSession();
+    $ctx = new QuestionContext(
+        competencyCode: 'COL',
+        questionIndex: 0,
+        // openingText defaults to null
+    );
+
+    $provider = new TavusProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedBody)->not->toHaveKey('custom_greeting');
 });

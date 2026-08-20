@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
+use App\Http\Controllers\Api\ParticipantRecoveryController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
@@ -226,6 +227,18 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/entry-links', [EntryLinkController::class, 'store']);
+});
+
+// ─── Participant Recovery (participant-error-recovery) ────────────────────
+// POST /api/participants/{id}/recover — the SOLE authorized path back out of
+// `errore`. Own route group, adjacent to (NOT inside) the Admin Read API
+// block above — it is a WRITE (atomically resets the participant + its
+// errored session(s)), not a read. ParticipantPolicy::recover denies viewer;
+// RecoverFailedParticipant resolves the participant scoped by TenantContext
+// (cross-org -> 404) under a row lock (design D1/D4/D6).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::post('/participants/{id}/recover', [ParticipantRecoveryController::class, 'store']);
 });
 
 // ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────

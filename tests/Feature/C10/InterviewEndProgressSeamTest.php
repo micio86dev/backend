@@ -111,7 +111,9 @@ function c10EndWebhookBearer(Participant $participant): string
 }
 
 test('COMMIT: non-last-competency /end produces exactly one progress delivery row (CompetencySessionEnded)', function (): void {
-    Http::fake();
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
+    ]);
     Queue::fake();
 
     $org = Organization::factory()->create();
@@ -132,7 +134,9 @@ test('COMMIT: non-last-competency /end produces exactly one progress delivery ro
 
 test('COMMIT: last-competency /end dispatches the progress delivery alongside FinalizeInterview', function (): void {
     Http::fake([
-        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => []], 200),
+        // @wire-source legacy-demo/src/pages/api/interview/end.ts:76-84 — real shape
+        // is `data.transcript_data` (PR4); empty array here = genuinely no transcript.
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
     ]);
     Queue::fake();
 
