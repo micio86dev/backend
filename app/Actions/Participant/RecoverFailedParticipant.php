@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Participant;
 
+use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\Enums\WebhookEventType;
 use App\Exceptions\Participant\RecoveryRefusalReason;
 use App\Exceptions\Participant\RecoveryRefused;
@@ -115,14 +116,11 @@ final class RecoverFailedParticipant
             $utterancesDiscarded = 0;
 
             foreach ($erroredSessions as $session) {
-                $utterancesDiscarded += $session->utterances()->count();
-                $session->utterances()->delete();
-
-                $session->status = 'pending';
-                $session->provider_session_ref = null;
-                $session->ended_reason = null;
-                $session->ended_at = null;
-                $session->save();
+                // (interview-continuous-flow D3) The reset now lives in a shared
+                // action, so the automatic re-offer and this operator path cannot
+                // drift apart. This path stays deliberately UNBOUNDED (D4): the
+                // action does not consult `error_count`, and neither does the loop.
+                $utterancesDiscarded += (new ResetSessionForRetry)($session);
 
                 $competenciesReset[] = $session->competency_code;
             }
