@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Hash;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 function guardIsolationParticipant(): Participant
 {
@@ -77,7 +78,7 @@ test('candidate token TTL is unaffected by the operator jwt config (D7)', functi
     $participant = guardIsolationParticipant();
     $candidateToken = CandidateTokenFactory::mintCandidateToken($participant);
 
-    $payload = \Tymon\JWTAuth\Facades\JWTAuth::setToken($candidateToken)->getPayload();
+    $payload = JWTAuth::setToken($candidateToken)->getPayload();
 
     $ttlMinutes = ($payload->get('exp') - $payload->get('iat')) / 60;
 

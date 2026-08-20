@@ -13,9 +13,8 @@ use Throwable;
  * Reads `CONFIG GET maxmemory-policy` off the `redis` cache connection
  * (backoffice-session-refresh-hardening D3). Mirrors the resolve-real-driver
  * shape of App\Support\Queue\ReservedJobAgeProbe — a thin, injectable probe
- * so App\Console\Commands\CheckRedisEvictionPolicy and
- * App\Http\Controllers\QueueHealthController stay unit-testable without a
- * real Redis instance (bound to the App\Contracts\RedisEvictionPolicyProbe
+ * so App\Http\Controllers\QueueHealthController stays unit-testable without
+ * a real Redis instance (bound to the App\Contracts\RedisEvictionPolicyProbe
  * interface in AppServiceProvider, mirroring the LLMProvider pattern).
  *
  * Managed Redis providers sometimes disable the CONFIG command entirely; on
