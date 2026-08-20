@@ -32,9 +32,6 @@ final class ProviderFieldSpecs
     /** Tavus's hard call ceiling, in seconds. */
     public const TAVUS_MAX_SECONDS = 3600;
 
-    /** Both providers offer the same two languages; Tavus needs its own wording downstream. */
-    private const LANGUAGES = ['it', 'en'];
-
     /** @return list<FieldSpec> */
     public static function for(string $provider): array
     {
@@ -56,9 +53,14 @@ final class ProviderFieldSpecs
         $h = fn (string $k): string => "avatar_templates.hint.{$k}";
 
         return [
+            // No language control. The avatar's spoken language follows the
+            // PROJECT (avatar-language-follows-project, D1/D5): `avatar_templates`
+            // is scoped by organization with no project_id, so one template would
+            // have to serve every project in it. Leaving the control would let an
+            // operator pick a language and hear no difference — the exact failure
+            // the comments in TemplatePayload already warn about.
             new FieldSpec('avatarId', FieldType::Text, $l('avatarId'), required: true, hintKey: $h('avatarId')),
             new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId')),
-            new FieldSpec('language', FieldType::Select, $l('language'), options: self::LANGUAGES, hintKey: $h('language')),
             new FieldSpec('interactivityType', FieldType::Select, $l('interactivityType'), options: ['CONVERSATIONAL', 'PUSH_TO_TALK'], hintKey: $h('interactivityType')),
             new FieldSpec('maxSessionDurationSec', FieldType::Number, $l('maxSessionDurationSec'), min: 30, max: self::HEYGEN_MAX_SECONDS, hintKey: $h('maxSessionDurationSec')),
             new FieldSpec('videoQuality', FieldType::Select, $l('videoQuality'), options: ['very_high', 'high', 'medium', 'low'], hintKey: $h('videoQuality')),
@@ -78,10 +80,15 @@ final class ProviderFieldSpecs
         $h = fn (string $k): string => "avatar_templates.hint.{$k}";
 
         return [
+            // No language control. The avatar's spoken language follows the
+            // PROJECT (avatar-language-follows-project, D1/D5): `avatar_templates`
+            // is scoped by organization with no project_id, so one template would
+            // have to serve every project in it. Leaving the control would let an
+            // operator pick a language and hear no difference — the exact failure
+            // the comments in TemplatePayload already warn about.
             // Conversation-level: sent when the conversation is created.
             new FieldSpec('faceId', FieldType::Text, $l('faceId'), required: true, hintKey: $h('faceId')),
             new FieldSpec('palId', FieldType::Text, $l('palId'), required: true, hintKey: $h('palId')),
-            new FieldSpec('language', FieldType::Select, $l('language'), options: self::LANGUAGES, hintKey: $h('language')),
             new FieldSpec('audioOnly', FieldType::Checkbox, $l('audioOnly'), hintKey: $h('audioOnly')),
             new FieldSpec('maxCallDurationSec', FieldType::Number, $l('maxCallDurationSec'), min: 30, max: self::TAVUS_MAX_SECONDS, hintKey: $h('maxCallDurationSec')),
             new FieldSpec('participantAbsentTimeoutSec', FieldType::Number, $l('participantAbsentTimeoutSec'), min: 10, max: self::TAVUS_MAX_SECONDS, hintKey: $h('participantAbsentTimeoutSec')),

@@ -56,7 +56,12 @@ class HeygenProvider implements ProviderSessionService
     private const TOKEN_FIELD_ALLOWLIST = [
         'avatar_id',
         'avatar_persona.voice_id',
-        'avatar_persona.language',
+        // 'avatar_persona.language' is deliberately ABSENT: the avatar's spoken
+        // language follows the project and a template may not override it (D1).
+        // This line is a statement of intent, not the mechanism — `TemplatePayload`
+        // no longer emits the key at all, and this allowlist is union'd with
+        // `interview.heygen.extra_token_fields`, so on its own it could be
+        // re-opened by an env change with no deploy.
         'interactivity_type',
         'video_settings.quality',
     ];
@@ -179,7 +184,7 @@ class HeygenProvider implements ProviderSessionService
      *
      * Hotfix 0.22.1 — root cause of the production 422 ("avatar_id: Field
      * required"): avatar identity previously came ONLY from the org's active
-     * `AvatarTemplate`. No org has one today, so `$templateFields` was `[]` and
+     * `AvatarTemplate`. no organization is required to have one, so `$templateFields` was `[]` and
      * `avatar_id` was never sent. Three-layer precedence, weakest to strongest:
      *   1. `$platformDefault` — this method's own floor. Always supplies
      *      avatar_id/voice_id/language (from `interview.heygen.*` config /

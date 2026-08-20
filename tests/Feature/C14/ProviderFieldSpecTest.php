@@ -88,7 +88,6 @@ test('a complete config validates clean', function (): void {
     $errors = ConfigValidator::validate('heygen', [
         'avatarId' => 'av_1',
         'voiceId' => 'vo_1',
-        'language' => 'it',
         'voiceSpeed' => 1.0,
     ]);
 

@@ -11,7 +11,14 @@ declare(strict_types=1);
  * Asserts (per interview-frontend delta spec — ADDED Requirement:
  * "POST /start question_context — localized completion phrases"):
  * - question_context.end_phrase + final_phrase are present and non-empty in the
- *   participant/project language (it).
+ *   PROJECT language (it).
+ *
+ * SOURCE CHANGED (avatar-language-follows-project, D4): these resolved from
+ * `participant.language` until the phrases were brought into line with
+ * `interview-session/spec.md`, which already required the project language. The
+ * participant value arrives from unvalidated M2M input — a caller can post 'fr'
+ * on an 'it' project — so it could disagree with everything else the avatar was
+ * given.
  * - Same fields are present and non-empty English strings for language 'en',
  *   and DIFFER from the Italian strings.
  * - Fallback: a participant whose language has no phrase file (e.g. 'fr') falls
@@ -44,13 +51,13 @@ function phrasesOrg(): Organization
     return Organization::factory()->create();
 }
 
-function phrasesProjectWithCompetencies(Organization $org, int $count = 1): array
+function phrasesProjectWithCompetencies(Organization $org, int $count = 1, ?string $language = 'en'): array
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active']);
+    $project = Project::factory()->create(['status' => 'active', 'language' => $language]);
 
     // C8 (M-3): seed a Role matching project.role_code so SystemPromptComposer can succeed.
     $role = Role::factory()->create(['code' => $project->role_code]);
@@ -69,10 +76,14 @@ function phrasesProjectWithCompetencies(Organization $org, int $count = 1): arra
         $ind->forceFill([
             'role_id' => $role->id,
             'competency_id' => $comp->id,
-            'text' => ['en' => "Phrases fixture indicator {$i}"],
-            'anchor_5' => ['en' => "Excellent {$i}"],
-            'anchor_3' => ['en' => "Adequate {$i}"],
-            'anchor_1' => ['en' => "Insufficient {$i}"],
+            // Seeded in every locale these tests use. The phrases now resolve from
+            // the PROJECT language, so a project set to `it` or `fr` must still
+            // compose — otherwise /start fails at composition and the test reads
+            // as a phrase bug when it is a fixture gap.
+            'text' => ['en' => "Phrases fixture indicator {$i}", 'it' => "Indicatore {$i}", 'fr' => "Indicateur {$i}"],
+            'anchor_5' => ['en' => "Excellent {$i}", 'it' => "Eccellente {$i}", 'fr' => "Excellent {$i}"],
+            'anchor_3' => ['en' => "Adequate {$i}", 'it' => "Adeguato {$i}", 'fr' => "Adequat {$i}"],
+            'anchor_1' => ['en' => "Insufficient {$i}", 'it' => "Insufficiente {$i}", 'fr' => "Insuffisant {$i}"],
             'position' => 0,
         ]);
         $ind->save();
@@ -130,7 +141,7 @@ test('POST /start question_context contains non-empty Italian end_phrase and fin
     Queue::fake();
 
     $org = phrasesOrg();
-    [$project] = phrasesProjectWithCompetencies($org);
+    [$project] = phrasesProjectWithCompetencies($org, 1, 'it');
     $participant = phrasesParticipant($org, $project, 'it');
 
     $response = phrasesStart($participant);
@@ -154,7 +165,7 @@ test('POST /start question_context contains English phrases for language en, dif
     Queue::fake();
 
     $org = phrasesOrg();
-    [$project] = phrasesProjectWithCompetencies($org);
+    [$project] = phrasesProjectWithCompetencies($org, 1, 'en');
     $participant = phrasesParticipant($org, $project, 'en');
 
     $response = phrasesStart($participant);
@@ -178,7 +189,7 @@ test('POST /start falls back to platform default language when participant langu
 
     // French has no lang/fr/interview.php yet → must fall back to config app.fallback_locale (en).
     $org = phrasesOrg();
-    [$project] = phrasesProjectWithCompetencies($org);
+    [$project] = phrasesProjectWithCompetencies($org, 1, 'fr');
     $participant = phrasesParticipant($org, $project, 'fr');
 
     $response = phrasesStart($participant);
@@ -203,7 +214,7 @@ test('POST /start question_context end_phrase and final_phrase are present even 
     Queue::fake();
 
     $org = phrasesOrg();
-    [$project] = phrasesProjectWithCompetencies($org);
+    [$project] = phrasesProjectWithCompetencies($org, 1, 'en');
     $participant = phrasesParticipant($org, $project, null);
 
     $response = phrasesStart($participant);

@@ -684,7 +684,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $freshToken, $participant->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
+        return $this->buildSuccessResponse($session, $freshToken, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
     }
 
     /**
@@ -753,7 +753,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $token, $participant->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
+        return $this->buildSuccessResponse($session, $token, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
     }
 
     /**

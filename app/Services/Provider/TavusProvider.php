@@ -10,6 +10,7 @@ use App\Models\InterviewSession;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\AvatarTemplates\TemplatePayload;
 use App\Support\Provider\ProviderErrorMessage;
+use App\Support\Provider\TavusLanguage;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -79,7 +80,7 @@ class TavusProvider implements ProviderSessionService
         // Hotfix 0.22.2 — root cause of the production 400 ("Either replica_id/
         // face_id or a persona_id/pal_id with a default replica specified must
         // be present"): avatar identity previously came ONLY from the org's
-        // active `AvatarTemplate` (`TemplatePayload::tavus()`). No org has one
+        // active `AvatarTemplate` (`TemplatePayload::tavus()`). no organization is required to have one
         // today, so that mapping returned `[]` and replica_id/persona_id were
         // never sent. Same three-layer precedence as
         // `HeygenProvider::buildSessionTokenBody()`, weakest to strongest:
@@ -95,7 +96,7 @@ class TavusProvider implements ProviderSessionService
         // knobs are deliberately NOT here — they belong to the PAL, and sent on
         // a conversation Tavus ignores them silently.
         $conversationBody = array_replace_recursive(
-            $this->platformDefaultConversationFields(),
+            $this->platformDefaultConversationFields($ctx),
             TemplatePayload::tavus($this->activeTemplateConfig()),
             $conversationBody,
         );
@@ -156,9 +157,25 @@ class TavusProvider implements ProviderSessionService
      *
      * @return array<string, mixed>
      */
-    private function platformDefaultConversationFields(): array
+    private function platformDefaultConversationFields(?QuestionContext $ctx = null): array
     {
         $body = [];
+
+        // The avatar's spoken language follows the PROJECT (D2/D4). Tavus was the
+        // harder half of this: the template used to be its ONLY language source,
+        // so removing that without adding a platform default would have dropped
+        // the language entirely — a regression wearing the shape of a fix.
+        //
+        // Written at `properties.language`, NOT top-level. The demonstrated-working
+        // demo call nests it, and Tavus ignores a field at the wrong path in
+        // silence. The mapper this replaces emitted it top-level, guarded by a
+        // comment warning about exactly this failure mode one level up: its author
+        // fixed the vocabulary and left the path wrong.
+        $language = $ctx?->language ?? config('interview.tavus.language');
+
+        if (is_string($language) && $language !== '') {
+            $body['properties']['language'] = TavusLanguage::forWire($language);
+        }
 
         $replicaId = config('interview.tavus.replica_id');
 

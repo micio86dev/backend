@@ -42,7 +42,7 @@ function seedTemplate(Organization $org, array $attributes = []): AvatarTemplate
 $validPayload = [
     'name' => 'Recruiter voice',
     'provider' => 'heygen',
-    'config' => ['avatarId' => 'av_1', 'voiceId' => 'vo_1', 'language' => 'it'],
+    'config' => ['avatarId' => 'av_1', 'voiceId' => 'vo_1'],
 ];
 
 // ─── RBAC ────────────────────────────────────────────────────────────────────
