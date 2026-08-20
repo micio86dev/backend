@@ -207,7 +207,15 @@ test('L2: Tavus /conversations outbound body matches the golden JSON verified ag
     // replica specified must be present"). They now come from the
     // platform-default config floor (`interview.tavus.{replica_id,
     // persona_id}`, `TavusProvider::platformDefaultConversationFields()`) and
-    // are ALWAYS present in the golden body. `properties.*` remain absent —
-    // those are template-only knobs, not required by the provider.
+    // are ALWAYS present in the golden body.
+    //
+    // `properties.language` joined them (avatar-language-follows-project, D2/D4)
+    // for the same reason and by the same route: the avatar's spoken language
+    // follows the PROJECT, so it can no longer come from a template, and the
+    // platform default supplies it when — as here — the caller passes no
+    // QuestionContext language. It is written NESTED because that is where the
+    // demonstrated-working demo call puts it; Tavus ignores a field at the wrong
+    // path in silence. Every OTHER `properties.*` key remains absent: those are
+    // template-only knobs the provider does not require.
     $this->assertEqualsCanonicalizing($golden, $capturedBody);
 });

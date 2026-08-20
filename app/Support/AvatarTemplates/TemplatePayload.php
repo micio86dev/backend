@@ -39,7 +39,19 @@ final class TemplatePayload
         // the worst failure available, because the operator sees a saved
         // setting and hears no difference.
         self::put($payload, 'avatar_persona.voice_id', $config['voiceId'] ?? null);
-        self::put($payload, 'avatar_persona.language', $config['language'] ?? null);
+
+        // NO language. The avatar's spoken language follows the PROJECT
+        // (avatar-language-follows-project, D1). `avatar_templates` is scoped by
+        // organization with no project_id, so one active template would have to
+        // serve every project in that organization — while `project.language` is
+        // per project. An org running one Italian and one English project cannot
+        // express that through a template, and CLAUDE.md binds UI, TTS and
+        // evaluation to the project language.
+        //
+        // Cutting it HERE is what makes the guarantee hold. Removing the entry
+        // from HeygenProvider's TOKEN_FIELD_ALLOWLIST is defence in depth only:
+        // that allowlist is union'd with `interview.heygen.extra_token_fields`,
+        // so an env change with no deploy could re-open the field.
 
         self::put($payload, 'interactivity_type', $config['interactivityType'] ?? null);
 
@@ -86,15 +98,10 @@ final class TemplatePayload
         // differ: Tavus wants the language spelled out. Sending 'it' is
         // accepted and ignored, so the avatar answers in English to an Italian
         // candidate — a failure nobody would attribute to a language mapping.
-        $language = $config['language'] ?? null;
-
-        if (is_string($language)) {
-            self::put($payload, 'language', match ($language) {
-                'it' => 'italian',
-                'en' => 'english',
-                default => $language,
-            });
-        }
+        // NO language for Tavus either — same reason as HeyGen above. The
+        // spelled-out vocabulary that used to live here moved to
+        // App\Support\Provider\TavusLanguage, which the provider's platform
+        // default now uses with the project's locale.
 
         self::put($payload, 'audio_only', $config['audioOnly'] ?? null);
         self::put($payload, 'properties.max_call_duration', $config['maxCallDurationSec'] ?? null);
