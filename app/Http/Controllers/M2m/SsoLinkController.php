@@ -91,8 +91,22 @@ final class SsoLinkController extends Controller
             );
         } catch (EntryLinkRefused $e) {
             return match ($e->reason) {
-                EntryLinkRefusalReason::Terminal => response()->json(
-                    ['message' => 'Conflict: participant has already completed this assessment.'],
+                // (participant-error-recovery D3) Completed vs Failed: both stay
+                // 409, only the message + machine-facing `reason` differ. An
+                // `errore` participant is recoverable by an operator — reporting
+                // it as "completed" would be false.
+                EntryLinkRefusalReason::Completed => response()->json(
+                    [
+                        'message' => 'Conflict: participant has already completed this assessment.',
+                        'reason' => 'completed',
+                    ],
+                    409
+                ),
+                EntryLinkRefusalReason::Failed => response()->json(
+                    [
+                        'message' => "Conflict: this participant's assessment failed and must be re-opened by an operator before a new link can be issued.",
+                        'reason' => 'failed',
+                    ],
                     409
                 ),
                 EntryLinkRefusalReason::RoleCode => response()->json([

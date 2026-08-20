@@ -87,7 +87,7 @@ test('a role_code supplied for a potential project refuses the mint with reason 
     }
 });
 
-test('a terminal-status participant refuses the mint with reason terminal', function (): void {
+test('a completed participant refuses the mint with reason completed', function (): void {
     $org = Organization::factory()->create();
     $project = minterActiveProject($org);
 
@@ -106,7 +106,30 @@ test('a terminal-status participant refuses the mint with reason terminal', func
         (new EntryLinkMinter)->mint($project, 'terminal-cand', 'Done', null, null);
         expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
     } catch (EntryLinkRefused $e) {
-        expect($e->reason)->toBe(EntryLinkRefusalReason::Terminal);
+        expect($e->reason)->toBe(EntryLinkRefusalReason::Completed);
+    }
+});
+
+test('a failed (errore) participant refuses the mint with reason failed', function (): void {
+    $org = Organization::factory()->create();
+    $project = minterActiveProject($org);
+
+    $p = new Participant;
+    $p->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'errored-cand',
+        'display_name' => 'Errored',
+        'status' => 'in_attesa',
+    ]);
+    $p->save();
+    DB::table('participants')->where('id', $p->id)->update(['status' => 'errore']);
+
+    try {
+        (new EntryLinkMinter)->mint($project, 'errored-cand', 'Errored', null, null);
+        expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
+    } catch (EntryLinkRefused $e) {
+        expect($e->reason)->toBe(EntryLinkRefusalReason::Failed);
     }
 });
 
