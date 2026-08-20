@@ -16,10 +16,12 @@ declare(strict_types=1);
  */
 
 use App\Exceptions\ProviderException;
+use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
+use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -192,6 +194,82 @@ test('TavusProvider::teardown() calls POST /v2/conversations/{id}/end, not DELET
     Http::assertNotSent(function ($request): bool {
         return $request->method() === 'DELETE';
     });
+});
+
+test('TavusProvider::issue() sends replica_id and persona_id from platform config when the org has NO active AvatarTemplate (hotfix 0.22.2 regression — production 400 "Either replica_id/face_id or a persona_id/pal_id with a default replica specified must be present")', function (): void {
+    // No ActiveTemplateResolver override bound — exercises the REAL resolver
+    // against an empty avatar_templates table, i.e. the exact production
+    // condition every org is in today: no active template. This is the same
+    // defect class hotfix 0.22.1 fixed for HeygenProvider::buildSessionTokenBody().
+    config([
+        'interview.tavus.replica_id' => 'platform-default-replica',
+        'interview.tavus.persona_id' => 'platform-default-persona',
+    ]);
+
+    $capturedBody = [];
+    Http::fake([
+        '*tavusapi*/v2/conversations*' => function ($request) use (&$capturedBody) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-platform-default',
+                'conversation_url' => 'https://tavus.io/conv-platform-default',
+            ], 200);
+        },
+    ]);
+
+    $session = tavusMockSession();
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new TavusProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedBody)->toHaveKey('replica_id', 'platform-default-replica');
+    expect($capturedBody)->toHaveKey('persona_id', 'platform-default-persona');
+});
+
+test('TavusProvider::issue() lets an org\'s active AvatarTemplate override the platform-default replica_id/persona_id (precedence: template wins)', function (): void {
+    config([
+        'interview.tavus.replica_id' => 'platform-default-replica',
+        'interview.tavus.persona_id' => 'platform-default-persona',
+    ]);
+
+    $template = new AvatarTemplate;
+    $template->forceFill(['config' => ['faceId' => 'org-template-replica', 'palId' => 'org-template-persona']]);
+
+    app()->instance(
+        ActiveTemplateResolver::class,
+        new class($template)
+        {
+            public function __construct(private readonly AvatarTemplate $template) {}
+
+            public function resolve(): AvatarTemplate
+            {
+                return $this->template;
+            }
+        },
+    );
+
+    $capturedBody = [];
+    Http::fake([
+        '*tavusapi*/v2/conversations*' => function ($request) use (&$capturedBody) {
+            $capturedBody = $request->data();
+
+            return Http::response([
+                'conversation_id' => 'conv-precedence',
+                'conversation_url' => 'https://tavus.io/conv-precedence',
+            ], 200);
+        },
+    ]);
+
+    $session = tavusMockSession();
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new TavusProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedBody)->toHaveKey('replica_id', 'org-template-replica');
+    expect($capturedBody)->toHaveKey('persona_id', 'org-template-persona');
+
+    app()->forgetInstance(ActiveTemplateResolver::class);
 });
 
 // ─── Helper ──────────────────────────────────────────────────────────────────

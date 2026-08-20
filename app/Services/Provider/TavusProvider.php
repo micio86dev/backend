@@ -76,10 +76,26 @@ class TavusProvider implements ProviderSessionService
             $conversationBody['custom_greeting'] = $ctx->openingText;
         }
 
+        // Hotfix 0.22.2 — root cause of the production 400 ("Either replica_id/
+        // face_id or a persona_id/pal_id with a default replica specified must
+        // be present"): avatar identity previously came ONLY from the org's
+        // active `AvatarTemplate` (`TemplatePayload::tavus()`). No org has one
+        // today, so that mapping returned `[]` and replica_id/persona_id were
+        // never sent. Same three-layer precedence as
+        // `HeygenProvider::buildSessionTokenBody()`, weakest to strongest:
+        //   1. `$platformDefault` — this method's own floor. Always supplies
+        //      replica_id/persona_id from `interview.tavus.*` config.
+        //   2. `TemplatePayload::tavus(...)` — an org's active `AvatarTemplate`,
+        //      when it sets a value. Overrides the platform default on a
+        //      per-key basis. C14 avatar-template customization is preserved,
+        //      not regressed by this fix.
+        //   3. `$conversationBody` — conversational_context/custom_greeting,
+        //      call-specific and never template-overridable.
         // C14: see HeygenProvider for the merge-not-assign reasoning. Persona
         // knobs are deliberately NOT here — they belong to the PAL, and sent on
         // a conversation Tavus ignores them silently.
-        $conversationBody = array_merge(
+        $conversationBody = array_replace_recursive(
+            $this->platformDefaultConversationFields(),
             TemplatePayload::tavus($this->activeTemplateConfig()),
             $conversationBody,
         );
@@ -124,6 +140,39 @@ class TavusProvider implements ProviderSessionService
             conversation_url: (string) $conversationUrl,
             provider_session_ref: (string) $conversationId,
         );
+    }
+
+    /**
+     * The platform-default `/v2/conversations` fields (hotfix 0.22.2) — the
+     * floor every request gets when the org has no active `AvatarTemplate`, or
+     * when its template leaves a field unset.
+     *
+     * `replica_id`/`persona_id` come from `interview.tavus.{replica_id,
+     * persona_id}` config (env `TAVUS_REPLICA_ID`/`TAVUS_PERSONA_ID`) —
+     * omitted (not sent as `""`) when unset, matching `TemplatePayload`'s
+     * "unset means absent" convention.
+     *
+     * @wire-source legacy-demo/src/pages/api/interview/start.ts:300-322
+     *
+     * @return array<string, mixed>
+     */
+    private function platformDefaultConversationFields(): array
+    {
+        $body = [];
+
+        $replicaId = config('interview.tavus.replica_id');
+
+        if (is_string($replicaId) && $replicaId !== '') {
+            $body['replica_id'] = $replicaId;
+        }
+
+        $personaId = config('interview.tavus.persona_id');
+
+        if (is_string($personaId) && $personaId !== '') {
+            $body['persona_id'] = $personaId;
+        }
+
+        return $body;
     }
 
     /**
