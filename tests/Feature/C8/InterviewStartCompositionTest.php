@@ -150,7 +150,7 @@ function c8HeygenFake(): array
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-c8',
-                'access_token' => 'heygen-token-c8',
+                'session_token' => 'heygen-token-c8',
             ],
         ], 200),
         '*liveavatar*/sessions/*' => Http::response([], 200), // teardown
@@ -188,7 +188,7 @@ test('5.5 /start response never leaks composed system_prompt; provider body carr
             return Http::response(['data' => ['id' => 'ctx-c8']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'heygen-session-c8', 'access_token' => 'heygen-token-c8']], 200);
+            return Http::response(['data' => ['session_id' => 'heygen-session-c8', 'session_token' => 'heygen-token-c8']], 200);
         }
 
         return Http::response([], 200);
@@ -414,7 +414,7 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
             return Http::response(['data' => ['id' => 'ctx-resume-degrade']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'heygen-session-resume', 'access_token' => 'heygen-token-resume']], 200);
+            return Http::response(['data' => ['session_id' => 'heygen-session-resume', 'session_token' => 'heygen-token-resume']], 200);
         }
 
         // teardown old session
@@ -471,7 +471,7 @@ test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains
             return Http::response(['data' => ['id' => 'ctx-resume-adaptive']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'heygen-session-adaptive', 'access_token' => 'heygen-token-adaptive']], 200);
+            return Http::response(['data' => ['session_id' => 'heygen-session-adaptive', 'session_token' => 'heygen-token-adaptive']], 200);
         }
 
         return Http::response([], 200);

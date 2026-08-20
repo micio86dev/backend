@@ -53,6 +53,27 @@ return [
          * Example: ['voice_settings.speed', 'video_settings.encoding']
          */
         'extra_token_fields' => array_filter(explode(',', (string) env('HEYGEN_EXTRA_TOKEN_FIELDS', ''))),
+
+        /*
+         * PLATFORM-DEFAULT avatar identity (hotfix 0.22.1 — production outage:
+         * HeyGen HTTP 422 "avatar_id: Field required" on EVERY /start, because
+         * `HeygenProvider::buildSessionTokenBody()` sourced avatar_id/voice_id/
+         * language ONLY from the org's active `AvatarTemplate`, and NO org has
+         * one today).
+         *
+         * Reads the SAME env vars as `interview.demo.heygen.*` below (LIVEAVATAR_*
+         * accepted as an alias of HEYGEN_*), but this key is DELIBERATELY a
+         * separate config surface, never read via `interview.demo.*` from the
+         * provider path: `demo.*` is `beai:demo-seed`-scoped (seeds one
+         * organization's AvatarTemplate row) and could be repointed or removed
+         * independently of what every tenant without a template needs at request
+         * time. Precedence in `HegenProvider::buildSessionTokenBody()`: an org's
+         * active template still wins when it sets a value; this is only the
+         * fallback for the (today: universal) case where it does not.
+         */
+        'avatar_id' => env('HEYGEN_AVATAR_ID', env('LIVEAVATAR_AVATAR_ID')),
+        'voice_id' => env('HEYGEN_VOICE_ID', env('LIVEAVATAR_VOICE_ID')),
+        'language' => env('HEYGEN_LANGUAGE', env('LIVEAVATAR_LANGUAGE', 'it')),
     ],
 
     /*

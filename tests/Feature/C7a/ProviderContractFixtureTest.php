@@ -83,9 +83,9 @@ test('L1: HeygenProvider::issue() correctly parses a docs-verified /contexts + /
 
     $token = (new HeygenProvider)->issue($session, $ctx);
 
-    // Proves our parsing reads `data.id` (contexts) and `data.access_token` /
+    // Proves our parsing reads `data.id` (contexts) and `data.session_token` /
     // `data.session_id` (sessions/token) correctly — nothing about acceptance.
-    expect($token->token)->toBe($tokenFixture['data']['access_token']);
+    expect($token->token)->toBe($tokenFixture['data']['session_token']);
     expect($token->provider_session_ref)->toBe($tokenFixture['data']['session_id']);
 });
 
@@ -136,7 +136,7 @@ test('L2: HeyGen /contexts outbound body matches the golden JSON verified agains
             return Http::response(['data' => ['id' => 'ctx-golden']], 200);
         }
         if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'sid-golden', 'access_token' => 'tok-golden']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-golden', 'session_token' => 'tok-golden']], 200);
         }
 
         return Http::response([], 200);

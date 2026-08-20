@@ -125,7 +125,7 @@ function chainHeygenSuccessResponse(): array
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-chain-'.uniqid(),
-                'access_token' => 'heygen-token-chain-'.uniqid(),
+                'session_token' => 'heygen-token-chain-'.uniqid(),
                 'url' => 'https://webrtc.heygen.com/test',
             ],
         ], 200),
