@@ -125,14 +125,21 @@ test('the face and persona an operator chose reach the Tavus body', function ():
     expect($payload['persona_id'])->toBe('p_xyz');
 });
 
-test('Tavus language is translated into its own vocabulary', function (): void {
-    // The one knob both providers share, and even here the value spaces differ:
-    // Tavus wants the language SPELLED OUT. Sending 'it' is accepted and
-    // ignored, so the avatar answers in English to an Italian candidate.
-    expect(TemplatePayload::tavus(['faceId' => 'r', 'palId' => 'p', 'language' => 'it'])['language'])
-        ->toBe('italian');
-    expect(TemplatePayload::tavus(['faceId' => 'r', 'palId' => 'p', 'language' => 'en'])['language'])
-        ->toBe('english');
+test('neither provider mapping emits a language — the project owns it', function (): void {
+    // Superseded (avatar-language-follows-project, D1). A template used to be
+    // able to override the avatar's spoken language, which `avatar_templates`
+    // cannot express correctly: it is scoped by organization with no project_id,
+    // while `project.language` is per project.
+    //
+    // The vocabulary this test used to assert now lives in
+    // App\Support\Provider\TavusLanguage, with its own unit test, and is applied
+    // by the provider's platform default from the project's locale — at
+    // `properties.language`, which is where Tavus actually reads it.
+    expect(TemplatePayload::tavus(['faceId' => 'r', 'palId' => 'p', 'language' => 'it']))
+        ->not->toHaveKey('language');
+
+    expect(TemplatePayload::heygen(['avatarId' => 'a', 'language' => 'it'])['avatar_persona'] ?? [])
+        ->not->toHaveKey('language');
 });
 
 test('Tavus call properties are nested under properties', function (): void {

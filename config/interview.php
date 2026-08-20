@@ -131,6 +131,11 @@ return [
          */
         'replica_id' => env('TAVUS_REPLICA_ID', 'rf4e9d9790f0'),
         'persona_id' => env('TAVUS_PERSONA_ID', 'p8a490c4dfd4'),
+
+        // Fallback ONLY for callers with no project in scope (ProviderSmokeCheck's
+        // standalone fake session). Every real interview supplies the project's
+        // language through QuestionContext.
+        'language' => env('TAVUS_LANGUAGE', 'it'),
     ],
 
     /*

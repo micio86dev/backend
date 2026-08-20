@@ -67,10 +67,12 @@ function casProject(Organization $org, int $count = 1): array
         $ind->forceFill([
             'role_id' => $role->id,
             'competency_id' => $comp->id,
-            'text' => ['en' => "CAS fixture indicator {$i}"],
-            'anchor_5' => ['en' => "Excellent {$i}"],
-            'anchor_3' => ['en' => "Adequate {$i}"],
-            'anchor_1' => ['en' => "Insufficient {$i}"],
+            // Both locales: a project switched to `it` must still compose, or the
+            // test fails with anchor_translation_missing and looks like a code bug.
+            'text' => ['en' => "CAS fixture indicator {$i}", 'it' => "Indicatore CAS {$i}"],
+            'anchor_5' => ['en' => "Excellent {$i}", 'it' => "Eccellente {$i}"],
+            'anchor_3' => ['en' => "Adequate {$i}", 'it' => "Adeguato {$i}"],
+            'anchor_1' => ['en' => "Insufficient {$i}", 'it' => "Insufficiente {$i}"],
             'position' => 0,
         ]);
         $ind->save();
