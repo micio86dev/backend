@@ -28,5 +28,6 @@ return [
         'first' => 'Ciao, e benvenuto! Iniziamo parlando di :competency.',
         'next' => 'Bene, passiamo ora a parlare di :competency.',
         'resume' => 'Riprendiamo da dove eravamo rimasti, parlando di :competency.',
+        'retry' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo con :competency.',
     ],
 ];

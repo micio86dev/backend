@@ -100,3 +100,46 @@ test('compose() with an unknown variant throws InvalidArgumentException (fail lo
     expect(fn () => $composer->compose('bogus_variant', 'Networking', 'en'))
         ->toThrow(InvalidArgumentException::class);
 });
+
+// ─── 'retry' — the fourth variant (interview-continuous-flow, D10) ────────────
+//
+// A competency that ended in `error` is offered to the candidate again. Without
+// its own greeting the avatar simply asks the same thing twice, which reads as
+// not having listened — the candidate has no way to know they are re-attempting
+// rather than being ignored.
+
+test("compose('retry') is a distinct greeting, not the 'next' one reused", function (): void {
+    $composer = new OpeningTextComposer;
+
+    $retry = $composer->compose('retry', 'Networking', 'it')->text;
+    $next = $composer->compose('next', 'Networking', 'it')->text;
+
+    expect($retry)->not->toBe($next);
+});
+
+test("compose('retry') interpolates the competency name in both locales", function (): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose('retry', 'Networking', 'it')->text)->toContain('Networking');
+    expect($composer->compose('retry', 'Networking', 'en')->text)->toContain('Networking');
+});
+
+test("compose('retry') says something happened, without blaming the candidate", function (): void {
+    // The re-offer exists because a provider call failed on OUR side. The
+    // greeting must not imply the candidate answered badly or ran out of time.
+    $composer = new OpeningTextComposer;
+
+    foreach (['it', 'en'] as $locale) {
+        $text = mb_strtolower($composer->compose('retry', 'Networking', $locale)->text);
+
+        foreach (['sbagli', 'errore tuo', 'non hai', 'your mistake', 'you failed', 'incorrect'] as $blame) {
+            expect($text)->not->toContain($blame);
+        }
+    }
+});
+
+test("compose('retry') falls back to the default locale for an unknown one", function (): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose('retry', 'Networking', 'xx')->text)->toContain('Networking');
+});
