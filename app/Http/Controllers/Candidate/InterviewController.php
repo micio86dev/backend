@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Candidate;
 
+use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
@@ -100,6 +101,13 @@ class InterviewController extends Controller
         $nextCompetency = $this->resolveNextCompetency($pid, $project->id);
 
         if ($nextCompetency === null) {
+            // (D5, call site 3) Idempotent self-heal. Every competency is terminal,
+            // so this participant is finished whether or not anything settled them
+            // at the time. It rescues candidates stranded before this change who
+            // come back, and does nothing for anyone already settled — the CAS
+            // predicate makes a second call a no-op, not a second dispatch.
+            $this->settleCompletionIfFinished($pid, $project->id);
+
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -157,6 +165,22 @@ class InterviewController extends Controller
 
         // (2) Create-or-RESUME session row.
         $providerName = $project->provider_override ?? config('interview.provider', 'heygen');
+
+        // (D2/D3) A re-offered competency is reset to `pending` and its previous
+        // attempt's transcript discarded BEFORE the session is resumed, so the
+        // competency is never scored on a conversation that mixes two attempts.
+        // `error_count` survives the reset — it is the bound.
+        if (($nextCompetency['reoffer'] ?? false) === true) {
+            $errored = InterviewSession::where('participant_id', $pid)
+                ->where('project_id', $project->id)
+                ->where('competency_code', $nextCompetency['competency_code'])
+                ->first();
+
+            if ($errored !== null) {
+                (new ResetSessionForRetry)($errored);
+            }
+        }
+
         $session = $this->createOrResumeSession($participant, $project, $nextCompetency, $providerName);
 
         // Re-resolve the provider after we know the project override.
@@ -290,26 +314,9 @@ class InterviewController extends Controller
                 $locked->ended_reason = $endedReason;
                 $locked->save();
 
-                // (7) Count ended sessions (completed, timeout, skipped) for this participant + project
-                $endedCount = InterviewSession::where('participant_id', $pid)
-                    ->where('project_id', $projectId)
-                    ->whereIn('status', ['completed', 'timeout', 'skipped'])
-                    ->count();
-                $totalCompetencies = DB::table('project_competencies')
-                    ->where('project_id', $projectId)
-                    ->count();
-
-                // (8) Last-question CAS single-winner
-                if ($endedCount === $totalCompetencies && $totalCompetencies > 0) {
-                    $won = Participant::where('id', $pid)
-                        ->where('status', 'in_corso')
-                        ->update(['status' => 'in_valutazione']);
-
-                    if ($won === 1) {
-                        // afterCommit() attaches to THIS explicit transaction
-                        FinalizeInterview::dispatch($pid)->afterCommit();
-                    }
-                }
+                // (7)+(8) Tally + last-question CAS, extracted (D5) so the two other
+                // paths that can finish an interview reach the same code.
+                $this->settleCompletionIfFinished($pid, $projectId);
 
                 // C10 D5: set ONLY on the success path — every abort() above (:225,
                 // :231) throws past this point, so reaching it means the write
@@ -453,6 +460,11 @@ class InterviewController extends Controller
             ->where('project_id', $projectId)
             ->pluck('status', 'competency_code');
 
+        // Attempts spent per competency, for the re-offer bound (D1/D2).
+        $errorCounts = InterviewSession::where('participant_id', $participantId)
+            ->where('project_id', $projectId)
+            ->pluck('error_count', 'competency_code');
+
         foreach ($all as $row) {
             $status = $existingStatuses->get($row->competency_code);
 
@@ -472,7 +484,28 @@ class InterviewController extends Controller
                 ];
             }
 
-            // completed | timeout | skipped | error → skip to next
+            // (D2) error with attempts left → RE-OFFER this competency.
+            //
+            // Ordered deliberately AFTER the pending|in_corso branch: a session
+            // already reset to `pending` is caught above and never reaches here, so
+            // the ratified participant-sso "Resume, not restart" scenario keeps
+            // holding verbatim — the operator recovery path leaves sessions at
+            // `pending`, never at `error`.
+            //
+            // The reset happens at the call site, not here: this method resolves,
+            // it does not mutate. Left to a later step it would be one early return
+            // away from being skipped.
+            if ($status === 'error'
+                && ($errorCounts->get($row->competency_code) ?? 0) < InterviewSession::MAX_ERROR_ATTEMPTS
+            ) {
+                return [
+                    'competency_code' => $row->competency_code,
+                    'question_index' => $row->position - 1,
+                    'reoffer' => true,
+                ];
+            }
+
+            // completed | timeout | skipped | exhausted error → skip to next
         }
 
         return null; // all competencies terminal-completed
@@ -667,7 +700,7 @@ class InterviewController extends Controller
         InterviewSession $session,
         Participant $participant,
     ): JsonResponse {
-        return match ($e->failureClass()) {
+        $response = match ($e->failureClass()) {
             // (4c) 429 — retryable; DO NOT flip participant to errore; session stays pending
             ProviderFailureClass::Throttle => response()->json(['error' => 'provider_busy'], Response::HTTP_TOO_MANY_REQUESTS),
 
@@ -680,6 +713,86 @@ class InterviewController extends Controller
             // (4b) Genuine provider failure — unchanged from pre-PR1 behavior.
             ProviderFailureClass::Upstream => $this->markSessionError($session, Response::HTTP_BAD_GATEWAY, $participant),
         };
+
+        // (D5, call site 2) The competency that just died may have been the last one.
+        //
+        // Placed AFTER the switch, never inside markSessionError(). For `Upstream`,
+        // markParticipantFailed() has already moved the participant to `errore`, and
+        // settleCompletionIfFinished()'s `where('status','in_corso')` predicate then
+        // matches zero rows and does nothing — which is exactly right. Settling
+        // FIRST would flip in_corso → in_valutazione, dispatch scoring, and then let
+        // markParticipantFailed() overwrite it to `errore`: a scored, webhooked
+        // candidate sitting at a failure status. One guard, no branch duplication,
+        // and it is the same guard /end already relies on.
+        //
+        // Not "settle on the next /start" instead: after a terminal error the client
+        // renders its error screen and may never call anything again. A settlement
+        // that depends on a client action which may never come is not a settlement.
+        $this->settleCompletionIfFinished($session->participant_id, $session->project_id);
+
+        return $response;
+    }
+
+    /**
+     * Settle the participant when every competency of the project is terminal (D5).
+     *
+     * Extracted from `/end` steps (7)+(8) and called from three places, because an
+     * interview can finish in three ways and only one of them was covered:
+     *   1. `/end` — a competency ends normally.
+     *   2. `handleProviderFailure()` — the LAST competency dies at the provider.
+     *   3. `start()`'s `no_competency_remaining` branch — idempotent self-heal for a
+     *      participant stranded before this change who comes back.
+     *
+     * THE DEFECT THIS REPAIRS: the tally counted only `completed|timeout|skipped`
+     * while `resolveNextCompetency()` treats `error` as terminal and skips it. A
+     * participant with one errored competency exhausted every competency while the
+     * count stayed at `total - 1`, so the CAS never fired — no scoring, no webhook,
+     * no notification, and nothing anywhere reported it.
+     *
+     * An `error` counts only once it has spent its re-offer. This predicate and the
+     * re-offer branch in `resolveNextCompetency()` are two halves of ONE behaviour
+     * and cannot ship apart: count errors too early and a single transient provider
+     * 4xx — our own bug — ends the interview with no second chance; count them too
+     * late and a competency the resolver skips is never tallied, which is the
+     * stranding this method exists to end, wearing a different name.
+     *
+     * The `where('status','in_corso')` predicate is the single-winner guard and the
+     * reason this is safe to call from anywhere: a participant already at
+     * `in_valutazione`, `errore` or `completato` matches zero rows, so a second call
+     * is a no-op rather than a second dispatch.
+     */
+    private function settleCompletionIfFinished(int $participantId, int $projectId): void
+    {
+        $endedCount = InterviewSession::where('participant_id', $participantId)
+            ->where('project_id', $projectId)
+            ->where(function ($q): void {
+                $q->whereIn('status', ['completed', 'timeout', 'skipped'])
+                    // An `error` counts only once it has spent its re-offer. Below
+                    // the ceiling the competency is still offerable, so counting it
+                    // would end an interview the candidate can still finish.
+                    ->orWhere(fn ($e) => $e->where('status', 'error')
+                        ->where('error_count', '>=', InterviewSession::MAX_ERROR_ATTEMPTS));
+            })
+            ->count();
+
+        $totalCompetencies = DB::table('project_competencies')
+            ->where('project_id', $projectId)
+            ->count();
+
+        if ($endedCount !== $totalCompetencies || $totalCompetencies === 0) {
+            return;
+        }
+
+        $won = Participant::where('id', $participantId)
+            ->where('status', 'in_corso')
+            ->update(['status' => 'in_valutazione']);
+
+        if ($won === 1) {
+            // afterCommit() attaches to the caller's transaction when there is one
+            // (/end) and dispatches immediately when there is not (the two /start
+            // call sites, which hold no transaction).
+            FinalizeInterview::dispatch($participantId)->afterCommit();
+        }
     }
 
     /**
@@ -697,6 +810,11 @@ class InterviewController extends Controller
         try {
             $session->status = 'error';
             $session->ended_reason = 'error';
+            // D1: the attempt is recorded HERE, the sole writer of `status = 'error'`.
+            // `ResetSessionForRetry` deliberately never touches this column, so the
+            // count survives the reset that re-offers the competency — a counter its
+            // own reset clears is not a bound.
+            $session->error_count = $session->error_count + 1;
             $session->save();
         } catch (\Throwable) {
             // Best-effort — if even the error update fails, still return the failure status
