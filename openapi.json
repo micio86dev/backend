@@ -319,7 +319,7 @@
                                             "properties": {
                                                 "error": {
                                                     "type": "string",
-                                                    "const": "refresh_token_revoked"
+                                                    "const": "refresh_token_invalid"
                                                 }
                                             },
                                             "required": [
@@ -331,7 +331,7 @@
                                             "properties": {
                                                 "error": {
                                                     "type": "string",
-                                                    "const": "refresh_token_invalid"
+                                                    "const": "refresh_token_revoked"
                                                 }
                                             },
                                             "required": [
