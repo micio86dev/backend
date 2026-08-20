@@ -431,6 +431,18 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PasswordRecovery');
 
+// ─── backoffice-session-refresh-hardening ──────────────────────────────────────
+
+// Unit/Auth — needs TestCase so config()/Cache facade resolve against the
+// booted app; no DB (Redis/array-cache-only state, no Eloquent models).
+pest()->extend(TestCase::class)
+    ->in('Unit/Auth');
+
+// Feature/Auth — RefreshDatabase: rotation/reuse/CORS/candidate-isolation
+// feature tests mint real Users/Participants via factories.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Auth');
+
 // ─── framework-catalog-it-translations ─────────────────────────────────────────
 
 // Feature/Console — RefreshDatabase: ForgetLocaleCommandTest seeds real

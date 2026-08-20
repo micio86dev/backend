@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\LLMProvider;
+use App\Contracts\RedisEvictionPolicyProbe;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
@@ -22,6 +23,7 @@ use App\Services\Scoring\AssessableFractionReliability;
 use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
 use App\Services\Scoring\ThresholdValidityPredicate;
+use App\Support\Auth\RedisConfigEvictionPolicyProbe;
 use App\Testing\FakeLLMProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -62,6 +64,11 @@ class AppServiceProvider extends ServiceProvider
         // Override bindings in tests by calling $this->app->instance() or rebinding.
         $this->app->bind(ReliabilityStrategy::class, AssessableFractionReliability::class);
         $this->app->bind(ValidityPredicate::class, ThresholdValidityPredicate::class);
+
+        // backoffice-session-refresh-hardening D3 — real CONFIG GET probe by
+        // default; tests bind a fake via $this->app->instance() (LLMProvider
+        // pattern) rather than mocking the final concrete implementation.
+        $this->app->bind(RedisEvictionPolicyProbe::class, RedisConfigEvictionPolicyProbe::class);
     }
 
     /**
