@@ -9,7 +9,12 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Create `interview_sessions` table (C7a — Interview Session Mechanics).
  *
- * One row per competency attempt per participant. One session = one competency.
+ * One row per competency per participant — enforced by the unique constraint
+ * below. One session = one competency, for the WHOLE life of that competency:
+ * an errored competency re-offered to the candidate reuses this row rather than
+ * inserting a second, and `error_count` is what records how many attempts it has
+ * spent. (It said "one row per competency ATTEMPT" until the re-offer shipped;
+ * a row can hold more than one.)
  *
  * Design invariants:
  * - organization_id: cascadeOnDelete (org deletion cascades to sessions).
