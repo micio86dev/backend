@@ -24,12 +24,12 @@ namespace App\Services\Provider;
  * i18n mandate) — the avatar's `avatar_persona.language` MUST match the
  * project's configured language, not a static env default. Sourced by the
  * controller from `$project->language` (the same locale source PR3/D9 already
- * uses for the opening greeting) rather than read by `HegenProvider` off the
+ * uses for the opening greeting) rather than read by `HeygenProvider` off the
  * session's `project` relation directly — this keeps the provider a pure
  * function of its two arguments (testable without a persisted Project row,
  * which `ProviderSmokeCheck`'s in-memory fake session does not have) and
  * matches the widening pattern every prior field on this DTO already follows.
- * Null ⇒ `HegenProvider` falls back to `config('interview.heygen.language')`.
+ * Null ⇒ `HeygenProvider` falls back to `config('interview.heygen.language')`.
  *
  * REQ: QuestionContext DTO (C7a)
  * REQ: QuestionContext Carries Composed Prompt (C8 — task 4.2)

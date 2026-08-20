@@ -80,9 +80,11 @@ class TavusProvider implements ProviderSessionService
         // Hotfix 0.22.2 — root cause of the production 400 ("Either replica_id/
         // face_id or a persona_id/pal_id with a default replica specified must
         // be present"): avatar identity previously came ONLY from the org's
-        // active `AvatarTemplate` (`TemplatePayload::tavus()`). no organization is required to have one. Pinned by ProviderContractFixtureTest's golden body and AvatarLanguageTest's null-context case.
-        // today, so that mapping returned `[]` and replica_id/persona_id were
-        // never sent. Same three-layer precedence as
+        // active `AvatarTemplate` (`TemplatePayload::tavus()`) — a source no
+        // organization is required to have, so that mapping returned `[]` and
+        // replica_id/persona_id were never sent. Pinned by
+        // `ProviderContractFixtureTest`'s golden conversation body and
+        // `AvatarLanguageTest`'s null-context case. Same three-layer precedence as
         // `HeygenProvider::buildSessionTokenBody()`, weakest to strongest:
         //   1. `$platformDefault` — this method's own floor. Always supplies
         //      replica_id/persona_id from `interview.tavus.*` config.
