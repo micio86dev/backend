@@ -17,6 +17,7 @@ declare(strict_types=1);
  */
 
 use App\Models\AvatarTemplate;
+use App\Services\Provider\TavusProvider;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -150,4 +151,88 @@ test('one organization template never reaches another organization session', fun
     expect($body)->not->toBeNull();
     expect($body['avatar_id'] ?? null)->not->toBe('A-avatar');
     expect($body['avatar_persona']['language'] ?? null)->toBe('en');
+});
+
+// ─── Tavus ────────────────────────────────────────────────────────────────────
+
+test('Tavus writes the project language NESTED under properties, never top-level', function (): void {
+    // The path is the whole point. Tavus accepts a field at the wrong path and
+    // ignores it in silence, so an assertion that only checks a language is
+    // present passes against the exact defect this change removes.
+    Queue::fake();
+
+    $captured = null;
+    Http::fake(function ($request) use (&$captured) {
+        if (str_contains($request->url(), '/conversations')) {
+            $captured = $request->data();
+        }
+
+        return Http::response([
+            'conversation_id' => 'conv-'.uniqid(),
+            'conversation_url' => 'https://tavus.example/conv',
+        ], 200);
+    });
+
+    $org = casOrg();
+    [$project] = casProject($org, 1);
+    casInTenant($org, fn () => $project->forceFill([
+        'language' => 'it',
+        'provider_override' => 'tavus',
+    ])->save());
+
+    // A template that tries to set a different language must not win.
+    langActiveTemplate($org->id, 'tavus', ['faceId' => 'f1', 'palId' => 'p1', 'language' => 'en']);
+
+    $participant = casParticipant($org, $project);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.casBearer($participant)])
+        ->postJson('/api/candidate/interview/start')->assertStatus(201);
+
+    expect($captured)->not->toBeNull('the conversations call must have been made');
+    expect($captured['properties']['language'] ?? null)->toBe('italian');
+    expect($captured)->not->toHaveKey('language');
+});
+
+test('Tavus falls back to the configured default when the caller supplies no language', function (): void {
+    // Mirrors HeyGen's existing null-context test. ProviderSmokeCheck builds a
+    // standalone fake session with no project, so this branch is reachable.
+    config()->set('interview.tavus.language', 'en');
+
+    $body = (new ReflectionClass(TavusProvider::class))
+        ->getMethod('platformDefaultConversationFields');
+    $body->setAccessible(true);
+
+    $result = $body->invoke(new TavusProvider, null);
+
+    expect($result['properties']['language'] ?? null)->toBe('english');
+});
+
+test('two projects in ONE organization each get their own language, despite one shared template', function (): void {
+    // The reason a template cannot own the language: `avatar_templates` is scoped
+    // by organization with no project_id, so a single active template has to
+    // serve every project in it — while `project.language` is per project.
+    Http::fake(heygenOkFake());
+    Queue::fake();
+
+    $org = casOrg();
+    langActiveTemplate($org->id, 'heygen', ['avatarId' => 'shared-avatar', 'language' => 'en']);
+
+    [$italian] = casProject($org, 1);
+    casInTenant($org, fn () => $italian->forceFill(['language' => 'it'])->save());
+
+    [$english] = casProject($org, 1);
+    casInTenant($org, fn () => $english->forceFill(['language' => 'en'])->save());
+
+    $a = casParticipant($org, $italian);
+    $this->withHeaders(['Authorization' => 'Bearer '.casBearer($a)])
+        ->postJson('/api/candidate/interview/start')->assertStatus(201);
+    expect(langTokenBody()['avatar_persona']['language'] ?? null)->toBe('it');
+
+    Http::fake(heygenOkFake());
+    $this->app['auth']->forgetGuards();
+
+    $b = casParticipant($org, $english);
+    $this->withHeaders(['Authorization' => 'Bearer '.casBearer($b)])
+        ->postJson('/api/candidate/interview/start')->assertStatus(201);
+    expect(langTokenBody()['avatar_persona']['language'] ?? null)->toBe('en');
 });

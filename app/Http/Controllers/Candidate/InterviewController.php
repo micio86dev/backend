@@ -947,13 +947,18 @@ class InterviewController extends Controller
      *
      * question_context.end_phrase / final_phrase are the localized avatar
      * completion-signal phrases (C7a follow-up — interview-frontend addendum),
-     * resolved for the participant's language with a platform-default fallback.
+     * resolved for the PROJECT's language with a platform-default fallback.
+     * (avatar-language-follows-project, D7: they read `participant.language`
+     * until the code was brought into line with interview-session/spec.md, which
+     * already required the project's. The participant value arrives from
+     * unvalidated M2M input and could disagree with everything else the avatar
+     * was given.)
      * The frontend (C7b) consumes them as the SOLE completion-signal source.
      *
      * C8 (M-3): prompt_version added to question_context for audit/traceability.
      * Machine-facing field — returned literally in every locale (not localized).
      *
-     * @param  string|null  $language  The participant's language (BCP-ish locale, may be null).
+     * @param  string|null  $language  The PROJECT's language (BCP-ish locale, may be null).
      * @param  string|null  $promptVersion  Composed prompt template version (C8). On the standard
      *                                      path this is the composed prompt's version; on the
      *                                      degraded resume path it falls back to the config
@@ -1008,7 +1013,7 @@ class InterviewController extends Controller
      * project of a given language, stored in lang/{locale}/interview.php.
      *
      * Resolution rule (per interview-frontend delta spec):
-     *   1. Use the participant's language when a phrase file exists for it.
+     *   1. Use the PROJECT's language when a phrase file exists for it.
      *   2. Otherwise fall back to the platform default language
      *      (config app.fallback_locale) — the fallback phrase is ALWAYS included
      *      (an absent field is a contract violation).
@@ -1016,7 +1021,7 @@ class InterviewController extends Controller
      * Lang::has() checks whether the key resolves for the exact locale (no implicit
      * fallback), so a missing/unknown/null language deterministically falls back.
      *
-     * @param  string|null  $language  The participant's language.
+     * @param  string|null  $language  The PROJECT's language.
      * @return array{0: string, 1: string} [end_phrase, final_phrase]
      */
     private function resolveCompletionPhrases(?string $language): array
