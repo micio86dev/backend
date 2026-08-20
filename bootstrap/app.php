@@ -11,6 +11,7 @@ use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
+use App\Models\RefreshToken;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -52,6 +53,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('queue:prune-batches', [
             '--hours' => (int) config('queue.maintenance.batches_retention_hours'),
         ])->dailyAt('03:20')->onOneServer();
+
+        // backoffice-session-refresh-hardening (storage corrected from Redis
+        // to PostgreSQL — see design.md): dead refresh_tokens rows (past
+        // their absolute ceiling, or already revoked_at) never become live
+        // again, so the Laravel-standard Prunable convention deletes them on
+        // a schedule rather than requiring an operator to remember to.
+        $schedule->command('model:prune', [
+            '--model' => [RefreshToken::class],
+        ])->dailyAt('03:30')->onOneServer();
     })
     ->withMiddleware(function (Middleware $middleware): void {
         // This application is API-only (CLAUDE.md: "API-only, no Blade UI").

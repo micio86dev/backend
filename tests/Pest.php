@@ -433,9 +433,13 @@ pest()->use(RefreshDatabase::class)
 
 // ─── backoffice-session-refresh-hardening ──────────────────────────────────────
 
-// Unit/Auth — needs TestCase so config()/Cache facade resolve against the
-// booted app; no DB (Redis/array-cache-only state, no Eloquent models).
+// Unit/Auth — needs TestCase + RefreshDatabase: App\Support\Auth\RefreshTokenStore
+// is backed by the `refresh_tokens` table (storage corrected from Redis to
+// PostgreSQL — durable auth state does not belong on the shared, evictable
+// cache Redis instance), so RefreshTokenStoreTest exercises a real migrated
+// schema, not a Cache facade fake.
 pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
     ->in('Unit/Auth');
 
 // Feature/Auth — RefreshDatabase: rotation/reuse/CORS/candidate-isolation

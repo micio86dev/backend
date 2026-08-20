@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 /**
  * Refresh-token family configuration (backoffice-session-refresh-hardening
- * D2/D4/D6).
+ * D2/D4/D6, storage corrected from Redis to PostgreSQL — see design.md).
  *
- * No database migration — every value here governs Redis-only state built by
- * App\Support\Auth\RefreshTokenStore, reusing the atomic-consume convention
- * already established by App\Support\Jwt\CandidateTokenFactory::consumeJti()
- * (Cache::add() = Redis SET NX EX).
+ * Every value here governs `refresh_tokens` table state, built by
+ * App\Support\Auth\RefreshTokenStore under DB::transaction()+lockForUpdate()
+ * atomicity — durable authentication state, not cache. The SAME Redis
+ * instance backs CACHE_STORE, QUEUE_CONNECTION and SESSION_DRIVER
+ * (api/.env.example); a cache must stay evictable, so refresh tokens no
+ * longer live there.
  */
 return [
 
