@@ -17,6 +17,19 @@ declare(strict_types=1);
  * candidate `frontend` app also calls api/* (SSO exchange, interview), so an
  * allowlist covering only the backoffice origin takes the candidate app down.
  * See docs/deploy.md.
+ *
+ * An unset/empty CORS_ALLOWED_ORIGINS resolves `allowed_origins` to `[]`
+ * below, which silently blocks every cross-origin request with no error
+ * anywhere (deploy incident 2026-08-20 — CORS_ALLOWED_ORIGINS was unset on
+ * Railway and nothing detected it until live traffic broke). That is NOT
+ * guarded here: config files are only re-evaluated when NOT cached — once
+ * `php artisan config:cache` runs, this file never executes again and a
+ * check here would silently stop firing on every request after the cache
+ * was built. The fail-loud check instead lives in
+ * App\Support\Http\CorsAllowlistStatus, called from HealthController on
+ * every /api/health hit (polled by Docker's HEALTHCHECK and Railway) —
+ * config('cors.allowed_origins') is safe there because it always reads the
+ * resolved value from the config repository, cached or not.
  */
 return [
 

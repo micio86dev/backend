@@ -9,7 +9,6 @@
  * allowlist covering only the backoffice would silently take the candidate
  * app down.
  */
-
 test('preflight from the allowlisted backoffice origin gets Access-Control-Allow-Origin', function (): void {
     $response = $this->withHeaders([
         'Origin' => 'http://localhost:3001',
