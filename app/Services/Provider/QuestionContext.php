@@ -49,5 +49,17 @@ readonly class QuestionContext
         // Hotfix 0.22.1: nullable trailing param — null preserves exact pre-hotfix
         // provider body (falls back to the platform config default language).
         public ?string $language = null,
+        /**
+         * D6 — 1-based ordinal of this competency in the project's order, and the
+         * project's competency count. Threaded to the /start response so the client
+         * never re-derives progress; client-side arithmetic on an empty competency
+         * list is what truncated every interview to one question.
+         *
+         * NOT `questionIndex + 1`: `position` is 0-based at every writer while
+         * `questionIndex` subtracts one, so that sum renders 0/N on the first
+         * competency of every project.
+         */
+        public ?int $competencyOrdinal = null,
+        public ?int $totalCompetencies = null,
     ) {}
 }
