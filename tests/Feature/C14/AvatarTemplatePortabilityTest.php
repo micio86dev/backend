@@ -41,7 +41,6 @@ function portableHeygenConfig(): array
     return [
         'avatarId' => 'ab0765ad-69de-41fb-9f8a-bd01c3c52d6f',
         'voiceId' => 'c84af063-5ce2-4370-8ef8-dcd0ef903d43',
-        'language' => 'it',
     ];
 }
 
@@ -167,7 +166,7 @@ test('an entry carrying two providers becomes two templates', function (): void 
             'name' => 'Dual',
             'configs' => [
                 'heygen' => portableHeygenConfig(),
-                'tavus' => ['palId' => 'p8a490c4dfd4', 'faceId' => 'rf4e9d9790f0', 'language' => 'en'],
+                'tavus' => ['palId' => 'p8a490c4dfd4', 'faceId' => 'rf4e9d9790f0'],
             ],
         ]],
     ])->assertCreated();

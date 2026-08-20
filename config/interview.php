@@ -58,8 +58,8 @@ return [
          * PLATFORM-DEFAULT avatar identity (hotfix 0.22.1 — production outage:
          * HeyGen HTTP 422 "avatar_id: Field required" on EVERY /start, because
          * `HeygenProvider::buildSessionTokenBody()` sourced avatar_id/voice_id/
-         * language ONLY from the org's active `AvatarTemplate`, and NO org has
-         * one today).
+         * language ONLY from the org's active `AvatarTemplate` — a source no
+         * organization is required to have).
          *
          * Reads the SAME env vars as `interview.demo.heygen.*` below (LIVEAVATAR_*
          * accepted as an alias of HEYGEN_*), but this key is DELIBERATELY a
@@ -69,7 +69,7 @@ return [
          * independently of what every tenant without a template needs at request
          * time. Precedence in `HegenProvider::buildSessionTokenBody()`: an org's
          * active template still wins when it sets a value; this is only the
-         * fallback for the (today: universal) case where it does not.
+         * fallback for the case where it does not.
          *
          * The literal fallbacks are the same committed, WORKING values
          * `interview.demo.heygen.*` uses, and they are NOT optional polish:
@@ -108,8 +108,8 @@ return [
          * Tavus HTTP 400 "Either replica_id/face_id or a persona_id/pal_id with
          * a default replica specified must be present" on EVERY /start, because
          * `TavusProvider::issue()` sourced replica_id/persona_id ONLY from the
-         * org's active `AvatarTemplate`, and NO org has one today — the exact
-         * same defect class hotfix 0.22.1 fixed for HeygenProvider).
+         * org's active `AvatarTemplate` — a source no organization is required
+         * to have. Same defect class hotfix 0.22.1 fixed for HeygenProvider).
          *
          * Reads the SAME env vars as `interview.demo.tavus.*` below, but this key
          * is DELIBERATELY a separate config surface, never read via
@@ -118,8 +118,7 @@ return [
          * and could be repointed or removed independently of what every tenant
          * without a template needs at request time. Precedence in
          * `TavusProvider::issue()`: an org's active template still wins when it
-         * sets a value; this is only the fallback for the (today: universal)
-         * case where it does not.
+         * sets a value; this is the fallback for the case where it does not.
          *
          * The literal fallbacks are the same committed, WORKING values
          * `interview.demo.tavus.*` uses, and they are NOT optional polish:
@@ -198,7 +197,6 @@ return [
         'heygen' => [
             'avatar_id' => env('HEYGEN_AVATAR_ID', env('LIVEAVATAR_AVATAR_ID', 'ab0765ad-69de-41fb-9f8a-bd01c3c52d6f')),
             'voice_id' => env('HEYGEN_VOICE_ID', env('LIVEAVATAR_VOICE_ID', 'c84af063-5ce2-4370-8ef8-dcd0ef903d43')),
-            'language' => env('HEYGEN_LANGUAGE', env('LIVEAVATAR_LANGUAGE', 'it')),
         ],
         'tavus' => [
             'replica_id' => env('TAVUS_REPLICA_ID', 'rf4e9d9790f0'),

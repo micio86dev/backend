@@ -149,7 +149,6 @@ final class DemoWriter
                 'config' => [
                     'avatarId' => $identity['heygen']['avatarId'],
                     'voiceId' => $identity['heygen']['voiceId'],
-                    'language' => $identity['heygen']['language'],
                     'interactivityType' => 'CONVERSATIONAL',
                     'maxSessionDurationSec' => 600,
                     'videoQuality' => 'high',
@@ -169,7 +168,6 @@ final class DemoWriter
                 'config' => [
                     'faceId' => $identity['tavus']['faceId'],
                     'palId' => $identity['tavus']['palId'],
-                    'language' => 'en',
                     'audioOnly' => false,
                     'maxCallDurationSec' => 900,
                     'participantAbsentTimeoutSec' => 60,

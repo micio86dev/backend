@@ -184,7 +184,7 @@ class HeygenProvider implements ProviderSessionService
      *
      * Hotfix 0.22.1 — root cause of the production 422 ("avatar_id: Field
      * required"): avatar identity previously came ONLY from the org's active
-     * `AvatarTemplate`. No org has one today, so `$templateFields` was `[]` and
+     * `AvatarTemplate`. no organization is required to have one, so `$templateFields` was `[]` and
      * `avatar_id` was never sent. Three-layer precedence, weakest to strongest:
      *   1. `$platformDefault` — this method's own floor. Always supplies
      *      avatar_id/voice_id/language (from `interview.heygen.*` config /
