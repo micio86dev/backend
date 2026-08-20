@@ -40,15 +40,21 @@ final class OpeningTextComposer
      *   'first'  — the participant's very first competency of the interview.
      *   'next'   — a subsequent (non-resumed) competency.
      *   'resume' — a fresh provider session re-issued for an in-progress competency.
+     *   'retry'  — a competency that ended in `error` and is being OFFERED AGAIN
+     *              (interview-continuous-flow, D10). Distinct from 'resume': that
+     *              one continues a conversation still in progress, this one starts
+     *              a competency over after a failure on OUR side. Without it the
+     *              avatar asks the same question twice with no explanation, which
+     *              reads to the candidate as not having been listened to.
      */
-    private const VARIANTS = ['first', 'next', 'resume'];
+    private const VARIANTS = ['first', 'next', 'resume', 'retry'];
 
     /**
      * Compose the opening greeting for a single competency.
      *
      * Pure — no HTTP, no DB, no LLM. Same inputs always produce the same output.
      *
-     * @param  string  $variant  One of 'first' | 'next' | 'resume'.
+     * @param  string  $variant  One of 'first' | 'next' | 'resume' | 'retry'.
      * @param  string  $competencyName  The competency's display name, in the target locale
      *                                  (caller resolves translation — this class only interpolates).
      * @param  string  $locale  The project's language (design D9 — matches SystemPromptComposer).
