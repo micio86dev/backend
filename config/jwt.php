@@ -124,6 +124,16 @@ return [
     |
     */
 
+    // backoffice-session-refresh-hardening D7: this value is DEAD for the
+    // operator refresh flow (App\Http\Controllers\Auth\AuthController no
+    // longer calls $guard->refresh() — refresh now goes through
+    // App\Support\Auth\RefreshTokenStore, an entirely separate opaque
+    // credential) and will look like removable config to the next reader.
+    // It is NOT removable: verified at
+    // vendor/tymon/jwt-auth/src/Blacklist.php:100, the DENYLIST retention on
+    // logout is computed as max(exp, iat + refresh_ttl) + 1 minute. Lowering
+    // this value silently shortens how long a logged-out access token's jti
+    // stays denylisted, independent of the refresh credential entirely.
     'refresh_ttl' => env('JWT_REFRESH_TTL', 20160),
 
     /*

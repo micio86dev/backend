@@ -14,16 +14,22 @@ final class RefreshRotateResult
         public readonly RefreshRotateStatus $status,
         public readonly ?int $userId = null,
         public readonly ?RefreshTokenIssue $issue = null,
+        public readonly ?string $familyId = null,
     ) {}
 
     public static function rotated(int $userId, RefreshTokenIssue $issue): self
     {
-        return new self(RefreshRotateStatus::Rotated, $userId, $issue);
+        return new self(RefreshRotateStatus::Rotated, $userId, $issue, $issue->familyId);
     }
 
-    public static function concurrentDuplicate(int $userId): self
+    /**
+     * D6: no rotation, no new cookie — $familyId is still needed by the
+     * caller to stamp the SAME `fam` claim onto the freshly minted access
+     * token (the family itself did not change on this path).
+     */
+    public static function concurrentDuplicate(int $userId, string $familyId): self
     {
-        return new self(RefreshRotateStatus::ConcurrentDuplicate, $userId);
+        return new self(RefreshRotateStatus::ConcurrentDuplicate, $userId, familyId: $familyId);
     }
 
     public static function invalid(): self

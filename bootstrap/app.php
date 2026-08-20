@@ -8,6 +8,7 @@ use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
 use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\RejectStaleCredentials;
+use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TenantContext;
 use Illuminate\Console\Scheduling\Schedule;
@@ -74,6 +75,23 @@ return Application::configure(basePath: dirname(__DIR__))
         // Apply security headers globally (task 7.7 / D29).
         $middleware->append(SecurityHeaders::class);
 
+        // backoffice-session-refresh-hardening D4: the refresh cookie carries
+        // its own opaque, hashed-at-rest secret (256 bits of CSPRNG entropy)
+        // — Laravel's app-level cookie encryption would only obscure the
+        // documented wire format `{family_id}.{secret}` (design D2/D4, and
+        // the D11 WebKit gate's raw Set-Cookie fixture) for zero additional
+        // security. Same reasoning tymon documents for its own optional
+        // cookie transport (config/jwt.php `decrypt_cookies`).
+        //
+        // NOT config('refresh_tokens.cookie.name') here — this closure runs
+        // during Application::configure(), before LoadConfiguration has
+        // bound the 'config' singleton into the container; calling config()
+        // this early throws "Target class [config] does not exist." The
+        // literal name is asserted equal to the config value by
+        // tests/Arch/Config/CorsConfigTest.php's sibling refresh-cookie
+        // invariant test so the two can never silently drift.
+        $middleware->encryptCookies(except: ['beai_refresh']);
+
         // C2: Register TenantContext on the `api` middleware group AFTER auth:api.
         // TenantContext reads $request->user() which is only available after auth:api
         // has authenticated the bearer token and loaded the User from the DB.
@@ -90,7 +108,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // C5: Register the 'ability' middleware alias for per-route M2M ability checks.
         // e.g. Route::middleware('ability:participants:read')
-        $middleware->alias(['ability' => CheckAbility::class]);
+        // backoffice-session-refresh-hardening D5: 'refresh.csrf' alias for
+        // POST /api/auth/refresh, now publicly routable (auth:api dropped).
+        $middleware->alias([
+            'ability' => CheckAbility::class,
+            'refresh.csrf' => RequireRefreshCsrfHeader::class,
+        ]);
 
         // C5: Insert CheckAbility IMMEDIATELY BEFORE SubstituteBindings in the priority list.
         // Without this, per-route ability middleware could execute AFTER SubstituteBindings

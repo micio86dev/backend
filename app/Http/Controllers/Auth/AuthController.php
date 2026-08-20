@@ -6,47 +6,57 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Auth\RefreshRotateResult;
+use App\Support\Auth\RefreshRotateStatus;
+use App\Support\Auth\RefreshTokenCookie;
+use App\Support\Auth\RefreshTokenStore;
 use App\Support\ProfilePhotoUrlSigner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\PermissionRegistrar;
-use Tymon\JWTAuth\Exceptions\JWTException;
 use Tymon\JWTAuth\JWTGuard;
 
 /**
- * AuthController (C2).
+ * AuthController (C2, refresh flow hardened by backoffice-session-refresh-hardening).
  *
- * Handles JWT login, token refresh, logout (jti denylist), and me.
+ * Handles JWT login, cookie-based refresh (rotation + reuse detection),
+ * logout (jti denylist + family revoke), and me.
  *
  * Routes (all under /api/auth):
  *   POST   /login   — public
- *   POST   /refresh — auth:api
+ *   POST   /refresh — public, authenticated by the httpOnly beai_refresh
+ *                      cookie + RequireRefreshCsrfHeader (NEVER auth:api —
+ *                      D8: it must work even after the access token expires)
  *   POST   /logout  — auth:api
  *   GET    /me      — auth:api
  *
+ * Two distinct credentials (design D2/D4), never one:
+ * - Access token: short-TTL jwt-auth JWT, JSON body, memory-only client-side.
+ *   Carries a `fam` claim (the operator's current refresh family id) so
+ *   logout can resolve which family to revoke without the cookie ever being
+ *   sent to /logout (its Path is scoped to /api/auth/refresh only).
+ * - Refresh credential: opaque secret in an httpOnly cookie, hashed at rest,
+ *   rotated on every use, family-scoped so a detected replay revokes every
+ *   descendant (App\Support\Auth\RefreshTokenStore).
+ *
  * Invariants:
  * - All protected routes use auth:api explicitly — never bare `auth`.
- * - Logout denylists the jti in the cache store (Redis in production).
+ * - Logout denylists the jti in the cache store (Redis in production) AND
+ *   revokes the refresh family named by the `fam` claim.
  * - Logout also invalidates the Spatie permission cache (forgetCachedPermissions).
  *   Cache-invalidation mechanism: explicit call here + RoleAttached/RoleDetached listeners
  *   registered via events_enabled=true in config/permission.php.
  */
 final class AuthController extends Controller
 {
+    public function __construct(private readonly RefreshTokenStore $refreshTokens) {}
+
     /**
-     * Attempt login and return a token pair.
+     * Attempt login and return an access token; sets the refresh cookie.
      *
      * POST /api/auth/login
      * Public — no auth middleware.
-     *
-     * Token model (D4 — jwt-auth rotation):
-     * - Access token: standard TTL (30 min), used for all API requests.
-     * - Refresh token: re-issues a new access token via POST /api/auth/refresh.
-     *   jwt-auth rotation: the SAME bearer token is posted to /refresh; the old
-     *   token's jti is denylisted and a new token is returned. There is no separate
-     *   long-lived opaque refresh token — the "refresh_token" field carries the
-     *   same access token string returned at login.
      */
     public function login(Request $request): JsonResponse
     {
@@ -67,45 +77,52 @@ final class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials.'], 401);
         }
 
-        $guard = $this->jwtGuard();
+        $issue = $this->refreshTokens->issue($user->id);
 
-        // Issue the access token via the jwt guard — sets guard's current token.
-        $accessToken = (string) $guard->login($user);
-
-        // Per D4 spec: jwt-auth uses ROTATION (no separate refresh-token table).
-        // The "refresh_token" field carries the same access token string — the client
-        // presents it to POST /refresh to rotate it. Issuing a separate token with
-        // extended TTL is deferred to C5/C6 if product requires it.
-        $refreshToken = $accessToken;
-
-        return $this->tokenResponse($accessToken, $refreshToken);
-    }
-
-    /**
-     * Refresh the access token.
-     *
-     * POST /api/auth/refresh
-     * Protected: auth:api
-     *
-     * Uses jwt-auth's native token ROTATION: the current bearer access token is
-     * presented and a new access token is returned; the old token's jti is denylisted.
-     */
-    public function refresh(): JsonResponse
-    {
-        try {
-            $newToken = $this->jwtGuard()->refresh();
-        } catch (JWTException $e) {
-            return response()->json(['message' => 'Token could not be refreshed.'], 401);
-        }
+        $accessToken = (string) $this->jwtGuard()
+            ->claims(['fam' => $issue->familyId])
+            ->login($user);
 
         return response()->json([
-            'access_token' => (string) $newToken,
+            'access_token' => $accessToken,
             'token_type' => 'bearer',
-        ]);
+        ])->withCookie(RefreshTokenCookie::build($issue));
     }
 
     /**
-     * Logout — denylist the current token's jti + invalidate Spatie permission cache.
+     * Refresh the access token via the httpOnly refresh cookie.
+     *
+     * POST /api/auth/refresh
+     * PUBLIC — authenticated by cookie + RequireRefreshCsrfHeader, NEVER
+     * auth:api (D8): an expired access token is exactly when this endpoint
+     * must still work.
+     */
+    public function refresh(Request $request): JsonResponse
+    {
+        $cookieValue = $request->cookie((string) config('refresh_tokens.cookie.name'));
+        $parsed = $this->parseCookie($cookieValue);
+
+        if ($parsed === null) {
+            return $this->refreshFailure('refresh_token_invalid');
+        }
+
+        [$familyId, $secret] = $parsed;
+
+        $result = $this->refreshTokens->rotate($familyId, $secret);
+
+        return match ($result->status) {
+            RefreshRotateStatus::Rotated => $this->refreshSuccess($result, setCookie: true),
+            RefreshRotateStatus::ConcurrentDuplicate => $this->refreshSuccess($result, setCookie: false),
+            RefreshRotateStatus::Invalid => $this->refreshFailure('refresh_token_invalid'),
+            RefreshRotateStatus::Revoked => $this->refreshFailure('refresh_token_revoked'),
+            RefreshRotateStatus::Expired => $this->refreshFailure('refresh_token_expired'),
+            RefreshRotateStatus::Reused => $this->refreshFailure('refresh_token_reused'),
+        };
+    }
+
+    /**
+     * Logout — denylist the current token's jti, revoke its refresh family,
+     * clear the refresh cookie, invalidate the Spatie permission cache.
      *
      * POST /api/auth/logout
      * Protected: auth:api
@@ -116,9 +133,16 @@ final class AuthController extends Controller
         // This ensures a subsequent check with a fresh token starts cache-clean.
         $this->forgetPermissionCache();
 
+        $familyId = $this->jwtGuard()->payload()->get('fam');
+
+        if (is_string($familyId) && $familyId !== '') {
+            $this->refreshTokens->revokeFamily($familyId);
+        }
+
         $this->jwtGuard()->logout();
 
-        return response()->json(['message' => 'Successfully logged out.']);
+        return response()->json(['message' => 'Successfully logged out.'])
+            ->withCookie(RefreshTokenCookie::clear());
     }
 
     /**
@@ -189,14 +213,71 @@ final class AuthController extends Controller
     }
 
     /**
-     * Build the standard token-pair response.
+     * Parses the raw `{family_id}.{secret}` cookie wire format (D2/D4).
+     *
+     * @return array{0: string, 1: string}|null
      */
-    private function tokenResponse(string $accessToken, string $refreshToken): JsonResponse
+    private function parseCookie(?string $cookieValue): ?array
     {
-        return response()->json([
+        if ($cookieValue === null || $cookieValue === '') {
+            return null;
+        }
+
+        $dotPosition = strpos($cookieValue, '.');
+
+        if ($dotPosition === false || $dotPosition === 0 || $dotPosition === strlen($cookieValue) - 1) {
+            return null;
+        }
+
+        return [substr($cookieValue, 0, $dotPosition), substr($cookieValue, $dotPosition + 1)];
+    }
+
+    /**
+     * Mints a fresh access token for a rotated/duplicate refresh outcome.
+     *
+     * Re-checks isDeactivated() explicitly: POST /api/auth/refresh runs
+     * OUTSIDE auth:api (D8), so App\Http\Middleware\TenantContext's
+     * deactivation kill switch never sees this request — this is the
+     * equivalent enforcement point on the cookie-authenticated path.
+     */
+    private function refreshSuccess(RefreshRotateResult $result, bool $setCookie): JsonResponse
+    {
+        $user = User::find($result->userId);
+
+        if ($user === null || $user->isDeactivated()) {
+            // The store already rotated/consumed the presented token (or
+            // confirmed the concurrent duplicate) — revoke the family
+            // outright rather than leaving a live generation behind a user
+            // who can no longer authenticate.
+            $this->refreshTokens->revokeFamily($result->familyId);
+
+            return $this->refreshFailure('refresh_token_revoked');
+        }
+
+        $accessToken = (string) $this->jwtGuard()
+            ->claims(['fam' => $result->familyId])
+            ->login($user);
+
+        $response = response()->json([
             'access_token' => $accessToken,
-            'refresh_token' => $refreshToken,
             'token_type' => 'bearer',
         ]);
+
+        // D6: the concurrent-duplicate path issues NO Set-Cookie — doing so
+        // would clobber the winner's already-rotated cookie.
+        if ($setCookie) {
+            $response->withCookie(RefreshTokenCookie::build($result->issue));
+        }
+
+        return $response;
+    }
+
+    /**
+     * Every 401 from /refresh clears the cookie (design D4).
+     */
+    private function refreshFailure(string $error): JsonResponse
+    {
+        return response()->json(['error' => $error], 401)
+            ->withCookie(RefreshTokenCookie::clear());
     }
 }

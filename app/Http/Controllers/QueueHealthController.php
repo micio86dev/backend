@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Contracts\RedisEvictionPolicyProbe;
 use App\Providers\QueueRuntimeServiceProvider;
 use App\Support\Queue\ReservedJobAgeProbe;
 use Illuminate\Http\JsonResponse;
@@ -34,8 +35,13 @@ use Illuminate\Support\Facades\Queue;
  */
 class QueueHealthController extends Controller
 {
-    public function __invoke(ReservedJobAgeProbe $reservedJobAgeProbe): JsonResponse
+    public function __invoke(ReservedJobAgeProbe $reservedJobAgeProbe, RedisEvictionPolicyProbe $evictionPolicyProbe): JsonResponse
     {
+        // backoffice-session-refresh-hardening D3: surfaced on EVERY response
+        // (not only the "ok" branch) so eviction-policy drift is observable
+        // even while the worker itself is down.
+        $redisEvictionPolicy = $evictionPolicyProbe->resolve();
+
         $heartbeatAt = Cache::get(QueueRuntimeServiceProvider::HEARTBEAT_KEY);
         $heartbeatAgeSeconds = $heartbeatAt !== null ? max(0, now()->getTimestamp() - (int) $heartbeatAt) : null;
 
@@ -55,6 +61,7 @@ class QueueHealthController extends Controller
                 ],
                 'queue' => null,
                 'failed' => null,
+                'redis_eviction_policy' => $redisEvictionPolicy,
             ], 503);
         }
 
@@ -95,6 +102,7 @@ class QueueHealthController extends Controller
                 'count' => $failedCount,
                 'oldest_age_seconds' => $failedOldestAgeSeconds,
             ],
+            'redis_eviction_policy' => $redisEvictionPolicy,
         ], 200);
     }
 }

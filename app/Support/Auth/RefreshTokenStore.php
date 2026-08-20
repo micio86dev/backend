@@ -188,7 +188,7 @@ final class RefreshTokenStore
                     'age_seconds' => $ageSeconds,
                 ]);
 
-                return RefreshRotateResult::concurrentDuplicate((int) $fam['user_id']);
+                return RefreshRotateResult::concurrentDuplicate((int) $fam['user_id'], (string) $spent['family_id']);
             }
         }
 

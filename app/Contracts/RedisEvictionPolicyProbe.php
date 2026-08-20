@@ -16,8 +16,8 @@ interface RedisEvictionPolicyProbe
 {
     /**
      * @return string The policy value (e.g. 'noeviction', 'allkeys-lru'), or
-     *                 'unknown' if it could not be read (non-Redis store, or
-     *                 the provider disables CONFIG).
+     *                'unknown' if it could not be read (non-Redis store, or
+     *                the provider disables CONFIG).
      */
     public function resolve(): string;
 }

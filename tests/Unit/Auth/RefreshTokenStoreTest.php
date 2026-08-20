@@ -178,6 +178,18 @@ test('ceiling never extends on rotation: the TTL shrinks as it approaches the ce
     expect($secondsRemaining)->toBeGreaterThan(0);
 });
 
+// ─── Cookie-name / encryption-exclusion drift guard ────────────────────────────
+
+test('the cookie name matches the literal excluded from encryption in bootstrap/app.php', function (): void {
+    // bootstrap/app.php's encryptCookies(except: [...]) call cannot read
+    // config('refresh_tokens.cookie.name') — that closure runs before the
+    // 'config' container binding exists — so it hardcodes the literal
+    // 'beai_refresh' instead. This test is the drift guard: if the config
+    // value ever changes, this fails loudly rather than silently leaving
+    // the refresh cookie double-encrypted.
+    expect(config('refresh_tokens.cookie.name'))->toBe('beai_refresh');
+});
+
 // ─── revokeFamily() ──────────────────────────────────────────────────────────
 
 test('revokeFamily() invalidates every outstanding token in the family immediately', function (): void {

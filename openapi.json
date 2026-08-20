@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.14.1"
+        "version": "0.21.0"
     },
     "servers": [
         {
@@ -199,8 +199,8 @@
         "/auth/login": {
             "post": {
                 "operationId": "auth.login",
-                "description": "POST /api/auth/login\nPublic \u2014 no auth middleware.\n\nToken model (D4 \u2014 jwt-auth rotation):\n- Access token: standard TTL (30 min), used for all API requests.\n- Refresh token: re-issues a new access token via POST /api/auth/refresh.\n  jwt-auth rotation: the SAME bearer token is posted to /refresh; the old\n  token's jti is denylisted and a new token is returned. There is no separate\n  long-lived opaque refresh token \u2014 the \"refresh_token\" field carries the\n  same access token string returned at login.",
-                "summary": "Attempt login and return a token pair",
+                "description": "POST /api/auth/login\nPublic \u2014 no auth middleware.",
+                "summary": "Attempt login and return an access token; sets the refresh cookie",
                 "tags": [
                     "Auth"
                 ],
@@ -238,9 +238,6 @@
                                         "access_token": {
                                             "type": "string"
                                         },
-                                        "refresh_token": {
-                                            "type": "string"
-                                        },
                                         "token_type": {
                                             "type": "string",
                                             "const": "bearer"
@@ -248,7 +245,6 @@
                                     },
                                     "required": [
                                         "access_token",
-                                        "refresh_token",
                                         "token_type"
                                     ]
                                 }
@@ -283,8 +279,8 @@
         "/auth/refresh": {
             "post": {
                 "operationId": "auth.refresh",
-                "description": "POST /api/auth/refresh\nProtected: auth:api\n\nUses jwt-auth's native token ROTATION: the current bearer access token is\npresented and a new access token is returned; the old token's jti is denylisted.",
-                "summary": "Refresh the access token",
+                "description": "POST /api/auth/refresh\nPUBLIC \u2014 authenticated by cookie + RequireRefreshCsrfHeader, NEVER\nauth:api (D8): an expired access token is exactly when this endpoint\nmust still work.",
+                "summary": "Refresh the access token via the httpOnly refresh cookie",
                 "tags": [
                     "Auth"
                 ],
@@ -313,7 +309,63 @@
                         }
                     },
                     "401": {
-                        "$ref": "#/components/responses/AuthenticationException"
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "refresh_token_revoked"
+                                                }
+                                            },
+                                            "required": [
+                                                "error"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "refresh_token_invalid"
+                                                }
+                                            },
+                                            "required": [
+                                                "error"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "refresh_token_expired"
+                                                }
+                                            },
+                                            "required": [
+                                                "error"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "refresh_token_reused"
+                                                }
+                                            },
+                                            "required": [
+                                                "error"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -322,7 +374,7 @@
             "post": {
                 "operationId": "auth.logout",
                 "description": "POST /api/auth/logout\nProtected: auth:api",
-                "summary": "Logout \u2014 denylist the current token's jti + invalidate Spatie permission cache",
+                "summary": "Logout \u2014 denylist the current token's jti, revoke its refresh family,\nclear the refresh cookie, invalidate the Spatie permission cache",
                 "tags": [
                     "Auth"
                 ],
@@ -381,10 +433,7 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ],
+                                                    "type": "string",
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 },
                                                 "photo_url": {
@@ -832,25 +881,20 @@
                                                         "type": "string"
                                                     },
                                                     "description": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ]
+                                                        "type": "string"
                                                     },
                                                     "provider": {
                                                         "type": "string"
                                                     },
                                                     "config": {
-                                                        "type": "array",
-                                                        "items": {}
+                                                        "type": "string"
                                                     },
                                                     "persona": {
                                                         "type": [
-                                                            "array",
+                                                            "string",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config.",
-                                                        "items": {}
+                                                        "description": "Persona is optional: a template may be pure provider config."
                                                     }
                                                 },
                                                 "required": [
@@ -3085,13 +3129,17 @@
                                                 "count",
                                                 "oldest_age_seconds"
                                             ]
+                                        },
+                                        "redis_eviction_policy": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
                                         "status",
                                         "worker",
                                         "queue",
-                                        "failed"
+                                        "failed",
+                                        "redis_eviction_policy"
                                     ]
                                 }
                             }
@@ -3131,13 +3179,17 @@
                                         },
                                         "failed": {
                                             "type": "null"
+                                        },
+                                        "redis_eviction_policy": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
                                         "status",
                                         "worker",
                                         "queue",
-                                        "failed"
+                                        "failed",
+                                        "redis_eviction_policy"
                                     ]
                                 }
                             }
@@ -4849,34 +4901,28 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "participant_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "provider_session_ref": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [
@@ -5057,13 +5103,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
@@ -5072,10 +5118,7 @@
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [

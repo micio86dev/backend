@@ -1,15 +1,24 @@
 <?php
 
 /**
- * AuthController feature tests (C2).
+ * AuthController feature tests (C2, corrected first for
+ * backoffice-session-refresh-hardening slice 3 — design D2/D4/D8).
  *
- * Covers login, refresh, logout (jti denylist), me, and superadmin login.
- * All tests use RefreshDatabase (via Pest.php C2 scoping).
+ * Covers login, refresh, logout (jti denylist + family revoke), me, and
+ * superadmin login. All tests use RefreshDatabase (via Pest.php C2 scoping).
+ *
+ * Corrected from the pre-hardening shape: login no longer returns a
+ * `refresh_token` JSON field (D8 — the real refresh credential is now an
+ * httpOnly cookie the client must never read); login stamps a `fam` claim on
+ * the access token and sets the refresh cookie; `/refresh` is authenticated
+ * by cookie + CSRF header rather than a Bearer token (D8 — it must work even
+ * when the access token has already expired).
  */
 
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 // Helper: create a user with known password and optionally an org.
 function makeUser(array $attrs = []): User
@@ -19,9 +28,32 @@ function makeUser(array $attrs = []): User
     ], $attrs));
 }
 
+/**
+ * Extracts the raw `beai_refresh` cookie's value from a TestResponse — the
+ * SAME cookie a browser would store, never decrypted/re-encoded by the test
+ * client (jwt.php decrypt_cookies=false; this cookie carries its own
+ * distinct encryption exemption via App\Http\Middleware\EncryptCookies'
+ * $except list, added alongside the controller wiring).
+ */
+function refreshCookieFrom(\Illuminate\Testing\TestResponse $response): ?string
+{
+    foreach ($response->headers->getCookies() as $cookie) {
+        if ($cookie->getName() === config('refresh_tokens.cookie.name')) {
+            return $cookie->getValue();
+        }
+    }
+
+    return null;
+}
+
+function refreshHeaders(): array
+{
+    return ['X-BEAI-Refresh' => '1'];
+}
+
 // ─── Login ───────────────────────────────────────────────────────────────────
 
-test('valid credentials → 200 with access_token, refresh_token, token_type bearer', function (): void {
+test('valid credentials → 200 with access_token + token_type bearer, NO refresh_token field', function (): void {
     $org = Organization::factory()->create();
     $user = makeUser(['organization_id' => $org->id]);
 
@@ -31,8 +63,44 @@ test('valid credentials → 200 with access_token, refresh_token, token_type bea
     ]);
 
     $response->assertOk()
-        ->assertJsonStructure(['access_token', 'refresh_token', 'token_type'])
+        ->assertJsonStructure(['access_token', 'token_type'])
+        ->assertJsonMissingPath('refresh_token')
         ->assertJsonPath('token_type', 'bearer');
+});
+
+test('login sets the beai_refresh cookie: HttpOnly, Secure, SameSite=None, Path=/api/auth/refresh', function (): void {
+    $org = Organization::factory()->create();
+    $user = makeUser(['organization_id' => $org->id]);
+
+    $response = $this->postJson('/api/auth/login', [
+        'email' => $user->email,
+        'password' => 'secret-password',
+    ])->assertOk();
+
+    $cookie = collect($response->headers->getCookies())
+        ->first(fn ($c) => $c->getName() === 'beai_refresh');
+
+    expect($cookie)->not->toBeNull();
+    expect($cookie->isHttpOnly())->toBeTrue();
+    expect($cookie->isSecure())->toBeTrue();
+    expect($cookie->getSameSite())->toBe('none');
+    expect($cookie->getPath())->toBe('/api/auth/refresh');
+    expect($cookie->getValue())->toContain('.'); // {family_id}.{secret}
+});
+
+test('login stamps a fam claim on the access token', function (): void {
+    $org = Organization::factory()->create();
+    $user = makeUser(['organization_id' => $org->id]);
+
+    $response = $this->postJson('/api/auth/login', [
+        'email' => $user->email,
+        'password' => 'secret-password',
+    ])->assertOk();
+
+    $token = $response->json('access_token');
+    $payload = JWTAuth::setToken($token)->getPayload();
+
+    expect($payload->get('fam'))->toBeString()->not->toBeEmpty();
 });
 
 test('invalid password → 401', function (): void {
@@ -66,41 +134,72 @@ test('login with missing password → 422 validation error', function (): void {
     ])->assertUnprocessable();
 });
 
-// ─── Refresh ─────────────────────────────────────────────────────────────────
+// ─── Refresh (D8: publicly routable — cookie + CSRF header, NOT auth:api) ──────
 
-test('valid refresh token → 200 with new access_token', function (): void {
+test('valid refresh cookie + CSRF header → 200 with a new access_token, rotated cookie', function (): void {
     $org = Organization::factory()->create();
     $user = makeUser(['organization_id' => $org->id]);
 
-    // Log in first to get a token pair
     $loginResponse = $this->postJson('/api/auth/login', [
         'email' => $user->email,
         'password' => 'secret-password',
     ])->assertOk();
 
-    $token = $loginResponse->json('access_token');
+    $refreshCookieValue = refreshCookieFrom($loginResponse);
 
-    $response = $this->withToken($token)
+    $response = $this->withHeaders(refreshHeaders())
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $refreshCookieValue)
         ->postJson('/api/auth/refresh');
 
     $response->assertOk()
-        ->assertJsonStructure(['access_token', 'token_type']);
+        ->assertJsonStructure(['access_token', 'token_type'])
+        ->assertJsonMissingPath('refresh_token');
+
+    $rotatedCookieValue = refreshCookieFrom($response);
+    expect($rotatedCookieValue)->not->toBeNull();
+    expect($rotatedCookieValue)->not->toBe($refreshCookieValue);
 });
 
-test('refresh without bearer token → 401 token could not be refreshed', function (): void {
-    // Use actingAs to satisfy auth:api middleware without supplying an Authorization header.
-    // The guard resolves $user from the pre-set state, but jwtGuard()->refresh() calls
-    // requireToken() which looks for a Bearer token in the request — none is present, so
-    // it throws JWTException('Token could not be parsed from the request.').
-    // The controller catch block converts this to 401 + 'Token could not be refreshed.'
+test('refresh works even when the access token has already expired (D8 — the structural fix)', function (): void {
     $org = Organization::factory()->create();
     $user = makeUser(['organization_id' => $org->id]);
 
-    $response = $this->actingAs($user, 'api')
-        ->postJson('/api/auth/refresh');
+    $loginResponse = $this->postJson('/api/auth/login', [
+        'email' => $user->email,
+        'password' => 'secret-password',
+    ])->assertOk();
 
-    $response->assertUnauthorized()
-        ->assertJsonPath('message', 'Token could not be refreshed.');
+    $refreshCookieValue = refreshCookieFrom($loginResponse);
+
+    $this->travel(31)->minutes(); // past jwt.ttl=30 — access token now expired
+
+    $this->withHeaders(refreshHeaders())
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $refreshCookieValue)
+        ->postJson('/api/auth/refresh')
+        ->assertOk();
+});
+
+test('refresh without the CSRF header → 403', function (): void {
+    $org = Organization::factory()->create();
+    $user = makeUser(['organization_id' => $org->id]);
+
+    $loginResponse = $this->postJson('/api/auth/login', [
+        'email' => $user->email,
+        'password' => 'secret-password',
+    ])->assertOk();
+
+    $refreshCookieValue = refreshCookieFrom($loginResponse);
+
+    $this->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $refreshCookieValue)
+        ->postJson('/api/auth/refresh')
+        ->assertForbidden();
+});
+
+test('refresh without any cookie → 401 refresh_token_invalid, revokes nothing', function (): void {
+    $this->withHeaders(refreshHeaders())
+        ->postJson('/api/auth/refresh')
+        ->assertUnauthorized()
+        ->assertJsonPath('error', 'refresh_token_invalid');
 });
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
@@ -126,14 +225,39 @@ test('logout → 200 and subsequent me returns 401', function (): void {
         ->assertUnauthorized();
 });
 
+test('logout clears the beai_refresh cookie and revokes its family', function (): void {
+    $org = Organization::factory()->create();
+    $user = makeUser(['organization_id' => $org->id]);
+
+    $loginResponse = $this->postJson('/api/auth/login', [
+        'email' => $user->email,
+        'password' => 'secret-password',
+    ])->assertOk();
+
+    $token = $loginResponse->json('access_token');
+    $refreshCookieValue = refreshCookieFrom($loginResponse);
+
+    $logoutResponse = $this->withToken($token)
+        ->postJson('/api/auth/logout')
+        ->assertOk();
+
+    $clearedCookie = collect($logoutResponse->headers->getCookies())
+        ->first(fn ($c) => $c->getName() === 'beai_refresh');
+    expect($clearedCookie)->not->toBeNull();
+    expect($clearedCookie->getValue())->toBe('');
+
+    // The family behind that cookie is now dead too.
+    $this->withHeaders(refreshHeaders())
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $refreshCookieValue)
+        ->postJson('/api/auth/refresh')
+        ->assertUnauthorized()
+        ->assertJsonPath('error', 'refresh_token_revoked');
+});
+
 test('logout triggers forgetCachedPermissions', function (): void {
     $org = Organization::factory()->create();
     $user = makeUser(['organization_id' => $org->id]);
 
-    // Spy: after logout the permission registrar cache should be cleared.
-    // We verify by asserting that a fresh hasRole check after role assignment
-    // is not served from a stale cache. As a proxy, just confirm the call goes through.
-    // The actual cache invalidation is tested via RoleService / events in isolation tests.
     $loginResponse = $this->postJson('/api/auth/login', [
         'email' => $user->email,
         'password' => 'secret-password',
@@ -206,7 +330,7 @@ test('me without token → 401', function (): void {
 
 // ─── Superadmin login ─────────────────────────────────────────────────────────
 
-test('superadmin login (null org, is_superadmin=true) → 200 with token', function (): void {
+test('superadmin login (null org, is_superadmin=true) → 200 with token, no refresh_token field', function (): void {
     $user = makeUser(['organization_id' => null, 'is_superadmin' => true]);
 
     $response = $this->postJson('/api/auth/login', [
@@ -215,5 +339,6 @@ test('superadmin login (null org, is_superadmin=true) → 200 with token', funct
     ]);
 
     $response->assertOk()
-        ->assertJsonStructure(['access_token', 'refresh_token', 'token_type']);
+        ->assertJsonStructure(['access_token', 'token_type'])
+        ->assertJsonMissingPath('refresh_token');
 });
