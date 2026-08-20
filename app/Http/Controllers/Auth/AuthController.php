@@ -100,7 +100,7 @@ final class AuthController extends Controller
     public function refresh(Request $request): JsonResponse
     {
         $cookieValue = $request->cookie((string) config('refresh_tokens.cookie.name'));
-        $parsed = $this->parseCookie($cookieValue);
+        $parsed = $this->parseCookie(is_string($cookieValue) ? $cookieValue : null);
 
         if ($parsed === null) {
             return $this->refreshFailure('refresh_token_invalid');
@@ -242,6 +242,18 @@ final class AuthController extends Controller
      */
     private function refreshSuccess(RefreshRotateResult $result, bool $setCookie): JsonResponse
     {
+        // RefreshRotateResult::rotated()/concurrentDuplicate() — the only two
+        // named constructors this method is ever called with (see refresh()'s
+        // match()) — always set $familyId. This check is real type-narrowing
+        // for PHPStan, not a reachable branch: $familyId is ?string on the
+        // shared value object because Invalid/Revoked/Expired/Reused leave it
+        // null, and nothing here can prove that from the type system alone.
+        $familyId = $result->familyId;
+
+        if ($familyId === null) {
+            return $this->refreshFailure('refresh_token_invalid');
+        }
+
         $user = User::find($result->userId);
 
         if ($user === null || $user->isDeactivated()) {
@@ -249,13 +261,13 @@ final class AuthController extends Controller
             // confirmed the concurrent duplicate) — revoke the family
             // outright rather than leaving a live generation behind a user
             // who can no longer authenticate.
-            $this->refreshTokens->revokeFamily($result->familyId);
+            $this->refreshTokens->revokeFamily($familyId);
 
             return $this->refreshFailure('refresh_token_revoked');
         }
 
         $accessToken = (string) $this->jwtGuard()
-            ->claims(['fam' => $result->familyId])
+            ->claims(['fam' => $familyId])
             ->login($user);
 
         $response = response()->json([
@@ -264,9 +276,17 @@ final class AuthController extends Controller
         ]);
 
         // D6: the concurrent-duplicate path issues NO Set-Cookie — doing so
-        // would clobber the winner's already-rotated cookie.
+        // would clobber the winner's already-rotated cookie. $setCookie is
+        // only ever true for the Rotated constructor, which always carries a
+        // non-null $issue — same type-narrowing reasoning as $familyId above.
         if ($setCookie) {
-            $response->withCookie(RefreshTokenCookie::build($result->issue));
+            $issue = $result->issue;
+
+            if ($issue === null) {
+                return $this->refreshFailure('refresh_token_invalid');
+            }
+
+            $response->withCookie(RefreshTokenCookie::build($issue));
         }
 
         return $response;

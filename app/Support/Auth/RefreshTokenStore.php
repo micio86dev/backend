@@ -71,9 +71,9 @@ final class RefreshTokenStore
         $tokKey = "refresh_tok:{$hash}";
         $spentKey = "refresh_spent:{$hash}";
 
-        $rec = Cache::get($tokKey);
+        $rec = $this->asTokRecord(Cache::get($tokKey));
 
-        if (is_array($rec)) {
+        if ($rec !== null) {
             return $this->rotateLiveToken($familyId, $tokKey, $spentKey, $rec);
         }
 
@@ -81,9 +81,9 @@ final class RefreshTokenStore
         // concurrent duplicate — D6), or it never existed at all. Step 4b is
         // load-bearing: an unattributable hash must NEVER revoke a family,
         // or anyone able to POST garbage could log families out at will.
-        $spent = Cache::get($spentKey);
+        $spent = $this->asSpentRecord(Cache::get($spentKey));
 
-        if (! is_array($spent)) {
+        if ($spent === null) {
             return RefreshRotateResult::invalid();
         }
 
@@ -103,9 +103,12 @@ final class RefreshTokenStore
     // Private helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * @param  array{family_id: string, generation: int, user_id: int}  $rec
+     */
     private function rotateLiveToken(string $familyId, string $tokKey, string $spentKey, array $rec): RefreshRotateResult
     {
-        if (($rec['family_id'] ?? null) !== $familyId) {
+        if ($rec['family_id'] !== $familyId) {
             // The family id travels in the token but is attacker-controlled
             // and is therefore cross-checked against the stored record,
             // never trusted — the hash is the authority (D2).
@@ -137,9 +140,9 @@ final class RefreshTokenStore
         // single winner of a concurrent race performs the rotation below;
         // the loser falls through to the D6 concurrency-grace check.
         if (! Cache::add($spentKey, $spentPayload, $this->ttlUntil($absoluteExpiresAt, floor: 60))) {
-            $existingSpent = Cache::get($spentKey);
+            $existingSpent = $this->asSpentRecord(Cache::get($spentKey));
 
-            return is_array($existingSpent)
+            return $existingSpent !== null
                 ? $this->resolveAgainstTombstone($existingSpent)
                 : RefreshRotateResult::invalid();
         }
@@ -169,6 +172,9 @@ final class RefreshTokenStore
      * one behind the family's CURRENT generation — i.e. this presentation is
      * the immediate duplicate of the rotation that just happened, not a
      * stale replay from several rotations ago.
+     */
+    /**
+     * @param  array{family_id: string, generation: int, spent_at: int}  $spent
      */
     private function resolveAgainstTombstone(array $spent): RefreshRotateResult
     {
@@ -236,5 +242,56 @@ final class RefreshTokenStore
         // 32 CSPRNG bytes, base64url — 256 bits of entropy, not
         // brute-forceable (D2: this is why hashing uses sha256, not bcrypt).
         return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    }
+
+    /**
+     * Runtime shape validation for a `refresh_tok:*` Cache read — every
+     * caller treats a malformed/foreign entry identically to "not found"
+     * rather than trusting whatever `Cache::get()` (typed `mixed`) returns.
+     * Defense in depth: a corrupted cache entry must never crash the refresh
+     * endpoint, and this is also what gives PHPStan a real, checked array
+     * shape instead of a widened `array<mixed, mixed>`.
+     *
+     * @return array{family_id: string, generation: int, user_id: int}|null
+     */
+    private function asTokRecord(mixed $value): ?array
+    {
+        if (! is_array($value)
+            || ! isset($value['family_id'], $value['generation'], $value['user_id'])
+            || ! is_string($value['family_id'])
+            || ! is_int($value['generation'])
+            || ! is_int($value['user_id'])
+        ) {
+            return null;
+        }
+
+        return [
+            'family_id' => $value['family_id'],
+            'generation' => $value['generation'],
+            'user_id' => $value['user_id'],
+        ];
+    }
+
+    /**
+     * Same reasoning as asTokRecord(), for `refresh_spent:*` entries.
+     *
+     * @return array{family_id: string, generation: int, spent_at: int}|null
+     */
+    private function asSpentRecord(mixed $value): ?array
+    {
+        if (! is_array($value)
+            || ! isset($value['family_id'], $value['generation'], $value['spent_at'])
+            || ! is_string($value['family_id'])
+            || ! is_int($value['generation'])
+            || ! is_int($value['spent_at'])
+        ) {
+            return null;
+        }
+
+        return [
+            'family_id' => $value['family_id'],
+            'generation' => $value['generation'],
+            'spent_at' => $value['spent_at'],
+        ];
     }
 }
