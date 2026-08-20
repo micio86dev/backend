@@ -22,6 +22,22 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+/**
+ * Run the REAL migration's up(), not a copy of its SQL.
+ *
+ * The first version of this fixture pasted the statement inline under a comment
+ * claiming it "cannot drift from the thing it protects" — which was exactly
+ * backwards: a duplicated string drifts the moment the migration changes, and
+ * the test would keep passing against SQL that no longer ships.
+ */
+function runLanguageStripMigration(): void
+{
+    $migration = require dirname(__DIR__, 3)
+        .'/database/migrations/2026_08_20_140000_strip_language_from_avatar_templates_config.php';
+
+    $migration->up();
+}
+
 /** Every HeyGen knob the field specs allow, plus the one being removed. */
 function stripMaximalHeygenConfig(): array
 {
@@ -88,9 +104,7 @@ test('the strip removes language and NOTHING else, across two organizations', fu
     $a = stripSeedTemplate($orgA->id, 'heygen', stripMaximalHeygenConfig(), true);
     $b = stripSeedTemplate($orgB->id, 'tavus', stripMaximalTavusConfig(), false);
 
-    // Re-run the migration's own statement rather than a hand-written copy, so
-    // the test cannot drift from the thing it protects.
-    DB::statement("UPDATE avatar_templates SET config = config - 'language' WHERE config ?? 'language'");
+    runLanguageStripMigration();
 
     $afterA = stripRawConfig($a);
     $afterB = stripRawConfig($b);
@@ -120,7 +134,7 @@ test('a config with no language key is left completely untouched', function (): 
 
     $id = stripSeedTemplate($org->id, 'heygen', $clean, true);
 
-    DB::statement("UPDATE avatar_templates SET config = config - 'language' WHERE config ?? 'language'");
+    runLanguageStripMigration();
 
     // Compared by content, not by key order: JSONB does not preserve insertion
     // order, and asserting it would fail for a reason unrelated to the strip.
@@ -131,7 +145,7 @@ test('is_active is not disturbed — the strip touches config only', function ()
     $org = Organization::factory()->create();
     $id = stripSeedTemplate($org->id, 'heygen', stripMaximalHeygenConfig(), true);
 
-    DB::statement("UPDATE avatar_templates SET config = config - 'language' WHERE config ?? 'language'");
+    runLanguageStripMigration();
 
     expect((bool) DB::table('avatar_templates')->where('id', $id)->value('is_active'))->toBeTrue();
 });

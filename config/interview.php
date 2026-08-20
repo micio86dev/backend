@@ -117,8 +117,9 @@ return [
          * `beai:demo-seed`-scoped (seeds one organization's AvatarTemplate row)
          * and could be repointed or removed independently of what every tenant
          * without a template needs at request time. Precedence in
-         * `TavusProvider::issue()`: an org's active template still wins when it
-         * sets a value; this is the fallback for the case where it does not.
+         * `TavusProvider::issue()`: an org's active template still wins for identity
+         * when it sets a value; this is the fallback for the case where it does
+         * not. Pinned by ProviderContractFixtureTest's golden conversation body.
          *
          * The literal fallbacks are the same committed, WORKING values
          * `interview.demo.tavus.*` uses, and they are NOT optional polish:
