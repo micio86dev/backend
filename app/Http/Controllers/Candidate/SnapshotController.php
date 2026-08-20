@@ -81,7 +81,15 @@ class SnapshotController extends Controller
         $session = $this->resolveOwnedSession((int) $validated['session_id']);
 
         // ── Step 3: Base64 decode ─────────────────────────────────────────────────────
-        $decoded = base64_decode($validated['image_base64'], strict: false);
+        // Tolerate a `data:image/jpeg;base64,` prefix before decoding.
+        //
+        // This is not cosmetic leniency. `canvas.toDataURL()` returns the prefixed
+        // form, and decoding it with strict:false does NOT reject: every character of
+        // "dataimagejpegbase64" is itself in the base64 alphabet, so the prefix is
+        // CONSUMED, the payload shifts out of alignment, and the magic-byte check
+        // below fails on bytes that were a perfectly good JPEG a moment earlier.
+        // The resulting 422 blames the image for a framing mistake.
+        $decoded = base64_decode($this->stripDataUrlPrefix($validated['image_base64']), strict: false);
 
         if (strlen($decoded) < 3) {
             return response()->json(
@@ -130,5 +138,22 @@ class SnapshotController extends Controller
         $snapshot->save();
 
         return response()->json(null, Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * Strip a leading `data:<mediatype>;base64,` prefix, if present.
+     *
+     * Only the well-formed base64 data-URL header is removed; anything else is
+     * returned untouched so it still reaches the magic-byte gate. The length check
+     * in step 1 runs against the ORIGINAL string, so this cannot be used to slip a
+     * larger payload past the size limit.
+     */
+    private function stripDataUrlPrefix(string $value): string
+    {
+        if (preg_match('#^data:[\w.+-]+/[\w.+-]+;base64,#i', $value, $matches) !== 1) {
+            return $value;
+        }
+
+        return substr($value, strlen($matches[0]));
     }
 }

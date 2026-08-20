@@ -190,6 +190,66 @@ test('POST /snapshot with encoded length exceeding max_encoded_bytes → 413; no
     expect($countAfter)->toBe($countBefore, 'No InterviewSnapshot must be persisted on oversized input');
 });
 
+test('POST /snapshot accepts a data-URL-prefixed payload and stores the decoded JPEG', function (): void {
+    // `canvas.toDataURL('image/jpeg')` yields "data:image/jpeg;base64,<payload>", and
+    // a client that forwards it verbatim used to get a hard 422 on EVERY snapshot.
+    // The prefix does not survive base64_decode(strict: false) as a rejection — every
+    // character of "dataimagejpegbase64" is in the base64 alphabet, so the decode
+    // silently MISALIGNED and the magic-byte check failed on shifted bytes.
+    //
+    // The client now strips it, but the endpoint tolerates the prefix rather than
+    // relying on that: an alignment failure this quiet must not be one deploy away.
+    Storage::fake();
+
+    $org = snapshotOrg();
+    $project = snapshotProject($org);
+    $participant = snapshotParticipant($org, $project, 'in_corso');
+    $session = snapshotSession($org, $participant, $project, 'in_corso');
+    $token = snapshotBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/snapshot', [
+            'session_id' => $session->id,
+            'image_base64' => 'data:image/jpeg;base64,'.validJpegBase64(),
+        ]);
+
+    $response->assertStatus(202);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $snapshot = InterviewSnapshot::where('interview_session_id', $session->id)->first();
+    expect($snapshot)->not->toBeNull();
+
+    // The stored object must be the DECODED image, with no prefix bytes smuggled in.
+    $stored = Storage::disk()->get($snapshot->s3_key);
+    expect(substr($stored, 0, 3))->toBe("\xFF\xD8\xFF");
+});
+
+test('POST /snapshot rejects a data-URL-prefixed payload whose decoded bytes are not JPEG', function (): void {
+    // Tolerating the prefix must not weaken the magic-byte gate behind it.
+    Storage::fake();
+
+    $org = snapshotOrg();
+    $project = snapshotProject($org);
+    $participant = snapshotParticipant($org, $project, 'in_corso');
+    $session = snapshotSession($org, $participant, $project, 'in_corso');
+    $token = snapshotBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/snapshot', [
+            'session_id' => $session->id,
+            'image_base64' => 'data:image/jpeg;base64,'.nonJpegBase64(),
+        ]);
+
+    $response->assertStatus(422);
+    Storage::disk()->assertDirectoryEmpty('');
+    expect(InterviewSnapshot::where('interview_session_id', $session->id)->count())->toBe(0);
+});
+
 test('POST /snapshot with valid base64 but non-JPEG bytes → 422; no S3 write; no DB insert', function (): void {
     Storage::fake();
 
