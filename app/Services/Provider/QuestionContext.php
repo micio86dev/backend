@@ -19,9 +19,22 @@ namespace App\Services\Provider;
  * (`opening_text` on HeyGen `/contexts`, `custom_greeting` on Tavus `/conversations`)
  * — same "unset means absent" convention TemplatePayload already uses.
  *
+ * Hotfix 0.22.1 additive widening: one further trailing nullable field for the
+ * session's spoken language. BEAI is multi-tenant and multilingual (CLAUDE.md
+ * i18n mandate) — the avatar's `avatar_persona.language` MUST match the
+ * project's configured language, not a static env default. Sourced by the
+ * controller from `$project->language` (the same locale source PR3/D9 already
+ * uses for the opening greeting) rather than read by `HegenProvider` off the
+ * session's `project` relation directly — this keeps the provider a pure
+ * function of its two arguments (testable without a persisted Project row,
+ * which `ProviderSmokeCheck`'s in-memory fake session does not have) and
+ * matches the widening pattern every prior field on this DTO already follows.
+ * Null ⇒ `HegenProvider` falls back to `config('interview.heygen.language')`.
+ *
  * REQ: QuestionContext DTO (C7a)
  * REQ: QuestionContext Carries Composed Prompt (C8 — task 4.2)
  * REQ: QuestionContext Carries a Composed Opening Greeting (PR3 — delta spec, interview-conversation)
+ * REQ: QuestionContext Carries the Session Language (hotfix 0.22.1)
  */
 readonly class QuestionContext
 {
@@ -33,5 +46,8 @@ readonly class QuestionContext
         public ?string $promptVersion = null,
         // PR3: nullable trailing param — null preserves exact pre-PR3 provider body (backward-compatible).
         public ?string $openingText = null,
+        // Hotfix 0.22.1: nullable trailing param — null preserves exact pre-hotfix
+        // provider body (falls back to the platform config default language).
+        public ?string $language = null,
     ) {}
 }

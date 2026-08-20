@@ -136,7 +136,7 @@ test('full cycle: fail at competency 2 of 3, recover, resume, finish 2 and 3 -> 
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-'.uniqid(),
-                'access_token' => 'heygen-token-'.uniqid(),
+                'session_token' => 'heygen-token-'.uniqid(),
             ],
         ], 200),
         '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),

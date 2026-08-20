@@ -46,7 +46,7 @@ test('HeygenProvider::issue() on 200 returns ProviderToken with non-null token a
             return Http::response([
                 'data' => [
                     'session_id' => 'session-xyz',
-                    'access_token' => 'token-abc',
+                    'session_token' => 'token-abc',
                     'url' => 'https://webrtc.heygen.com/session-xyz',
                 ],
             ], 200);
@@ -84,7 +84,7 @@ test('HeygenProvider::issue() names the context beai-{session_id}-{ulid}; two co
             return Http::response(['data' => ['id' => 'ctx-'.count($capturedNames)]], 200);
         },
         '*liveavatar*/sessions/token*' => Http::response([
-            'data' => ['session_id' => 'sid', 'access_token' => 'tok'],
+            'data' => ['session_id' => 'sid', 'session_token' => 'tok'],
         ], 200),
     ]);
 
@@ -132,7 +132,7 @@ test('HeygenProvider::issue() merges the template into /sessions/token recursive
         '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
             $capturedTokenBody = $request->data();
 
-            return Http::response(['data' => ['session_id' => 'sid-merge', 'access_token' => 'tok-merge']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-merge', 'session_token' => 'tok-merge']], 200);
         },
     ]);
 
@@ -186,7 +186,7 @@ test('HeygenProvider::issue() drops unproven template fields from /sessions/toke
         '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
             $capturedTokenBody = $request->data();
 
-            return Http::response(['data' => ['session_id' => 'sid-allowlist', 'access_token' => 'tok-allowlist']], 200);
+            return Http::response(['data' => ['session_id' => 'sid-allowlist', 'session_token' => 'tok-allowlist']], 200);
         },
     ]);
 
@@ -205,6 +205,163 @@ test('HeygenProvider::issue() drops unproven template fields from /sessions/toke
     expect($capturedTokenBody)->not->toHaveKey('video_settings.encoding');
 
     app()->forgetInstance(ActiveTemplateResolver::class);
+});
+
+test('HeygenProvider::issue() sends avatar_id from platform config when the org has NO active AvatarTemplate (hotfix 0.22.1 regression — production 422 "avatar_id: Field required")', function (): void {
+    // No ActiveTemplateResolver override bound — exercises the REAL resolver
+    // against an empty avatar_templates table, i.e. the exact production
+    // condition every org is in today: no active template.
+    config([
+        'interview.heygen.avatar_id' => 'platform-default-avatar',
+        'interview.heygen.voice_id' => 'platform-default-voice',
+        'interview.heygen.language' => 'en',
+    ]);
+
+    $capturedTokenBody = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-platform-default']], 200),
+        '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
+            $capturedTokenBody = $request->data();
+
+            return Http::response([
+                'data' => ['session_id' => 'sid-platform-default', 'session_token' => 'tok-platform-default'],
+            ], 200);
+        },
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedTokenBody)->toHaveKey('avatar_id', 'platform-default-avatar');
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.voice_id', 'platform-default-voice');
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.language', 'en');
+
+    // The two proven-constant fields (@wire-source start.ts:216-220) are ALSO
+    // always sent, independent of any template — this is the second half of
+    // the same production defect (D2's "unverified, default OFF" classification
+    // was wrong for these two: they are in the demonstrated-working call).
+    expect($capturedTokenBody)->toHaveKey('interactivity_type', 'CONVERSATIONAL');
+    expect($capturedTokenBody)->toHaveKey('video_settings.quality', 'low');
+});
+
+test('HeygenProvider::issue() sources avatar_persona.language from QuestionContext.language (project language), falling back to platform config default', function (): void {
+    config(['interview.heygen.language' => 'it']);
+
+    $capturedTokenBody = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-lang']], 200),
+        '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
+            $capturedTokenBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-lang', 'session_token' => 'tok-lang']], 200);
+        },
+    ]);
+
+    $session = mockSession('heygen');
+    $provider = new HeygenProvider;
+
+    // Explicit language on QuestionContext (threaded from $project->language by
+    // the controller) WINS over the platform config default.
+    $ctxWithLanguage = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, language: 'en');
+    $provider->issue($session, $ctxWithLanguage);
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.language', 'en');
+
+    // No language on QuestionContext (e.g. ProviderSmokeCheck's standalone fake
+    // session) → falls back to the platform config default.
+    $ctxWithoutLanguage = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider->issue($session, $ctxWithoutLanguage);
+    expect($capturedTokenBody)->toHaveKey('avatar_persona.language', 'it');
+});
+
+test('HeygenProvider::issue() lets an org\'s active AvatarTemplate override the platform-default avatar_id (precedence: template wins)', function (): void {
+    config(['interview.heygen.avatar_id' => 'platform-default-avatar']);
+
+    $template = new AvatarTemplate;
+    $template->forceFill(['config' => ['avatarId' => 'org-template-avatar']]);
+
+    app()->instance(
+        ActiveTemplateResolver::class,
+        new class($template)
+        {
+            public function __construct(private readonly AvatarTemplate $template) {}
+
+            public function resolve(): AvatarTemplate
+            {
+                return $this->template;
+            }
+        },
+    );
+
+    $capturedTokenBody = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-precedence']], 200),
+        '*liveavatar*/sessions/token*' => function ($request) use (&$capturedTokenBody) {
+            $capturedTokenBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-precedence', 'session_token' => 'tok-precedence']], 200);
+        },
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+    $provider->issue($session, $ctx);
+
+    expect($capturedTokenBody)->toHaveKey('avatar_id', 'org-template-avatar');
+
+    app()->forgetInstance(ActiveTemplateResolver::class);
+});
+
+test('HeygenProvider::issue() reads data.session_token, NOT data.access_token (hotfix 0.22.1 — the second latent bug)', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-session-token']], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => 'sid-session-token', 'session_token' => 'the-real-session-token'],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+    $token = $provider->issue($session, $ctx);
+
+    expect($token->token)->toBe('the-real-session-token');
+});
+
+test('HeygenProvider::issue() tolerates a null session_id — provider_session_ref is nullable end-to-end, not a malformed-response error', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-null-session-id']], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            // session_id omitted entirely, matching legacy-demo's `data.session_id ?? null`.
+            'data' => ['session_token' => 'tok-null-session-id'],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+    $token = $provider->issue($session, $ctx);
+
+    expect($token->token)->toBe('tok-null-session-id');
+    expect($token->provider_session_ref)->toBeNull();
+});
+
+test('HeygenProvider::issue() throws a malformed-response ProviderException when session_token is missing', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-missing-token']], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => 'sid-missing-token'],
+        ], 200),
+    ]);
+
+    $session = mockSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0);
+    $provider = new HeygenProvider;
+
+    expect(fn () => $provider->issue($session, $ctx))
+        ->toThrow(ProviderException::class, 'HeyGen: malformed token response (missing session_token)');
 });
 
 test('HeygenProvider::issue() on 5xx throws ProviderException with API key REDACTED from message', function (): void {
