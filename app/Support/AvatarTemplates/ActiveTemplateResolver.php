@@ -10,7 +10,7 @@ use App\Models\AvatarTemplate;
  * The organization's active avatar template, if it has one (C14).
  *
  * Returns null rather than throwing when nothing is active, and that is not
- * defensive coding — it is the state EVERY existing organization is in the
+ * defensive coding — having no active template is a fully supported state, not an edge case — the
  * moment this ships. Failing here would break every interview in the product to
  * deliver a feature nobody has configured yet.
  *

@@ -705,7 +705,7 @@ final class DemoDataset
      * placeholder `demo_*` strings the legacy DemoSeeder used).
      *
      * @return array{
-     *   heygen: array{avatarId: string, voiceId: string, language: string},
+     *   heygen: array{avatarId: string, voiceId: string},
      *   tavus: array{faceId: string, palId: string}
      * }
      */
@@ -715,7 +715,6 @@ final class DemoDataset
             'heygen' => [
                 'avatarId' => (string) config('interview.demo.heygen.avatar_id'),
                 'voiceId' => (string) config('interview.demo.heygen.voice_id'),
-                'language' => (string) config('interview.demo.heygen.language'),
             ],
             'tavus' => [
                 'faceId' => (string) config('interview.demo.tavus.replica_id'),
