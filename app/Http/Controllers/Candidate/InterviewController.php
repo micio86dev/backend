@@ -220,6 +220,9 @@ class InterviewController extends Controller
             // project's configured language (i18n mandate), same source PR3/D9
             // already uses for the opening greeting — never a static env default.
             language: $project->language,
+            // D6 — progress, computed by the resolver from the ordered list.
+            competencyOrdinal: $nextCompetency['competency_ordinal'] ?? null,
+            totalCompetencies: $nextCompetency['total_competencies'] ?? null,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -283,10 +286,11 @@ class InterviewController extends Controller
         // the success path (last statement inside the closure — every abort() above
         // it throws past this point, so reaching it means the write committed).
         $progress = null;
+        $directive = null;
 
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
         try {
-            DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress): void {
+            DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress, &$directive): void {
                 // Lock the session row (scope MUST cover the status UPDATE in step 6)
                 $locked = InterviewSession::lockForUpdate()->find($session->id);
 
@@ -317,6 +321,11 @@ class InterviewController extends Controller
                 // (7)+(8) Tally + last-question CAS, extracted (D5) so the two other
                 // paths that can finish an interview reach the same code.
                 $this->settleCompletionIfFinished($pid, $projectId);
+
+                // (D7) The directive, computed HERE — inside the transaction that
+                // already holds the counters, so it costs one extra query (the
+                // project's cadence) rather than a second tally.
+                $directive = $this->buildDirective($pid, $projectId);
 
                 // C10 D5: set ONLY on the success path — every abort() above (:225,
                 // :231) throws past this point, so reaching it means the write
@@ -355,7 +364,45 @@ class InterviewController extends Controller
             ));
         }
 
-        return response()->json(null, Response::HTTP_OK);
+        return response()->json($directive, Response::HTTP_OK);
+    }
+
+    /**
+     * What the client should do next (D7).
+     *
+     * Computed on the SERVER because the SA-04 pause cadence is TENANT
+     * CONFIGURATION (`projects.pause_every_n_competencies`; `null` = never pause).
+     * A browser must not re-derive tenant policy, the numbers are already in hand
+     * here, and client-side arithmetic is the documented cause of the defect this
+     * change removes — the page carried an empty competency list and concluded
+     * every interview was over after one question.
+     *
+     * `done` is evaluated FIRST so a pause is never due on the final competency:
+     * a candidate must not be shown a break screen for an interview that is over.
+     *
+     * A null project fails closed to "no pause" rather than guessing a cadence.
+     *
+     * @return array{ended_competencies: int, total_competencies: int, next_action: string}
+     */
+    private function buildDirective(int $participantId, int $projectId): array
+    {
+        $ended = $this->endedCompetencyCount($participantId, $projectId);
+        $total = DB::table('project_competencies')->where('project_id', $projectId)->count();
+
+        $pauseEvery = Project::whereKey($projectId)->value('pause_every_n_competencies');
+
+        $nextAction = match (true) {
+            $total > 0 && $ended >= $total => 'done',
+            $pauseEvery !== null && $pauseEvery > 0 && $ended % $pauseEvery === 0 => 'pause',
+            default => 'continue',
+        };
+
+        return [
+            // Machine-facing: literal in every locale (CLAUDE.md).
+            'ended_competencies' => $ended,
+            'total_competencies' => $total,
+            'next_action' => $nextAction,
+        ];
     }
 
     // =========================================================================
@@ -447,7 +494,11 @@ class InterviewController extends Controller
      */
     private function resolveNextCompetency(int $participantId, int $projectId): ?array
     {
-        // All competencies for the project, ordered by position
+        // All competencies for the project, ordered by position.
+        // The ARRAY INDEX of this ordered list — not `position` — is what
+        // `competency_ordinal` is derived from (D6): `position` is written 0-based
+        // at every writer while `question_index` below subtracts one, so the
+        // ordinal has to come from something correct by construction.
         $all = DB::table('project_competencies as pc')
             ->join('framework_competencies as fc', 'fc.id', '=', 'pc.competency_id')
             ->where('pc.project_id', $projectId)
@@ -465,7 +516,9 @@ class InterviewController extends Controller
             ->where('project_id', $projectId)
             ->pluck('error_count', 'competency_code');
 
-        foreach ($all as $row) {
+        $total = $all->count();
+
+        foreach ($all->values() as $index => $row) {
             $status = $existingStatuses->get($row->competency_code);
 
             if ($status === null) {
@@ -473,6 +526,8 @@ class InterviewController extends Controller
                 return [
                     'competency_code' => $row->competency_code,
                     'question_index' => $row->position - 1, // 0-based
+                    'competency_ordinal' => $index + 1,
+                    'total_competencies' => $total,
                 ];
             }
 
@@ -481,6 +536,8 @@ class InterviewController extends Controller
                 return [
                     'competency_code' => $row->competency_code,
                     'question_index' => $row->position - 1,
+                    'competency_ordinal' => $index + 1,
+                    'total_competencies' => $total,
                 ];
             }
 
@@ -501,6 +558,8 @@ class InterviewController extends Controller
                 return [
                     'competency_code' => $row->competency_code,
                     'question_index' => $row->position - 1,
+                    'competency_ordinal' => $index + 1,
+                    'total_competencies' => $total,
                     'reoffer' => true,
                 ];
             }
@@ -613,7 +672,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $freshToken, $participant->language, $ctx->promptVersion);
+        return $this->buildSuccessResponse($session, $freshToken, $participant->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
     }
 
     /**
@@ -682,7 +741,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $token, $participant->language, $ctx->promptVersion);
+        return $this->buildSuccessResponse($session, $token, $participant->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
     }
 
     /**
@@ -763,17 +822,7 @@ class InterviewController extends Controller
      */
     private function settleCompletionIfFinished(int $participantId, int $projectId): void
     {
-        $endedCount = InterviewSession::where('participant_id', $participantId)
-            ->where('project_id', $projectId)
-            ->where(function ($q): void {
-                $q->whereIn('status', ['completed', 'timeout', 'skipped'])
-                    // An `error` counts only once it has spent its re-offer. Below
-                    // the ceiling the competency is still offerable, so counting it
-                    // would end an interview the candidate can still finish.
-                    ->orWhere(fn ($e) => $e->where('status', 'error')
-                        ->where('error_count', '>=', InterviewSession::MAX_ERROR_ATTEMPTS));
-            })
-            ->count();
+        $endedCount = $this->endedCompetencyCount($participantId, $projectId);
 
         $totalCompetencies = DB::table('project_competencies')
             ->where('project_id', $projectId)
@@ -793,6 +842,33 @@ class InterviewController extends Controller
             // call sites, which hold no transaction).
             FinalizeInterview::dispatch($participantId)->afterCommit();
         }
+    }
+
+    /**
+     * Competencies that have reached a terminal state for this participant.
+     *
+     * ONE definition, shared by the completion CAS and the /end directive: two
+     * copies of this predicate would be two chances to disagree about when an
+     * interview is over, which is the defect class this change exists to close.
+     *
+     * An `error` counts only once it has spent its re-offer. Count it earlier and
+     * a single transient 4xx — our own payload bug — ends the interview with no
+     * second chance. Count it later and a competency the resolver skips is never
+     * tallied, which is the original stranding under another name.
+     */
+    private function endedCompetencyCount(int $participantId, int $projectId): int
+    {
+        return InterviewSession::where('participant_id', $participantId)
+            ->where('project_id', $projectId)
+            ->where(function ($q): void {
+                $q->whereIn('status', ['completed', 'timeout', 'skipped'])
+                    // An `error` counts only once it has spent its re-offer. Below
+                    // the ceiling the competency is still offerable, so counting it
+                    // would end an interview the candidate can still finish.
+                    ->orWhere(fn ($e) => $e->where('status', 'error')
+                        ->where('error_count', '>=', InterviewSession::MAX_ERROR_ATTEMPTS));
+            })
+            ->count();
     }
 
     /**
@@ -876,6 +952,8 @@ class InterviewController extends Controller
         ProviderToken $token,
         ?string $language,
         ?string $promptVersion = null,
+        ?int $competencyOrdinal = null,
+        ?int $totalCompetencies = null,
     ): JsonResponse {
         [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
 
@@ -895,6 +973,18 @@ class InterviewController extends Controller
                 // C8 (M-3): prompt version for audit and traceability.
                 // Machine-facing: returned literally, never localized.
                 'prompt_version' => $promptVersion,
+                // D6: 1-based position in the project's competency order, and how
+                // many there are. Machine-facing — literal in every locale.
+                //
+                // The ordinal is NOT `question_index + 1`: `position` is written
+                // 0-based at every writer while `question_index` subtracts one, so
+                // that arithmetic renders 0/N on the first competency of every
+                // project. The ordinal comes from the ordered list's own index and
+                // is correct whatever `position` holds. Repairing `question_index`
+                // is a separate change — it is a persisted column AND a shipped
+                // contract field.
+                'competency_ordinal' => $competencyOrdinal,
+                'total_competencies' => $totalCompetencies,
             ],
         ], Response::HTTP_CREATED);
     }

@@ -49,6 +49,7 @@
             "Tests\\": "tests/"
         },
         "files": [
+            "tests/Helpers/C9Fixtures.php",
             "tests/Helpers/C10Fixtures.php",
             "tests/Helpers/ScoringFixtures.php",
             "tests/Helpers/QueueWorkCommandFixtures.php"
