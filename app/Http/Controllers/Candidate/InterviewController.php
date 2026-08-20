@@ -130,9 +130,15 @@ class InterviewController extends Controller
         // VARIANT below, before QuestionContext is built — participant->status cannot change
         // between here and its prior use site, so hoisting is safe (design D9).
         // Only the FIRST competency of any participant's interview triggers the started_at
-        // stamp AND the 'first' greeting variant. First competency ≡ participant.status =
-        // 'in_attesa' (not yet started any interview).
-        $isFirst = $participant->status === 'in_attesa';
+        // stamp AND the 'first' greeting variant.
+        //
+        // (participant-error-recovery D2b) First competency ≡ participant.started_at
+        // === null — NOT participant.status === 'in_attesa'. A participant recovered
+        // from `errore` is flipped back to `in_attesa` by the recovery action but
+        // KEEPS its original started_at (it is resuming, not starting fresh). Keying
+        // this off status alone would re-greet a recovered candidate as brand new AND
+        // silently overwrite started_at to now() below, destroying the true start time.
+        $isFirst = $participant->started_at === null;
 
         $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
         if ($compositionResult instanceof JsonResponse) {

@@ -577,3 +577,46 @@ test('POST /start FIX-8: session + participant writes are in one transaction (bo
     expect($participant->status)->toBe('in_corso');
     expect($participant->started_at)->not->toBeNull();
 });
+
+test('POST /start on a recovered participant (status=in_attesa, started_at already set) does NOT clobber started_at and greets with the "next" variant, not "first" (participant-error-recovery D2b)', function (): void {
+    // A recovered participant is flipped errore -> in_attesa (D2 recovery action)
+    // but keeps its ORIGINAL started_at — it is resuming, not starting fresh.
+    // $isFirst must key off started_at === null, NOT status === 'in_attesa',
+    // otherwise this candidate is greeted as brand new AND started_at is
+    // silently overwritten to now(), destroying the true interview start time.
+    Http::fake(heygenSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+
+    $participant->started_at = now()->subMinutes(20);
+    $participant->save();
+    $originalStartedAt = $participant->fresh()->started_at;
+
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+
+    // started_at is UNCHANGED — not overwritten to "now"
+    $participant->refresh();
+    expect($participant->started_at->getTimestamp())->toBe($originalStartedAt->getTimestamp());
+
+    // The avatar context was composed with the "next" opening greeting
+    // ("Great, let's move on...") — NOT the "first" one ("Hi, and welcome!").
+    Http::assertSent(function ($req) {
+        if (! str_contains($req->url(), '/contexts')) {
+            return false;
+        }
+
+        $body = $req->data();
+
+        return str_contains($body['opening_text'] ?? '', "Great, let's move on")
+            && ! str_contains($body['opening_text'] ?? '', 'Hi, and welcome');
+    });
+});
