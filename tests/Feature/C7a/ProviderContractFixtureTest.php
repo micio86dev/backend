@@ -201,7 +201,13 @@ test('L2: Tavus /conversations outbound body matches the golden JSON verified ag
     $golden = loadProviderFixture('tavus/conversations_request_golden.json');
 
     // No active avatar template exists in this test (C14: empty config → empty
-    // payload), so `replica_id`/`persona_id`/`properties.*` are legitimately
-    // absent — the golden body covers only the fields Tavus always receives.
+    // template payload). Hotfix 0.22.2: `replica_id`/`persona_id` are NOT
+    // "legitimately absent" in that case — their absence was the production
+    // 400 ("Either replica_id/face_id or a persona_id/pal_id with a default
+    // replica specified must be present"). They now come from the
+    // platform-default config floor (`interview.tavus.{replica_id,
+    // persona_id}`, `TavusProvider::platformDefaultConversationFields()`) and
+    // are ALWAYS present in the golden body. `properties.*` remain absent —
+    // those are template-only knobs, not required by the provider.
     $this->assertEqualsCanonicalizing($golden, $capturedBody);
 });

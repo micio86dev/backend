@@ -102,6 +102,35 @@ return [
          */
         'concurrency_retries' => (int) env('TAVUS_CONCURRENCY_RETRIES', 3),
         'concurrency_backoff_ms' => (int) env('TAVUS_CONCURRENCY_BACKOFF_MS', 2000),
+
+        /*
+         * PLATFORM-DEFAULT avatar identity (hotfix 0.22.2 — production outage:
+         * Tavus HTTP 400 "Either replica_id/face_id or a persona_id/pal_id with
+         * a default replica specified must be present" on EVERY /start, because
+         * `TavusProvider::issue()` sourced replica_id/persona_id ONLY from the
+         * org's active `AvatarTemplate`, and NO org has one today — the exact
+         * same defect class hotfix 0.22.1 fixed for HeygenProvider).
+         *
+         * Reads the SAME env vars as `interview.demo.tavus.*` below, but this key
+         * is DELIBERATELY a separate config surface, never read via
+         * `interview.demo.*` from the provider path: `demo.*` is
+         * `beai:demo-seed`-scoped (seeds one organization's AvatarTemplate row)
+         * and could be repointed or removed independently of what every tenant
+         * without a template needs at request time. Precedence in
+         * `TavusProvider::issue()`: an org's active template still wins when it
+         * sets a value; this is only the fallback for the (today: universal)
+         * case where it does not.
+         *
+         * The literal fallbacks are the same committed, WORKING values
+         * `interview.demo.tavus.*` uses, and they are NOT optional polish:
+         * both fields are REQUIRED by the provider, so a config that can
+         * resolve to null guarantees an HTTP 400 on every /start. A mandatory
+         * field must never depend on an env var whose absence fails silently —
+         * that is exactly how the CORS allowlist took production down on
+         * 2026-08-20.
+         */
+        'replica_id' => env('TAVUS_REPLICA_ID', 'rf4e9d9790f0'),
+        'persona_id' => env('TAVUS_PERSONA_ID', 'p8a490c4dfd4'),
     ],
 
     /*
