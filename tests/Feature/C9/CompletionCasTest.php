@@ -16,12 +16,14 @@ declare(strict_types=1);
  * `/start`'s provider-failure path, and `/end` is never called for that competency.
  * The repair is the two additional call sites.
  *
- * SCOPE NOTE (PR 1 of 4): the automatic re-offer does not exist yet, so EVERY
- * `error` is terminal here and every `error` counts. PR 2 adds the re-offer branch
- * to `resolveNextCompetency()` and narrows this tally to
- * `error_count >= MAX_ERROR_ATTEMPTS` in the same commit — narrowing it earlier
- * would leave a session at `error_count = 1` skipped by the resolver but uncounted
- * by the tally, which is the same stranding under a new name.
+ * The tally and the re-offer are ONE behaviour, and these tests are why we know.
+ * An `error` counts only once it has spent its re-offer:
+ *   - count it earlier and a single transient 4xx — our own payload bug — ends the
+ *     interview with no second chance. `InterviewStartTest`'s ratified "participant
+ *     status UNCHANGED" guard goes red on exactly that.
+ *   - count it later and a competency the resolver skips is never tallied, which is
+ *     the original stranding wearing a different name.
+ * Both halves shipped together in `api` v0.23.0.
  */
 
 use App\Actions\Participant\RecoverFailedParticipant;
