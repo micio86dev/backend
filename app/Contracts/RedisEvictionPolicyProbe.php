@@ -8,8 +8,7 @@ namespace App\Contracts;
  * Resolves the active Redis `maxmemory-policy` (backoffice-session-refresh-hardening
  * D3). Bound to App\Support\Auth\RedisConfigEvictionPolicyProbe in
  * AppServiceProvider — an interface (mirroring the LLMProvider pattern) so
- * App\Console\Commands\CheckRedisEvictionPolicy and
- * App\Http\Controllers\QueueHealthController stay unit-testable with a
+ * App\Http\Controllers\QueueHealthController stays unit-testable with a
  * simple fake, without a real Redis instance or mocking a final class.
  */
 interface RedisEvictionPolicyProbe

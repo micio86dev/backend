@@ -18,6 +18,7 @@
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Testing\TestResponse;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 // Helper: create a user with known password and optionally an org.
@@ -35,7 +36,7 @@ function makeUser(array $attrs = []): User
  * distinct encryption exemption via App\Http\Middleware\EncryptCookies'
  * $except list, added alongside the controller wiring).
  */
-function refreshCookieFrom(\Illuminate\Testing\TestResponse $response): ?string
+function refreshCookieFrom(TestResponse $response): ?string
 {
     foreach ($response->headers->getCookies() as $cookie) {
         if ($cookie->getName() === config('refresh_tokens.cookie.name')) {

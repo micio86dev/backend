@@ -8,7 +8,6 @@
  * is the exact regression D1 exists to close, so every invariant here asserts
  * its ABSENCE rather than a specific present value.
  */
-
 test('config/cors.php exists and is an array', function (): void {
     expect(config('cors'))->toBeArray();
 });

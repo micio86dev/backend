@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.22.2"
+        "version": "0.22.3"
     },
     "servers": [
         {
@@ -1733,6 +1733,30 @@
                                     },
                                     "required": [
                                         "status"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "down"
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "const": "cors_allowed_origins_empty"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "reason"
                                     ]
                                 }
                             }

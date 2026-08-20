@@ -457,3 +457,11 @@ pest()->use(RefreshDatabase::class)
 // transaction rollback on its own.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Console');
+
+// ─── CORS fail-loud (deploy incident 2026-08-20) ───────────────────────────────
+
+// Unit/Support/Http — needs TestCase so app()['env'] and config() resolve
+// against a booted app. No DB needed: CorsAllowlistStatus is pure
+// config/environment logic, same shape as Unit/NotificationsConfigTest.php.
+pest()->extend(TestCase::class)
+    ->in('Unit/Support/Http');
