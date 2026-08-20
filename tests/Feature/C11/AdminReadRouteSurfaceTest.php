@@ -41,6 +41,11 @@ test('the admin participant route surface is exactly the enumerated set', functi
         'api/participants/{id}/transcript/download',
         'api/participants/{id}/evaluation/download',
         'api/participants/{participant}/sessions',
+        // (participant-error-recovery) POST /api/participants/{id}/recover is a
+        // WRITE, not part of the admin READ surface this test otherwise
+        // enumerates — it shares the URI prefix only, so it is listed here
+        // rather than filtered out, to keep the enumeration exhaustive.
+        'api/participants/{id}/recover',
         'api/dashboard/metrics',
     ]);
 });

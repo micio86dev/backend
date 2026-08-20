@@ -68,4 +68,21 @@ class ParticipantPolicy
     {
         return $user->hasRole('admin') || $user->hasRole('operator');
     }
+
+    /**
+     * Recover a participant out of `errore` (participant-error-recovery,
+     * design D4) — admin and operator only, `viewer` denied. Same reasoning
+     * as `create()` above, with more force: recovery re-opens an assessment
+     * and can discard partial transcript data, so it must never be available
+     * to a read-only role. Model-less, like `create()` — the check runs
+     * BEFORE the participant is resolved (403 before 404).
+     *
+     * Named `recover` everywhere (route/action/log/i18n) — rejected `update`
+     * (too generic, would widen silently) and `reopen` (suggests reopening a
+     * SUCCESSFULLY completed assessment, which this explicitly does not do).
+     */
+    public function recover(User $user): bool
+    {
+        return $user->hasRole('admin') || $user->hasRole('operator');
+    }
 }

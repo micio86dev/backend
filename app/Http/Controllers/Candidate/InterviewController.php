@@ -608,11 +608,27 @@ class InterviewController extends Controller
                 $session->status = 'in_corso';
                 $session->save();
 
-                // On first competency only: stamp participant.started_at + status (direct property)
+                // started_at is NOT in $fillable → direct property assignment is
+                // mandatory. Stamped ONLY on the participant's true first
+                // competency (isFirstCompetency, keyed off started_at === null —
+                // see D2b above), never on a resumed/recovered competency.
                 if ($isFirstCompetency) {
-                    // started_at is NOT in $fillable → direct property assignment is mandatory
                     $participant->started_at = now();
+                }
+
+                // (participant-error-recovery D2b) The status transition to
+                // in_corso is a SEPARATE concern from the started_at stamp: a
+                // recovered participant (status=in_attesa, started_at already
+                // set, isFirstCompetency=false) must STILL move to in_corso
+                // here, or it is stranded at in_attesa forever — /end's later
+                // completion CAS requires status='in_corso' to reach
+                // in_valutazione. Guarded so an already in_corso participant
+                // (the normal 2nd+ competency path) triggers no redundant write.
+                if ($participant->status !== 'in_corso') {
                     $participant->status = 'in_corso';
+                }
+
+                if ($participant->isDirty()) {
                     $participant->save();
                 }
             });

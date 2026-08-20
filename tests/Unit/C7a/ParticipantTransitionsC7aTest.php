@@ -134,6 +134,23 @@ test('completato is explicitly terminal — completato → in_corso is rejected'
     expect(fn () => c7aTransitionParticipant($p, 'in_corso'))->toThrow(ParticipantTransitionException::class);
 });
 
+// ─── errore → in_attesa: the ONE authorized recovery edge ─────────────────────
+// (participant-error-recovery, design D2) errore is no longer a one-way door:
+// the recovery action may flip it back to in_attesa. This is the ONLY
+// outbound edge from errore — errore → in_corso/in_valutazione stay illegal
+// (see the two tests below), and this edge is written ONLY by
+// App\Actions\Participant\RecoverFailedParticipant, never by a bare status
+// assignment elsewhere.
+
+test('errore → in_attesa is allowed (participant-error-recovery: the recovery edge)', function (): void {
+    $org = Organization::factory()->create();
+    $project = makeC7aTransitionProject($org);
+    $p = makeC7aParticipantWithStatus($org, $project, 'errore');
+
+    expect(fn () => c7aTransitionParticipant($p, 'in_attesa'))->not->toThrow(ParticipantTransitionException::class);
+    expect($p->fresh()->status)->toBe('in_attesa');
+});
+
 test('errore is explicitly terminal — errore → in_corso is rejected', function (): void {
     $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
