@@ -54,6 +54,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $provider_session_ref
  * @property string $status
  * @property string|null $ended_reason
+ * @property int $error_count
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
  * @property Carbon $created_at
@@ -63,6 +64,21 @@ class InterviewSession extends TenantModel
 {
     /** @use HasFactory<InterviewSessionFactory> */
     use HasFactory;
+
+    /**
+     * How many times a single competency may reach `error` before it is closed for
+     * good (interview-continuous-flow, D1/D4).
+     *
+     * Two, meaning the candidate gets ONE re-offer after the first failure. This
+     * mirrors the already-ratified scoring retry semantics in CLAUDE.md — "exactly
+     * 1 retry; after a failed retry → completed (definitive)" — so the product has
+     * one retry rule rather than two that have to be explained separately.
+     *
+     * The bound governs the AUTOMATIC path only. Operator-initiated recovery
+     * (`RecoverFailedParticipant`) stays deliberately unbounded: an operator acting
+     * on a known incident is not the failure mode this ceiling exists to contain.
+     */
+    public const MAX_ERROR_ATTEMPTS = 2;
 
     /**
      * Mass-assignable attributes.
