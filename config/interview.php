@@ -70,9 +70,16 @@ return [
          * time. Precedence in `HegenProvider::buildSessionTokenBody()`: an org's
          * active template still wins when it sets a value; this is only the
          * fallback for the (today: universal) case where it does not.
+         *
+         * The literal fallbacks are the same committed, WORKING values
+         * `interview.demo.heygen.*` uses, and they are NOT optional polish:
+         * `avatar_id` is REQUIRED by the provider, so a config that can resolve
+         * to null guarantees an HTTP 422 on every /start. A mandatory field must
+         * never depend on an env var whose absence fails silently — that is
+         * exactly how the CORS allowlist took production down on 2026-08-20.
          */
-        'avatar_id' => env('HEYGEN_AVATAR_ID', env('LIVEAVATAR_AVATAR_ID')),
-        'voice_id' => env('HEYGEN_VOICE_ID', env('LIVEAVATAR_VOICE_ID')),
+        'avatar_id' => env('HEYGEN_AVATAR_ID', env('LIVEAVATAR_AVATAR_ID', 'ab0765ad-69de-41fb-9f8a-bd01c3c52d6f')),
+        'voice_id' => env('HEYGEN_VOICE_ID', env('LIVEAVATAR_VOICE_ID', 'c84af063-5ce2-4370-8ef8-dcd0ef903d43')),
         'language' => env('HEYGEN_LANGUAGE', env('LIVEAVATAR_LANGUAGE', 'it')),
     ],
 
