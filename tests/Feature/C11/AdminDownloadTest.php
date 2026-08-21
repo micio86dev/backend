@@ -156,7 +156,9 @@ test('a gated download before its lifecycle threshold returns 409, never a file'
     $org = Organization::factory()->create();
     $token = downloadTestAdminUser($org);
     $project = downloadTestProjectIn($org);
-    $participant = Participant::factory()->forProject($project)->withStatus('in_corso')->create();
+    // in_attesa is the only status still denied for Transcript after D1
+    // loosened the minimum to in_corso (operator-participant-visibility).
+    $participant = Participant::factory()->forProject($project)->withStatus('in_attesa')->create();
 
     $response = $this->withToken($token)->getJson("/api/participants/{$participant->id}/transcript/download");
 

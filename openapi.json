@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.23.0"
+        "version": "0.26.4"
     },
     "servers": [
         {
@@ -433,7 +433,10 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
-                                                    "type": "string",
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 },
                                                 "photo_url": {
@@ -881,20 +884,25 @@
                                                         "type": "string"
                                                     },
                                                     "description": {
-                                                        "type": "string"
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
                                                     },
                                                     "provider": {
                                                         "type": "string"
                                                     },
                                                     "config": {
-                                                        "type": "string"
+                                                        "type": "array",
+                                                        "items": {}
                                                     },
                                                     "persona": {
                                                         "type": [
-                                                            "string",
+                                                            "array",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config."
+                                                        "description": "Persona is optional: a template may be pure provider config.",
+                                                        "items": {}
                                                     }
                                                 },
                                                 "required": [
@@ -2210,7 +2218,7 @@
         "/participants/{id}/transcript": {
             "get": {
                 "operationId": "participant.transcript",
-                "description": "Transcript scope (D2) \u2014 requires lifecycle >= in_valutazione; a\npre-threshold status raises LifecycleNotReadyException -> 409 (D4).",
+                "description": "Transcript scope (D2) \u2014 requires lifecycle >= in_corso, OR errore\n(operator-participant-visibility D1); a pre-threshold status (in_attesa)\nraises LifecycleNotReadyException -> 409 (D4).",
                 "summary": "GET /api/participants/{id}/transcript",
                 "tags": [
                     "Participant"
@@ -5094,28 +5102,34 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "participant_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "provider_session_ref": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "started_at": {
                         "type": [
@@ -5296,13 +5310,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "provider": {
                         "type": "string"
@@ -5311,7 +5325,10 @@
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "started_at": {
                         "type": [
@@ -5522,11 +5539,60 @@
             "TranscriptResource": {
                 "type": "object",
                 "properties": {
+                    "is_partial": {
+                        "type": "boolean"
+                    },
                     "sessions": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": {
+                                    "type": "integer"
+                                },
+                                "competency_code": {
+                                    "type": "string"
+                                },
+                                "question_index": {
+                                    "type": "integer"
+                                },
+                                "utterances": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "speaker": {
+                                                "type": "string"
+                                            },
+                                            "text": {
+                                                "type": "string"
+                                            },
+                                            "ts": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        },
+                                        "required": [
+                                            "speaker",
+                                            "text",
+                                            "ts"
+                                        ]
+                                    }
+                                }
+                            },
+                            "required": [
+                                "session_id",
+                                "competency_code",
+                                "question_index",
+                                "utterances"
+                            ]
+                        }
                     }
                 },
                 "required": [
+                    "is_partial",
                     "sessions"
                 ],
                 "title": "TranscriptResource"

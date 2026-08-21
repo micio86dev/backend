@@ -7,10 +7,12 @@ namespace App\Services\Admin;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Utterance;
+use App\Support\Admin\LifecycleReadGate;
 
 /**
  * Builds the admin transcript for a Participant across ALL of their
- * InterviewSessions (C11 D6).
+ * InterviewSessions (C11 D6), welded to the partial-disclosure marker
+ * (operator-participant-visibility D2).
  *
  * A participant has ONE InterviewSession per competency
  * (InterviewSession.php:48-49, ScoreEvaluationJob.php:335-338).
@@ -31,18 +33,16 @@ use App\Models\Utterance;
  *
  * REQ: Evaluation Serializer Is Scoped, Not Copied From the Webhook Assembler
  *      (openspec/changes/admin-dashboards/specs/admin-read-api/spec.md — transcript half)
+ *      Partial Transcript Disclosure Marker
+ *      (openspec/changes/operator-participant-visibility/specs/admin-read-api/spec.md)
  */
 final class AdminTranscriptSerializer
 {
-    /**
-     * @return array<int, array{
-     *     session_id: int,
-     *     competency_code: string,
-     *     question_index: int,
-     *     utterances: array<int, array{speaker: string, text: string, ts: string|null}>
-     * }>
-     */
-    public function serialize(Participant $participant): array
+    public function __construct(
+        private readonly LifecycleReadGate $gate = new LifecycleReadGate,
+    ) {}
+
+    public function serialize(Participant $participant): AdminTranscript
     {
         $sessions = InterviewSession::where('participant_id', $participant->id)
             ->with(['utterances' => fn ($query) => $query->orderBy('ts')->orderBy('id')])
@@ -50,25 +50,28 @@ final class AdminTranscriptSerializer
             ->orderBy('id')
             ->get();
 
-        return $sessions
-            ->map(fn (InterviewSession $session): array => [
-                'session_id' => $session->id,
-                'competency_code' => $session->competency_code,
-                'question_index' => $session->question_index,
-                'utterances' => $session->utterances
-                    ->map(fn (Utterance $utterance): array => [
-                        'speaker' => $utterance->speaker,
-                        'text' => $utterance->text,
-                        // Carbon::toISOString() is declared ?string (returns
-                        // null only for an invalid/unset date) — $utterance->ts
-                        // itself is never null (DB NOT NULL constraint,
-                        // 2026_07_20_100003_create_utterances_table.php:44).
-                        'ts' => $utterance->ts->toISOString(),
-                    ])
-                    ->values()
-                    ->all(),
-            ])
-            ->values()
-            ->all();
+        return new AdminTranscript(
+            isPartial: $this->gate->isTranscriptPartial($participant->status),
+            sessions: $sessions
+                ->map(fn (InterviewSession $session): array => [
+                    'session_id' => $session->id,
+                    'competency_code' => $session->competency_code,
+                    'question_index' => $session->question_index,
+                    'utterances' => $session->utterances
+                        ->map(fn (Utterance $utterance): array => [
+                            'speaker' => $utterance->speaker,
+                            'text' => $utterance->text,
+                            // Carbon::toISOString() is declared ?string (returns
+                            // null only for an invalid/unset date) — $utterance->ts
+                            // itself is never null (DB NOT NULL constraint,
+                            // 2026_07_20_100003_create_utterances_table.php:44).
+                            'ts' => $utterance->ts->toISOString(),
+                        ])
+                        ->values()
+                        ->all(),
+                ])
+                ->values()
+                ->all(),
+        );
     }
 }
