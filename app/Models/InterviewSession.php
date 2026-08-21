@@ -35,6 +35,16 @@ use Illuminate\Support\Carbon;
  *
  * started_at / ended_at: cast as immutable datetime (timestampTz in DB).
  *
+ * started_at (interview-session-started-at, D2): the FIRST live moment,
+ * written once (`??= now()`) at the `in_corso` transition, never
+ * overwritten by a resume. ended_at is stamped at `/end`. Consequence,
+ * stated plainly: `ended_at - started_at` is a WALL-CLOCK SPAN that MAY
+ * include an abandonment gap across a resume — it is NOT the session's
+ * duration and MUST NEVER be read as one. The duration is
+ * `liveSeconds()`: the sum of every CLOSED `interview_session_live_periods`
+ * row, which a resume closes and reopens rather than leaving the original
+ * span open across the gap (D1/D3).
+ *
  * UNIQUE(participant_id, competency_code): one session per participant per competency.
  * Concurrent /start hitting this UNIQUE constraint → catch UniqueConstraintViolationException → RESUME.
  *
@@ -184,5 +194,52 @@ class InterviewSession extends TenantModel
     public function interviewSnapshots(): HasMany
     {
         return $this->hasMany(InterviewSnapshot::class);
+    }
+
+    /**
+     * Every stretch this session held a live provider session
+     * (interview-session-started-at, D1). `SessionLiveClock` is the only
+     * writer.
+     *
+     * @return HasMany<InterviewSessionLivePeriod, $this>
+     */
+    public function livePeriods(): HasMany
+    {
+        return $this->hasMany(InterviewSessionLivePeriod::class);
+    }
+
+    // -------------------------------------------------------------------------
+    // Derived duration
+    // -------------------------------------------------------------------------
+
+    /**
+     * The session's recorded duration: the SUM of every CLOSED live period,
+     * never the wall-clock span between `started_at` and `ended_at`
+     * (interview-session-started-at, D1/D3).
+     *
+     * An open period (a resume mid-flight, or a session still `in_corso`)
+     * contributes NOTHING and is excluded — mirrors
+     * `operator-participant-visibility` D4: clamping an open period with
+     * `now()` would report weeks for an abandoned tab.
+     *
+     * `null` when there are no CLOSED periods at all — never `0`. `0` reads
+     * as "this session ran, and took no time", which is false for a session
+     * that has not finished a single stretch yet.
+     *
+     * Call sites MUST eager-load `livePeriods` when iterating many sessions
+     * (`SessionReviewController::index`, `ParticipantInterviewAggregator`) —
+     * this method never issues its own query.
+     */
+    public function liveSeconds(): ?int
+    {
+        $closed = $this->livePeriods->filter(fn (InterviewSessionLivePeriod $period): bool => $period->ended_at !== null);
+
+        if ($closed->isEmpty()) {
+            return null;
+        }
+
+        return (int) $closed->sum(
+            fn (InterviewSessionLivePeriod $period): int => $period->ended_at->getTimestamp() - $period->started_at->getTimestamp()
+        );
     }
 }

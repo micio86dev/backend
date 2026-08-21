@@ -397,6 +397,14 @@ final class DemoWriter
             $competencyCode = $sessionDefinition['competency'];
             $position = $positionByCode[$competencyCode] ?? 0;
 
+            // (interview-session-started-at, D9) A DETERMINISTIC per-competency
+            // length derived from `position` — never the flat 20-minute
+            // HeyGen ceiling that made every demo interview read as a
+            // measurement. Seeders are re-run and DemoDatasetValidator
+            // asserts invariants, so randomness is not available; comfortably
+            // below the 1200s ceiling.
+            $durationSeconds = 300 + ($position % 5) * 96;
+
             $session = new InterviewSession;
             $session->forceFill([
                 'participant_id' => $participant->id,
@@ -405,19 +413,93 @@ final class DemoWriter
                 'competency_code' => $competencyCode,
                 'framework_version_id' => $project->framework_version_id,
                 'provider' => 'heygen',
+                // The marker half — the reliable discriminator between demo
+                // and real rows — stays unchanged (D9).
                 'provider_session_ref' => DemoMarker::PREFIX.'s-'.$participant->id.'-'.$competencyCode,
                 'status' => $sessionDefinition['status'],
                 'ended_reason' => $sessionDefinition['ended_reason'],
                 'started_at' => $baseTime,
-                'ended_at' => $sessionDefinition['status'] === 'in_corso' ? null : $baseTime->copy()->addMinutes(20),
+                'ended_at' => $sessionDefinition['status'] === 'in_corso' ? null : $baseTime->copy()->addSeconds($durationSeconds),
             ])->save();
             $session->refresh();
+
+            $this->writeSessionLivePeriods($session, $sessionDefinition['status'], $baseTime, $durationSeconds);
 
             $this->writeUtterances($session, $content[$competencyCode] ?? [], $project->language, $sessionDefinition, $baseTime);
 
             $baseTime = $baseTime->copy()->addHour();
         }
     }
+
+    /**
+     * `interview_session_live_periods` for one demo session
+     * (interview-session-started-at, D9). Mirrors the session's own
+     * `started_at`/`ended_at` (or leaves it open for `in_corso`) with ONE
+     * exception: the FIRST `completed` session this writer encounters
+     * across the whole dataset is deliberately given TWO closed periods
+     * with a gap between them, so the demo exercises the resumed-interview
+     * shape the product now supports — an operator can see what a resumed
+     * interview looks like without needing a real one. Periods cascade on
+     * session delete (FK cascade, Phase 1); demo teardown needs no edit.
+     */
+    private function writeSessionLivePeriods(InterviewSession $session, string $status, Carbon $baseTime, int $durationSeconds): void
+    {
+        if ($status === 'in_corso') {
+            $session->livePeriods()->create([
+                'provider_session_ref' => $session->provider_session_ref,
+                'started_at' => $baseTime,
+                'ended_at' => null,
+                'closed_reason' => null,
+            ]);
+
+            return;
+        }
+
+        if ($status !== 'completed' && $status !== 'timeout' && $status !== 'skipped') {
+            // `error` (and any other terminal-without-a-real-stretch status)
+            // never went live long enough to warrant a period — matches the
+            // real path's markSessionError, which closes a period only when
+            // one was actually open.
+            return;
+        }
+
+        if (! $this->resumedDemoWritten && $status === 'completed') {
+            $this->resumedDemoWritten = true;
+
+            $firstEnd = $baseTime->copy()->addSeconds((int) ($durationSeconds / 2));
+            $gapEnd = $firstEnd->copy()->addHours(3);
+
+            $session->livePeriods()->create([
+                'provider_session_ref' => DemoMarker::PREFIX.'s-'.$session->participant_id.'-'.$session->competency_code.'-r1',
+                'started_at' => $baseTime,
+                'ended_at' => $firstEnd,
+                'closed_reason' => 'resume',
+            ]);
+            $session->livePeriods()->create([
+                'provider_session_ref' => $session->provider_session_ref,
+                'started_at' => $gapEnd,
+                'ended_at' => $session->ended_at,
+                'closed_reason' => 'end',
+            ]);
+
+            return;
+        }
+
+        $session->livePeriods()->create([
+            'provider_session_ref' => $session->provider_session_ref,
+            'started_at' => $baseTime,
+            'ended_at' => $session->ended_at,
+            'closed_reason' => $status === 'completed' ? 'end' : $status,
+        ]);
+    }
+
+    /**
+     * Set once this writer produces the demo's single resumed-interview
+     * session (D9). Per-instance, not static: one `DemoWriter` is
+     * constructed per `write()` call, so a fresh false start is guaranteed
+     * on every re-run.
+     */
+    private bool $resumedDemoWritten = false;
 
     /**
      * 3 avatar + 3 candidate turns for a completed session; a live

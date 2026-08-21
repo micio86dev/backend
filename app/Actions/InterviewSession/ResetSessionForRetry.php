@@ -52,6 +52,15 @@ final class ResetSessionForRetry
         $session->ended_reason = null;
         $session->ended_at = null;
         // error_count is deliberately absent — see the class docblock.
+        //
+        // (interview-session-started-at, D6) `started_at` and every
+        // `interview_session_live_periods` row are ALSO deliberately absent
+        // here — the same judgement applied to a different column. The
+        // minutes already spent in the failed attempt were genuinely
+        // billed; only the WORDS must not survive into a re-scored
+        // transcript. The next `/start` opens a SECOND stretch through
+        // `handleIssuePending` (`started_at ??= now()` is a no-op for this
+        // row), and that stretch is summed alongside the first.
         $session->save();
 
         return $utterancesDiscarded;
