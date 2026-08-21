@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.26.4"
+        "version": "0.28.0"
     },
     "servers": [
         {
@@ -5224,7 +5224,8 @@
                         "type": [
                             "integer",
                             "null"
-                        ]
+                        ],
+                        "description": "(interview-session-started-at, D3) Accumulated LIVE time, never\nthe wall-clock span. The caller MUST eager-load `livePeriods`."
                     },
                     "integrity": {
                         "type": "object",
@@ -5421,7 +5422,7 @@
                     },
                     "duration_seconds": {
                         "type": [
-                            "string",
+                            "integer",
                             "null"
                         ]
                     },
