@@ -64,7 +64,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $provider_session_ref
  * @property string $status
  * @property string|null $ended_reason
- * @property int $error_count\n * @property Carbon|null $transcript_harvested_at
+ * @property int $error_count
+ * @property Carbon|null $transcript_harvested_at
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
  * @property Carbon $created_at
@@ -239,7 +240,14 @@ class InterviewSession extends TenantModel
         }
 
         return (int) $closed->sum(
-            fn (InterviewSessionLivePeriod $period): int => $period->ended_at->getTimestamp() - $period->started_at->getTimestamp()
+            // The null arm is unreachable given the filter above, but the rule it
+            // encodes is the real one: an OPEN period has no measurable duration
+            // and contributes nothing. Stating it here keeps that rule in one
+            // place instead of splitting it between a filter and a sum, where a
+            // later refactor could drop half of it silently.
+            fn (InterviewSessionLivePeriod $period): int => $period->ended_at === null
+                ? 0
+                : $period->ended_at->getTimestamp() - $period->started_at->getTimestamp()
         );
     }
 }

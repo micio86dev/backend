@@ -157,8 +157,8 @@ class InterviewController extends Controller
         // the avatar is told to say and the one the client watches for can
         // never drift apart.
         [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($project->language);
-        $isLastCompetency = ($nextCompetency['competency_ordinal'] ?? 0)
-            >= ($nextCompetency['total_competencies'] ?? 0);
+        $isLastCompetency = $nextCompetency['competency_ordinal']
+            >= $nextCompetency['total_competencies'];
         $advancePhrase = $isLastCompetency ? $finalPhrase : $endPhrase;
 
         $compositionResult = $this->composePromptForCompetency(
@@ -250,8 +250,8 @@ class InterviewController extends Controller
             // already uses for the opening greeting — never a static env default.
             language: $project->language,
             // D6 — progress, computed by the resolver from the ordered list.
-            competencyOrdinal: $nextCompetency['competency_ordinal'] ?? null,
-            totalCompetencies: $nextCompetency['total_competencies'] ?? null,
+            competencyOrdinal: $nextCompetency['competency_ordinal'],
+            totalCompetencies: $nextCompetency['total_competencies'],
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -532,7 +532,7 @@ class InterviewController extends Controller
      * terminal-completed = status ∈ {completed, timeout, skipped}
      * pending | in_corso → RESUME that session (no new creation needed).
      *
-     * @return array{competency_code: string, question_index: int}|null
+     * @return array{competency_code: string, question_index: int, competency_ordinal: int, total_competencies: int, reoffer?: bool}|null
      */
     private function resolveNextCompetency(int $participantId, int $projectId): ?array
     {
@@ -564,9 +564,10 @@ class InterviewController extends Controller
         $total = $all->count();
 
         foreach ($all->values() as $index => $row) {
-            $status = $existing->get($row->competency_code)?->status;
+            $session = $existing->get($row->competency_code);
+            $status = $session?->status;
 
-            if ($status === null) {
+            if ($session === null) {
                 // No session yet → this is the next one to create
                 return $this->competencyPayload((array) $row, $index, $total);
             }
@@ -588,7 +589,7 @@ class InterviewController extends Controller
             // it does not mutate. Left to a later step it would be one early return
             // away from being skipped.
             if ($status === 'error'
-                && ($existing->get($row->competency_code)?->error_count ?? 0) < InterviewSession::MAX_ERROR_ATTEMPTS
+                && $session->error_count < InterviewSession::MAX_ERROR_ATTEMPTS
             ) {
                 return $this->competencyPayload((array) $row, $index, $total, reoffer: true);
             }
