@@ -25,7 +25,12 @@ use Illuminate\Support\Facades\Schema;
  * - UNIQUE(participant_id, competency_code): idempotent on /start.
  * - Composite indexes lead with organization_id (D22 org-lead rule).
  * - started_at / ended_at: timestampTz (server-set; nullable).
- * - question_index: 0-based ordinal (position - 1).
+ * - question_index: 0-based ordinal. Invariant: question_index ==
+ *   project_competencies.position of that session's competency within the
+ *   session's project — never derived by arithmetic (interview-question-index-offset,
+ *   D6). Frozen at session creation; recomputed to CURRENT position by the
+ *   `2026_08_21_160000_recompute_interview_session_question_index` backfill for any
+ *   row already persisted before that fix shipped.
  *
  * REQ: InterviewSession tenant model + schema (C7a)
  */
@@ -48,7 +53,9 @@ return new class extends Migration
                 ->constrained('projects')
                 ->restrictOnDelete();
 
-            // 0-based ordinal (position - 1) from project_competencies.position.
+            // Invariant: question_index == project_competencies.position of this
+            // session's competency (0-based) — never position - 1. See class
+            // docblock (interview-question-index-offset, D6).
             $table->integer('question_index');
 
             // The BARS competency code (e.g. 'PRS', 'STG').

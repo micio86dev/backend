@@ -60,7 +60,12 @@ function casProject(Organization $org, int $count = 1): array
         DB::table('project_competencies')->insert([
             'project_id' => $project->id,
             'competency_id' => $comp->id,
-            'position' => $i + 1,
+            // 0-based, matching every production writer (project_competencies.position
+            // comes from a PHP array key). This fixture was 1-based, which cancelled
+            // the `position - 1` defect exactly and is why an endpoint-driven test
+            // passed against wrong code for months. A fixture that disagrees with
+            // production does not simplify a test, it disarms it.
+            'position' => $i,
         ]);
 
         $ind = new BarsIndicator;
@@ -70,6 +75,60 @@ function casProject(Organization $org, int $count = 1): array
             // Both locales: a project switched to `it` must still compose, or the
             // test fails with anchor_translation_missing and looks like a code bug.
             'text' => ['en' => "CAS fixture indicator {$i}", 'it' => "Indicatore CAS {$i}"],
+            'anchor_5' => ['en' => "Excellent {$i}", 'it' => "Eccellente {$i}"],
+            'anchor_3' => ['en' => "Adequate {$i}", 'it' => "Adeguato {$i}"],
+            'anchor_1' => ['en' => "Insufficient {$i}", 'it' => "Insufficiente {$i}"],
+            'position' => 0,
+        ]);
+        $ind->save();
+
+        $competencies[] = $comp;
+    }
+
+    return [$project, $competencies];
+}
+
+/**
+ * A project with `$count` competencies at 0-based `project_competencies.position`
+ * (interview-question-index-offset) — matching the REAL production writers
+ * (`ProjectController::store()`/`update()` — plain array `foreach`, 0-based array
+ * index) rather than `casProject()`'s 1-based `$i + 1`. Needed wherever a test
+ * asserts the actual persisted `question_index` value: `casProject()`'s 1-based
+ * positions happen to cancel the historic `position - 1` defect out, which is
+ * exactly why it never caught it.
+ *
+ * @return array{0: Project, 1: list<Competency>}
+ */
+function casDenseProject(Organization $org, int $count = 1): array
+{
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $project = Project::factory()->create([
+        'status' => 'active',
+        'assessment_type' => 'standard',
+    ]);
+
+    $role = Role::firstOrCreate(
+        ['code' => $project->role_code],
+        Role::factory()->make(['code' => $project->role_code])->getAttributes(),
+    );
+
+    $competencies = [];
+    for ($i = 0; $i < $count; $i++) {
+        $comp = Competency::factory()->create();
+        DB::table('project_competencies')->insert([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'position' => $i,
+        ]);
+
+        $ind = new BarsIndicator;
+        $ind->forceFill([
+            'role_id' => $role->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "CAS dense fixture indicator {$i}", 'it' => "Indicatore CAS denso {$i}"],
             'anchor_5' => ['en' => "Excellent {$i}", 'it' => "Eccellente {$i}"],
             'anchor_3' => ['en' => "Adequate {$i}", 'it' => "Adeguato {$i}"],
             'anchor_1' => ['en' => "Insufficient {$i}", 'it' => "Insufficiente {$i}"],
