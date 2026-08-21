@@ -95,7 +95,9 @@ test('detail carries progress, elapsed and cost shaped per the Interfaces contra
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    InterviewSession::create([
+    // (interview-session-started-at, D8) Duration reaches liveSeconds()
+    // through a named closed period — never a bare started_at/ended_at pair.
+    $session = InterviewSession::create([
         'participant_id' => $participant->id,
         'project_id' => $project->id,
         'question_index' => 0,
@@ -104,8 +106,12 @@ test('detail carries progress, elapsed and cost shaped per the Interfaces contra
         'provider' => 'heygen',
         'provider_session_ref' => 'ref-0',
         'status' => 'completed',
+    ]);
+    $session->livePeriods()->create([
+        'provider_session_ref' => 'ref-0',
         'started_at' => '2026-03-01 10:00:00',
         'ended_at' => '2026-03-01 10:05:00',
+        'closed_reason' => 'end',
     ]);
 
     $response = $this->withToken($token)->getJson("/api/participants/{$participant->id}");

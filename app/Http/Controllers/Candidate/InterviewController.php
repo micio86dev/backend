@@ -27,6 +27,7 @@ use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\Interview\CompetencyTally;
+use App\Support\Interview\SessionLiveClock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -55,6 +56,7 @@ class InterviewController extends Controller
     public function __construct(
         private readonly SystemPromptComposer $composer,
         private readonly OpeningTextComposer $openingComposer,
+        private readonly SessionLiveClock $liveClock,
     ) {}
 
     // =========================================================================
@@ -344,6 +346,13 @@ class InterviewController extends Controller
                 $locked->ended_at = now();
                 $locked->ended_reason = $endedReason;
                 $locked->save();
+
+                // (interview-session-started-at, D4) Close the open period
+                // alongside the status write, inside the same lock — a
+                // no-op on the FIX-3 idempotency guard's second /end call,
+                // since that path already aborted above before reaching
+                // here.
+                $this->liveClock->close($locked, 'end');
 
                 // (7)+(8) Tally + last-question CAS, extracted (D5) so the two other
                 // paths that can finish an interview reach the same code.
@@ -686,6 +695,18 @@ class InterviewController extends Controller
         // Provider name is required by ProviderToken::fromRef (F1).
         // A null provider_session_ref means there is no old provider session to tear down.
         $oldRef = $session->provider_session_ref;
+
+        // (interview-session-started-at, D1/D4) Close the OUTGOING period —
+        // deliberately OUTSIDE the `$oldRef !== null` guard below: a period
+        // is BEAI's own observation of live time, not a mirror of the
+        // provider's ref, and must close even when no provider ref
+        // survives. Nested inside the guard, a null-ref row would leak an
+        // open period forever and lose its first stretch from every sum.
+        // Placed BEFORE the (c) transaction below is deliberate: if (c)
+        // fails, the stretch that genuinely ended stays correctly closed
+        // rather than being discarded by a later, unrelated write failure.
+        $this->liveClock->close($session, 'resume');
+
         if ($oldRef !== null) {
             // (b0) HARVEST the outgoing session's transcript BEFORE tearing it
             // down. This is the last moment it is readable.
@@ -721,7 +742,16 @@ class InterviewController extends Controller
             DB::transaction(function () use ($session, $freshToken): void {
                 $session->provider_session_ref = $freshToken->provider_session_ref;
                 $session->status = 'in_corso';
+                // (D2) `??=` — a no-op here for any row that truly resumed
+                // (started_at is already set from the first stretch).
+                $session->started_at ??= now();
                 $session->save();
+
+                // (D1/D4) Open the NEW stretch in the same transaction — the
+                // outgoing one was already closed above, before this txn, so
+                // the D5 invariant (at most one open period) holds even if
+                // this transaction fails and is retried.
+                $this->liveClock->open($session, $freshToken->provider_session_ref);
             });
         } catch (\Throwable $e) {
             // DB failure after provider success → teardown the NEW in-memory token (WARNING-6)
@@ -766,7 +796,21 @@ class InterviewController extends Controller
                 // UPDATE session status = in_corso + new ref
                 $session->provider_session_ref = $token->provider_session_ref;
                 $session->status = 'in_corso';
+
+                // (interview-session-started-at, D2) The FIRST live moment,
+                // write-once. `??=` — not `=` — because this site is NOT only
+                // the first-stretch path: `ResetSessionForRetry` returns an
+                // already-lived session to `pending`, so a re-offered
+                // competency reaches here with a start already recorded, and
+                // that value must survive (D6).
+                $session->started_at ??= now();
                 $session->save();
+
+                // (D1/D4) Open a new live period in the SAME transaction as
+                // the status write. The plain path always arrives here with
+                // no period already open (D5's invariant — a `pending` row
+                // holds none).
+                $this->liveClock->open($session, $token->provider_session_ref);
 
                 // started_at is NOT in $fillable → direct property assignment is
                 // mandatory. Stamped ONLY on the participant's true first
@@ -980,6 +1024,16 @@ class InterviewController extends Controller
             // own reset clears is not a bound.
             $session->error_count = $session->error_count + 1;
             $session->save();
+
+            // (interview-session-started-at, D4) Close the open period, if
+            // any — a no-op for a session that never left `pending` (the
+            // ClientError/Throttle branches never reach here at all). KNOWN
+            // RESIDUAL: a RESUME whose issue() throws never reaches
+            // teardown, so the old provider session may keep billing to its
+            // ceiling while this closes the period only up to the moment
+            // the failure was detected — a bounded, disclosed under-count,
+            // not papered over with an invented end time.
+            $this->liveClock->close($session, 'error');
         } catch (\Throwable) {
             // Best-effort — if even the error update fails, still return the failure status
         }

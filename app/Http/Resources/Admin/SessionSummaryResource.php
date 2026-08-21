@@ -25,9 +25,9 @@ final class SessionSummaryResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $duration = $this->started_at !== null && $this->ended_at !== null
-            ? $this->ended_at->getTimestamp() - $this->started_at->getTimestamp()
-            : null;
+        // (interview-session-started-at, D3) Accumulated LIVE time, never the
+        // wall-clock span. The caller MUST eager-load `livePeriods`.
+        $duration = $this->liveSeconds();
 
         return [
             'id' => $this->id,

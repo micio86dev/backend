@@ -25,6 +25,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
@@ -55,14 +56,15 @@ function reviewSession(Organization $org, array $overrides = []): InterviewSessi
         'project_id' => $project->id,
     ]);
 
-    return InterviewSession::factory()->create(array_merge([
+    // (interview-session-started-at, D8) A duration/cost assertion cannot
+    // pass on the bare factory default — this reaches liveSeconds() through
+    // the named ->ended() state, one closed period of 600s.
+    return InterviewSession::factory()->ended(600)->create(array_merge([
         'organization_id' => $org->id,
         'participant_id' => $participant->id,
         'project_id' => $project->id,
         'framework_version_id' => $fv->id,
         'provider' => 'heygen',
-        'started_at' => '2026-03-01 10:00:00',
-        'ended_at' => '2026-03-01 10:10:00',
     ], $overrides));
 }
 
@@ -196,6 +198,52 @@ test('the participant sessions list is org-scoped and ordered', function (): voi
     ]);
 
     expect($response->json('data'))->toHaveCount(1);
+});
+
+test('the sessions list query count does not grow with the number of sessions — livePeriods eager-loaded, no N+1', function (): void {
+    $org = Organization::factory()->create();
+    $token = reviewUser($org);
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create(['organization_id' => $org->id, 'framework_version_id' => $fv->id]);
+    $participant = Participant::factory()->create(['organization_id' => $org->id, 'project_id' => $project->id]);
+
+    $competencyCounter = 0;
+    $makeSessions = function (int $count) use ($participant, $project, $fv, &$competencyCounter): void {
+        for ($i = 0; $i < $count; $i++) {
+            InterviewSession::factory()->ended(600)->create([
+                'organization_id' => $participant->organization_id,
+                'participant_id' => $participant->id,
+                'project_id' => $project->id,
+                'framework_version_id' => $fv->id,
+                'competency_code' => 'COMP'.$competencyCounter++,
+            ]);
+        }
+    };
+
+    $makeSessions(6);
+
+    DB::enableQueryLog();
+    $response = $this->withToken($token)->getJson("/api/participants/{$participant->id}/sessions");
+    $log = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    $response->assertOk();
+    expect($response->json('data'))->toHaveCount(6);
+
+    // Content-based, not a raw total (auth/permission resolution issues its
+    // own queries, unrelated to this guard): isolate SELECTs against the
+    // live-periods table. Exactly ONE — the eager load `->with('livePeriods')`
+    // — proves 6 sessions did not cost 6 separate lookups (N+1).
+    $periodLoads = array_filter(
+        $log,
+        fn (array $entry): bool => str_contains(strtolower((string) $entry['query']), 'interview_session_live_periods')
+    );
+
+    expect($periodLoads)->toHaveCount(1, 'livePeriods must be eager-loaded once, not once per session.');
 });
 
 test('an operator may read a review; the surface is not admin-only', function (): void {

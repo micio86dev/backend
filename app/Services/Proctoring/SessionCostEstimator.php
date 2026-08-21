@@ -32,13 +32,13 @@ final class SessionCostEstimator
      */
     public function estimate(InterviewSession $session): ?array
     {
-        if ($session->started_at === null || $session->ended_at === null) {
-            return null;
-        }
+        // (interview-session-started-at, D3) Reads accumulated LIVE time,
+        // never the wall-clock span — a resumed session's cost is priced on
+        // live minutes, not on the abandonment gap between two stretches.
+        // Callers iterating many sessions MUST eager-load `livePeriods`.
+        $seconds = $session->liveSeconds();
 
-        $seconds = $session->ended_at->getTimestamp() - $session->started_at->getTimestamp();
-
-        if ($seconds <= 0) {
+        if ($seconds === null || $seconds <= 0) {
             return null;
         }
 

@@ -343,3 +343,98 @@ test('projects.provider_override is nullable', function (): void {
 
     expect($col->is_nullable)->toBe('YES');
 });
+
+// ─── interview_session_live_periods (interview-session-started-at, D1/D5) ─────
+
+test('interview_session_live_periods table exists', function (): void {
+    expect(Schema::hasTable('interview_session_live_periods'))->toBeTrue();
+});
+
+test('interview_session_live_periods has all required columns', function (): void {
+    $columns = [
+        'id',
+        'organization_id',
+        'interview_session_id',
+        'provider_session_ref',
+        'started_at',
+        'ended_at',
+        'closed_reason',
+        'created_at',
+        'updated_at',
+    ];
+
+    foreach ($columns as $column) {
+        expect(Schema::hasColumn('interview_session_live_periods', $column))
+            ->toBeTrue("Column '{$column}' is missing from interview_session_live_periods");
+    }
+});
+
+test('interview_session_live_periods.started_at is NOT NULL timestamptz', function (): void {
+    $col = collect(
+        DB::select("SELECT data_type, is_nullable FROM information_schema.columns
+                    WHERE table_name = 'interview_session_live_periods' AND column_name = 'started_at'")
+    )->first();
+
+    expect($col->data_type)->toBe('timestamp with time zone');
+    expect($col->is_nullable)->toBe('NO');
+});
+
+test('interview_session_live_periods.ended_at is a nullable timestamptz — NULL means still live', function (): void {
+    $col = collect(
+        DB::select("SELECT data_type, is_nullable FROM information_schema.columns
+                    WHERE table_name = 'interview_session_live_periods' AND column_name = 'ended_at'")
+    )->first();
+
+    expect($col->data_type)->toBe('timestamp with time zone');
+    expect($col->is_nullable)->toBe('YES');
+});
+
+test('interview_session_live_periods has composite index (organization_id, interview_session_id)', function (): void {
+    $indexes = DB::select(
+        "SELECT indexname FROM pg_indexes
+         WHERE tablename = 'interview_session_live_periods'
+           AND indexdef LIKE '%organization_id%'
+           AND indexdef LIKE '%interview_session_id%'"
+    );
+
+    expect($indexes)->not->toBeEmpty('Composite index (organization_id, interview_session_id) missing from interview_session_live_periods');
+});
+
+test('interview_session_live_periods has a partial unique index rejecting a second open period per session', function (): void {
+    $indexes = DB::select(
+        "SELECT indexdef FROM pg_indexes
+         WHERE tablename = 'interview_session_live_periods'
+           AND indexdef LIKE '%UNIQUE%'
+           AND indexdef LIKE '%ended_at IS NULL%'"
+    );
+
+    expect($indexes)->not->toBeEmpty('Partial UNIQUE (interview_session_id) WHERE ended_at IS NULL missing');
+});
+
+test('interview_session_live_periods.interview_session_id FK cascades on delete', function (): void {
+    $fk = collect(DB::select(
+        "SELECT rc.delete_rule
+         FROM information_schema.referential_constraints rc
+         JOIN information_schema.key_column_usage kcu
+           ON rc.constraint_name = kcu.constraint_name
+         WHERE kcu.table_name = 'interview_session_live_periods'
+           AND kcu.column_name = 'interview_session_id'"
+    ))->first();
+
+    expect($fk)->not->toBeNull('FK on interview_session_id not found in interview_session_live_periods');
+    expect($fk->delete_rule)->toBe('CASCADE');
+});
+
+test('interview_session_live_periods.organization_id FK cascades on delete', function (): void {
+    $fk = collect(DB::select(
+        "SELECT rc.delete_rule
+         FROM information_schema.referential_constraints rc
+         JOIN information_schema.key_column_usage kcu
+           ON rc.constraint_name = kcu.constraint_name
+         WHERE kcu.table_name = 'interview_session_live_periods'
+           AND kcu.column_name = 'organization_id'"
+    ))->first();
+
+    expect($fk)->not->toBeNull('FK on organization_id not found in interview_session_live_periods');
+    expect($fk->delete_rule)->toBe('CASCADE');
+});

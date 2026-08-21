@@ -54,8 +54,12 @@ final class ParticipantInterviewAggregator
         // the same pass below. Progress's numerator/denominator are sourced
         // from CompetencyTally instead (D5) — a COUNT-aggregate query, a
         // different concern from this row-by-row pass.
+        // (interview-session-started-at, D3) `livePeriods` eager-loaded so
+        // `liveSeconds()`/`SessionCostEstimator::estimate()` below never issue
+        // an N+1 per session.
         $sessions = InterviewSession::where('participant_id', $participantId)
             ->where('project_id', $projectId)
+            ->with('livePeriods')
             ->get();
 
         $estimator = new SessionCostEstimator;
@@ -66,17 +70,17 @@ final class ParticipantInterviewAggregator
         $sessionsEstimated = 0;
 
         foreach ($sessions as $session) {
-            // D4: sum only sessions where BOTH timestamps exist and the delta
-            // is positive. An open session (started_at, no ended_at)
-            // contributes 0 and is excluded — never clamped with now(),
-            // which would report weeks for an abandoned tab.
-            if ($session->started_at !== null && $session->ended_at !== null) {
-                $delta = $session->ended_at->getTimestamp() - $session->started_at->getTimestamp();
+            // (interview-session-started-at, D3) `liveSeconds()` sums only
+            // CLOSED periods — an open period (a resume mid-flight, or a
+            // session still `in_corso`) contributes 0 and is excluded, same
+            // doctrine as D4 originally stated for the raw column pair:
+            // never clamped with now(), which would report weeks for an
+            // abandoned tab.
+            $delta = $session->liveSeconds();
 
-                if ($delta > 0) {
-                    $elapsedSeconds += $delta;
-                    $sessionsCounted++;
-                }
+            if ($delta !== null && $delta > 0) {
+                $elapsedSeconds += $delta;
+                $sessionsCounted++;
             }
 
             // D6: reuse the estimator unmodified, sum its already-rounded
