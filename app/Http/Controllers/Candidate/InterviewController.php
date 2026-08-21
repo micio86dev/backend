@@ -26,6 +26,7 @@ use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
+use App\Support\Interview\CompetencyTally;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -412,8 +413,9 @@ class InterviewController extends Controller
      */
     private function buildDirective(int $participantId, int $projectId): array
     {
-        $ended = $this->endedCompetencyCount($participantId, $projectId);
-        $total = DB::table('project_competencies')->where('project_id', $projectId)->count();
+        $tally = new CompetencyTally;
+        $ended = $tally->ended($participantId, $projectId);
+        $total = $tally->total($projectId);
 
         $pauseEvery = Project::whereKey($projectId)->value('pause_every_n_competencies');
 
@@ -869,11 +871,9 @@ class InterviewController extends Controller
      */
     private function settleCompletionIfFinished(int $participantId, int $projectId): void
     {
-        $endedCount = $this->endedCompetencyCount($participantId, $projectId);
-
-        $totalCompetencies = DB::table('project_competencies')
-            ->where('project_id', $projectId)
-            ->count();
+        $tally = new CompetencyTally;
+        $endedCount = $tally->ended($participantId, $projectId);
+        $totalCompetencies = $tally->total($projectId);
 
         if ($endedCount !== $totalCompetencies || $totalCompetencies === 0) {
             return;
@@ -889,33 +889,6 @@ class InterviewController extends Controller
             // call sites, which hold no transaction).
             FinalizeInterview::dispatch($participantId)->afterCommit();
         }
-    }
-
-    /**
-     * Competencies that have reached a terminal state for this participant.
-     *
-     * ONE definition, shared by the completion CAS and the /end directive: two
-     * copies of this predicate would be two chances to disagree about when an
-     * interview is over, which is the defect class this change exists to close.
-     *
-     * An `error` counts only once it has spent its re-offer. Count it earlier and
-     * a single transient 4xx — our own payload bug — ends the interview with no
-     * second chance. Count it later and a competency the resolver skips is never
-     * tallied, which is the original stranding under another name.
-     */
-    private function endedCompetencyCount(int $participantId, int $projectId): int
-    {
-        return InterviewSession::where('participant_id', $participantId)
-            ->where('project_id', $projectId)
-            ->where(function ($q): void {
-                $q->whereIn('status', ['completed', 'timeout', 'skipped'])
-                    // An `error` counts only once it has spent its re-offer. Below
-                    // the ceiling the competency is still offerable, so counting it
-                    // would end an interview the candidate can still finish.
-                    ->orWhere(fn ($e) => $e->where('status', 'error')
-                        ->where('error_count', '>=', InterviewSession::MAX_ERROR_ATTEMPTS));
-            })
-            ->count();
     }
 
     /**

@@ -73,12 +73,18 @@ final class AdminParticipantReader
      * list endpoint either — the arch guard (AdminTenancySafetyArchTest,
      * task 2.3b) forbids that there.
      *
+     * `->with('project:id,name')` (operator-participant-visibility D6):
+     * eager-loaded HERE, not in the controller, so a future list caller
+     * cannot forget it and silently lazy-load per row (N+1). Kept here
+     * rather than duplicated at every future list caller.
+     *
      * @return Builder<Participant>
      */
     public function listQuery(): Builder
     {
         Gate::authorize('viewAny', Participant::class);
 
-        return Participant::where('organization_id', $this->resolver->getOrgId());
+        return Participant::where('organization_id', $this->resolver->getOrgId())
+            ->with('project:id,name');
     }
 }

@@ -34,9 +34,18 @@ class ParticipantResource extends JsonResource
      * code in this repository. `id`/`project_id` are backed by an explicit
      * `(int)` cast (design.md D1 — pdo_pgsql bigint).
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, started_at: string|null, completed_at: string|null, created_at: string|null}
+     * `project_name` (operator-participant-visibility D6): flat, alongside
+     * `project_id` — nested would duplicate `ParticipantDetailResource`'s
+     * `project` object, whose gate fields a list row has no use for.
+     * Resolved via the eager load on `AdminParticipantReader::listQuery()`
+     * (never a per-row query). `null` is reachable only on an orphaned FK —
+     * this resource renders it rather than throwing, deliberately unlike
+     * `ParticipantDetailResource`'s `firstOrFail()`: one bad row must not
+     * blank the whole list page.
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, started_at: string|null, completed_at: string|null, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -51,6 +60,7 @@ class ParticipantResource extends JsonResource
             'language' => $participant->language,
             'status' => $participant->status,
             'project_id' => (int) $participant->project_id,
+            'project_name' => $participant->project?->name,
             'started_at' => $participant->started_at?->toISOString(),
             'completed_at' => $participant->completed_at?->toISOString(),
             'created_at' => $participant->created_at->toISOString(),
