@@ -4695,6 +4695,73 @@
                             "session_count"
                         ]
                     },
+                    "progress": {
+                        "type": "object",
+                        "properties": {
+                            "done": {
+                                "type": "integer"
+                            },
+                            "total": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "done",
+                            "total"
+                        ]
+                    },
+                    "elapsed": {
+                        "type": "object",
+                        "properties": {
+                            "seconds": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "sessions_counted": {
+                                "type": "integer"
+                            },
+                            "sessions_total": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "seconds",
+                            "sessions_counted",
+                            "sessions_total"
+                        ]
+                    },
+                    "cost": {
+                        "type": "object",
+                        "properties": {
+                            "amount": {
+                                "type": [
+                                    "number",
+                                    "null"
+                                ]
+                            },
+                            "currency": {
+                                "type": "string"
+                            },
+                            "is_estimate": {
+                                "type": "boolean"
+                            },
+                            "sessions_estimated": {
+                                "type": "integer"
+                            },
+                            "sessions_total": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "amount",
+                            "currency",
+                            "is_estimate",
+                            "sessions_estimated",
+                            "sessions_total"
+                        ]
+                    },
                     "files": {
                         "type": "object",
                         "properties": {
@@ -4759,6 +4826,9 @@
                     "project_id",
                     "project",
                     "timeline",
+                    "progress",
+                    "elapsed",
+                    "cost",
                     "files",
                     "created_at"
                 ],
@@ -4801,6 +4871,12 @@
                     "project_id": {
                         "type": "integer"
                     },
+                    "project_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "started_at": {
                         "type": [
                             "string",
@@ -4828,6 +4904,7 @@
                     "language",
                     "status",
                     "project_id",
+                    "project_name",
                     "started_at",
                     "completed_at",
                     "created_at"
