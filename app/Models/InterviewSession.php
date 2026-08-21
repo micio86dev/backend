@@ -54,7 +54,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $provider_session_ref
  * @property string $status
  * @property string|null $ended_reason
- * @property int $error_count
+ * @property int $error_count\n * @property Carbon|null $transcript_harvested_at
  * @property Carbon|null $started_at
  * @property Carbon|null $ended_at
  * @property Carbon $created_at
