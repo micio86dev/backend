@@ -30,7 +30,7 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  * Routes (all under auth:api + TenantContext, routes/api.php):
  *   GET /participants                    — index (RBAC only, Summary scope)
  *   GET /participants/{id}                — show (RBAC only, Summary scope)
- *   GET /participants/{id}/transcript     — transcript (lifecycle >= in_valutazione)
+ *   GET /participants/{id}/transcript     — transcript (lifecycle >= in_corso, or errore)
  *   GET /participants/{id}/evaluation     — evaluation (lifecycle === completato)
  *
  * REQ: Admin Read Endpoint Surface, Cross-Tenant Isolation on Every Admin
@@ -105,8 +105,9 @@ final class ParticipantController extends Controller
     /**
      * GET /api/participants/{id}/transcript
      *
-     * Transcript scope (D2) — requires lifecycle >= in_valutazione; a
-     * pre-threshold status raises LifecycleNotReadyException -> 409 (D4).
+     * Transcript scope (D2) — requires lifecycle >= in_corso, OR errore
+     * (operator-participant-visibility D1); a pre-threshold status (in_attesa)
+     * raises LifecycleNotReadyException -> 409 (D4).
      */
     public function transcript(int $id): TranscriptResource
     {
