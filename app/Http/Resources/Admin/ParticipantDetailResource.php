@@ -6,6 +6,7 @@ namespace App\Http\Resources\Admin;
 
 use App\Models\InterviewSession;
 use App\Models\Participant;
+use App\Services\Admin\ParticipantInterviewAggregator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -48,9 +49,17 @@ class ParticipantDetailResource extends JsonResource
      * `deadline_at` move in lockstep across BOTH this docblock and the
      * `@scramble-return` below, or the exported schema lies (design D5).
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * `progress`/`elapsed`/`cost` (operator-participant-visibility D3/D4/D6):
+     * the five missing facts, derived once by `ParticipantInterviewAggregator`
+     * over one pass of the participant's InterviewSession rows.
+     * `elapsed.seconds`/`cost.amount` are `null` (never `0`) when nothing
+     * could be measured/estimated — each figure carries its own
+     * `sessions_*` coverage counts because cost and elapsed genuinely
+     * exclude different sessions.
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -63,6 +72,8 @@ class ParticipantDetailResource extends JsonResource
         // a clear exception instead of a null-pointer crash on the
         // pathological case of an orphaned FK.
         $project = $participant->project()->firstOrFail();
+
+        $interview = (new ParticipantInterviewAggregator)->aggregate($participant);
 
         return [
             'id' => (int) $participant->id,
@@ -84,6 +95,9 @@ class ParticipantDetailResource extends JsonResource
                 'completed_at' => $participant->completed_at?->toISOString(),
                 'session_count' => (int) InterviewSession::where('participant_id', $participant->id)->count(),
             ],
+            'progress' => $interview['progress'],
+            'elapsed' => $interview['elapsed'],
+            'cost' => $interview['cost'],
             'files' => [
                 'transcript' => [
                     'type' => 'text/plain',

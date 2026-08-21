@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\Admin\AdminEvaluationSerializer;
+use App\Services\Admin\AdminTranscript;
 use App\Services\Admin\AdminTranscriptSerializer;
 use App\Support\Admin\AdminParticipantReader;
 use App\Support\Admin\ParticipantReadScope;
@@ -46,7 +47,10 @@ final class ParticipantDownloadController extends Controller
     {
         $participant = $this->reader->read($id, ParticipantReadScope::Transcript);
 
-        $body = $this->renderTranscriptText($this->transcriptSerializer->serialize($participant));
+        $body = $this->renderTranscriptText(
+            $this->transcriptSerializer->serialize($participant),
+            $participant->status,
+        );
 
         return response($body, 200, [
             'Content-Type' => 'text/plain; charset=utf-8',
@@ -77,17 +81,24 @@ final class ParticipantDownloadController extends Controller
     }
 
     /**
-     * Plain-text rendering of the transcript sessions produced by
+     * Plain-text rendering of the AdminTranscript DTO produced by
      * AdminTranscriptSerializer::serialize(), grouped by competency in the
      * already-established question_index/id order.
      *
-     * @param  array<int, array{session_id: int, competency_code: string, question_index: int, utterances: array<int, array{speaker: string, text: string, ts: string|null}>}>  $sessions
+     * The `partial: <bool>` header is UNCONDITIONAL — emitted every time,
+     * never omitted for the complete case — because an absent marker is
+     * indistinguishable from "complete", which is exactly the concealment
+     * D2 removes. Machine-facing (CLAUDE.md): never routed through `__()`.
      */
-    private function renderTranscriptText(array $sessions): string
+    private function renderTranscriptText(AdminTranscript $transcript, string $status): string
     {
-        $lines = [];
+        $lines = [
+            'partial: '.($transcript->isPartial ? 'true' : 'false'),
+            "status: {$status}",
+            '',
+        ];
 
-        foreach ($sessions as $session) {
+        foreach ($transcript->sessions as $session) {
             $lines[] = sprintf('=== %s (question %d) ===', $session['competency_code'], $session['question_index'] + 1);
 
             foreach ($session['utterances'] as $utterance) {

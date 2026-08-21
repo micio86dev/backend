@@ -96,7 +96,9 @@ test('same-org RBAC-denying user gets an authorization denial, never a leaked re
 
 test('same-org, authorized, but gate-blocked status raises LifecycleNotReadyException', function (): void {
     $org = Organization::factory()->create();
-    $participant = createParticipantIn($org, 'in_corso');
+    // in_attesa is the only status still denied for Transcript after D1
+    // loosened the minimum to in_corso (operator-participant-visibility).
+    $participant = createParticipantIn($org, 'in_attesa');
     $viewer = createAdminUser($org, 'viewer');
 
     app(TenantResolver::class)->setOrgId($org->id);

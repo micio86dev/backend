@@ -147,6 +147,14 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Unit/Support/Admin');
 
+// Unit/Support/Interview — needs TestCase + RefreshDatabase (operator-participant-
+// visibility D5): CompetencyTallyTest builds Participant/Project/InterviewSession
+// fixtures via factories/DB::table('project_competencies') to pin the moved
+// ended()/total() predicate.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/Interview');
+
 // Unit/Services/Admin — needs RefreshDatabase: AdminEvaluationSerializer/
 // AdminTranscriptSerializer tests build Participant/Project/Evaluation/CompetencyResult/
 // IndicatorScore/InterviewSession/Utterance fixtures via factories (PR A2).

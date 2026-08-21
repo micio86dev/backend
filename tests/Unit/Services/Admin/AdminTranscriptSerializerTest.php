@@ -3,7 +3,8 @@
 declare(strict_types=1);
 
 /**
- * RED — AdminTranscriptSerializer (C11, task 5.2, PR A2).
+ * RED — AdminTranscriptSerializer (C11, task 5.2, PR A2; DTO + partial marker
+ * per operator-participant-visibility D2, task 1.9).
  *
  * A participant has ONE InterviewSession per competency (design D6,
  * InterviewSession.php:48-49) — this is new assembly logic. TranscriptAssembler
@@ -14,9 +15,13 @@ declare(strict_types=1);
  * (a) sessions are grouped and ordered by question_index then session id.
  * (b) each session's utterances are ordered by ts then id (mirrors
  *     TranscriptAssembler.php:11-14's dual-sort discipline).
+ * (c) `serialize()` returns an `AdminTranscript` DTO whose `isPartial` reuses
+ *     the OLD (`in_valutazione`) threshold — turn assembly is unchanged (D2).
  *
  * REQ: Evaluation Serializer Is Scoped, Not Copied From the Webhook Assembler
  *      (openspec/changes/admin-dashboards/specs/admin-read-api/spec.md — transcript half)
+ *      Partial Transcript Disclosure Marker
+ *      (openspec/changes/operator-participant-visibility/specs/admin-read-api/spec.md)
  */
 
 use App\Models\InterviewSession;
@@ -24,6 +29,7 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Utterance;
+use App\Services\Admin\AdminTranscript;
 use App\Services\Admin\AdminTranscriptSerializer;
 use App\Support\Tenancy\TenantResolver;
 
@@ -41,9 +47,9 @@ function transcriptSerializerProject(Organization $org): Project
     return Project::factory()->create(['status' => 'active']);
 }
 
-function transcriptSerializerParticipant(Project $project): Participant
+function transcriptSerializerParticipant(Project $project, string $status = 'in_valutazione'): Participant
 {
-    return Participant::factory()->forProject($project)->withStatus('in_valutazione')->create();
+    return Participant::factory()->forProject($project)->withStatus($status)->create();
 }
 
 function transcriptSerializerSession(Project $project, Participant $participant, string $competencyCode, int $questionIndex): InterviewSession
@@ -95,17 +101,20 @@ test('sessions are grouped and ordered by question_index then session id; uttera
     $serializer = new AdminTranscriptSerializer;
     $result = $serializer->serialize($participant);
 
-    expect($result)->toHaveCount(2);
+    expect($result)->toBeInstanceOf(AdminTranscript::class);
 
-    expect($result[0]['session_id'])->toBe($sessionOne->id);
-    expect($result[0]['competency_code'])->toBe('COL');
-    expect($result[0]['utterances'])->toHaveCount(2);
-    expect($result[0]['utterances'][0]['text'])->toBe('Session one, first utterance');
-    expect($result[0]['utterances'][1]['text'])->toBe('Session one, second utterance');
+    $sessions = $result->sessions;
+    expect($sessions)->toHaveCount(2);
 
-    expect($result[1]['session_id'])->toBe($sessionTwo->id);
-    expect($result[1]['competency_code'])->toBe('COM');
-    expect($result[1]['utterances'])->toHaveCount(1);
+    expect($sessions[0]['session_id'])->toBe($sessionOne->id);
+    expect($sessions[0]['competency_code'])->toBe('COL');
+    expect($sessions[0]['utterances'])->toHaveCount(2);
+    expect($sessions[0]['utterances'][0]['text'])->toBe('Session one, first utterance');
+    expect($sessions[0]['utterances'][1]['text'])->toBe('Session one, second utterance');
+
+    expect($sessions[1]['session_id'])->toBe($sessionTwo->id);
+    expect($sessions[1]['competency_code'])->toBe('COM');
+    expect($sessions[1]['utterances'])->toHaveCount(1);
 });
 
 test('ts tie: lower utterance id sorts first', function (): void {
@@ -134,6 +143,25 @@ test('ts tie: lower utterance id sorts first', function (): void {
     $serializer = new AdminTranscriptSerializer;
     $result = $serializer->serialize($participant);
 
-    expect($result[0]['utterances'][0]['text'])->toBe('Earlier id');
-    expect($result[0]['utterances'][1]['text'])->toBe('Later id');
+    expect($result->sessions[0]['utterances'][0]['text'])->toBe('Earlier id');
+    expect($result->sessions[0]['utterances'][1]['text'])->toBe('Later id');
 });
+
+// ── D2 — isPartial reuses the OLD (in_valutazione) threshold ──
+
+test('isPartial is true for in_corso and errore, false for in_valutazione and completato', function (string $status, bool $expectedPartial): void {
+    $org = transcriptSerializerOrg();
+    $project = transcriptSerializerProject($org);
+    $participant = transcriptSerializerParticipant($project, $status);
+    transcriptSerializerSession($project, $participant, 'COL', 0);
+
+    $serializer = new AdminTranscriptSerializer;
+    $result = $serializer->serialize($participant);
+
+    expect($result->isPartial)->toBe($expectedPartial);
+})->with([
+    'in_corso is partial' => ['in_corso', true],
+    'errore is partial' => ['errore', true],
+    'in_valutazione is complete' => ['in_valutazione', false],
+    'completato is complete' => ['completato', false],
+]);

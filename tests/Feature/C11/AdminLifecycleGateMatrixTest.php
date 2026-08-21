@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 /**
  * Lifecycle read-gate matrix on transcript/evaluation read + download
- * (C11 PR A3, tasks 9.2, 9.3, D2/D4).
+ * (C11 PR A3, tasks 9.2, 9.3, D2/D4; loosened for operator-participant-visibility
+ * PR1, D1/D3).
  *
- * Table (spec, corrected to 409 per task 0.2):
+ * Table (operator-participant-visibility spec.md:24-31):
  *
  * | status          | transcript | evaluation |
  * |-----------------|------------|------------|
  * | in_attesa       | 409        | 409        |
- * | in_corso        | 409        | 409        |
+ * | in_corso        | 200        | 409        |
  * | in_valutazione  | 200        | 409        |
  * | completato      | 200        | 200        |
- * | errore          | 409        | 409        |
+ * | errore          | 200        | 409        |
  * | unrecognized    | 409        | 409        |
  *
  * 403 MUST NEVER appear for a gate denial — that status is reserved for
@@ -22,7 +23,7 @@ declare(strict_types=1);
  * backoffice must be able to distinguish (D4).
  *
  * REQ: Lifecycle Read-Gate (Fail-Closed)
- *      (openspec/changes/admin-dashboards/specs/admin-read-api/spec.md)
+ *      (openspec/changes/operator-participant-visibility/specs/admin-read-api/spec.md)
  */
 
 use App\Models\CompetencyResult;
@@ -76,14 +77,16 @@ test('transcript read + download gate matrix', function (string $status, int $ex
     if ($expected === 409) {
         $read->assertJsonPath('error', 'lifecycle_not_ready');
         $read->assertJsonPath('resource', 'transcript');
-        $read->assertJsonPath('required_status', 'in_valutazione');
+        // D1: the Transcript minimum moved from in_valutazione to in_corso —
+        // the only remaining 409 row (in_attesa) must report the NEW threshold.
+        $read->assertJsonPath('required_status', 'in_corso');
     }
 })->with([
     'in_attesa' => ['in_attesa', 409],
-    'in_corso' => ['in_corso', 409],
+    'in_corso' => ['in_corso', 200],
     'in_valutazione' => ['in_valutazione', 200],
     'completato' => ['completato', 200],
-    'errore' => ['errore', 409],
+    'errore' => ['errore', 200],
 ]);
 
 test('evaluation read + download gate matrix', function (string $status, int $expected): void {
