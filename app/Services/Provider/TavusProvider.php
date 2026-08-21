@@ -173,7 +173,7 @@ class TavusProvider implements ProviderSessionService
         // silence. The mapper this replaces emitted it top-level, guarded by a
         // comment warning about exactly this failure mode one level up: its author
         // fixed the vocabulary and left the path wrong.
-        $language = $ctx?->language ?? config('interview.tavus.language');
+        $language = $ctx->language ?? config('interview.tavus.language');
 
         if (is_string($language) && $language !== '') {
             $body['properties']['language'] = TavusLanguage::forWire($language);
