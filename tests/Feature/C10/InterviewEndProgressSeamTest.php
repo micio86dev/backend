@@ -59,7 +59,12 @@ function c10EndWebhookProjectWithCompetencies(Organization $org, int $count = 2)
         DB::table('project_competencies')->insert([
             'project_id' => $project->id,
             'competency_id' => $comp->id,
-            'position' => $i + 1,
+            // 0-based, matching every production writer (project_competencies.position
+            // comes from a PHP array key). This fixture was 1-based, which cancelled
+            // the `position - 1` defect exactly and is why an endpoint-driven test
+            // passed against wrong code for months. A fixture that disagrees with
+            // production does not simplify a test, it disarms it.
+            'position' => $i,
         ]);
         $competencies[] = $comp;
     }

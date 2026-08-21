@@ -55,9 +55,11 @@ readonly class QuestionContext
          * never re-derives progress; client-side arithmetic on an empty competency
          * list is what truncated every interview to one question.
          *
-         * NOT `questionIndex + 1`: `position` is 0-based at every writer while
-         * `questionIndex` subtracts one, so that sum renders 0/N on the first
-         * competency of every project.
+         * NOT an identity with `questionIndex + 1` (interview-question-index-offset,
+         * D6): `questionIndex` is PERSISTED and equals `position` verbatim;
+         * `competencyOrdinal` is DERIVED per request and always dense. They coincide
+         * on a dense, unreordered project but diverge whenever positions are sparse
+         * or the project is reordered after a session already exists.
          */
         public ?int $competencyOrdinal = null,
         public ?int $totalCompetencies = null,

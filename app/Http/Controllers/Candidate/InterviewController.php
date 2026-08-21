@@ -529,9 +529,12 @@ class InterviewController extends Controller
     {
         // All competencies for the project, ordered by position.
         // The ARRAY INDEX of this ordered list — not `position` — is what
-        // `competency_ordinal` is derived from (D6): `position` is written 0-based
-        // at every writer while `question_index` below subtracts one, so the
-        // ordinal has to come from something correct by construction.
+        // `competency_ordinal` is derived from (D6). `question_index` below is
+        // PERSISTED and equals `position` verbatim; `competency_ordinal` is
+        // DERIVED per request and always dense (1..N), never stored. The two
+        // coincide for a dense, unreordered project — that convergence is a
+        // consequence of well-formed data, not the reason `competency_ordinal`
+        // exists.
         $all = DB::table('project_competencies as pc')
             ->join('framework_competencies as fc', 'fc.id', '=', 'pc.competency_id')
             ->where('pc.project_id', $projectId)
@@ -556,22 +559,12 @@ class InterviewController extends Controller
 
             if ($status === null) {
                 // No session yet → this is the next one to create
-                return [
-                    'competency_code' => $row->competency_code,
-                    'question_index' => $row->position - 1, // 0-based
-                    'competency_ordinal' => $index + 1,
-                    'total_competencies' => $total,
-                ];
+                return $this->competencyPayload((array) $row, $index, $total);
             }
 
             // pending | in_corso → RESUME this competency
             if (in_array($status, ['pending', 'in_corso'], true)) {
-                return [
-                    'competency_code' => $row->competency_code,
-                    'question_index' => $row->position - 1,
-                    'competency_ordinal' => $index + 1,
-                    'total_competencies' => $total,
-                ];
+                return $this->competencyPayload((array) $row, $index, $total);
             }
 
             // (D2) error with attempts left → RE-OFFER this competency.
@@ -588,19 +581,41 @@ class InterviewController extends Controller
             if ($status === 'error'
                 && ($existing->get($row->competency_code)?->error_count ?? 0) < InterviewSession::MAX_ERROR_ATTEMPTS
             ) {
-                return [
-                    'competency_code' => $row->competency_code,
-                    'question_index' => $row->position - 1,
-                    'competency_ordinal' => $index + 1,
-                    'total_competencies' => $total,
-                    'reoffer' => true,
-                ];
+                return $this->competencyPayload((array) $row, $index, $total, reoffer: true);
             }
 
             // completed | timeout | skipped | exhausted error → skip to next
         }
 
         return null; // all competencies terminal-completed
+    }
+
+    /**
+     * Build the array `resolveNextCompetency()` returns for one row (D5).
+     *
+     * Collapses the three near-identical literals that used to live at the three
+     * return sites above into one construction. `question_index` MUST equal
+     * `$row->position` verbatim (D1) — `position` is 0-based at every writer, so
+     * the value needs no arithmetic here; the historic `- 1` produced `-1` for a
+     * project's first competency.
+     *
+     * @param  array<string, mixed>  $row  cast from the `project_competencies` ⋈ `framework_competencies` row
+     * @return array{competency_code: string, question_index: int, competency_ordinal: int, total_competencies: int, reoffer?: bool}
+     */
+    private function competencyPayload(array $row, int $index, int $total, bool $reoffer = false): array
+    {
+        $payload = [
+            'competency_code' => (string) $row['competency_code'],
+            'question_index' => (int) $row['position'],
+            'competency_ordinal' => $index + 1,
+            'total_competencies' => $total,
+        ];
+
+        if ($reoffer) {
+            $payload['reoffer'] = true;
+        }
+
+        return $payload;
     }
 
     /**
@@ -1054,13 +1069,14 @@ class InterviewController extends Controller
                 // D6: 1-based position in the project's competency order, and how
                 // many there are. Machine-facing — literal in every locale.
                 //
-                // The ordinal is NOT `question_index + 1`: `position` is written
-                // 0-based at every writer while `question_index` subtracts one, so
-                // that arithmetic renders 0/N on the first competency of every
-                // project. The ordinal comes from the ordered list's own index and
-                // is correct whatever `position` holds. Repairing `question_index`
-                // is a separate change — it is a persisted column AND a shipped
-                // contract field.
+                // `competency_ordinal` is NOT `question_index + 1` as an identity —
+                // it is a coincidence of well-formed data. `question_index` is
+                // PERSISTED on the session row, frozen at creation, and equals
+                // `position` (0-based) verbatim. `competency_ordinal` is DERIVED
+                // per request from the ordered list's own array index and is
+                // always dense (1..N), whatever `position` holds — it diverges
+                // from `question_index + 1` whenever positions are sparse or the
+                // project is reordered after a session already exists.
                 'competency_ordinal' => $competencyOrdinal,
                 'total_competencies' => $totalCompetencies,
             ],
