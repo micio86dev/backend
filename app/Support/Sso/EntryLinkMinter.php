@@ -10,7 +10,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
 use Illuminate\Support\Carbon;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\JWTAuth;
 
 /**
  * EntryLinkMinter (operator-interview-link, design D1).
@@ -93,7 +93,14 @@ final class EntryLinkMinter
         // expires_at is read back from the token's OWN exp claim — never
         // independently recomputed — so it can never drift from what the
         // token actually carries.
-        $payload = JWTAuth::setToken($token)->getPayload();
+        // The CONCRETE class, not the facade. `setToken()` lives on
+        // `Tymon\JWTAuth\JWT`, but reaching it through the facade's static
+        // proxy means static analysis has to boot the container to see it —
+        // which it manages locally and not in CI, so this line was the last
+        // thing keeping the pipeline red while passing on every developer
+        // machine. The container aliases `tymon.jwt.auth` to this class, so
+        // it is the same singleton, just reachable without a boot.
+        $payload = app(JWTAuth::class)->setToken($token)->getPayload();
         $expiresAt = Carbon::createFromTimestamp((int) $payload->get('exp'));
 
         return new MintedEntryLink($token, $expiresAt, $resolvedLang);
