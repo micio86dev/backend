@@ -67,7 +67,7 @@ return [
          * provider path: `demo.*` is `beai:demo-seed`-scoped (seeds one
          * organization's AvatarTemplate row) and could be repointed or removed
          * independently of what every tenant without a template needs at request
-         * time. Precedence in `HegenProvider::buildSessionTokenBody()`: an org's
+         * time. Precedence in `HeygenProvider::buildSessionTokenBody()`: an org's
          * active template still wins when it sets a value; this is only the
          * fallback for the case where it does not.
          *
