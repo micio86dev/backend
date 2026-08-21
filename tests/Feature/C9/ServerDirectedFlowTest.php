@@ -16,11 +16,13 @@ declare(strict_types=1);
  * and therefore believed every interview was over after one question.
  *
  * `competency_ordinal` is NEW rather than `question_index + 1` on purpose.
- * `position` is written 0-based at every writer while `resolveNextCompetency()`
- * subtracts one, so `question_index` is -1 on the first competency of every
- * project and that arithmetic renders `0/N`. Repairing a persisted column and an
- * already-shipped contract field is a separate change with its own blast radius;
- * the ordinal is derived from the ordered list itself and is correct regardless.
+ * `question_index` is now (interview-question-index-offset) PERSISTED as
+ * `position` verbatim, frozen at session creation. `competency_ordinal` is
+ * DERIVED per request from the ordered list's own array index and is always
+ * dense (1..N). They coincide on a dense, unreordered project — `ordinal ==
+ * question_index + 1` — but that is a coincidence of well-formed data, not an
+ * identity: they diverge whenever positions are sparse or the project is
+ * reordered after a session already exists.
  */
 
 use App\Models\InterviewSession;
@@ -68,23 +70,28 @@ test('/start returns competency_ordinal and total_competencies', function (): vo
     expect($response->json('question_context.total_competencies'))->toBe(3);
 });
 
-test('competency_ordinal is 1-based on the FIRST competency, where question_index is not', function (): void {
-    // The whole reason the ordinal exists. `position` is 0-based at every writer
-    // while resolveNextCompetency() subtracts one, so `question_index + 1` renders
-    // 0/N here. This test documents that they legitimately disagree and that the
-    // ordinal is the one a progress display may trust.
+test('competency_ordinal reconciles with question_index + 1 on a dense project', function (): void {
+    // Both values now agree on a dense-from-0 project (interview-question-index-offset,
+    // D1): `question_index` is persisted as `position` verbatim and `competency_ordinal`
+    // is derived from the ordered list's own array index. `casDenseProject()` seeds
+    // 0-based positions matching the REAL production writers — `casProject()`'s 1-based
+    // `$i + 1` positions would mask this reconciliation rather than prove it.
     Http::fake(heygenOkFake());
     Queue::fake();
 
     $org = casOrg();
-    [$project] = casProject($org, 2);
+    [$project] = casDenseProject($org, 2);
     $participant = casParticipant($org, $project);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.casBearer($participant)])
         ->postJson('/api/candidate/interview/start')->assertStatus(201);
 
-    expect($response->json('question_context.competency_ordinal'))
-        ->toBe(1, 'the first competency is always 1 of N, whatever position holds');
+    $ordinal = $response->json('question_context.competency_ordinal');
+    $questionIndex = $response->json('question_context.question_index');
+
+    expect($ordinal)->toBe(1, 'the first competency is always 1 of N');
+    expect($questionIndex)->toBe(0, 'the first competency sits at position 0');
+    expect($ordinal)->toBe($questionIndex + 1, 'ordinal and question_index + 1 reconcile on a dense project');
 });
 
 test('competency_ordinal advances with the competency', function (): void {
