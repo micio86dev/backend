@@ -670,6 +670,22 @@ class InterviewController extends Controller
         // A null provider_session_ref means there is no old provider session to tear down.
         $oldRef = $session->provider_session_ref;
         if ($oldRef !== null) {
+            // (b0) HARVEST the outgoing session's transcript BEFORE tearing it
+            // down. This is the last moment it is readable.
+            //
+            // Without it a resume silently destroyed everything said before it.
+            // Each resume issues a NEW provider_session_ref; at /end,
+            // reconcileTranscript() fetches only the surviving session and
+            // replaceUtterances() DELETEs the rest. Observed in production: a
+            // competency holding the resume greeting and one word, while an
+            // un-resumed one held twenty-seven turns — and the candidate had
+            // answered all of them. BARS then scored the fragment.
+            //
+            // Best-effort by design: a transcript we cannot fetch is turns we
+            // never had, which is no worse than today. Losing the candidate's
+            // access to a live interview over it would be.
+            $this->harvestOutgoingTranscript($session, $provider, $oldRef);
+
             $oldToken = ProviderToken::fromRef($session->provider, $oldRef);
             try {
                 $provider->teardown($oldToken);
@@ -903,6 +919,59 @@ class InterviewController extends Controller
     }
 
     /**
+     * Persist the outgoing provider session's turns before it is torn down.
+     *
+     * Appends rather than replaces: `replaceUtterances()` at /end is authoritative
+     * for ONE provider session, and a resumed competency spans several. Anything
+     * already stored belongs to an earlier session and must survive.
+     */
+    private function harvestOutgoingTranscript(
+        InterviewSession $session,
+        ProviderSessionService $provider,
+        string $oldRef,
+    ): void {
+        try {
+            $turns = $provider->reconcileTranscript($session);
+        } catch (\Throwable $e) {
+            Log::warning('C7a: could not harvest transcript before resume (non-fatal)', [
+                'session_id' => $session->id,
+                'old_ref' => $oldRef,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        if ($turns === []) {
+            return;
+        }
+
+        $existing = DB::table('utterances')
+            ->where('interview_session_id', $session->id)
+            ->count();
+
+        // The live /utterance path may already have stored some of these. Replace
+        // this session's slice wholesale with the provider's authoritative copy,
+        // which is a superset of what arrived live.
+        if ($existing > 0) {
+            DB::table('utterances')->where('interview_session_id', $session->id)->delete();
+        }
+
+        DB::table('utterances')->insert(array_map(fn (array $row) => [
+            'interview_session_id' => $session->id,
+            'organization_id' => $session->organization_id,
+            'speaker' => $row['speaker'],
+            'text' => $row['text'],
+            'ts' => $row['ts'],
+        ], $turns));
+
+        // Marks everything stored so far as already harvested, so /end's own
+        // reconciliation APPENDS its session rather than replacing the lot.
+        $session->transcript_harvested_at = now();
+        $session->save();
+    }
+
+    /**
      * Mark the session as errored and return the provider_error response.
      *
      * When `$participant` is given, also runs `markParticipantFailed()` — the
@@ -1092,9 +1161,13 @@ class InterviewController extends Controller
             return;
         }
 
-        // DELETE all existing utterances for this session, then INSERT the
-        // authoritative server transcript — only ever reached together (see above).
-        DB::table('utterances')->where('interview_session_id', $session->id)->delete();
+        // DELETE-then-INSERT is authoritative for ONE provider session. Once a
+        // resume has harvested an earlier one, the stored rows belong to a
+        // session this fetch knows nothing about, and deleting them destroys
+        // turns the candidate actually spoke. Append in that case.
+        if ($session->transcript_harvested_at === null) {
+            DB::table('utterances')->where('interview_session_id', $session->id)->delete();
+        }
 
         $rows = array_map(fn (array $row) => [
             'interview_session_id' => $session->id,

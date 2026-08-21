@@ -453,8 +453,15 @@ test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider 
         expect($capturedContextBody)->not->toHaveKey('prompt');
     }
 
-    // A warning must have been logged about the composition failure
-    Log::shouldHaveReceived('warning')->once();
+    // A warning must have been logged about the composition failure.
+    //
+    // Asserted by CONTENT, not by count. The count was incidental and became
+    // wrong when the resume path gained a second best-effort warning (harvesting
+    // the outgoing transcript before teardown). Pinning "exactly one warning in
+    // this request" tests how many things happen to log, not that the right one
+    // did.
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message) => str_contains($message, 'composition failed'));
 
     // prompt_version in response must be non-null non-empty (FIX C1 — degraded resume path
     // returns config('conversation.prompt_version') instead of null for C9 traceability).
