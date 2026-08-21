@@ -59,6 +59,9 @@ final class SessionReviewController extends Controller
             ->where('organization_id', $this->resolver->getOrgId())
             ->where('participant_id', $participant)
             ->withCount('integrityEvents')
+            // (interview-session-started-at, D3) eager-loaded so
+            // SessionSummaryResource's liveSeconds() never issues an N+1.
+            ->with('livePeriods')
             ->orderByDesc('started_at')
             ->orderByDesc('id')
             ->get();
@@ -75,7 +78,7 @@ final class SessionReviewController extends Controller
     {
         $interviewSession = InterviewSession::query()
             ->where('organization_id', $this->resolver->getOrgId())
-            ->with(['integrityEvents', 'interviewSnapshots'])
+            ->with(['integrityEvents', 'interviewSnapshots', 'livePeriods'])
             ->findOrFail($session);
 
         // Authorization rides on the participant, so the session review can

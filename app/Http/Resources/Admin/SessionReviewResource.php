@@ -74,10 +74,8 @@ final class SessionReviewResource extends JsonResource
 
     private function durationSeconds(): ?int
     {
-        if ($this->started_at === null || $this->ended_at === null) {
-            return null;
-        }
-
-        return $this->ended_at->getTimestamp() - $this->started_at->getTimestamp();
+        // (interview-session-started-at, D3) Accumulated LIVE time, never
+        // the wall-clock span. The caller MUST eager-load `livePeriods`.
+        return $this->liveSeconds();
     }
 }

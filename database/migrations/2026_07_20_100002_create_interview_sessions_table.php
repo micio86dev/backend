@@ -24,7 +24,13 @@ use Illuminate\Support\Facades\Schema;
  * - status: LOCKED enum {pending,in_corso,completed,timeout,skipped,error}; default 'pending'.
  * - UNIQUE(participant_id, competency_code): idempotent on /start.
  * - Composite indexes lead with organization_id (D22 org-lead rule).
- * - started_at / ended_at: timestampTz (server-set; nullable).
+ * - started_at / ended_at: timestampTz (server-set; nullable). started_at is the
+ *   FIRST live moment (the `in_corso` transition), written once and never
+ *   overwritten by a resume (interview-session-started-at, D2). The pair
+ *   `ended_at - started_at` is a WALL-CLOCK SPAN that may include an
+ *   abandonment gap across a resume — it is NOT the session's duration and
+ *   MUST NOT be read as one. The duration is `InterviewSession::liveSeconds()`,
+ *   the sum of the session's CLOSED `interview_session_live_periods` rows.
  * - question_index: 0-based ordinal. Invariant: question_index ==
  *   project_competencies.position of that session's competency within the
  *   session's project — never derived by arithmetic (interview-question-index-offset,

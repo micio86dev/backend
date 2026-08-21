@@ -90,6 +90,32 @@ function aggSession(Participant $participant, Project $project, string $code, ar
     return $session;
 }
 
+/**
+ * A CLOSED live period for a session (interview-session-started-at, D8) —
+ * duration/cost assertions in this suite MUST reach `liveSeconds()` through
+ * a named period, never a bare `started_at`/`ended_at` pair on the session.
+ */
+function aggClosedPeriod(InterviewSession $session, string $started, string $ended): void
+{
+    $session->livePeriods()->create([
+        'provider_session_ref' => 'ref-'.uniqid(),
+        'started_at' => $started,
+        'ended_at' => $ended,
+        'closed_reason' => 'end',
+    ]);
+}
+
+/** An OPEN live period (mid-flight, still `in_corso`) — excluded from every sum. */
+function aggOpenPeriod(InterviewSession $session, string $started): void
+{
+    $period = $session->livePeriods()->create([
+        'provider_session_ref' => 'ref-'.uniqid(),
+        'started_at' => $started,
+        'ended_at' => null,
+        'closed_reason' => null,
+    ]);
+}
+
 // ── D3 — progress ──────────────────────────────────────────────────────────
 
 test('progress: 15 project competencies, 6 ended, reports 6/15', function (): void {
@@ -114,14 +140,11 @@ test('elapsed: two finished sessions of 300s and 480s sum to 780s, with coverage
     [$project, $comps] = aggProjectWithCompetencies($org, 2);
     $participant = aggParticipant($org, $project);
 
-    aggSession($participant, $project, $comps[0]->code, [
-        'started_at' => '2026-03-01 10:00:00',
-        'ended_at' => '2026-03-01 10:05:00', // 300s
-    ]);
-    aggSession($participant, $project, $comps[1]->code, [
-        'started_at' => '2026-03-01 11:00:00',
-        'ended_at' => '2026-03-01 11:08:00', // 480s
-    ]);
+    $s0 = aggSession($participant, $project, $comps[0]->code);
+    aggClosedPeriod($s0, '2026-03-01 10:00:00', '2026-03-01 10:05:00'); // 300s
+
+    $s1 = aggSession($participant, $project, $comps[1]->code);
+    aggClosedPeriod($s1, '2026-03-01 11:00:00', '2026-03-01 11:08:00'); // 480s
 
     $result = (new ParticipantInterviewAggregator)->aggregate($participant);
 
@@ -135,11 +158,8 @@ test('elapsed: no session has finished at all — seconds is null, never 0', fun
     [$project, $comps] = aggProjectWithCompetencies($org, 1);
     $participant = aggParticipant($org, $project);
 
-    aggSession($participant, $project, $comps[0]->code, [
-        'status' => 'in_corso',
-        'started_at' => '2026-03-01 10:00:00',
-        'ended_at' => null,
-    ]);
+    $s0 = aggSession($participant, $project, $comps[0]->code, ['status' => 'in_corso']);
+    aggOpenPeriod($s0, '2026-03-01 10:00:00');
 
     $result = (new ParticipantInterviewAggregator)->aggregate($participant);
 
@@ -153,17 +173,12 @@ test('elapsed: an open session contributes 0 and is excluded from sessions_count
     $participant = aggParticipant($org, $project);
 
     // Finished session: 300s.
-    aggSession($participant, $project, $comps[0]->code, [
-        'started_at' => '2026-03-01 10:00:00',
-        'ended_at' => '2026-03-01 10:05:00',
-    ]);
+    $s0 = aggSession($participant, $project, $comps[0]->code);
+    aggClosedPeriod($s0, '2026-03-01 10:00:00', '2026-03-01 10:05:00');
 
     // Open session, started weeks ago — must NOT be clamped with now().
-    aggSession($participant, $project, $comps[1]->code, [
-        'status' => 'in_corso',
-        'started_at' => now()->subWeeks(3),
-        'ended_at' => null,
-    ]);
+    $s1 = aggSession($participant, $project, $comps[1]->code, ['status' => 'in_corso']);
+    aggOpenPeriod($s1, now()->subWeeks(3)->toDateTimeString());
 
     $result = (new ParticipantInterviewAggregator)->aggregate($participant);
 
@@ -183,24 +198,16 @@ test('cost: 3 sessions, 2 estimable, sums the 2 and discloses 2/3 contributed', 
     $participant = aggParticipant($org, $project);
 
     // Estimable: 10 min * 2 credits * $0.10 = $2.00
-    aggSession($participant, $project, $comps[0]->code, [
-        'provider' => 'heygen',
-        'started_at' => '2026-03-01 10:00:00',
-        'ended_at' => '2026-03-01 10:10:00',
-    ]);
+    $s0 = aggSession($participant, $project, $comps[0]->code, ['provider' => 'heygen']);
+    aggClosedPeriod($s0, '2026-03-01 10:00:00', '2026-03-01 10:10:00');
+
     // Estimable: 5 min * 2 credits * $0.10 = $1.00
-    aggSession($participant, $project, $comps[1]->code, [
-        'provider' => 'heygen',
-        'started_at' => '2026-03-01 11:00:00',
-        'ended_at' => '2026-03-01 11:05:00',
-    ]);
+    $s1 = aggSession($participant, $project, $comps[1]->code, ['provider' => 'heygen']);
+    aggClosedPeriod($s1, '2026-03-01 11:00:00', '2026-03-01 11:05:00');
+
     // Not estimable: unfinished.
-    aggSession($participant, $project, $comps[2]->code, [
-        'status' => 'in_corso',
-        'provider' => 'heygen',
-        'started_at' => '2026-03-01 12:00:00',
-        'ended_at' => null,
-    ]);
+    $s2 = aggSession($participant, $project, $comps[2]->code, ['status' => 'in_corso', 'provider' => 'heygen']);
+    aggOpenPeriod($s2, '2026-03-01 12:00:00');
 
     $result = (new ParticipantInterviewAggregator)->aggregate($participant);
 
@@ -216,11 +223,8 @@ test('cost: no session yields an estimate — amount is null, never 0', function
     [$project, $comps] = aggProjectWithCompetencies($org, 1);
     $participant = aggParticipant($org, $project);
 
-    aggSession($participant, $project, $comps[0]->code, [
-        'provider' => 'some_future_provider',
-        'started_at' => '2026-03-01 10:00:00',
-        'ended_at' => '2026-03-01 10:10:00',
-    ]);
+    $s0 = aggSession($participant, $project, $comps[0]->code, ['provider' => 'some_future_provider']);
+    aggClosedPeriod($s0, '2026-03-01 10:00:00', '2026-03-01 10:10:00');
 
     $result = (new ParticipantInterviewAggregator)->aggregate($participant);
 
