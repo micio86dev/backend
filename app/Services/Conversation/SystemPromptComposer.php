@@ -58,6 +58,7 @@ final class SystemPromptComposer
         string $projectLocale,
         int $budget,
         ?int $nudgeMinChars,
+        ?string $advancePhrase = null,
     ): ComposedPrompt {
         $indicators = $this->loader->forRoleCompetency($roleId, $competencyId);
 
@@ -71,7 +72,7 @@ final class SystemPromptComposer
         $coverageSection = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
         $budgetSection = $this->buildBudgetSection($budget);
         $nudgeSection = $this->buildNudgeSection($nudgeMinChars);
-        $advanceSection = $this->buildAdvanceSection();
+        $advanceSection = $this->buildAdvanceSection($advancePhrase);
 
         $text = $this->assemblePrompt(
             $competencyCode,
@@ -163,10 +164,30 @@ final class SystemPromptComposer
      *
      * REQ: R-5 advance signal.
      */
-    private function buildAdvanceSection(): string
+    private function buildAdvanceSection(?string $advancePhrase = null): string
     {
-        return 'Speak end_phrase ONLY when all coverage topics have been addressed '
-            .'OR the follow-up budget is exhausted. Do NOT speak end_phrase after the first answer.';
+        // The phrase must be QUOTED here, verbatim. It used to say "speak
+        // end_phrase" and never said what end_phrase was — the avatar was told
+        // to utter a placeholder whose value it had never been given. It never
+        // said the sentence, `matchesEndPhrase()` never matched, and every
+        // competency ran to its cap. On HeyGen the session hit
+        // MAX_DURATION_REACHED first and died, which the candidate saw as an
+        // error at the end of a question they had answered completely.
+        //
+        // This string and the one the client matches against MUST be the same:
+        // both come from `interview.{end,final}_phrase` in the project's locale.
+        // If they ever diverge, completion stops firing silently.
+        if ($advancePhrase === null || trim($advancePhrase) === '') {
+            return 'Speak the closing phrase ONLY when all coverage topics have been addressed '
+                .'OR the follow-up budget is exhausted. Do NOT close after the first answer.';
+        }
+
+        return 'When all coverage topics have been addressed OR the follow-up budget is '
+            .'exhausted, you MUST end your turn by saying this sentence exactly, word for word, '
+            .'as your final sentence: "'.$advancePhrase.'" '
+            .'Say it verbatim — do not paraphrase, translate or add to it. '
+            .'Do NOT say it after the first answer, and never say it before the coverage '
+            .'topics are addressed.';
     }
 
     /**

@@ -148,7 +148,21 @@ class InterviewController extends Controller
         // silently overwrite started_at to now() below, destroying the true start time.
         $isFirst = $participant->started_at === null;
 
-        $compositionResult = $this->composePromptForCompetency($project, $nextCompetency['competency_code']);
+        // Which sentence ends THIS turn: the last competency gets the final
+        // phrase, every other one the intermediate. Resolved from the same
+        // source the /start response advertises to the client, so the sentence
+        // the avatar is told to say and the one the client watches for can
+        // never drift apart.
+        [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($project->language);
+        $isLastCompetency = ($nextCompetency['competency_ordinal'] ?? 0)
+            >= ($nextCompetency['total_competencies'] ?? 0);
+        $advancePhrase = $isLastCompetency ? $finalPhrase : $endPhrase;
+
+        $compositionResult = $this->composePromptForCompetency(
+            $project,
+            $nextCompetency['competency_code'],
+            $advancePhrase,
+        );
         if ($compositionResult instanceof JsonResponse) {
             if (! $isResumeInCorso) {
                 // NEW/pending path — hard fail. No session, no provider call.
@@ -438,6 +452,7 @@ class InterviewController extends Controller
     private function composePromptForCompetency(
         ?Project $project,
         string $competencyCode,
+        ?string $advancePhrase = null,
     ): ComposedPrompt|JsonResponse {
         if ($project === null) {
             // Participant has no associated project — treat as composition failure.
@@ -470,6 +485,10 @@ class InterviewController extends Controller
                 projectLocale: $project->language,
                 budget: $budget,
                 nudgeMinChars: $project->nudge_min_chars,
+                // The sentence the avatar must SPEAK to end its turn. Without it
+                // the prompt told it to utter a placeholder it had never been
+                // given, so no question ever ended by itself.
+                advancePhrase: $advancePhrase,
             );
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
