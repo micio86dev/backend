@@ -518,20 +518,20 @@ class InterviewController extends Controller
             ->select('fc.code as competency_code', 'pc.position')
             ->get();
 
-        // Existing sessions for this participant (non-terminal or terminal)
-        $existingStatuses = InterviewSession::where('participant_id', $participantId)
+        // Existing sessions for this participant: status AND attempts spent, in
+        // ONE query. These were two identical selects differing only in the
+        // column plucked — the design promised one and the implementation drifted
+        // to two, which `sdd-verify` caught. Same rows, same WHERE, so there was
+        // never a reason to ask twice.
+        $existing = InterviewSession::where('participant_id', $participantId)
             ->where('project_id', $projectId)
-            ->pluck('status', 'competency_code');
-
-        // Attempts spent per competency, for the re-offer bound (D1/D2).
-        $errorCounts = InterviewSession::where('participant_id', $participantId)
-            ->where('project_id', $projectId)
-            ->pluck('error_count', 'competency_code');
+            ->get(['competency_code', 'status', 'error_count'])
+            ->keyBy('competency_code');
 
         $total = $all->count();
 
         foreach ($all->values() as $index => $row) {
-            $status = $existingStatuses->get($row->competency_code);
+            $status = $existing->get($row->competency_code)?->status;
 
             if ($status === null) {
                 // No session yet → this is the next one to create
@@ -565,7 +565,7 @@ class InterviewController extends Controller
             // it does not mutate. Left to a later step it would be one early return
             // away from being skipped.
             if ($status === 'error'
-                && ($errorCounts->get($row->competency_code) ?? 0) < InterviewSession::MAX_ERROR_ATTEMPTS
+                && ($existing->get($row->competency_code)?->error_count ?? 0) < InterviewSession::MAX_ERROR_ATTEMPTS
             ) {
                 return [
                     'competency_code' => $row->competency_code,
