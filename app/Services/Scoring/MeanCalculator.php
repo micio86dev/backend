@@ -7,8 +7,9 @@ namespace App\Services\Scoring;
 /**
  * Recomputes competency mean score server-side (CC2/CC3).
  *
- * Input: list<int> of indicator scores in {1,3,5,-1}.
- * - Assessed set: scores in {1,3,5} only (-1 excluded as unassessable sentinel).
+ * Input: list<int> of indicator scores in {1,2,3,4,5,-1} (widened per AD-1/D4,
+ * bars-full-scale-1-5 — 2 and 4 are legal RESIDUAL levels).
+ * - Assessed set: scores in {1,2,3,4,5} only (-1 excluded as unassessable sentinel).
  * - Returns float|null: null when the assessed set is empty (all -1).
  * - MUST NOT throw, return NaN, or divide by zero on an empty assessed set.
  * - Rounding: round($mean, 2, PHP_ROUND_HALF_UP) — explicit to self-document intent.
@@ -25,7 +26,7 @@ final class MeanCalculator
     /**
      * Compute the mean of assessed indicator scores.
      *
-     * @param  list<int>  $indicatorScores  Scores in {1,3,5,-1}.
+     * @param  list<int>  $indicatorScores  Scores in {1,2,3,4,5,-1}.
      * @return float|null Rounded mean (2dp, half-up), or null if no assessed indicators.
      */
     public function compute(array $indicatorScores): ?float

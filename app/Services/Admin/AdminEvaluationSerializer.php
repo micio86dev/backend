@@ -29,10 +29,17 @@ use App\Services\Scoring\ReliabilityRenderer;
  * High/Medium/Low band exists or is applied: the threshold formula is open
  * product decision #1 and MUST NOT be invented here.
  *
- * Indicator scores are the discrete set {1,3,5}. `-1` is a sentinel meaning
- * "unassessable" — it is NEVER emitted as the literal -1; it renders as
- * `null` instead, mirroring the codebase's existing "null means no value"
- * convention already used for the competency-level score (CompetencyResult.php:39,67).
+ * Indicator scores are one integer from {1,2,3,4,5} ∪ {-1}. `-1` is a
+ * sentinel meaning "unassessable" — it is NEVER emitted as the literal -1;
+ * it renders as `null` instead, mirroring the codebase's existing "null
+ * means no value" convention already used for the competency-level score
+ * (CompetencyResult.php:39,67).
+ *
+ * `meta()` (D7, bars-full-scale-1-5) returns the Evaluation's already-persisted
+ * scoring provenance (`prompt_version`, `model_version`, `framework_version` —
+ * the RESOLVED FrameworkVersion.version string, never the raw FK id) for
+ * exposure as a `meta.scoring` sibling of `data` at the read surface. Nothing
+ * new is computed here; the values already exist on the Evaluation row.
  *
  * Ordering: competencies are ordered by `project_competencies.position`, via
  * `Project::competencies()` (Project.php:183-188, already `orderByPivot`) — a
@@ -91,6 +98,29 @@ final class AdminEvaluationSerializer
         }
 
         return $output;
+    }
+
+    /**
+     * Scoring provenance for the `meta.scoring` response sibling (D7).
+     *
+     * `framework_version` is the resolved `FrameworkVersion.version` string,
+     * loaded through the existing FK relation under the ambient tenant
+     * scope — never the raw `framework_version_id`, which means nothing to
+     * an operator.
+     *
+     * @return array{prompt_version: string, model_version: string, framework_version: string}
+     */
+    public function meta(Participant $participant): array
+    {
+        $evaluation = Evaluation::where('participant_id', $participant->id)
+            ->with('frameworkVersion')
+            ->firstOrFail();
+
+        return [
+            'prompt_version' => $evaluation->prompt_version,
+            'model_version' => $evaluation->model_version,
+            'framework_version' => $evaluation->frameworkVersion->version,
+        ];
     }
 
     /**

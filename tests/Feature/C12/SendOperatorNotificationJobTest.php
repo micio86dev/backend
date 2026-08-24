@@ -23,6 +23,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\WebhookDelivery;
 use App\Notifications\WebhookDeliveryDeadNotification;
+use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role as AuthorizationRole;
@@ -276,4 +277,127 @@ test('machine values in the persisted row are never localized', function (): voi
 
     expect($row->notification_type->value)->toBe('webhook_delivery_dead');
     expect($row->status->value)->toBe('sent');
+});
+
+// ---------------------------------------------------------------------------
+// Demo data must never raise an operational alert
+//
+// `beai:demo-seed` points its projects at https://webhooks.invalid/… — an
+// RFC 2606 reserved domain the standard guarantees will never resolve. Every
+// demo delivery therefore exhausts its six attempts and dead-letters BY
+// DESIGN: the fixture exists precisely to show a `dead` row on the dashboard.
+//
+// What must not follow is an operator notification. Seven of them fired in
+// production on 2026-08-24, none about a real project. That is how an alerting
+// channel dies: people learn the notifications mean nothing, stop reading them,
+// and the day a client's webhook really breaks nobody notices.
+//
+// The row is still written, carrying `demo_project` — suppressed, not erased.
+// ---------------------------------------------------------------------------
+
+function c12DemoProject(Organization $org): Project
+{
+    return Project::factory()->create([
+        'organization_id' => $org->id,
+        'slug' => DemoMarker::PREFIX.'sales-ico',
+    ]);
+}
+
+function c12DeliveryFor(Organization $org, Project $project): WebhookDelivery
+{
+    return TenantContextScope::runFor($org->id, function () use ($project): WebhookDelivery {
+        $participant = Participant::factory()->create(['project_id' => $project->id]);
+
+        return WebhookDelivery::factory()->forParticipant($participant)->create();
+    });
+}
+
+test('a dead webhook on a DEMO project is suppressed, never sent', function (): void {
+    Notification::fake();
+
+    $org = Organization::factory()->create();
+    $operator = c12Operator($org);
+
+    $delivery = TenantContextScope::runFor($org->id, fn () => c12DeliveryFor($org, c12DemoProject($org)));
+
+    c12Run($delivery);
+
+    $log = NotificationLog::withoutGlobalScopes()->firstOrFail();
+
+    expect($log->status)->toBe(NotificationStatus::Suppressed)
+        ->and($log->suppression_reason)->toBe(NotificationSuppressionReason::DemoProject);
+
+    Notification::assertNothingSentTo($operator);
+});
+
+test('a scoring failure on a DEMO project is suppressed, never sent', function (): void {
+    // Same rule, other door. Covering only the webhook path would let the noise
+    // come back through scoring the moment a demo interview fails.
+    Notification::fake();
+
+    $org = Organization::factory()->create();
+    $operator = c12Operator($org);
+
+    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->create([
+        'project_id' => c12DemoProject($org)->id,
+    ]));
+
+    SendOperatorNotificationJob::dispatch(
+        NotificationType::ScoringFailed,
+        NotificationSubjectType::Participant,
+        $participant->getKey(),
+    );
+
+    $log = NotificationLog::withoutGlobalScopes()->firstOrFail();
+
+    expect($log->status)->toBe(NotificationStatus::Suppressed)
+        ->and($log->suppression_reason)->toBe(NotificationSuppressionReason::DemoProject);
+
+    Notification::assertNothingSentTo($operator);
+});
+
+test('demo_project outranks no_recipients as the recorded reason', function (): void {
+    // Both conditions hold. The dashboard must say WHY the operator was not
+    // told, and "this is demo data" is the root fact — reporting
+    // `no_recipients` would describe a configuration problem the org does not
+    // have and send someone to fix nothing.
+    Notification::fake();
+
+    $org = Organization::factory()->create(); // deliberately no operator
+
+    $delivery = TenantContextScope::runFor($org->id, fn () => c12DeliveryFor($org, c12DemoProject($org)));
+
+    c12Run($delivery);
+
+    $log = NotificationLog::withoutGlobalScopes()->firstOrFail();
+
+    expect($log->suppression_reason)->toBe(NotificationSuppressionReason::DemoProject)
+        ->and($log->suppression_reason)->not->toBe(NotificationSuppressionReason::NoRecipients);
+});
+
+test('a client slug that merely CONTAINS the prefix mid-string still alerts', function (): void {
+    // DemoMarker::matches is a PREFIX check, never a substring one. A client
+    // project must not be able to silence its own operational alerts by
+    // choosing an unlucky slug.
+    Notification::fake();
+
+    $org = Organization::factory()->create();
+    $operator = c12Operator($org);
+
+    $delivery = TenantContextScope::runFor($org->id, function () use ($org): WebhookDelivery {
+        $project = Project::factory()->create([
+            'organization_id' => $org->id,
+            'slug' => 'acme-'.DemoMarker::PREFIX.'sales',
+        ]);
+
+        return c12DeliveryFor($org, $project);
+    });
+
+    c12Run($delivery);
+
+    $log = NotificationLog::withoutGlobalScopes()->firstOrFail();
+
+    expect($log->status)->toBe(NotificationStatus::Sent);
+
+    Notification::assertSentTo($operator, WebhookDeliveryDeadNotification::class);
 });

@@ -175,6 +175,46 @@ test('retryable 503 exhausts to dead at attempt_count=6, never delivered', funct
         ->and($delivery->delivered_at)->toBeNull();
 });
 
+test('the dead log line carries the failure reason, not just the id', function (): void {
+    // A dead-lettered delivery is the one moment an operator MUST be told why.
+    // The line used to carry only delivery_id and attempt_count, while the
+    // status and the error body sat two statements above it — already written
+    // to the row, already redacted — so diagnosing a dead webhook required
+    // shell access to the production database to read what the process had
+    // just held in a local variable.
+    //
+    // Safe to log by construction: last_error passes through
+    // ErrorRedactor::redactAndTruncate() before it reaches either the row or
+    // this line, and the secret-non-leak test below covers every emitted line.
+    [, , , $delivery] = c10PendingDelivery();
+
+    Http::fake([$delivery->target_url => Http::response(['error' => 'unavailable'], 503)]);
+
+    /** @var list<array<string, mixed>> $deadContexts */
+    $deadContexts = [];
+    Log::listen(function ($event) use (&$deadContexts): void {
+        if (($event->message ?? '') === 'webhook.delivery.dead') {
+            $deadContexts[] = is_array($event->context ?? null) ? $event->context : [];
+        }
+    });
+
+    for ($attempt = 1; $attempt <= 6; $attempt++) {
+        c10InvokeHandle(c10JobAtAttempt($delivery->id, $attempt));
+    }
+
+    expect($delivery->refresh()->status)->toBe(WebhookDeliveryStatus::Dead)
+        ->and($deadContexts)->toHaveCount(1);
+
+    expect($deadContexts[0])
+        ->toHaveKeys(['delivery_id', 'attempt_count', 'last_response_status', 'last_error']);
+
+    // The reason must be the ACTUAL outcome, not a placeholder: a constant
+    // string would satisfy the key assertion above and tell an operator nothing.
+    expect($deadContexts[0]['last_response_status'])->toBe(503)
+        ->and($deadContexts[0]['last_error'])->toBeString()
+        ->and($deadContexts[0]['last_error'])->toContain('unavailable');
+});
+
 test('success after one retryable failure produces delivered, attempt_count=2', function (): void {
     [, , , $delivery] = c10PendingDelivery();
 

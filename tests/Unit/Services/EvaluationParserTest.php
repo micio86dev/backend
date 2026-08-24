@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 use App\DTOs\Scoring\IndicatorRef;
 use App\Exceptions\Scoring\IndicatorCountMismatchException;
+use App\Exceptions\Scoring\InvalidIndicatorScoreException;
 use App\Exceptions\Scoring\JsonParseException;
 use App\Services\Scoring\EvaluationParser;
 
@@ -92,4 +93,86 @@ test('(c) invalid JSON → JsonParseException', function (): void {
 
     expect(fn () => $parser->parse('THIS IS NOT JSON {{{', $indicators))
         ->toThrow(JsonParseException::class);
+});
+
+// ─── Score type coercion (bars-full-scale-1-5) ───────────────────────────────
+//
+// `(int) 4.5` is 4. Under the old {1,3,5,-1} domain that truncation was caught
+// by accident: 4 was illegal, so a fractional score always ended as
+// llm_parse_error. Widening the domain to {1,2,3,4,5,-1} removed that
+// accidental guard — 4 is now legal, so a truncated 4.5 would be persisted in
+// silence as a real, anchor-matched score it never was.
+//
+// The rule is narrow on purpose. json_decode types the SAME logical value three
+// ways depending on how the model wrote it — `4` is int, `4.0` is float, `"4"`
+// is string — and all three legitimately mean four. Only a genuine fractional
+// part is a contract violation, and only that is rejected.
+
+test('a fractional score is REJECTED, never truncated to a legal neighbour', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = json_encode([
+        'behaviors' => [
+            ['indicator' => 'Indicator A', 'score' => 4.5, 'explanation' => 'E', 'excerpts' => []],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => $parser->parse($response, $indicators))
+        ->toThrow(InvalidIndicatorScoreException::class);
+});
+
+test('an integer-valued float is accepted — 4.0 means four', function (): void {
+    // json_decode types `4.0` as float. Rejecting it would fail a response that
+    // is correct in every way that matters.
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = '{"behaviors":[{"indicator":"Indicator A","score":4.0,"explanation":"E","excerpts":[]}]}';
+
+    expect($parser->parse($response, $indicators)[0]->score)->toBe(4);
+});
+
+test('a numeric string score is accepted — "4" means four', function (): void {
+    // A quoted number is a plausible LLM formatting choice, not a contract
+    // violation. Rejecting it would close one hole by opening another.
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = '{"behaviors":[{"indicator":"Indicator A","score":"4","explanation":"E","excerpts":[]}]}';
+
+    expect($parser->parse($response, $indicators)[0]->score)->toBe(4);
+});
+
+test('a fractional STRING score is rejected too', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = '{"behaviors":[{"indicator":"Indicator A","score":"4.5","explanation":"E","excerpts":[]}]}';
+
+    expect(fn () => $parser->parse($response, $indicators))
+        ->toThrow(InvalidIndicatorScoreException::class);
+});
+
+test('a non-scalar score is rejected without a type error', function (): void {
+    // `(int) []` is 0 with a warning, and 0 is illegal — so this happened to
+    // fail before. It must fail on PURPOSE, with a message naming what arrived.
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = '{"behaviors":[{"indicator":"Indicator A","score":{"value":4},"explanation":"E","excerpts":[]}]}';
+
+    expect(fn () => $parser->parse($response, $indicators))
+        ->toThrow(InvalidIndicatorScoreException::class);
+});
+
+test('an absent score stays 0 and is left for IndicatorValidator to reject', function (): void {
+    // Unchanged behaviour, pinned: absence is not a type violation, and the
+    // validator already rejects 0 with the message that names the legal set.
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = '{"behaviors":[{"indicator":"Indicator A","explanation":"E","excerpts":[]}]}';
+
+    expect($parser->parse($response, $indicators)[0]->score)->toBe(0);
 });

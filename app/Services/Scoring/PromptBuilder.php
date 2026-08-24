@@ -31,10 +31,49 @@ use Illuminate\Database\Eloquent\Collection;
  * Options enforced:
  *   temperature=0 (determinism-critical), model_version from config.
  *
- * REQ: PromptBuilder (C9 D3/D6 FIX-11)
+ * Scoring procedure (AD-1/D4, bars-full-scale-1-5):
+ *   The domain widened from {1,3,5,-1} to {1,2,3,4,5,-1}. Scores 4 and 2 are
+ *   RESIDUAL levels — legal only when the evidence falls between two authored
+ *   anchors, never free LLM discretion. SCORING_PROCEDURE below encodes the
+ *   anchor-primacy tie-break STRUCTURALLY: it is an ordered, early-stopping
+ *   procedure, not a flat table, so a genuine tie between an authored anchor
+ *   and a residual level is resolved before the residual step is ever reached.
+ *   Any future edit to this rubric's wording MUST bump prompt_version (D8).
+ *
+ * REQ: PromptBuilder (C9 D3/D6 FIX-11, widened AD-1/D4/D5/D8)
  */
 final class PromptBuilder
 {
+    /**
+     * The AD-1 ordered relational rubric for residual score levels (D4).
+     *
+     * Injected verbatim between the IMPORTANT RULES block and the indicator
+     * rubric. The early-stop control flow — not a sentence appended after a
+     * flat table — is what makes the anchor-primacy tie-break structural: a
+     * tie between an authored anchor and a residual level is resolved at
+     * steps 2-4, before step 5 (the only place 4/2 may be assigned) is ever
+     * reached.
+     */
+    private const SCORING_PROCEDURE = <<<'PROCEDURE'
+SCORING PROCEDURE — apply these steps in this exact order for each indicator:
+  1. If the transcript contains no assessable evidence for this indicator,
+     score -1 and stop.
+  2. If the evidence matches the Score 5 anchor, score 5 and stop.
+  3. If the evidence matches the Score 3 anchor, score 3 and stop.
+  4. If the evidence matches the Score 1 anchor, score 1 and stop.
+  5. Only if steps 2, 3 and 4 were ALL rejected, the evidence falls between two
+     anchors. Then, and only then:
+       - score 4 if it clearly exceeds the Score 3 anchor but does not fully
+         match the Score 5 anchor;
+       - score 2 if it is clearly below the Score 3 anchor but is not as weak as
+         the Score 1 anchor.
+
+Scores 4 and 2 are RESIDUAL levels. They are legal ONLY at step 5. If the
+evidence is equally consistent with an authored anchor (5, 3 or 1) and with an
+intermediate level, the authored anchor WINS — score the anchor, never the
+intermediate.
+PROCEDURE;
+
     /**
      * Build the prompt payload for a single competency scoring call.
      *
@@ -91,17 +130,19 @@ final class PromptBuilder
 
         $rubric = implode("\n\n", $rubricLines);
         $indicatorCount = $indicators->count();
+        $scoringProcedure = self::SCORING_PROCEDURE;
 
         $systemPrompt = <<<PROMPT
 You are a BARS (Behaviorally Anchored Rating Scale) evaluator. Your task is to score the candidate's interview transcript against the competency indicators below.
 
 IMPORTANT RULES:
 - You MUST evaluate EXACTLY {$indicatorCount} indicator(s), in the EXACT SAME ORDER they are listed below.
-- For each indicator, assign a score from EXACTLY one of: 1, 3, or 5 (the closest anchor), OR -1 if the indicator cannot be assessed from the transcript.
-- Do NOT use scores 2, 4, or any other value. Do NOT interpolate between anchors.
+- For each indicator, assign a score from EXACTLY one of: 1, 2, 3, 4, 5, OR -1 if the indicator cannot be assessed from the transcript.
 - Excerpts MUST be verbatim substrings of the transcript provided. Do NOT paraphrase or invent text.
 - If a behavior is not assessable from the transcript, use score -1 and provide an empty excerpts array.
 - Return ONLY the JSON object below, with no additional text or commentary.
+
+{$scoringProcedure}
 
 COMPETENCY INDICATORS (evaluate in this exact order):
 {$rubric}
@@ -111,8 +152,8 @@ OUTPUT FORMAT (strict JSON, return the behaviors array in the SAME ORDER as the 
   "behaviors": [
     {
       "indicator": "<echo the indicator text>",
-      "score": <1, 3, 5, or -1>,
-      "explanation": "<brief explanation referencing the anchor>",
+      "score": <1, 2, 3, 4, 5, or -1>,
+      "explanation": "<brief explanation referencing the anchor; for a score of 4 or 2, name BOTH anchors the evidence falls between>",
       "excerpts": ["<verbatim substring 1>", "<verbatim substring 2>"]
     }
   ]

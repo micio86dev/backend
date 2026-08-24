@@ -256,3 +256,130 @@ test('(e) present IT anchor → prompt built successfully with Italian anchor in
     // Must also contain the LLM output schema contract
     expect($prompt->systemPrompt)->toContain('behaviors');
 });
+
+// ─── PR3 (bars-full-scale-1-5): AD-1 ordered relational rubric (D4/D5/D8) ─────
+
+test('(f) prompt contains the D4 SCORING PROCEDURE ordered-steps text verbatim', function (): void {
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $fv = FrameworkVersion::create(['version' => '1.0', 'label' => 'V1', 'organization_id' => $org->id]);
+    $role = Role::factory()->create(['code' => 'PROC_ROLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'PROC_'.uniqid()]);
+    createFullIndicator($role->id, $competency->id, 0);
+
+    $builder = new PromptBuilder;
+    $prompt = $builder->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: 'en',
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'Candidate: Some answer.',
+    );
+
+    expect($prompt->systemPrompt)
+        ->toContain('SCORING PROCEDURE — apply these steps in this exact order for each indicator')
+        ->toContain('If the transcript contains no assessable evidence for this indicator,')
+        ->toContain('score -1 and stop.')
+        ->toContain('If the evidence matches the Score 5 anchor, score 5 and stop.')
+        ->toContain('If the evidence matches the Score 3 anchor, score 3 and stop.')
+        ->toContain('If the evidence matches the Score 1 anchor, score 1 and stop.')
+        ->toContain('Only if steps 2, 3 and 4 were ALL rejected, the evidence falls between two')
+        ->toContain('score 4 if it clearly exceeds the Score 3 anchor but does not fully')
+        ->toContain('match the Score 5 anchor;')
+        ->toContain('score 2 if it is clearly below the Score 3 anchor but is not as weak as')
+        ->toContain('the Score 1 anchor.')
+        ->toContain('Scores 4 and 2 are RESIDUAL levels. They are legal ONLY at step 5.')
+        ->toContain('evidence is equally consistent with an authored anchor (5, 3 or 1) and with an')
+        ->toContain('intermediate level, the authored anchor WINS — score the anchor, never the')
+        ->toContain('intermediate.');
+});
+
+test('(g) the old "Do NOT use scores 2, 4" prohibition is absent from the prompt', function (): void {
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $fv = FrameworkVersion::create(['version' => '1.0', 'label' => 'V1', 'organization_id' => $org->id]);
+    $role = Role::factory()->create(['code' => 'NOPROHIB_ROLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'NOPROHIB_'.uniqid()]);
+    createFullIndicator($role->id, $competency->id, 0);
+
+    $builder = new PromptBuilder;
+    $prompt = $builder->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: 'en',
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'Candidate: Some answer.',
+    );
+
+    expect($prompt->systemPrompt)->not->toContain('Do NOT use scores 2, 4');
+
+    // The IMPORTANT RULES line now allows all five values plus the sentinel.
+    expect($prompt->systemPrompt)->toContain('assign a score from EXACTLY one of: 1, 2, 3, 4, 5, OR -1');
+
+    // Output-format comment reflects the widened domain.
+    expect($prompt->systemPrompt)->toContain('<1, 2, 3, 4, 5, or -1>');
+});
+
+test('(h) residual-score explanation contract names both bounding anchors (D5)', function (): void {
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $fv = FrameworkVersion::create(['version' => '1.0', 'label' => 'V1', 'organization_id' => $org->id]);
+    $role = Role::factory()->create(['code' => 'EXPL_ROLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'EXPL_'.uniqid()]);
+    createFullIndicator($role->id, $competency->id, 0);
+
+    $builder = new PromptBuilder;
+    $prompt = $builder->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: 'en',
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'Candidate: Some answer.',
+    );
+
+    expect($prompt->systemPrompt)->toContain(
+        '<brief explanation referencing the anchor; for a score of 4 or 2, name BOTH anchors the evidence falls between>'
+    );
+});
+
+test('(i) D8 parity: config(scoring.prompt_version) equals .env.example SCORING_PROMPT_VERSION', function (): void {
+    $envExamplePath = base_path('.env.example');
+    $envExampleContents = (string) file_get_contents($envExamplePath);
+
+    expect($envExampleContents)->toMatch('/^SCORING_PROMPT_VERSION=(.+)$/m');
+
+    preg_match('/^SCORING_PROMPT_VERSION=(.+)$/m', $envExampleContents, $matches);
+    $envExampleVersion = trim($matches[1]);
+
+    expect(config('scoring.prompt_version'))->toBe(
+        $envExampleVersion,
+        "config('scoring.prompt_version') default (".config('scoring.prompt_version').
+        ") must match .env.example's SCORING_PROMPT_VERSION ({$envExampleVersion}) — D8 parity guard. "
+        .'A deployment that pins SCORING_PROMPT_VERSION explicitly (e.g. Railway) must ALSO be bumped '
+        .'at deploy time: this test only guards the two file-level defaults, not any environment override.'
+    );
+});

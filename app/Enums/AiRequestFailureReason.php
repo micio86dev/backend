@@ -30,7 +30,7 @@ enum AiRequestFailureReason: string
     /** The model returned a different number of indicators than the framework defines. */
     case IndicatorCountMismatch = 'indicator_count_mismatch';
 
-    /** A score outside the discrete set {1,3,5} ∪ {-1}. */
+    /** A score outside the discrete set {1,2,3,4,5} ∪ {-1}. */
     case InvalidIndicatorScore = 'invalid_indicator_score';
 
     /** An excerpt that is not verbatim from the transcript — the model invented evidence. */

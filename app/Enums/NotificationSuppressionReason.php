@@ -16,6 +16,14 @@ namespace App\Enums;
  *                     recorded OUTCOME, not a crash: an alerting job that throws
  *                     because nobody is listening helps nobody, and the row is
  *                     what makes the gap visible in the dashboard.
+ *   - DemoProject   — the subject belongs to a project written by
+ *                     `beai:demo-seed` (DemoMarker prefix on `projects.slug`).
+ *                     Demo webhooks target an RFC 2606 reserved domain that
+ *                     cannot resolve, so they dead-letter by design; alerting on
+ *                     them teaches operators that the channel means nothing.
+ *                     Ranked ABOVE Window and NoRecipients: it is the root fact,
+ *                     and reporting either of the others would describe a
+ *                     problem the organization does not have.
  *
  * NULL on any row whose status is not `suppressed`. Machine values; never
  * localized.
@@ -24,4 +32,5 @@ enum NotificationSuppressionReason: string
 {
     case Window = 'window';
     case NoRecipients = 'no_recipients';
+    case DemoProject = 'demo_project';
 }

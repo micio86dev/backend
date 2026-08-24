@@ -10,7 +10,8 @@ use App\Services\Scoring\Contracts\ReliabilityStrategy;
  * AssessableFractionReliability — default R-A reliability strategy (C9 D5).
  *
  * Formula: assessed / total
- *   - assessed = count of indicator scores in {1,3,5} (excludes -1 sentinel).
+ *   - assessed = count of indicator scores in {1,2,3,4,5} (excludes -1 sentinel;
+ *     widened per AD-1/D4, bars-full-scale-1-5).
  *   - total    = count($indicatorScores).
  *
  * Returns 0.0 when the assessed set is empty (all -1 or empty input).
@@ -23,7 +24,7 @@ class AssessableFractionReliability implements ReliabilityStrategy
     /**
      * Compute the reliability as assessed / total.
      *
-     * @param  list<int>  $indicatorScores  Values in {1,3,5,-1}.
+     * @param  list<int>  $indicatorScores  Values in {1,2,3,4,5,-1}.
      * @return float [0..1]; 0.0 when assessed set is empty.
      */
     public function compute(array $indicatorScores): float

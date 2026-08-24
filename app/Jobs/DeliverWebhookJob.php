@@ -212,9 +212,21 @@ class DeliverWebhookJob implements ShouldQueue
                 ])->save();
             });
 
+            // The reason travels WITH the line. Dead-lettering is the one moment
+            // an operator has to be told why, and both values are already in
+            // scope and already on the row two statements above — omitting them
+            // meant a dead webhook could only be diagnosed with shell access to
+            // the production database.
+            //
+            // Safe by construction: $lastError has passed through
+            // ErrorRedactor::redactAndTruncate() (see attempt()), so the signing
+            // secret cannot reach a log sink through this line. The secret
+            // non-leak test asserts that across EVERY line the job emits.
             Log::error('webhook.delivery.dead', [
                 'delivery_id' => $delivery->delivery_id,
                 'attempt_count' => $attemptCount,
+                'last_response_status' => $responseStatus,
+                'last_error' => $lastError,
             ]);
 
             // C12 D5. Placed here — immediately after persist(), OUTSIDE the

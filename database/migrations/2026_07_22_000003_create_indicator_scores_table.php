@@ -14,7 +14,9 @@ use Illuminate\Support\Facades\Schema;
  *
  * Design invariants (D1, D22):
  * - organization_id leads all composite indexes (D22 org-first rule).
- * - score: smallint — values in {1, 3, 5, -1} (D4 domain; validated by IndicatorValidator).
+ * - score: smallint — values in {1, 2, 3, 4, 5, -1} (D4 domain, widened per
+ *   AD-1/D4 bars-full-scale-1-5; validated by IndicatorValidator). No CHECK
+ *   constraint at the DB level — {1,3,5,-1} ⊂ {1,2,3,4,5,-1} needed no migration.
  * - position: unsignedSmallInt — zero-based index; used for position-based mapping (D4/FIX-8).
  * - excerpts: json — original LLM excerpt array (persisted verbatim, not normalized).
  * - explanation: text — LLM-provided behavioral rationale.
@@ -44,7 +46,7 @@ return new class extends Migration
             // Canonical BARS indicator text at pinned framework_version_id in project locale.
             $table->string('indicator_text');
 
-            // Discrete score from LLM: {1, 3, 5} = assessed; -1 = unassessable sentinel.
+            // Discrete score from LLM: {1, 2, 3, 4, 5} = assessed; -1 = unassessable sentinel.
             $table->smallInteger('score');
 
             // LLM-provided behavioral rationale for the score.
