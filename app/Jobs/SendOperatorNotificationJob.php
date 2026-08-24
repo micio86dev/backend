@@ -11,10 +11,12 @@ use App\Enums\NotificationType;
 use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Models\Project;
 use App\Models\User;
 use App\Models\WebhookDelivery;
 use App\Notifications\ScoringFailedNotification;
 use App\Notifications\WebhookDeliveryDeadNotification;
+use App\Support\Demo\DemoMarker;
 use App\Support\Notifications\OperatorRecipientResolver;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
@@ -107,12 +109,33 @@ final class SendOperatorNotificationJob implements ShouldQueue
         /** @var int $organizationId */
         $organizationId = $subject->getAttribute('organization_id');
 
-        TenantContextScope::runFor($organizationId, function () use ($organizationId, $resolver): void {
+        TenantContextScope::runFor($organizationId, function () use ($organizationId, $resolver, $subject): void {
             $log = $this->recordAttempt($organizationId);
 
             if ($log === null) {
                 // A terminal row already exists — `sent` or `suppressed`. The
                 // DB arbitrated; nothing to do.
+                return;
+            }
+
+            // Checked FIRST, ahead of recipients and the storm window, because
+            // it is the root fact rather than a downstream symptom: a demo
+            // project with no operator is suppressed for being demo data, not
+            // for a recipient gap the organization does not actually have.
+            //
+            // Demo webhooks target an RFC 2606 reserved domain that cannot
+            // resolve, so they dead-letter by design — the fixture exists to
+            // show a `dead` row on the dashboard. Alerting on that trains
+            // operators to ignore the channel, and a real dead webhook then
+            // goes unread.
+            //
+            // The row is still written. Suppressed, not erased.
+            if ($this->belongsToDemoProject($subject)) {
+                $log->forceFill([
+                    'status' => NotificationStatus::Suppressed,
+                    'suppression_reason' => NotificationSuppressionReason::DemoProject,
+                ])->save();
+
                 return;
             }
 
@@ -151,6 +174,33 @@ final class SendOperatorNotificationJob implements ShouldQueue
      * after Queue::before reset the resolver — and the whole point is to derive
      * the org FROM this row rather than to filter by one we already assumed.
      */
+    /**
+     * Whether the notification's subject hangs off a project written by
+     * `beai:demo-seed`.
+     *
+     * Both subject types carry `project_id`, so one lookup serves the webhook
+     * and the scoring path alike — covering only the first would let the noise
+     * return through the second.
+     *
+     * DemoMarker is the single source of truth the seed and teardown commands
+     * already share, so "what counts as demo data" cannot drift between them
+     * and this. It is a PREFIX check: a client slug that merely contains
+     * `beai-demo-` mid-string is not demo data and must keep alerting — nobody
+     * gets to silence their own operational alerts by choosing a slug.
+     */
+    private function belongsToDemoProject(Model $subject): bool
+    {
+        $projectId = $subject->getAttribute('project_id');
+
+        if ($projectId === null) {
+            return false;
+        }
+
+        $project = Project::withoutGlobalScopes()->find((int) $projectId);
+
+        return DemoMarker::isDemoSlug($project?->slug);
+    }
+
     private function loadSubject(): ?Model
     {
         return match ($this->subjectType) {
