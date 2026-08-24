@@ -13,7 +13,7 @@ namespace App\Support\Demo;
  * fighting), no seeded PRNG (unreadable, and incapable of writing an Italian
  * sentence that is also a valid BARS excerpt).
  *
- * The fixture authors only INPUTS: score vectors in {1,3,5,-1} and transcript
+ * The fixture authors only INPUTS: score vectors in {1,2,3,4,5,-1} and transcript
  * text. Every derived number — mean, reliability, validity, completion
  * status, proctoring band — is computed by the same production classes that
  * score a real interview. `DemoDatasetValidator` checks this fixture against

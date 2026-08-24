@@ -10,8 +10,11 @@ use App\Exceptions\Scoring\InvalidIndicatorScoreException;
 /**
  * Enforces the BARS indicator score domain constraint.
  *
- * Legal domain: {1, 3, 5, -1}.
- * Illegal values: 2, 4, any decimal (cast to int in the parser), or any other int.
+ * Legal domain: {1, 2, 3, 4, 5, -1} (widened per AD-1/D4, bars-full-scale-1-5).
+ * Scores 2 and 4 are RESIDUAL levels — legal only when the LLM follows
+ * PromptBuilder's SCORING_PROCEDURE tie-break (never free discretion), but this
+ * validator enforces domain membership only, not procedure compliance.
+ * Illegal values: 0, 6, any decimal (cast to int in the parser), or any other int.
  * Score -1 (unassessable sentinel) is ALWAYS accepted, even with empty excerpts.
  * The caller is responsible for calling ExcerptValidator separately.
  *
@@ -24,12 +27,12 @@ use App\Exceptions\Scoring\InvalidIndicatorScoreException;
 final class IndicatorValidator
 {
     /** @var list<int> */
-    private const LEGAL_SCORES = [1, 3, 5, -1];
+    private const LEGAL_SCORES = [1, 2, 3, 4, 5, -1];
 
     /**
      * Validate the score domain of a single indicator DTO.
      *
-     * @throws InvalidIndicatorScoreException When score ∉ {1,3,5,-1}.
+     * @throws InvalidIndicatorScoreException When score ∉ {1,2,3,4,5,-1}.
      */
     public function validate(IndicatorScoreDTO $dto): void
     {

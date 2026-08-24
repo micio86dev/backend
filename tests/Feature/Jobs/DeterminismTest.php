@@ -19,6 +19,11 @@ declare(strict_types=1);
  * (a) Two runs on the same participant/transcript/framework → identical COL score.
  * (b) Two runs → identical COL reliability.
  * (c) Two runs → identical COL IndicatorScore excerpts (all three indicators).
+ * (d) (bars-full-scale-1-5, task 3.10) Two runs over a cassette that returns the
+ *     RESIDUAL levels {5,4,2} → identical CompetencyResult score/reliability and
+ *     identical IndicatorScore excerpts — run-twice invariance is not an
+ *     accident of the anchor-only {1,3,5} domain, it must also hold once 2 and
+ *     4 are legal.
  *
  * REQ: Determinism (C9 D8) — explicit run-twice assertion
  */
@@ -175,6 +180,39 @@ function detCassetteForCompetencyCode(string $code): CassetteLLMProvider
     return new CassetteLLMProvider([$code => $response]);
 }
 
+/**
+ * Build a cassette that returns residual levels {5,4,2} — same response for every call
+ * (bars-full-scale-1-5, task 3.10). Uses the SAME fixed indicator/utterance shape as
+ * detSetupCompetency(), so the excerpts below are verbatim substrings of those utterances.
+ */
+function detResidualCassetteForCompetencyCode(string $code): CassetteLLMProvider
+{
+    $response = (string) json_encode([
+        'behaviors' => [
+            [
+                'indicator' => 'Work effectively with others',
+                'score' => 5,
+                'explanation' => 'Matches the Score 5 anchor: strong collaboration evidence.',
+                'excerpts' => ['I worked collaboratively on multiple projects'],
+            ],
+            [
+                'indicator' => 'Willingly help colleagues in trouble',
+                'score' => 4,
+                'explanation' => 'Clearly exceeds the Score 3 anchor but does not fully match the Score 5 anchor; a residual level between the two.',
+                'excerpts' => ['Quello che abbiamo fatto è stato di cambiare le nostre abitudini'],
+            ],
+            [
+                'indicator' => 'Demonstrate commitment to team goals',
+                'score' => 2,
+                'explanation' => 'Clearly below the Score 3 anchor but not as weak as the Score 1 anchor; a residual level between the two.',
+                'excerpts' => ['è stato sicuramente anche un metodo molto efficace per raggiungere gli obiettivi'],
+            ],
+        ],
+    ]);
+
+    return new CassetteLLMProvider([$code => $response]);
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 test('(a–c) same input at temperature=0 → two runs produce identical scores, reliability, and excerpts', function (): void {
@@ -271,5 +309,94 @@ test('(a–c) same input at temperature=0 → two runs produce identical scores,
 
     // Confirm expected values (COL {5,3,3} → 3.67, reliability 1.0)
     expect($cr1->score)->toBe(3.67, 'COL score must be 3.67 (mean of {5,3,3}).');
+    expect($cr1->reliability)->toBe(1.0, 'COL reliability must be 1.0 (all 3 assessed).');
+});
+
+test('(d) determinism holds over residual score levels {5,4,2} (bars-full-scale-1-5)', function (): void {
+    $org = detOrg();
+
+    // ── RUN 1 ─────────────────────────────────────────────────────────────────
+    $project1 = detProject($org);
+    $participant1 = detParticipant($org, $project1);
+    $competency1 = detSetupCompetency($org, $project1, $participant1);
+
+    app()->instance(LLMProvider::class, detResidualCassetteForCompetencyCode($competency1->code));
+
+    (new ScoreEvaluationJob($participant1->id))->handle();
+
+    $eval1 = Evaluation::withoutGlobalScopes()
+        ->where('participant_id', $participant1->id)
+        ->firstOrFail();
+
+    $cr1 = CompetencyResult::withoutGlobalScopes()
+        ->where('evaluation_id', $eval1->id)
+        ->where('competency_code', $competency1->code)
+        ->firstOrFail();
+
+    $scores1 = IndicatorScore::withoutGlobalScopes()
+        ->where('competency_result_id', $cr1->id)
+        ->orderBy('position')
+        ->get()
+        ->map(static fn ($is) => [
+            'score' => $is->score,
+            'excerpts' => $is->excerpts,
+        ])
+        ->all();
+
+    // ── RUN 2 (fresh participant, same org, same cassette) ────────────────────
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $project2 = detProject($org);
+    $participant2 = detParticipant($org, $project2);
+    $competency2 = detSetupCompetency($org, $project2, $participant2);
+
+    app()->instance(LLMProvider::class, detResidualCassetteForCompetencyCode($competency2->code));
+
+    (new ScoreEvaluationJob($participant2->id))->handle();
+
+    $eval2 = Evaluation::withoutGlobalScopes()
+        ->where('participant_id', $participant2->id)
+        ->firstOrFail();
+
+    $cr2 = CompetencyResult::withoutGlobalScopes()
+        ->where('evaluation_id', $eval2->id)
+        ->where('competency_code', $competency2->code)
+        ->firstOrFail();
+
+    $scores2 = IndicatorScore::withoutGlobalScopes()
+        ->where('competency_result_id', $cr2->id)
+        ->orderBy('position')
+        ->get()
+        ->map(static fn ($is) => [
+            'score' => $is->score,
+            'excerpts' => $is->excerpts,
+        ])
+        ->all();
+
+    expect($cr1->score)->toBe($cr2->score,
+        'Determinism (d): two runs over residual levels must produce identical competency score.'
+    );
+    expect($cr1->reliability)->toBe($cr2->reliability,
+        'Determinism (d): two runs over residual levels must produce identical reliability.'
+    );
+
+    foreach ($scores1 as $i => $row1) {
+        expect($row1['score'])->toBe($scores2[$i]['score'],
+            "Determinism (d): indicator[$i] score must be identical across runs."
+        );
+        expect($row1['excerpts'])->toBe($scores2[$i]['excerpts'],
+            "Determinism (d): indicator[$i] excerpts must be identical across runs."
+        );
+    }
+
+    // Confirm the residual levels actually persisted (not silently coerced to anchors).
+    expect($scores1[0]['score'])->toBe(5);
+    expect($scores1[1]['score'])->toBe(4, 'Indicator[1] must persist the residual score 4, not be rejected or coerced.');
+    expect($scores1[2]['score'])->toBe(2, 'Indicator[2] must persist the residual score 2, not be rejected or coerced.');
+
+    // Confirm expected values (COL {5,4,2} → 3.67, reliability 1.0)
+    expect($cr1->score)->toBe(3.67, 'COL score must be 3.67 (mean of {5,4,2}).');
     expect($cr1->reliability)->toBe(1.0, 'COL reliability must be 1.0 (all 3 assessed).');
 });
