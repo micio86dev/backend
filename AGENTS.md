@@ -32,7 +32,9 @@ made in this codebase, not because it is good practice in the abstract.
 
 ## BARS scoring — domain correctness
 
-- **Indicator scores are the discrete set `{1, 3, 5}`.** Never 2, never 4, never a decimal.
+- **Indicator scores are one integer from `{1, 2, 3, 4, 5}` ∪ `{-1}`.** No decimals. `4`
+  and `2` are residual levels, legal only when the evidence matches neither bounding
+  anchor — anchor-primacy tie-break wins on a genuine tie.
 - **`-1` means UNASSESSABLE.** It is not a score: exclude it from the competency mean, never
   render it as a number, never place it on an error/warning/success scale.
 - **A competency whose indicators are all unassessable has no mean** — never `0`.
