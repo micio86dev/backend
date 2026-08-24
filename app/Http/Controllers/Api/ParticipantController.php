@@ -126,6 +126,9 @@ final class ParticipantController extends Controller
     {
         $participant = $this->reader->read($id, ParticipantReadScope::Evaluation);
 
-        return new EvaluationResource($this->evaluationSerializer->serialize($participant));
+        return new EvaluationResource(
+            $this->evaluationSerializer->serialize($participant),
+            $this->evaluationSerializer->meta($participant),
+        );
     }
 }

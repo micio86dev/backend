@@ -19,14 +19,22 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * (`utterances`, `speaker`). The underlying array is produced exclusively by
  * AdminEvaluationSerializer, which has no access to
  * InterviewSession/Utterance data, so this is structural, not just a filter.
+ *
+ * `meta.scoring` (D7, bars-full-scale-1-5) is emitted as a SIBLING of `data`,
+ * via `with()` — never merged into the competency map, which is keyed by
+ * competency code and frameworks are custom/versioned per tenant (a reserved
+ * key inside that map would risk colliding with a tenant-authored code).
  */
 class EvaluationResource extends JsonResource
 {
     /**
      * @param  array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>}>  $resource
+     * @param  array{prompt_version: string, model_version: string, framework_version: string}|null  $scoringMeta
      */
-    public function __construct(array $resource)
-    {
+    public function __construct(
+        array $resource,
+        private readonly ?array $scoringMeta = null,
+    ) {
         parent::__construct($resource);
     }
 
@@ -36,6 +44,18 @@ class EvaluationResource extends JsonResource
     public function toArray(Request $request): array
     {
         return $this->resource;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function with(Request $request): array
+    {
+        if ($this->scoringMeta === null) {
+            return [];
+        }
+
+        return ['meta' => ['scoring' => $this->scoringMeta]];
     }
 
     /**
