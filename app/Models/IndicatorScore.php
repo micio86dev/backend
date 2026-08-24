@@ -17,7 +17,9 @@ use Illuminate\Support\Carbon;
  *
  * Extends TenantModel (C2) — automatically scoped by organization_id.
  *
- * Score domain: {1, 3, 5} (assessed) ∪ {-1} (unassessable sentinel).
+ * Score domain: {1, 2, 3, 4, 5} (assessed) ∪ {-1} (unassessable sentinel).
+ * Widened from {1,3,5,-1} per AD-1/D4 (bars-full-scale-1-5) — 2 and 4 are
+ * RESIDUAL levels, legal only per PromptBuilder's SCORING_PROCEDURE tie-break.
  * Validated by IndicatorValidator before persistence.
  *
  * excerpts: persisted as original LLM array (not whitespace-normalized).
@@ -64,7 +66,7 @@ class IndicatorScore extends TenantModel
     /**
      * Attribute casts.
      *
-     * score: integer (smallint in DB; values {1,3,5,-1}).
+     * score: integer (smallint in DB; values {1,2,3,4,5,-1}).
      * excerpts: array (JSON column deserialized to PHP array).
      *
      * @return array<string, string>

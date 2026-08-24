@@ -97,8 +97,17 @@ return [
     | Semantic version string for the scoring prompt template. Bump this string
     | on ANY edit to the scoring prompt — enables per-Evaluation traceability.
     |
+    | D8 parity guard (bars-full-scale-1-5): this default MUST always equal
+    | .env.example's SCORING_PROMPT_VERSION — see the parity test in
+    | tests/Unit/Services/PromptBuilderTest.php. Bumping only one of the two
+    | leaves environments provisioned from .env.example stamping a stale
+    | version on Evaluations. A deploy environment that sets
+    | SCORING_PROMPT_VERSION explicitly (Railway production api service does)
+    | overrides BOTH defaults and must be bumped separately, at deploy time —
+    | this config/.env.example parity guard cannot see or enforce that value.
+    |
     */
-    'prompt_version' => env('SCORING_PROMPT_VERSION', '1.0.0'),
+    'prompt_version' => env('SCORING_PROMPT_VERSION', '2.0.0'),
 
     /*
     |--------------------------------------------------------------------------
