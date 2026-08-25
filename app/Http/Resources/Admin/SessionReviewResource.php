@@ -20,6 +20,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * cannot be checked against what produced it is not a judgement, it is a
  * verdict.
  *
+ * By the same reasoning, `integrity.band` is NULLABLE (proctoring-honest-coverage
+ * AD-2). When a detector reported itself unavailable and the measured score is
+ * below the medium threshold, there is no honest band to give: "low" would be an
+ * assertion about a candidate drawn from observations nobody made. `null` means
+ * "no opinion", and a read surface MUST render it as not-measured — never fall
+ * back to the most flattering available value. `integrity.coverage_complete` and
+ * `integrity.unavailable_layers` say why.
+ *
  * Snapshots carry signed, expiring URLs. `s3_key` never leaves the server:
  * returning it would imply either a public bucket of identifiable webcam
  * frames or a disclosed storage layout.

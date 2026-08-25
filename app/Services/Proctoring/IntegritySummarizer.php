@@ -52,6 +52,16 @@ final class IntegritySummarizer
      */
     private const WEIGHT_SECOND_MONITOR = 8.0;
 
+    /**
+     * The kind that reports a DEAD OBSERVER rather than a candidate behaviour
+     * (proctoring-honest-coverage AD-1).
+     *
+     * It is deliberately absent from every weight table below. It is a statement
+     * about us, never about the candidate; scoring it would penalise a person
+     * for a failure of ours.
+     */
+    private const KIND_UNAVAILABLE = 'proctor_unavailable';
+
     /** score < MEDIUM → low; MEDIUM ≤ score < HIGH → medium; ≥ HIGH → high. */
     private const BAND_MEDIUM = 15.0;
 
@@ -66,6 +76,7 @@ final class IntegritySummarizer
         $counts = [];
         $seconds = array_fill_keys(array_keys(self::WEIGHT_PER_SECOND), 0.0);
         $secondMonitor = false;
+        $unavailableLayers = [];
 
         foreach ($events as $event) {
             $kind = $event['kind'];
@@ -83,6 +94,13 @@ final class IntegritySummarizer
             if ($kind === 'second_monitor' && ($payload['isExtended'] ?? null) === true) {
                 $secondMonitor = true;
             }
+
+            if ($kind === self::KIND_UNAVAILABLE) {
+                // A malformed payload must fail TOWARDS honesty: an unnamed layer
+                // still means something went unobserved, so it still opens a gap.
+                $layer = $payload['layer'] ?? null;
+                $unavailableLayers[] = is_string($layer) && $layer !== '' ? $layer : 'unknown';
+            }
         }
 
         $score = $secondMonitor ? self::WEIGHT_SECOND_MONITOR : 0.0;
@@ -97,9 +115,15 @@ final class IntegritySummarizer
 
         $score = round($score, 1);
 
+        $unavailableLayers = array_values(array_unique($unavailableLayers));
+        sort($unavailableLayers);
+        $coverageComplete = $unavailableLayers === [];
+
         return [
             'score' => $score,
-            'band' => self::band($score),
+            'band' => self::band($score, $coverageComplete),
+            'coverage_complete' => $coverageComplete,
+            'unavailable_layers' => $unavailableLayers,
             'counts' => $counts,
             'total' => count($events),
             'tab_hidden_sec' => (int) round($seconds['tab_hidden']),
@@ -136,12 +160,35 @@ final class IntegritySummarizer
         return $ms > 0 ? $ms / 1000 : 0.0;
     }
 
-    private static function band(float $score): string
+    /**
+     * The risk band, or NULL when the evidence cannot support one (AD-2).
+     *
+     * The governing asymmetry: a measurement we never took can only ever RAISE
+     * the true score, never lower it. So:
+     *
+     *   - `medium` and `high` SURVIVE incomplete coverage. They are valid lower
+     *     bounds — we found that much with the detectors that did run, and the
+     *     missing ones could only have found more. Withholding them would hide a
+     *     real finding, which is the opposite of this change's purpose.
+     *
+     *   - `low` does NOT survive. "Low risk" is precisely the claim the missing
+     *     data cannot support, and it is the claim an operator reads as *this
+     *     candidate behaved well*. A dead detector and an irreproachable
+     *     candidate must never render the same.
+     *
+     * `null` means "no opinion", and the read surface must render it as such —
+     * never as a default, never as the most flattering available value.
+     */
+    private static function band(float $score, bool $coverageComplete): ?string
     {
         if ($score >= self::BAND_HIGH) {
             return 'high';
         }
 
-        return $score >= self::BAND_MEDIUM ? 'medium' : 'low';
+        if ($score >= self::BAND_MEDIUM) {
+            return 'medium';
+        }
+
+        return $coverageComplete ? 'low' : null;
     }
 }
