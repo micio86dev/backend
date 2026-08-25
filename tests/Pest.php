@@ -483,3 +483,10 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Unit/Observability');
+
+// Unit/Config/TruncationRetryConfigTest.php (B1) — needs TestCase so
+// config() resolves against the booted app. No DB needed: pure
+// config-invariant assertions, same shape as Unit/QueueRuntimeConfigTest.php
+// and Unit/NotificationsConfigTest.php above.
+pest()->extend(TestCase::class)
+    ->in('Unit/Config/TruncationRetryConfigTest.php');

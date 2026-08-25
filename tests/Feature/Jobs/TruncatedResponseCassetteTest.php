@@ -11,6 +11,20 @@ declare(strict_types=1);
  * - The scoring loop never reaches `json_decode()` — no `IndicatorScore` row
  *   is persisted (there is nothing to parse into: the short-circuit happens
  *   before any parse attempt, D4).
+ *
+ * UPDATED for B1 (design.md D8): `scoring.truncation_retry` now ships with
+ * `enabled=true, max_attempts=1` as its SHIPPED DEFAULT (previously Increment
+ * A shipped no such config block at all, so `ScoringFailureClassifier`
+ * always returned `Terminal` and exactly one call was made). This cassette's
+ * fixture returns the SAME truncated body on every call (a bare
+ * `CassetteResponse`, not a `list`), so from B1 onward the job now retries
+ * once at an enlarged budget, gets truncated again, and THEN finalizes as
+ * unscorable — two calls, two `ai_requests` rows, both `failure_reason =
+ * 'truncated'`. This is the deliberate, documented behavior change B1 makes
+ * to every truncated call in production (see
+ * tests/Feature/Jobs/TruncationRetryTest.php for the full retry-success /
+ * both-truncated / never-retried-when-not-truncated matrix) — not a silent
+ * regression of this test.
  */
 
 use App\Contracts\LLMProvider;
@@ -72,16 +86,19 @@ test('a truncated response is recorded as truncated/llm_truncated, never llm_par
 
     expect($evaluation)->not->toBeNull();
 
-    $aiRequest = AiRequest::withoutGlobalScopes()
+    $aiRequests = AiRequest::withoutGlobalScopes()
         ->where('evaluation_id', $evaluation->id)
         ->where('competency_code', $competencyCode)
-        ->first();
+        ->get();
 
-    expect($aiRequest)->not->toBeNull('An ai_requests row must exist — the call was made and billed.')
-        ->and($aiRequest->success)->toBeFalse()
-        ->and($aiRequest->failure_reason)->toBe(AiRequestFailureReason::Truncated)
-        ->and($aiRequest->failure_reason)->not->toBe(AiRequestFailureReason::ParseError)
-        ->and($aiRequest->finish_reason)->toBe('max_tokens');
+    // B1: two rows — the original attempt plus the one enlarged-budget retry,
+    // both truncated (this fixture returns the same cut-off body every call).
+    // Every attempt is billed and logged — its own row, never reused (D8).
+    expect($aiRequests)->toHaveCount(2, 'Every attempt (original + retry) gets its own ai_requests row.')
+        ->and($aiRequests->every(fn (AiRequest $r): bool => $r->success === false))->toBeTrue()
+        ->and($aiRequests->every(fn (AiRequest $r): bool => $r->failure_reason === AiRequestFailureReason::Truncated))->toBeTrue()
+        ->and($aiRequests->every(fn (AiRequest $r): bool => $r->failure_reason !== AiRequestFailureReason::ParseError))->toBeTrue()
+        ->and($aiRequests->every(fn (AiRequest $r): bool => $r->finish_reason === 'max_tokens'))->toBeTrue();
 
     $competencyResult = CompetencyResult::withoutGlobalScopes()
         ->where('evaluation_id', $evaluation->id)
@@ -99,5 +116,5 @@ test('a truncated response is recorded as truncated/llm_truncated, never llm_par
     $indicatorScoreCount = IndicatorScore::where('competency_result_id', $competencyResult->id)->count();
     expect($indicatorScoreCount)->toBe(0, 'No IndicatorScore row should exist — the parser was never reached.');
 
-    expect($cassette->callCount())->toBe(1, 'Increment A ships no retry — exactly one call is made.');
+    expect($cassette->callCount())->toBe(2, 'B1 ships enabled=true/max_attempts=1 by default: original call + exactly one retry, no third.');
 });

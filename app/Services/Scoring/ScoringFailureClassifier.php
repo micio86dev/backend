@@ -22,6 +22,12 @@ use App\Enums\Scoring\ScoringFailure;
  * `max_attempts`. This lets Increment A call this same classifier from the
  * job's truncation short-circuit WITHOUT any behavior change once B1 lands:
  * only the config default moves, never this class.
+ *
+ * B1: `scoring.truncation_retry.enabled` is a KILL-SWITCH, checked before
+ * `max_attempts` — `enabled=false` returns 0 unconditionally, so an operator
+ * disabling the feature gets the IDENTICAL behavior to Increment A's
+ * no-config-block default rather than a `max_attempts` silently honored
+ * underneath a flag that claims to turn the feature off.
  */
 final class ScoringFailureClassifier
 {
@@ -37,6 +43,10 @@ final class ScoringFailureClassifier
 
     private function maxAttempts(): int
     {
+        if (! (bool) config('scoring.truncation_retry.enabled', false)) {
+            return 0;
+        }
+
         return (int) config('scoring.truncation_retry.max_attempts', 0);
     }
 }

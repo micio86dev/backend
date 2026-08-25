@@ -47,3 +47,47 @@ test('ResponseTruncated is Terminal when no retry attempts are configured (Incre
     expect($classifier->classify(ScoringFailure::ResponseTruncated, 0))
         ->toBe(ScoringDisposition::Terminal);
 });
+
+// ─── B1: the retry action, once config.truncation_retry ships (D8) ──────────
+
+test('ResponseTruncated at attempt 0 retries when max_attempts allows it', function (): void {
+    config([
+        'scoring.truncation_retry.enabled' => true,
+        'scoring.truncation_retry.max_attempts' => 1,
+    ]);
+
+    $classifier = new ScoringFailureClassifier;
+
+    expect($classifier->classify(ScoringFailure::ResponseTruncated, 0))
+        ->toBe(ScoringDisposition::RetryWithLargerBudget);
+});
+
+test('ResponseTruncated at attempt 1 is Terminal once max_attempts (1) is exhausted — no third call, ever', function (): void {
+    config([
+        'scoring.truncation_retry.enabled' => true,
+        'scoring.truncation_retry.max_attempts' => 1,
+    ]);
+
+    $classifier = new ScoringFailureClassifier;
+
+    expect($classifier->classify(ScoringFailure::ResponseTruncated, 1))
+        ->toBe(ScoringDisposition::Terminal);
+});
+
+test('enabled=false is a kill-switch: Terminal at every attempt count regardless of max_attempts', function (): void {
+    // The 'enabled' flag would be dead config if it did not gate the retry
+    // action — an operator disabling the feature must get IDENTICAL behavior
+    // to Increment A's no-config-block default, not a max_attempts that is
+    // still silently honored underneath.
+    config([
+        'scoring.truncation_retry.enabled' => false,
+        'scoring.truncation_retry.max_attempts' => 1,
+    ]);
+
+    $classifier = new ScoringFailureClassifier;
+
+    expect($classifier->classify(ScoringFailure::ResponseTruncated, 0))
+        ->toBe(ScoringDisposition::Terminal)
+        ->and($classifier->classify(ScoringFailure::ResponseTruncated, 1))
+        ->toBe(ScoringDisposition::Terminal);
+});
