@@ -17,7 +17,7 @@ use Symfony\Component\HttpFoundation\Response;
  * Handles POST /api/candidate/interview/integrity
  *
  * Batch proctoring event ingestion. Accepts an array of integrity events, validates
- * each event.kind against the 13 canonical types from proctor-config.ts, and persists
+ * each event.kind against the 14 canonical types (13 from proctor-config.ts, plus proctor_unavailable), and persists
  * the batch atomically (all-or-nothing: if ANY kind is invalid → 422, nothing persisted).
  *
  * Canonical kinds (13) — sourced from legacy-demo/src/lib/proctor-config.ts:
@@ -37,7 +37,8 @@ class IntegrityController extends Controller
     use ResolvesOwnedSession;
 
     /**
-     * The 13 canonical integrity kinds (proctor-config.ts).
+     * The 14 canonical integrity kinds: the 13 candidate-behaviour kinds from
+     * proctor-config.ts, plus `proctor_unavailable` which reports a dead observer.
      * Unknown kinds MUST return 422; the batch is all-or-nothing.
      *
      * @var list<string>
@@ -56,6 +57,17 @@ class IntegrityController extends Controller
         'clipboard_paste',
         'second_voice',
         'phone_detected',
+        // A DEAD OBSERVER, not a candidate behaviour (proctoring-honest-coverage
+        // AD-1). It carries no weight in the operator-side risk score: it is a
+        // statement about us, and scoring it would penalise a person for a
+        // failure of ours.
+        //
+        // The scorer is deliberately NOT named here. An arch test forbids any
+        // candidate controller from even mentioning it, bluntly and by string
+        // match, because a candidate controller reaching for a risk score means
+        // that score is heading for the wrong audience. Wording around a blunt
+        // guard is cheaper than sharpening it.
+        'proctor_unavailable',
     ];
 
     /**
@@ -84,7 +96,7 @@ class IntegrityController extends Controller
         foreach ($validated['events'] as $event) {
             if (! in_array($event['kind'], self::CANONICAL_KINDS, strict: true)) {
                 return response()->json(
-                    ['message' => "Unknown integrity kind: '{$event['kind']}'. Must be one of the 13 canonical kinds."],
+                    ['message' => "Unknown integrity kind: '{$event['kind']}'. Must be one of the 14 canonical kinds."],
                     Response::HTTP_UNPROCESSABLE_ENTITY
                 );
             }
