@@ -38,7 +38,7 @@ return [
     | wired independently of scoring (KD-3 mirrors C9 discipline).
     |
     */
-    'prompt_version' => env('CONVERSATION_PROMPT_VERSION', 'conv-2026-08-25'),
+    'prompt_version' => env('CONVERSATION_PROMPT_VERSION', 'conv-2026-08-25.2'),
 
     /*
     |--------------------------------------------------------------------------

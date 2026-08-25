@@ -13,7 +13,7 @@ declare(strict_types=1);
  * - Mixed batch (1 valid + 1 unknown) → HTTP 422; no rows persisted (all-or-nothing).
  * - session_id from different participant → HTTP 404.
  *
- * The 13 canonical kinds from proctor-config.ts are tested exhaustively via dataset.
+ * All 14 canonical kinds are tested exhaustively via dataset.
  *
  * Tasks: 11.1 (RED)
  * REQ: POST /integrity — batch integrity-event ingestion (C7a)
@@ -201,9 +201,9 @@ test('POST /integrity with session_id from different participant → 404', funct
     expect($countAfter)->toBe($countBefore, 'No IntegrityEvent must be persisted for cross-participant attempt');
 });
 
-// ─── Dataset: all 13 canonical kinds are accepted individually ────────────────
+// ─── Dataset: all 14 canonical kinds are accepted individually ────────────────
 
-test('POST /integrity accepts all 13 canonical integrity kinds', function (string $kind) {
+test('POST /integrity accepts all 14 canonical integrity kinds', function (string $kind) {
     $org = integrityOrg();
     $project = integrityProject($org);
     $participant = integrityParticipant($org, $project, 'in_corso');
@@ -241,4 +241,7 @@ test('POST /integrity accepts all 13 canonical integrity kinds', function (strin
     'clipboard_paste',
     'second_voice',
     'phone_detected',
+    // Without this the api 422s the batch, and because validation is
+    // ALL-OR-NOTHING a degraded client would lose every event it ever sent.
+    'proctor_unavailable',
 ]);

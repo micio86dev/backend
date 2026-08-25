@@ -451,3 +451,15 @@ test('(y) task 5.7 — identical arguments compose an identical prompt', functio
 
     expect($composer->compose(...$args)->text)->toBe($composer->compose(...$args)->text);
 });
+
+// ─── interview-opening-no-dead-turn ──────────────────────────────────────────
+
+test('(z) the prompt tells the model its opening ALREADY asked for an episode', function (): void {
+    // The greeting is delivered by the provider as its own field before this
+    // prompt runs. Without this line the model re-asks what the candidate has
+    // already been asked, or waits for a turn that never comes.
+    $prompt = starPromptReflowed();
+
+    expect($prompt)->toContain('ALREADY asked them to describe a specific episode')
+        ->and($prompt)->toContain('Do NOT open by asking for one again');
+});
