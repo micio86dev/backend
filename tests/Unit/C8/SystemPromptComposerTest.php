@@ -247,3 +247,207 @@ test('(h) empty indicator collection → CompositionException', function (): voi
     expect(fn () => $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, null))
         ->toThrow(CompositionException::class);
 });
+
+// ─── star-interviewer-protocol ───────────────────────────────────────────────
+
+/**
+ * Compose a prompt with one fully-translated indicator, for text assertions.
+ */
+function starPrompt(int $budget = 4, ?int $minQuestions = null, ?string $advancePhrase = null): string
+{
+    $role = Role::factory()->create(['code' => 'STAR_ROLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'STAR_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    return makeComposer()->compose(
+        competencyCode: $competency->code,
+        roleId: $role->id,
+        competencyId: $competency->id,
+        projectLocale: 'en',
+        budget: $budget,
+        nudgeMinChars: null,
+        advancePhrase: $advancePhrase,
+        minQuestions: $minQuestions,
+    )->text;
+}
+
+/** Hard-wrap-insensitive view, for assertions about WHAT the prompt says. */
+function starPromptReflowed(int $budget = 4, ?int $minQuestions = null, ?string $advancePhrase = null): string
+{
+    return (string) preg_replace('/\s+/', ' ', starPrompt($budget, $minQuestions, $advancePhrase));
+}
+
+// ─── Group 1: the clamp (design D-1/D-2) ─────────────────────────────────────
+
+test('(i) task 1.1 — a minimum below the budget ceiling is used as configured', function (): void {
+    expect(starPromptReflowed(budget: 4, minQuestions: 4))
+        ->toContain('at least 4 questions');
+});
+
+test('(j) task 1.2 — a minimum exceeding the budget is CLAMPED, never thrown', function (): void {
+    // budget 2 permits 3 questions (1 opening + 2 follow-ups). A configured
+    // minimum of 6 would instruct the avatar to ask at least 6 while asking at
+    // most 3 — unsatisfiable. It then never speaks the closing phrase, the
+    // competency runs to its session cap, and HeyGen kills the session with
+    // MAX_DURATION_REACHED. This system has shipped that defect once already.
+    $prompt = starPromptReflowed(budget: 2, minQuestions: 6);
+
+    expect($prompt)->toContain('at least 3 questions')
+        ->and($prompt)->not->toContain('at least 6 questions');
+});
+
+test('(k) task 1.3 — a zero budget still yields a satisfiable minimum of 1', function (): void {
+    expect(starPromptReflowed(budget: 0, minQuestions: 4))
+        ->toContain('at least 1 question');
+});
+
+test('(l) task 1.4 — a zero or negative configured minimum floors at 1, never 0', function (): void {
+    // A stated minimum of zero reads as permission to close before asking anything.
+    expect(starPromptReflowed(budget: 4, minQuestions: 0))
+        ->toContain('at least 1 question')
+        ->not->toContain('at least 0 question');
+
+    expect(starPromptReflowed(budget: 4, minQuestions: -3))
+        ->toContain('at least 1 question');
+});
+
+test('(m) task 1.5 — GRID: the stated minimum never exceeds what the budget permits', function (): void {
+    // The property that keeps budget exhaustion always able to satisfy the
+    // minimum, and therefore keeps the "OR budget exhausted" escape hatch
+    // reachable under every configuration. Asserted across the grid rather than
+    // trusted by reading the arithmetic.
+    foreach ([0, 1, 2, 4, 8] as $budget) {
+        foreach ([1, 2, 4, 6, 10] as $minimum) {
+            $prompt = starPromptReflowed(budget: $budget, minQuestions: $minimum);
+
+            $expected = max(1, min($minimum, $budget + 1));
+
+            expect($prompt)->toContain("at least {$expected} question");
+
+            // And never a value above the ceiling.
+            for ($over = $budget + 2; $over <= 12; $over++) {
+                expect($prompt)->not->toContain("at least {$over} question");
+            }
+        }
+    }
+});
+
+// ─── Group 2: the STAR section ───────────────────────────────────────────────
+
+test('(n) task 2.1 — the prompt names all five STAR elements', function (): void {
+    $prompt = starPromptReflowed();
+
+    expect($prompt)->toContain('STAR');
+
+    foreach (['Situation', 'Task', 'Context', 'Action', 'Result'] as $element) {
+        expect($prompt)->toContain($element);
+    }
+});
+
+test('(o) task 2.2 — the avatar is told to target the LEAST covered element', function (): void {
+    expect(starPromptReflowed())
+        ->toContain('least covered');
+});
+
+test('(p) task 2.3 — Action and Result carry the evaluator\'s own requirements', function (): void {
+    // EVALUATION_STANDARDS in the SCORING prompt refuses a 4 or 5 without
+    // concrete personal actions and a measurable outcome. The interviewer must
+    // ask for what the evaluator is required to find — the two prompts are a
+    // matched pair.
+    $prompt = starPromptReflowed();
+
+    expect($prompt)->toContain('measurable outcome')
+        ->and($prompt)->toContain('candidate personally did')
+        ->and($prompt)->toContain('not what the team did');
+});
+
+test('(q) task 2.4 — an inapplicable element counts as covered and is not re-asked', function (): void {
+    // Otherwise an element the episode simply does not have becomes an
+    // unreachable coverage condition, and the competency cannot advance.
+    $prompt = starPromptReflowed();
+
+    expect($prompt)->toContain('genuinely does not apply')
+        ->and($prompt)->toContain('treat it as covered');
+});
+
+// ─── Group 3: the same-episode constraint ────────────────────────────────────
+
+test('(r) task 3.1/3.2 — every follow-up deepens ONE episode; no second example', function (): void {
+    $prompt = starPromptReflowed();
+
+    expect($prompt)->toContain('the SAME episode')
+        ->and($prompt)->toContain('Do NOT ask for a second or different example');
+});
+
+test('(s) task 3.3 — an episode with no assessable behaviour may be replaced', function (): void {
+    // Without this a candidate who opens with a poor example is locked into it
+    // for the whole competency.
+    expect(starPromptReflowed())
+        ->toContain('no assessable behaviour at all');
+});
+
+test('(t) task 3.4 — the same-episode rule is stated ONCE, not three times', function (): void {
+    // The reference log repeats it three times. Repetition competes with the
+    // other rules for the model's attention; if once proves insufficient in the
+    // live smoke we add repetition WITH EVIDENCE, not on the reference's
+    // authority.
+    $occurrences = substr_count(
+        starPromptReflowed(),
+        'Do NOT ask for a second or different example',
+    );
+
+    expect($occurrences)->toBe(1);
+});
+
+// ─── Group 4: the advance rule ───────────────────────────────────────────────
+
+test('(u) task 4.1 — with a phrase, the advance condition carries the minimum', function (): void {
+    $prompt = starPromptReflowed(budget: 4, minQuestions: 4, advancePhrase: 'Grazie, passiamo oltre.');
+
+    expect($prompt)->toContain('at least 4 questions')
+        ->and($prompt)->toContain('Grazie, passiamo oltre.');
+});
+
+test('(v) task 4.2 — the no-phrase fallback branch also carries the minimum', function (): void {
+    $prompt = starPromptReflowed(budget: 4, minQuestions: 4, advancePhrase: null);
+
+    expect($prompt)->toContain('at least 4 questions')
+        ->and($prompt)->toContain('Do NOT close after the first answer');
+});
+
+test('(w) task 4.3 — the verbatim-phrase instruction survives untouched', function (): void {
+    // This is the fix for a real incident: the avatar was told to speak a
+    // placeholder it had never been given, so matchesEndPhrase() never fired.
+    $prompt = starPromptReflowed(advancePhrase: 'Grazie, passiamo oltre.');
+
+    expect($prompt)->toContain('word for word')
+        ->and($prompt)->toContain('Say it verbatim');
+});
+
+test('(x) task 4.4 — an exhausted budget still permits closing', function (): void {
+    expect(starPromptReflowed())
+        ->toContain('follow-up budget');
+});
+
+// ─── Group 5: purity ─────────────────────────────────────────────────────────
+
+test('(y) task 5.7 — identical arguments compose an identical prompt', function (): void {
+    $role = Role::factory()->create(['code' => 'PURE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'PURE_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $composer = makeComposer();
+
+    $args = [
+        'competencyCode' => $competency->code,
+        'roleId' => $role->id,
+        'competencyId' => $competency->id,
+        'projectLocale' => 'en',
+        'budget' => 4,
+        'nudgeMinChars' => null,
+        'advancePhrase' => 'Grazie.',
+        'minQuestions' => 4,
+    ];
+
+    expect($composer->compose(...$args)->text)->toBe($composer->compose(...$args)->text);
+});
