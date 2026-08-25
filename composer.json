@@ -9,7 +9,7 @@
         "api"
     ],
     "license": "MIT",
-    "version": "0.31.0",
+    "version": "0.32.0",
     "require": {
         "php": "^8.5",
         "dedoc/scramble": "^0.13",

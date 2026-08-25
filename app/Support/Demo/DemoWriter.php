@@ -570,7 +570,8 @@ final class DemoWriter
      * Excerpts are a sentence-index SLICE of the exact answer text already
      * persisted as the candidate's `Utterance` (writeSessions ran first, in
      * the same request), then checked with the production `ExcerptValidator`
-     * against `TranscriptAssembler::assemble()` before the row is written —
+     * against `TranscriptAssembler::assembleForParticipant()->validation` (the
+     * candidate-only corpus) before the row is written —
      * so a fixture bug throws here, loudly, rather than persisting a
      * fabricated quotation.
      *
@@ -654,11 +655,19 @@ final class DemoWriter
             $totalCount = count($definition['scores']);
 
             foreach ($definition['scores'] as $competencyCode => $scores) {
-                $session = InterviewSession::where('participant_id', $participant->id)
+                // Kept as the "this competency really has a session" assertion
+                // on the fixture, even though the corpora are participant-wide.
+                InterviewSession::where('participant_id', $participant->id)
                     ->where('competency_code', $competencyCode)
                     ->firstOrFail();
 
-                $transcript = $transcriptAssembler->assemble($session);
+                // Candidate-only corpus (evaluator-evidence-and-rigor D-1/D-7):
+                // demo excerpts are sentence slices of the candidate's own
+                // Utterance, so they validate under the stricter rule — but the
+                // seed ships to PRODUCTION, so it is checked, never assumed.
+                $transcript = $transcriptAssembler
+                    ->assembleForParticipant($participant->id, $competencyCode)
+                    ->validation;
 
                 $meanScore = $meanCalculator->compute($scores);
                 $reliabilityValue = $reliabilityStrategy->compute($scores);

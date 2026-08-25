@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Excerpt Is a Verbatim Substring of Its Seeded Transcript").
  *
  * Checked with the PRODUCTION `ExcerptValidator` against the PRODUCTION
- * `TranscriptAssembler::assemble()` — the same two classes that guard a
+ * `TranscriptAssembler::assembleForParticipant()` — the same two classes that guard a
  * real scoring run — not a copy of the substring logic. An excerpt that is
  * not a verbatim substring of the transcript is a fabricated quotation
  * attributed to a real person; this is the check that makes it impossible.
@@ -53,11 +53,18 @@ test('every IndicatorScore excerpt is a verbatim substring of its own session tr
             $results = CompetencyResult::where('evaluation_id', $evaluation->id)->get();
 
             foreach ($results as $result) {
-                $session = InterviewSession::where('participant_id', $participant->id)
+                // Asserts the fixture really has a session for this competency.
+                InterviewSession::where('participant_id', $participant->id)
                     ->where('competency_code', $result->competency_code)
                     ->firstOrFail();
 
-                $transcript = $assembler->assemble($session);
+                // The CANDIDATE-ONLY corpus (evaluator-evidence-and-rigor D-1/D-7).
+                // The demo seed ships to PRODUCTION, so the stricter rule — an
+                // excerpt may only quote the candidate — is proven against it
+                // here rather than assumed to hold.
+                $transcript = $assembler
+                    ->assembleForParticipant($participant->id, $result->competency_code)
+                    ->validation;
 
                 foreach ($result->indicatorScores as $indicatorScore) {
                     $dto = new IndicatorScoreDTO(

@@ -584,8 +584,17 @@ class ScoreEvaluationJob implements ShouldQueue
             return;
         }
 
-        // ── Assemble transcript ──────────────────────────────────────────
-        $transcript = $transcriptAssembler->assemble($session);
+        // ── Assemble the two corpora (evaluator-evidence-and-rigor D-1) ──
+        // The prompt corpus spans the WHOLE interview with this competency's
+        // segment delimited; the validation corpus is candidate speech only.
+        // $session above is still the "does this competency have a session at
+        // all" gate — it just no longer bounds the evidence.
+        $corpora = $transcriptAssembler->assembleForParticipant(
+            participantId: $this->participantId,
+            targetCompetencyCode: $competencyCode,
+        );
+        $transcript = $corpora->prompt;
+        $validationCorpus = $corpora->validation;
 
         // ── Build prompt (triggers AnchorTranslationMissingException on L-2 fail) ──
         try {
@@ -756,7 +765,10 @@ class ScoreEvaluationJob implements ShouldQueue
         foreach ($dtos as $dto) {
             try {
                 $indicatorValidator->validate($dto);
-                $excerptValidator->validate($dto, $transcript);
+                // Candidate-only corpus, NOT the prompt corpus: the model may
+                // read the interviewer's questions but may not cite them as
+                // evidence that the candidate did anything (D-1).
+                $excerptValidator->validate($dto, $validationCorpus);
                 $validated[] = $dto;
             } catch (InvalidIndicatorScoreException) {
                 $validated[] = $dto->asUnassessable(IndicatorFailureReason::ScoreIllegal);
