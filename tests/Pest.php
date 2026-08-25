@@ -473,3 +473,13 @@ pest()->use(RefreshDatabase::class)
 // config/environment logic, same shape as Unit/NotificationsConfigTest.php.
 pest()->extend(TestCase::class)
     ->in('Unit/Support/Http');
+
+// ─── scoring-failure-containment (C13) ─────────────────────────────────────────
+
+// Unit/Observability — needs TestCase + RefreshDatabase: FingerprintNoLeakTest
+// runs a real ScoreEvaluationJob against a real migrated ai_requests table to
+// assert no column leaks a substring of the raw response body (D6) — the same
+// shape as Unit/Auth above, not pure logic like Unit/Support/Observability.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Observability');

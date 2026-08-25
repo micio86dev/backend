@@ -38,9 +38,11 @@ use App\Services\Scoring\ExcerptValidator;
 use App\Services\Scoring\IndicatorValidator;
 use App\Services\Scoring\MeanCalculator;
 use App\Services\Scoring\PromptBuilder;
+use App\Services\Scoring\ResponseEnvelopeStripper;
 use App\Services\Scoring\ScoringFailureClassifier;
 use App\Services\Scoring\TranscriptAssembler;
 use App\Support\Observability\AiRequestCostEstimator;
+use App\Support\Observability\ResponseFingerprint;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -816,6 +818,11 @@ class ScoreEvaluationJob implements ShouldQueue
     ): void {
         $estimator = app(AiRequestCostEstimator::class);
 
+        // D6 — derived signals only, for EVERY scoring call, success or
+        // failure. The fingerprint's own types make it structurally unable
+        // to carry the response content; see ResponseFingerprint's docblock.
+        $fingerprint = ResponseFingerprint::from($llmResponse->content, new ResponseEnvelopeStripper);
+
         AiRequest::create([
             'evaluation_id' => $evaluation->id,
             'competency_code' => $competencyCode,
@@ -832,6 +839,9 @@ class ScoreEvaluationJob implements ShouldQueue
             'success' => $success,
             'failure_reason' => $failureReason?->value,
             'finish_reason' => $llmResponse->finishReason,
+            'response_bytes' => $fingerprint->bytes,
+            'response_fenced' => $fingerprint->fenced,
+            'response_sha256' => $fingerprint->sha256,
             'latency_ms' => $latencyMs,
         ]);
     }
