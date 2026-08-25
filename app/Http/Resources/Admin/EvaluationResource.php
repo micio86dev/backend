@@ -28,7 +28,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class EvaluationResource extends JsonResource
 {
     /**
-     * @param  array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>}>  $resource
+     * @param  array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>, unscorable_reason: string|null}>  $resource
      * @param  array{prompt_version: string, model_version: string, framework_version: string}|null  $scoringMeta
      */
     public function __construct(

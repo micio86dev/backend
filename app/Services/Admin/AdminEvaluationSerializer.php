@@ -58,7 +58,8 @@ final class AdminEvaluationSerializer
      * @return array<string, array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>,
+     *     unscorable_reason: string|null
      * }>
      */
     public function serialize(Participant $participant): array
@@ -127,7 +128,8 @@ final class AdminEvaluationSerializer
      * @return array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>,
+     *     unscorable_reason: string|null
      * }
      */
     private function serializeCompetencyResult(CompetencyResult $result): array
@@ -145,6 +147,11 @@ final class AdminEvaluationSerializer
                 ])
                 ->values()
                 ->all(),
+            // Machine-facing value, unlocalized per CLAUDE.md — returned literally
+            // in every locale. `null` for a scored competency (scoring-failure-
+            // containment D11/admin-read-api). Localization of the LABEL happens
+            // in the backoffice, never here.
+            'unscorable_reason' => $result->unscorable_reason,
         ];
     }
 }

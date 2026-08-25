@@ -156,6 +156,70 @@ test('a competency whose indicators are all unassessable has score null, never 0
     expect($result['COL']['score'])->not->toBe(0.0);
 });
 
+// ─── unscorable_reason exposure (A4, design.md D11) ──────────────────────────
+
+test('an unscorable competency exposes unscorable_reason', function (): void {
+    $org = evalSerializerOrg();
+    $project = evalSerializerProject($org, ['PRS' => 0]);
+    $participant = evalSerializerParticipant($project);
+
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    CompetencyResult::factory()->truncated()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'PRS',
+    ]);
+
+    $serializer = new AdminEvaluationSerializer;
+    $result = $serializer->serialize($participant);
+
+    expect($result['PRS'])->toHaveKey('unscorable_reason')
+        ->and($result['PRS']['unscorable_reason'])->toBe('llm_truncated');
+});
+
+test('a scored competency carries a null unscorable_reason', function (): void {
+    $org = evalSerializerOrg();
+    $project = evalSerializerProject($org, ['SLF' => 0]);
+    $participant = evalSerializerParticipant($project);
+
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    CompetencyResult::factory()->valid()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'SLF',
+    ]);
+
+    $serializer = new AdminEvaluationSerializer;
+    $result = $serializer->serialize($participant);
+
+    expect($result['SLF'])->toHaveKey('unscorable_reason')
+        ->and($result['SLF']['unscorable_reason'])->toBeNull();
+});
+
+test('unscorable_reason is byte-identical regardless of app locale (unlocalized, machine-facing)', function (): void {
+    $org = evalSerializerOrg();
+    $project = evalSerializerProject($org, ['PRS' => 0]);
+    $participant = evalSerializerParticipant($project);
+
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    CompetencyResult::factory()->truncated()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'PRS',
+    ]);
+
+    $serializer = new AdminEvaluationSerializer;
+
+    app()->setLocale('it');
+    $itResult = $serializer->serialize($participant);
+
+    app()->setLocale('en');
+    $enResult = $serializer->serialize($participant);
+
+    expect($itResult['PRS']['unscorable_reason'])->toBe($enResult['PRS']['unscorable_reason'])
+        ->and($itResult['PRS']['unscorable_reason'])->toBe('llm_truncated');
+});
+
 test('competencies are ordered by project_competencies.position, not by creation/DB order', function (): void {
     $org = evalSerializerOrg();
     // Position 0 = STG, position 1 = SLF — CompetencyResults are created below
