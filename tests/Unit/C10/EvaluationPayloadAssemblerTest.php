@@ -186,6 +186,23 @@ test('unscorable competency serializes score:null plus an additive unscorable_re
         ->and($entry['behaviors'])->toBe([]);
 });
 
+test('a truncated competency\'s llm_truncated reason propagates into the webhook payload with zero production code change (A1.13, C-B)', function (): void {
+    [, $project, , $evaluation] = c10EvaluationFixtures();
+    c10AttachCompetency($project, 'PRS');
+
+    CompetencyResult::factory()->truncated()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'PRS',
+    ]);
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+    $entry = $payload['data']['text']['PRS'];
+
+    expect($entry['score'])->toBeNull()
+        ->and($entry['unscorable_reason'])->toBe('llm_truncated')
+        ->and($entry['behaviors'])->toBe([]);
+});
+
 test('a scored competency never carries an unscorable_reason key (additive-only)', function (): void {
     [, $project, , $evaluation] = c10EvaluationFixtures();
     c10AttachCompetency($project, 'PRS');

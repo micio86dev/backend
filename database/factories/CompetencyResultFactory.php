@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\UnscorableReason;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  *   ->unscorable() — unscorable with role_no_bars reason.
  *   ->anchorMissing() — anchor_translation_missing unscorable reason.
  *   ->parseError() — llm_parse_error unscorable reason.
+ *   ->truncated() — llm_truncated unscorable reason (scoring-failure-containment D3/D4).
  *
  * @extends Factory<CompetencyResult>
  */
@@ -66,7 +68,7 @@ class CompetencyResultFactory extends Factory
             'score' => null,
             'reliability' => 0.0000,
             'valid' => false,
-            'unscorable_reason' => 'role_no_bars',
+            'unscorable_reason' => UnscorableReason::RoleNoBars->value,
         ]);
     }
 
@@ -79,7 +81,7 @@ class CompetencyResultFactory extends Factory
             'score' => null,
             'reliability' => 0.0000,
             'valid' => false,
-            'unscorable_reason' => 'anchor_translation_missing',
+            'unscorable_reason' => UnscorableReason::AnchorTranslationMissing->value,
         ]);
     }
 
@@ -92,7 +94,20 @@ class CompetencyResultFactory extends Factory
             'score' => null,
             'reliability' => 0.0000,
             'valid' => false,
-            'unscorable_reason' => 'llm_parse_error',
+            'unscorable_reason' => UnscorableReason::LlmParseError->value,
+        ]);
+    }
+
+    /**
+     * Unscorable — evaluator response cut off before completion (D3/D4/D8).
+     */
+    public function truncated(): static
+    {
+        return $this->state(fn (array $attrs) => [
+            'score' => null,
+            'reliability' => 0.0000,
+            'valid' => false,
+            'unscorable_reason' => UnscorableReason::LlmTruncated->value,
         ]);
     }
 }

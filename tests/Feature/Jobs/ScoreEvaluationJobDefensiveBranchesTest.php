@@ -25,6 +25,7 @@ declare(strict_types=1);
 
 use App\Contracts\LLMProvider;
 use App\Enums\EvaluationStatus;
+use App\Enums\UnscorableReason;
 use App\Events\EvaluationFailed;
 use App\Jobs\ScoreEvaluationJob;
 use App\Models\BarsIndicator;
@@ -668,7 +669,7 @@ test('(8) persistUnscorable() catch: UniqueConstraintViolationException → logs
     $persistMethod->setAccessible(true);
 
     // Second call with the same key → UniqueConstraintViolationException → caught silently.
-    expect(static fn () => $persistMethod->invoke($job, $eval, $comp->code, 'role_no_bars'))
+    expect(static fn () => $persistMethod->invoke($job, $eval, $comp->code, UnscorableReason::RoleNoBars))
         ->not->toThrow(Throwable::class,
             'persistUnscorable() must catch UniqueConstraintViolationException and NOT propagate it.'
         );

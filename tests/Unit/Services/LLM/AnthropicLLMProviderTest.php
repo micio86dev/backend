@@ -183,6 +183,32 @@ test('complete() parses model, inputTokens, outputTokens, finishReason from resp
     expect($response->finishReason)->toBe('end_turn');
 });
 
+test('complete() sets truncated=true when stop_reason is max_tokens (A1.9, D3)', function (): void {
+    Http::fake([
+        'api.anthropic.com/v1/messages' => Http::response([
+            'content' => [['type' => 'text', 'text' => '{"partial"']],
+            'model' => 'claude-haiku-4-5-20251001',
+            'stop_reason' => 'max_tokens',
+            'usage' => ['input_tokens' => 200, 'output_tokens' => 2048],
+        ], 200),
+    ]);
+
+    $response = (new AnthropicLLMProvider)->complete('Prompt.');
+
+    expect($response->truncated)->toBeTrue()
+        ->and($response->finishReason)->toBe('max_tokens', 'the raw stop_reason string must be carried unchanged');
+});
+
+test('complete() sets truncated=false when stop_reason is end_turn', function (): void {
+    Http::fake([
+        'api.anthropic.com/v1/messages' => Http::response(anthropicSuccessResponse(), 200),
+    ]);
+
+    $response = (new AnthropicLLMProvider)->complete('Prompt.');
+
+    expect($response->truncated)->toBeFalse();
+});
+
 // ---------------------------------------------------------------------------
 // Error paths
 // ---------------------------------------------------------------------------
