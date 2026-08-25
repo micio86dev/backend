@@ -18,10 +18,12 @@ declare(strict_types=1);
  * that nested key too (B3.2 updates this expected list).
  */
 
+use App\Models\Competency;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use App\Models\IndicatorScore;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Services\Admin\AdminEvaluationSerializer;
 use App\Support\Tenancy\TenantResolver;
@@ -34,10 +36,10 @@ test('serializeCompetencyResult() output key set equals the explicit expected li
     $resolver->setBypass(false);
 
     $project = Project::factory()->create();
-    $competency = App\Models\Competency::factory()->create(['code' => 'COL']);
+    $competency = Competency::factory()->create(['code' => 'COL']);
     $project->competencies()->attach($competency->id, ['position' => 0]);
 
-    $participant = App\Models\Participant::factory()->forProject($project)->withStatus('completato')->create();
+    $participant = Participant::factory()->forProject($project)->withStatus('completato')->create();
     $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
 
     $result = CompetencyResult::factory()->valid()->create([
@@ -64,10 +66,10 @@ test('each behaviors[] entry key set equals the explicit expected list', functio
     $resolver->setBypass(false);
 
     $project = Project::factory()->create();
-    $competency = App\Models\Competency::factory()->create(['code' => 'COL']);
+    $competency = Competency::factory()->create(['code' => 'COL']);
     $project->competencies()->attach($competency->id, ['position' => 0]);
 
-    $participant = App\Models\Participant::factory()->forProject($project)->withStatus('completato')->create();
+    $participant = Participant::factory()->forProject($project)->withStatus('completato')->create();
     $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
 
     $result = CompetencyResult::factory()->valid()->create([
