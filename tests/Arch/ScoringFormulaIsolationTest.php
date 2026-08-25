@@ -27,7 +27,6 @@ declare(strict_types=1);
  * tests/Arch/Tenancy/QueuedJobTenantContextArchTest.php — this codebase's
  * established arch-test convention (no pest-plugin-arch dependency).
  */
-
 test('the three formula classes never depend on a DTO or a reason type — list<int>/int only', function (): void {
     $bannedNeedles = ['IndicatorFailureReason', 'UnscorableReason', 'IndicatorScoreDTO'];
 

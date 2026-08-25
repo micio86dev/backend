@@ -48,7 +48,7 @@ uses(RefreshDatabase::class);
 
 /**
  * @return array{0: Organization, 1: Project, 2: Participant, 3: string, 4: string}
- *              org, project, participant, COMP_A code, COMP_B code
+ *                                                                                  org, project, participant, COMP_A code, COMP_B code
  */
 function gatePolicyAllUnassessableSetup(): array
 {

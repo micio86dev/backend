@@ -12,7 +12,6 @@ declare(strict_types=1);
  * idiom as tests/Unit/QueueRuntimeConfigTest.php and PromptBuilderTest's
  * prompt_version parity guard.
  */
-
 test('shipped truncation_retry defaults: enabled=true, max_attempts=1, budget_multiplier=2.0, budget_ceiling=8192', function (): void {
     expect(config('scoring.truncation_retry.enabled'))->toBeTrue()
         ->and(config('scoring.truncation_retry.max_attempts'))->toBe(1)
