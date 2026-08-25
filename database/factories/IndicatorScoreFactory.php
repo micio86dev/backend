@@ -40,12 +40,21 @@ class IndicatorScoreFactory extends Factory
 
     /**
      * Unassessable indicator state (score = -1, empty excerpts).
+     *
+     * Defaults `unassessable_reason` to `model_declared` (C13,
+     * scoring-failure-containment D7/D1): the `indicator_scores_unassessable_
+     * reason_check` equivalence CHECK requires `unassessable_reason IS NOT
+     * NULL` whenever `score = -1`, and `model_declared` is the correct
+     * default for a bare `->unassessable()` call — pass `unassessableReason:`
+     * to override for a validation-failure state (`score_illegal`,
+     * `excerpt_unverifiable`).
      */
-    public function unassessable(): static
+    public function unassessable(?string $unassessableReason = 'model_declared'): static
     {
         return $this->state(fn (array $attrs) => [
             'score' => -1,
             'excerpts' => [],
+            'unassessable_reason' => $unassessableReason,
         ]);
     }
 }

@@ -720,6 +720,11 @@ final class DemoWriter
                             ? 'The candidate provided no episode addressing this indicator.'
                             : 'Matched against the reference anchor for level '.$score.'.',
                         'excerpts' => $excerpts,
+                        // Demo data has no validation-failure path — every -1 here is
+                        // the fixture DECLARING no episode, i.e. model_declared, never
+                        // score_illegal/excerpt_unverifiable. Required by
+                        // indicator_scores_unassessable_reason_check (D7).
+                        'unassessable_reason' => $score === -1 ? 'model_declared' : null,
                     ])->save();
                 }
             }

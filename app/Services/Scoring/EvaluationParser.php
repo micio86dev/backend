@@ -6,8 +6,8 @@ namespace App\Services\Scoring;
 
 use App\DTOs\Scoring\IndicatorRef;
 use App\DTOs\Scoring\IndicatorScoreDTO;
+use App\Enums\IndicatorFailureReason;
 use App\Exceptions\Scoring\IndicatorCountMismatchException;
-use App\Exceptions\Scoring\InvalidIndicatorScoreException;
 use App\Exceptions\Scoring\JsonParseException;
 
 /**
@@ -22,10 +22,16 @@ use App\Exceptions\Scoring\JsonParseException;
  * Position mapping:
  *   behaviors[0] → $indicators[0] (array index, NOT by indicator field string-match).
  *
- * Error paths:
- *   - Invalid JSON → JsonParseException (catches json_decode failure).
+ * Error paths (C13, scoring-failure-containment D7 — the parser is now TOTAL
+ * over behaviors[]):
+ *   - Invalid JSON / "behaviors" missing or not an array → JsonParseException.
  *   - count(behaviors) ≠ count(indicators) → IndicatorCountMismatchException.
- *   Both are deterministic at temperature=0 → the caller MUST NOT queue-retry.
+ *   Both are ENVELOPE-level and deterministic at temperature=0 → the caller
+ *   MUST NOT queue-retry either. These are now the ONLY exceptions this class
+ *   can throw: an illegal per-indicator score (a non-whole-number, or a
+ *   non-scalar) no longer throws — parse() emits a DTO marked
+ *   asUnassessable(IndicatorFailureReason::ScoreIllegal) for that indicator
+ *   instead, so one bad indicator can never discard its siblings.
  *
  * REQ: EvaluationParser (C9 D4 FIX-8/FIX-9)
  */
@@ -43,7 +49,14 @@ final class EvaluationParser
      */
     public function parse(string $llmResponse, array $indicators): array
     {
-        $decoded = json_decode($llmResponse, associative: true);
+        // D5 — strip a leading/trailing fence or conversational-prose wrapper
+        // BEFORE decoding. The stripper never validates anything: json_decode()
+        // remains the SOLE acceptance test. A stripper bug that returns garbage
+        // produces the exact same JsonParseException as today — there is no
+        // partial-acceptance path for the tolerance to leak through.
+        $unwrapped = (new ResponseEnvelopeStripper)->unwrap($llmResponse)->json;
+
+        $decoded = json_decode($unwrapped, associative: true);
 
         if ($decoded === null || json_last_error() !== JSON_ERROR_NONE) {
             throw new JsonParseException(jsonError: json_last_error_msg());
@@ -72,13 +85,33 @@ final class EvaluationParser
                 ? array_values(array_filter($behavior['excerpts'], 'is_string'))
                 : [];
 
-            $dtos[] = new IndicatorScoreDTO(
+            $coerced = $this->coerceScore($behavior['score'] ?? 0);
+
+            $dto = new IndicatorScoreDTO(
                 position: $indicator->position,
                 indicatorText: $indicator->text,   // CANONICAL catalog text, NOT echoed LLM text
-                score: $this->coerceScore($behavior['score'] ?? 0, $indicator->position),
+                // A null $coerced (illegal type) is never persisted as a real
+                // score: asUnassessable() below overwrites it to -1
+                // unconditionally. 0 here is a harmless, momentary placeholder.
+                score: $coerced ?? 0,
                 explanation: (string) ($behavior['explanation'] ?? ''),
                 excerpts: $excerpts,
             );
+
+            // D7 — every -1 score is tagged with WHY at parse time, never left
+            // null: `indicator_scores_unassessable_reason_check` requires
+            // unassessable_reason IS NOT NULL whenever score = -1, including
+            // the PRE-EXISTING "the model itself says no evidence" case
+            // (scoring-engine's "tagged model_declared" scenario), not only
+            // the NEW illegal-type-coercion case introduced by this change.
+            // A type-coercion failure is a PER-INDICATOR failure, not a
+            // whole-competency one: this indicator alone is marked
+            // unassessable; every sibling DTO in this same loop is unaffected.
+            $dtos[] = match ($coerced) {
+                null => $dto->asUnassessable(IndicatorFailureReason::ScoreIllegal),
+                -1 => $dto->asUnassessable(IndicatorFailureReason::ModelDeclared),
+                default => $dto,
+            };
         }
 
         return $dtos;
@@ -106,9 +139,13 @@ final class EvaluationParser
      * unchanged: absence is not a type violation, and IndicatorValidator already
      * rejects 0 with the message that names the legal set.
      *
-     * @throws InvalidIndicatorScoreException When the value is not a whole number.
+     * B2a (D7): this method NO LONGER THROWS. Returning `null` instead of
+     * throwing is what makes the parser TOTAL over `behaviors[]` — the caller
+     * (parse()) converts a `null` into a per-indicator
+     * `asUnassessable(ScoreIllegal)` DTO rather than aborting construction of
+     * every sibling DTO already built in the same loop.
      */
-    private function coerceScore(mixed $raw, int $position): int
+    private function coerceScore(mixed $raw): ?int
     {
         if (is_int($raw)) {
             return $raw;
@@ -125,11 +162,6 @@ final class EvaluationParser
             return (int) trim($raw);
         }
 
-        throw new InvalidIndicatorScoreException(
-            // A non-scalar has no meaningful string form; name its TYPE instead
-            // of interpolating something unreadable (or fatal, for an array).
-            is_scalar($raw) && ! is_bool($raw) ? $raw : get_debug_type($raw),
-            $position,
-        );
+        return null;
     }
 }

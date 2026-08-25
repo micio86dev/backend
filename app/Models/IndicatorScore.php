@@ -26,6 +26,15 @@ use Illuminate\Support\Carbon;
  * Substring validation is performed at scoring time with normalization applied
  * transiently; the stored form is verbatim from the LLM.
  *
+ * unassessable_reason (C13, scoring-failure-containment D1/D7 — product
+ * owner override, 0.4 in tasks.md): nullable, WHY this row's score is -1 —
+ * `model_declared`, `excerpt_unverifiable`, or `score_illegal` (App\Enums\
+ * IndicatorFailureReason). Equivalence-CHECKed at the DB level
+ * (`indicator_scores_unassessable_reason_check`): `(score = -1) =
+ * (unassessable_reason IS NOT NULL)`. METADATA ONLY — no scoring formula
+ * (MeanCalculator, AssessableFractionReliability, CompletionGate) may read it
+ * (D9, arch-tested).
+ *
  * Security:
  * - organization_id NOT in $fillable — stamped by TenantScoped.creating unconditionally.
  *
@@ -39,6 +48,7 @@ use Illuminate\Support\Carbon;
  * @property int $score
  * @property string $explanation
  * @property array<int, string> $excerpts
+ * @property string|null $unassessable_reason
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
@@ -61,6 +71,7 @@ class IndicatorScore extends TenantModel
         'score',
         'explanation',
         'excerpts',
+        'unassessable_reason',
     ];
 
     /**

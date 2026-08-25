@@ -150,4 +150,33 @@ return [
         'timeout_seconds' => (int) env('ANTHROPIC_TIMEOUT', 60),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Truncation-Only Retry (C13, scoring-failure-containment D8)
+    |--------------------------------------------------------------------------
+    |
+    | A truncated LLM response (finish_reason = max_tokens) is retried exactly
+    | ONCE, at an enlarged max_tokens budget, before the competency is
+    | finalized as unscorable. Every field here is config-driven per the
+    | ratified product answer; tests/Unit/Config/TruncationRetryConfigTest.php
+    | pins the SHIPPED defaults so changing the cap requires editing a test —
+    | deliberate and visible — while an operator retains the env override.
+    |
+    | enabled:           kill-switch. false makes ScoringFailureClassifier
+    |                    return Terminal for ResponseTruncated unconditionally,
+    |                    identical to Increment A's no-config-block behavior.
+    | max_attempts:      how many retries are permitted (shipped: 1 — "exactly
+    |                    ONE retry", per the ratified answer and the
+    |                    Truncation-Only Retry requirement).
+    | budget_multiplier: the retry's max_tokens = min(round(current * this), ceiling).
+    | budget_ceiling:    hard cap on the retry's max_tokens, regardless of multiplier.
+    |
+    */
+    'truncation_retry' => [
+        'enabled' => (bool) env('SCORING_TRUNCATION_RETRY_ENABLED', true),
+        'max_attempts' => (int) env('SCORING_TRUNCATION_RETRY_MAX_ATTEMPTS', 1),
+        'budget_multiplier' => (float) env('SCORING_TRUNCATION_RETRY_MULTIPLIER', 2.0),
+        'budget_ceiling' => (int) env('SCORING_TRUNCATION_RETRY_CEILING', 8192),
+    ],
+
 ];

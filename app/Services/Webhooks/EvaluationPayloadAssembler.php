@@ -136,12 +136,23 @@ final class EvaluationPayloadAssembler
                 'behaviors' => $result->indicatorScores
                     ->sortBy('position')
                     ->values()
-                    ->map(fn (IndicatorScore $indicator): array => [
-                        'indicator' => $indicator->indicator_text,
-                        'score' => $indicator->score,
-                        'explanation' => $indicator->explanation,
-                        'excerpts' => $indicator->excerpts,
-                    ])
+                    ->map(function (IndicatorScore $indicator): array {
+                        $behavior = [
+                            'indicator' => $indicator->indicator_text,
+                            'score' => $indicator->score,
+                            'explanation' => $indicator->explanation,
+                            'excerpts' => $indicator->excerpts,
+                        ];
+
+                        // Additive-only, same convention as the competency-level
+                        // unscorable_reason below: absent entirely when the
+                        // indicator scored legally (B3, D10).
+                        if ($indicator->unassessable_reason !== null) {
+                            $behavior['unassessable_reason'] = $indicator->unassessable_reason;
+                        }
+
+                        return $behavior;
+                    })
                     ->all(),
                 'reliability' => $this->reliabilityRenderer->render((float) $result->reliability).'%',
                 'score' => $result->score,

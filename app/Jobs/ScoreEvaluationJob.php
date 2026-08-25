@@ -10,6 +10,10 @@ use App\DTOs\Scoring\IndicatorRef;
 use App\DTOs\Scoring\IndicatorScoreDTO;
 use App\Enums\AiRequestFailureReason;
 use App\Enums\EvaluationStatus;
+use App\Enums\IndicatorFailureReason;
+use App\Enums\Scoring\ScoringDisposition;
+use App\Enums\Scoring\ScoringFailure;
+use App\Enums\UnscorableReason;
 use App\Events\EvaluationCompleted;
 use App\Events\EvaluationFailed;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
@@ -35,8 +39,11 @@ use App\Services\Scoring\ExcerptValidator;
 use App\Services\Scoring\IndicatorValidator;
 use App\Services\Scoring\MeanCalculator;
 use App\Services\Scoring\PromptBuilder;
+use App\Services\Scoring\ResponseEnvelopeStripper;
+use App\Services\Scoring\ScoringFailureClassifier;
 use App\Services\Scoring\TranscriptAssembler;
 use App\Support\Observability\AiRequestCostEstimator;
+use App\Support\Observability\ResponseFingerprint;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -571,7 +578,7 @@ class ScoreEvaluationJob implements ShouldQueue
             $this->persistUnscorable(
                 evaluation: $evaluation,
                 competencyCode: $competencyCode,
-                reason: 'role_no_bars',
+                reason: UnscorableReason::RoleNoBars,
             );
 
             return;
@@ -601,12 +608,12 @@ class ScoreEvaluationJob implements ShouldQueue
             $this->persistUnscorable(
                 evaluation: $evaluation,
                 competencyCode: $competencyCode,
-                reason: 'anchor_translation_missing',
+                reason: UnscorableReason::AnchorTranslationMissing,
             );
 
             return;
         } catch (RoleNoBarsException $e) {
-            $this->persistUnscorable($evaluation, $competencyCode, 'role_no_bars');
+            $this->persistUnscorable($evaluation, $competencyCode, UnscorableReason::RoleNoBars);
 
             return;
         }
@@ -623,6 +630,73 @@ class ScoreEvaluationJob implements ShouldQueue
         $llmResponse = $llmProvider->complete($fullPrompt, $options);
         $latencyMs = (int) round(microtime(true) * 1000) - $startMs;
 
+        // ── Truncation short-circuit + retry loop — BEFORE any parse attempt (D3/D4/D8) ──
+        //
+        // A truncated body is not a parse failure that happens to be caused by
+        // truncation — it is a different fact about a different actor, and
+        // routing it through json_decode() is what made the 2026-08-24
+        // incident undiagnosable. Each attempt — including a retry — is
+        // recorded with its OWN ai_requests row BEFORE its outcome is known to
+        // be terminal: every call is made and billed (C13 D1 / D8), and a
+        // retry that reused the first row would hide a real cost at exactly
+        // the moment something is already wrong.
+        //
+        // The loop is driven entirely by ScoringFailureClassifier — the only
+        // line that grants a retry is the `RetryWithLargerBudget` arm of its
+        // match, reachable only for ScoringFailure::ResponseTruncated. With no
+        // `scoring.truncation_retry` config (or `enabled: false`),
+        // maxAttempts() returns 0 and this loop body runs at most once,
+        // identical to Increment A's behavior.
+        $attemptsAlreadyMade = 0;
+
+        while ($llmResponse->truncated) {
+            Log::warning('ScoreEvaluationJob: truncated response — llm_truncated', [
+                'evaluation_id' => $evaluation->id,
+                'competency_code' => $competencyCode,
+                'finish_reason' => $llmResponse->finishReason,
+                'attempts_already_made' => $attemptsAlreadyMade,
+            ]);
+
+            // The call was MADE and BILLED — record it before finalizing or
+            // retrying, exactly like every other billed-but-unusable call
+            // (C13 D1 / D8).
+            $this->recordAiRequest(
+                $evaluation,
+                $competencyCode,
+                $llmResponse,
+                $latencyMs,
+                $options,
+                success: false,
+                failureReason: AiRequestFailureReason::Truncated,
+            );
+
+            $disposition = (new ScoringFailureClassifier)->classify(
+                ScoringFailure::ResponseTruncated,
+                attemptsAlreadyMade: $attemptsAlreadyMade,
+            );
+
+            if ($disposition === ScoringDisposition::Terminal) {
+                $this->persistUnscorable($evaluation, $competencyCode, UnscorableReason::LlmTruncated);
+
+                return;
+            }
+
+            // ── Retry: same call, enlarged (config-driven) max_tokens budget (D8) ──
+            $currentMaxTokens = (int) ($options['max_tokens'] ?? config('scoring.anthropic.max_tokens', 2048));
+            $multiplier = (float) config('scoring.truncation_retry.budget_multiplier', 2.0);
+            $ceiling = (int) config('scoring.truncation_retry.budget_ceiling', 8192);
+
+            $options = array_merge($options, [
+                'max_tokens' => min((int) round($currentMaxTokens * $multiplier), $ceiling),
+            ]);
+
+            $attemptsAlreadyMade++;
+
+            $startMs = (int) round(microtime(true) * 1000);
+            $llmResponse = $llmProvider->complete($fullPrompt, $options);
+            $latencyMs = (int) round(microtime(true) * 1000) - $startMs;
+        }
+
         // ── Parse + validate ──────────────────────────────────────────────
         // Convert BarsIndicator collection to IndicatorRefs for the parser.
         // indicator_text is cast to string; position is already int from the model.
@@ -637,15 +711,11 @@ class ScoreEvaluationJob implements ShouldQueue
             )->all()
         );
 
+        // ── Phase 1: ENVELOPE. May throw. Nothing to isolate yet — no DTOs exist (D7) ──
         try {
             $dtos = $evaluationParser->parse($llmResponse->content, $indicatorList);
-
-            foreach ($dtos as $dto) {
-                $indicatorValidator->validate($dto);
-                $excerptValidator->validate($dto, $transcript);
-            }
-        } catch (JsonParseException|IndicatorCountMismatchException|InvalidIndicatorScoreException|ExcerptNotVerbatimException $e) {
-            Log::warning('ScoreEvaluationJob: parse/validation error — llm_parse_error', [
+        } catch (JsonParseException|IndicatorCountMismatchException $e) {
+            Log::warning('ScoreEvaluationJob: parse error — llm_parse_error', [
                 'evaluation_id' => $evaluation->id,
                 'competency_code' => $competencyCode,
                 'error' => $e->getMessage(),
@@ -663,22 +733,46 @@ class ScoreEvaluationJob implements ShouldQueue
                 $latencyMs,
                 $options,
                 success: false,
-                failureReason: match (true) {
-                    $e instanceof JsonParseException => AiRequestFailureReason::ParseError,
-                    $e instanceof IndicatorCountMismatchException => AiRequestFailureReason::IndicatorCountMismatch,
-                    $e instanceof InvalidIndicatorScoreException => AiRequestFailureReason::InvalidIndicatorScore,
-                    default => AiRequestFailureReason::ExcerptNotVerbatim,
-                },
+                failureReason: $e instanceof JsonParseException
+                    ? AiRequestFailureReason::ParseError
+                    : AiRequestFailureReason::IndicatorCountMismatch,
             );
 
             // DO NOT queue-retry: persist as llm_parse_error immediately (D4 FIX-9).
-            $this->persistUnscorable($evaluation, $competencyCode, 'llm_parse_error');
+            $this->persistUnscorable($evaluation, $competencyCode, UnscorableReason::LlmParseError);
 
             return;
         }
 
+        // ── Phase 2: PER-INDICATOR. The `try` is INSIDE the loop (D7) ──────
+        //
+        // An indicator that fails validation (illegal score, or non-verbatim
+        // excerpt) is marked unassessable and its sibling DTOs in the SAME
+        // competency — whether validated before or after the failing one in
+        // processing order — retain their own scores. This is what makes
+        // isolation a consequence of the catch SCOPE, not a convention.
+        $validated = [];
+
+        foreach ($dtos as $dto) {
+            try {
+                $indicatorValidator->validate($dto);
+                $excerptValidator->validate($dto, $transcript);
+                $validated[] = $dto;
+            } catch (InvalidIndicatorScoreException) {
+                $validated[] = $dto->asUnassessable(IndicatorFailureReason::ScoreIllegal);
+            } catch (ExcerptNotVerbatimException) {
+                $validated[] = $dto->asUnassessable(IndicatorFailureReason::ExcerptUnverifiable);
+            }
+        }
+
+        // Post-condition (D7/D9): the loop appends exactly once on every path
+        // (try-success, and both catch arms) — no sibling is ever silently
+        // dropped. Checked here AND asserted explicitly by
+        // tests/Feature/Jobs/PerIndicatorIsolationTest.php.
+        assert(count($validated) === count($dtos));
+
         // ── Compute mean + reliability + validity (PR3: real values) ─────
-        $scores = array_map(static fn (IndicatorScoreDTO $dto): int => $dto->score, $dtos);
+        $scores = array_map(static fn (IndicatorScoreDTO $dto): int => $dto->score, $validated);
         $score = $meanCalculator->compute($scores);
         $reliability = $reliabilityStrategy->compute($scores);
         $valid = $validityPredicate->isValid($reliability);
@@ -709,7 +803,7 @@ class ScoreEvaluationJob implements ShouldQueue
 
         // ── Persist: CompetencyResult + IndicatorScores in ONE transaction ──
         DB::transaction(function () use (
-            $evaluation, $competencyCode, $score, $reliability, $valid, $dtos
+            $evaluation, $competencyCode, $score, $reliability, $valid, $validated
         ): void {
             // Persist CompetencyResult with real reliability + valid (PR3).
             $cr = CompetencyResult::create([
@@ -722,7 +816,15 @@ class ScoreEvaluationJob implements ShouldQueue
             ]);
 
             // 3. Persist IndicatorScore rows.
-            foreach ($dtos as $dto) {
+            //
+            // unassessable_reason (B2a/B2b, D1/D7): every -1 score is tagged
+            // with why — ModelDeclared / ScoreIllegal from the parser
+            // (EvaluationParser::parse()), or ScoreIllegal / ExcerptUnverifiable
+            // from this method's per-indicator catch above (asUnassessable()) —
+            // so this is a straight passthrough of $dto->unassessableReason.
+            // Required by indicator_scores_unassessable_reason_check — every
+            // -1 row MUST carry a non-null reason.
+            foreach ($validated as $dto) {
                 IndicatorScore::create([
                     'competency_result_id' => $cr->id,
                     'indicator_text' => $dto->indicatorText,
@@ -730,6 +832,7 @@ class ScoreEvaluationJob implements ShouldQueue
                     'explanation' => $dto->explanation,
                     'excerpts' => $dto->excerpts,
                     'position' => $dto->position,
+                    'unassessable_reason' => $dto->unassessableReason?->value,
                 ]);
             }
         });
@@ -768,6 +871,11 @@ class ScoreEvaluationJob implements ShouldQueue
     ): void {
         $estimator = app(AiRequestCostEstimator::class);
 
+        // D6 — derived signals only, for EVERY scoring call, success or
+        // failure. The fingerprint's own types make it structurally unable
+        // to carry the response content; see ResponseFingerprint's docblock.
+        $fingerprint = ResponseFingerprint::from($llmResponse->content, new ResponseEnvelopeStripper);
+
         AiRequest::create([
             'evaluation_id' => $evaluation->id,
             'competency_code' => $competencyCode,
@@ -784,17 +892,24 @@ class ScoreEvaluationJob implements ShouldQueue
             'success' => $success,
             'failure_reason' => $failureReason?->value,
             'finish_reason' => $llmResponse->finishReason,
+            'response_bytes' => $fingerprint->bytes,
+            'response_fenced' => $fingerprint->fenced,
+            'response_sha256' => $fingerprint->sha256,
             'latency_ms' => $latencyMs,
         ]);
     }
 
     /**
      * Persist a CompetencyResult as unscorable (no LLM call, no ai_requests row).
+     *
+     * `$reason` is `UnscorableReason` (D2) — an enum in PHP, a plain string in
+     * Postgres. No Eloquent cast, no CHECK constraint: only `->value` crosses
+     * into the write.
      */
     private function persistUnscorable(
         Evaluation $evaluation,
         string $competencyCode,
-        string $reason,
+        UnscorableReason $reason,
     ): void {
         try {
             CompetencyResult::create([
@@ -803,7 +918,7 @@ class ScoreEvaluationJob implements ShouldQueue
                 'score' => null,
                 'reliability' => 0.0,
                 'valid' => false,
-                'unscorable_reason' => $reason,
+                'unscorable_reason' => $reason->value,
             ]);
         } catch (UniqueConstraintViolationException) {
             // CW5: already persisted (race condition) → skip.

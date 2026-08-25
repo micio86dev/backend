@@ -41,4 +41,20 @@ enum AiRequestFailureReason: string
 
     /** The call exceeded its time budget. Billed or not, it consumed a worker slot. */
     case Timeout = 'timeout';
+
+    /**
+     * The provider response was cut off at the configured max-output-tokens
+     * budget (scoring-failure-containment C-A/D2/D3). The ONLY Postgres
+     * constraint on this column, `ai_requests_failure_reason_check`, is
+     * presence-based — `(success = false) = (failure_reason IS NOT NULL)` —
+     * not a value-enumerating CHECK, so this case ships as a one-case enum
+     * edit with its writer: no migration, no deploy-order gate.
+     *
+     * Deliberately similarly named to, but a DIFFERENT column/grain from,
+     * `UnscorableReason::LlmTruncated` (`competency_results.unscorable_reason`):
+     * this one is ONE PROVIDER CALL; that one is ONE COMPETENCY, after all
+     * attempts (which may span two ai_requests rows under the truncation
+     * retry — see design.md D8). A future reader must not conflate them.
+     */
+    case Truncated = 'truncated';
 }

@@ -127,6 +127,40 @@ test('(a) ai_requests row persisted with evaluation_id (never null) when compete
     expect($aiRequests->first()->competency_code)->toBe($competencyCode);
 });
 
+test('(c) ai_requests row carries the derived fingerprint for a successful call (A3.4, D6)', function (): void {
+    $org = aiLogOrg();
+    $project = aiLogProject($org);
+    $participant = aiLogParticipant($org, $project);
+
+    $setup = setupScoringCompetency($org, $project, $participant, 'COL');
+    $competencyCode = $setup['competency']->code;
+
+    $llmJson = json_encode([
+        'behaviors' => [
+            [
+                'indicator' => 'Work effectively with others',
+                'score' => 5,
+                'explanation' => 'Strong evidence of collaboration',
+                'excerpts' => ['I worked collaboratively on multiple projects'],
+            ],
+        ],
+    ]);
+
+    $cassette = new CassetteLLMProvider([$competencyCode => $llmJson]);
+    $this->app->instance(LLMProvider::class, $cassette);
+
+    $job = new ScoreEvaluationJob($participant->id);
+    $job->handle();
+
+    $evaluation = Evaluation::withoutGlobalScopes()->where('participant_id', $participant->id)->first();
+    $aiRequest = AiRequest::withoutGlobalScopes()->where('evaluation_id', $evaluation->id)->first();
+
+    expect($aiRequest->response_bytes)->toBe(strlen($llmJson))
+        ->and($aiRequest->response_fenced)->toBeFalse()
+        ->and($aiRequest->response_sha256)->toBe(hash('sha256', $llmJson))
+        ->and($aiRequest->response_sha256)->toMatch('/^[0-9a-f]{64}$/');
+});
+
 test('(b) unscorable competency (role_no_bars) → no ai_requests row', function (): void {
     // We need a setup where a competency has NO BarsIndicator for its role.
     // The job should detect role_no_bars and skip LLM call.
