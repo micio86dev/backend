@@ -5234,12 +5234,23 @@
                                 "type": "number"
                             },
                             "band": {
-                                "type": "string",
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
                                 "enum": [
-                                    "medium",
                                     "low",
-                                    "high"
+                                    "medium",
+                                    "high",
+                                    null
                                 ]
+                            },
+                            "coverage_complete": {
+                                "type": "boolean"
+                            },
+                            "unavailable_layers": {
+                                "type": "array",
+                                "items": {}
                             },
                             "counts": {
                                 "type": "string"
@@ -5312,6 +5323,8 @@
                         "required": [
                             "score",
                             "band",
+                            "coverage_complete",
+                            "unavailable_layers",
                             "counts",
                             "total",
                             "tab_hidden_sec",
