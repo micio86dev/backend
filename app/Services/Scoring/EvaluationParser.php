@@ -43,7 +43,14 @@ final class EvaluationParser
      */
     public function parse(string $llmResponse, array $indicators): array
     {
-        $decoded = json_decode($llmResponse, associative: true);
+        // D5 — strip a leading/trailing fence or conversational-prose wrapper
+        // BEFORE decoding. The stripper never validates anything: json_decode()
+        // remains the SOLE acceptance test. A stripper bug that returns garbage
+        // produces the exact same JsonParseException as today — there is no
+        // partial-acceptance path for the tolerance to leak through.
+        $unwrapped = (new ResponseEnvelopeStripper)->unwrap($llmResponse)->json;
+
+        $decoded = json_decode($unwrapped, associative: true);
 
         if ($decoded === null || json_last_error() !== JSON_ERROR_NONE) {
             throw new JsonParseException(jsonError: json_last_error_msg());

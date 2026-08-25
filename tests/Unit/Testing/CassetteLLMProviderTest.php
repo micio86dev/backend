@@ -82,5 +82,5 @@ test('exhausting a list<CassetteResponse> entry throws LogicException naming the
     $cassette->complete('prompt', ['competency_code' => 'PRS']);
 
     expect(fn () => $cassette->complete('prompt', ['competency_code' => 'PRS']))
-        ->toThrow(\LogicException::class);
+        ->toThrow(LogicException::class);
 });

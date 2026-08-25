@@ -49,8 +49,8 @@ final class CassetteLLMProvider implements LLMProvider
 
     /**
      * @param  array<string, string|CassetteResponse|list<CassetteResponse>>  $cassette  Map of
-     *   competency_code → JSON response string, a single CassetteResponse, or a
-     *   list of CassetteResponse consumed in call order.
+     *                                                                                   competency_code → JSON response string, a single CassetteResponse, or a
+     *                                                                                   list of CassetteResponse consumed in call order.
      * @param  string  $model  Model name to report in the LLMResponse.
      */
     public function __construct(
@@ -67,7 +67,7 @@ final class CassetteLLMProvider implements LLMProvider
      * @param  array<string, mixed>  $options  Must contain 'competency_code'.
      *
      * @throws \LogicException When no cassette entry exists for the requested competency_code,
-     *   or when a list<CassetteResponse> entry is exhausted for that competency_code.
+     *                         or when a list<CassetteResponse> entry is exhausted for that competency_code.
      */
     public function complete(string $prompt, array $options = []): LLMResponse
     {

@@ -95,6 +95,44 @@ test('(c) invalid JSON → JsonParseException', function (): void {
         ->toThrow(JsonParseException::class);
 });
 
+// ─── Fence / prose tolerance (A2.3, design.md D5) ────────────────────────────
+//
+// EvaluationParser::parse() wires ResponseEnvelopeStripper before
+// json_decode(). json_decode() remains the SOLE acceptance test — the
+// stripper never validates anything.
+
+test('a markdown-fenced body parses successfully via parse()', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = "```json\n".'{"behaviors":[{"indicator":"Indicator A","score":5,"explanation":"E","excerpts":[]}]}'."\n```";
+
+    expect($parser->parse($response, $indicators)[0]->score)->toBe(5);
+});
+
+test('leading conversational prose is stripped before parse()', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = 'Here is my evaluation:'."\n"
+        .'{"behaviors":[{"indicator":"Indicator A","score":3,"explanation":"E","excerpts":[]}]}';
+
+    expect($parser->parse($response, $indicators)[0]->score)->toBe(3);
+});
+
+test('a genuinely malformed body still hard-fails after the tolerance pass', function (): void {
+    // A stray trailing comma INSIDE the JSON structure itself — not a
+    // fence/prose wrapper. Already starts with `{` and ends with `}`, so the
+    // stripper is a no-op; json_decode() still fails on the malformed inner.
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $response = '{"behaviors":[{"indicator":"Indicator A","score":5,"explanation":"E","excerpts":[],}]}';
+
+    expect(fn () => $parser->parse($response, $indicators))
+        ->toThrow(JsonParseException::class);
+});
+
 // ─── Score type coercion (bars-full-scale-1-5) ───────────────────────────────
 //
 // `(int) 4.5` is 4. Under the old {1,3,5,-1} domain that truncation was caught
