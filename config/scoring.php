@@ -107,7 +107,7 @@ return [
     | this config/.env.example parity guard cannot see or enforce that value.
     |
     */
-    'prompt_version' => env('SCORING_PROMPT_VERSION', '2.0.0'),
+    'prompt_version' => env('SCORING_PROMPT_VERSION', '3.0.0'),
 
     /*
     |--------------------------------------------------------------------------

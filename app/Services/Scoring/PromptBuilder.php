@@ -40,7 +40,14 @@ use Illuminate\Database\Eloquent\Collection;
  *   and a residual level is resolved before the residual step is ever reached.
  *   Any future edit to this rubric's wording MUST bump prompt_version (D8).
  *
- * REQ: PromptBuilder (C9 D3/D6 FIX-11, widened AD-1/D4/D5/D8)
+ * Severity calibration (evaluator-evidence-and-rigor D-5):
+ *   EVALUATION_STANDARDS is injected AFTER SCORING_PROCEDURE and establishes that
+ *   3 is the baseline, 4/5 are rare, and generic answers score 1-2. Its
+ *   doubt-resolution clause is SCOPED to step 5 and must stay that way — an
+ *   unscoped downward rule would silently repeal the anchor-primacy tie-break
+ *   above. Read that constant's docblock before touching its wording.
+ *
+ * REQ: PromptBuilder (C9 D3/D6 FIX-11, widened AD-1/D4/D5/D8, calibrated D-5)
  */
 final class PromptBuilder
 {
@@ -73,6 +80,48 @@ evidence is equally consistent with an authored anchor (5, 3 or 1) and with an
 intermediate level, the authored anchor WINS — score the anchor, never the
 intermediate.
 PROCEDURE;
+
+    /**
+     * Severity calibration (evaluator-evidence-and-rigor D-5).
+     *
+     * ⚠️ READ BEFORE EDITING THIS WORDING.
+     *
+     * This block is injected AFTER SCORING_PROCEDURE, and that placement is
+     * load-bearing. Its doubt-resolution clause is deliberately SCOPED to
+     * step 5 of that procedure. An unscoped "when in doubt choose the lower
+     * one" — the phrasing the reference log uses, and the phrasing this block
+     * exists to translate safely — would read as a general override and would
+     * silently repeal the anchor-primacy tie-break ratified in
+     * `bars-full-scale-1-5` (archive/2026-08-25). Anchor primacy says evidence
+     * matching an authored anchor is scored AT that anchor, full stop; a
+     * general downward rule would quietly start pulling 3s down to 2s.
+     *
+     * `PromptBuilderTest` case (o) guards the scoping and case (n) asserts the
+     * anchor-primacy paragraph survives verbatim. If you reword anything here,
+     * both must still pass, and `prompt_version` MUST be bumped (D8/D-6):
+     * evaluations scored under different calibration are not comparable.
+     */
+    private const EVALUATION_STANDARDS = <<<'STANDARDS'
+EVALUATION STANDARDS — calibrate severity BEFORE applying the procedure above:
+  - Be rigorous and demanding. You are assessing evidence of past behaviour, not
+    effort, likeability or eloquence.
+  - 3 is the baseline. A candidate who described a real episode and their own part
+    in it adequately scores 3. Most indicators backed by usable evidence land here.
+  - Scores of 4 and 5 are rare. A score of 5 requires ALL THREE of: a specific
+    situation described with concrete detail; concrete actions the candidate
+    personally took — what "we" or "the team" did is not what the candidate did;
+    and a measurable outcome. Missing any one of the three is not a 5.
+  - Generic, hypothetical or second-hand answers score 1 or 2. "I would normally",
+    "our team always", and advice on how the job ought to be done describe no
+    episode and are not evidence of past behaviour.
+  - Fluency is not competence. A confident, well-structured answer with no concrete
+    episode behind it is a LOW score, not a high one.
+  - At step 5, resolve doubt DOWNWARD: award 4 only when the evidence CLEARLY
+    exceeds the Score 3 anchor, and 2 only when it is CLEARLY below it. If you are
+    unsure whether it clears the anchor, it does not.
+    This scoping is absolute. It applies ONLY at step 5 and NEVER overrides steps
+    2, 3 or 4: evidence matching an authored anchor is scored AT that anchor.
+STANDARDS;
 
     /**
      * Build the prompt payload for a single competency scoring call.
@@ -131,6 +180,7 @@ PROCEDURE;
         $rubric = implode("\n\n", $rubricLines);
         $indicatorCount = $indicators->count();
         $scoringProcedure = self::SCORING_PROCEDURE;
+        $evaluationStandards = self::EVALUATION_STANDARDS;
 
         $systemPrompt = <<<PROMPT
 You are a BARS (Behaviorally Anchored Rating Scale) evaluator. Your task is to score the candidate's interview transcript against the competency indicators below.
@@ -143,6 +193,8 @@ IMPORTANT RULES:
 - Return ONLY the JSON object below, with no additional text or commentary.
 
 {$scoringProcedure}
+
+{$evaluationStandards}
 
 COMPETENCY INDICATORS (evaluate in this exact order):
 {$rubric}

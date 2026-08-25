@@ -383,3 +383,113 @@ test('(i) D8 parity: config(scoring.prompt_version) equals .env.example SCORING_
         .'at deploy time: this test only guards the two file-level defaults, not any environment override.'
     );
 });
+
+// ─── evaluator-evidence-and-rigor: PR 1 — severity calibration (D-5) ─────────
+
+/**
+ * Build a system prompt with one fully-translated indicator, for prompt-text assertions.
+ */
+function builtSystemPrompt(string $locale = 'en'): string
+{
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $fv = FrameworkVersion::create(['version' => '1.0', 'label' => 'V1', 'organization_id' => $org->id]);
+    $role = Role::factory()->create(['code' => 'STD_ROLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'STD_'.uniqid()]);
+    createFullIndicator($role->id, $competency->id, 0);
+
+    return (new PromptBuilder)->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: $locale,
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'candidate: Test answer.',
+    )->systemPrompt;
+}
+
+/**
+ * The prompt is a hard-wrapped heredoc, so a phrase can straddle a newline and
+ * an indent. Content assertions run against this reflowed form: they are about
+ * WHAT the prompt says, and must not break when the heredoc is re-wrapped.
+ * Assertions about exact layout (case (n)) use the raw prompt instead.
+ */
+function builtSystemPromptReflowed(string $locale = 'en'): string
+{
+    return (string) preg_replace('/\s+/', ' ', builtSystemPrompt($locale));
+}
+
+test('(j) task 1.1 — the system prompt carries an EVALUATION STANDARDS section', function (): void {
+    expect(builtSystemPrompt())->toContain('EVALUATION STANDARDS');
+});
+
+test('(k) task 1.2 — standards establish 3 as the baseline and 4/5 as rare', function (): void {
+    $prompt = builtSystemPromptReflowed();
+
+    expect($prompt)->toContain('3 is the baseline')
+        ->and($prompt)->toContain('Scores of 4 and 5 are rare');
+});
+
+test('(l) task 1.3 — a high score requires ALL THREE of situation, actions, measurable outcome', function (): void {
+    $prompt = builtSystemPromptReflowed();
+
+    expect($prompt)->toContain('a specific situation')
+        ->and($prompt)->toContain('concrete actions the candidate personally took')
+        ->and($prompt)->toContain('a measurable outcome');
+});
+
+test('(m) task 1.4 — generic or hypothetical answers are directed to 1-2', function (): void {
+    expect(builtSystemPromptReflowed())
+        ->toContain('Generic, hypothetical or second-hand answers score 1 or 2');
+});
+
+test('(n) task 2.1 — the anchor-primacy paragraph survives VERBATIM', function (): void {
+    // The single highest-risk assertion in this change (design D-5). The severity
+    // block sits beside a tie-break ratified in bars-full-scale-1-5 one day earlier.
+    // If a future edit to the standards wording displaces or rewords this paragraph,
+    // the rubric silently stops being anchor-primary and every score shifts.
+    $anchorPrimacy = <<<'TEXT'
+Scores 4 and 2 are RESIDUAL levels. They are legal ONLY at step 5. If the
+evidence is equally consistent with an authored anchor (5, 3 or 1) and with an
+intermediate level, the authored anchor WINS — score the anchor, never the
+intermediate.
+TEXT;
+
+    expect(builtSystemPrompt())->toContain($anchorPrimacy);
+});
+
+test('(o) task 2.2 — doubt resolution is SCOPED to step 5 and introduces no general tie-break', function (): void {
+    $prompt = builtSystemPromptReflowed();
+
+    // The downward-doubt instruction must name step 5 explicitly...
+    expect($prompt)->toContain('At step 5, resolve doubt DOWNWARD');
+
+    // ...and must carry the clause that walls it off from steps 2-4, which is
+    // what keeps anchor primacy intact.
+    expect($prompt)->toContain('It applies ONLY at step 5 and NEVER overrides steps 2, 3 or 4');
+
+    // ...and must NOT appear as a bare, unscoped rule that would compete with
+    // anchor primacy. These are the reference log's own phrasings — the ones
+    // this block exists to translate safely rather than copy.
+    expect($prompt)->not->toContain('When in doubt, always choose the lower score');
+    expect($prompt)->not->toContain('when in doubt choose the lower one');
+});
+
+test('(p) task 3.1 — standards are English under an Italian locale, rubric stays Italian', function (): void {
+    $prompt = builtSystemPromptReflowed('it');
+
+    // Calibration language addressed to the model — English, like SCORING PROCEDURE.
+    expect($prompt)->toContain('EVALUATION STANDARDS')
+        ->and($prompt)->toContain('3 is the baseline');
+
+    // Candidate-facing rubric content — localised, unchanged by this change.
+    expect($prompt)->toContain('IT indicator text')
+        ->and($prompt)->toContain('IT anchor 5');
+});
