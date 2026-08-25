@@ -18,18 +18,45 @@ namespace App\Support\AvatarTemplates;
  * bilingual, and an English string baked in here would sit untranslatable in an
  * Italian operator's form while nothing failed.
  *
- * Durations are capped at each provider's real plan ceiling rather than at a
- * shared round number: HeyGen refuses above 1200s and Tavus above 3600s, so a
- * common maximum would let an operator save a value one provider rejects at
- * session start — an error that surfaces to a candidate, not to the person who
- * caused it.
+ * Durations are capped per provider rather than at a shared round number, so an
+ * operator cannot save a value one provider rejects at session start — an error
+ * that surfaces to a candidate, not to the person who caused it.
+ *
+ * ⚠️ THESE CEILINGS ARE PLAN LIMITS, NOT PROVIDER LIMITS. Both vendors scale the
+ * maximum session length with the subscription tier, so neither number is a
+ * property of the API — each is a property of the account BEAI happens to hold.
+ * The previous wording here ("HeyGen refuses above 1200s and Tavus above 3600s")
+ * stated them as absolutes and carried no @wire-source, i.e. it had never been
+ * checked. Verified against vendor documentation 2026-08-25:
+ *
+ *   HeyGen LiveAvatar — Starter 5 min (300s) · Essential 20 min (1200s) ·
+ *   Business 60 min (3600s). BEAI is on **Essential**, hence 1200.
+ *
+ *   @wire-source https://help.heygen.com/en/articles/12758516-introducing-liveavatar
+ *
+ *   Tavus — no single maximum; plan-dependent. WORSE THAN HEYGEN: a request
+ *   above the plan's limit is NOT rejected, it is silently capped and the
+ *   conversation simply ends early. Nothing surfaces at save time, so a
+ *   too-generous value here reads as accepted and truncates a live interview.
+ *   @wire-source https://docs.tavus.io/sections/conversational-video-interface/conversation/customizations/call-duration-and-timeout
+ *
+ * If the HeyGen plan changes, HEYGEN_MAX_SECONDS must change with it. Leaving it
+ * at a higher tier's value lets an operator configure a session HeyGen will cut
+ * short mid-answer — exactly the failure this cap exists to prevent.
  */
 final class ProviderFieldSpecs
 {
-    /** HeyGen's hard session ceiling, in seconds. */
+    /**
+     * Session ceiling for BEAI's HeyGen LiveAvatar plan (Essential, 20 min).
+     * A PLAN limit, not a provider limit — see the class docblock before editing.
+     */
     public const HEYGEN_MAX_SECONDS = 1200;
 
-    /** Tavus's hard call ceiling, in seconds. */
+    /**
+     * Call ceiling for BEAI's Tavus plan. A PLAN limit, not a provider limit.
+     * Tavus caps an over-plan request SILENTLY rather than rejecting it, so this
+     * value must not be raised without confirming the plan actually allows it.
+     */
     public const TAVUS_MAX_SECONDS = 3600;
 
     /** @return list<FieldSpec> */

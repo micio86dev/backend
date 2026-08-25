@@ -35,6 +35,7 @@ use App\Services\Scoring\TranscriptAssembler;
 use App\Services\Webhooks\EvaluationPayloadAssembler;
 use App\Services\Webhooks\ProgressPayloadAssembler;
 use App\Support\AvatarTemplates\ConfigValidator;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
@@ -150,7 +151,10 @@ final class DemoWriter
                     'avatarId' => $identity['heygen']['avatarId'],
                     'voiceId' => $identity['heygen']['voiceId'],
                     'interactivityType' => 'CONVERSATIONAL',
-                    'maxSessionDurationSec' => 600,
+                    // The full plan allowance, not a literal: it shipped 600s and a
+                    // five-question STAR probe overran it in production on 2026-08-25,
+                    // disconnecting the room while the candidate was still speaking.
+                    'maxSessionDurationSec' => ProviderFieldSpecs::HEYGEN_MAX_SECONDS,
                     'videoQuality' => 'high',
                     'videoEncoding' => 'H264',
                     'voiceSpeed' => 1.0,
