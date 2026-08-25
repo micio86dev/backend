@@ -14,8 +14,8 @@ declare(strict_types=1);
  * set of `serializeCompetencyResult()`'s output against an explicit expected
  * list, so a future field addition/removal fails HERE first.
  *
- * When Increment B adds `behaviors[].unassessable_reason`, this list gains
- * that nested key too (B3.2 updates this expected list).
+ * B3.2: `behaviors[]` now gains `unassessable_reason` — this file's second
+ * test's expected list is updated accordingly.
  */
 
 use App\Models\Competency;
@@ -82,8 +82,8 @@ test('each behaviors[] entry key set equals the explicit expected list', functio
     $behaviorKeys = array_keys($serialized['COL']['behaviors'][0]);
     sort($behaviorKeys);
 
-    $expected = ['excerpts', 'explanation', 'indicator', 'score'];
+    $expected = ['excerpts', 'explanation', 'indicator', 'score', 'unassessable_reason'];
     sort($expected);
 
-    expect($behaviorKeys)->toBe($expected, 'A behaviors[] entry gained or lost a key — this is B3.2\'s list to update when Increment B adds unassessable_reason.');
+    expect($behaviorKeys)->toBe($expected, 'A behaviors[] entry gained or lost a key — update this list AND the backoffice hand-typed interface together.');
 });

@@ -220,6 +220,61 @@ test('unscorable_reason is byte-identical regardless of app locale (unlocalized,
         ->and($itResult['PRS']['unscorable_reason'])->toBe('llm_truncated');
 });
 
+// ─── unassessable_reason exposure (B3, design.md D11, admin-read-api spec) ──
+
+test('a behaviors[] entry with score=-1 exposes its unassessable_reason', function (): void {
+    $org = evalSerializerOrg();
+    $project = evalSerializerProject($org, ['COL' => 0]);
+    $participant = evalSerializerParticipant($project);
+
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    $competencyResult = CompetencyResult::factory()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'COL',
+        'score' => 4.0,
+        'reliability' => 0.67,
+        'valid' => true,
+        'unscorable_reason' => null,
+    ]);
+
+    IndicatorScore::factory()->create([
+        'competency_result_id' => $competencyResult->id,
+        'position' => 0,
+        'score' => 5,
+    ]);
+    IndicatorScore::factory()->unassessable('excerpt_unverifiable')->create([
+        'competency_result_id' => $competencyResult->id,
+        'position' => 1,
+    ]);
+
+    $serializer = new AdminEvaluationSerializer;
+    $result = $serializer->serialize($participant);
+
+    expect($result['COL']['behaviors'][0]['unassessable_reason'])->toBeNull()
+        ->and($result['COL']['behaviors'][1]['unassessable_reason'])->toBe('excerpt_unverifiable');
+});
+
+test('a legally-scored behaviors[] entry carries a null unassessable_reason', function (): void {
+    $org = evalSerializerOrg();
+    $project = evalSerializerProject($org, ['PRS' => 0]);
+    $participant = evalSerializerParticipant($project);
+
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    $competencyResult = CompetencyResult::factory()->valid()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'PRS',
+    ]);
+
+    IndicatorScore::factory()->create(['competency_result_id' => $competencyResult->id, 'position' => 0, 'score' => 3]);
+
+    $serializer = new AdminEvaluationSerializer;
+    $result = $serializer->serialize($participant);
+
+    expect($result['PRS']['behaviors'][0]['unassessable_reason'])->toBeNull();
+});
+
 test('competencies are ordered by project_competencies.position, not by creation/DB order', function (): void {
     $org = evalSerializerOrg();
     // Position 0 = STG, position 1 = SLF — CompetencyResults are created below
