@@ -58,7 +58,8 @@ final class AdminEvaluationSerializer
      * @return array<string, array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     unscorable_reason: string|null
      * }>
      */
     public function serialize(Participant $participant): array
@@ -127,7 +128,8 @@ final class AdminEvaluationSerializer
      * @return array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>}>
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     unscorable_reason: string|null
      * }
      */
     private function serializeCompetencyResult(CompetencyResult $result): array
@@ -142,9 +144,19 @@ final class AdminEvaluationSerializer
                     'score' => $indicator->score === -1 ? null : $indicator->score,
                     'explanation' => $indicator->explanation,
                     'excerpts' => $indicator->excerpts,
+                    // Machine-facing value, unlocalized per CLAUDE.md — the
+                    // indicator-grain sibling of unscorable_reason (competency
+                    // grain) and failure_reason (ai_requests grain). `null`
+                    // for a legally-scored indicator (B3, admin-read-api D11).
+                    'unassessable_reason' => $indicator->unassessable_reason,
                 ])
                 ->values()
                 ->all(),
+            // Machine-facing value, unlocalized per CLAUDE.md — returned literally
+            // in every locale. `null` for a scored competency (scoring-failure-
+            // containment D11/admin-read-api). Localization of the LABEL happens
+            // in the backoffice, never here.
+            'unscorable_reason' => $result->unscorable_reason,
         ];
     }
 }

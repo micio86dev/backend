@@ -186,6 +186,23 @@ test('unscorable competency serializes score:null plus an additive unscorable_re
         ->and($entry['behaviors'])->toBe([]);
 });
 
+test('a truncated competency\'s llm_truncated reason propagates into the webhook payload with zero production code change (A1.13, C-B)', function (): void {
+    [, $project, , $evaluation] = c10EvaluationFixtures();
+    c10AttachCompetency($project, 'PRS');
+
+    CompetencyResult::factory()->truncated()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'PRS',
+    ]);
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+    $entry = $payload['data']['text']['PRS'];
+
+    expect($entry['score'])->toBeNull()
+        ->and($entry['unscorable_reason'])->toBe('llm_truncated')
+        ->and($entry['behaviors'])->toBe([]);
+});
+
 test('a scored competency never carries an unscorable_reason key (additive-only)', function (): void {
     [, $project, , $evaluation] = c10EvaluationFixtures();
     c10AttachCompetency($project, 'PRS');
@@ -198,6 +215,68 @@ test('a scored competency never carries an unscorable_reason key (additive-only)
     $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
 
     expect($payload['data']['text']['PRS'])->not->toHaveKey('unscorable_reason');
+});
+
+// ─── unassessable_reason inside behaviors[] (B3, design.md D10) ─────────────
+
+test('an unassessable behaviors[] entry carries an additive unassessable_reason key', function (): void {
+    [, $project, , $evaluation] = c10EvaluationFixtures();
+    c10AttachCompetency($project, 'COL');
+
+    $result = CompetencyResult::factory()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'COL',
+        'score' => 5.0,
+        'reliability' => 0.5,
+        'valid' => true,
+    ]);
+    IndicatorScore::factory()->create(['competency_result_id' => $result->id, 'position' => 0, 'score' => 5]);
+    IndicatorScore::factory()->unassessable('excerpt_unverifiable')->create([
+        'competency_result_id' => $result->id,
+        'position' => 1,
+    ]);
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+    $behaviors = $payload['data']['text']['COL']['behaviors'];
+
+    expect($behaviors[0])->not->toHaveKey('unassessable_reason')
+        ->and($behaviors[1]['unassessable_reason'])->toBe('excerpt_unverifiable');
+});
+
+test('a legally-scored behaviors[] entry never carries an unassessable_reason key (additive-only)', function (): void {
+    [, $project, , $evaluation] = c10EvaluationFixtures();
+    c10AttachCompetency($project, 'SLF');
+
+    $result = CompetencyResult::factory()->valid()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'SLF',
+    ]);
+    IndicatorScore::factory()->create(['competency_result_id' => $result->id, 'position' => 0, 'score' => 3]);
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+
+    expect($payload['data']['text']['SLF']['behaviors'][0])->not->toHaveKey('unassessable_reason');
+});
+
+test('unassessable_reason on a behaviors[] entry does not change payload_version (additive, no version bump)', function (): void {
+    [, $project, , $evaluation] = c10EvaluationFixtures();
+    c10AttachCompetency($project, 'COL');
+
+    $result = CompetencyResult::factory()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'COL',
+        'score' => null,
+        'reliability' => 0.0,
+        'valid' => false,
+    ]);
+    IndicatorScore::factory()->unassessable('score_illegal')->create([
+        'competency_result_id' => $result->id,
+        'position' => 0,
+    ]);
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+
+    expect($payload['version'])->toBe((string) config('webhooks.payload.version'));
 });
 
 test('deterministic ordering: competencies by project_competencies.position, behaviors by indicator_scores.position', function (): void {

@@ -137,12 +137,17 @@ final class AnthropicLLMProvider implements LLMProvider
             $blocks,
         ));
 
+        $stopReason = (string) ($data['stop_reason'] ?? '');
+
         return new LLMResponse(
             content: $text,
             model: (string) ($data['model'] ?? ''),
             inputTokens: (int) (($data['usage'] ?? [])['input_tokens'] ?? 0),
             outputTokens: (int) (($data['usage'] ?? [])['output_tokens'] ?? 0),
-            finishReason: (string) ($data['stop_reason'] ?? ''),
+            finishReason: $stopReason,
+            // D3 — the ONE decision derived from the raw stop_reason. finishReason
+            // above still carries the raw string unchanged for anyone doing forensics.
+            truncated: $stopReason === 'max_tokens',
         );
     }
 }

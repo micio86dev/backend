@@ -36,6 +36,9 @@ use Illuminate\Support\Carbon;
  * @property int $input_tokens
  * @property int $output_tokens
  * @property string|null $finish_reason
+ * @property int|null $response_bytes
+ * @property bool|null $response_fenced
+ * @property string|null $response_sha256
  * @property int $latency_ms
  * @property Carbon $created_at
  */
@@ -80,6 +83,9 @@ class AiRequest extends TenantModel
         'input_tokens',
         'output_tokens',
         'finish_reason',
+        'response_bytes',
+        'response_fenced',
+        'response_sha256',
         'latency_ms',
     ];
 
@@ -97,6 +103,8 @@ class AiRequest extends TenantModel
             'estimated_cost_usd' => 'decimal:6',
             'success' => 'boolean',
             'failure_reason' => AiRequestFailureReason::class,
+            'response_bytes' => 'integer',
+            'response_fenced' => 'boolean',
             'latency_ms' => 'integer',
         ];
     }
