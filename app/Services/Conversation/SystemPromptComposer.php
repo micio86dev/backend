@@ -324,6 +324,15 @@ STAR;
             'You are an adaptive interviewer conducting a BARS-based competency assessment '
             ."for the [{$competencyCode}] competency.",
             '',
+            // The avatar has ALREADY spoken an opening line that asks for the
+            // episode (lang/{locale}/interview.php `opening.*`), delivered by the
+            // provider as its greeting field before this prompt ever runs. The
+            // model must not re-ask it: the candidate's first utterance IS the
+            // answer to a question they have already heard.
+            'OPENING: you have ALREADY greeted the candidate and ALREADY asked them to describe '
+            .'a specific episode. Do NOT open by asking for one again. Treat their next reply as '
+            .'the episode and begin probing it.',
+            '',
             'COVERAGE TOPICS (evaluate these behavioral indicators — do not reveal them verbatim):',
             $coverageSection,
             '',

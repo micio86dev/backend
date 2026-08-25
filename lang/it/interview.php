@@ -19,15 +19,24 @@ declare(strict_types=1);
  * `opening.*` (PR3, design D9): il saluto iniziale pronunciato dall'avatar per
  * ciascuna variante, composto da App\Services\Conversation\OpeningTextComposer.
  * `:competency` viene sostituito con il nome visualizzato della competenza.
+ *
+ * OGNI variante TERMINA CON UNA DOMANDA, e non è cosmesi. Prima annunciavano
+ * soltanto l'argomento: il provider pronunciava la frase, l'LLM non aveva alcun
+ * turno utente a cui rispondere e RESTAVA IN ATTESA. Il candidato doveva dire
+ * "ok" prima che arrivasse la prima domanda vera — un turno morto a ogni
+ * competenza, osservato in produzione il 2026-08-25.
+ *
+ * `resume` invita a PROSEGUIRE, non a iniziare: chi riprende era già dentro un
+ * episodio, e chiedergliene uno nuovo perderebbe quanto già raccontato.
  */
 return [
     'end_phrase' => 'Passiamo alla prossima domanda.',
     'final_phrase' => 'Grazie per il tuo tempo.',
 
     'opening' => [
-        'first' => 'Ciao, e benvenuto! Iniziamo parlando di :competency.',
-        'next' => 'Bene, passiamo ora a parlare di :competency.',
-        'resume' => 'Riprendiamo da dove eravamo rimasti, parlando di :competency.',
-        'retry' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo con :competency.',
+        'first' => 'Ciao, e benvenuto! Iniziamo parlando di :competency. Raccontami un episodio specifico e concreto in cui questo è emerso nel tuo lavoro: cosa è successo?',
+        'next' => 'Bene, passiamo ora a parlare di :competency. Raccontami un episodio specifico in cui questo è emerso: cosa è successo?',
+        'resume' => 'Riprendiamo da dove eravamo rimasti, parlando di :competency. Vai pure avanti da dove ti eri fermato.',
+        'retry' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo con :competency. Raccontami un episodio specifico in cui questo è emerso: cosa è successo?',
     ],
 ];
