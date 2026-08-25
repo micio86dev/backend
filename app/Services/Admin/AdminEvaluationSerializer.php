@@ -9,6 +9,7 @@ use App\Models\Evaluation;
 use App\Models\IndicatorScore;
 use App\Models\Participant;
 use App\Services\Scoring\ReliabilityRenderer;
+use RuntimeException;
 
 /**
  * Builds the admin BARS evaluation report for a Participant (C11 D6).
@@ -117,10 +118,31 @@ final class AdminEvaluationSerializer
             ->with('frameworkVersion')
             ->firstOrFail();
 
+        $frameworkVersion = $evaluation->frameworkVersion;
+
+        // `evaluations.framework_version_id` is NOT NULL behind a real FK with
+        // restrictOnDelete (create_evaluations_table:48-50), so this relation
+        // cannot be null because the row is missing — the database forbids it.
+        // The one way it resolves to null is the ambient tenant scope filtering
+        // the FrameworkVersion out, i.e. serving an evaluation whose framework
+        // belongs to another organization. That is a tenancy violation, and it
+        // must announce itself rather than fatal on a property access or, worse,
+        // be papered over with a placeholder string that an operator would read
+        // as real provenance.
+        if ($frameworkVersion === null) {
+            throw new RuntimeException(sprintf(
+                'AdminEvaluationSerializer: evaluation %d references framework_version_id %d, '
+                .'but the FrameworkVersion did not resolve under the ambient tenant scope. '
+                .'Refusing to serialize scoring provenance without it.',
+                $evaluation->id,
+                $evaluation->framework_version_id,
+            ));
+        }
+
         return [
             'prompt_version' => $evaluation->prompt_version,
             'model_version' => $evaluation->model_version,
-            'framework_version' => $evaluation->frameworkVersion->version,
+            'framework_version' => $frameworkVersion->version,
         ];
     }
 
