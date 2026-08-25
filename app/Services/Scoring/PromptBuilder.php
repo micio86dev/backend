@@ -188,7 +188,8 @@ You are a BARS (Behaviorally Anchored Rating Scale) evaluator. Your task is to s
 IMPORTANT RULES:
 - You MUST evaluate EXACTLY {$indicatorCount} indicator(s), in the EXACT SAME ORDER they are listed below.
 - For each indicator, assign a score from EXACTLY one of: 1, 2, 3, 4, 5, OR -1 if the indicator cannot be assessed from the transcript.
-- Excerpts MUST be verbatim substrings of the transcript provided. Do NOT paraphrase or invent text.
+- Excerpts MUST be verbatim substrings of what the CANDIDATE said. Do NOT paraphrase or invent text, and never quote the interviewer's own question as evidence about the candidate.
+- The transcript below is the WHOLE interview, covering every competency. The segment enclosed between the "=== TARGET COMPETENCY ... PRIMARY EVIDENCE BEGINS/ENDS ===" markers is the competency you are scoring now. Weight that segment first, but evidence the candidate gave elsewhere in the interview IS admissible when it genuinely bears on an indicator. The marker lines themselves are not part of the transcript and must never be quoted.
 - If a behavior is not assessable from the transcript, use score -1 and provide an empty excerpts array.
 - Return ONLY the JSON object below, with no additional text or commentary.
 
