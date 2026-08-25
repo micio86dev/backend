@@ -493,3 +493,30 @@ test('(p) task 3.1 — standards are English under an Italian locale, rubric sta
     expect($prompt)->toContain('IT indicator text')
         ->and($prompt)->toContain('IT anchor 5');
 });
+
+test('(q) task 12.1 — the prompt explains the delimited target segment', function (): void {
+    $prompt = builtSystemPromptReflowed();
+
+    // The model must know the transcript is now the WHOLE interview...
+    expect($prompt)->toContain('the WHOLE interview, covering every competency');
+
+    // ...that the markers identify the competency being scored...
+    expect($prompt)->toContain('PRIMARY EVIDENCE BEGINS/ENDS');
+    expect($prompt)->toContain('is the competency you are scoring now');
+
+    // ...that outside evidence is admissible rather than ignored...
+    expect($prompt)->toContain('elsewhere in the interview IS admissible');
+
+    // ...and that the delimiters are not quotable text.
+    expect($prompt)->toContain('marker lines themselves are not part of the transcript');
+});
+
+test('(r) task 12.1 — excerpts are constrained to the CANDIDATE, not to the transcript at large', function (): void {
+    // The old rule said "verbatim substrings of the transcript provided", which
+    // was true of the interviewer's own question too. That is exactly the hole
+    // the split corpora close, and the prompt must say so.
+    $prompt = builtSystemPromptReflowed();
+
+    expect($prompt)->toContain('verbatim substrings of what the CANDIDATE said')
+        ->and($prompt)->toContain("never quote the interviewer's own question as evidence");
+});
