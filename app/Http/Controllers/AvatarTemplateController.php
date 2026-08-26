@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
+use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
@@ -80,6 +81,11 @@ final class AvatarTemplateController extends Controller
             'description' => ['nullable', 'string', 'max:500'],
             'provider' => ['required', 'string', 'in:'.implode(',', self::PROVIDERS)],
             'config' => ['required', 'array'],
+            // Both-or-neither is enforced by the DB CHECK (I1) and by
+            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+            // here (pluggable-conversation-llm PR P3a, design D4).
+            'llm_model_id' => ['sometimes', 'nullable', 'integer'],
+            'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
@@ -99,7 +105,7 @@ final class AvatarTemplateController extends Controller
         );
 
         return (new AvatarTemplateResource($template))
-            ->additional($this->palWarning($template))
+            ->additional($this->recordSync($template))
             ->response()
             ->setStatusCode(Response::HTTP_CREATED);
     }
@@ -113,6 +119,13 @@ final class AvatarTemplateController extends Controller
             'name' => ['sometimes', 'string', 'max:120'],
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
             'config' => ['sometimes', 'array'],
+            // Both-or-neither is enforced by the DB CHECK (I1) and by
+            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+            // here (pluggable-conversation-llm PR P3a, design D4). Both null
+            // clears the binding (see "Unbinding a template clears only
+            // that template's binding").
+            'llm_model_id' => ['sometimes', 'nullable', 'integer'],
+            'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 
         // The provider is immutable. Changing it would leave every knob in the
@@ -134,6 +147,13 @@ final class AvatarTemplateController extends Controller
             $this->assertNameFree($validated['name'], $template->id);
         }
 
+        // Names, never ids — the AuditRecorder doctrine applied to a binding
+        // change (pluggable-conversation-llm PR P3a, design D3/D4). Captured
+        // BEFORE the write, while the OLD binding (if any) is still resolvable.
+        $bindingRequested = array_key_exists('llm_model_id', $validated)
+            || array_key_exists('llm_credential_id', $validated);
+        $beforeBindingNames = $bindingRequested ? $this->bindingAuditNames($template) : null;
+
         $before = ['name' => $template->name];
         $template->update($validated);
 
@@ -145,7 +165,60 @@ final class AvatarTemplateController extends Controller
             after: ['name' => $template->name],
         );
 
-        return (new AvatarTemplateResource($template))->additional($this->palWarning($template));
+        if ($bindingRequested) {
+            $this->recordBindingChange($template->refresh(), $beforeBindingNames);
+        }
+
+        return (new AvatarTemplateResource($template))->additional($this->recordSync($template));
+    }
+
+    /**
+     * @return array{model_key: string|null, credential_name: string|null}
+     */
+    private function bindingAuditNames(AvatarTemplate $template): array
+    {
+        return [
+            'model_key' => $template->llmModel?->key,
+            'credential_name' => $template->llmCredential?->name,
+        ];
+    }
+
+    /**
+     * Audits a binding change as `.llm_bound` or `.llm_unbound` — never
+     * `.updated` (pluggable-conversation-llm PR P3a, design D3).
+     *
+     * The actual HeyGen `DELETE /v1/llm-configurations/{id}` call on unbind
+     * happens in `recordSync()`, called right after this method returns —
+     * it dispatches to `HeygenLlmRegistrar::ensureConfiguration()`, whose
+     * own unbound branch calls `forget()` (PR P5, design D8). This method
+     * therefore no longer clears `heygen_llm_configuration_id` itself; doing
+     * so here AND there would be the exact duplication P5's own task list
+     * warns against ("extend it, don't duplicate it").
+     *
+     * @param  array{model_key: string|null, credential_name: string|null}|null  $beforeBindingNames
+     */
+    private function recordBindingChange(AvatarTemplate $template, ?array $beforeBindingNames): void
+    {
+        $isNowUnbound = $template->llm_model_id === null && $template->llm_credential_id === null;
+
+        if ($isNowUnbound) {
+            app(AuditRecorder::class)->record(
+                'avatar_template.llm_unbound',
+                'avatar_template',
+                $template->id,
+                before: $beforeBindingNames,
+            );
+
+            return;
+        }
+
+        app(AuditRecorder::class)->record(
+            'avatar_template.llm_bound',
+            'avatar_template',
+            $template->id,
+            before: $beforeBindingNames,
+            after: $this->bindingAuditNames($template),
+        );
     }
 
     /**
@@ -170,7 +243,13 @@ final class AvatarTemplateController extends Controller
         $this->assertConfigValid($template->provider, $template->config);
 
         DB::transaction(function () use ($template): void {
+            // Narrowed to the SAME provider (pluggable-conversation-llm PR
+            // P0, design D0). An organization may hold one active template
+            // PER PROVIDER simultaneously — deactivating across every
+            // provider would silently kill an unrelated, still-correct
+            // Tavus template the moment an operator activates a HeyGen one.
             AvatarTemplate::where('is_active', true)
+                ->where('provider', $template->provider)
                 ->whereKeyNot($template->id)
                 ->update(['is_active' => false]);
 
@@ -188,7 +267,7 @@ final class AvatarTemplateController extends Controller
 
         $fresh = $template->fresh();
 
-        return (new AvatarTemplateResource($fresh))->additional($this->palWarning($fresh));
+        return (new AvatarTemplateResource($fresh))->additional($this->recordSync($fresh));
     }
 
     public function destroy(int $id): JsonResponse
@@ -204,6 +283,12 @@ final class AvatarTemplateController extends Controller
                 'error' => 'template_active',
                 'message' => 'Activate another template before deleting this one.',
             ], Response::HTTP_CONFLICT);
+        }
+
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8) — deleting OUR row must not be
+            // blocked by an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
         }
 
         app(AuditRecorder::class)->record(
@@ -265,7 +350,9 @@ final class AvatarTemplateController extends Controller
     }
 
     /**
-     * Push persona-level knobs to Tavus, and report it if that did not work.
+     * Push persona-level knobs and the managed-mode LLM binding to the
+     * template's provider, report it if that did not work, and PERSIST the
+     * outcome (pluggable-conversation-llm PR P4/P5, design D0/D7/D8).
      *
      * Nine of the seventeen Tavus fields live on the PERSONA, not the
      * conversation — sent on a conversation they do nothing at all. Offering
@@ -278,15 +365,55 @@ final class AvatarTemplateController extends Controller
      * third party was slow. But it is reported, because an operator who is not
      * told will believe the setting took effect.
      *
+     * `llm_sync_status`/`llm_synced_at` are written HERE for BOTH providers —
+     * `TavusPalSync::sync()` returns a transient result and persists nothing
+     * (C-E: `Support/AvatarTemplates/` stays pure of DB writes); `HeygenLlmRegistrar`
+     * persists `heygen_llm_configuration_id` itself (it IS the orphan ledger,
+     * design D8) but not these two columns — D0's resolver rule stays ONE
+     * line for both providers, decided from these same two columns
+     * regardless of which provider wrote the underlying vendor state.
+     * Without this write, `degraded` (design D0) would be UNREACHABLE: a
+     * template whose provider push failed would still resolve `applied` at a
+     * later session-issue and get billed for a binding that never took
+     * effect.
+     *
+     * Deliberately checks `llm_model_id`/`llm_credential_id` directly rather
+     * than resolving a full `LlmBinding` here — a controller is exactly the
+     * class an `LlmBinding` (which carries the plaintext key) must never
+     * reach (design D6, `LlmBindingContainmentArchTest`), and a boolean
+     * presence check is all this decision needs.
+     *
      * @return array<string, mixed>
      */
-    private function palWarning(?AvatarTemplate $template): array
+    private function recordSync(?AvatarTemplate $template): array
     {
         if ($template === null) {
             return [];
         }
 
-        $result = app(TavusPalSync::class)->sync($template);
+        $result = match ($template->provider) {
+            'tavus' => app(TavusPalSync::class)->sync($template),
+            'heygen' => app(HeygenLlmRegistrar::class)->ensureConfiguration($template),
+            default => ['status' => 'skipped'],
+        };
+
+        if (in_array($template->provider, ['tavus', 'heygen'], true)) {
+            $isBound = $template->llm_model_id !== null && $template->llm_credential_id !== null;
+
+            // saveQuietly() — NOT save() — IS A RE-ENTRANCY GUARD, NOT A
+            // STYLE CHOICE. A plain save() re-fires the `saving` event,
+            // which re-runs AvatarTemplate::booted()'s I2/I3/I4 invariants
+            // on a binding that already passed them for this same request,
+            // and dispatches `saved` observers a second time for a write
+            // that is bookkeeping ABOUT a sync, not a save a user made. Do
+            // NOT "tidy" this to save() in a future refactor.
+            $template->forceFill([
+                'llm_sync_status' => $result['status'] === 'synced'
+                    ? 'synced'
+                    : ($isBound ? 'failed' : 'not_required'),
+                'llm_synced_at' => $result['status'] === 'synced' ? now() : null,
+            ])->saveQuietly();
+        }
 
         return $result['status'] === 'warning'
             ? ['warning' => $result['message'] ?? 'pal_sync_failed']

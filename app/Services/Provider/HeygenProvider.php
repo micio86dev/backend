@@ -7,7 +7,10 @@ namespace App\Services\Provider;
 use App\Enums\ProviderFailureClass;
 use App\Exceptions\ProviderException;
 use App\Exceptions\ProviderTranscriptShapeException;
+use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
+use App\Services\ConversationLlm\LlmBindingResolver;
+use App\Services\ConversationLlm\ManagedLlmPayload;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\AvatarTemplates\TemplatePayload;
 use App\Support\Provider\ProviderErrorMessage;
@@ -198,8 +201,10 @@ class HeygenProvider implements ProviderSessionService
      *      value. Overrides the platform default on a per-key basis: a template
      *      that customizes `videoQuality` still wins over the "low" floor. C14
      *      avatar-template customization is preserved, not regressed by this fix.
-     *   3. `$providerOwned` — `mode`/`is_sandbox`/`avatar_persona.context_id`.
-     *      Technical protocol constants; never template-overridable.
+     *   3. `$providerOwned` — `mode`/`is_sandbox`/`avatar_persona.context_id`,
+     *      and the managed-mode `llm_configuration_id` (pluggable-conversation-llm
+     *      PR P5, design D8). Technical protocol constants; never
+     *      template-overridable.
      *
      * `array_replace_recursive` (not `array_merge`) across all three: the template
      * emits `avatar_persona.{voice_id, language}` and the platform default emits
@@ -207,6 +212,25 @@ class HeygenProvider implements ProviderSessionService
      * `avatar_persona` node and silently drop voice/language — the C14
      * "operator sets a voice, hears no difference" failure at a new address.
      *
+     * `llm_configuration_id` is placed in `$providerOwned` deliberately NOT
+     * through `TOKEN_FIELD_ALLOWLIST` (`:56`) — that allowlist is union'd
+     * with `interview.heygen.extra_token_fields`, an env var, so routing the
+     * binding through it would let an environment change silently disable
+     * every tenant's LLM binding with no deploy and no diff (design D8's
+     * rationale). Absent entirely when the template is unbound or has never
+     * synced a configuration.
+     *
+     * @wire-source live HeyGen API smoke-check, 2026-08-26 — Phase 0.3(a)
+     * control experiment: `POST /v1/sessions/token` returned HTTP 200
+     * IDENTICALLY for a valid `llm_configuration_id` at TOP LEVEL, a bogus
+     * all-zeros id at top level, a bogus id nested under `avatar_persona`,
+     * AND for a completely invented field name — the endpoint accepts and
+     * ignores any unknown field, so NO status code can discriminate where
+     * this belongs (the exact class of problem `TemplatePayload.php:38-40`
+     * already documents). Top level (i.e. `$providerOwned`, sibling to
+     * `mode`/`is_sandbox`) is this batch's BEST GUESS, UNVERIFIED — only a
+     * live conversational smoke test (not a 200 from `/sessions/token`
+     * alone) can confirm the real placement. Do not treat this as pinned.
      * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
      *
      * @return array<string, mixed>
@@ -214,7 +238,8 @@ class HeygenProvider implements ProviderSessionService
     private function buildSessionTokenBody(QuestionContext $ctx, string $contextId): array
     {
         $platformDefault = $this->platformDefaultTokenFields($ctx);
-        $templateFields = $this->allowlistedTemplateFields($this->activeTemplateConfig());
+        $template = $this->activeTemplate();
+        $templateFields = $this->allowlistedTemplateFields($template === null ? [] : $template->config);
 
         $providerOwned = [
             'mode' => 'FULL',
@@ -223,6 +248,17 @@ class HeygenProvider implements ProviderSessionService
                 'context_id' => $contextId,
             ],
         ];
+
+        if ($template !== null) {
+            $binding = app(LlmBindingResolver::class)->resolve($template);
+
+            if ($binding !== null && $binding->heygenConfigurationId !== null) {
+                $providerOwned = array_replace_recursive(
+                    $providerOwned,
+                    ManagedLlmPayload::forHeygenSessionToken($binding),
+                );
+            }
+        }
 
         return array_replace_recursive($platformDefault, $templateFields, $providerOwned);
     }
@@ -471,23 +507,23 @@ class HeygenProvider implements ProviderSessionService
     }
 
     /**
-     * The active template's config, or an empty array.
+     * The organization's active HeyGen template, or `null`.
      *
      * Resolution failures are swallowed on purpose. An interview must not fail
      * because a cosmetic setting could not be read — the fallback is the
      * provider's own defaults, which is exactly what this product did before
      * templates existed.
      *
-     * @return array<string, mixed>
+     * Returns the model itself, not just its `config` (pluggable-conversation-llm
+     * PR P5) — `buildSessionTokenBody()` also needs `heygen_llm_configuration_id`
+     * via `LlmBindingResolver`, which `config` alone cannot supply.
      */
-    private function activeTemplateConfig(): array
+    private function activeTemplate(): ?AvatarTemplate
     {
         try {
-            $template = app(ActiveTemplateResolver::class)->resolve();
-
-            return $template === null ? [] : $template->config;
+            return app(ActiveTemplateResolver::class)->resolve('heygen');
         } catch (\Throwable) {
-            return [];
+            return null;
         }
     }
 }

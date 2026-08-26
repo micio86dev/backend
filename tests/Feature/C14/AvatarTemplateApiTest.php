@@ -16,6 +16,7 @@ use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -198,6 +199,42 @@ test('activation never leaves the organization with two active templates', funct
     expect($active)->toBe(1);
 });
 
+test('activating a Tavus template does not deactivate an active HeyGen template (pluggable-conversation-llm P0)', function (): void {
+    $org = Organization::factory()->create();
+    $heygen = seedTemplate($org, ['provider' => 'heygen', 'is_active' => true]);
+    $tavus = seedTemplate($org, ['provider' => 'tavus', 'name' => 'T-tavus-'.uniqid(), 'config' => ['faceId' => 'f', 'palId' => 'p']]);
+
+    $this->withToken(templateActor($org, 'admin'))
+        ->postJson("/api/avatar-templates/{$tavus->id}/activate")
+        ->assertOk()
+        ->assertJsonPath('data.is_active', true);
+
+    // Both are now active simultaneously — the deactivate query is narrowed
+    // to the SAME provider as the template being activated (D0).
+    expect($heygen->fresh()->is_active)->toBeTrue();
+    expect($tavus->fresh()->is_active)->toBeTrue();
+});
+
+test('activating a template still deactivates the prior active template on the SAME provider (pluggable-conversation-llm P0)', function (): void {
+    $org = Organization::factory()->create();
+    $oldTavus = seedTemplate($org, ['provider' => 'tavus', 'is_active' => true, 'config' => ['faceId' => 'f1', 'palId' => 'p1']]);
+    $newTavus = seedTemplate($org, ['provider' => 'tavus', 'name' => 'T-tavus-new-'.uniqid(), 'config' => ['faceId' => 'f2', 'palId' => 'p2']]);
+
+    $this->withToken(templateActor($org, 'admin'))
+        ->postJson("/api/avatar-templates/{$newTavus->id}/activate")
+        ->assertOk()
+        ->assertJsonPath('data.is_active', true);
+
+    expect($oldTavus->fresh()->is_active)->toBeFalse();
+
+    $activeTavusCount = TenantContextScope::runFor(
+        $org->id,
+        fn (): int => AvatarTemplate::where('is_active', true)->where('provider', 'tavus')->count(),
+    );
+
+    expect($activeTavusCount)->toBe(1);
+});
+
 test('activating the already-active template is a no-op, not an error', function (): void {
     $org = Organization::factory()->create();
     $active = seedTemplate($org, ['is_active' => true]);
@@ -290,6 +327,23 @@ test('deleting an inactive template returns 204', function (): void {
     $this->withToken(templateActor($org, 'admin'))
         ->deleteJson("/api/avatar-templates/{$template->id}")
         ->assertNoContent();
+});
+
+test('deleting a bound HeyGen template issues the DELETE and clears the ledger column (PR P5)', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+
+    $org = Organization::factory()->create();
+    $template = seedTemplate($org);
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg-to-delete'])->saveQuietly();
+
+    Http::fake(['*heygen.com/v1/llm-configurations/cfg-to-delete' => Http::response([], 200)]);
+
+    $this->withToken(templateActor($org, 'admin'))
+        ->deleteJson("/api/avatar-templates/{$template->id}")
+        ->assertNoContent();
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && str_contains($request->url(), '/v1/llm-configurations/cfg-to-delete'));
 });
 
 // ─── Field specs ─────────────────────────────────────────────────────────────

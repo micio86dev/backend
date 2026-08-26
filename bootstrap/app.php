@@ -2,6 +2,8 @@
 
 use App\Exceptions\Admin\LifecycleNotReadyException;
 use App\Exceptions\Conversation\CompositionException;
+use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
+use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
 use App\Exceptions\ParticipantTransitionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
@@ -165,6 +167,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // machine-readable error code (last_admin/self_demotion/self_deactivation).
         // The exception's own render() method handles the JSON response.
         $exceptions->render(function (UserGuardException $e, Request $request) {
+            return $e->render($request);
+        });
+
+        // pluggable-conversation-llm PR P3a (design D4/D11): I2/I3/I4 binding
+        // invariants, enforced in AvatarTemplate::booted() on `saving` — the
+        // one hook `forceFill()->save()` (the portability import path)
+        // cannot dodge. Same machine-readable 422 shape as UserGuardException
+        // above.
+        $exceptions->render(function (UnsupportedLlmModeException $e, Request $request) {
+            return $e->render($request);
+        });
+
+        $exceptions->render(function (InvalidLlmBindingException $e, Request $request) {
             return $e->render($request);
         });
 

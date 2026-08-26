@@ -60,7 +60,7 @@ test('persona knobs are patched onto the PAL', function (): void {
 
     $result = app(TavusPalSync::class)->sync(palTemplate([
         'faceId' => 'r', 'palId' => 'p_123',
-        'llmModel' => 'tavus-gemma-4', 'turnTakingPatience' => 'high',
+        'llmTemperature' => 0.5, 'turnTakingPatience' => 'high',
     ]));
 
     expect($result['status'])->toBe('synced');
@@ -74,7 +74,7 @@ test('persona knobs are patched onto the PAL', function (): void {
         return str_contains($request->url(), '/pals/p_123')
             && $body[0]['op'] === 'add'
             && $body[0]['path'] === '/layers'
-            && $body[0]['value']['llm']['model'] === 'tavus-gemma-4';
+            && $body[0]['value']['llm']['extra_body']['temperature'] === 0.5;
     });
 });
 
@@ -85,7 +85,7 @@ test('a 304 counts as synced', function (): void {
     // is a successful no-op — reporting it as a failure would have operators
     // chasing a problem that does not exist.
     expect(app(TavusPalSync::class)->sync(palTemplate([
-        'faceId' => 'r', 'palId' => 'p', 'llmModel' => 'tavus-gemma-4',
+        'faceId' => 'r', 'palId' => 'p', 'llmTemperature' => 0.5,
     ]))['status'])->toBe('synced');
 });
 
@@ -93,7 +93,7 @@ test('a provider failure is a warning, never an exception', function (): void {
     Http::fake(['*' => Http::response(['error' => 'nope'], 500)]);
 
     $result = app(TavusPalSync::class)->sync(palTemplate([
-        'faceId' => 'r', 'palId' => 'p', 'llmModel' => 'tavus-gemma-4',
+        'faceId' => 'r', 'palId' => 'p', 'llmTemperature' => 0.5,
     ]));
 
     // A template save must not fail because a cosmetic setting could not be
@@ -106,7 +106,7 @@ test('an unreachable provider is a warning, never an exception', function (): vo
     Http::fake(fn () => throw new ConnectionException('down'));
 
     $result = app(TavusPalSync::class)->sync(palTemplate([
-        'faceId' => 'r', 'palId' => 'p', 'llmModel' => 'tavus-gemma-4',
+        'faceId' => 'r', 'palId' => 'p', 'llmTemperature' => 0.5,
     ]));
 
     expect($result['status'])->toBe('warning');
@@ -116,7 +116,7 @@ test('the warning never carries the provider\'s own words', function (): void {
     Http::fake(['*' => Http::response(['message' => 'Tavus persona 404 at tavusapi.com'], 404)]);
 
     $result = app(TavusPalSync::class)->sync(palTemplate([
-        'faceId' => 'r', 'palId' => 'p', 'llmModel' => 'tavus-gemma-4',
+        'faceId' => 'r', 'palId' => 'p', 'llmTemperature' => 0.5,
     ]));
 
     // Provider error text names the vendor and can echo request content, and
@@ -131,7 +131,7 @@ test('a missing API key is reported rather than attempted', function (): void {
     Http::fake();
 
     $result = app(TavusPalSync::class)->sync(palTemplate([
-        'faceId' => 'r', 'palId' => 'p', 'llmModel' => 'tavus-gemma-4',
+        'faceId' => 'r', 'palId' => 'p', 'llmTemperature' => 0.5,
     ]));
 
     expect($result['message'])->toBe('tavus_key_missing');
@@ -142,7 +142,7 @@ test('a missing palId is reported rather than attempted', function (): void {
     Http::fake();
 
     $result = app(TavusPalSync::class)->sync(palTemplate([
-        'faceId' => 'r', 'llmModel' => 'tavus-gemma-4',
+        'faceId' => 'r', 'llmTemperature' => 0.5,
     ]));
 
     // Without a persona id there is nothing to patch. Guessing one, or creating

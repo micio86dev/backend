@@ -292,7 +292,7 @@ class TavusProvider implements ProviderSessionService
     private function activeTemplateConfig(): array
     {
         try {
-            $template = app(ActiveTemplateResolver::class)->resolve();
+            $template = app(ActiveTemplateResolver::class)->resolve('tavus');
 
             return $template === null ? [] : $template->config;
         } catch (\Throwable) {

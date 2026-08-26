@@ -7,6 +7,7 @@ use App\Contracts\RedisEvictionPolicyProbe;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
+use App\Models\LlmCredential;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Policies\ApiClientPolicy;
 use App\Policies\AvatarTemplatePolicy;
 use App\Policies\EvaluationPolicy;
+use App\Policies\LlmCredentialPolicy;
 use App\Policies\OrganizationPolicy;
 use App\Policies\ParticipantPolicy;
 use App\Policies\ProjectPolicy;
@@ -96,6 +98,11 @@ class AppServiceProvider extends ServiceProvider
         // authorization rule that works by convention is one that breaks
         // silently the day a namespace moves.
         Gate::policy(AvatarTemplate::class, AvatarTemplatePolicy::class);
+
+        // pluggable-conversation-llm PR P2 — Register LlmCredentialPolicy.
+        // Every ability admin-only, mirroring AvatarTemplatePolicy exactly: a
+        // credential is closer to a secret than a setting.
+        Gate::policy(LlmCredential::class, LlmCredentialPolicy::class);
 
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //
