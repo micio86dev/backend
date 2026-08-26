@@ -643,6 +643,19 @@
                                             "type": "string"
                                         },
                                         "minItems": 1
+                                    },
+                                    "llm_model_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4)."
+                                    },
+                                    "llm_credential_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
                                     }
                                 },
                                 "required": [
@@ -765,6 +778,19 @@
                                         "items": {
                                             "type": "string"
                                         }
+                                    },
+                                    "llm_model_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4). Both null\nclears the binding (see \"Unbinding a template clears only\n that template's binding\")."
+                                    },
+                                    "llm_credential_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
                                     }
                                 }
                             }
@@ -1930,6 +1956,306 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/llm-credentials": {
+            "get": {
+                "operationId": "llmCredential.index",
+                "tags": [
+                    "LlmCredential"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `LlmCredentialResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/LlmCredentialResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "llmCredential.store",
+                "tags": [
+                    "LlmCredential"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "vendor": {
+                                        "type": "string",
+                                        "enum": [
+                                            "google"
+                                        ]
+                                    },
+                                    "api_key": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "vendor",
+                                    "api_key"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`LlmCredentialResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/LlmCredentialResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/llm-credentials/{id}": {
+            "get": {
+                "operationId": "llmCredential.show",
+                "tags": [
+                    "LlmCredential"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`LlmCredentialResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/LlmCredentialResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "llmCredential.update",
+                "tags": [
+                    "LlmCredential"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "api_key": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`LlmCredentialResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/LlmCredentialResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "llmCredential.destroy",
+                "tags": [
+                    "LlmCredential"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": ""
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "const": "credential_in_use"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Unbind every template using this credential before deleting it."
+                                        },
+                                        "templates": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "error",
+                                        "message",
+                                        "templates"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/llm-models": {
+            "get": {
+                "operationId": "llmModel.index",
+                "summary": "GET /api/llm-models",
+                "tags": [
+                    "LlmModel"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `LlmModelResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/LlmModelResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -4326,6 +4652,30 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "llm_model_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_credential_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_sync_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm_synced_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -4336,7 +4686,11 @@
                     "config",
                     "is_active",
                     "created_at",
-                    "updated_at"
+                    "updated_at",
+                    "llm_model_id",
+                    "llm_credential_id",
+                    "llm_sync_status",
+                    "llm_synced_at"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -4539,6 +4893,172 @@
                     "updated_at"
                 ],
                 "title": "FrameworkVersionResource"
+            },
+            "LlmCredentialResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "type": "string"
+                    },
+                    "key_last_four": {
+                        "type": "string"
+                    },
+                    "validated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "validation_error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "vendor",
+                    "key_last_four",
+                    "validated_at",
+                    "validation_error",
+                    "created_at"
+                ],
+                "title": "LlmCredentialResource"
+            },
+            "LlmModelResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "vendor": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "capability": {
+                        "type": "string"
+                    },
+                    "mode": {
+                        "type": "string"
+                    },
+                    "is_available": {
+                        "type": "boolean"
+                    },
+                    "sort_order": {
+                        "type": "integer"
+                    },
+                    "rate_card_source_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "rate_card_verified_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "text_input_usd_per_million": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "text_output_usd_per_million": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "text_input_usd_per_million_high": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "text_output_usd_per_million_high": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "context_tier_threshold_tokens": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "audio_input_usd_per_million": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "audio_output_usd_per_million": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "audio_input_usd_per_minute": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "audio_output_usd_per_minute": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "audio_tokens_per_second": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "key",
+                    "vendor",
+                    "display_name",
+                    "capability",
+                    "mode",
+                    "is_available",
+                    "sort_order",
+                    "rate_card_source_url",
+                    "rate_card_verified_at",
+                    "text_input_usd_per_million",
+                    "text_output_usd_per_million",
+                    "text_input_usd_per_million_high",
+                    "text_output_usd_per_million_high",
+                    "context_tier_threshold_tokens",
+                    "audio_input_usd_per_million",
+                    "audio_output_usd_per_million",
+                    "audio_input_usd_per_minute",
+                    "audio_output_usd_per_minute",
+                    "audio_tokens_per_second"
+                ],
+                "title": "LlmModelResource"
             },
             "OrganizationResource": {
                 "type": "object",

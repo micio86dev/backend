@@ -43,6 +43,28 @@ test('an organization cannot hold two active templates', function (): void {
         ->toThrow(QueryException::class);
 });
 
+test('an organization cannot hold two active templates on the SAME provider (pluggable-conversation-llm P0)', function (): void {
+    $org = Organization::factory()->create();
+    makeTemplate($org, ['provider' => 'tavus', 'is_active' => true]);
+
+    expect(fn () => makeTemplate($org, ['provider' => 'tavus', 'is_active' => true]))
+        ->toThrow(QueryException::class, 'avatar_templates_one_active_per_org_provider');
+});
+
+test('one organization may hold an active template on EACH of its providers simultaneously (pluggable-conversation-llm P0)', function (): void {
+    $org = Organization::factory()->create();
+
+    $heygen = makeTemplate($org, ['provider' => 'heygen', 'is_active' => true]);
+    $tavus = makeTemplate($org, ['provider' => 'tavus', 'is_active' => true]);
+
+    // The index is scoped to (organization_id, provider), not organization_id
+    // alone — a project on HeyGen and another on Tavus need one active
+    // template EACH, and a plain (organization_id) index would make that
+    // unconfigurable.
+    expect($heygen->fresh()->is_active)->toBeTrue();
+    expect($tavus->fresh()->is_active)->toBeTrue();
+});
+
 test('two organizations may each hold an active template', function (): void {
     $orgA = Organization::factory()->create();
     $orgB = Organization::factory()->create();

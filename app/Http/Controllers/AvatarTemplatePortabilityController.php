@@ -6,6 +6,8 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Models\AvatarTemplate;
+use App\Models\LlmCredential;
+use App\Models\LlmModel;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplateDocument;
@@ -142,7 +144,7 @@ final class AvatarTemplatePortabilityController extends Controller
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, description: string|null}  $record
+     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, description: string|null, llm: array{model_key: string, credential_name: string}|null}  $record
      * @return array<string, mixed>
      */
     private function create(array $record): array
@@ -157,6 +159,8 @@ final class AvatarTemplatePortabilityController extends Controller
             throw new MissingTenantContextException(AvatarTemplate::class);
         }
 
+        [$llmIds, $llmWarnings] = $this->resolveLlmBinding($record['llm']);
+
         $template = new AvatarTemplate;
         $template->forceFill([
             'organization_id' => $orgId,
@@ -169,10 +173,60 @@ final class AvatarTemplatePortabilityController extends Controller
             // a file must never change which avatar an organization's live
             // interviews are running on.
             'is_active' => false,
+            'llm_model_id' => $llmIds['llm_model_id'],
+            'llm_credential_id' => $llmIds['llm_credential_id'],
         ]);
+        // I2/I3/I4 still run on THIS save() (design D4/D13) — a mode or
+        // vendor mismatch is a 422 via the exception's own render(), not a
+        // warning: a file must not install a binding the form would refuse.
         $template->save();
 
-        return ['id' => $template->id, 'name' => $template->name, 'provider' => $template->provider];
+        $result = ['id' => $template->id, 'name' => $template->name, 'provider' => $template->provider];
+
+        if ($llmWarnings !== []) {
+            $result['llm_warnings'] = $llmWarnings;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolves `{model_key, credential_name}` against the IMPORTING
+     * organization — both-or-neither (design D13). I1's CHECK makes "resolve
+     * what you can" a shape the database refuses to store, so a partial
+     * resolution imports UNBOUND with a warning naming what failed, never as
+     * a failed import.
+     *
+     * @param  array{model_key: string, credential_name: string}|null  $llm
+     * @return array{0: array{llm_model_id: int|null, llm_credential_id: int|null}, 1: list<string>}
+     */
+    private function resolveLlmBinding(?array $llm): array
+    {
+        if ($llm === null) {
+            return [['llm_model_id' => null, 'llm_credential_id' => null], []];
+        }
+
+        // Global registry — not tenant-scoped (design D1).
+        $model = LlmModel::where('key', $llm['model_key'])->first();
+        // Tenant-scoped to the CURRENT (importing) organization via the
+        // TenantScoped global scope — never the exporting org's row.
+        $credential = LlmCredential::where('name', $llm['credential_name'])->first();
+
+        $warnings = [];
+
+        if ($model === null) {
+            $warnings[] = 'model_not_found';
+        }
+
+        if ($credential === null) {
+            $warnings[] = 'credential_not_found';
+        }
+
+        if ($model === null || $credential === null) {
+            return [['llm_model_id' => null, 'llm_credential_id' => null], $warnings];
+        }
+
+        return [['llm_model_id' => $model->id, 'llm_credential_id' => $credential->id], []];
     }
 
     /**

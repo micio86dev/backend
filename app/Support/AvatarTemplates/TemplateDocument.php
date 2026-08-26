@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Support\AvatarTemplates;
 
 use App\Models\AvatarTemplate;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * The portable avatar-template document (C14, design D6).
@@ -29,6 +29,10 @@ final class TemplateDocument
      */
     public static function export(Collection $templates): array
     {
+        // Eager-loaded so a multi-template export is not an N+1 — the
+        // collection here is exactly the set the caller is about to iterate.
+        $templates->loadMissing(['llmModel:id,key', 'llmCredential:id,name']);
+
         return [
             'schema' => self::SCHEMA,
             'exported_at' => now()->toIso8601String(),
@@ -39,6 +43,13 @@ final class TemplateDocument
                 'config' => $t->config,
                 // Persona is optional: a template may be pure provider config.
                 'persona' => $t->persona ?? null,
+                // The binding travels by NAME, never by id or key material
+                // (design D13) — an id is meaningless in another org, and a
+                // fingerprint is key-derived material with no import use.
+                'llm' => $t->llm_model_id === null ? null : [
+                    'model_key' => $t->llmModel?->key,
+                    'credential_name' => $t->llmCredential?->name,
+                ],
             ])->values()->all(),
         ];
     }
@@ -53,7 +64,7 @@ final class TemplateDocument
      * lose a block.
      *
      * @param  array<string, mixed>  $entry
-     * @return list<array{name: string, description: string|null, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null}>
+     * @return list<array{name: string, description: string|null, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, llm: array{model_key: string, credential_name: string}|null}>
      */
     public static function flatten(array $entry): array
     {
@@ -69,10 +80,13 @@ final class TemplateDocument
                 'provider' => is_string($entry['provider']) ? $entry['provider'] : '',
                 'config' => is_array($entry['config'] ?? null) ? $entry['config'] : [],
                 'persona' => $persona,
+                'llm' => self::flattenLlm($entry['llm'] ?? null),
             ]];
         }
 
-        // Multi-provider shape: `avatar-tester`'s.
+        // Multi-provider shape: `avatar-tester`'s. It has no concept of a
+        // credential, so every flattened record here is unbound — correct
+        // for a document from a tool that never had one.
         $records = [];
 
         foreach ((array) ($entry['configs'] ?? []) as $provider => $config) {
@@ -88,9 +102,29 @@ final class TemplateDocument
                 'provider' => $provider,
                 'config' => $config,
                 'persona' => $persona,
+                'llm' => null,
             ];
         }
 
         return $records;
+    }
+
+    /**
+     * @return array{model_key: string, credential_name: string}|null
+     */
+    private static function flattenLlm(mixed $llm): ?array
+    {
+        if (! is_array($llm)) {
+            return null;
+        }
+
+        $modelKey = $llm['model_key'] ?? null;
+        $credentialName = $llm['credential_name'] ?? null;
+
+        if (! is_string($modelKey) || ! is_string($credentialName)) {
+            return null;
+        }
+
+        return ['model_key' => $modelKey, 'credential_name' => $credentialName];
     }
 }

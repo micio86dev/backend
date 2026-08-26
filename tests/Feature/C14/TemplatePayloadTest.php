@@ -36,7 +36,7 @@ test('the resolver finds the organization\'s active template', function (): void
     $org = Organization::factory()->create();
     activeTemplate($org, 'heygen', ['avatarId' => 'av_1', 'voiceId' => 'vo_1']);
 
-    $found = TenantContextScope::runFor($org->id, fn () => app(ActiveTemplateResolver::class)->resolve());
+    $found = TenantContextScope::runFor($org->id, fn () => app(ActiveTemplateResolver::class)->resolve('heygen'));
 
     expect($found?->config['avatarId'])->toBe('av_1');
 });
@@ -47,7 +47,7 @@ test('an organization with no active template resolves to null, not an error', f
     // Every existing tenant is in this state the moment this ships. Failing
     // here would break every interview in the product to deliver a feature
     // nobody has configured yet.
-    $found = TenantContextScope::runFor($org->id, fn () => app(ActiveTemplateResolver::class)->resolve());
+    $found = TenantContextScope::runFor($org->id, fn () => app(ActiveTemplateResolver::class)->resolve('heygen'));
 
     expect($found)->toBeNull();
 });
@@ -58,7 +58,7 @@ test('an inactive template is not resolved', function (): void {
         'name' => 'Draft', 'provider' => 'heygen', 'config' => ['avatarId' => 'x', 'voiceId' => 'y'],
     ]));
 
-    expect(TenantContextScope::runFor($org->id, fn () => app(ActiveTemplateResolver::class)->resolve()))->toBeNull();
+    expect(TenantContextScope::runFor($org->id, fn () => app(ActiveTemplateResolver::class)->resolve('heygen')))->toBeNull();
 });
 
 test('the resolver never crosses tenants', function (): void {
@@ -66,7 +66,7 @@ test('the resolver never crosses tenants', function (): void {
     $theirs = Organization::factory()->create();
     activeTemplate($theirs, 'heygen', ['avatarId' => 'not-mine', 'voiceId' => 'v']);
 
-    expect(TenantContextScope::runFor($mine->id, fn () => app(ActiveTemplateResolver::class)->resolve()))->toBeNull();
+    expect(TenantContextScope::runFor($mine->id, fn () => app(ActiveTemplateResolver::class)->resolve('heygen')))->toBeNull();
 });
 
 // ─── HeyGen mapping ──────────────────────────────────────────────────────────
@@ -155,13 +155,13 @@ test('Tavus call properties are nested under properties', function (): void {
 test('persona-level knobs are NOT sent on the conversation', function (): void {
     $payload = TemplatePayload::tavus([
         'faceId' => 'r', 'palId' => 'p',
-        'llmModel' => 'tavus-gemma-4', 'ttsEngine' => 'cartesia',
+        'llmTemperature' => 0.7, 'ttsEngine' => 'cartesia',
     ]);
 
     // Tavus splits its configuration across two API objects. A persona knob on
     // a conversation is silently ignored — no error, no effect, and an operator
     // watching a setting do nothing. They belong in the PAL.
-    expect(json_encode($payload))->not->toContain('tavus-gemma-4');
+    expect(json_encode($payload))->not->toContain('0.7');
     expect(json_encode($payload))->not->toContain('cartesia');
 });
 
@@ -169,16 +169,16 @@ test('persona-level knobs are NOT sent on the conversation', function (): void {
 
 test('persona knobs become nested PAL layers at their declared paths', function (): void {
     $layers = TemplatePayload::tavusPalLayers([
-        'llmModel' => 'tavus-gemma-4',
         'llmTemperature' => 0.7,
+        'llmSpeculativeInference' => true,
         'ttsEngine' => 'cartesia',
         'turnTakingPatience' => 'high',
     ]);
 
     // The paths come from the field spec's palPath, so adding a knob is a
     // one-line change in one file rather than an edit here as well.
-    expect($layers['llm']['model'])->toBe('tavus-gemma-4');
     expect($layers['llm']['extra_body']['temperature'])->toBe(0.7);
+    expect($layers['llm']['speculative_inference'])->toBeTrue();
     expect($layers['tts']['tts_engine'])->toBe('cartesia');
     expect($layers['conversational_flow']['turn_taking_patience'])->toBe('high');
 });

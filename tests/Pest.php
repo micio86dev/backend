@@ -490,3 +490,20 @@ pest()->extend(TestCase::class)
 // and Unit/NotificationsConfigTest.php above.
 pest()->extend(TestCase::class)
     ->in('Unit/Config/TruncationRetryConfigTest.php');
+
+// ─── pluggable-conversation-llm (P0/P1) ────────────────────────────────────────
+
+// Unit/Support/AvatarTemplates — needs TestCase + RefreshDatabase:
+// ActiveTemplateResolverTest creates real tenant-scoped AvatarTemplate rows
+// (mirrors Unit/Support/Interview's reasoning above) to assert the resolver's
+// provider filter and cross-tenant isolation against a migrated schema, not a
+// mocked query builder.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Support/AvatarTemplates');
+
+// Feature/ConversationLlm — RefreshDatabase: schema, seeder, and console-command
+// tests for the llm_models global registry assert real Postgres columns/CHECKs
+// and real command output against a migrated schema.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/ConversationLlm');

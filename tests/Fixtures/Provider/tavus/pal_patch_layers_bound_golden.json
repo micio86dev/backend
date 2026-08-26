@@ -1,0 +1,10 @@
+{
+  "llm": {
+    "model": "REPLACED_AT_TEST_TIME",
+    "base_url": "REPLACED_AT_TEST_TIME",
+    "api_key": "REPLACED_AT_TEST_TIME",
+    "extra_body": {
+      "temperature": 0.5
+    }
+  }
+}

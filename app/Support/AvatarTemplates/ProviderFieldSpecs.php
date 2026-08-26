@@ -125,7 +125,13 @@ final class ProviderFieldSpecs
             // Persona-level: applied by creating or patching a Tavus PAL. Sent
             // on a conversation they are silently ignored — no error, no
             // effect, and an operator watching a setting do nothing.
-            new FieldSpec('llmModel', FieldType::Select, $l('llmModel'), options: ['tavus-gemma-4', 'tavus-gemma-4-thinking', 'tavus-gpt-5.6-sol', 'tavus-gpt-5.6-terra', 'tavus-gemini-2.5-flash'], palPath: 'layers/llm/model', hintKey: $h('llmModel')),
+            //
+            // `llmModel` is DELIBERATELY absent (pluggable-conversation-llm
+            // PR P3a, design D3). The binding (`avatar_templates.llm_model_id`
+            // / `llm_credential_id`) now writes the SAME PAL path this field
+            // used to (`layers/llm/model`) — two writers, one path, last one
+            // wins, no error. `config.llmModel` is therefore rejected
+            // `unknown` by `ConfigValidator`, same as any other retired key.
             new FieldSpec('llmTemperature', FieldType::Number, $l('llmTemperature'), min: 0, max: 2, step: 0.01, palPath: 'layers/llm/extra_body/temperature', hintKey: $h('llmTemperature')),
             new FieldSpec('llmSpeculativeInference', FieldType::Checkbox, $l('llmSpeculativeInference'), palPath: 'layers/llm/speculative_inference', hintKey: $h('llmSpeculativeInference')),
             new FieldSpec('ttsEngine', FieldType::Select, $l('ttsEngine'), options: ['tavus-auto', 'cartesia', 'elevenlabs', 'azure'], palPath: 'layers/tts/tts_engine', hintKey: $h('ttsEngine')),
