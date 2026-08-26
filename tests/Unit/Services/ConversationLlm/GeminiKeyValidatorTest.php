@@ -135,3 +135,101 @@ test('the request selects the cheapest available registry model', function (): v
 
     Http::assertSent(fn (Request $request): bool => $request['model'] === 'gemini-3-flash-preview');
 });
+
+// ---------------------------------------------------------------------------
+// Single-retry-on-transport-failure (measured 2026-08-26 against the live
+// endpoint — see the class docblock for the raw latency table).
+// ---------------------------------------------------------------------------
+
+test('a transport failure followed by a success classifies as valid (one retry)', function (): void {
+    seedCheapestGeminiModel();
+
+    // Http::fake's recorder middleware only records a REQUEST/RESPONSE pair
+    // on the success path (it hooks the promise's `.then()`), so a thrown
+    // ConnectionException never reaches assertSentCount(). Count attempts
+    // ourselves instead.
+    $attempts = 0;
+    Http::fake(function () use (&$attempts) {
+        $attempts++;
+
+        if ($attempts === 1) {
+            throw new ConnectionException('Connection timed out');
+        }
+
+        return Http::response(['choices' => []], 200);
+    });
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('valid');
+
+    expect($attempts)->toBe(2);
+});
+
+test('two consecutive transport failures classify as unreachable (retries exactly once)', function (): void {
+    seedCheapestGeminiModel();
+
+    $attempts = 0;
+    Http::fake(function () use (&$attempts): void {
+        $attempts++;
+
+        throw new ConnectionException('Connection timed out');
+    });
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('unreachable');
+
+    expect($attempts)->toBe(2);
+});
+
+test('a 401 classifies as invalid_key without a second HTTP attempt', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response(['error' => 'bad key'], 401),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-bad-key'))->toBe('invalid_key');
+
+    Http::assertSentCount(1);
+});
+
+test('a 429 classifies as rate_limited without a second HTTP attempt', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 429),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('rate_limited');
+
+    Http::assertSentCount(1);
+});
+
+test('the timeout is read from config, not hardcoded', function (): void {
+    config(['conversation_llm.timeout_seconds' => 3]);
+    seedCheapestGeminiModel();
+
+    $seenTimeout = null;
+    Http::fake(function (Request $request, array $options) use (&$seenTimeout) {
+        $seenTimeout = $options['timeout'] ?? null;
+
+        return Http::response(['choices' => []], 200);
+    });
+
+    app(GeminiKeyValidator::class)->validate('sk-real-key');
+
+    expect($seenTimeout)->toBe(3);
+});
+
+test('the retry count is read from config, not hardcoded', function (): void {
+    config(['conversation_llm.validation_retries' => 0]);
+    seedCheapestGeminiModel();
+
+    $attempts = 0;
+    Http::fake(function () use (&$attempts): void {
+        $attempts++;
+
+        throw new ConnectionException('Connection timed out');
+    });
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('unreachable');
+
+    // With validation_retries = 0, only the initial attempt is made — no retry.
+    expect($attempts)->toBe(1);
+});
