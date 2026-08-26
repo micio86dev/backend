@@ -1,0 +1,3 @@
+{
+  "message": "Bad Request. Please ensure both base_url and api_key are included in order to use a custom llm."
+}

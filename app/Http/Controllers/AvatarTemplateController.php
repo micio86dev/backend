@@ -104,7 +104,7 @@ final class AvatarTemplateController extends Controller
         );
 
         return (new AvatarTemplateResource($template))
-            ->additional($this->palWarning($template))
+            ->additional($this->recordSync($template))
             ->response()
             ->setStatusCode(Response::HTTP_CREATED);
     }
@@ -168,7 +168,7 @@ final class AvatarTemplateController extends Controller
             $this->recordBindingChange($template->refresh(), $beforeBindingNames);
         }
 
-        return (new AvatarTemplateResource($template))->additional($this->palWarning($template));
+        return (new AvatarTemplateResource($template))->additional($this->recordSync($template));
     }
 
     /**
@@ -268,7 +268,7 @@ final class AvatarTemplateController extends Controller
 
         $fresh = $template->fresh();
 
-        return (new AvatarTemplateResource($fresh))->additional($this->palWarning($fresh));
+        return (new AvatarTemplateResource($fresh))->additional($this->recordSync($fresh));
     }
 
     public function destroy(int $id): JsonResponse
@@ -345,7 +345,9 @@ final class AvatarTemplateController extends Controller
     }
 
     /**
-     * Push persona-level knobs to Tavus, and report it if that did not work.
+     * Push persona-level knobs (and the managed-mode LLM binding) to Tavus,
+     * report it if that did not work, and PERSIST the outcome
+     * (pluggable-conversation-llm PR P4, design D0/D7).
      *
      * Nine of the seventeen Tavus fields live on the PERSONA, not the
      * conversation — sent on a conversation they do nothing at all. Offering
@@ -358,15 +360,54 @@ final class AvatarTemplateController extends Controller
      * third party was slow. But it is reported, because an operator who is not
      * told will believe the setting took effect.
      *
+     * `llm_sync_status`/`llm_synced_at` are written HERE, not inside
+     * `TavusPalSync` itself, which returns a transient result and persists
+     * nothing (C-E: `Support/AvatarTemplates/` stays pure of DB writes; this
+     * controller already holds both the HTTP result and the model). Without
+     * this write, `degraded` (design D0) is UNREACHABLE on the Tavus path: a
+     * template whose PAL push failed would still resolve `applied` at a later
+     * session-issue and get billed for a binding that never took effect.
+     *
+     * Scoped to `provider === 'tavus'` on purpose — HeyGen writes these same
+     * two columns from `HeygenLlmRegistrar`'s own return (PR P5, design D8),
+     * not from here. `TavusPalSync::sync()` already returns `skipped`
+     * immediately for a non-Tavus template, so nothing would be attempted for
+     * HeyGen anyway; the guard just keeps this method from writing a
+     * misleading 'failed' onto a template this call never touched.
+     *
+     * Deliberately checks `llm_model_id`/`llm_credential_id` directly rather
+     * than resolving a full `LlmBinding` here — a controller is exactly the
+     * class an `LlmBinding` (which carries the plaintext key) must never
+     * reach (design D6, `LlmBindingContainmentArchTest`), and a boolean
+     * presence check is all this decision needs.
+     *
      * @return array<string, mixed>
      */
-    private function palWarning(?AvatarTemplate $template): array
+    private function recordSync(?AvatarTemplate $template): array
     {
         if ($template === null) {
             return [];
         }
 
         $result = app(TavusPalSync::class)->sync($template);
+
+        if ($template->provider === 'tavus') {
+            $isBound = $template->llm_model_id !== null && $template->llm_credential_id !== null;
+
+            // saveQuietly() — NOT save() — IS A RE-ENTRANCY GUARD, NOT A
+            // STYLE CHOICE. A plain save() re-fires the `saving` event,
+            // which re-runs AvatarTemplate::booted()'s I2/I3/I4 invariants
+            // on a binding that already passed them for this same request,
+            // and dispatches `saved` observers a second time for a write
+            // that is bookkeeping ABOUT a sync, not a save a user made. Do
+            // NOT "tidy" this to save() in a future refactor.
+            $template->forceFill([
+                'llm_sync_status' => $result['status'] === 'synced'
+                    ? 'synced'
+                    : ($isBound ? 'failed' : 'not_required'),
+                'llm_synced_at' => $result['status'] === 'synced' ? now() : null,
+            ])->saveQuietly();
+        }
 
         return $result['status'] === 'warning'
             ? ['warning' => $result['message'] ?? 'pal_sync_failed']

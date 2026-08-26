@@ -17,14 +17,18 @@ declare(strict_types=1);
  * REQ: API key secret non-exposure (C7a task 14.3)
  */
 
+use App\Models\AvatarTemplate;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\InterviewSession;
+use App\Models\LlmCredential;
+use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantContextScope;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -269,4 +273,75 @@ test('14.4: cross-org /end probe → 404; no terminal-status disclosure', functi
     // Session unchanged
     $sessionB->refresh();
     expect($sessionB->status)->toBe('completed');
+});
+
+// ─── P4: the managed-mode Gemini key across a full Tavus PAL sync cycle ──────
+
+test('P4: the Gemini credential key appears in no response, no exception, and no log channel across a Tavus PAL sync', function (): void {
+    config()->set('interview.tavus.api_key', 'platform-tavus-key');
+    $geminiKey = 'GEMINI_KEY_MUST_NOT_LEAK_ANYWHERE_777';
+
+    $org = secretOrg();
+    $token = authTokenForRole($org, 'admin');
+
+    $model = LlmModel::create([
+        'key' => 'gemini-3-flash-preview',
+        'vendor' => 'google',
+        'display_name' => 'Gemini 3 Flash Preview',
+        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        'capability' => 'text',
+        'is_available' => true,
+        'sort_order' => 0,
+    ]);
+
+    $credential = TenantContextScope::runFor($org->id, function () use ($org, $geminiKey): LlmCredential {
+        $credential = new LlmCredential;
+        $credential->forceFill([
+            'organization_id' => $org->id,
+            'name' => 'Secret test credential',
+            'vendor' => 'google',
+            'api_key' => $geminiKey,
+            'key_last_four' => substr($geminiKey, -4),
+            'key_fingerprint' => hash('sha256', $geminiKey),
+        ]);
+        $credential->save();
+
+        return $credential;
+    });
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Secret test template',
+        'provider' => 'tavus',
+        'config' => ['faceId' => 'r', 'palId' => 'p_secret'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+
+    // Worst case (14.3's own doctrine, applied to PAL sync): the vendor
+    // ECHOES something resembling the key back in its error body.
+    Http::fake(['*pals*' => Http::response(['message' => "Unauthorized: {$geminiKey}"], 401)]);
+
+    $logMessages = [];
+    Log::listen(function ($message) use (&$logMessages): void {
+        $msg = $message->message ?? '';
+        $context = is_array($message->context ?? null) ? json_encode($message->context) : '';
+        $logMessages[] = $msg.' '.$context;
+    });
+
+    $response = $this->withToken($token)
+        ->patchJson("/api/avatar-templates/{$template->id}", ['name' => 'Secret test template renamed']);
+
+    $response->assertSuccessful();
+    expect($response->getContent())->not->toContain($geminiKey);
+
+    foreach ($logMessages as $logMsg) {
+        expect($logMsg)->not->toContain($geminiKey);
+    }
+
+    // The outbound PATCH itself carries the key (it must — the vendor has no
+    // vault and does not retain a previously-submitted key, per the Phase
+    // 0.3(c) live smoke-check), but that is a REQUEST we send, never a
+    // response/exception/log surface we control from the caller's side.
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), '/pals/p_secret')
+        && $request->data()[0]['value']['llm']['api_key'] === $geminiKey);
 });

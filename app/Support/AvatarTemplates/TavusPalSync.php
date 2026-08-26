@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Support\AvatarTemplates;
 
 use App\Models\AvatarTemplate;
+use App\Services\ConversationLlm\LlmBindingResolver;
+use App\Services\ConversationLlm\ManagedLlmPayload;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -36,6 +38,8 @@ final class TavusPalSync
     /** Bounded so a slow provider cannot hold an admin request open. */
     private const TIMEOUT_SECONDS = 10;
 
+    public function __construct(private readonly LlmBindingResolver $bindingResolver) {}
+
     /**
      * @return array{status: 'skipped'|'synced'|'warning', message?: string}
      */
@@ -47,9 +51,34 @@ final class TavusPalSync
 
         $layers = TemplatePayload::tavusPalLayers($template->config);
 
+        // The managed-mode binding (pluggable-conversation-llm PR P4, design
+        // D7). `array_replace_recursive`, NOT `array_merge`: `llmTemperature`
+        // writes `layers.llm.extra_body.temperature` and the binding writes
+        // `layers.llm.{model,base_url,api_key}` — both inside the SAME `llm`
+        // node. A shallow merge replaces the whole node and drops one side,
+        // the identical trap `HeygenProvider.php:227` already solves for
+        // `avatar_persona`. `resolve()` never throws — an unbound template
+        // (the common case) leaves `$layers` untouched.
+        //
+        // @wire-source live Tavus API smoke-check, 2026-08-26: Tavus does NOT
+        // retain a previously-submitted `layers.llm.api_key` across PATCHes —
+        // omitting it returns HTTP 400, not a silent no-op. The key is
+        // therefore re-read from the binding and re-sent on EVERY sync call,
+        // never assumed to still be on file from a prior PATCH.
+        $binding = $this->bindingResolver->resolve($template);
+
+        if ($binding !== null) {
+            $layers = array_replace_recursive($layers, ManagedLlmPayload::forTavusLayers($binding));
+        }
+
         if ($layers === []) {
             // Nothing to say must mean saying nothing: a PATCH carrying an
             // empty layers object would WIPE the persona's existing settings.
+            // MUST run AFTER the binding merge above — a template whose ONLY
+            // LLM configuration is the binding produces `[]` from
+            // `tavusPalLayers()` alone, and checking this guard first would
+            // skip it forever, silently never syncing the binding it exists
+            // to push (design D7's rationale — a certainty, not a risk).
             return ['status' => 'skipped'];
         }
 
