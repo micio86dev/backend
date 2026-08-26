@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ConversationLlm;
 
+use App\Enums\LlmBindingStatus;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
@@ -49,5 +50,29 @@ final class LlmBindingResolver
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /**
+     * The tri-state billing decision (design D0):
+     * `applied ⇔ binding present ∧ credential resolvable ∧ llm_sync_status
+     * === 'synced'`. Decided from PERSISTED state only — never HTTP — so
+     * this stays pure DB, matching `resolve()`'s own contract.
+     *
+     * NULL `llm_sync_status` is NOT `'synced'`: every path that never pushed
+     * — a portability import (D13), a seeder-written row, a save whose PATCH
+     * timed out — fails CLOSED into `Degraded`, never `Applied`. Only
+     * `Applied` is billable.
+     */
+    public function resolveStatus(AvatarTemplate $template): LlmBindingStatus
+    {
+        $binding = $this->resolve($template);
+
+        if ($binding === null) {
+            return LlmBindingStatus::Unbound;
+        }
+
+        return $template->llm_sync_status === 'synced'
+            ? LlmBindingStatus::Applied
+            : LlmBindingStatus::Degraded;
     }
 }
