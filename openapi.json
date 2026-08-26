@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.33.0"
+        "version": "0.34.0"
     },
     "servers": [
         {
@@ -929,6 +929,25 @@
                                                         ],
                                                         "description": "Persona is optional: a template may be pure provider config.",
                                                         "items": {}
+                                                    },
+                                                    "llm": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "description": "The binding travels by NAME, never by id or key material\n(design D13) \u2014 an id is meaningless in another org, and a\nfingerprint is key-derived material with no import use.",
+                                                        "properties": {
+                                                            "model_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "credential_name": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "model_key",
+                                                            "credential_name"
+                                                        ]
                                                     }
                                                 },
                                                 "required": [
@@ -936,7 +955,8 @@
                                                     "description",
                                                     "provider",
                                                     "config",
-                                                    "persona"
+                                                    "persona",
+                                                    "llm"
                                                 ]
                                             }
                                         }
