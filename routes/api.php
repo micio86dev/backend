@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationIndexController;
 use App\Http\Controllers\Api\FrameworkController;
+use App\Http\Controllers\Api\LlmCredentialController;
 use App\Http\Controllers\Api\LlmModelController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
@@ -94,6 +95,20 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 // no policy check, no ownership to authorize.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/llm-models', [LlmModelController::class, 'index']);
+});
+
+// ─── Conversation LLM Credentials (pluggable-conversation-llm PR P2) ─────────
+// Org-scoped, admin-only vault CRUD (LlmCredentialPolicy, design D9).
+// `throttle:5,1` on store/update — both routes reach GeminiKeyValidator, and
+// there is deliberately no "test without saving" endpoint (design D9).
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/llm-credentials', [LlmCredentialController::class, 'index']);
+    Route::post('/llm-credentials', [LlmCredentialController::class, 'store'])
+        ->middleware('throttle:5,1');
+    Route::get('/llm-credentials/{id}', [LlmCredentialController::class, 'show']);
+    Route::patch('/llm-credentials/{id}', [LlmCredentialController::class, 'update'])
+        ->middleware('throttle:5,1');
+    Route::delete('/llm-credentials/{id}', [LlmCredentialController::class, 'destroy']);
 });
 
 // ─── Project Configuration API (C4) ──────────────────────────────────────────

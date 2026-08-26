@@ -1,0 +1,137 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * GeminiKeyValidator (pluggable-conversation-llm PR P2, design D9,
+ * non-negotiable #11).
+ *
+ * `POST {base_url}chat/completions`, Bearer auth, the cheapest AVAILABLE
+ * registry model, `max_tokens: 1`, 8s timeout. Returns a STABLE code — never
+ * Google's prose, because it travels to a UI and would be an oracle.
+ *
+ * REQ: conversation-llm "Credential validation returns a stable code, never
+ *      the vendor's prose, and cannot become a key-testing oracle"
+ */
+
+use App\Models\LlmModel;
+use App\Services\ConversationLlm\GeminiKeyValidator;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+
+uses(RefreshDatabase::class);
+
+function seedCheapestGeminiModel(): LlmModel
+{
+    return LlmModel::create([
+        'key' => 'gemini-3-flash-preview',
+        'vendor' => 'google',
+        'display_name' => 'Gemini 3 Flash Preview',
+        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        'capability' => 'text',
+        'is_available' => true,
+        'sort_order' => 0,
+        'text_input_usd_per_million' => '0.075000',
+        'text_output_usd_per_million' => '0.300000',
+    ]);
+}
+
+test('a 200 response classifies as valid', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response(['choices' => []], 200),
+    ]);
+
+    $code = app(GeminiKeyValidator::class)->validate('sk-real-key');
+
+    expect($code)->toBe('valid');
+
+    Http::assertSent(function (Request $request): bool {
+        return $request->url() === 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
+            && $request->hasHeader('Authorization', 'Bearer sk-real-key')
+            && $request['max_tokens'] === 1
+            && $request['model'] === 'gemini-3-flash-preview';
+    });
+});
+
+test('a 401 classifies as invalid_key', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response(['error' => 'Google says the key is bad'], 401),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-bad-key'))->toBe('invalid_key');
+});
+
+test('a 403 also classifies as invalid_key', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 403),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-bad-key'))->toBe('invalid_key');
+});
+
+test('a 429 classifies as rate_limited', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 429),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('rate_limited');
+});
+
+test('a 500 classifies as unreachable', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 500),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('unreachable');
+});
+
+test('a timeout classifies as unreachable', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake(function (): void {
+        throw new ConnectionException('Connection timed out');
+    });
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('unreachable');
+});
+
+test('the vendor response body never surfaces in the returned code', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response(['error' => 'a very specific Google message'], 401),
+    ]);
+
+    $code = app(GeminiKeyValidator::class)->validate('sk-bad-key');
+
+    expect($code)->not->toContain('Google');
+    expect($code)->toBe('invalid_key');
+});
+
+test('the request selects the cheapest available registry model', function (): void {
+    LlmModel::create([
+        'key' => 'gemini-3.1-pro-preview',
+        'vendor' => 'google',
+        'display_name' => 'Gemini 3.1 Pro Preview',
+        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        'capability' => 'text',
+        'is_available' => true,
+        'sort_order' => 0,
+        'text_input_usd_per_million' => '2.000000',
+        'text_output_usd_per_million' => '12.000000',
+    ]);
+    seedCheapestGeminiModel();
+
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 200),
+    ]);
+
+    app(GeminiKeyValidator::class)->validate('sk-real-key');
+
+    Http::assertSent(fn (Request $request): bool => $request['model'] === 'gemini-3-flash-preview');
+});
