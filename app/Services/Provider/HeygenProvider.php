@@ -483,7 +483,7 @@ class HeygenProvider implements ProviderSessionService
     private function activeTemplateConfig(): array
     {
         try {
-            $template = app(ActiveTemplateResolver::class)->resolve();
+            $template = app(ActiveTemplateResolver::class)->resolve('heygen');
 
             return $template === null ? [] : $template->config;
         } catch (\Throwable) {

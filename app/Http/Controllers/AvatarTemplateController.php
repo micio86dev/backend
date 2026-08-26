@@ -170,7 +170,13 @@ final class AvatarTemplateController extends Controller
         $this->assertConfigValid($template->provider, $template->config);
 
         DB::transaction(function () use ($template): void {
+            // Narrowed to the SAME provider (pluggable-conversation-llm PR
+            // P0, design D0). An organization may hold one active template
+            // PER PROVIDER simultaneously — deactivating across every
+            // provider would silently kill an unrelated, still-correct
+            // Tavus template the moment an operator activates a HeyGen one.
             AvatarTemplate::where('is_active', true)
+                ->where('provider', $template->provider)
                 ->whereKeyNot($template->id)
                 ->update(['is_active' => false]);
 

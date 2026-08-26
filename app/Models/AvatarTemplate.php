@@ -7,12 +7,13 @@ namespace App\Models;
 /**
  * A named avatar/voice configuration an operator can activate (C14).
  *
- * Exactly one template per organization may be active at a time, and that is
- * enforced by a partial unique index — `avatar_templates_one_active_per_org` —
- * rather than by this class. Two concurrent activations both read "nobody else
- * is active", both write, and both win; a check that only holds when nobody is
- * in a hurry is not a check. Application code deactivates first for a clean
- * user experience, and the index is what makes the invariant true.
+ * Exactly one template per organization, PER PROVIDER, may be active at a
+ * time (pluggable-conversation-llm PR P0), and that is enforced by a partial
+ * unique index — `avatar_templates_one_active_per_org_provider` — rather than
+ * by this class. Two concurrent activations both read "nobody else is active
+ * on this provider", both write, and both win; a check that only holds when
+ * nobody is in a hurry is not a check. Application code deactivates first for
+ * a clean user experience, and the index is what makes the invariant true.
  *
  * `organization_id` is NOT fillable. It is stamped by TenantScoped from the
  * resolver, never from a payload — the same invariant Participant and User

@@ -127,8 +127,10 @@ final class SessionLiveClock
      * that value wins, because it is what was actually sent to the provider
      * on `issue()`, and is therefore the real ceiling THIS session's
      * provider call was bound by. Falls back to `ProviderFieldSpecs`'
-     * platform ceiling when no template applies (no active template, or the
-     * active template belongs to a different provider than this session's).
+     * platform ceiling when no template applies (no active template on this
+     * session's provider — `resolve()` (pluggable-conversation-llm PR P0)
+     * already filters by provider, so a different-provider active template
+     * is never returned here in the first place).
      */
     private function resolveMaxSeconds(InterviewSession $session): int
     {
@@ -137,9 +139,9 @@ final class SessionLiveClock
             default => ProviderFieldSpecs::HEYGEN_MAX_SECONDS,
         };
 
-        $template = $this->templates->resolve();
+        $template = $this->templates->resolve($session->provider);
 
-        if ($template === null || $template->provider !== $session->provider) {
+        if ($template === null) {
             return $default;
         }
 
