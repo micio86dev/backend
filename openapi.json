@@ -4652,6 +4652,30 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "llm_model_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_credential_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_sync_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm_synced_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -4662,7 +4686,11 @@
                     "config",
                     "is_active",
                     "created_at",
-                    "updated_at"
+                    "updated_at",
+                    "llm_model_id",
+                    "llm_credential_id",
+                    "llm_sync_status",
+                    "llm_synced_at"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -4911,6 +4939,9 @@
             "LlmModelResource": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
                     "key": {
                         "type": "string"
                     },
@@ -5006,6 +5037,7 @@
                     }
                 },
                 "required": [
+                    "id",
                     "key",
                     "vendor",
                     "display_name",

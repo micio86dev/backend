@@ -25,7 +25,7 @@ class LlmModelResource extends JsonResource
     /**
      * @return array<string, mixed>
      *
-     * @scramble-return array{key: string, vendor: string, display_name: string, capability: string, mode: string, is_available: bool, sort_order: int, rate_card_source_url: string|null, rate_card_verified_at: string|null, text_input_usd_per_million: string|null, text_output_usd_per_million: string|null, text_input_usd_per_million_high: string|null, text_output_usd_per_million_high: string|null, context_tier_threshold_tokens: int|null, audio_input_usd_per_million: string|null, audio_output_usd_per_million: string|null, audio_input_usd_per_minute: string|null, audio_output_usd_per_minute: string|null, audio_tokens_per_second: int|null}
+     * @scramble-return array{id: int, key: string, vendor: string, display_name: string, capability: string, mode: string, is_available: bool, sort_order: int, rate_card_source_url: string|null, rate_card_verified_at: string|null, text_input_usd_per_million: string|null, text_output_usd_per_million: string|null, text_input_usd_per_million_high: string|null, text_output_usd_per_million_high: string|null, context_tier_threshold_tokens: int|null, audio_input_usd_per_million: string|null, audio_output_usd_per_million: string|null, audio_input_usd_per_minute: string|null, audio_output_usd_per_minute: string|null, audio_tokens_per_second: int|null}
      */
     public function toArray(Request $request): array
     {
@@ -33,6 +33,7 @@ class LlmModelResource extends JsonResource
         $model = $this->resource;
 
         return [
+            'id' => $model->id,
             'key' => $model->key,
             'vendor' => $model->vendor,
             'display_name' => $model->display_name,
