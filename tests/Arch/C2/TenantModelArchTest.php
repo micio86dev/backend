@@ -13,6 +13,7 @@ use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
 use App\Models\FrameworkGap;
+use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\RefreshToken;
@@ -69,6 +70,13 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // is enforced at the controller layer (forceFill organization_id from project)
         // and via the TenantContextCandidate middleware. See C6 design invariants.
         Participant::class,
+        // pluggable-conversation-llm — LlmModel intentionally does NOT extend
+        // TenantModel. A conversation-LLM rate card is a VENDOR fact (Google's
+        // published prices), not tenant data: making it tenant-scoped would
+        // mean N copies of the same price list drifting independently, and
+        // every organization must resolve the SAME registry row for the SAME
+        // vendor model id. See design.md D1.
+        LlmModel::class,
         // backoffice-session-refresh-hardening — RefreshToken intentionally does
         // NOT extend TenantModel. App\Support\Auth\RefreshTokenStore is reached
         // from POST /api/auth/refresh, which runs OUTSIDE auth:api (by design —

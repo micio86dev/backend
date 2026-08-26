@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationIndexController;
 use App\Http\Controllers\Api\FrameworkController;
+use App\Http\Controllers\Api\LlmModelController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
@@ -85,6 +86,14 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 
     // C4 — GET /api/framework/versions: list org-scoped FrameworkVersions available for pinning.
     Route::get('/versions', [FrameworkController::class, 'versions']);
+});
+
+// ─── Conversation LLM Registry (pluggable-conversation-llm PR P1) ────────────
+// GET /api/llm-models — a public price list, readable by all three
+// authorization roles (design D9). Global, like the framework catalog above:
+// no policy check, no ownership to authorize.
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('/llm-models', [LlmModelController::class, 'index']);
 });
 
 // ─── Project Configuration API (C4) ──────────────────────────────────────────
