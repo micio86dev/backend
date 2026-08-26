@@ -20,6 +20,7 @@ use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -54,7 +55,7 @@ function creditInUseCredential(int $orgId): LlmCredential
     });
 }
 
-test('deleting a credential bound to two templates is refused 409, naming both', function (): void {
+test('deleting a credential bound to two templates is refused 409, naming both, and makes no HeyGen call', function (): void {
     $org = Organization::factory()->create();
     $token = authTokenForRole($org, 'admin');
     $model = creditInUseModel();
@@ -73,12 +74,18 @@ test('deleting a credential bound to two templates is refused 409, naming both',
         ]);
     });
 
+    // PR P5: the 409 gate must be checked BEFORE `HeygenLlmRegistrar::forgetSecret()`
+    // is ever reached — a request that is refused must not also delete the
+    // vendor secret out from under the templates still bound to it.
+    Http::fake();
+
     $response = $this->withToken($token)->deleteJson("/api/llm-credentials/{$credential->id}")
         ->assertStatus(409);
 
     expect($response->json('error'))->toBe('credential_in_use');
     expect($response->json('templates'))->toContain('Bound A', 'Bound B');
     expect(LlmCredential::withoutGlobalScopes()->find($credential->id))->not->toBeNull();
+    Http::assertNothingSent();
 });
 
 test('unbinding one template leaves the sibling bound, and deletion then succeeds', function (): void {

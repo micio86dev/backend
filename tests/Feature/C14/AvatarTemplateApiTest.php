@@ -16,6 +16,7 @@ use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -326,6 +327,23 @@ test('deleting an inactive template returns 204', function (): void {
     $this->withToken(templateActor($org, 'admin'))
         ->deleteJson("/api/avatar-templates/{$template->id}")
         ->assertNoContent();
+});
+
+test('deleting a bound HeyGen template issues the DELETE and clears the ledger column (PR P5)', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+
+    $org = Organization::factory()->create();
+    $template = seedTemplate($org);
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg-to-delete'])->saveQuietly();
+
+    Http::fake(['*heygen.com/v1/llm-configurations/cfg-to-delete' => Http::response([], 200)]);
+
+    $this->withToken(templateActor($org, 'admin'))
+        ->deleteJson("/api/avatar-templates/{$template->id}")
+        ->assertNoContent();
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && str_contains($request->url(), '/v1/llm-configurations/cfg-to-delete'));
 });
 
 // ─── Field specs ─────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ use App\Http\Resources\LlmCredentialResource;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Services\ConversationLlm\GeminiKeyValidator;
+use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -133,6 +134,17 @@ final class LlmCredentialController extends Controller
 
         $credential->save();
 
+        // Rotate the vendor secret ONLY when one already exists — a
+        // credential never bound to a HeyGen template has no
+        // `heygen_secret_id` yet, and eagerly registering one here would
+        // create a secret HeyGen never uses (design D8: `secret_name` is not
+        // unique, so an eager POST on every save risks an orphan). The
+        // first HeyGen template that binds this credential creates its
+        // secret fresh, via `HeygenLlmRegistrar::ensureConfiguration()`.
+        if (array_key_exists('api_key', $validated) && $credential->heygen_secret_id !== null) {
+            app(HeygenLlmRegistrar::class)->rotateSecret($credential);
+        }
+
         if (array_key_exists('api_key', $validated)) {
             app(AuditRecorder::class)->record(
                 'llm_credential.rotated',
@@ -169,6 +181,11 @@ final class LlmCredentialController extends Controller
                 'templates' => $boundTemplateNames,
             ], Response::HTTP_CONFLICT);
         }
+
+        // Reached only once nothing references this credential — never
+        // throws (design D8), so an unreachable HeyGen account cannot block
+        // deleting OUR row.
+        app(HeygenLlmRegistrar::class)->forgetSecret($credential);
 
         app(AuditRecorder::class)->record(
             'llm_credential.deleted',

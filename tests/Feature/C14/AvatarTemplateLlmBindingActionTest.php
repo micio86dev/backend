@@ -16,6 +16,7 @@ use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Support\Facades\Http;
 
 function bindActionModel(): LlmModel
 {
@@ -49,6 +50,8 @@ function bindActionCredential(int $orgId): LlmCredential
 }
 
 test('unbinding a HeyGen template clears its heygen_llm_configuration_id', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+
     $org = Organization::factory()->create();
     $token = authTokenForRole($org, 'admin');
     $model = bindActionModel();
@@ -63,6 +66,12 @@ test('unbinding a HeyGen template clears its heygen_llm_configuration_id', funct
     ]));
     $template->forceFill(['heygen_llm_configuration_id' => 'hg-config-1'])->saveQuietly();
 
+    // PR P5: unbind now issues a REAL `DELETE /v1/llm-configurations/{id}`
+    // via `HeygenLlmRegistrar::forget()`, not just a column clear — this
+    // fake proves it, closing the gap the pre-P5 stub's own docblock named
+    // ("the full lifecycle is wired in PR P5's HeygenLlmRegistrar").
+    Http::fake(['*heygen.com/v1/llm-configurations/hg-config-1' => Http::response([], 200)]);
+
     $this->withToken($token)->patchJson("/api/avatar-templates/{$template->id}", [
         'llm_model_id' => null,
         'llm_credential_id' => null,
@@ -72,6 +81,9 @@ test('unbinding a HeyGen template clears its heygen_llm_configuration_id', funct
     expect($fresh->llm_model_id)->toBeNull();
     expect($fresh->llm_credential_id)->toBeNull();
     expect($fresh->heygen_llm_configuration_id)->toBeNull();
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && str_contains($request->url(), '/v1/llm-configurations/hg-config-1'));
 });
 
 test('binding a template is audited as avatar_template.llm_bound with names, never ids', function (): void {

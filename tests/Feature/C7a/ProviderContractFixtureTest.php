@@ -33,6 +33,7 @@ use App\Models\InterviewSession;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Models\Organization;
+use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Services\ConversationLlm\LlmBindingResolver;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\QuestionContext;
@@ -372,4 +373,209 @@ test('L2 (P4, regression): an unbound template\'s PAL PATCH body is byte-identic
     // regression proof: the outbound layers node is EXACTLY the pre-P4 shape.
     $layers = $capturedBody[0]['value'];
     expect($layers)->toBe(['llm' => ['extra_body' => ['temperature' => 0.5]]]);
+});
+
+// ─── PR P5 — HeyGen secret/configuration lifecycle (design D8) ────────────────
+//
+// L1: `HeygenLlmRegistrar` correctly reads `data.id` from BOTH
+// `/v1/secrets` and `/v1/llm-configurations` responses — @wire-source live
+// HeyGen API smoke-check, 2026-08-26: the id is at `data.id`, NOT top level,
+// on both endpoints.
+//
+// L2: the outbound `/v1/secrets` and `/v1/llm-configurations` POST bodies
+// match a golden shape — proves "unchanged", not "correct", same L2 doctrine
+// as the Tavus/LiveAvatar goldens above. Deliberately does NOT cover the
+// `/v1/sessions/token` body's `llm_configuration_id` placement — design D8's
+// placement inside `$providerOwned` is this batch's BEST GUESS (see
+// `HeygenProvider::buildSessionTokenBody()`'s docblock), UNVERIFIED by any
+// live conversational test, and pinning it in a golden fixture would encode
+// a guess as a fact.
+
+test('L1: HeygenLlmRegistrar::ensureSecret() correctly reads data.id from a docs-verified /v1/secrets response', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    $fixture = loadProviderFixture('heygen/secret_create_response.json');
+
+    Http::fake(['*heygen.com/v1/secrets' => Http::response($fixture, 200)]);
+
+    $org = Organization::factory()->create();
+    $credential = palGeminiCredentialForOrg($org->id);
+
+    $secretId = app(HeygenLlmRegistrar::class)->ensureSecret($credential);
+
+    expect($secretId)->toBe($fixture['data']['id']);
+    expect($credential->fresh()->heygen_secret_id)->toBe($fixture['data']['id']);
+});
+
+test('L1: HeygenLlmRegistrar::ensureConfiguration() correctly reads data.id from a docs-verified /v1/llm-configurations response', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    $secretFixture = loadProviderFixture('heygen/secret_create_response.json');
+    $configFixture = loadProviderFixture('heygen/llm_configuration_create_response.json');
+
+    Http::fake([
+        '*heygen.com/v1/secrets' => Http::response($secretFixture, 200),
+        '*heygen.com/v1/llm-configurations' => Http::response($configFixture, 200),
+    ]);
+
+    $model = palGeminiModel();
+    $template = palBoundTemplate(['avatarId' => 'a', 'voiceId' => 'v'], $model);
+    $template->forceFill(['provider' => 'heygen'])->saveQuietly();
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
+
+    expect($result['status'])->toBe('synced');
+    expect($template->fresh()->heygen_llm_configuration_id)->toBe($configFixture['data']['id']);
+});
+
+test('L2: HeyGen /v1/secrets outbound body matches the golden JSON', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        $capturedBody = $request->data();
+
+        return Http::response(loadProviderFixture('heygen/secret_create_response.json'), 200);
+    });
+
+    $org = Organization::factory()->create();
+    $credential = palGeminiCredentialForOrg($org->id);
+
+    app(HeygenLlmRegistrar::class)->ensureSecret($credential);
+
+    $golden = loadProviderFixture('heygen/secret_create_request_golden.json');
+    $golden['secret_value'] = $credential->api_key;
+    $golden['secret_name'] = $capturedBody['secret_name'];
+
+    expect($capturedBody['secret_name'])->toBe("beai-org{$org->id}-cred{$credential->id}");
+    $this->assertEqualsCanonicalizing($golden, $capturedBody);
+});
+
+test('L2: HeyGen /v1/llm-configurations outbound body matches the golden JSON', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/v1/secrets')) {
+            return Http::response(loadProviderFixture('heygen/secret_create_response.json'), 200);
+        }
+
+        $capturedBody = $request->data();
+
+        return Http::response(loadProviderFixture('heygen/llm_configuration_create_response.json'), 200);
+    });
+
+    $model = palGeminiModel();
+    $template = palBoundTemplate(['avatarId' => 'a', 'voiceId' => 'v'], $model);
+    $template->forceFill(['provider' => 'heygen'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
+
+    $golden = loadProviderFixture('heygen/llm_configuration_create_request_golden.json');
+    $golden['display_name'] = $capturedBody['display_name'];
+    $golden['model_name'] = $model->key;
+    $golden['base_url'] = $model->base_url;
+    $golden['secret_id'] = loadProviderFixture('heygen/secret_create_response.json')['data']['id'];
+
+    $this->assertEqualsCanonicalizing($golden, $capturedBody);
+});
+
+// ─── PR P5 — HeyGen session-token binding (design D8) ─────────────────────────
+
+test('L2 (P5): a bound HeyGen template carries llm_configuration_id in the session-token body, at the top level', function (): void {
+    $model = palGeminiModel();
+    $template = palBoundTemplate(['avatarId' => 'a', 'voiceId' => 'v'], $model);
+    $template->forceFill([
+        'provider' => 'heygen',
+        'is_active' => true,
+        'heygen_llm_configuration_id' => 'cfg_bound_123',
+    ])->saveQuietly();
+
+    $capturedBody = [];
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            return Http::response(['data' => ['id' => 'ctx-p5']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            $capturedBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-p5', 'session_token' => 'tok-p5']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = fixtureContractSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, systemPrompt: 'p', promptVersion: 'v1');
+
+    TenantContextScope::runFor($template->organization_id, fn () => (new HeygenProvider)->issue($session, $ctx));
+
+    // A SHAPE assertion only — "the field is present when bound" — never a
+    // placement CORRECTNESS claim. The Phase 0.3(a) control experiment
+    // proved a 200 from this endpoint cannot discriminate where the field
+    // belongs (see `HeygenProvider.php`'s docblock); only a live
+    // conversational test could confirm it, and none has run.
+    expect($capturedBody)->toHaveKey('llm_configuration_id');
+    expect($capturedBody['llm_configuration_id'])->toBe('cfg_bound_123');
+});
+
+test('L2 (P5): the token-field allowlist environment variable cannot remove llm_configuration_id from the body', function (): void {
+    // Design D8's rationale: TOKEN_FIELD_ALLOWLIST is union'd with
+    // `interview.heygen.extra_token_fields`, an ENV VAR — routing the
+    // binding through it would let an environment change silently disable
+    // every tenant's LLM binding with no deploy and no diff. Placing it in
+    // `$providerOwned` instead means this config change cannot touch it
+    // at all — proven here by mutating the allowlist-governing config
+    // itself and asserting the field survives regardless.
+    config()->set('interview.heygen.extra_token_fields', ['nonexistent.field.path']);
+
+    $model = palGeminiModel();
+    $template = palBoundTemplate(['avatarId' => 'a', 'voiceId' => 'v'], $model);
+    $template->forceFill([
+        'provider' => 'heygen',
+        'is_active' => true,
+        'heygen_llm_configuration_id' => 'cfg_allowlist_proof',
+    ])->saveQuietly();
+
+    $capturedBody = [];
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            return Http::response(['data' => ['id' => 'ctx-allowlist']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            $capturedBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-allowlist', 'session_token' => 'tok-allowlist']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = fixtureContractSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, systemPrompt: 'p', promptVersion: 'v1');
+
+    TenantContextScope::runFor($template->organization_id, fn () => (new HeygenProvider)->issue($session, $ctx));
+
+    expect($capturedBody['llm_configuration_id'])->toBe('cfg_allowlist_proof');
+});
+
+test('L2 (P5, regression): an unbound HeyGen template carries no llm_configuration_id at all', function (): void {
+    $capturedBody = [];
+    Http::fake(function ($request) use (&$capturedBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            return Http::response(['data' => ['id' => 'ctx-p5-unbound']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            $capturedBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-p5-u', 'session_token' => 'tok-p5-u']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $session = fixtureContractSession('heygen');
+    $ctx = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, systemPrompt: 'p', promptVersion: 'v1');
+
+    (new HeygenProvider)->issue($session, $ctx);
+
+    expect($capturedBody)->not->toHaveKey('llm_configuration_id');
 });

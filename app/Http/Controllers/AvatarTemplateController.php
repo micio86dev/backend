@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
+use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
@@ -184,13 +185,15 @@ final class AvatarTemplateController extends Controller
 
     /**
      * Audits a binding change as `.llm_bound` or `.llm_unbound` — never
-     * `.updated` — and, for an unbind on a HeyGen template, clears the
-     * ledger id (pluggable-conversation-llm PR P3a, design D3).
+     * `.updated` (pluggable-conversation-llm PR P3a, design D3).
      *
-     * The actual HeyGen `DELETE /v1/llm-configurations/{id}` call is a stub
-     * here; the full lifecycle (create/update/rotate/forget) is wired in
-     * PR P5's `HeygenLlmRegistrar`. Clearing the ledger id is what makes
-     * this call site correct to extend, not a workaround.
+     * The actual HeyGen `DELETE /v1/llm-configurations/{id}` call on unbind
+     * happens in `recordSync()`, called right after this method returns —
+     * it dispatches to `HeygenLlmRegistrar::ensureConfiguration()`, whose
+     * own unbound branch calls `forget()` (PR P5, design D8). This method
+     * therefore no longer clears `heygen_llm_configuration_id` itself; doing
+     * so here AND there would be the exact duplication P5's own task list
+     * warns against ("extend it, don't duplicate it").
      *
      * @param  array{model_key: string|null, credential_name: string|null}|null  $beforeBindingNames
      */
@@ -199,10 +202,6 @@ final class AvatarTemplateController extends Controller
         $isNowUnbound = $template->llm_model_id === null && $template->llm_credential_id === null;
 
         if ($isNowUnbound) {
-            if ($template->provider === 'heygen' && $template->heygen_llm_configuration_id !== null) {
-                $template->forceFill(['heygen_llm_configuration_id' => null])->saveQuietly();
-            }
-
             app(AuditRecorder::class)->record(
                 'avatar_template.llm_unbound',
                 'avatar_template',
@@ -286,6 +285,12 @@ final class AvatarTemplateController extends Controller
             ], Response::HTTP_CONFLICT);
         }
 
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8) — deleting OUR row must not be
+            // blocked by an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
+        }
+
         app(AuditRecorder::class)->record(
             'avatar_template.deleted',
             'avatar_template',
@@ -345,9 +350,9 @@ final class AvatarTemplateController extends Controller
     }
 
     /**
-     * Push persona-level knobs (and the managed-mode LLM binding) to Tavus,
-     * report it if that did not work, and PERSIST the outcome
-     * (pluggable-conversation-llm PR P4, design D0/D7).
+     * Push persona-level knobs and the managed-mode LLM binding to the
+     * template's provider, report it if that did not work, and PERSIST the
+     * outcome (pluggable-conversation-llm PR P4/P5, design D0/D7/D8).
      *
      * Nine of the seventeen Tavus fields live on the PERSONA, not the
      * conversation — sent on a conversation they do nothing at all. Offering
@@ -360,20 +365,17 @@ final class AvatarTemplateController extends Controller
      * third party was slow. But it is reported, because an operator who is not
      * told will believe the setting took effect.
      *
-     * `llm_sync_status`/`llm_synced_at` are written HERE, not inside
-     * `TavusPalSync` itself, which returns a transient result and persists
-     * nothing (C-E: `Support/AvatarTemplates/` stays pure of DB writes; this
-     * controller already holds both the HTTP result and the model). Without
-     * this write, `degraded` (design D0) is UNREACHABLE on the Tavus path: a
-     * template whose PAL push failed would still resolve `applied` at a later
-     * session-issue and get billed for a binding that never took effect.
-     *
-     * Scoped to `provider === 'tavus'` on purpose — HeyGen writes these same
-     * two columns from `HeygenLlmRegistrar`'s own return (PR P5, design D8),
-     * not from here. `TavusPalSync::sync()` already returns `skipped`
-     * immediately for a non-Tavus template, so nothing would be attempted for
-     * HeyGen anyway; the guard just keeps this method from writing a
-     * misleading 'failed' onto a template this call never touched.
+     * `llm_sync_status`/`llm_synced_at` are written HERE for BOTH providers —
+     * `TavusPalSync::sync()` returns a transient result and persists nothing
+     * (C-E: `Support/AvatarTemplates/` stays pure of DB writes); `HeygenLlmRegistrar`
+     * persists `heygen_llm_configuration_id` itself (it IS the orphan ledger,
+     * design D8) but not these two columns — D0's resolver rule stays ONE
+     * line for both providers, decided from these same two columns
+     * regardless of which provider wrote the underlying vendor state.
+     * Without this write, `degraded` (design D0) would be UNREACHABLE: a
+     * template whose provider push failed would still resolve `applied` at a
+     * later session-issue and get billed for a binding that never took
+     * effect.
      *
      * Deliberately checks `llm_model_id`/`llm_credential_id` directly rather
      * than resolving a full `LlmBinding` here — a controller is exactly the
@@ -389,9 +391,13 @@ final class AvatarTemplateController extends Controller
             return [];
         }
 
-        $result = app(TavusPalSync::class)->sync($template);
+        $result = match ($template->provider) {
+            'tavus' => app(TavusPalSync::class)->sync($template),
+            'heygen' => app(HeygenLlmRegistrar::class)->ensureConfiguration($template),
+            default => ['status' => 'skipped'],
+        };
 
-        if ($template->provider === 'tavus') {
+        if (in_array($template->provider, ['tavus', 'heygen'], true)) {
             $isBound = $template->llm_model_id !== null && $template->llm_credential_id !== null;
 
             // saveQuietly() — NOT save() — IS A RE-ENTRANCY GUARD, NOT A

@@ -1,0 +1,9 @@
+{
+  "data": {
+    "id": "cfg_01H0000000000000000000000",
+    "display_name": "beai-org1-template1",
+    "model_name": "gemini-3-flash-preview",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "secret_id": "sec_01H0000000000000000000000"
+  }
+}
