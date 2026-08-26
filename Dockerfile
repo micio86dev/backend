@@ -74,6 +74,9 @@ RUN apk add --no-cache nginx supervisor
 
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
+# Seeds the LLM model registry before supervisord takes over — see the script's
+# own header for why it is here and not in Railway's preDeployCommand.
+COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # php-fpm on a local TCP socket rather than the default Unix one: nginx and fpm
 # are separate processes in this container, and a TCP socket needs no shared
@@ -100,4 +103,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
