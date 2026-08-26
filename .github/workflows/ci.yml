@@ -113,8 +113,16 @@ jobs:
         run: php artisan test --parallel
 
       # ── Coverage gate (85% minimum) ───────────────────────────────────────
+      # `-d memory_limit=2G` is required, not defensive. PCOV holds the whole
+      # line map in memory and the report renderer builds every class summary
+      # before printing; at PHP's default 128M the process dies with a
+      # FatalError *after* the suite has already passed, which reads as a
+      # coverage failure when it is really an OOM. Reproduced locally on
+      # 2026-08-26 at the exact commit that first crossed the limit. The
+      # phpstan step above already carries `--memory-limit=1G` for the same
+      # class of reason.
       - name: Test coverage (≥85%)
-        run: php artisan test --coverage --min=85
+        run: php -d memory_limit=2G artisan test --coverage --min=85
 
       # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
       - name: Generate OpenAPI spec
