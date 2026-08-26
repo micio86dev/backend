@@ -177,7 +177,10 @@ final class DemoWriter
                     'participantAbsentTimeoutSec' => 60,
                     'enableRecording' => false,
                     'enableClosedCaptions' => true,
-                    'llmModel' => 'tavus-gemini-2.5-flash',
+                    // 'llmModel' removed (pluggable-conversation-llm PR P3a,
+                    // design D3): the field no longer exists in
+                    // ProviderFieldSpecs::tavus() — the real binding now owns
+                    // the PAL path it used to write.
                     'llmTemperature' => 0.0,
                     'llmSpeculativeInference' => true,
                     'ttsEngine' => 'tavus-auto',

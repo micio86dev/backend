@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\LlmCredentialResource;
+use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Services\ConversationLlm\GeminiKeyValidator;
 use App\Support\Audit\AuditRecorder;
@@ -152,6 +153,22 @@ final class LlmCredentialController extends Controller
     {
         $credential = LlmCredential::findOrFail($id);
         $this->authorize('delete', $credential);
+
+        // The (organization_id, llm_credential_id) index (design D3) makes
+        // this one query. Mirrors AvatarTemplateController::destroy()'s 409
+        // `template_active` — the request is well-formed, the state is what
+        // refuses it.
+        $boundTemplateNames = AvatarTemplate::where('llm_credential_id', $credential->id)
+            ->pluck('name')
+            ->all();
+
+        if ($boundTemplateNames !== []) {
+            return response()->json([
+                'error' => 'credential_in_use',
+                'message' => 'Unbind every template using this credential before deleting it.',
+                'templates' => $boundTemplateNames,
+            ], Response::HTTP_CONFLICT);
+        }
 
         app(AuditRecorder::class)->record(
             'llm_credential.deleted',

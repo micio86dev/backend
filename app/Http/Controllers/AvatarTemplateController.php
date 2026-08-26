@@ -80,6 +80,11 @@ final class AvatarTemplateController extends Controller
             'description' => ['nullable', 'string', 'max:500'],
             'provider' => ['required', 'string', 'in:'.implode(',', self::PROVIDERS)],
             'config' => ['required', 'array'],
+            // Both-or-neither is enforced by the DB CHECK (I1) and by
+            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+            // here (pluggable-conversation-llm PR P3a, design D4).
+            'llm_model_id' => ['sometimes', 'nullable', 'integer'],
+            'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
@@ -113,6 +118,13 @@ final class AvatarTemplateController extends Controller
             'name' => ['sometimes', 'string', 'max:120'],
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
             'config' => ['sometimes', 'array'],
+            // Both-or-neither is enforced by the DB CHECK (I1) and by
+            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+            // here (pluggable-conversation-llm PR P3a, design D4). Both null
+            // clears the binding (see "Unbinding a template clears only
+            // that template's binding").
+            'llm_model_id' => ['sometimes', 'nullable', 'integer'],
+            'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 
         // The provider is immutable. Changing it would leave every knob in the
@@ -134,6 +146,13 @@ final class AvatarTemplateController extends Controller
             $this->assertNameFree($validated['name'], $template->id);
         }
 
+        // Names, never ids — the AuditRecorder doctrine applied to a binding
+        // change (pluggable-conversation-llm PR P3a, design D3/D4). Captured
+        // BEFORE the write, while the OLD binding (if any) is still resolvable.
+        $bindingRequested = array_key_exists('llm_model_id', $validated)
+            || array_key_exists('llm_credential_id', $validated);
+        $beforeBindingNames = $bindingRequested ? $this->bindingAuditNames($template) : null;
+
         $before = ['name' => $template->name];
         $template->update($validated);
 
@@ -145,7 +164,62 @@ final class AvatarTemplateController extends Controller
             after: ['name' => $template->name],
         );
 
+        if ($bindingRequested) {
+            $this->recordBindingChange($template->refresh(), $beforeBindingNames);
+        }
+
         return (new AvatarTemplateResource($template))->additional($this->palWarning($template));
+    }
+
+    /**
+     * @return array{model_key: string|null, credential_name: string|null}
+     */
+    private function bindingAuditNames(AvatarTemplate $template): array
+    {
+        return [
+            'model_key' => $template->llmModel?->key,
+            'credential_name' => $template->llmCredential?->name,
+        ];
+    }
+
+    /**
+     * Audits a binding change as `.llm_bound` or `.llm_unbound` — never
+     * `.updated` — and, for an unbind on a HeyGen template, clears the
+     * ledger id (pluggable-conversation-llm PR P3a, design D3).
+     *
+     * The actual HeyGen `DELETE /v1/llm-configurations/{id}` call is a stub
+     * here; the full lifecycle (create/update/rotate/forget) is wired in
+     * PR P5's `HeygenLlmRegistrar`. Clearing the ledger id is what makes
+     * this call site correct to extend, not a workaround.
+     *
+     * @param  array{model_key: string|null, credential_name: string|null}|null  $beforeBindingNames
+     */
+    private function recordBindingChange(AvatarTemplate $template, ?array $beforeBindingNames): void
+    {
+        $isNowUnbound = $template->llm_model_id === null && $template->llm_credential_id === null;
+
+        if ($isNowUnbound) {
+            if ($template->provider === 'heygen' && $template->heygen_llm_configuration_id !== null) {
+                $template->forceFill(['heygen_llm_configuration_id' => null])->saveQuietly();
+            }
+
+            app(AuditRecorder::class)->record(
+                'avatar_template.llm_unbound',
+                'avatar_template',
+                $template->id,
+                before: $beforeBindingNames,
+            );
+
+            return;
+        }
+
+        app(AuditRecorder::class)->record(
+            'avatar_template.llm_bound',
+            'avatar_template',
+            $template->id,
+            before: $beforeBindingNames,
+            after: $this->bindingAuditNames($template),
+        );
     }
 
     /**

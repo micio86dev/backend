@@ -155,13 +155,13 @@ test('Tavus call properties are nested under properties', function (): void {
 test('persona-level knobs are NOT sent on the conversation', function (): void {
     $payload = TemplatePayload::tavus([
         'faceId' => 'r', 'palId' => 'p',
-        'llmModel' => 'tavus-gemma-4', 'ttsEngine' => 'cartesia',
+        'llmTemperature' => 0.7, 'ttsEngine' => 'cartesia',
     ]);
 
     // Tavus splits its configuration across two API objects. A persona knob on
     // a conversation is silently ignored — no error, no effect, and an operator
     // watching a setting do nothing. They belong in the PAL.
-    expect(json_encode($payload))->not->toContain('tavus-gemma-4');
+    expect(json_encode($payload))->not->toContain('0.7');
     expect(json_encode($payload))->not->toContain('cartesia');
 });
 
@@ -169,16 +169,16 @@ test('persona-level knobs are NOT sent on the conversation', function (): void {
 
 test('persona knobs become nested PAL layers at their declared paths', function (): void {
     $layers = TemplatePayload::tavusPalLayers([
-        'llmModel' => 'tavus-gemma-4',
         'llmTemperature' => 0.7,
+        'llmSpeculativeInference' => true,
         'ttsEngine' => 'cartesia',
         'turnTakingPatience' => 'high',
     ]);
 
     // The paths come from the field spec's palPath, so adding a knob is a
     // one-line change in one file rather than an edit here as well.
-    expect($layers['llm']['model'])->toBe('tavus-gemma-4');
     expect($layers['llm']['extra_body']['temperature'])->toBe(0.7);
+    expect($layers['llm']['speculative_inference'])->toBeTrue();
     expect($layers['tts']['tts_engine'])->toBe('cartesia');
     expect($layers['conversational_flow']['turn_taking_patience'])->toBe('high');
 });

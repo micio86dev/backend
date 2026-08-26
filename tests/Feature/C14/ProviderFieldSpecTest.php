@@ -68,7 +68,7 @@ test('persona-level knobs are marked, conversation-level ones are not', function
     // Tavus splits its configuration across two API objects. A persona knob
     // sent on a conversation is silently ignored — no error, no effect, and an
     // operator who set it watching it do nothing.
-    expect($tavus['llmModel']->palPath)->toBe('layers/llm/model');
+    expect($tavus['llmTemperature']->palPath)->toBe('layers/llm/extra_body/temperature');
     expect($tavus['faceId']->palPath)->toBeNull();
 });
 
