@@ -89,10 +89,11 @@ class AvatarTemplate extends TenantModel
     }
 
     /**
-     * Binding invariants I2/I3/I4 (pluggable-conversation-llm PR P3a,
-     * design D4). Enforced on `saving` — the one write hook `forceFill()`
-     * (the portability import path) cannot dodge — never only in a
-     * FormRequest.
+     * Binding invariants I2/I3/I4/I5 (pluggable-conversation-llm PR P3a,
+     * design D4; I5 added closing an adversarial-review gap: `is_available`
+     * was carried on `LlmModel` but never enforced on any write path).
+     * Enforced on `saving` — the one write hook `forceFill()` (the
+     * portability import path) cannot dodge — never only in a FormRequest.
      */
     protected static function booted(): void
     {
@@ -112,6 +113,18 @@ class AvatarTemplate extends TenantModel
 
             if ($model === null) {
                 throw new InvalidLlmBindingException('llm_model_id', 'model_not_found');
+            }
+
+            // I5 — a withdrawn (`is_available = false`) model cannot be
+            // NEWLY bound. Gated on `isDirty('llm_model_id')` deliberately:
+            // a template already bound to a model that later becomes
+            // unavailable MUST keep saving for unrelated field changes
+            // (renaming it, changing its voice settings) — that is the
+            // entire point of "mark unavailable, never delete" (design D1).
+            // Rejecting every unrelated edit to a grandfathered template
+            // would be a worse bug than the one this guard fixes.
+            if ($template->isDirty('llm_model_id') && ! $model->is_available) {
+                throw new InvalidLlmBindingException('llm_model_id', 'model_unavailable');
             }
 
             // I2 — native_duplex is refused at every write path.

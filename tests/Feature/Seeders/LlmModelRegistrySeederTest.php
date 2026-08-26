@@ -11,7 +11,11 @@ declare(strict_types=1);
  *      console command, never db:seed"
  */
 
+use App\Models\AvatarTemplate;
+use App\Models\LlmCredential;
 use App\Models\LlmModel;
+use App\Models\Organization;
+use App\Support\Tenancy\TenantContextScope;
 use Database\Seeders\LlmModelRegistrySeeder;
 
 test('the seeder produces exactly the four verified model keys and no others', function (): void {
@@ -75,4 +79,52 @@ test('a model removed from the seed array becomes unavailable, never deleted, an
 
     // The other three, still present in the array, remain available.
     expect(LlmModel::where('is_available', true)->count())->toBe(3);
+});
+
+test('a re-run of the seeder never disturbs an AvatarTemplate bound to a seeded model (deferred P1.11 obligation, closing GAP 2)', function (): void {
+    (new LlmModelRegistrySeeder)->run();
+
+    $model = LlmModel::where('key', 'gemini-3-flash-preview')->firstOrFail();
+
+    $org = Organization::factory()->create();
+    $credential = TenantContextScope::runFor($org->id, function () use ($org, $model): LlmCredential {
+        $credential = new LlmCredential;
+        $credential->forceFill([
+            'organization_id' => $org->id,
+            'name' => 'Seeder-bound credential',
+            'vendor' => $model->vendor,
+            'api_key' => 'sk-real-key',
+            'key_last_four' => 'real',
+            'key_fingerprint' => hash('sha256', uniqid('', true)),
+        ]);
+        $credential->save();
+
+        return $credential;
+    });
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Seeder-bound tavus',
+        'provider' => 'tavus',
+        'config' => ['faceId' => 'f', 'palId' => 'p'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+
+    $templateUpdatedAtBefore = $template->fresh()->updated_at;
+
+    (new LlmModelRegistrySeeder)->run();
+
+    $freshTemplate = $template->fresh();
+
+    // The binding still resolves — the FK never dangles.
+    expect($freshTemplate->llm_model_id)->toBe($model->id);
+    expect($freshTemplate->llmModel->id)->toBe($model->id);
+
+    // The seeder is tenant-scoped registry maintenance, not a template
+    // write — the bound template's own row must not move.
+    expect($freshTemplate->updated_at->equalTo($templateUpdatedAtBefore))->toBeTrue();
+
+    // The LlmModel row itself keeps its id (an upsert on the natural key,
+    // never a delete-then-recreate that would break the FK above).
+    expect(LlmModel::where('key', 'gemini-3-flash-preview')->firstOrFail()->id)->toBe($model->id);
 });
