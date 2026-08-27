@@ -4696,6 +4696,36 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "llm": {
+                        "type": "object",
+                        "properties": {
+                            "estimated_cost_usd_per_interview": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "minutes": {
+                                        "type": "integer"
+                                    },
+                                    "turns": {
+                                        "type": "integer"
+                                    },
+                                    "usd": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "minutes",
+                                    "turns",
+                                    "usd"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "estimated_cost_usd_per_interview"
+                        ]
                     }
                 },
                 "required": [
@@ -4710,7 +4740,8 @@
                     "llm_model_id",
                     "llm_credential_id",
                     "llm_sync_status",
-                    "llm_synced_at"
+                    "llm_synced_at",
+                    "llm"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -5885,7 +5916,7 @@
                     },
                     "cost": {
                         "type": "object",
-                        "description": "Avatar minutes only. `ai_requests` has no interview_session_id,\nso LLM spend cannot be attributed to one session without\ninventing the link \u2014 and a plausible number with no basis is\nworse than an absent one (D5).",
+                        "description": "TWO SEPARATE labelled lines, never one combined total \u2014 the\nsame refusal already ratified at `SessionCostEstimator.php:20-22`\nfor avatar-vs-LLM spend: different vendors, different meters. `avatar`: minutes only. `ai_requests` has no interview_session_id,\nso LLM spend cannot be attributed to one session without\ninventing the link \u2014 and a plausible number with no basis is\nworse than an absent one (D5).\n\n`llm`: null when the session was never billed (unbound/degraded \u2014\nno vendor default is priced). When present, `actual_usd`\nrenders ONLY when non-null (pluggable-conversation-llm PR P6b,\ndesign D5: permanently null in managed mode, reserved for a\nfuture native_duplex change).",
                         "properties": {
                             "avatar": {
                                 "type": [
@@ -5909,12 +5940,37 @@
                                     "usd"
                                 ]
                             },
+                            "llm": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "estimated_usd": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "actual_usd": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "estimated_usd",
+                                    "actual_usd"
+                                ]
+                            },
                             "is_estimate": {
                                 "type": "boolean"
                             }
                         },
                         "required": [
                             "avatar",
+                            "llm",
                             "is_estimate"
                         ]
                     }
@@ -5991,6 +6047,13 @@
                                 ]
                             }
                         ]
+                    },
+                    "llm_cost_usd": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "description": "(pluggable-conversation-llm PR P6b) A separate line, never\ncombined with any avatar-minute figure. `actual_cost_usd` is\npreferred when non-null (permanently null in managed mode;\nreserved for a future native_duplex change). `null` \u2014 never\n`0` \u2014 when the session was never billed (no usage row: it\nresolved unbound/degraded)."
                     }
                 },
                 "required": [
@@ -6003,7 +6066,8 @@
                     "started_at",
                     "ended_at",
                     "duration_seconds",
-                    "integrity_event_count"
+                    "integrity_event_count",
+                    "llm_cost_usd"
                 ],
                 "title": "SessionSummaryResource"
             },

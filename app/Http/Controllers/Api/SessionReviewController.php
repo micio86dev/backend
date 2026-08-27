@@ -61,7 +61,8 @@ final class SessionReviewController extends Controller
             ->withCount('integrityEvents')
             // (interview-session-started-at, D3) eager-loaded so
             // SessionSummaryResource's liveSeconds() never issues an N+1.
-            ->with('livePeriods')
+            // llmUsage: same reasoning, for the LLM cost line (P6b).
+            ->with(['livePeriods', 'llmUsage'])
             ->orderByDesc('started_at')
             ->orderByDesc('id')
             ->get();
@@ -78,7 +79,7 @@ final class SessionReviewController extends Controller
     {
         $interviewSession = InterviewSession::query()
             ->where('organization_id', $this->resolver->getOrgId())
-            ->with(['integrityEvents', 'interviewSnapshots', 'livePeriods'])
+            ->with(['integrityEvents', 'interviewSnapshots', 'livePeriods', 'llmUsage'])
             ->findOrFail($session);
 
         // Authorization rides on the participant, so the session review can
@@ -111,6 +112,7 @@ final class SessionReviewController extends Controller
             $summary,
             $this->signedSnapshots($interviewSession),
             $this->cost->estimate($interviewSession),
+            $interviewSession->llmUsage,
         ))->response();
     }
 

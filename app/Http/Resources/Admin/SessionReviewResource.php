@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Admin;
 
 use App\Models\InterviewSession;
+use App\Models\InterviewSessionLlmUsage;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -46,6 +47,7 @@ final class SessionReviewResource extends JsonResource
         private readonly array $integrity,
         private readonly array $snapshots,
         private readonly ?array $avatarCost,
+        private readonly ?InterviewSessionLlmUsage $llmUsage,
     ) {
         parent::__construct($session);
     }
@@ -69,14 +71,44 @@ final class SessionReviewResource extends JsonResource
             'duration_seconds' => $this->durationSeconds(),
             'integrity' => $this->integrity,
             'snapshots' => $this->snapshots,
-            // Avatar minutes only. `ai_requests` has no interview_session_id,
+            // TWO SEPARATE labelled lines, never one combined total — the
+            // same refusal already ratified at `SessionCostEstimator.php:20-22`
+            // for avatar-vs-LLM spend: different vendors, different meters.
+            //
+            // `avatar`: minutes only. `ai_requests` has no interview_session_id,
             // so LLM spend cannot be attributed to one session without
             // inventing the link — and a plausible number with no basis is
             // worse than an absent one (D5).
+            //
+            // `llm`: null when the session was never billed (unbound/degraded —
+            // no vendor default is priced). When present, `actual_usd`
+            // renders ONLY when non-null (pluggable-conversation-llm PR P6b,
+            // design D5: permanently null in managed mode, reserved for a
+            // future native_duplex change).
             'cost' => [
                 'avatar' => $this->avatarCost,
+                'llm' => $this->llmCostLine(),
                 'is_estimate' => true,
             ],
+        ];
+    }
+
+    /**
+     * @return array{estimated_usd: float|null, actual_usd: float|null}|null
+     */
+    private function llmCostLine(): ?array
+    {
+        if ($this->llmUsage === null) {
+            return null;
+        }
+
+        return [
+            'estimated_usd' => $this->llmUsage->estimated_cost_usd === null
+                ? null
+                : (float) $this->llmUsage->estimated_cost_usd,
+            'actual_usd' => $this->llmUsage->actual_cost_usd === null
+                ? null
+                : (float) $this->llmUsage->actual_cost_usd,
         ];
     }
 
