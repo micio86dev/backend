@@ -111,7 +111,7 @@ final class TranscriptAssembler
                 // candidate speech and nothing else, so a quoted prefix or a
                 // quoted delimiter fails for the same reason invented text does,
                 // through the same code path, with no special case.
-                if (strtolower(trim((string) $utterance->speaker)) === self::SPEAKER_CANDIDATE) {
+                if (self::isCandidate($utterance->speaker)) {
                     $validationLines[] = $utterance->text;
                 }
             }
@@ -125,5 +125,46 @@ final class TranscriptAssembler
             prompt: implode("\n", $promptLines),
             validation: implode("\n", $validationLines),
         );
+    }
+
+    /**
+     * The validation corpus of ONE session — candidate speech only, same
+     * speaker rule, same ordering, same join, as the participant-wide corpus
+     * above.
+     *
+     * Exists because the admin session review must answer a question scoring
+     * never asks: was THIS excerpt spoken in THIS session? Scoring deliberately
+     * validates against the participant's whole interview (see the class
+     * docblock), so a competency's excerpt may legitimately quote a different
+     * session, and a read surface that renders it under one session without
+     * saying so misattributes it.
+     *
+     * By construction this is a SUBSET of `assembleForParticipant()`'s
+     * `validation` corpus for the same participant — same predicate, narrower
+     * session set — so an excerpt this method matches is necessarily one the
+     * participant-wide corpus matches too. Sharing `isCandidate()` is what
+     * keeps that true rather than merely likely.
+     */
+    public function candidateCorpusForSession(InterviewSession $session): string
+    {
+        $lines = $session->utterances()
+            ->withoutGlobalScopes()
+            ->orderBy('ts')
+            ->orderBy('id')
+            ->get()
+            ->filter(fn ($utterance): bool => self::isCandidate($utterance->speaker))
+            ->map(fn ($utterance): string => (string) $utterance->text)
+            ->all();
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * CASE-INSENSITIVE on purpose — see the class docblock. Extracted so the
+     * per-session corpus cannot drift from the participant-wide one.
+     */
+    private static function isCandidate(?string $speaker): bool
+    {
+        return strtolower(trim((string) $speaker)) === self::SPEAKER_CANDIDATE;
     }
 }

@@ -119,7 +119,17 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
+            // Config-driven, not hardcoded (self-service-password-reset): the
+            // reset email prints this same value as its "expires in N minutes"
+            // line, so a change here cannot leave the copy lying. 60 keeps the
+            // framework default rather than inventing a fourth TTL beside the
+            // access token, the refresh ceiling and the candidate magic link.
+            'expire' => (int) env('AUTH_PASSWORD_RESET_EXPIRE_MINUTES', 60),
+            // Per-USER, not per-caller: it stops repeated requests from
+            // mail-bombing ONE inbox, and it runs inside SendPasswordResetLinkJob
+            // because the send is off-request (AD-3). It cannot price an HTTP
+            // endpoint and must not be mistaken for the route throttle — that
+            // is `throttle:6,1` in routes/api.php.
             'throttle' => 60,
         ],
     ],

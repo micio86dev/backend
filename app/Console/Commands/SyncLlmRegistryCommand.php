@@ -14,9 +14,14 @@ use Illuminate\Console\Command;
  * Production runs no `db:seed` — bootstrap is `beai:provision-organization`,
  * and nothing in the Dockerfile or `railway.json` invokes a seeder. Without
  * this command the registry is empty and every model picker renders
- * nothing. Deploy runbook (design.md "Migration / Rollout"):
+ * nothing.
  *
- *     php artisan migrate --force && php artisan beai:sync-llm-registry
+ * On deploy this is invoked BY `beai:deploy`, never on its own: Railway's
+ * `preDeployCommand` is not shell-evaluated, so the `migrate --force && …`
+ * runbook this docblock used to carry silently dropped everything after the
+ * `&&`. Run it directly only to refresh the catalogue by hand:
+ *
+ *     php artisan beai:sync-llm-registry
  *
  * Every input is a flag, and this command accepts none, so it is safe with
  * no TTY by construction — the same posture as `ProvisionOrganizationCommand`.

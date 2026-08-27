@@ -73,15 +73,39 @@ final class ExcerptValidator
             return;
         }
 
-        $corpus = $this->normalizeWhitespace($validationCorpus);
-
         foreach ($dto->excerpts as $excerpt) {
-            if (! $this->matches($this->normalizeWhitespace($excerpt), $corpus)) {
+            if (! $this->matchesCorpus($excerpt, $validationCorpus)) {
                 // Reports the ORIGINAL excerpt: an operator must see what the
                 // model actually emitted, not our normalized rewrite of it.
                 throw new ExcerptNotVerbatimException($excerpt, $dto->position);
             }
         }
+    }
+
+    /**
+     * Does this raw excerpt quote this raw corpus, under the SAME rules
+     * `validate()` applies — whitespace normalization on both sides, then the
+     * anchored forward walk over elision fragments?
+     *
+     * Public because a read surface needs the same question answered without
+     * the throwing, DTO-shaped contract above: the session review asks whether
+     * an excerpt was spoken in ONE session, given that the scoring corpus
+     * deliberately spans the participant's whole interview
+     * (`TranscriptAssembler`). Answering it with a second, hand-rolled
+     * `str_contains` would let the read surface and the scorer disagree about
+     * what "verbatim" means — an excerpt shown as unquotable that scoring
+     * accepted, or the reverse. One matcher, two callers.
+     *
+     * NOT a substitute for `validate()`: this returns a boolean and enforces
+     * nothing. `validate()` is still the only path that may admit an excerpt
+     * into persistence.
+     */
+    public function matchesCorpus(string $excerpt, string $corpus): bool
+    {
+        return $this->matches(
+            $this->normalizeWhitespace($excerpt),
+            $this->normalizeWhitespace($corpus),
+        );
     }
 
     /**

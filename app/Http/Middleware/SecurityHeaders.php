@@ -2,9 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Http\BackofficeOrigin;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -98,32 +98,12 @@ final class SecurityHeaders
      */
     private function resolveBackofficeOrigin(): ?string
     {
-        // Use config() — not env() — so the value is available even when config is cached.
-        $raw = (string) config('services.backoffice_origin', '');
-
-        // Empty — not configured.
-        if ($raw === '') {
-            return null;
-        }
-
-        // Wildcard is never a valid explicit origin.
-        if ($raw === '*') {
-            Log::warning(
-                'SecurityHeaders: BACKOFFICE_ORIGIN is set to wildcard "*" — using safe block-all CSP default.'
-            );
-
-            return null;
-        }
-
-        // Must start with http:// or https:// to be a valid origin.
-        if (preg_match('#^https?://#', $raw) !== 1) {
-            Log::warning(
-                "SecurityHeaders: BACKOFFICE_ORIGIN \"{$raw}\" is not a valid origin — using safe block-all CSP default."
-            );
-
-            return null;
-        }
-
-        return rtrim($raw, '/');
+        // Delegated to App\Support\Http\BackofficeOrigin (self-service-password-reset
+        // AD-5): the password-reset link builder needs the SAME rules — non-empty,
+        // non-wildcard, explicit http(s):// origin — and two copies of them would
+        // eventually disagree, shipping a working CSP with broken emails or the
+        // reverse. The safe default on null stays HERE (block-all CSP); the
+        // resolver decides validity, never what to do about it.
+        return BackofficeOrigin::resolve('SecurityHeaders');
     }
 }
