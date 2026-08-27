@@ -14,6 +14,7 @@ use App\Services\Proctoring\IntegritySummarizer;
 use App\Services\Proctoring\SessionCostEstimator;
 use App\Support\Admin\AdminParticipantReader;
 use App\Support\Admin\ParticipantReadScope;
+use App\Support\Admin\SessionEvidenceReader;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -41,6 +42,7 @@ final class SessionReviewController extends Controller
         private readonly AdminParticipantReader $reader,
         private readonly TenantResolver $resolver,
         private readonly SessionCostEstimator $cost,
+        private readonly SessionEvidenceReader $evidence,
     ) {}
 
     /**
@@ -61,7 +63,8 @@ final class SessionReviewController extends Controller
             ->withCount('integrityEvents')
             // (interview-session-started-at, D3) eager-loaded so
             // SessionSummaryResource's liveSeconds() never issues an N+1.
-            ->with('livePeriods')
+            // llmUsage: same reasoning, for the LLM cost line (P6b).
+            ->with(['livePeriods', 'llmUsage'])
             ->orderByDesc('started_at')
             ->orderByDesc('id')
             ->get();
@@ -78,14 +81,20 @@ final class SessionReviewController extends Controller
     {
         $interviewSession = InterviewSession::query()
             ->where('organization_id', $this->resolver->getOrgId())
-            ->with(['integrityEvents', 'interviewSnapshots', 'livePeriods'])
+            ->with(['integrityEvents', 'interviewSnapshots', 'livePeriods', 'llmUsage'])
             ->findOrFail($session);
 
         // Authorization rides on the participant, so the session review can
         // never be readable by someone who cannot read the candidate it belongs
         // to. Roles are checked AFTER the org filter, so a cross-org id 404s
         // before any role is evaluated.
-        $this->reader->read($interviewSession->participant_id, ParticipantReadScope::Summary);
+        //
+        // Deliberately still `Summary`: the BARS evidence attached below is
+        // Evaluation-scoped, but it is gated as a BLOCK inside
+        // SessionEvidenceReader, not by raising the whole route. Raising it
+        // would 409 the session review of an in-flight candidate — the review's
+        // primary use — to protect a block that simply would not be there yet.
+        $participant = $this->reader->read($interviewSession->participant_id, ParticipantReadScope::Summary);
 
         $events = $interviewSession->integrityEvents
             ->sortBy([['ts', 'asc'], ['id', 'asc']])
@@ -111,6 +120,8 @@ final class SessionReviewController extends Controller
             $summary,
             $this->signedSnapshots($interviewSession),
             $this->cost->estimate($interviewSession),
+            $interviewSession->llmUsage,
+            $this->evidence->forSession($interviewSession, $participant->status),
         ))->response();
     }
 

@@ -32,17 +32,21 @@ uses(RefreshDatabase::class);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// `key` is uniquely indexed, so this is firstOrCreate rather than create —
+// a test that builds several templates must not collide on the shared model.
 function registrarModel(): LlmModel
 {
-    return LlmModel::create([
-        'key' => 'gemini-3-flash-preview',
-        'vendor' => 'google',
-        'display_name' => 'Gemini 3 Flash Preview',
-        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
-        'capability' => 'text',
-        'is_available' => true,
-        'sort_order' => 0,
-    ]);
+    return LlmModel::firstOrCreate(
+        ['key' => 'gemini-3-flash-preview'],
+        [
+            'vendor' => 'google',
+            'display_name' => 'Gemini 3 Flash Preview',
+            'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
+            'capability' => 'text',
+            'is_available' => true,
+            'sort_order' => 0,
+        ]
+    );
 }
 
 function registrarCredentialForOrg(int $orgId): LlmCredential
@@ -392,6 +396,421 @@ test('an unbound template is skipped and any stale configuration is forgotten', 
 
     expect($result['status'])->toBe('skipped');
     expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+});
+
+// ─── Unconfigured platform key: degrade, never throw ──────────────────────────
+
+test('ensureSecret() returns null and sends nothing when the platform HeyGen key is unset', function (): void {
+    config()->set('interview.heygen.api_key', '');
+    Http::fake();
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+
+    expect(app(HeygenLlmRegistrar::class)->ensureSecret($credential))->toBeNull();
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('ensureConfiguration() warns with llm_provider_unreachable when the platform HeyGen key is unset', function (): void {
+    Http::fake();
+
+    $template = registrarHeygenTemplate();
+    config()->set('interview.heygen.api_key', '');
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_provider_unreachable']);
+    Http::assertNothingSent();
+});
+
+// ─── Malformed vendor envelopes: warn, never persist a bogus id ───────────────
+
+test('ensureSecret() returns null and stores nothing when the vendor omits data.id', function (): void {
+    // The @wire-source envelope carries the id at `data.id`, NOT top level —
+    // a response shaped like the top-level variant must be REJECTED, not
+    // silently stored as the ledger handle.
+    Http::fake(['*heygen.com/v1/secrets' => Http::response(
+        ['code' => 1000, 'id' => 'sec_at_top_level', 'data' => ['secret_name' => 'x']], 200
+    )]);
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+
+    expect(app(HeygenLlmRegistrar::class)->ensureSecret($credential))->toBeNull();
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+});
+
+test('ensureSecret() rejects an empty-string data.id rather than storing an unusable handle', function (): void {
+    Http::fake(['*heygen.com/v1/secrets' => Http::response(
+        ['code' => 1000, 'data' => ['id' => '', 'secret_name' => 'x']], 200
+    )]);
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+
+    expect(app(HeygenLlmRegistrar::class)->ensureSecret($credential))->toBeNull();
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+});
+
+test('a malformed configuration envelope warns with llm_config_failed and stores no id', function (): void {
+    Http::fake([
+        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*heygen.com/v1/llm-configurations' => Http::response(['data' => ['display_name' => 'x']], 200),
+    ]);
+
+    $template = registrarHeygenTemplate();
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_config_failed']);
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+});
+
+// ─── Binding integrity: a row handed to us is never trusted ───────────────────
+
+test('a cross-org credential is refused with llm_credential_missing and never reaches the vendor', function (): void {
+    Http::fake();
+
+    $orgB = Organization::factory()->create();
+    $foreignCredential = registrarCredentialForOrg($orgB->id);
+
+    // I3 refuses this at save time — `AvatarTemplate::saving` throws
+    // `credential_not_found` — so the row can only be built by bypassing the
+    // model events, which is precisely the shape this defence exists for: a
+    // bad backfill or a direct DB write. `saveQuietly()` is the bypass.
+    $template = registrarHeygenTemplate();
+    $template->forceFill(['llm_credential_id' => $foreignCredential->id])->saveQuietly();
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_credential_missing']);
+    Http::assertNothingSent();
+});
+
+test('a database failure while loading the binding warns with llm_credential_missing instead of throwing', function (): void {
+    Http::fake();
+
+    $template = registrarHeygenTemplate();
+
+    // A REAL failure injection, not a mock: PostgreSQL aborts the enclosing
+    // transaction on any statement error, so every subsequent query in it
+    // raises `current transaction is aborted`. That is exactly the shape of
+    // the mid-request DB fault the `catch (Throwable)` at the model lookup
+    // exists for, and the only honest way to reach it.
+    try {
+        DB::statement('SELECT 1 / 0');
+    } catch (Throwable) {
+        // Expected — the point is the aborted transaction it leaves behind.
+    }
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_credential_missing']);
+    Http::assertNothingSent();
+});
+
+// ─── Configuration sync failures ──────────────────────────────────────────────
+
+test('a configuration POST that throws warns with llm_provider_unreachable after the secret already succeeded', function (): void {
+    Http::fake([
+        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*heygen.com/v1/llm-configurations' => fn () => throw new ConnectionException('down'),
+    ]);
+
+    $template = registrarHeygenTemplate();
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_provider_unreachable']);
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+});
+
+test('a configuration POST that 500s warns with llm_config_failed', function (): void {
+    Http::fake([
+        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*heygen.com/v1/llm-configurations' => Http::response(['error' => 'boom'], 500),
+    ]);
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_config_failed']);
+});
+
+test('a secret POST that 500s warns with llm_secret_failed, and no configuration call is attempted', function (): void {
+    Http::fake([
+        '*heygen.com/v1/secrets' => Http::response(['error' => 'boom'], 500),
+        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+    ]);
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_secret_failed']);
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '/v1/llm-configurations'));
+});
+
+test('a PATCH that 404s twice — the retry POST also failing — warns once and never loops', function (): void {
+    Http::fake(['*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200)]);
+    Http::fakeSequence('*heygen.com/v1/llm-configurations')
+        ->push(heygenConfigurationResponse('cfg_1'), 200)
+        ->push(['error' => 'gone'], 404);
+    Http::fake(['*heygen.com/v1/llm-configurations/cfg_1' => Http::response([], 404)]);
+
+    $template = registrarHeygenTemplate();
+    app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
+
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_config_failed']);
+    // The stale id stays cleared: we proved it is gone on the vendor side.
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+
+    // POST (create) → PATCH (404) → POST (retry, 404). Exactly one retry —
+    // a persistently-404ing account must surface, never hang the request.
+    $configCalls = collect(Http::recorded())->filter(
+        fn (array $pair): bool => str_contains($pair[0]->url(), '/v1/llm-configurations')
+    )->values();
+
+    expect($configCalls)->toHaveCount(3);
+    expect($configCalls[2][0]->method())->toBe('POST');
+});
+
+// ─── forget() / forgetSecret(): the column is cleared unconditionally ─────────
+
+test('forget() on a template that never had a configuration sends nothing', function (): void {
+    Http::fake();
+
+    $template = registrarHeygenTemplate();
+
+    app(HeygenLlmRegistrar::class)->forget($template);
+
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('forget() clears the column without a vendor call when the platform key is unset', function (): void {
+    config()->set('interview.heygen.api_key', '');
+    Http::fake();
+
+    $template = registrarHeygenTemplate();
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg_orphan'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forget($template->fresh());
+
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('forget() swallows a transport exception and still clears the column', function (): void {
+    Http::fake(fn () => throw new ConnectionException('down'));
+
+    $template = registrarHeygenTemplate();
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg_unreachable'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forget($template->fresh());
+
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+});
+
+test('forget() treats a vendor 404 as success — already gone is the desired end state', function (): void {
+    $warnings = [];
+    Log::listen(function ($message) use (&$warnings): void {
+        $warnings[] = $message->message;
+    });
+
+    Http::fake(['*heygen.com/v1/llm-configurations/cfg_gone' => Http::response([], 404)]);
+
+    $template = registrarHeygenTemplate();
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg_gone'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forget($template->fresh());
+
+    expect($template->fresh()->heygen_llm_configuration_id)->toBeNull();
+    expect($warnings)->not->toContain('HeyGen LLM configuration delete failed');
+});
+
+test('forgetSecret() on a credential that never had a secret sends nothing', function (): void {
+    Http::fake();
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+
+    app(HeygenLlmRegistrar::class)->forgetSecret($credential);
+
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('forgetSecret() clears the column without a vendor call when the platform key is unset', function (): void {
+    config()->set('interview.heygen.api_key', '');
+    Http::fake();
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+    $credential->forceFill(['heygen_secret_id' => 'sec_orphan'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forgetSecret($credential->fresh());
+
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('forgetSecret() swallows a transport exception and still clears the column', function (): void {
+    Http::fake(fn () => throw new ConnectionException('down'));
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+    $credential->forceFill(['heygen_secret_id' => 'sec_unreachable'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forgetSecret($credential->fresh());
+
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+});
+
+test('forgetSecret() logs a 500 but still clears the column, and treats a 404 as success', function (): void {
+    $warnings = [];
+    Log::listen(function ($message) use (&$warnings): void {
+        $warnings[] = $message->message;
+    });
+
+    Http::fake(['*heygen.com/v1/secrets/sec_500' => Http::response([], 500)]);
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+    $credential->forceFill(['heygen_secret_id' => 'sec_500'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forgetSecret($credential->fresh());
+
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+    expect($warnings)->toContain('HeyGen secret delete failed');
+
+    $warnings = [];
+    Http::fake(['*heygen.com/v1/secrets/sec_404' => Http::response([], 404)]);
+    $credential->forceFill(['heygen_secret_id' => 'sec_404'])->saveQuietly();
+
+    app(HeygenLlmRegistrar::class)->forgetSecret($credential->fresh());
+
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+    expect($warnings)->not->toContain('HeyGen secret delete failed');
+});
+
+// ─── rotateSecret() failure modes ─────────────────────────────────────────────
+
+test('rotateSecret() warns with llm_secret_failed when the recreate leg fails, and leaves no stale id behind', function (): void {
+    Http::fake([
+        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*heygen.com/v1/secrets' => Http::response(['error' => 'boom'], 500),
+    ]);
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+
+    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_secret_failed']);
+    // The old secret IS deleted vendor-side and the id IS cleared: holding a
+    // handle to a secret we just deleted would be the orphan ledger lying.
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+});
+
+test('rotateSecret() reports llm_config_failed when any bound configuration fails to re-point', function (): void {
+    Http::fakeSequence('*heygen.com/v1/secrets')
+        ->push(heygenSecretResponse('sec_old'), 200)
+        ->push(heygenSecretResponse('sec_new'), 200);
+    Http::fake(['*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
+
+    $model = registrarModel();
+    $org = Organization::factory()->create();
+    $credential = registrarCredentialForOrg($org->id);
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Rotate failing', 'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id, 'llm_credential_id' => $credential->id,
+    ]));
+
+    app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
+    expect($template->fresh()->heygen_llm_configuration_id)->toBe('cfg_a');
+
+    Http::fake([
+        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*heygen.com/v1/llm-configurations/cfg_a' => Http::response(['error' => 'boom'], 500),
+    ]);
+
+    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+
+    // The secret rotated fine; only the re-point failed. The caller is told
+    // the WEAKER of the two outcomes, never the optimistic one.
+    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_config_failed']);
+    expect($credential->fresh()->heygen_secret_id)->toBe('sec_new');
+});
+
+test('rotateSecret() ignores templates bound to a different credential or a non-heygen provider', function (): void {
+    Http::fakeSequence('*heygen.com/v1/secrets')
+        ->push(heygenSecretResponse('sec_old'), 200)
+        ->push(heygenSecretResponse('sec_new'), 200);
+    Http::fake(['*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
+
+    $model = registrarModel();
+    $org = Organization::factory()->create();
+    $credential = registrarCredentialForOrg($org->id);
+    $otherCredential = registrarCredentialForOrg($org->id);
+
+    $bound = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Bound', 'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id, 'llm_credential_id' => $credential->id,
+    ]));
+    TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Other credential', 'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id, 'llm_credential_id' => $otherCredential->id,
+    ]));
+    TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Tavus', 'provider' => 'tavus',
+        'config' => ['faceId' => 'f', 'palId' => 'p'],
+        'llm_model_id' => $model->id, 'llm_credential_id' => $credential->id,
+    ]));
+
+    app(HeygenLlmRegistrar::class)->ensureConfiguration($bound);
+
+    Http::fake([
+        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*heygen.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
+    ]);
+
+    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+
+    expect($result)->toBe(['status' => 'synced']);
+
+    $patched = collect(Http::recorded())->filter(
+        fn (array $pair): bool => $pair[0]->method() === 'PATCH' && str_contains($pair[0]->url(), '/v1/llm-configurations/')
+    );
+
+    expect($patched)->toHaveCount(1);
+});
+
+// ─── Stable codes, never vendor prose ─────────────────────────────────────────
+
+test('every warning message is a stable code from the closed set, never vendor prose', function (): void {
+    $allowed = ['llm_provider_unreachable', 'llm_credential_missing', 'llm_secret_failed', 'llm_config_failed'];
+
+    $registrar = app(HeygenLlmRegistrar::class);
+    $results = [];
+
+    Http::fake(['*heygen.com*' => Http::response(['message' => 'Your account has been suspended, contact sales@heygen.com'], 402)]);
+    $results[] = $registrar->ensureConfiguration(registrarHeygenTemplate());
+
+    Http::fake([
+        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*heygen.com/v1/llm-configurations' => Http::response(['message' => 'Quota exceeded for org 1234'], 429),
+    ]);
+    $results[] = $registrar->ensureConfiguration(registrarHeygenTemplate());
+
+    Http::fake(fn () => throw new ConnectionException('cURL error 28: Operation timed out after 10001 ms'));
+    $results[] = $registrar->ensureConfiguration(registrarHeygenTemplate());
+
+    $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+    $results[] = $registrar->rotateSecret($credential->fresh());
+
+    foreach ($results as $result) {
+        expect($result['status'])->toBe('warning');
+        expect($result['message'])->toBeIn($allowed);
+    }
 });
 
 // ─── Secret containment ────────────────────────────────────────────────────

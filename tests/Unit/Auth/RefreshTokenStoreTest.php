@@ -231,3 +231,66 @@ test('revokeFamily() invalidates every outstanding token in the family immediate
 
     expect($result->status)->toBe(RefreshRotateStatus::Revoked);
 });
+
+// ─── revokeAllForUser() (self-service-password-reset AD-4) ───────────────────
+
+test('revokeAllForUser() kills EVERY family the user holds, not just one', function (): void {
+    $user = User::factory()->create();
+
+    // A user holds one family PER LOGIN — issue() mints a new familyId every
+    // time — so a two-device operator has two. `revokeFamily()` is
+    // family-scoped and would leave the second device alive; a password reset
+    // has no session and therefore no `fam` claim to scope by at all.
+    $laptop = $this->store->issue(userId: $user->id);
+    $desktop = $this->store->issue(userId: $user->id);
+
+    $revoked = $this->store->revokeAllForUser($user->id);
+
+    expect($revoked)->toBe(2);
+    expect(refreshTokenRowFor($laptop->secret)->revoked_at)->not->toBeNull();
+    expect(refreshTokenRowFor($desktop->secret)->revoked_at)->not->toBeNull();
+});
+
+test('a revoked family can no longer rotate — the reset really ends the session', function (): void {
+    $user = User::factory()->create();
+    $issue = $this->store->issue(userId: $user->id);
+
+    $this->store->revokeAllForUser($user->id);
+
+    expect($this->store->rotate($issue->familyId, $issue->secret)->status)
+        ->toBe(RefreshRotateStatus::Revoked);
+});
+
+test('revokeAllForUser() touches no other user', function (): void {
+    $victim = User::factory()->create();
+    $bystander = User::factory()->create();
+
+    $victimIssue = $this->store->issue(userId: $victim->id);
+    $bystanderIssue = $this->store->issue(userId: $bystander->id);
+
+    $this->store->revokeAllForUser($victim->id);
+
+    expect(refreshTokenRowFor($victimIssue->secret)->revoked_at)->not->toBeNull();
+    expect(refreshTokenRowFor($bystanderIssue->secret)->revoked_at)->toBeNull();
+});
+
+test('revokeAllForUser() is idempotent and does not re-stamp an already-revoked row', function (): void {
+    $user = User::factory()->create();
+    $issue = $this->store->issue(userId: $user->id);
+
+    expect($this->store->revokeAllForUser($user->id))->toBe(1);
+
+    $firstStamp = refreshTokenRowFor($issue->secret)->revoked_at;
+
+    // Second call finds nothing left to revoke. Re-stamping would move the
+    // revocation time forward and misdate the incident in the row that
+    // records it.
+    expect($this->store->revokeAllForUser($user->id))->toBe(0);
+    expect(refreshTokenRowFor($issue->secret)->revoked_at->equalTo($firstStamp))->toBeTrue();
+});
+
+test('revokeAllForUser() on a user with no families is a no-op', function (): void {
+    $user = User::factory()->create();
+
+    expect($this->store->revokeAllForUser($user->id))->toBe(0);
+});

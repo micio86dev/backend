@@ -40,6 +40,30 @@ final class SessionSummaryResource extends JsonResource
             'ended_at' => $this->ended_at?->toIso8601String(),
             'duration_seconds' => $duration,
             'integrity_event_count' => $this->integrity_events_count ?? 0,
+            // (pluggable-conversation-llm PR P6b) A separate line, never
+            // combined with any avatar-minute figure. `actual_cost_usd` is
+            // preferred when non-null (permanently null in managed mode;
+            // reserved for a future native_duplex change). `null` — never
+            // `0` — when the session was never billed (no usage row: it
+            // resolved unbound/degraded).
+            'llm_cost_usd' => $this->llmCostUsd(),
         ];
+    }
+
+    /**
+     * The caller MUST eager-load `llmUsage` — same N+1 discipline as
+     * `livePeriods` above.
+     */
+    private function llmCostUsd(): ?float
+    {
+        $usage = $this->llmUsage;
+
+        if ($usage === null) {
+            return null;
+        }
+
+        $value = $usage->actual_cost_usd ?? $usage->estimated_cost_usd;
+
+        return $value === null ? null : (float) $value;
     }
 }

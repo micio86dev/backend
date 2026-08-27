@@ -102,6 +102,18 @@ test('every ShouldQueue job under app/ references TenantContextScope or is expli
         // Participant, a plain Model (does NOT extend TenantModel — see
         // app/Models/Participant.php:22-25).
         'App\\Jobs\\FinalizeInterview' => 'Zero tenant-scoped writes (design D3) — only touches Participant, a plain (non-TenantModel) Model.',
+        // SendPasswordResetLinkJob is CROSS-TENANT BY CONSTRUCTION and must
+        // stay that way. It reads exactly one row — a User, a plain
+        // (non-TenantModel) Model — matched on the globally unique
+        // `users.email`, and writes only `password_reset_tokens`, which is
+        // keyed on that same email and has no organization_id at all.
+        //
+        // Opening a tenant scope here would be worse than pointless: a
+        // platform superadmin has `organization_id IS NULL`, and
+        // TenantContextScope::runFor() refuses orgId < 1 outright — so the
+        // one class of user with no other recovery path would be the one
+        // class this job could not serve.
+        'App\\Jobs\\SendPasswordResetLinkJob' => 'Cross-tenant by construction: reads User (a plain, non-TenantModel Model) by globally unique email and writes only password_reset_tokens, which has no organization_id. Must also serve platform superadmins (organization_id IS NULL), which TenantContextScope::runFor() cannot express.',
     ];
 
     $violations = c10DiscoverShouldQueueViolations(app_path(), 'App', $allowlist);

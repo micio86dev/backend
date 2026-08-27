@@ -74,8 +74,10 @@ RUN apk add --no-cache nginx supervisor
 
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
-# Seeds the LLM model registry before supervisord takes over — see the script's
-# own header for why it is here and not in Railway's preDeployCommand.
+# A pass-through that execs the start command, so `worker` and `scheduler` can
+# run this same image with their own commands. Release steps (migrations, then
+# the LLM registry sync) belong to `beai:deploy` in Railway's once-per-deploy
+# preDeployCommand slot, NOT here — the script's own header records why.
 COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # php-fpm on a local TCP socket rather than the default Unix one: nginx and fpm

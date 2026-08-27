@@ -143,6 +143,36 @@ final class RefreshTokenStore
             ->update(['revoked_at' => now()]);
     }
 
+    /**
+     * Kills every family the USER holds — every device, every login.
+     *
+     * NOT a convenience wrapper over `revokeFamily()`, and the difference is
+     * the point (self-service-password-reset AD-4). A user holds one family
+     * PER LOGIN (`issue()` mints a fresh `familyId` each time), so a
+     * two-device operator has two families. An out-of-session password reset
+     * has no session at all, therefore no `fam` claim to scope by, and
+     * family-scoped revocation would leave the other device logged in.
+     *
+     * This is the half of "a reset ends every session" that
+     * `password_changed_at` cannot cover: `POST /api/auth/refresh` runs
+     * OUTSIDE `RejectStaleCredentials` on purpose (routes/api.php, D8 — an
+     * expired access token is exactly when refresh must still work), so
+     * `password_changed_at` is never consulted there and a stolen refresh
+     * cookie would otherwise keep minting fresh access tokens after a reset.
+     *
+     * `whereNull('revoked_at')` is not just an optimisation: re-stamping an
+     * already-revoked row would move the recorded revocation time forward and
+     * misdate the incident in the very row that records it.
+     *
+     * @return int The number of live rows revoked.
+     */
+    public function revokeAllForUser(int $userId): int
+    {
+        return RefreshToken::where('user_id', $userId)
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => now()]);
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------

@@ -54,4 +54,40 @@ return [
     */
     'validation_retries' => (int) env('CONVERSATION_LLM_VALIDATION_RETRIES', 1),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Per-template cost forecast (pluggable-conversation-llm PR P6b, design D10)
+    |--------------------------------------------------------------------------
+    |
+    | Reference parameters for `AvatarTemplateResource.llm.estimated_cost_usd_per_interview`
+    | — a TOTAL for one reference interview, computed by the SAME
+    | `ConversationLlmUsageEstimator` the real `/end` write uses, over
+    | SYNTHETIC turns built from these constants rather than real
+    | transcript rows.
+    |
+    | Deliberately NOT a $/minute figure: input tokens grow QUADRATICALLY in
+    | turn count (the whole conversation history is re-sent every turn), so
+    | a per-minute number misstates cost at any other interview length. A
+    | shape — "≈$X for a typical N-minute, M-turn interview" — survives
+    | being reasoned about; a per-minute rate invites an operator to
+    | multiply it by session length and be confidently wrong.
+    |
+    | `reference_minutes` / `reference_turns`: a typical BEAI interview
+    | (one competency asks a handful of adaptive follow-up questions; a
+    | full assessment covers several competencies in one sitting).
+    | `reference_system_prompt_chars`: the composed BARS system prompt is
+    | re-sent on EVERY turn and is the LARGEST term in the cost formula —
+    | ~3000 chars reflects a role's full competency framework context.
+    | `reference_participant_chars_per_turn` / `reference_avatar_chars_per_turn`:
+    | a spoken conversational turn, not a written paragraph — short.
+    |
+    */
+    'forecast' => [
+        'reference_minutes' => (int) env('CONVERSATION_LLM_FORECAST_MINUTES', 15),
+        'reference_turns' => (int) env('CONVERSATION_LLM_FORECAST_TURNS', 60),
+        'reference_system_prompt_chars' => (int) env('CONVERSATION_LLM_FORECAST_SYSTEM_PROMPT_CHARS', 3000),
+        'reference_participant_chars_per_turn' => (int) env('CONVERSATION_LLM_FORECAST_PARTICIPANT_CHARS', 150),
+        'reference_avatar_chars_per_turn' => (int) env('CONVERSATION_LLM_FORECAST_AVATAR_CHARS', 200),
+    ],
+
 ];

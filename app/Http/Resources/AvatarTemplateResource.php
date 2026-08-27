@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Resources;
 
 use App\Models\AvatarTemplate;
+use App\Models\LlmModel;
+use App\Services\ConversationLlm\ConversationLlmUsageEstimator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -41,9 +43,17 @@ class AvatarTemplateResource extends JsonResource
      * echo the credential's name or masked key back to the caller who is
      * already looking at the credential list separately.
      *
-     * @return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null}
+     * `llm.estimated_cost_usd_per_interview` (pluggable-conversation-llm PR
+     * P6b, design D10): a TOTAL for one reference interview
+     * (`config('conversation_llm.forecast')`), never a $/minute figure —
+     * input tokens grow QUADRATICALLY in turn count, so a per-minute number
+     * misstates cost at any other interview length. `null` when the
+     * template carries no usable binding, computed by the SAME
+     * `ConversationLlmUsageEstimator` the real `/end` write uses.
      *
-     * @scramble-return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null}
+     * @return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}}
+     *
+     * @scramble-return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}}
      */
     public function toArray(Request $request): array
     {
@@ -63,6 +73,37 @@ class AvatarTemplateResource extends JsonResource
             'llm_credential_id' => $template->llm_credential_id,
             'llm_sync_status' => $template->llm_sync_status,
             'llm_synced_at' => $template->llm_synced_at?->toIso8601String(),
+            'llm' => [
+                'estimated_cost_usd_per_interview' => $this->forecast($template),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{minutes: int, turns: int, usd: float}|null
+     */
+    private function forecast(AvatarTemplate $template): ?array
+    {
+        if ($template->llm_model_id === null) {
+            return null;
+        }
+
+        $model = LlmModel::find($template->llm_model_id);
+
+        if ($model === null) {
+            return null;
+        }
+
+        $usd = app(ConversationLlmUsageEstimator::class)->forecastCostUsd($model);
+
+        if ($usd === null) {
+            return null;
+        }
+
+        return [
+            'minutes' => (int) config('conversation_llm.forecast.reference_minutes'),
+            'turns' => (int) config('conversation_llm.forecast.reference_turns'),
+            'usd' => $usd,
         ];
     }
 }

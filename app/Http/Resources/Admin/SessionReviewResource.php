@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Admin;
 
 use App\Models\InterviewSession;
+use App\Models\InterviewSessionLlmUsage;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -40,12 +41,15 @@ final class SessionReviewResource extends JsonResource
      * @param  array<string, mixed>  $integrity
      * @param  list<array{url: string, taken_at: string}>  $snapshots
      * @param  array{provider: string, minutes: float, usd: float}|null  $avatarCost
+     * @param  array<string, mixed>|null  $evaluation
      */
     public function __construct(
         InterviewSession $session,
         private readonly array $integrity,
         private readonly array $snapshots,
         private readonly ?array $avatarCost,
+        private readonly ?InterviewSessionLlmUsage $llmUsage,
+        private readonly ?array $evaluation = null,
     ) {
         parent::__construct($session);
     }
@@ -69,14 +73,93 @@ final class SessionReviewResource extends JsonResource
             'duration_seconds' => $this->durationSeconds(),
             'integrity' => $this->integrity,
             'snapshots' => $this->snapshots,
-            // Avatar minutes only. `ai_requests` has no interview_session_id,
+            // TWO SEPARATE labelled lines, never one combined total — the
+            // same refusal already ratified at `SessionCostEstimator.php:20-22`
+            // for avatar-vs-LLM spend: different vendors, different meters.
+            //
+            // `avatar`: minutes only. `ai_requests` has no interview_session_id,
             // so LLM spend cannot be attributed to one session without
             // inventing the link — and a plausible number with no basis is
             // worse than an absent one (D5).
+            //
+            // `llm`: null when the session was never billed (unbound/degraded —
+            // no vendor default is priced). When present, `actual_usd`
+            // renders ONLY when non-null (pluggable-conversation-llm PR P6b,
+            // design D5: permanently null in managed mode, reserved for a
+            // future native_duplex change).
             'cost' => [
                 'avatar' => $this->avatarCost,
+                'llm' => $this->llmCostLine(),
                 'is_estimate' => true,
             ],
+            // The BARS evidence for the competency THIS session probed, so the
+            // backoffice needs ONE request rather than a second fetch it has to
+            // correlate itself — client-side correlation is where a wrong
+            // excerpt/session pairing would be introduced.
+            //
+            // `null` — not an empty object — when the participant has not
+            // reached `completato` (the Evaluation read gate), when there is no
+            // evaluation, or when this competency was never scored. All three
+            // mean "no evidence to show", and a caller that renders a section
+            // only for a non-null block cannot accidentally display an empty
+            // one as though it were a verdict.
+            //
+            // Each behaviour carries `excerpts_spoken_in_this_session`, a
+            // positional parallel of `excerpts`. It is NOT decoration: the
+            // scoring corpus spans the participant's whole interview
+            // (`TranscriptAssembler`), so an excerpt shown on a session page may
+            // legitimately quote a different session, and the flag is what stops
+            // this surface from implying otherwise. See `SessionEvidenceReader`.
+            'evaluation' => $this->evaluationBlock(),
+        ];
+    }
+
+    /**
+     * Typed so Scramble emits a real schema rather than a bare `{}` — the
+     * backoffice generates its client from `openapi.json`, and an untyped
+     * property arrives there as `unknown`, which is exactly the shape that
+     * invites hand-written correlation code on the client.
+     *
+     * @return array{
+     *     competency_code: string,
+     *     score: float|null,
+     *     reliability: string,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, excerpts_spoken_in_this_session: array<int, bool>, unassessable_reason: string|null}>,
+     *     unscorable_reason: string|null
+     * }|null
+     *
+     * @scramble-return array{
+     *     competency_code: string,
+     *     score: float|null,
+     *     reliability: string,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, excerpts_spoken_in_this_session: array<int, bool>, unassessable_reason: string|null}>,
+     *     unscorable_reason: string|null
+     * }|null
+     */
+    private function evaluationBlock(): ?array
+    {
+        /** @var array{competency_code: string, score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, excerpts_spoken_in_this_session: array<int, bool>, unassessable_reason: string|null}>, unscorable_reason: string|null}|null $evaluation */
+        $evaluation = $this->evaluation;
+
+        return $evaluation;
+    }
+
+    /**
+     * @return array{estimated_usd: float|null, actual_usd: float|null}|null
+     */
+    private function llmCostLine(): ?array
+    {
+        if ($this->llmUsage === null) {
+            return null;
+        }
+
+        return [
+            'estimated_usd' => $this->llmUsage->estimated_cost_usd === null
+                ? null
+                : (float) $this->llmUsage->estimated_cost_usd,
+            'actual_usd' => $this->llmUsage->actual_cost_usd === null
+                ? null
+                : (float) $this->llmUsage->actual_cost_usd,
         ];
     }
 

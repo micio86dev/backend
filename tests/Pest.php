@@ -507,3 +507,14 @@ pest()->extend(TestCase::class)
 // and real command output against a migrated schema.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/ConversationLlm');
+
+// ─── beai:deploy (release steps) ───────────────────────────────────────────────
+
+// Feature/Deploy — RefreshDatabase is LOAD-BEARING, not decoration. The happy
+// path runs the REAL `migrate --force` and the REAL `beai:sync-llm-registry`
+// (stubbing them would prove nothing about the wiring this command exists to
+// fix), and the seeder inserts four `llm_models` rows. Without the transaction
+// those rows outlive the test and every later test that creates
+// `gemini-3-flash-preview` fails on `llm_models_key_unique`.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Deploy');

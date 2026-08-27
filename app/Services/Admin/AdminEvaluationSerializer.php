@@ -103,6 +103,44 @@ final class AdminEvaluationSerializer
     }
 
     /**
+     * ONE competency's result for one participant, in the EXACT shape
+     * `serialize()` emits per competency — or `null` when that competency was
+     * never scored.
+     *
+     * The admin session review needs the evidence for the single competency its
+     * session probed. Reusing `serializeCompetencyResult()` rather than shaping
+     * a second payload is deliberate: the session view and the full report must
+     * never disagree about how a score, a reliability percentage, an
+     * unassessable sentinel, or an excerpt is rendered.
+     *
+     * Non-throwing, unlike `serialize()`: an unscored competency is an ordinary
+     * state at this read surface, not a failure.
+     *
+     * Tenancy rides on the ambient global scope (CompetencyResult and Evaluation
+     * both extend TenantModel) — never `withoutGlobalScopes()`, which is
+     * reserved for the queued-job assembler.
+     *
+     * @return array{
+     *     score: float|null,
+     *     reliability: string,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     unscorable_reason: string|null
+     * }|null
+     */
+    public function serializeCompetency(int $participantId, string $competencyCode): ?array
+    {
+        $result = CompetencyResult::query()
+            ->whereHas('evaluation', fn ($query) => $query->where('participant_id', $participantId))
+            ->where('competency_code', $competencyCode)
+            // Explicitly ordered: `behaviors` is a positional list, and DB
+            // insertion order is a coincidence, not a guarantee.
+            ->with(['indicatorScores' => fn ($query) => $query->orderBy('position')->orderBy('id')])
+            ->first();
+
+        return $result === null ? null : $this->serializeCompetencyResult($result);
+    }
+
+    /**
      * Scoring provenance for the `meta.scoring` response sibling (D7).
      *
      * `framework_version` is the resolved `FrameworkVersion.version` string,

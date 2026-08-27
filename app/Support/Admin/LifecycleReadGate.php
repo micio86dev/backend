@@ -79,11 +79,11 @@ final class LifecycleReadGate
 
     public function assert(string $status, ParticipantReadScope $scope): void
     {
-        if ($scope === ParticipantReadScope::Summary) {
-            if (in_array($status, self::KNOWN_STATUSES, true)) {
-                return;
-            }
+        if ($this->permits($status, $scope)) {
+            return;
+        }
 
+        if ($scope === ParticipantReadScope::Summary) {
             throw new LifecycleNotReadyException(
                 resource: 'participant',
                 currentStatus: $status,
@@ -91,18 +91,45 @@ final class LifecycleReadGate
             );
         }
 
-        $scopeKey = $scope === ParticipantReadScope::Transcript ? 'transcript' : 'evaluation';
-        $rule = self::SCOPE_RULES[$scopeKey];
-
-        if ($this->reaches($status, $rule['minimum']) || in_array($status, $rule['off_progression'], true)) {
-            return;
-        }
+        $scopeKey = $this->scopeKey($scope);
 
         throw new LifecycleNotReadyException(
             resource: $scopeKey,
             currentStatus: $status,
-            requiredStatus: $rule['minimum'],
+            requiredStatus: self::SCOPE_RULES[$scopeKey]['minimum'],
         );
+    }
+
+    /**
+     * The same rule `assert()` enforces, as a question rather than a demand.
+     *
+     * Exists for a read that must DEGRADE rather than refuse: the session
+     * review is a Summary read that additionally carries the BARS evidence for
+     * the competency it probed, and that evidence is Evaluation-scoped. Raising
+     * the whole endpoint to the Evaluation threshold would 409 an in-flight
+     * candidate's session review — the review's main use — so the caller asks
+     * whether the block may be INCLUDED and omits it otherwise.
+     *
+     * Sharing one implementation is the point: a second copy of the threshold
+     * logic is a second place for `errore` to accidentally rank above
+     * `completato`. Fail-closed is inherited unchanged — an unrecognized status
+     * returns false for every scope.
+     */
+    public function permits(string $status, ParticipantReadScope $scope): bool
+    {
+        if ($scope === ParticipantReadScope::Summary) {
+            return in_array($status, self::KNOWN_STATUSES, true);
+        }
+
+        $rule = self::SCOPE_RULES[$this->scopeKey($scope)];
+
+        return $this->reaches($status, $rule['minimum'])
+            || in_array($status, $rule['off_progression'], true);
+    }
+
+    private function scopeKey(ParticipantReadScope $scope): string
+    {
+        return $scope === ParticipantReadScope::Transcript ? 'transcript' : 'evaluation';
     }
 
     /**
