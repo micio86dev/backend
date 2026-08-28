@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\ReconcileLlmUsage;
 use App\Exceptions\Admin\LifecycleNotReadyException;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
@@ -64,6 +65,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('model:prune', [
             '--model' => [RefreshToken::class],
         ])->dailyAt('03:30')->onOneServer();
+
+        // pluggable-conversation-llm PR P6b (design D10 W4): reconciles the
+        // LLM cost of a session that ended via server-detected error (or a
+        // lost /end request) without ever calling POST /end. NOT a
+        // best-effort approximation — the SAME estimator, over the SAME
+        // persisted rows, `firstOrCreate()`-guarded against a late /end.
+        $schedule->command(ReconcileLlmUsage::class)->dailyAt('04:00')->onOneServer();
     })
     ->withMiddleware(function (Middleware $middleware): void {
         // This application is API-only (CLAUDE.md: "API-only, no Blade UI").

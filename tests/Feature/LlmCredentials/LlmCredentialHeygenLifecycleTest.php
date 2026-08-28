@@ -17,6 +17,7 @@ use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -143,4 +144,92 @@ test('deleting an unbound credential with a HeyGen secret deletes the vendor sec
 
     Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
         && str_contains($request->url(), '/v1/secrets/sec_to_delete'));
+});
+
+test('deleting a bound HeyGen template deletes its vendor configuration — no orphan is left billing the credential', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    $model = heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'admin');
+
+    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+        $c = new LlmCredential;
+        $c->forceFill([
+            'organization_id' => $org->id,
+            'name' => 'Template delete credential',
+            'vendor' => 'google',
+            'api_key' => 'sk-real-key',
+            'key_last_four' => 'real',
+            'key_fingerprint' => hash('sha256', uniqid('', true)),
+            'heygen_secret_id' => 'sec_live',
+        ]);
+        $c->save();
+
+        return $c;
+    });
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Template to delete',
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg_live'])->saveQuietly();
+
+    Http::fake(['*heygen.com/v1/llm-configurations/cfg_live' => Http::response([], 200)]);
+
+    $this->withToken($token)->deleteJson("/api/avatar-templates/{$template->id}")
+        ->assertStatus(204);
+
+    // The vendor-side configuration is the thing that would keep billing;
+    // deleting OUR row without deleting THEIRS is the orphan design D8 makes
+    // `heygen_llm_configuration_id` the ledger for.
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && str_contains($request->url(), '/v1/llm-configurations/cfg_live'));
+
+    expect(AvatarTemplate::withoutGlobalScopes()->find($template->id))->toBeNull();
+});
+
+test('deleting a HeyGen template whose vendor account is unreachable still deletes the template', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    $model = heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'admin');
+
+    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+        $c = new LlmCredential;
+        $c->forceFill([
+            'organization_id' => $org->id,
+            'name' => 'Unreachable vendor credential',
+            'vendor' => 'google',
+            'api_key' => 'sk-real-key',
+            'key_last_four' => 'real',
+            'key_fingerprint' => hash('sha256', uniqid('', true)),
+            'heygen_secret_id' => 'sec_live',
+        ]);
+        $c->save();
+
+        return $c;
+    });
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Template to delete anyway',
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg_live'])->saveQuietly();
+
+    Http::fake(fn () => throw new ConnectionException('down'));
+
+    // An unreachable HeyGen account must never block an operator from
+    // deleting their OWN template (design D8, "never throws").
+    $this->withToken($token)->deleteJson("/api/avatar-templates/{$template->id}")
+        ->assertStatus(204);
+
+    expect(AvatarTemplate::withoutGlobalScopes()->find($template->id))->toBeNull();
 });

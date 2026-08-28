@@ -22,6 +22,8 @@ use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
+use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\AvatarTemplateController;
 use App\Http\Controllers\AvatarTemplatePortabilityController;
 use App\Http\Controllers\Candidate\IntegrityController;
@@ -68,6 +70,35 @@ Route::get('/health/queue', QueueHealthController::class);
 Route::prefix('auth')->group(function (): void {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/refresh', [AuthController::class, 'refresh'])->middleware(RequireRefreshCsrfHeader::class);
+
+    // ─── Self-service password reset (self-service-password-reset AD-7) ──────
+    // Both PUBLIC by necessity — the caller cannot log in, which is why they
+    // are here — and both throttled inline, following the /profile/password
+    // convention below rather than inventing a number:
+    //
+    //   forgot-password: unauthenticated, with a side effect on ANOTHER
+    //     person's inbox. Unthrottled it is a mail-bomb primitive and a cost
+    //     primitive (every call is a queued job and a paid Resend send).
+    //   reset-password: unauthenticated token submission, i.e. a brute-force
+    //     surface against the reset token itself.
+    //
+    // The limiter keys on the caller's IP for both, so the limit cannot differ
+    // between a known and an unknown address — a limit that kicked in sooner
+    // for real accounts would be an enumeration oracle of its own.
+    //
+    // NOT ADDED HERE, deliberately: a per-EMAIL hourly cap. It trades
+    // mail-bombing against a targeted recovery-DENIAL attack (an attacker who
+    // knows a victim's address could lock them out of recovery), and that is an
+    // open product decision — proposal question 4 — not an implementation
+    // choice. The broker's own per-user throttle (config/auth.php
+    // passwords.users.throttle, 60s) already prices repeat sends to ONE inbox;
+    // it runs inside the queued job and must not be mistaken for a route limit.
+    //
+    // login/refresh/logout/me stay unthrottled — an explicit non-goal here.
+    Route::post('/forgot-password', ForgotPasswordController::class)
+        ->middleware('throttle:6,1');
+    Route::post('/reset-password', ResetPasswordController::class)
+        ->middleware('throttle:6,1');
 
     Route::middleware('auth:api')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);

@@ -433,10 +433,7 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
-                                                    "type": [
-                                                        "string",
-                                                        "null"
-                                                    ],
+                                                    "type": "string",
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 },
                                                 "photo_url": {
@@ -910,25 +907,20 @@
                                                         "type": "string"
                                                     },
                                                     "description": {
-                                                        "type": [
-                                                            "string",
-                                                            "null"
-                                                        ]
+                                                        "type": "string"
                                                     },
                                                     "provider": {
                                                         "type": "string"
                                                     },
                                                     "config": {
-                                                        "type": "array",
-                                                        "items": {}
+                                                        "type": "string"
                                                     },
                                                     "persona": {
                                                         "type": [
-                                                            "array",
+                                                            "string",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config.",
-                                                        "items": {}
+                                                        "description": "Persona is optional: a template may be pure provider config."
                                                     },
                                                     "llm": {
                                                         "type": [
@@ -1555,6 +1547,48 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/auth/forgot-password": {
+            "post": {
+                "operationId": "auth.forgotPassword",
+                "tags": [
+                    "ForgotPassword"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ForgotPasswordRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Says nothing about the address. Deliberately not localized per\nrecipient \u2014 there is no recipient to localize for, since we refuse\nto admit whether one exists.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "If an account exists for that address, a password reset link has been sent."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
@@ -3719,6 +3753,48 @@
                 }
             }
         },
+        "/auth/reset-password": {
+            "post": {
+                "operationId": "auth.resetPassword",
+                "tags": [
+                    "ResetPassword"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ResetPasswordRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Your password has been reset. Every device you were signed in on must sign in again."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
         "/candidate/session": {
             "get": {
                 "operationId": "session.show",
@@ -4696,6 +4772,36 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "llm": {
+                        "type": "object",
+                        "properties": {
+                            "estimated_cost_usd_per_interview": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "minutes": {
+                                        "type": "integer"
+                                    },
+                                    "turns": {
+                                        "type": "integer"
+                                    },
+                                    "usd": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "minutes",
+                                    "turns",
+                                    "usd"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "estimated_cost_usd_per_interview"
+                        ]
                     }
                 },
                 "required": [
@@ -4710,7 +4816,8 @@
                     "llm_model_id",
                     "llm_credential_id",
                     "llm_sync_status",
-                    "llm_synced_at"
+                    "llm_synced_at",
+                    "llm"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -4868,6 +4975,21 @@
                 "type": "object",
                 "additionalProperties": {},
                 "title": "EvaluationResource"
+            },
+            "ForgotPasswordRequest": {
+                "type": "object",
+                "description": "Validates `POST /api/auth/forgot-password` (self-service-password-reset AD-3).\n\n`exists:users,email` is DELIBERATELY ABSENT and must never be added. It would\nmake the validator itself the account-enumeration oracle this whole flow is\nbuilt to avoid \u2014 a 422 for \"unknown\" and a 202 for \"known\" is a cleaner\nsignal than any timing difference.\n\nOnly the FORMAT is validated. That is safe: it says something about the\nstring the caller typed, never about whether an account exists behind it.",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    }
+                },
+                "required": [
+                    "email"
+                ],
+                "title": "ForgotPasswordRequest"
             },
             "FrameworkVersionResource": {
                 "type": "object",
@@ -5691,6 +5813,35 @@
                 ],
                 "title": "ProjectResource"
             },
+            "ResetPasswordRequest": {
+                "type": "object",
+                "description": "Validates `POST /api/auth/reset-password` (self-service-password-reset AD-2).\n\nValidation runs BEFORE the token is presented to the broker, so a typo in the\nnew password \u2014 a mismatched confirmation, one character short \u2014 does NOT burn\nthe single-use token. A locked-out user gets one link; spending it on a typo\nwould send them back to the start.\n\n`min:8` matches the floor the admin path (`UpdateUserRequest`) and the\nself-service path (`UpdatePasswordRequest`) already use. A stricter floor\nhere would be theatre: the same account can be given a shorter password\nthrough either of those two routes.\n\n`exists:users,email` is absent here for the same reason as in\n`ForgotPasswordRequest`, though the exposure is smaller \u2014 a caller must also\nhold a valid token. The controller answers unknown-user, deactivated-user and\nbad-token with ONE generic failure.",
+                "properties": {
+                    "token": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    },
+                    "password_confirmation": {
+                        "type": "string",
+                        "minLength": 8
+                    }
+                },
+                "required": [
+                    "token",
+                    "email",
+                    "password",
+                    "password_confirmation"
+                ],
+                "title": "ResetPasswordRequest"
+            },
             "RoleResource": {
                 "type": "object",
                 "properties": {
@@ -5719,34 +5870,28 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "participant_id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "provider_session_ref": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "status": {
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [
@@ -5885,7 +6030,7 @@
                     },
                     "cost": {
                         "type": "object",
-                        "description": "Avatar minutes only. `ai_requests` has no interview_session_id,\nso LLM spend cannot be attributed to one session without\ninventing the link \u2014 and a plausible number with no basis is\nworse than an absent one (D5).",
+                        "description": "TWO SEPARATE labelled lines, never one combined total \u2014 the\nsame refusal already ratified at `SessionCostEstimator.php:20-22`\nfor avatar-vs-LLM spend: different vendors, different meters. `avatar`: minutes only. `ai_requests` has no interview_session_id,\nso LLM spend cannot be attributed to one session without\ninventing the link \u2014 and a plausible number with no basis is\nworse than an absent one (D5).\n\n`llm`: null when the session was never billed (unbound/degraded \u2014\nno vendor default is priced). When present, `actual_usd`\nrenders ONLY when non-null (pluggable-conversation-llm PR P6b,\ndesign D5: permanently null in managed mode, reserved for a\nfuture native_duplex change).",
                         "properties": {
                             "avatar": {
                                 "type": [
@@ -5909,13 +6054,118 @@
                                     "usd"
                                 ]
                             },
+                            "llm": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "estimated_usd": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    },
+                                    "actual_usd": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "estimated_usd",
+                                    "actual_usd"
+                                ]
+                            },
                             "is_estimate": {
                                 "type": "boolean"
                             }
                         },
                         "required": [
                             "avatar",
+                            "llm",
                             "is_estimate"
+                        ]
+                    },
+                    "evaluation": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "description": "The BARS evidence for the competency THIS session probed, so the\nbackoffice needs ONE request rather than a second fetch it has to\ncorrelate itself \u2014 client-side correlation is where a wrong\nexcerpt/session pairing would be introduced. `null` \u2014 not an empty object \u2014 when the participant has not\nreached `completato` (the Evaluation read gate), when there is no\nevaluation, or when this competency was never scored. All three\nmean \"no evidence to show\", and a caller that renders a section\nonly for a non-null block cannot accidentally display an empty\none as though it were a verdict.\n\nEach behaviour carries `excerpts_spoken_in_this_session`, a\npositional parallel of `excerpts`. It is NOT decoration: the\nscoring corpus spans the participant's whole interview\n(`TranscriptAssembler`), so an excerpt shown on a session page may\nlegitimately quote a different session, and the flag is what stops\nthis surface from implying otherwise. See `SessionEvidenceReader`.",
+                        "properties": {
+                            "competency_code": {
+                                "type": "string"
+                            },
+                            "score": {
+                                "type": [
+                                    "number",
+                                    "null"
+                                ]
+                            },
+                            "reliability": {
+                                "type": "string"
+                            },
+                            "behaviors": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "indicator": {
+                                            "type": "string"
+                                        },
+                                        "score": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "explanation": {
+                                            "type": "string"
+                                        },
+                                        "excerpts": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "excerpts_spoken_in_this_session": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "boolean"
+                                            }
+                                        },
+                                        "unassessable_reason": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "indicator",
+                                        "score",
+                                        "explanation",
+                                        "excerpts",
+                                        "excerpts_spoken_in_this_session",
+                                        "unassessable_reason"
+                                    ]
+                                }
+                            },
+                            "unscorable_reason": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "competency_code",
+                            "score",
+                            "reliability",
+                            "behaviors",
+                            "unscorable_reason"
                         ]
                     }
                 },
@@ -5933,7 +6183,8 @@
                     "duration_seconds",
                     "integrity",
                     "snapshots",
-                    "cost"
+                    "cost",
+                    "evaluation"
                 ],
                 "title": "SessionReviewResource"
             },
@@ -5941,13 +6192,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "provider": {
                         "type": "string"
@@ -5956,10 +6207,7 @@
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "started_at": {
                         "type": [
@@ -5991,6 +6239,13 @@
                                 ]
                             }
                         ]
+                    },
+                    "llm_cost_usd": {
+                        "type": [
+                            "number",
+                            "null"
+                        ],
+                        "description": "(pluggable-conversation-llm PR P6b) A separate line, never\ncombined with any avatar-minute figure. `actual_cost_usd` is\npreferred when non-null (permanently null in managed mode;\nreserved for a future native_duplex change). `null` \u2014 never\n`0` \u2014 when the session was never billed (no usage row: it\nresolved unbound/degraded)."
                     }
                 },
                 "required": [
@@ -6003,7 +6258,8 @@
                     "started_at",
                     "ended_at",
                     "duration_seconds",
-                    "integrity_event_count"
+                    "integrity_event_count",
+                    "llm_cost_usd"
                 ],
                 "title": "SessionSummaryResource"
             },

@@ -20,6 +20,8 @@ use App\Console\Commands\ResetUserPasswordCommand;
 use App\Models\AuditLog;
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\Auth\RefreshRotateStatus;
+use App\Support\Auth\RefreshTokenStore;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Console\PromptsForMissingInput;
@@ -464,4 +466,49 @@ test('a platform superadmin reset cannot persist to the tenant-scoped audit tabl
             && $context['operator'] === 'root'
             && $context['organization_id'] === null;
     });
+});
+
+// ─── Refresh-family revocation parity (self-service-password-reset AD-4) ─────
+
+test('the CLI reset revokes every refresh family the user holds, not only their access tokens', function (): void {
+    $org = Organization::factory()->create();
+    $user = User::factory()->create(['organization_id' => $org->id, 'email' => 'cli-revoke@example.com']);
+
+    $store = app(RefreshTokenStore::class);
+    $laptop = $store->issue($user->id);
+    $desktop = $store->issue($user->id);
+
+    $this->artisan('beai:reset-user-password', ['email' => 'cli-revoke@example.com'])
+        ->assertSuccessful();
+
+    // `password_changed_at` alone does NOT cover this: POST /api/auth/refresh
+    // runs outside RejectStaleCredentials by design, so a refresh cookie held
+    // before the reset would keep minting access tokens after it. The CLI and
+    // the HTTP flow must answer "an out-of-session reset invalidates prior
+    // sessions" the SAME way — two paths with different answers is the
+    // divergence AD-4 exists to prevent.
+    foreach ([$laptop, $desktop] as $issue) {
+        expect($store->rotate($issue->familyId, $issue->secret)->status)
+            ->toBe(RefreshRotateStatus::Revoked);
+    }
+});
+
+test('a CLI reset that rolls back leaves the refresh families intact', function (): void {
+    $org = Organization::factory()->create();
+    $user = User::factory()->create(['organization_id' => $org->id, 'email' => 'cli-rollback@example.com']);
+
+    $store = app(RefreshTokenStore::class);
+    $issue = $store->issue($user->id);
+
+    // Revocation must live INSIDE the existing transaction: a reset that did
+    // not happen must not have logged anyone out.
+    Event::listen('eloquent.saved: '.User::class, function (): void {
+        throw new RuntimeException('write failed');
+    });
+
+    $this->artisan('beai:reset-user-password', ['email' => 'cli-rollback@example.com'])
+        ->assertFailed();
+
+    expect($store->rotate($issue->familyId, $issue->secret)->status)
+        ->not->toBe(RefreshRotateStatus::Revoked);
 });

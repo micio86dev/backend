@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Candidate;
 
+use App\Actions\ConversationLlm\RecordConversationLlmUsage;
 use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
 use App\Enums\ProviderFailureClass;
@@ -21,6 +22,7 @@ use App\Models\Project;
 use App\Models\Role;
 use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
+use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
@@ -57,6 +59,8 @@ class InterviewController extends Controller
         private readonly SystemPromptComposer $composer,
         private readonly OpeningTextComposer $openingComposer,
         private readonly SessionLiveClock $liveClock,
+        private readonly InterviewSessionLlmSnapshot $llmSnapshot,
+        private readonly RecordConversationLlmUsage $recordLlmUsage,
     ) {}
 
     // =========================================================================
@@ -353,6 +357,16 @@ class InterviewController extends Controller
                 // since that path already aborted above before reaching
                 // here.
                 $this->liveClock->close($locked, 'end');
+
+                // (pluggable-conversation-llm PR P6b, design D10) Write the
+                // conversation-LLM cost row, inside the same lock, AFTER the
+                // period close so `liveSeconds()` sees the just-closed
+                // stretch. `firstOrCreate()` inside the action makes this a
+                // no-op against the reconcile sweep racing a late /end (or
+                // vice versa). No row at all when llm_binding_status !==
+                // 'applied' — a session that ran on the vendor default gets
+                // no Gemini cost row.
+                ($this->recordLlmUsage)($locked);
 
                 // (7)+(8) Tally + last-question CAS, extracted (D5) so the two other
                 // paths that can finish an interview reach the same code.
@@ -740,12 +754,17 @@ class InterviewController extends Controller
 
         // (c) Persist new ref in a short DB txn (FIX-8: no participant update needed on RESUME)
         try {
-            DB::transaction(function () use ($session, $freshToken): void {
+            DB::transaction(function () use ($session, $freshToken, $ctx): void {
                 $session->provider_session_ref = $freshToken->provider_session_ref;
                 $session->status = 'in_corso';
                 // (D2) `??=` — a no-op here for any row that truly resumed
                 // (started_at is already set from the first stretch).
                 $session->started_at ??= now();
+                // (pluggable-conversation-llm PR P6a, design D5) issue() IS
+                // re-invoked on resume — stamp() carries its own write-once /
+                // downgrade-only / null-guard rules, mirroring started_at's
+                // idiom right above it.
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt);
                 $session->save();
 
                 // (D1/D4) Open the NEW stretch in the same transaction — the
@@ -793,7 +812,7 @@ class InterviewController extends Controller
 
         // (4a) Provider SUCCESS → short txn (FIX-8: BOTH writes in ONE transaction)
         try {
-            DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency): void {
+            DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency, $ctx): void {
                 // UPDATE session status = in_corso + new ref
                 $session->provider_session_ref = $token->provider_session_ref;
                 $session->status = 'in_corso';
@@ -805,6 +824,12 @@ class InterviewController extends Controller
                 // competency reaches here with a start already recorded, and
                 // that value must survive (D6).
                 $session->started_at ??= now();
+                // (pluggable-conversation-llm PR P6a, design D5) Same
+                // write-once / downgrade-only / null-guard stamp as the
+                // RESUME path above — this site is also reached by a
+                // re-offered competency (ResetSessionForRetry), not only a
+                // true first issue.
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt);
                 $session->save();
 
                 // (D1/D4) Open a new live period in the SAME transaction as

@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\User;
 use App\Support\Audit\AuditRecorder;
+use App\Support\Auth\RefreshTokenStore;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -113,6 +114,23 @@ class ResetUserPasswordCommand extends Command
                 // not tightened for this CLI path.
                 $user->password_changed_at = now()->startOfSecond();
                 $user->save();
+
+                // (self-service-password-reset AD-4) `password_changed_at`
+                // alone does NOT end every session: POST /api/auth/refresh
+                // runs OUTSIDE RejectStaleCredentials by design (routes/
+                // api.php, D8 — an expired access token is exactly when
+                // refresh must still work), so it is never consulted there
+                // and a refresh cookie held before this reset would keep
+                // minting fresh access tokens after it.
+                //
+                // User-scoped, not family-scoped: a user holds one family per
+                // LOGIN, and a CLI reset has no session and therefore no
+                // `fam` claim to scope by.
+                //
+                // INSIDE the transaction on purpose — the report() line below
+                // promises "all existing sessions were revoked", and a reset
+                // that rolled back must not have logged anyone out.
+                app(RefreshTokenStore::class)->revokeAllForUser($user->id);
             });
         } catch (Throwable $e) {
             // The transaction has already rolled back, so nothing partial
