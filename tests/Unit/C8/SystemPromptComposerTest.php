@@ -425,8 +425,17 @@ test('(w) task 4.3 — the verbatim-phrase instruction survives untouched', func
 });
 
 test('(x) task 4.4 — an exhausted budget still permits closing', function (): void {
+    // Strengthened 2026-08-28. This asserted only `toContain('follow-up budget')`,
+    // which `buildBudgetSection()` satisfies on its own with "...the follow-up
+    // budget of N is exhausted." — so the test passed whether or not
+    // `buildAdvanceSection()` still carried its "OR the follow-up budget is
+    // exhausted" clause, which is the behaviour the scenario is about. An
+    // assertion two sections can satisfy cannot tell you which one did.
+    //
+    // The exact phrase below exists ONLY in the advance section, so removing
+    // that clause now fails this test instead of passing it.
     expect(starPromptReflowed())
-        ->toContain('follow-up budget');
+        ->toContain('OR the follow-up budget is exhausted');
 });
 
 // ─── Group 5: purity ─────────────────────────────────────────────────────────
