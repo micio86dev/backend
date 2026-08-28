@@ -81,6 +81,37 @@ jobs:
           DB_PASSWORD: postgres
         run: php artisan migrate --force
 
+      # Every test in the @ai group self-skips when ANTHROPIC_API_KEY is empty,
+      # and a run of nothing but skips exits 0. So this lane reported SUCCESS
+      # on every run since 2026-08-13 while asserting nothing: the one run that
+      # actually contained RubricAdherenceDriftTest logged
+      # "Tests: 2 skipped (0 assertions)" and concluded success, and a task was
+      # ticked on the strength of it reading "still green". It was skipped, not
+      # green.
+      #
+      # That test's own docblock calls it the ONLY mechanism in the suite that
+      # can detect the model drawing the exceeds/meets line differently — which
+      # is exactly what a prompt severity recalibration changes, and exactly the
+      # kind of change this lane exists to gate.
+      #
+      # Fail loudly instead. A red lane that says "the secret is missing" is
+      # worth more than a green one that checked nothing, and it matches what
+      # the rest of this codebase already does: MailSelfTestCommand refuses to
+      # report success on a transport that delivers nothing, and
+      # BackofficeOrigin returns null rather than mint a broken link.
+      - name: Assert the AI credentials are actually present
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set for this repository."
+            echo "Every @ai test would self-skip and this job would exit 0 having"
+            echo "asserted nothing — a green light over an unrun gate."
+            echo "Set the repository secret, or do not run this workflow."
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY present — the @ai group will actually execute."
+
       - name: Run @ai group tests (real LLM API — uses AI credits)
         env:
           DB_CONNECTION: pgsql
