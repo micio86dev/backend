@@ -16,8 +16,10 @@ use Illuminate\Support\Facades\Schema;
  * make cache writes and queue pushes fail loudly the moment memory fills — a
  * cache must stay evictable. This follows the Laravel-standard shape already
  * used for `password_reset_tokens` (0001_01_01_000000_create_users_table.php)
- * and Sanctum's `personal_access_tokens`: durable credential state lives in
- * the database, hashed at rest, with a scheduled prune of dead rows.
+ * and by `personal_access_tokens` — cited as shape precedent only, because
+ * this project's auth is JWT (tymon/jwt-auth) and does not use Sanctum:
+ * durable credential state lives in the database, hashed at rest, with a
+ * scheduled prune of dead rows.
  *
  * One row per issued generation (never mutated into a different generation —
  * a rotation INSERTs a new row, it does not overwrite the old one), which is
