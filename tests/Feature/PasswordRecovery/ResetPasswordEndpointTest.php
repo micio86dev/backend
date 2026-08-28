@@ -288,10 +288,14 @@ test('the reset token never appears in any log channel', function (): void {
         'password_confirmation' => 'brand-new-password-9876',
     ])->assertStatus(422);
 
-    foreach ($lines as $line) {
-        expect($line)->not->toContain($token);
-        expect($line)->not->toContain('brand-new-password-9876');
-    }
+    // Asserted over the JOINED lines, not in a `foreach`. A loop over an empty
+    // `$lines` executes zero assertions, and the `assertOk`/`assertStatus`
+    // above mask that — the test reads green while the property it is named
+    // for goes unchecked. Two assertions over the concatenation always run.
+    $logged = implode("\n", $lines);
+
+    expect($logged)->not->toContain($token)
+        ->and($logged)->not->toContain('brand-new-password-9876');
 });
 
 test('the endpoint is rate limited — the token itself is a brute-force surface', function (): void {
