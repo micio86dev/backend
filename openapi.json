@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.35.0"
+        "version": "0.36.1"
     },
     "servers": [
         {
@@ -433,7 +433,10 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
-                                                    "type": "string",
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
                                                     "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
                                                 },
                                                 "photo_url": {
@@ -907,20 +910,25 @@
                                                         "type": "string"
                                                     },
                                                     "description": {
-                                                        "type": "string"
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
                                                     },
                                                     "provider": {
                                                         "type": "string"
                                                     },
                                                     "config": {
-                                                        "type": "string"
+                                                        "type": "array",
+                                                        "items": {}
                                                     },
                                                     "persona": {
                                                         "type": [
-                                                            "string",
+                                                            "array",
                                                             "null"
                                                         ],
-                                                        "description": "Persona is optional: a template may be pure provider config."
+                                                        "description": "Persona is optional: a template may be pure provider config.",
+                                                        "items": {}
                                                     },
                                                     "llm": {
                                                         "type": [
@@ -5870,28 +5878,34 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "participant_id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "provider": {
                         "type": "string"
                     },
                     "provider_session_ref": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "status": {
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "started_at": {
                         "type": [
@@ -6192,13 +6206,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "competency_code": {
                         "type": "string"
                     },
                     "question_index": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "provider": {
                         "type": "string"
@@ -6207,7 +6221,10 @@
                         "type": "string"
                     },
                     "ended_reason": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "started_at": {
                         "type": [
