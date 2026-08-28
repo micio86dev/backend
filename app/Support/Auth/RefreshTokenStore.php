@@ -20,8 +20,9 @@ use Illuminate\Support\Str;
  * which the original Redis-backed design did — would make cache writes and
  * queue pushes fail the moment memory fills. A cache must stay evictable;
  * durable auth state belongs in the database, following the same shape
- * already used for `password_reset_tokens` (Laravel's own convention) and
- * Sanctum's `personal_access_tokens`.
+ * already used for `password_reset_tokens` (Laravel's own convention) and by
+ * `personal_access_tokens` — cited as shape precedent only, because this
+ * project's auth is JWT (tymon/jwt-auth) and does not use Sanctum.
  *
  * One row per issued generation (App\Models\RefreshToken), never mutated
  * into a different generation — rotation INSERTs a new row, it never
