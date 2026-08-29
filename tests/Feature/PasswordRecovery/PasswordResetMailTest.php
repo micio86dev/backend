@@ -66,9 +66,31 @@ test('the job sends nothing for a DEACTIVATED user — a reset is not a reactiva
     Notification::fake();
     $user = mailTestUser(['deactivated_at' => now()]);
 
+    $lines = [];
+    Log::listen(function ($message) use (&$lines): void {
+        $context = is_array($message->context ?? null) ? json_encode($message->context) : '';
+        $lines[] = ((string) ($message->message ?? '')).' '.$context;
+    });
+
     (new SendPasswordResetLinkJob($user->email))->handle();
 
     Notification::assertNothingSent();
+
+    // The refusal is logged BY ID, never by address. Until this assertion
+    // existed the delta spec's "A deactivated refusal is logged by id, not
+    // address" scenario was claimed rather than held: the job is at 100% line
+    // coverage, and changing the context to `['email' => $user->email]` would
+    // have turned nothing red. Line coverage is not assertion coverage.
+    //
+    // It matters because this is the one branch that has PROVEN the address
+    // belongs to a real account. A log naming it is the enumeration list the
+    // whole flow is shaped to avoid — the endpoint refuses to be an oracle,
+    // and a log line here would hand the same answer to anyone with log access.
+    $logged = implode("\n", $lines);
+
+    expect($logged)->toContain('password reset refused: user is deactivated')
+        ->and($logged)->toContain((string) $user->id)
+        ->and($logged)->not->toContain($user->email);
 });
 
 test('the job REFUSES to send when the backoffice origin is unset, and logs the refusal', function (): void {
@@ -248,9 +270,12 @@ test('the reset token never reaches a log channel from the send path either', fu
 
     expect($matches[1] ?? '')->not->toBe('');
 
-    foreach ($lines as $line) {
-        expect($line)->not->toContain($matches[1]);
-    }
+    // Asserted over the JOINED lines rather than in a loop. A `foreach` here
+    // executes zero assertions whenever the job happens to log nothing, and
+    // the preceding assertion masks that — the test stays green while the
+    // property it names goes unchecked. One assertion over the concatenation
+    // always runs, and fails the same way if the token ever appears.
+    expect(implode("\n", $lines))->not->toContain($matches[1]);
 });
 
 test('the job logs no probed address for an unknown email — logs must not become an enumeration list', function (): void {
@@ -261,6 +286,19 @@ test('the job logs no probed address for an unknown email — logs must not beco
     });
 
     (new SendPasswordResetLinkJob('probe-target@example.com'))->handle();
+
+    // An unknown address makes the job return silently, so `$lines` is empty
+    // and a bare `foreach` over it executes ZERO assertions — this test was
+    // the only risky one in a 2603-test suite for exactly that reason. It
+    // would still have caught a newly added log line naming the address, but
+    // a test guarding "logs must not become an enumeration list" should not
+    // depend on the reader noticing it asserts nothing today.
+    //
+    // Asserting emptiness first is strictly stronger AND always a real
+    // assertion: it fails if the job starts logging anything at all on the
+    // unknown-address path, which is the earliest signal that the silence
+    // this requirement depends on has been broken.
+    expect($lines)->toBeEmpty();
 
     foreach ($lines as $line) {
         expect($line)->not->toContain('probe-target@example.com');
