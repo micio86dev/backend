@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.36.2"
+        "version": "0.37.0"
     },
     "servers": [
         {
