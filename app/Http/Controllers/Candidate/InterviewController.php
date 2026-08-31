@@ -185,7 +185,19 @@ class InterviewController extends Controller
         }
 
         // (2) Create-or-RESUME session row.
-        $providerName = $project->provider_override ?? config('interview.provider', 'heygen');
+        // Precedence, most specific first: a template the PROJECT pinned wins,
+        // because pinning a template is already a statement about which
+        // provider this project runs on and it would be incoherent for the two
+        // to disagree. Then the explicit `provider_override`, then the env
+        // default — both unchanged for every project that pins nothing.
+        //
+        // Before pinning existed, `INTERVIEW_PROVIDER` silently decided for an
+        // operator who had one active HeyGen template and one active Tavus
+        // template: a legal state, since activation is scoped per provider, in
+        // which the project itself had no say.
+        $providerName = $project->avatarTemplate?->provider
+            ?? $project->provider_override
+            ?? config('interview.provider', 'heygen');
 
         // (D2/D3) A re-offered competency is reset to `pending` and its previous
         // attempt's transcript discarded BEFORE the session is resumed, so the

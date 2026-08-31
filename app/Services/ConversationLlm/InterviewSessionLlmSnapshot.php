@@ -57,7 +57,7 @@ final class InterviewSessionLlmSnapshot
      */
     public function stamp(InterviewSession $session, ?string $systemPrompt): void
     {
-        $template = $this->templates->resolve($session->provider);
+        $template = $this->templates->resolve($session->provider, $session->project_id);
 
         // Plain write-once.
         $session->avatar_template_id ??= $template?->id;
