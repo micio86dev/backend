@@ -105,7 +105,7 @@ beforeEach(function (): void {
 // ─── Return shape / never-throws contract ─────────────────────────────────────
 
 test('ensureConfiguration() returns the exact shape TavusPalSync declares, and never throws on a provider 500', function (): void {
-    Http::fake(['*heygen.com*' => Http::response(['error' => 'boom'], 500)]);
+    Http::fake(['*liveavatar.com*' => Http::response(['error' => 'boom'], 500)]);
 
     $result = app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
 
@@ -142,8 +142,8 @@ test('a non-heygen template is skipped without any HTTP call', function (): void
 
 test('create: first bind POSTs /v1/secrets then POSTs /v1/llm-configurations, and both ids are stored', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_new'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_new'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_new'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_new'), 200),
     ]);
 
     $template = registrarHeygenTemplate();
@@ -180,10 +180,45 @@ test('create: first bind POSTs /v1/secrets then POSTs /v1/llm-configurations, an
     });
 });
 
+/**
+ * The host, pinned as its own assertion rather than left implicit in the fake
+ * patterns above.
+ *
+ * This class originally called `api.heygen.com`, described in its own docblock
+ * as a separate "platform management domain" — a domain that does not route
+ * these paths at all. Production answered every save with HTTP 404 and the
+ * operator got the `llm_secret_failed` warning, which reads as a rejected
+ * credential and is not one: the request never reached anything that could
+ * evaluate a credential.
+ *
+ * Verified against the live API (2026-08-31), with the same key already
+ * configured in production:
+ *   GET api.heygen.com/v1/secrets      → 404 (Werkzeug HTML — an unrouted path,
+ *                                        byte-identical to an invented one)
+ *   GET api.liveavatar.com/v1/secrets  → 200
+ * The heygen.com v1 tier answers a REAL endpoint with 401 JSON on a bad key,
+ * so the 404 was routing, never auth.
+ *
+ * `HeygenProvider::BASE_URL` had pointed at `api.liveavatar.com` since it was
+ * written. A fake matching on the path alone would pass against either host,
+ * so the assertion is on the HOST.
+ */
+test('every management call goes to the LiveAvatar host, never to api.heygen.com', function (): void {
+    Http::fake([
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_new'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_new'), 200),
+    ]);
+
+    app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
+
+    Http::assertSent(fn ($request): bool => str_starts_with($request->url(), 'https://api.liveavatar.com/v1/')
+        && ! str_contains($request->url(), 'heygen.com'));
+});
+
 test('the secret id is memoized — a second ensureConfiguration() on a NEW template sharing the credential issues no second POST /v1/secrets', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_shared'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_shared'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
     ]);
 
     $model = registrarModel();
@@ -220,8 +255,8 @@ test('the secret id is memoized — a second ensureConfiguration() on a NEW temp
 
 test('update: a model change on a bound template PATCHes the stored configuration id, never a new POST', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
     ]);
 
     $template = registrarHeygenTemplate();
@@ -233,7 +268,7 @@ test('update: a model change on a bound template PATCHes the stored configuratio
     // on every call, though registered URL patterns themselves STACK) —
     // exactly what isolates the assertions below to this second phase alone.
     Http::fake([
-        '*heygen.com/v1/llm-configurations/cfg_1' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+        '*liveavatar.com/v1/llm-configurations/cfg_1' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
     ]);
 
     $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
@@ -246,7 +281,7 @@ test('update: a model change on a bound template PATCHes the stored configuratio
 });
 
 test('a 404 on PATCH clears the stored id and retries exactly once as a POST', function (): void {
-    Http::fake(['*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200)]);
+    Http::fake(['*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200)]);
 
     // The bare `/v1/llm-configurations` URL is hit TWICE in this test (the
     // initial create, then the post-404 retry) — a plain `Http::fake()`
@@ -254,12 +289,12 @@ test('a 404 on PATCH clears the stored id and retries exactly once as a POST', f
     // matching forever (the documented stacking gotcha), so a sequence is
     // the correct tool, exactly as `TavusSyncStatePersistenceTest.php` uses
     // for the analogous Tavus case.
-    Http::fakeSequence('*heygen.com/v1/llm-configurations')
+    Http::fakeSequence('*liveavatar.com/v1/llm-configurations')
         ->push(heygenConfigurationResponse('cfg_1'), 200)
         ->push(heygenConfigurationResponse('cfg_recreated'), 200);
 
     // A distinct sub-path pattern — never consumes the sequence above.
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_1' => Http::response([], 404)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_1' => Http::response([], 404)]);
 
     $template = registrarHeygenTemplate();
     app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
@@ -289,11 +324,11 @@ test('rotate: DELETEs then POSTs the secret (never PATCH — secrets are immutab
     // re-registration for the SAME pattern would leave the FIRST response
     // (`sec_old`) matching forever, so a sequence is the correct tool (same
     // stacking gotcha this file's other tests document).
-    Http::fakeSequence('*heygen.com/v1/secrets')
+    Http::fakeSequence('*liveavatar.com/v1/secrets')
         ->push(heygenSecretResponse('sec_old'), 200)
         ->push(heygenSecretResponse('sec_new'), 200);
 
-    Http::fake(['*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
 
     $model = registrarModel();
     $org = Organization::factory()->create();
@@ -315,8 +350,8 @@ test('rotate: DELETEs then POSTs the secret (never PATCH — secrets are immutab
     expect($credential->fresh()->heygen_secret_id)->toBe('sec_old');
 
     Http::fake([
-        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
-        '*heygen.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
     ]);
 
     $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
@@ -346,15 +381,15 @@ test('rotate: DELETEs then POSTs the secret (never PATCH — secrets are immutab
 
 test('forget: DELETEs the configuration and clears heygen_llm_configuration_id', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
     ]);
 
     $template = registrarHeygenTemplate();
     app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
     expect($template->fresh()->heygen_llm_configuration_id)->toBe('cfg_1');
 
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_1' => Http::response([], 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_1' => Http::response([], 200)]);
 
     app(HeygenLlmRegistrar::class)->forget($template->fresh());
 
@@ -365,14 +400,14 @@ test('forget: DELETEs the configuration and clears heygen_llm_configuration_id',
 
 test('forget: a vendor DELETE failure still clears the column and never throws', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
     ]);
 
     $template = registrarHeygenTemplate();
     app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
 
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_1' => Http::response([], 500)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_1' => Http::response([], 500)]);
 
     app(HeygenLlmRegistrar::class)->forget($template->fresh());
 
@@ -381,8 +416,8 @@ test('forget: a vendor DELETE failure still clears the column and never throws',
 
 test('an unbound template is skipped and any stale configuration is forgotten', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
     ]);
 
     $template = registrarHeygenTemplate();
@@ -390,7 +425,7 @@ test('an unbound template is skipped and any stale configuration is forgotten', 
 
     $template->forceFill(['llm_model_id' => null, 'llm_credential_id' => null])->saveQuietly();
 
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_1' => Http::response([], 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_1' => Http::response([], 200)]);
 
     $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
 
@@ -429,7 +464,7 @@ test('ensureSecret() returns null and stores nothing when the vendor omits data.
     // The @wire-source envelope carries the id at `data.id`, NOT top level —
     // a response shaped like the top-level variant must be REJECTED, not
     // silently stored as the ledger handle.
-    Http::fake(['*heygen.com/v1/secrets' => Http::response(
+    Http::fake(['*liveavatar.com/v1/secrets' => Http::response(
         ['code' => 1000, 'id' => 'sec_at_top_level', 'data' => ['secret_name' => 'x']], 200
     )]);
 
@@ -440,7 +475,7 @@ test('ensureSecret() returns null and stores nothing when the vendor omits data.
 });
 
 test('ensureSecret() rejects an empty-string data.id rather than storing an unusable handle', function (): void {
-    Http::fake(['*heygen.com/v1/secrets' => Http::response(
+    Http::fake(['*liveavatar.com/v1/secrets' => Http::response(
         ['code' => 1000, 'data' => ['id' => '', 'secret_name' => 'x']], 200
     )]);
 
@@ -452,8 +487,8 @@ test('ensureSecret() rejects an empty-string data.id rather than storing an unus
 
 test('a malformed configuration envelope warns with llm_config_failed and stores no id', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(['data' => ['display_name' => 'x']], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(['data' => ['display_name' => 'x']], 200),
     ]);
 
     $template = registrarHeygenTemplate();
@@ -511,8 +546,8 @@ test('a database failure while loading the binding warns with llm_credential_mis
 
 test('a configuration POST that throws warns with llm_provider_unreachable after the secret already succeeded', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => fn () => throw new ConnectionException('down'),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => fn () => throw new ConnectionException('down'),
     ]);
 
     $template = registrarHeygenTemplate();
@@ -525,8 +560,8 @@ test('a configuration POST that throws warns with llm_provider_unreachable after
 
 test('a configuration POST that 500s warns with llm_config_failed', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(['error' => 'boom'], 500),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(['error' => 'boom'], 500),
     ]);
 
     $result = app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
@@ -536,8 +571,8 @@ test('a configuration POST that 500s warns with llm_config_failed', function ():
 
 test('a secret POST that 500s warns with llm_secret_failed, and no configuration call is attempted', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(['error' => 'boom'], 500),
-        '*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['error' => 'boom'], 500),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_1'), 200),
     ]);
 
     $result = app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
@@ -547,11 +582,11 @@ test('a secret POST that 500s warns with llm_secret_failed, and no configuration
 });
 
 test('a PATCH that 404s twice — the retry POST also failing — warns once and never loops', function (): void {
-    Http::fake(['*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200)]);
-    Http::fakeSequence('*heygen.com/v1/llm-configurations')
+    Http::fake(['*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200)]);
+    Http::fakeSequence('*liveavatar.com/v1/llm-configurations')
         ->push(heygenConfigurationResponse('cfg_1'), 200)
         ->push(['error' => 'gone'], 404);
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_1' => Http::response([], 404)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_1' => Http::response([], 404)]);
 
     $template = registrarHeygenTemplate();
     app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
@@ -615,7 +650,7 @@ test('forget() treats a vendor 404 as success — already gone is the desired en
         $warnings[] = $message->message;
     });
 
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_gone' => Http::response([], 404)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_gone' => Http::response([], 404)]);
 
     $template = registrarHeygenTemplate();
     $template->forceFill(['heygen_llm_configuration_id' => 'cfg_gone'])->saveQuietly();
@@ -667,7 +702,7 @@ test('forgetSecret() logs a 500 but still clears the column, and treats a 404 as
         $warnings[] = $message->message;
     });
 
-    Http::fake(['*heygen.com/v1/secrets/sec_500' => Http::response([], 500)]);
+    Http::fake(['*liveavatar.com/v1/secrets/sec_500' => Http::response([], 500)]);
 
     $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
     $credential->forceFill(['heygen_secret_id' => 'sec_500'])->saveQuietly();
@@ -678,7 +713,7 @@ test('forgetSecret() logs a 500 but still clears the column, and treats a 404 as
     expect($warnings)->toContain('HeyGen secret delete failed');
 
     $warnings = [];
-    Http::fake(['*heygen.com/v1/secrets/sec_404' => Http::response([], 404)]);
+    Http::fake(['*liveavatar.com/v1/secrets/sec_404' => Http::response([], 404)]);
     $credential->forceFill(['heygen_secret_id' => 'sec_404'])->saveQuietly();
 
     app(HeygenLlmRegistrar::class)->forgetSecret($credential->fresh());
@@ -691,8 +726,8 @@ test('forgetSecret() logs a 500 but still clears the column, and treats a 404 as
 
 test('rotateSecret() warns with llm_secret_failed when the recreate leg fails, and leaves no stale id behind', function (): void {
     Http::fake([
-        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
-        '*heygen.com/v1/secrets' => Http::response(['error' => 'boom'], 500),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['error' => 'boom'], 500),
     ]);
 
     $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
@@ -707,10 +742,10 @@ test('rotateSecret() warns with llm_secret_failed when the recreate leg fails, a
 });
 
 test('rotateSecret() reports llm_config_failed when any bound configuration fails to re-point', function (): void {
-    Http::fakeSequence('*heygen.com/v1/secrets')
+    Http::fakeSequence('*liveavatar.com/v1/secrets')
         ->push(heygenSecretResponse('sec_old'), 200)
         ->push(heygenSecretResponse('sec_new'), 200);
-    Http::fake(['*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
 
     $model = registrarModel();
     $org = Organization::factory()->create();
@@ -726,8 +761,8 @@ test('rotateSecret() reports llm_config_failed when any bound configuration fail
     expect($template->fresh()->heygen_llm_configuration_id)->toBe('cfg_a');
 
     Http::fake([
-        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
-        '*heygen.com/v1/llm-configurations/cfg_a' => Http::response(['error' => 'boom'], 500),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/llm-configurations/cfg_a' => Http::response(['error' => 'boom'], 500),
     ]);
 
     $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
@@ -739,10 +774,10 @@ test('rotateSecret() reports llm_config_failed when any bound configuration fail
 });
 
 test('rotateSecret() ignores templates bound to a different credential or a non-heygen provider', function (): void {
-    Http::fakeSequence('*heygen.com/v1/secrets')
+    Http::fakeSequence('*liveavatar.com/v1/secrets')
         ->push(heygenSecretResponse('sec_old'), 200)
         ->push(heygenSecretResponse('sec_new'), 200);
-    Http::fake(['*heygen.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_a'), 200)]);
 
     $model = registrarModel();
     $org = Organization::factory()->create();
@@ -768,8 +803,8 @@ test('rotateSecret() ignores templates bound to a different credential or a non-
     app(HeygenLlmRegistrar::class)->ensureConfiguration($bound);
 
     Http::fake([
-        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
-        '*heygen.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
     ]);
 
     $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
@@ -791,12 +826,12 @@ test('every warning message is a stable code from the closed set, never vendor p
     $registrar = app(HeygenLlmRegistrar::class);
     $results = [];
 
-    Http::fake(['*heygen.com*' => Http::response(['message' => 'Your account has been suspended, contact sales@heygen.com'], 402)]);
+    Http::fake(['*liveavatar.com*' => Http::response(['message' => 'Your account has been suspended, contact sales@heygen.com'], 402)]);
     $results[] = $registrar->ensureConfiguration(registrarHeygenTemplate());
 
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(['message' => 'Quota exceeded for org 1234'], 429),
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_1'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(['message' => 'Quota exceeded for org 1234'], 429),
     ]);
     $results[] = $registrar->ensureConfiguration(registrarHeygenTemplate());
 
@@ -842,7 +877,7 @@ test('the Gemini key appears in no response, no exception, and no log channel ac
     ]));
 
     // Worst case: the vendor ECHOES the key back in an error body.
-    Http::fake(['*heygen.com*' => Http::response(['message' => "Unauthorized: {$geminiKey}"], 401)]);
+    Http::fake(['*liveavatar.com*' => Http::response(['message' => "Unauthorized: {$geminiKey}"], 401)]);
 
     $logMessages = [];
     Log::listen(function ($message) use (&$logMessages): void {

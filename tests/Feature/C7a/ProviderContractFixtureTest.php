@@ -395,7 +395,7 @@ test('L1: HeygenLlmRegistrar::ensureSecret() correctly reads data.id from a docs
     config()->set('interview.heygen.api_key', 'platform-heygen-key');
     $fixture = loadProviderFixture('heygen/secret_create_response.json');
 
-    Http::fake(['*heygen.com/v1/secrets' => Http::response($fixture, 200)]);
+    Http::fake(['*liveavatar.com/v1/secrets' => Http::response($fixture, 200)]);
 
     $org = Organization::factory()->create();
     $credential = palGeminiCredentialForOrg($org->id);
@@ -412,8 +412,8 @@ test('L1: HeygenLlmRegistrar::ensureConfiguration() correctly reads data.id from
     $configFixture = loadProviderFixture('heygen/llm_configuration_create_response.json');
 
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response($secretFixture, 200),
-        '*heygen.com/v1/llm-configurations' => Http::response($configFixture, 200),
+        '*liveavatar.com/v1/secrets' => Http::response($secretFixture, 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response($configFixture, 200),
     ]);
 
     $model = palGeminiModel();
