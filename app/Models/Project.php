@@ -77,6 +77,14 @@ class Project extends TenantModel
         'webhook_events',
         'deadline_at',
         'goes_live_at',
+        // Which avatar template THIS project runs on, or null to fall back to
+        // the organization's active one. Fillable, unlike `organization_id`:
+        // it is a setting an operator chooses, not an identity the payload
+        // must never be able to move. The tenant boundary is enforced by an
+        // org-scoped `exists` rule in Store/UpdateProjectRequest — a foreign
+        // id is refused before it is ever persisted, rather than merely
+        // ignored at read time.
+        'avatar_template_id',
     ];
 
     /**
@@ -86,6 +94,10 @@ class Project extends TenantModel
         // pdo_pgsql returns bigint as string — explicit cast prevents false-positive
         // immutability rejection when comparing (int) against persisted value.
         'framework_version_id' => 'integer',
+        // Same pdo_pgsql bigint-as-string reason as framework_version_id
+        // above: without this the id round-trips as a string and every
+        // strict comparison against it quietly fails.
+        'avatar_template_id' => 'integer',
         'deadline_at' => 'datetime',
         'goes_live_at' => 'datetime',
         // encrypted at rest; also in $hidden to prevent serialization exposure.
@@ -176,6 +188,22 @@ class Project extends TenantModel
     public function frameworkVersion(): BelongsTo
     {
         return $this->belongsTo(FrameworkVersion::class);
+    }
+
+    /**
+     * The avatar template pinned by this project, or null when it uses the
+     * organization's active one.
+     *
+     * Null is a supported, common configuration — not a missing setting — so
+     * every read of this relation must tolerate it. `ActiveTemplateResolver`
+     * is what turns "null here" into "the org's active template", and is the
+     * only place that fallback should live.
+     *
+     * @return BelongsTo<AvatarTemplate, $this>
+     */
+    public function avatarTemplate(): BelongsTo
+    {
+        return $this->belongsTo(AvatarTemplate::class);
     }
 
     /**

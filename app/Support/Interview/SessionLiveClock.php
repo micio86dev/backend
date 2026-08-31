@@ -139,7 +139,7 @@ final class SessionLiveClock
             default => ProviderFieldSpecs::HEYGEN_MAX_SECONDS,
         };
 
-        $template = $this->templates->resolve($session->provider);
+        $template = $this->templates->resolve($session->provider, $session->project_id);
 
         if ($template === null) {
             return $default;
