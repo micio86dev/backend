@@ -70,7 +70,7 @@ test('unbinding a HeyGen template clears its heygen_llm_configuration_id', funct
     // via `HeygenLlmRegistrar::forget()`, not just a column clear — this
     // fake proves it, closing the gap the pre-P5 stub's own docblock named
     // ("the full lifecycle is wired in PR P5's HeygenLlmRegistrar").
-    Http::fake(['*heygen.com/v1/llm-configurations/hg-config-1' => Http::response([], 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/hg-config-1' => Http::response([], 200)]);
 
     $this->withToken($token)->patchJson("/api/avatar-templates/{$template->id}", [
         'llm_model_id' => null,

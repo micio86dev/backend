@@ -87,6 +87,18 @@ class UpdateProjectRequest extends FormRequest
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
+            // `sometimes` + `nullable`, together deliberately: `sometimes`
+            // keeps an untouched field untouched, and `nullable` is what makes
+            // an EXPLICIT null a legal unpin rather than a validation error.
+            // Without the second, pinning would be a one-way door — an
+            // operator could never return the project to the organization
+            // fallback they started from.
+            'avatar_template_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                Rule::exists('avatar_templates', 'id')->where('organization_id', $orgId),
+            ],
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
             // the config, never a hardcoded list.

@@ -34,16 +34,47 @@ use Throwable;
  * 405 on the real API), so rotation is delete-then-recreate, never an
  * update. `POST /v1/llm-configurations` with `{display_name, model_name,
  * base_url, secret_id}` echoes `{id, base_url, display_name, model_name,
- * secret_id}` under `data`. These management endpoints live at
- * `api.heygen.com`, a DIFFERENT domain from the LiveAvatar session API
- * (`api.liveavatar.com`) `HeygenProvider` calls for `/contexts` and
- * `/sessions/token`.
+ * secret_id}` under `data`.
+ *
+ * THE HOST WAS WRONG, AND IT COST A RELEASE
+ * -----------------------------------------
+ * This docblock used to claim these management endpoints lived at
+ * `api.heygen.com`, "a DIFFERENT domain from the LiveAvatar session API".
+ * There is no such management domain. `api.heygen.com` does not route
+ * `/v1/secrets` or `/v1/llm-configurations` at all, so every HeyGen template
+ * save in production answered HTTP 404 and surfaced as the `llm_secret_failed`
+ * warning — which reads as a rejected credential and is nothing of the kind:
+ * the request never reached anything that could evaluate a credential.
+ *
+ * Re-verified against the live API (2026-08-31), with the key already
+ * configured in production:
+ *   GET  api.heygen.com/v1/secrets      → 404, Werkzeug HTML, byte-identical
+ *                                         to a path invented on the spot
+ *   GET  api.liveavatar.com/v1/secrets  → 200
+ * The `api.heygen.com` v1 tier answers a REAL endpoint with 401 JSON on a bad
+ * key (`/v1/video_status.get` does), so that 404 was ROUTING, never auth.
+ *
+ * The endpoints are the LiveAvatar ones — the same host `HeygenProvider` has
+ * always used for `/contexts` and `/sessions/token`. HeyGen's own docs index
+ * carries no interactive-avatar surface any more; it points at
+ * `docs.liveavatar.com`. Request bodies were correct throughout: only the host
+ * was wrong, which is why nothing but the host changed here.
+ *
+ * The original `@wire-source` above records HTTP 200 from `api.heygen.com` on
+ * 2026-08-26. That is not reproducible against that host and should be read as
+ * an unverified claim, not as evidence.
  */
 final class HeygenLlmRegistrar
 {
-    private const SECRETS_URL = 'https://api.heygen.com/v1/secrets';
+    /**
+     * Same host as `HeygenProvider::BASE_URL`. Kept as a separate literal
+     * rather than imported: these are different API surfaces that merely
+     * happen to share a host, and coupling them would make a future split of
+     * one silently move the other.
+     */
+    private const SECRETS_URL = 'https://api.liveavatar.com/v1/secrets';
 
-    private const CONFIGURATIONS_URL = 'https://api.heygen.com/v1/llm-configurations';
+    private const CONFIGURATIONS_URL = 'https://api.liveavatar.com/v1/llm-configurations';
 
     /** Bounded so a slow provider cannot hold an admin request open. */
     private const TIMEOUT_SECONDS = 10;

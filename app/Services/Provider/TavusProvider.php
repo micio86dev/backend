@@ -99,7 +99,7 @@ class TavusProvider implements ProviderSessionService
         // a conversation Tavus ignores them silently.
         $conversationBody = array_replace_recursive(
             $this->platformDefaultConversationFields($ctx),
-            TemplatePayload::tavus($this->activeTemplateConfig()),
+            TemplatePayload::tavus($this->activeTemplateConfig($session->project_id)),
             $conversationBody,
         );
 
@@ -289,10 +289,10 @@ class TavusProvider implements ProviderSessionService
      *
      * @return array<string, mixed>
      */
-    private function activeTemplateConfig(): array
+    private function activeTemplateConfig(?int $projectId = null): array
     {
         try {
-            $template = app(ActiveTemplateResolver::class)->resolve('tavus');
+            $template = app(ActiveTemplateResolver::class)->resolve('tavus', $projectId);
 
             return $template === null ? [] : $template->config;
         } catch (\Throwable) {

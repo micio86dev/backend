@@ -15,6 +15,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
 use App\Jobs\FinalizeInterview;
+use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Participant;
@@ -185,7 +186,28 @@ class InterviewController extends Controller
         }
 
         // (2) Create-or-RESUME session row.
-        $providerName = $project->provider_override ?? config('interview.provider', 'heygen');
+        // Precedence, most specific first: a template the PROJECT pinned wins,
+        // because pinning a template is already a statement about which
+        // provider this project runs on and it would be incoherent for the two
+        // to disagree. Then the explicit `provider_override`, then the env
+        // default — both unchanged for every project that pins nothing.
+        //
+        // Before pinning existed, `INTERVIEW_PROVIDER` silently decided for an
+        // operator who had one active HeyGen template and one active Tavus
+        // template: a legal state, since activation is scoped per provider, in
+        // which the project itself had no say.
+        // Read the one column this needs, rather than hydrating the whole
+        // related model to reach a single string. Also keeps the null case
+        // explicit: `?->` on a BelongsTo accessor reads as null-tolerant but
+        // is not, because the accessor's inferred type is non-null — the
+        // nullability lives in the FK, which is what is tested here.
+        $pinnedProvider = $project->avatar_template_id === null
+            ? null
+            : AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
+
+        $providerName = $pinnedProvider
+            ?? $project->provider_override
+            ?? config('interview.provider', 'heygen');
 
         // (D2/D3) A re-offered competency is reset to `pending` and its previous
         // attempt's transcript discarded BEFORE the session is resumed, so the

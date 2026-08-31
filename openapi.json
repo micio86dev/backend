@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Laravel",
-        "version": "0.37.1"
+        "version": "0.38.0"
     },
     "servers": [
         {
@@ -5701,6 +5701,12 @@
                             "null"
                         ]
                     },
+                    "avatar_template_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
                     "webhook_url": {
                         "type": [
                             "string",
@@ -5809,6 +5815,7 @@
                     "pause_every_n_competencies",
                     "nudge_min_chars",
                     "exit_redirect_url",
+                    "avatar_template_id",
                     "webhook_url",
                     "webhook_events",
                     "has_webhook_secret",
@@ -6363,6 +6370,13 @@
                         ],
                         "format": "uri",
                         "maxLength": 2048
+                    },
+                    "avatar_template_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row."
                     },
                     "webhook_secret": {
                         "type": [

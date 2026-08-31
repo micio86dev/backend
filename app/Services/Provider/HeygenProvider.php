@@ -96,7 +96,7 @@ class HeygenProvider implements ProviderSessionService
         $contextId = (string) $ctxResponse->json('data.id', '');
 
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
-            ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($ctx, $contextId));
+            ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($ctx, $contextId, $session->project_id));
 
         if (! $tokenResponse->successful()) {
             $this->throwRedacted($apiKey, $tokenResponse, 'session token issuance failed');
@@ -235,10 +235,10 @@ class HeygenProvider implements ProviderSessionService
      *
      * @return array<string, mixed>
      */
-    private function buildSessionTokenBody(QuestionContext $ctx, string $contextId): array
+    private function buildSessionTokenBody(QuestionContext $ctx, string $contextId, ?int $projectId = null): array
     {
         $platformDefault = $this->platformDefaultTokenFields($ctx);
-        $template = $this->activeTemplate();
+        $template = $this->activeTemplate($projectId);
         $templateFields = $this->allowlistedTemplateFields($template === null ? [] : $template->config);
 
         $providerOwned = [
@@ -518,10 +518,10 @@ class HeygenProvider implements ProviderSessionService
      * PR P5) — `buildSessionTokenBody()` also needs `heygen_llm_configuration_id`
      * via `LlmBindingResolver`, which `config` alone cannot supply.
      */
-    private function activeTemplate(): ?AvatarTemplate
+    private function activeTemplate(?int $projectId = null): ?AvatarTemplate
     {
         try {
-            return app(ActiveTemplateResolver::class)->resolve('heygen');
+            return app(ActiveTemplateResolver::class)->resolve('heygen', $projectId);
         } catch (\Throwable) {
             return null;
         }

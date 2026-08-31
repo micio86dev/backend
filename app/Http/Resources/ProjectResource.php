@@ -33,9 +33,9 @@ class ProjectResource extends JsonResource
      * `(int)` cast; nullable ints use the ternary form so `null` never
      * becomes `0`.
      *
-     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
+     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
      *
-     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
+     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
      */
     public function toArray(Request $request): array
     {
@@ -59,6 +59,10 @@ class ProjectResource extends JsonResource
                 ? null
                 : (int) $project->nudge_min_chars,
             'exit_redirect_url' => $project->exit_redirect_url,
+            // Null means "no template pinned — the organization's active one
+            // applies", NOT "no template will be used". The backoffice needs
+            // the two states distinguishable to label the control honestly.
+            'avatar_template_id' => $project->avatar_template_id,
             'webhook_url' => $project->webhook_url,
             'webhook_events' => $project->webhook_events,
             // webhook_secret intentionally excluded (hidden + encrypted).

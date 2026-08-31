@@ -74,6 +74,19 @@ class StoreProjectRequest extends FormRequest
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['nullable', 'url', 'max:2048'],
+            // Which avatar template this project runs on. Nullable: absent
+            // means "use the organization's active template", the behaviour
+            // every project had before this field existed.
+            //
+            // Org-scoped `Rule::exists`, exactly like `framework_version_id`
+            // above — a foreign template must be refused HERE, not merely
+            // ignored by `ActiveTemplateResolver` later. Ignoring it would
+            // still leave a cross-tenant id persisted in our row.
+            'avatar_template_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('avatar_templates', 'id')->where('organization_id', $orgId),
+            ],
             'webhook_secret' => ['nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
             // the config, never a hardcoded list.
