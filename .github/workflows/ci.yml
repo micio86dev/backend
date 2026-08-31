@@ -71,15 +71,51 @@ jobs:
       # only the api repo is checked out, so fetch the catalog from the public
       # wrapper repo and place it one level above the workspace where the code
       # expects it. Sparse + blobless keeps it to just the docs tree.
+      #
+      # PINNED, and that is the whole point. This clone used to omit --branch,
+      # so it resolved to the wrapper's DEFAULT branch at HEAD — not to the
+      # commit the wrapper pins for this api commit. That made api CI a
+      # downstream of wrapper `main`: on 2026-08-31 a docs-only rename in the
+      # wrapper (esempio-report-valutazione.json → evaluation-report-example.json)
+      # turned this job red for an api commit whose behaviour had not changed,
+      # and the only way out was to release the wrapper first. A CI job that a
+      # different repository can break without touching this one is not
+      # reproducible.
+      #
+      # Bumping .wrapper-ref is therefore a deliberate, reviewable act: it is
+      # how a catalogue change is adopted, in a PR, with the tests that prove
+      # it still passes. Do not replace it with a branch name.
       - name: Fetch framework catalog from wrapper
         run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            https://github.com/micio86dev/avatar-test.git "$RUNNER_TEMP/wrapper"
+          WRAPPER_REF="$(tr -d '[:space:]' < .wrapper-ref)"
+          if [ -z "$WRAPPER_REF" ]; then
+            echo "::error::.wrapper-ref is empty. It must name a wrapper tag (e.g. v0.24.2)."
+            exit 1
+          fi
+          echo "Wrapper catalogue pinned at $WRAPPER_REF"
+          git clone --depth 1 --filter=blob:none --sparse --branch "$WRAPPER_REF" \
+            https://github.com/micio86dev/avatar-test.git "$RUNNER_TEMP/wrapper" || {
+              echo "::error::Cannot clone wrapper at $WRAPPER_REF. Does that tag exist?"
+              exit 1
+            }
           git -C "$RUNNER_TEMP/wrapper" sparse-checkout set docs/app_description
           mkdir -p "$RUNNER_WORKSPACE/docs"
           cp -r "$RUNNER_TEMP/wrapper/docs/app_description" "$RUNNER_WORKSPACE/docs/"
-          test -f "$RUNNER_WORKSPACE/docs/app_description/02-domain/framework/roles.json" \
-            && echo "framework catalog in place"
+          # Assert every wrapper-owned file the suite opens at RUNTIME. Without
+          # this the failure surfaces deep inside a test as a bare
+          # "file_get_contents(): Failed to open stream", which says nothing
+          # about the cross-repo coupling that actually caused it.
+          for f in \
+            02-domain/framework/roles.json \
+            02-domain/framework/competencies.json \
+            03-ux-reference/evaluation-report-example.json
+          do
+            if [ ! -f "$RUNNER_WORKSPACE/docs/app_description/$f" ]; then
+              echo "::error::Missing $f in wrapper $WRAPPER_REF. It was renamed or removed upstream — reconcile the code and bump .wrapper-ref."
+              exit 1
+            fi
+          done
+          echo "framework catalog in place"
 
       - name: Setup PHP 8.5 + PCOV + pdo_pgsql
         uses: shivammathur/setup-php@v2
@@ -243,15 +279,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Pinned to .wrapper-ref for the same reason as the main job above.
       - name: Fetch framework catalog from wrapper
         run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            https://github.com/micio86dev/avatar-test.git "$RUNNER_TEMP/wrapper"
+          WRAPPER_REF="$(tr -d '[:space:]' < .wrapper-ref)"
+          if [ -z "$WRAPPER_REF" ]; then
+            echo "::error::.wrapper-ref is empty. It must name a wrapper tag (e.g. v0.24.2)."
+            exit 1
+          fi
+          echo "Wrapper catalogue pinned at $WRAPPER_REF"
+          git clone --depth 1 --filter=blob:none --sparse --branch "$WRAPPER_REF" \
+            https://github.com/micio86dev/avatar-test.git "$RUNNER_TEMP/wrapper" || {
+              echo "::error::Cannot clone wrapper at $WRAPPER_REF. Does that tag exist?"
+              exit 1
+            }
           git -C "$RUNNER_TEMP/wrapper" sparse-checkout set docs/app_description
           mkdir -p "$RUNNER_WORKSPACE/docs"
           cp -r "$RUNNER_TEMP/wrapper/docs/app_description" "$RUNNER_WORKSPACE/docs/"
-          test -f "$RUNNER_WORKSPACE/docs/app_description/02-domain/framework/roles.json" \
-            && echo "framework catalog in place"
+          for f in \
+            02-domain/framework/roles.json \
+            02-domain/framework/competencies.json \
+            03-ux-reference/evaluation-report-example.json
+          do
+            if [ ! -f "$RUNNER_WORKSPACE/docs/app_description/$f" ]; then
+              echo "::error::Missing $f in wrapper $WRAPPER_REF. It was renamed or removed upstream — reconcile the code and bump .wrapper-ref."
+              exit 1
+            fi
+          done
+          echo "framework catalog in place"
 
       # pcntl/posix/redis added on top of the main job's extension set — the
       # real-worker job needs the same runtime capability the Docker image
