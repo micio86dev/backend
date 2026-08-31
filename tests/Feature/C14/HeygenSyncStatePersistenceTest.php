@@ -75,7 +75,7 @@ test('a failed HeyGen configuration sync persists llm_sync_status !== synced, an
 
     // The vendor's own real error shape does not matter to this test — any
     // non-2xx across the secret/configuration lifecycle is a sync failure.
-    Http::fake(['*heygen.com*' => Http::response(['message' => 'nope'], 500)]);
+    Http::fake(['*liveavatar.com*' => Http::response(['message' => 'nope'], 500)]);
 
     $this->withToken($token)
         ->patchJson("/api/avatar-templates/{$template->id}", ['name' => 'Heygen sync-state — renamed'])
@@ -106,8 +106,8 @@ test('a successful HeyGen configuration sync persists llm_sync_status = synced, 
     ]));
 
     Http::fake([
-        '*heygen.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_ok'], 'message' => 'ok'], 200),
-        '*heygen.com/v1/llm-configurations' => Http::response(['data' => ['id' => 'cfg_ok']], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_ok'], 'message' => 'ok'], 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(['data' => ['id' => 'cfg_ok']], 200),
     ]);
 
     $this->withToken($token)

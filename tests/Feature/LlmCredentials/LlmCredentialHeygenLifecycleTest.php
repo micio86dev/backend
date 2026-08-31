@@ -70,9 +70,9 @@ test('rotating a credential that already has a HeyGen secret deletes and recreat
 
     Http::fake([
         'generativelanguage.googleapis.com/*' => Http::response([], 200),
-        '*heygen.com/v1/secrets/sec_old' => Http::response([], 200),
-        '*heygen.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_new'], 'message' => 'ok'], 200),
-        '*heygen.com/v1/llm-configurations/cfg_old' => Http::response(['data' => ['id' => 'cfg_old']], 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_new'], 'message' => 'ok'], 200),
+        '*liveavatar.com/v1/llm-configurations/cfg_old' => Http::response(['data' => ['id' => 'cfg_old']], 200),
     ]);
 
     $this->withToken($token)->patchJson('/api/llm-credentials/'.$credential->id, [
@@ -112,7 +112,11 @@ test('rotating a credential that has never been used with HeyGen makes no HeyGen
         'api_key' => 'sk-new-key-1234',
     ])->assertStatus(200);
 
-    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'heygen.com'));
+    // Asserted on the host the registrar ACTUALLY calls. Matching on
+    // 'heygen.com' — as this line did before the host was corrected — would
+    // now hold no matter what the registrar did, and a test that cannot fail
+    // is worse than no test: it reads as coverage this behaviour does not have.
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'liveavatar.com'));
 });
 
 test('deleting an unbound credential with a HeyGen secret deletes the vendor secret and clears the id', function (): void {
@@ -137,7 +141,7 @@ test('deleting an unbound credential with a HeyGen secret deletes the vendor sec
         return $c;
     });
 
-    Http::fake(['*heygen.com/v1/secrets/sec_to_delete' => Http::response([], 200)]);
+    Http::fake(['*liveavatar.com/v1/secrets/sec_to_delete' => Http::response([], 200)]);
 
     $this->withToken($token)->deleteJson("/api/llm-credentials/{$credential->id}")
         ->assertStatus(200);
@@ -178,7 +182,7 @@ test('deleting a bound HeyGen template deletes its vendor configuration — no o
     ]));
     $template->forceFill(['heygen_llm_configuration_id' => 'cfg_live'])->saveQuietly();
 
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg_live' => Http::response([], 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg_live' => Http::response([], 200)]);
 
     $this->withToken($token)->deleteJson("/api/avatar-templates/{$template->id}")
         ->assertStatus(204);

@@ -336,7 +336,7 @@ test('deleting a bound HeyGen template issues the DELETE and clears the ledger c
     $template = seedTemplate($org);
     $template->forceFill(['heygen_llm_configuration_id' => 'cfg-to-delete'])->saveQuietly();
 
-    Http::fake(['*heygen.com/v1/llm-configurations/cfg-to-delete' => Http::response([], 200)]);
+    Http::fake(['*liveavatar.com/v1/llm-configurations/cfg-to-delete' => Http::response([], 200)]);
 
     $this->withToken(templateActor($org, 'admin'))
         ->deleteJson("/api/avatar-templates/{$template->id}")
