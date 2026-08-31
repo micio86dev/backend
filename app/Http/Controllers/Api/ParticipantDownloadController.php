@@ -68,7 +68,7 @@ final class ParticipantDownloadController extends Controller
         // JSON_PRESERVE_ZERO_FRACTION: without it, json_encode(4.0) === "4",
         // silently dropping the fractional part of a whole-number float
         // score and diverging from the reference shape
-        // (esempio-report-valutazione.json shows "score": 4.0 literally).
+        // (evaluation-report-example.json shows "score": 4.0 literally).
         $body = json_encode(
             $this->evaluationSerializer->serialize($participant),
             JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION

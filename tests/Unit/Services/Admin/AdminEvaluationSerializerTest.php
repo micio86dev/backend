@@ -8,7 +8,7 @@ declare(strict_types=1);
  * Verifies:
  * (a) the SLF fixture (indicator scores 5,3,-1 → stored competency mean 4.0,
  *     reliability 0.67 → rendered "67%") matches
- *     esempio-report-valutazione.json:374-392.
+ *     evaluation-report-example.json:374-392.
  * (b) an all-(-1) competency → score is null, never 0 (CompetencyResult.php:39,67).
  * (c) a -1 indicator score is NEVER emitted as the literal -1 — it is a
  *     sentinel meaning "unassessable", not a value on the {1,3,5} scale, and

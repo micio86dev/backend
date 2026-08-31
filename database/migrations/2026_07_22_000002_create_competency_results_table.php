@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * Create `competency_results` table (C9 — Scoring Engine).
  *
  * One row per competency per evaluation. Maps to `COL{score, reliability}` in
- * the sample report (esempio-report-valutazione.json).
+ * the sample report (evaluation-report-example.json).
  *
  * Design invariants (D1, D22):
  * - organization_id leads all composite indexes (D22 org-first rule).

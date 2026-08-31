@@ -14,7 +14,7 @@ use Illuminate\Support\Carbon;
  * Tenant-scoped CompetencyResult model (C9 — Scoring Engine).
  *
  * One row per competency per evaluation. Maps to `COL{score, reliability}` in
- * the sample report (esempio-report-valutazione.json).
+ * the sample report (evaluation-report-example.json).
  *
  * Extends TenantModel (C2) — automatically scoped by organization_id.
  *
