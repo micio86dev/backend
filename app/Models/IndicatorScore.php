@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
  * Tenant-scoped IndicatorScore model (C9 — Scoring Engine).
  *
  * One row per BARS indicator per competency result. Maps to `behaviors[]{}`
- * in the sample report (esempio-report-valutazione.json).
+ * in the sample report (evaluation-report-example.json).
  *
  * Extends TenantModel (C2) — automatically scoped by organization_id.
  *

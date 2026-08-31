@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Golden cassette fixture for COL {5,3,3} → 3.67 and SLF {5,3,-1} → 4.0.
  *
- * Derived from docs/app_description/03-ux-reference/esempio-report-valutazione.json.
+ * Derived from docs/app_description/03-ux-reference/evaluation-report-example.json.
  *
  * The excerpts in each behavior MUST be verbatim substrings of the utterances
  * created in GoldenCassetteTest::createGoldenCompetency(). They are checked by

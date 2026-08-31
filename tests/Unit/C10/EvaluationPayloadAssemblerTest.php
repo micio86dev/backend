@@ -9,7 +9,7 @@ declare(strict_types=1);
  * - Envelope carries version/event/delivery_id/occurred_at/candidate_ref
  *   (verbatim)/project{id,slug}.
  * - `text` block matches the shape of docs/app_description/03-ux-reference/
- *   esempio-report-valutazione.json (keys, not literal scored values).
+ *   evaluation-report-example.json (keys, not literal scored values).
  * - `reliability` DELEGATES to ReliabilityRenderer::render() — never re-derives the
  *   round-before-cast formula (asserted via a mock returning a value the real formula
  *   could never produce for the given input).
@@ -111,8 +111,8 @@ test('reliability delegates to ReliabilityRenderer::render() — never re-derive
     expect($payload['data']['text']['PRS']['reliability'])->toBe('99%');
 });
 
-test('text block matches the sample report shape exactly (esempio-report-valutazione.json)', function (): void {
-    $samplePath = dirname(base_path()).'/docs/app_description/03-ux-reference/esempio-report-valutazione.json';
+test('text block matches the sample report shape exactly (evaluation-report-example.json)', function (): void {
+    $samplePath = dirname(base_path()).'/docs/app_description/03-ux-reference/evaluation-report-example.json';
     $sample = json_decode(file_get_contents($samplePath), true, 512, JSON_THROW_ON_ERROR);
 
     $sampleEntryKeys = array_keys($sample['COL']);

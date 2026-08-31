@@ -13,7 +13,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * Wraps the array produced by `AdminEvaluationSerializer::serialize()` for
  * `GET /api/participants/{id}/evaluation` (requires lifecycle ===
  * `completato`, D2). Top-level shape mirrors
- * `esempio-report-valutazione.json` — keyed by competency code, no envelope.
+ * `evaluation-report-example.json` — keyed by competency code, no envelope.
  *
  * SCOPE BOUNDARY: Evaluation-scope ONLY — MUST NEVER carry Transcript fields
  * (`utterances`, `speaker`). The underlying array is produced exclusively by
@@ -65,7 +65,7 @@ class EvaluationResource extends JsonResource
      * a whole-number float (json_encode(4.0) === "4", not "4.0") — Laravel's
      * JsonResponse default encoding options do not set this flag either.
      * `score` is a float per spec and the reference shape
-     * (esempio-report-valutazione.json) shows "score": 4.0 literally; losing
+     * (evaluation-report-example.json) shows "score": 4.0 literally; losing
      * the decimal on the wire would (a) diverge from that reference and
      * (b) make an integer-vs-float distinction ambiguous to API consumers
      * that treat "4" and "4.0" differently (e.g. strict client-side schemas).

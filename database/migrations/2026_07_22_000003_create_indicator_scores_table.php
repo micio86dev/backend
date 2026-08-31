@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * Create `indicator_scores` table (C9 — Scoring Engine).
  *
  * One row per BARS indicator per competency result. Maps to `behaviors[]{}`
- * in the sample report (esempio-report-valutazione.json).
+ * in the sample report (evaluation-report-example.json).
  *
  * Design invariants (D1, D22):
  * - organization_id leads all composite indexes (D22 org-first rule).
