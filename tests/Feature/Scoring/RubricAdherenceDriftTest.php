@@ -70,6 +70,23 @@ test('live LLM emits only domain-legal scores and uses at least one residual lev
     // Three indicators: one clearly strong (expect 5), one clearly weak (expect 1),
     // and one deliberately mid-band answer that exceeds the Score 3 anchor but does
     // not fully match the Score 5 anchor — the case the widened domain exists for.
+    //
+    // THE THIRD ANSWER IS THE WHOLE TEST, AND IT USED TO FAIL TO BE MID-BAND.
+    // As originally written it satisfied every clause of its own Score 5 anchor —
+    // specific, actionable, constructively framed, AND "I checked back with them a
+    // few days later". `SCORING_PROCEDURE` step 2 therefore matched and stopped, so
+    // the fixture asked for a residual from a transcript that could not produce one.
+    // Worse, the ambiguous reading could not save it either: the procedure's
+    // anchor-primacy tie-break ("if the evidence is equally consistent with an
+    // authored anchor and with an intermediate level, the authored anchor WINS")
+    // actively steers away from a residual whenever an anchor fits.
+    //
+    // The answer now states the ABSENCE explicitly rather than merely omitting the
+    // follow-up. Omission would read as "not assessable" and invite -1; a stated
+    // "I never followed up" makes step 2 fail on a named clause while steps 3 and 4
+    // still fail too (it is specific and actionable, so it clearly exceeds the
+    // generic-feedback Score 3 anchor, and it is not a refusal to give feedback).
+    // Only step 5 remains, which is what a score of 4 means.
     $indicatorSpecs = [
         [
             'text' => 'Respond to customer complaints professionally',
@@ -125,8 +142,8 @@ everything as fast as possible.
 Interviewer: Tell me about a time you gave a colleague feedback on their work.
 Candidate: I told them the report was missing the regional breakdown the client always
 asks for, and suggested they add a one-page summary table at the front next time so it's
-easier to find. I checked back with them a few days later and they said the next report
-went over well.
+easier to find. I never followed up though, so I don't know whether they took it on board
+or even understood what I meant.
 TRANSCRIPT;
 
     $builder = new PromptBuilder;
@@ -176,12 +193,21 @@ TRANSCRIPT;
     // actually reachable, not merely declared legal and never used.
     $residualScores = array_values(array_filter($scores, static fn (int $s): bool => in_array($s, [2, 4], true)));
 
+    // The message is deliberately SHORT and leads with the data. Pest truncates a
+    // long custom failure message in the middle ("Expected at least one residua…
+    // which."), which is exactly what happened on the first real run of this gate:
+    // the scores the message existed to report never reached the CI log, and the
+    // diagnosis had to be reconstructed by reading the fixture instead. Guidance
+    // for whoever is reading the failure belongs in the comment below, where it
+    // cannot be truncated; the assertion itself carries only the evidence.
+    //
+    // If this fails, the two candidate causes are: the model has drifted toward
+    // always snapping to an authored anchor (the real signal this test exists to
+    // catch), or the third answer has stopped being mid-band against its anchors.
+    // Check the fixture against SCORING_PROCEDURE before touching the assertion —
+    // and do not loosen it without establishing which of the two it is.
     expect($residualScores)->not->toBeEmpty(
-        'Expected at least one residual score (2 or 4) on this fixed mid-band transcript. '
-        .'Scores returned: ['.implode(', ', $scores).']. If this consistently fails, either '
-        .'the model has drifted toward always snapping to an authored anchor (a real drift '
-        .'signal this test exists to catch), or the fixture transcript needs a stronger '
-        .'mid-band answer — do not loosen this assertion without understanding which.'
+        'No residual (2 or 4). Scores: ['.implode(', ', $scores).']'
     );
 })->group('ai')->skip(
     fn (): bool => empty(getenv('ANTHROPIC_API_KEY')),
