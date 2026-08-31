@@ -81,12 +81,29 @@ test('live LLM emits only domain-legal scores and uses at least one residual lev
     // authored anchor and with an intermediate level, the authored anchor WINS")
     // actively steers away from a residual whenever an anchor fits.
     //
-    // The answer now states the ABSENCE explicitly rather than merely omitting the
-    // follow-up. Omission would read as "not assessable" and invite -1; a stated
-    // "I never followed up" makes step 2 fail on a named clause while steps 3 and 4
-    // still fail too (it is specific and actionable, so it clearly exceeds the
-    // generic-feedback Score 3 anchor, and it is not a refusal to give feedback).
-    // Only step 5 remains, which is what a score of 4 means.
+    // Landing a 4 needs BOTH halves of the prompt satisfied at once, and they pull
+    // in different directions — which is why the first attempt at this fixture
+    // overshot from 5 straight to 3 (live scores [5, 1, 3]).
+    //
+    //   SCORING_PROCEDURE wants exactly one Score 5 clause to fail, so that steps
+    //   2/3/4 are all rejected and step 5 is reached.
+    //
+    //   EVALUATION_STANDARDS wants the evidence to CLEARLY exceed the Score 3
+    //   anchor, and it defines "3 is the baseline... most indicators backed by
+    //   usable evidence land here", reserves 4 and 5 for answers carrying a
+    //   MEASURABLE OUTCOME, and resolves doubt DOWNWARD at step 5.
+    //
+    // The first attempt said "I never followed up, so I don't know whether they
+    // took it on board". That failed a Score 5 clause, but it also removed the
+    // measurable outcome — so the answer stopped clearly exceeding the baseline and
+    // the model correctly fell back to 3. Defensible under the standards, and not
+    // model drift.
+    //
+    // This answer keeps a concrete, measurable outcome ("the next report did
+    // include both, and the client stopped chasing us") so it clearly exceeds the
+    // generic-feedback Score 3 anchor, while failing exactly ONE Score 5 clause,
+    // explicitly and by name: it never checks that the peer understood. Exceeds 3,
+    // does not fully match 5 — which is the definition of a 4.
     $indicatorSpecs = [
         [
             'text' => 'Respond to customer complaints professionally',
@@ -142,8 +159,8 @@ everything as fast as possible.
 Interviewer: Tell me about a time you gave a colleague feedback on their work.
 Candidate: I told them the report was missing the regional breakdown the client always
 asks for, and suggested they add a one-page summary table at the front next time so it's
-easier to find. I never followed up though, so I don't know whether they took it on board
-or even understood what I meant.
+easier to find. The next report did include both, and the client stopped chasing us for
+the numbers. I never checked whether they actually understood why it mattered, though.
 TRANSCRIPT;
 
     $builder = new PromptBuilder;
