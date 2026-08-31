@@ -100,7 +100,7 @@ final class EvaluationPayloadAssembler
     /**
      * Renders the `text` block: a map keyed by competency code, ordered by
      * `project_competencies.position`. Reproduces
-     * docs/app_description/03-ux-reference/esempio-report-valutazione.json exactly —
+     * docs/app_description/03-ux-reference/evaluation-report-example.json exactly —
      * `behaviors[]{indicator,score,explanation,excerpts}`, `reliability`, `score`, plus
      * an ADDITIVE `unscorable_reason` key present only when the competency is
      * unscorable.

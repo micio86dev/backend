@@ -111,7 +111,7 @@ function createGoldenCompetency(
         'status' => 'completed',
     ]);
 
-    // Utterances sourced from esempio-report-valutazione.json (Italian transcript).
+    // Utterances sourced from evaluation-report-example.json (Italian transcript).
     // These MUST contain the verbatim excerpts in the col_slf_golden.php cassette fixture.
     $utterances = [
         'Candidate: I worked collaboratively on multiple projects.',
