@@ -46,6 +46,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $deadline_at
  * @property Carbon|null $goes_live_at
  * @property Carbon|null $deleted_at
+ * @property int|null $avatar_template_id
+ * @property-read AvatarTemplate|null $avatarTemplate Null is the COMMON case
+ *           (no template pinned — the organization's active one applies), not
+ *           an edge case. Annotated explicitly because Larastan otherwise
+ *           infers a BelongsTo accessor as non-null and reports the `?->` that
+ *           reads it as unnecessary, which would be exactly backwards.
  */
 class Project extends TenantModel
 {

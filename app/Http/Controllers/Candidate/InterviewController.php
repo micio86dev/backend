@@ -15,6 +15,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
 use App\Jobs\FinalizeInterview;
+use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Participant;
@@ -195,7 +196,16 @@ class InterviewController extends Controller
         // operator who had one active HeyGen template and one active Tavus
         // template: a legal state, since activation is scoped per provider, in
         // which the project itself had no say.
-        $providerName = $project->avatarTemplate?->provider
+        // Read the one column this needs, rather than hydrating the whole
+        // related model to reach a single string. Also keeps the null case
+        // explicit: `?->` on a BelongsTo accessor reads as null-tolerant but
+        // is not, because the accessor's inferred type is non-null — the
+        // nullability lives in the FK, which is what is tested here.
+        $pinnedProvider = $project->avatar_template_id === null
+            ? null
+            : AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
+
+        $providerName = $pinnedProvider
             ?? $project->provider_override
             ?? config('interview.provider', 'heygen');
 

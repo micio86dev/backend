@@ -177,6 +177,31 @@ test('a template id that does not exist is rejected', function (): void {
 
 // ─── The pin actually drives the interview ───────────────────────────────────
 
+/**
+ * Mirrors `InterviewController`'s precedence chain (`:198`).
+ *
+ * Stated plainly: this is a RE-IMPLEMENTATION, so it verifies the DATA the
+ * chain reads, not the controller line itself. Exercising that line for real
+ * needs a whole `/start` round-trip — a participant, an SSO token, a framework
+ * pin, a live provider double — which is `InterviewStartTest`'s job, not this
+ * file's. What is asserted here is the part that was actually broken: that a
+ * pinned template is reachable and outranks both fallbacks.
+ *
+ * The resolver tests are the real behavioural coverage, since
+ * `ActiveTemplateResolver` is what every consumer (both providers, the live
+ * clock, the LLM snapshot) goes through.
+ */
+function projTemplateResolvedProvider(Project $project): string
+{
+    $pinned = $project->avatar_template_id === null
+        ? null
+        : AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
+
+    return $pinned
+        ?? $project->provider_override
+        ?? config('interview.provider', 'heygen');
+}
+
 test('a pinned template decides the provider, overriding the env default', function (): void {
     // The whole point. `INTERVIEW_PROVIDER` used to decide for an operator who
     // held one active HeyGen template and one active Tavus template — a legal
@@ -191,11 +216,7 @@ test('a pinned template decides the provider, overriding the env default', funct
     $tavusTemplate = projTemplateFor($org, 'tavus');
     $project = Project::factory()->create(['avatar_template_id' => $tavusTemplate->id]);
 
-    $resolved = $project->fresh()->avatarTemplate?->provider
-        ?? $project->provider_override
-        ?? config('interview.provider', 'heygen');
-
-    expect($resolved)->toBe('tavus');
+    expect(projTemplateResolvedProvider($project->fresh()))->toBe('tavus');
 });
 
 test('provider_override still applies when nothing is pinned', function (): void {
@@ -207,11 +228,7 @@ test('provider_override still applies when nothing is pinned', function (): void
     app(TenantResolver::class)->setOrgId($org->id);
     $project = Project::factory()->create(['provider_override' => 'tavus']);
 
-    $resolved = $project->fresh()->avatarTemplate?->provider
-        ?? $project->provider_override
-        ?? config('interview.provider', 'heygen');
-
-    expect($resolved)->toBe('tavus');
+    expect(projTemplateResolvedProvider($project->fresh()))->toBe('tavus');
 });
 
 test('two projects on the same provider can run different templates', function (): void {
