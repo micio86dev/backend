@@ -23,6 +23,7 @@ use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\Tenancy\TenantContextScope;
 use App\Support\Tenancy\TenantResolver;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -225,7 +226,7 @@ test('two projects on the same provider can run different templates', function (
     $projectA = Project::factory()->create(['avatar_template_id' => $first->id]);
     $projectB = Project::factory()->create(['avatar_template_id' => $second->id]);
 
-    $resolver = app(App\Support\AvatarTemplates\ActiveTemplateResolver::class);
+    $resolver = app(ActiveTemplateResolver::class);
 
     $forA = TenantContextScope::runFor($org->id, fn () => $resolver->resolve('heygen', $projectA->id));
     $forB = TenantContextScope::runFor($org->id, fn () => $resolver->resolve('heygen', $projectB->id));
