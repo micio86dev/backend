@@ -70,6 +70,40 @@ test('live LLM emits only domain-legal scores and uses at least one residual lev
     // Three indicators: one clearly strong (expect 5), one clearly weak (expect 1),
     // and one deliberately mid-band answer that exceeds the Score 3 anchor but does
     // not fully match the Score 5 anchor — the case the widened domain exists for.
+    //
+    // THE THIRD ANSWER IS THE WHOLE TEST, AND IT USED TO FAIL TO BE MID-BAND.
+    // As originally written it satisfied every clause of its own Score 5 anchor —
+    // specific, actionable, constructively framed, AND "I checked back with them a
+    // few days later". `SCORING_PROCEDURE` step 2 therefore matched and stopped, so
+    // the fixture asked for a residual from a transcript that could not produce one.
+    // Worse, the ambiguous reading could not save it either: the procedure's
+    // anchor-primacy tie-break ("if the evidence is equally consistent with an
+    // authored anchor and with an intermediate level, the authored anchor WINS")
+    // actively steers away from a residual whenever an anchor fits.
+    //
+    // Landing a 4 needs BOTH halves of the prompt satisfied at once, and they pull
+    // in different directions — which is why the first attempt at this fixture
+    // overshot from 5 straight to 3 (live scores [5, 1, 3]).
+    //
+    //   SCORING_PROCEDURE wants exactly one Score 5 clause to fail, so that steps
+    //   2/3/4 are all rejected and step 5 is reached.
+    //
+    //   EVALUATION_STANDARDS wants the evidence to CLEARLY exceed the Score 3
+    //   anchor, and it defines "3 is the baseline... most indicators backed by
+    //   usable evidence land here", reserves 4 and 5 for answers carrying a
+    //   MEASURABLE OUTCOME, and resolves doubt DOWNWARD at step 5.
+    //
+    // The first attempt said "I never followed up, so I don't know whether they
+    // took it on board". That failed a Score 5 clause, but it also removed the
+    // measurable outcome — so the answer stopped clearly exceeding the baseline and
+    // the model correctly fell back to 3. Defensible under the standards, and not
+    // model drift.
+    //
+    // This answer keeps a concrete, measurable outcome ("the next report did
+    // include both, and the client stopped chasing us") so it clearly exceeds the
+    // generic-feedback Score 3 anchor, while failing exactly ONE Score 5 clause,
+    // explicitly and by name: it never checks that the peer understood. Exceeds 3,
+    // does not fully match 5 — which is the definition of a 4.
     $indicatorSpecs = [
         [
             'text' => 'Respond to customer complaints professionally',
@@ -125,8 +159,8 @@ everything as fast as possible.
 Interviewer: Tell me about a time you gave a colleague feedback on their work.
 Candidate: I told them the report was missing the regional breakdown the client always
 asks for, and suggested they add a one-page summary table at the front next time so it's
-easier to find. I checked back with them a few days later and they said the next report
-went over well.
+easier to find. The next report did include both, and the client stopped chasing us for
+the numbers. I never checked whether they actually understood why it mattered, though.
 TRANSCRIPT;
 
     $builder = new PromptBuilder;
@@ -176,12 +210,31 @@ TRANSCRIPT;
     // actually reachable, not merely declared legal and never used.
     $residualScores = array_values(array_filter($scores, static fn (int $s): bool => in_array($s, [2, 4], true)));
 
+    // Emitted unconditionally, on PASS as well as on failure. Pest truncates a
+    // custom failure message in the MIDDLE, so even a short one loses its head —
+    // the first run of this gate reported "Scores:… 1, 3]" and the leading score
+    // was simply gone. A drift detector whose verdict cannot be read is not a
+    // detector, and this is the only line that survives regardless of outcome or
+    // message length. It also makes a PASSING run informative: knowing which
+    // levels the model reached is the baseline any future drift is measured
+    // against.
+    fwrite(STDERR, "\nRubricAdherenceDrift live scores: [".implode(', ', $scores)."]\n");
+
+    // The message is deliberately SHORT and leads with the data. Pest truncates a
+    // long custom failure message in the middle ("Expected at least one residua…
+    // which."), which is exactly what happened on the first real run of this gate:
+    // the scores the message existed to report never reached the CI log, and the
+    // diagnosis had to be reconstructed by reading the fixture instead. Guidance
+    // for whoever is reading the failure belongs in the comment below, where it
+    // cannot be truncated; the assertion itself carries only the evidence.
+    //
+    // If this fails, the two candidate causes are: the model has drifted toward
+    // always snapping to an authored anchor (the real signal this test exists to
+    // catch), or the third answer has stopped being mid-band against its anchors.
+    // Check the fixture against SCORING_PROCEDURE before touching the assertion —
+    // and do not loosen it without establishing which of the two it is.
     expect($residualScores)->not->toBeEmpty(
-        'Expected at least one residual score (2 or 4) on this fixed mid-band transcript. '
-        .'Scores returned: ['.implode(', ', $scores).']. If this consistently fails, either '
-        .'the model has drifted toward always snapping to an authored anchor (a real drift '
-        .'signal this test exists to catch), or the fixture transcript needs a stronger '
-        .'mid-band answer — do not loosen this assertion without understanding which.'
+        'No residual (2 or 4). Scores: ['.implode(', ', $scores).']'
     );
 })->group('ai')->skip(
     fn (): bool => empty(getenv('ANTHROPIC_API_KEY')),
