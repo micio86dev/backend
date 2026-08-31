@@ -193,6 +193,16 @@ TRANSCRIPT;
     // actually reachable, not merely declared legal and never used.
     $residualScores = array_values(array_filter($scores, static fn (int $s): bool => in_array($s, [2, 4], true)));
 
+    // Emitted unconditionally, on PASS as well as on failure. Pest truncates a
+    // custom failure message in the MIDDLE, so even a short one loses its head —
+    // the first run of this gate reported "Scores:… 1, 3]" and the leading score
+    // was simply gone. A drift detector whose verdict cannot be read is not a
+    // detector, and this is the only line that survives regardless of outcome or
+    // message length. It also makes a PASSING run informative: knowing which
+    // levels the model reached is the baseline any future drift is measured
+    // against.
+    fwrite(STDERR, "\nRubricAdherenceDrift live scores: [".implode(', ', $scores)."]\n");
+
     // The message is deliberately SHORT and leads with the data. Pest truncates a
     // long custom failure message in the middle ("Expected at least one residua…
     // which."), which is exactly what happened on the first real run of this gate:
