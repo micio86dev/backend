@@ -54,6 +54,11 @@ class OrganizationController extends Controller
             'default_webhook_url',
             'default_webhook_secret',
             'default_webhook_events',
+            // `logo_path` is deliberately ABSENT: it is written by the upload
+            // endpoint, which is the only place that knows a file was actually
+            // stored. Accepting it here would let a client point the logo at an
+            // arbitrary path on the disk.
+            'primary_color',
         ]));
 
         return (new OrganizationResource($organization))->response();

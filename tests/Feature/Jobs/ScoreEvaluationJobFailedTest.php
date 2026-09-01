@@ -45,6 +45,7 @@ function c9FailedParticipant(Organization $org, Project $project, string $status
         'project_id' => $project->id,
         'candidate_ref' => 'c9-failed-'.uniqid(),
         'display_name' => 'C9 Failed Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

@@ -150,6 +150,7 @@ function casParticipant(Organization $org, Project $project, string $status = 'i
         'project_id' => $project->id,
         'candidate_ref' => 'cas-'.uniqid(),
         'display_name' => 'CAS Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
         'started_at' => now(),
     ]);

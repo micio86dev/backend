@@ -110,14 +110,22 @@ test("a project's pinned template wins over the organization's active one", func
     expect($found?->id)->toBe($pinned->id);
 });
 
-test('a project pinning nothing still gets the organization active template', function (): void {
+test('the organization active template is still the answer when no project is named', function (): void {
+    // The `$projectId`-less path, which is NOT dead: `SessionLiveClock` and the
+    // providers can be reached without one, and the organization-wide active
+    // template remains the answer there.
+    //
+    // What IS gone is "a project that pins nothing" — `projects
+    // .avatar_template_id` is NOT NULL, so that state cannot exist any more.
+    // The earlier version of this test constructed exactly that state, which
+    // means it could only ever have passed against a schema that no longer
+    // allows it.
     $org = Organization::factory()->create();
     $active = resolverActiveTemplate($org, 'heygen');
-    $project = resolverProjectPinning($org, null);
 
     $found = TenantContextScope::runFor(
         $org->id,
-        fn () => app(ActiveTemplateResolver::class)->resolve('heygen', $project->id),
+        fn () => app(ActiveTemplateResolver::class)->resolve('heygen'),
     );
 
     expect($found?->id)->toBe($active->id);

@@ -17,6 +17,7 @@ declare(strict_types=1);
  */
 
 use App\Models\AvatarTemplate;
+use App\Models\Project;
 use App\Services\Provider\TavusProvider;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,6 +60,21 @@ function langActiveTemplate(int $orgId, string $provider, array $config): Avatar
         'is_active' => true,
     ]);
     $t->save();
+
+    // Point this organization's projects at it.
+    //
+    // These tests build the project FIRST and the template after, which worked
+    // while `ActiveTemplateResolver` answered with the organization-wide active
+    // template: creating an active one was enough to change what the interview
+    // ran on. It is not any more. `projects.avatar_template_id` is NOT NULL and
+    // the resolver returns what the PROJECT pinned, so a template created after
+    // the project would never be reached — and the assertions would silently
+    // measure the bare template the factory pinned instead of the config each
+    // test carefully built.
+    //
+    // Re-pinning here rather than reordering every test: this helper is the one
+    // place that knows a new active template has appeared.
+    Project::where('organization_id', $orgId)->update(['avatar_template_id' => $t->id]);
 
     return $t;
 }

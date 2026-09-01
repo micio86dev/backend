@@ -57,6 +57,7 @@ test('teardown leaves zero demo rows in all four operational tables, non-demo ro
             'project_id' => $project->id,
             'candidate_ref' => 'real-candidate-completeness',
             'display_name' => 'Real Human',
+            'email' => uniqid('cand-').'@example.test',
             'role_code' => $project->role_code,
             'language' => $project->language,
             'status' => 'in_attesa',

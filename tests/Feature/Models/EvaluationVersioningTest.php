@@ -41,6 +41,7 @@ function versioningParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'ver-'.uniqid(),
         'display_name' => 'Versioning Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

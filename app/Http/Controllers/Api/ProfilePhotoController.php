@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateProfilePhotoRequest;
 use App\Http\Resources\Admin\ProfileResource;
 use App\Models\User;
+use App\Support\Uploads\ImageMagicBytes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -172,32 +173,14 @@ class ProfilePhotoController extends Controller
      * precedent). Returns the canonical extension for the detected format,
      * or null when neither JPEG nor PNG's magic bytes match.
      */
+    /**
+     * Delegates to the shared `ImageMagicBytes`, extracted when the
+     * organization-logo uploader needed the same check. Two copies of
+     * security-critical parsing is how the two start disagreeing, and the one
+     * that matters is always the one nobody updated.
+     */
     private function verdictExtension(string $realPath): ?string
     {
-        $handle = fopen($realPath, 'rb');
-
-        if ($handle === false) {
-            return null;
-        }
-
-        $header = fread($handle, 8);
-        fclose($handle);
-
-        if ($header === false || strlen($header) < 3) {
-            return null;
-        }
-
-        // JPEG: FF D8 FF
-        if (ord($header[0]) === 0xFF && ord($header[1]) === 0xD8 && ord($header[2]) === 0xFF) {
-            return 'jpg';
-        }
-
-        // PNG: 89 50 4E 47 0D 0A 1A 0A
-        $pngMagic = "\x89\x50\x4E\x47\x0D\x0A\x1A\x0A";
-        if (strlen($header) === 8 && $header === $pngMagic) {
-            return 'png';
-        }
-
-        return null;
+        return ImageMagicBytes::extensionFor($realPath);
     }
 }

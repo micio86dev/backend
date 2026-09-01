@@ -54,6 +54,7 @@ test('3 indicators failing 3 different ways all persist, siblings unaffected reg
         'project_id' => $project->id,
         'candidate_ref' => 'per-indicator-isolation-'.uniqid(),
         'display_name' => 'Per-Indicator Isolation Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

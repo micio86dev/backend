@@ -57,9 +57,9 @@ class ParticipantDetailResource extends JsonResource
      * `sessions_*` coverage counts because cost and elapsed genuinely
      * exclude different sessions.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, email: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -79,6 +79,13 @@ class ParticipantDetailResource extends JsonResource
             'id' => (int) $participant->id,
             'candidate_ref' => $participant->candidate_ref,
             'display_name' => $participant->display_name,
+            // Operator-facing, and admin-side only. It is the candidate's
+            // identity across projects as well as the address an invitation
+            // goes to, so an operator re-issuing a link needs to see WHICH
+            // person they are re-issuing it for. Never exposed on the
+            // candidate-facing resource — telling someone their own address
+            // back adds nothing and widens what a stolen token discloses.
+            'email' => $participant->email,
             'role_code' => $participant->role_code,
             'language' => $participant->language,
             'status' => $participant->status,

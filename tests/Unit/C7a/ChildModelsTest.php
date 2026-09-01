@@ -49,6 +49,7 @@ function makeChildParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'child-'.uniqid(),
         'display_name' => 'Child Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

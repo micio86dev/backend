@@ -58,6 +58,7 @@ function makeSsoParticipant(Project $project, Organization $org, ?string $ref = 
         'project_id' => $project->id,
         'candidate_ref' => $ref ?? 'ref-'.uniqid(),
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();
@@ -79,6 +80,7 @@ test('store creates participant with organization_id from project (not from requ
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test Candidate',
+            'email' => uniqid('cand-').'@example.test',
             'organization_id' => 99999, // should be ignored
         ]);
 
@@ -102,6 +104,7 @@ test('store cross-org project_id → 404', function (): void {
             'project_id' => $projectB->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertNotFound();
 });
@@ -168,6 +171,7 @@ test('missing participants:create ability → 403 on store', function (): void {
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertForbidden();
 });

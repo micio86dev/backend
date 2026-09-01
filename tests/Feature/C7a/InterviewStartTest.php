@@ -24,6 +24,7 @@ declare(strict_types=1);
  * REQ: POST /start endpoint (C7a)
  */
 
+use App\Models\AvatarTemplate;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\InterviewSession;
@@ -54,8 +55,25 @@ function startProject(Organization $org, ?string $providerOverride = null): Proj
     $resolver->setBypass(false);
 
     $attrs = ['status' => 'active'];
+
     if ($providerOverride !== null) {
+        // PIN a template of that provider, rather than setting
+        // `provider_override`.
+        //
+        // `projects.avatar_template_id` is required and the pinned template
+        // decides the provider, so `provider_override` sits below something
+        // that is now always present and can never be reached. A test still
+        // setting it would start a HeyGen interview against a Tavus fake — a
+        // 500 that looks like a provider bug and is really a stale premise.
+        //
+        // The parameter name is kept: what these callers mean is "run this
+        // project on that provider", and that intent is unchanged.
         $attrs['provider_override'] = $providerOverride;
+        $attrs['avatar_template_id'] = AvatarTemplate::create([
+            'name' => 'Start '.$providerOverride.' '.uniqid(),
+            'provider' => $providerOverride,
+            'config' => [],
+        ])->id;
     }
 
     return Project::factory()->create($attrs);
@@ -110,6 +128,7 @@ function startParticipant(Organization $org, Project $project, string $status = 
         'project_id' => $project->id,
         'candidate_ref' => 'start-'.uniqid(),
         'display_name' => 'Start Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

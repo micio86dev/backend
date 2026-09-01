@@ -102,6 +102,7 @@ function phrasesParticipant(Organization $org, Project $project, ?string $langua
         'project_id' => $project->id,
         'candidate_ref' => 'phrases-'.uniqid(),
         'display_name' => 'Phrases Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'language' => $language,
         'status' => 'in_attesa',
     ]);

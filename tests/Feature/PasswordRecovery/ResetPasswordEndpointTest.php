@@ -365,3 +365,84 @@ test('an org-scoped self-service reset writes the same audit action as the CLI p
 
     expect($row->organization_id)->toBe($user->organization_id);
 });
+
+/**
+ * The refusal and the confirmation are CODES, not English prose.
+ *
+ * `ResetPasswordController::fail()` deliberately collapses four cases — unknown
+ * user, deactivated user, invalid token, expired token — into ONE 422 keyed on
+ * `token`, because distinguishing them would be the enumeration oracle this
+ * endpoint refuses to be. That single message is therefore the ONLY thing that
+ * reaches the operator, and it was an English sentence that the backoffice
+ * rendered verbatim: an Italian operator on an Italian page read English.
+ *
+ * A response body is machine-facing (CLAUDE.md: "Machine-readable values ... are
+ * NOT user-facing and are returned literally in every locale"). The API's job is
+ * a stable code; turning it into the reader's language is the UI's, which is the
+ * only layer that knows the reader's locale. That is already the pattern for the
+ * conversation-LLM binding errors (`LlmCredentialController` returns codes).
+ *
+ * Nothing pinned these strings before — the endpoint could have returned any
+ * prose at all and no test would have objected.
+ */
+test('the generic refusal is a stable code, never a translatable sentence', function (): void {
+    $user = resetPasswordUser();
+
+    $response = $this->postJson('/api/auth/reset-password', [
+        'token' => 'not-a-real-token',
+        'email' => $user->email,
+        'password' => 'brand-new-password-9876',
+        'password_confirmation' => 'brand-new-password-9876',
+    ]);
+
+    $response->assertUnprocessable();
+    $response->assertJsonPath('errors.token.0', 'reset_link_invalid');
+});
+
+test('the success confirmation is a stable code too', function (): void {
+    $user = resetPasswordUser();
+
+    $response = $this->postJson('/api/auth/reset-password', [
+        'token' => resetTokenFor($user),
+        'email' => $user->email,
+        'password' => 'brand-new-password-9876',
+        'password_confirmation' => 'brand-new-password-9876',
+    ]);
+
+    $response->assertOk();
+    $response->assertJsonPath('message', 'password_reset');
+});
+
+test('no auth response body contains an English sentence', function (): void {
+    // The shape, not the wording: a space plus a trailing period is prose, and
+    // prose in a response body is a string somebody will eventually render to a
+    // reader whose language it is not.
+    $user = resetPasswordUser();
+
+    $bodies = [
+        $this->postJson('/api/auth/reset-password', [
+            'token' => 'not-a-real-token',
+            'email' => $user->email,
+            'password' => 'brand-new-password-9876',
+            'password_confirmation' => 'brand-new-password-9876',
+        ])->json(),
+        $this->postJson('/api/auth/reset-password', [
+            'token' => resetTokenFor($user),
+            'email' => $user->email,
+            'password' => 'brand-new-password-9876',
+            'password_confirmation' => 'brand-new-password-9876',
+        ])->json(),
+    ];
+
+    foreach ($bodies as $body) {
+        foreach (['message', 'errors.token.0'] as $path) {
+            $value = data_get($body, $path);
+
+            if (! is_string($value)) {
+                continue;
+            }
+
+            expect($value)->not->toMatch('/\s.*\.$/', "Prose in `{$path}`: \"{$value}\"");
+        }
+    }
+});

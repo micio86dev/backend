@@ -9,9 +9,11 @@ use App\Http\Resources\Admin\DashboardActivityResource;
 use App\Http\Resources\Admin\DashboardMetricsResource;
 use App\Models\AiRequest;
 use App\Models\Evaluation;
+use App\Models\InterviewSessionLlmUsage;
 use App\Support\Admin\AdminParticipantReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Admin DashboardController (C11 — Admin Dashboards, PR A3, D7).
@@ -21,12 +23,28 @@ use Illuminate\Support\Collection;
  * evaluations-by-status, completion rate, and (from `ai_requests`) summed
  * token usage + p50/p95 latency.
  *
- * Correction to the proposal, preserved from design D7: there is NO cost
- * column anywhere in the schema
- * (2026_07_22_000004_create_ai_requests_table.php:54-61 stores tokens and
- * latency only) — this endpoint ships token usage, not monetary cost.
+ * COST, WHICH THIS ENDPOINT USED TO SAY DID NOT EXIST
+ * ----------------------------------------------------
+ * Design D7 recorded that there was no cost column anywhere in the schema, so
+ * the dashboard shipped tokens and latency and nothing else. That was true
+ * when it was written and stopped being true twice since: `ai_requests` gained
+ * `estimated_cost_usd`, and the conversation LLM records both an estimate and
+ * a settled figure on `interview_session_llm_usage`. An operator asking what
+ * their assessments cost was being answered in tokens, which is not the
+ * question.
+ *
+ * The two are reported SEPARATELY as well as summed, because they answer
+ * different questions and behave differently: scoring cost is per completed
+ * evaluation and predictable, conversation cost is per minute of interview and
+ * is the one that moves when candidates talk longer.
+ *
+ * `actual_cost_usd` wins over `estimated_cost_usd` per row where the provider
+ * has settled it — an estimate that has been replaced by a real number should
+ * not go on being reported. Summing both columns would double-count.
+ *
  * Subscription/MRR/trial metrics stay out of scope (observability delta,
- * ruling 3) — no billing schema exists to source them from.
+ * ruling 3) — no billing schema exists to source them from, and that part of
+ * D7 does still hold.
  *
  * Participant counts go through AdminParticipantReader::listQuery() — the
  * same tenant-safe + RBAC-safe path the list endpoint uses — never a bare
@@ -111,7 +129,41 @@ final class DashboardController extends Controller
                 'latency_ms_p50' => $this->percentile($sortedLatencies, 0.5),
                 'latency_ms_p95' => $this->percentile($sortedLatencies, 0.95),
             ],
+            'costs' => $this->costs(),
         ]))->response();
+    }
+
+    /**
+     * What this organization's assessments have cost, in USD.
+     *
+     * Both models extend TenantModel, so the ambient global scope already
+     * restricts these sums to the caller's organization — the same reason
+     * `Evaluation` and `AiRequest` above need no reader indirection.
+     *
+     * USD is not localized and not converted. It is the unit every provider
+     * bills in, and inventing a conversion here would put a rate nobody chose
+     * in front of a number an operator may reconcile against an invoice.
+     *
+     * @return array{scoring_usd: float, conversation_usd: float, total_usd: float, currency: string}
+     */
+    private function costs(): array
+    {
+        $scoring = (float) AiRequest::query()->sum('estimated_cost_usd');
+
+        // COALESCE, not two sums added together: a row whose provider has
+        // settled the figure carries BOTH an estimate and an actual, and
+        // summing each column separately would count that interview twice.
+        $conversation = (float) InterviewSessionLlmUsage::query()
+            ->sum(DB::raw('coalesce(actual_cost_usd, estimated_cost_usd, 0)'));
+
+        return [
+            'scoring_usd' => round($scoring, 6),
+            'conversation_usd' => round($conversation, 6),
+            'total_usd' => round($scoring + $conversation, 6),
+            // Stated rather than assumed. A bare number on a dashboard is read
+            // in whatever currency the reader happens to think in.
+            'currency' => 'USD',
+        ];
     }
 
     /**

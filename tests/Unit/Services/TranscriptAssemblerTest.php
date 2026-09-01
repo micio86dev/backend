@@ -57,6 +57,7 @@ function assemblerParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'ta-test-'.uniqid(),
         'display_name' => 'TA Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

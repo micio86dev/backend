@@ -70,6 +70,7 @@ function matrixParticipant(Organization $org): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'matrix-'.uniqid(),
         'display_name' => 'Matrix Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();
@@ -236,6 +237,7 @@ test('sso-link JWT on auth:api guard → 401 (sub=candidate_ref → User::find=n
     $ssoLink = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => '999999999',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -253,6 +255,7 @@ test('sso-link JWT on auth:api-candidate guard → 401 (typ≠candidate)', funct
     $ssoLink = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'matrix-sso-cand',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -270,6 +273,7 @@ test('sso-link JWT at exchange → consumed (200 on valid token)', function (): 
     $ssoLink = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'matrix-sso-exchange',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',

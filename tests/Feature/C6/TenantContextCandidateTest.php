@@ -46,6 +46,7 @@ function tcParticipant(Project $project, Organization $org, ?string $ref = null)
         'project_id' => $project->id,
         'candidate_ref' => $ref ?? 'tc-ref-'.uniqid(),
         'display_name' => 'TC Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

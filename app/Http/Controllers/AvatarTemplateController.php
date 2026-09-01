@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
+use App\Models\Project;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\ConfigValidator;
@@ -37,6 +38,45 @@ final class AvatarTemplateController extends Controller
         return AvatarTemplateResource::collection(
             AvatarTemplate::orderByDesc('is_active')->orderBy('name')->get()
         );
+    }
+
+    /**
+     * The picker list: id, name, provider. Nothing else.
+     *
+     * `index()` above stays admin-only because this resource carries `config`,
+     * and that holds provider-side identifiers (avatarId, voiceId, faceId,
+     * palId) which are closer to credentials than to settings. But
+     * `projects.avatar_template_id` is NOT NULL, so every operator creating a
+     * project has to choose one — and an operator who cannot list templates
+     * cannot choose. Their select came back empty and the form refused its own
+     * submit, with nothing they could do about it.
+     *
+     * So this is the narrow answer rather than a widened `viewAny`: exactly
+     * the three fields choosing a template requires. A viewer gets it too —
+     * reading a project's configuration should show which template it names,
+     * not a bare id.
+     *
+     * The shape is hand-built rather than run through `AvatarTemplateResource`
+     * ON PURPOSE. A resource is a list of fields somebody will add to; this
+     * endpoint's entire value is that it cannot grow one, and a future field on
+     * that resource must not silently become readable by every role.
+     */
+    public function options(): JsonResponse
+    {
+        $this->authorize('listOptions', AvatarTemplate::class);
+
+        $options = AvatarTemplate::orderByDesc('is_active')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (AvatarTemplate $template): array => [
+                'id' => (int) $template->id,
+                'name' => $template->name,
+                'provider' => $template->provider,
+                'is_active' => (bool) $template->is_active,
+            ])
+            ->all();
+
+        return response()->json(['data' => $options]);
     }
 
     /**
@@ -270,6 +310,53 @@ final class AvatarTemplateController extends Controller
         return (new AvatarTemplateResource($fresh))->additional($this->recordSync($fresh));
     }
 
+    /**
+     * Take a template out of service without deleting it.
+     *
+     * Only `activate` existed, so the only ways to stop offering a template
+     * were to activate a different one — which needs a different one to exist —
+     * or to delete it, which is destructive and is now refused outright while
+     * any project pins it.
+     *
+     * What deactivation MEANS changed with the mandatory pin, and for the
+     * better. `is_active` used to be the organization-wide fallback, so
+     * switching it off silently changed which template every unpinned project
+     * ran on. Every project now names its own, so `is_active` is only "the one
+     * offered as the default for new projects" — turning it off is reversible
+     * bookkeeping, not a live reconfiguration.
+     *
+     * NO config revalidation, unlike `activate()`. That check exists to catch a
+     * stale config before a candidate meets it; withdrawing a template can only
+     * reduce exposure, and refusing to withdraw an ALREADY-invalid one would
+     * trap an operator with exactly the template they most want to retire.
+     *
+     * Idempotent: deactivating an inactive template is a no-op, so a double
+     * click or two operators acting at once never produce a failure for a state
+     * that is already correct.
+     */
+    public function deactivate(int $id): AvatarTemplateResource
+    {
+        $template = AvatarTemplate::findOrFail($id);
+        $this->authorize('activate', $template);
+
+        $wasActive = $template->is_active;
+
+        if ($wasActive) {
+            $template->update(['is_active' => false]);
+
+            // Only when something actually changed — an audit trail of no-ops
+            // is noise that makes the real entries harder to find.
+            app(AuditRecorder::class)->record(
+                'avatar_template.deactivated',
+                'avatar_template',
+                $template->id,
+                before: ['name' => $template->name, 'provider' => $template->provider],
+            );
+        }
+
+        return new AvatarTemplateResource($template->fresh());
+    }
+
     public function destroy(int $id): JsonResponse
     {
         $template = AvatarTemplate::findOrFail($id);
@@ -281,7 +368,23 @@ final class AvatarTemplateController extends Controller
             // well-formed, the state is what refuses it.
             return response()->json([
                 'error' => 'template_active',
-                'message' => 'Activate another template before deleting this one.',
+                'message' => 'template_active',
+            ], Response::HTTP_CONFLICT);
+        }
+
+        // `projects.avatar_template_id` is NOT NULL with `restrictOnDelete`, so
+        // the database would refuse this anyway — as a raw foreign-key
+        // violation, which reaches the operator as a 500 and tells them
+        // nothing. Refusing here turns it into the same well-formed 409 the
+        // active-template case already returns, and names the count so the
+        // operator knows how much work reassigning it is before they start.
+        $projectCount = Project::where('avatar_template_id', $template->id)->count();
+
+        if ($projectCount > 0) {
+            return response()->json([
+                'error' => 'template_in_use',
+                'message' => 'template_in_use',
+                'project_count' => $projectCount,
             ], Response::HTTP_CONFLICT);
         }
 

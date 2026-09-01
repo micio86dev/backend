@@ -69,6 +69,8 @@ function buildStandardPayload(int $fvId, string $roleCode, array $competencyIds)
         'role_code' => $roleCode,
         'language' => 'en',
         'competency_ids' => $competencyIds,
+        // Required since `projects.avatar_template_id` became NOT NULL.
+        'avatar_template_id' => templateIdForCurrentOrg(),
     ];
 }
 
@@ -89,6 +91,7 @@ test('store: assessment_type must be in standard|potential', function (): void {
             'name' => 'Test',
             'assessment_type' => 'invalid',
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
         ])
         ->assertUnprocessable();
 });
@@ -114,6 +117,7 @@ test('store: cross-org framework_version_id → 422 (org-scoped Rule::exists)', 
             'assessment_type' => 'standard',
             'role_code' => 'ICO',
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [],
         ])
         ->assertUnprocessable();
@@ -218,6 +222,7 @@ test('store: standard with invalid role_code → 422', function (): void {
             'assessment_type' => 'standard',
             'role_code' => 'INVALID',
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [],
         ])
         ->assertUnprocessable();
@@ -276,6 +281,7 @@ test('store: standard with potential-type competency (MTG) → 422', function ()
             'assessment_type' => 'standard',
             'role_code' => 'ICO',
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [$mtg->id],
         ])
         ->assertUnprocessable();
@@ -299,6 +305,7 @@ test('store: potential with non-null role_code → 422', function (): void {
             'assessment_type' => 'potential',
             'role_code' => 'ICO', // must be null for potential
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [],
         ])
         ->assertUnprocessable();
@@ -332,6 +339,7 @@ test('store: mixed standard+potential competencies → 422', function (): void {
             'assessment_type' => 'potential',
             'role_code' => null,
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [$standardId, $mtg->id], // mixed types
         ])
         ->assertUnprocessable();
@@ -359,6 +367,7 @@ test('store: potential project blocked when MTG/LAT not in catalog → 422 POTEN
             'assessment_type' => 'potential',
             'role_code' => null,
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [],
         ]);
 
@@ -393,6 +402,7 @@ test('store: potential blocked when only MTG seeded (partial catalog) → 422 PO
             'assessment_type' => 'potential',
             'role_code' => null,
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [],
         ]);
 
@@ -421,6 +431,7 @@ test('store: POTENTIAL_CATALOG_INCOMPLETE runs BEFORE subset cross-field validat
             'assessment_type' => 'potential',
             'role_code' => null,
             'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
             'competency_ids' => [99999], // invalid ID — should not matter
         ]);
 

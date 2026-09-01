@@ -128,3 +128,38 @@ test('an unbound credential deletes with 200', function (): void {
 
     expect(LlmCredential::withoutGlobalScopes()->find($credential->id))->toBeNull();
 });
+
+test('a SOFT-DELETED template no longer blocks deleting the credential it was bound to', function (): void {
+    // The regression this exists for. `avatar_templates.llm_credential_id`
+    // references `llm_credentials` with ON DELETE RESTRICT, and the guard
+    // above counts bound templates to decide whether removing a credential is
+    // safe. That count applies the soft-delete scope; the foreign key does
+    // not. Once templates learned to soft-delete, the two disagreed — the
+    // guard saw nothing, allowed the delete, and Postgres refused it as an
+    // unhandled 500 with a raw constraint name in it.
+    //
+    // The template now clears its binding when it is soft-deleted, so the two
+    // agree again. Asserted end to end rather than on the hook, because what
+    // broke was the INTERACTION and a unit test of either half would have
+    // stayed green throughout.
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'admin');
+    $model = creditInUseModel();
+    $credential = creditInUseCredential($org->id);
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Bound then deleted',
+        'provider' => 'tavus',
+        'config' => ['faceId' => 'f', 'palId' => 'p'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+
+    $this->withToken($token)->deleteJson("/api/avatar-templates/{$template->id}")
+        ->assertStatus(204);
+
+    $this->withToken($token)->deleteJson("/api/llm-credentials/{$credential->id}")
+        ->assertOk();
+
+    expect(LlmCredential::withoutGlobalScope('tenant')->find($credential->id))->toBeNull();
+});

@@ -46,6 +46,17 @@ storage/framework/sessions/*
 storage/framework/views/*
 storage/logs/*
 storage/debugbar
+# Uploaded files — snapshots, transcripts, anything written through the `local`
+# disk. NEVER part of a build: it is runtime data, and in a developer checkout
+# it is mostly test residue, because the suite writes real files through
+# `FILESYSTEM_DISK=local` and never cleans them up. This directory measured
+# 2.1 GB across 1508 directories on one machine, and every one of those bytes
+# was being copied into the image and shipped to production.
+#
+# The directory itself must survive — Laravel expects it to exist — so its
+# CONTENTS are excluded rather than the path.
+storage/app/private/*
+storage/app/public/*
 !bootstrap/cache/.gitignore
 !storage/framework/cache/data/.gitignore
 !storage/framework/sessions/.gitignore

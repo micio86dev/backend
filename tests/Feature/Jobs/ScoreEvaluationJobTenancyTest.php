@@ -70,6 +70,7 @@ function scoreTenancyParticipant(Organization $org, Project $project): Participa
         'project_id' => $project->id,
         'candidate_ref' => 'tenancy-'.uniqid(),
         'display_name' => 'Tenancy Retrofit Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();
@@ -164,6 +165,7 @@ function scoreTenancyUnresolvableOrgParticipant(Project $project): int
             'project_id' => $project->id,
             'candidate_ref' => $candidateRef,
             'display_name' => 'Unresolvable Org Test',
+            'email' => uniqid('cand-').'@example.test',
             'status' => 'in_valutazione',
             'created_at' => now(),
             'updated_at' => now(),

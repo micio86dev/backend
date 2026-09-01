@@ -110,6 +110,7 @@ function recoveryParticipant(Organization $org, Project $project, string $status
         'project_id' => $project->id,
         'candidate_ref' => 'recovery-'.uniqid(),
         'display_name' => 'Recovery Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

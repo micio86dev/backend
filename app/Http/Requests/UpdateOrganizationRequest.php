@@ -42,6 +42,33 @@ class UpdateOrganizationRequest extends FormRequest
             // config-driven Rule::in (never a hardcoded list, never env-overridable).
             'default_webhook_events' => ['sometimes', 'nullable', 'array'],
             'default_webhook_events.*' => [Rule::in(config('webhooks.events.types'))],
+
+            /*
+             * The primary colour is CSS, and is validated as CSS rather than as
+             * a string that happens to look like one.
+             *
+             * It is interpolated into a custom property in both Nuxt apps, so a
+             * value that is not a colour becomes a stylesheet that silently
+             * does not apply, and one carrying `;` or `}` appends rules of its
+             * own to every page an operator's candidates load.
+             *
+             * `\z`, NOT `$`, and that difference is the whole security of this
+             * rule. In PCRE `$` also matches immediately BEFORE a final
+             * newline, so `/^#[0-9a-f]{6}$/` accepts `"#123456\n"` — and the
+             * newline is exactly what lets a payload open a second declaration
+             * once it is interpolated into a stylesheet. `\z` matches only at
+             * the true end of the subject. Caught by the injection test, which
+             * failed against the `$` version of this rule.
+             *
+             * Three-digit shorthand is deliberately refused so the apps never
+             * have to expand it — one canonical form, and an operator pasting
+             * `#abc` is told so rather than getting a colour that quietly
+             * differs from the one they copied.
+             *
+             * `nullable` is the route back to the product palette; without it,
+             * choosing a colour would be a one-way door.
+             */
+            'primary_color' => ['sometimes', 'nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
         ];
     }
 }

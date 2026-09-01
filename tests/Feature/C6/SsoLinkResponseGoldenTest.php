@@ -62,6 +62,7 @@ test('golden: 201 response carries exactly a token field, nothing else', functio
         'project_id' => $project->id,
         'candidate_ref' => 'golden-cand',
         'display_name' => 'Golden Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'role_code' => 'ICO',
         'lang' => 'en',
     ]);
@@ -80,6 +81,7 @@ test('golden: 403 gate refusal body is exactly the literal Access denied message
         'project_id' => $project->id,
         'candidate_ref' => 'golden-cand-403',
         'display_name' => 'Golden Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertStatus(403);
@@ -97,6 +99,7 @@ test('golden: 409 mint-gate refusal body is exactly the literal Conflict message
         'project_id' => $project->id,
         'candidate_ref' => 'golden-done',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();
@@ -106,6 +109,7 @@ test('golden: 409 mint-gate refusal body is exactly the literal Conflict message
         'project_id' => $project->id,
         'candidate_ref' => 'golden-done',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertStatus(409);
@@ -128,6 +132,7 @@ test('golden: 422 role_code mismatch body is exactly the literal validation erro
         'project_id' => $project->id,
         'candidate_ref' => 'golden-422',
         'display_name' => 'Golden Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'role_code' => 'FLL',
     ]);
 
@@ -152,6 +157,7 @@ test('golden: 404 cross-org body matches the default model-not-found shape', fun
         'project_id' => $projectB->id,
         'candidate_ref' => 'golden-404',
         'display_name' => 'Golden Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertStatus(404);

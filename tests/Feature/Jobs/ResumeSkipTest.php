@@ -56,6 +56,7 @@ function resumeParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'resume-'.uniqid(),
         'display_name' => 'Resume Skip Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

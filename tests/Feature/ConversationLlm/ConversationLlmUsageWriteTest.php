@@ -28,6 +28,7 @@ function usageWriteModel(): LlmModel
         'key' => 'gemini-3-flash-preview',
         'vendor' => 'google',
         'display_name' => 'Gemini 3 Flash Preview',
+        'email' => uniqid('cand-').'@example.test',
         'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
         'capability' => 'text',
         'is_available' => true,
@@ -55,6 +56,7 @@ function usageWriteFixture(string $llmBindingStatus, ?string $llmModelKey, ?int 
         'project_id' => $project->id,
         'candidate_ref' => 'usage-'.uniqid(),
         'display_name' => 'Usage Write Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_corso',
     ]);
     $participant->save();

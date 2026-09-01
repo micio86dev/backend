@@ -374,3 +374,37 @@ test('the field spec carries label KEYS, never rendered text', function (): void
         expect($field['label_key'])->toStartWith('avatar_templates.field.');
     }
 });
+
+test('every role can read the PICKER list, and it carries no provider identifiers', function (): void {
+    // `projects.avatar_template_id` is NOT NULL, so an operator creating a
+    // project must choose a template — and an operator who cannot list them
+    // cannot choose. Widening `viewAny` was tried and reverted: this resource
+    // carries `config`, which holds avatarId/voiceId/faceId/palId, closer to
+    // credentials than to settings. This endpoint is the narrow answer.
+    $org = Organization::factory()->create();
+    $template = seedTemplate($org);
+
+    foreach (['admin', 'operator', 'viewer'] as $role) {
+        $response = $this->withToken(templateActor($org, $role))->getJson('/api/avatar-templates/options');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.id', $template->id);
+
+        // The key set is the assertion. A future field on
+        // `AvatarTemplateResource` must not silently become readable by every
+        // role, which is why this endpoint builds its own shape.
+        expect(array_keys($response->json('data.0')))
+            ->toBe(['id', 'name', 'provider', 'is_active']);
+    }
+});
+
+test('the picker list does NOT open the full resource to a non-admin', function (): void {
+    $org = Organization::factory()->create();
+    seedTemplate($org);
+
+    foreach (['operator', 'viewer'] as $role) {
+        $this->withToken(templateActor($org, $role))
+            ->getJson('/api/avatar-templates')
+            ->assertForbidden();
+    }
+});

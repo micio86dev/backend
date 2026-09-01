@@ -1,0 +1,16 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "php",
+            "args": [
+                "artisan",
+                "boost:mcp"
+            ]
+        }
+    },
+    "postgres": {
+            "command": "postgres-mcp",
+      	    "args": ["--access-mode=restricted"],
+            "env": { "DATABASE_URI": "${PG_MCP_URL}" }
+    }
+}

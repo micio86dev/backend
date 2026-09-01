@@ -43,9 +43,9 @@ class ParticipantResource extends JsonResource
      * `ParticipantDetailResource`'s `firstOrFail()`: one bad row must not
      * blank the whole list page.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, email: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -56,6 +56,13 @@ class ParticipantResource extends JsonResource
             'id' => (int) $participant->id,
             'candidate_ref' => $participant->candidate_ref,
             'display_name' => $participant->display_name,
+            // Operator-facing, and admin-side only. It is the candidate's
+            // identity across projects as well as the address an invitation
+            // goes to, so an operator re-issuing a link needs to see WHICH
+            // person they are re-issuing it for. Never exposed on the
+            // candidate-facing resource — telling someone their own address
+            // back adds nothing and widens what a stolen token discloses.
+            'email' => $participant->email,
             'role_code' => $participant->role_code,
             'language' => $participant->language,
             'status' => $participant->status,

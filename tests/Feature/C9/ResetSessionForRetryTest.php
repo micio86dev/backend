@@ -49,6 +49,7 @@ function resetFixture(int $errorCount = 1): array
         'project_id' => $project->id,
         'candidate_ref' => 'reset-'.uniqid(),
         'display_name' => 'Reset Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_corso',
         'started_at' => now(),
     ]);

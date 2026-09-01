@@ -47,6 +47,7 @@ function makeC7aParticipantWithStatus(Organization $org, Project $project, strin
         'project_id' => $project->id,
         'candidate_ref' => 'trans-'.uniqid(),
         'display_name' => 'Transition Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

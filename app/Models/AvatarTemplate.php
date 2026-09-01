@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\LlmMode;
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
 use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
@@ -43,6 +45,8 @@ use Illuminate\Support\Carbon;
  */
 class AvatarTemplate extends TenantModel
 {
+    use SoftDeletes;
+
     /**
      * Mirrors the database defaults IN MEMORY.
      *
@@ -101,6 +105,67 @@ class AvatarTemplate extends TenantModel
         // here; declaring booted() without this call would silently
         // unregister it on the single model this entire change hangs off.
         parent::booted();
+
+        static::deleting(function (self $template): void {
+            // A FORCE delete is still governed by the foreign key itself —
+            // `restrictOnDelete` sees every project row, trashed ones
+            // included, and refuses. Duplicating that here would only add a
+            // second, weaker copy of a rule the database already holds.
+            if ($template->isForceDeleting()) {
+                return;
+            }
+
+            // Trashed projects are deliberately NOT counted. They are already
+            // invisible, so hiding their template breaks nothing today, and a
+            // restore can restore the template alongside. Counting them would
+            // make a template undeletable forever because of a project nobody
+            // can see — and it would disagree with the count the controller
+            // reports, so the operator would read "0 projects" and still be
+            // refused.
+            // The tenant scope is dropped, the SOFT-DELETE scope deliberately
+            // is not: a template is deleted from within its own tenant context
+            // anyway, and dropping every scope would silently start counting
+            // trashed projects — the opposite of what the comment above says.
+            $projectCount = Project::withoutGlobalScope('tenant')
+                ->where('avatar_template_id', $template->id)
+                ->count();
+
+            if ($projectCount > 0) {
+                throw new AvatarTemplateInUseException($projectCount);
+            }
+        });
+
+        static::deleted(function (self $template): void {
+            if ($template->isForceDeleting()) {
+                return;
+            }
+
+            // A soft-deleted template keeps its ROW, and its row keeps its
+            // `llm_credential_id` — which `llm_credentials` references with
+            // ON DELETE RESTRICT. The credential-deletion guard counts BOUND
+            // templates to decide whether removing a credential is safe, and
+            // that count applies the soft-delete scope while the foreign key
+            // does not. The two disagreed: the guard saw nothing, allowed the
+            // delete, and Postgres refused it as an unhandled 500.
+            //
+            // The binding is torn down at the provider before the template is
+            // deleted (HeygenLlmRegistrar::forget), so it is already dead by
+            // the time we get here — nulling it makes the row agree with
+            // reality rather than inventing a new rule. Both columns go
+            // together because I1's CHECK constraint refuses a half-bound row.
+            //
+            // Written through the query builder deliberately: `runSoftDelete`
+            // updates ONLY `deleted_at`, so dirty attributes set in a
+            // `deleting` hook are silently dropped, and this has to happen
+            // after the row is already marked deleted.
+            static::withoutGlobalScopes()
+                ->whereKey($template->getKey())
+                ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
+
+            $template->llm_model_id = null;
+            $template->llm_credential_id = null;
+            $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
+        });
 
         static::saving(function (self $template): void {
             // Unbound is always legal; I1's CHECK handles the half-bound

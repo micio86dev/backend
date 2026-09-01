@@ -80,6 +80,7 @@ test('a superseded link remains valid until its own expiry — the OLDER token s
         'project_id' => $project->id,
         'candidate_ref' => 'superseded-cand',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     $first->assertStatus(201);
     $olderJwt = tokenFromEntryUrl($first->json('entry_url'));
@@ -90,6 +91,7 @@ test('a superseded link remains valid until its own expiry — the OLDER token s
         'project_id' => $project->id,
         'candidate_ref' => 'superseded-cand',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     $second->assertStatus(201);
     $newerJwt = tokenFromEntryUrl($second->json('entry_url'));
@@ -111,6 +113,7 @@ test('after the OLDER token is exchanged, the NEWER (still-unexchanged) token re
         'project_id' => $project->id,
         'candidate_ref' => 'superseded-cand-2',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     $first->assertStatus(201);
     $olderJwt = tokenFromEntryUrl($first->json('entry_url'));
@@ -119,6 +122,7 @@ test('after the OLDER token is exchanged, the NEWER (still-unexchanged) token re
         'project_id' => $project->id,
         'candidate_ref' => 'superseded-cand-2',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     $second->assertStatus(201);
     $newerJwt = tokenFromEntryUrl($second->json('entry_url'));

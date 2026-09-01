@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\Events\RoleAttached;
 use Spatie\Permission\Events\RoleDetached;
@@ -78,6 +79,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->forcePublicRootUrl();
+
         // C4 — Register ProjectPolicy for Gate-based authorization.
         Gate::policy(Project::class, ProjectPolicy::class);
 
@@ -288,6 +291,45 @@ class AppServiceProvider extends ServiceProvider
             Event::listen(RoleDetached::class, function (): void {
                 app(PermissionRegistrar::class)->forgetCachedPermissions();
             });
+        }
+    }
+
+    /**
+     * Generate absolute URLs from `APP_URL`, never from the request's Host.
+     *
+     * This API is always reached through something else — the Nuxt apps proxy
+     * `/api/*` in development, Railway's edge terminates TLS in production — so
+     * the `Host` header Laravel sees is the INTERNAL one. Left to its default,
+     * the URL generator built links against it, and a signed profile-photo URL
+     * came back as `http://api:8000/storage/...`: the compose service name,
+     * which no browser can resolve. The image simply did not load, with a 200
+     * response and a well-formed signature.
+     *
+     * `Storage::url()` alone was not enough, because the `local` disk with
+     * `serve => true` issues a temporary SIGNED ROUTE, and signed routes are
+     * built from the request root rather than the disk's configured `url`.
+     * Forcing the root is what makes both agree.
+     *
+     * Skipped when `APP_URL` is unset or malformed rather than guessed at:
+     * falling back to the request root restores exactly the previous behaviour,
+     * which is wrong here but is at least the behaviour every existing test was
+     * written against.
+     */
+    private function forcePublicRootUrl(): void
+    {
+        $appUrl = (string) config('app.url');
+
+        if ($appUrl === '' || filter_var($appUrl, FILTER_VALIDATE_URL) === false) {
+            return;
+        }
+
+        URL::forceRootUrl($appUrl);
+
+        // A signed URL generated against `http://` and verified against
+        // `https://` does not match, so the scheme has to be pinned with the
+        // root rather than left to the (proxied, and therefore plain) request.
+        if (str_starts_with($appUrl, 'https://')) {
+            URL::forceScheme('https');
         }
     }
 }

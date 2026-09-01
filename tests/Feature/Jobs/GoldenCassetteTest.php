@@ -57,6 +57,7 @@ function goldenParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'golden-'.uniqid(),
         'display_name' => 'Golden Cassette Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

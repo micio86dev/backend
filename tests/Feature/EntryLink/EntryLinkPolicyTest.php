@@ -55,6 +55,7 @@ function entryLinkMintPayload(Project $project, array $overrides = []): array
         'project_id' => $project->id,
         'candidate_ref' => 'policy-cand',
         'display_name' => 'Policy Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ], $overrides);
 }
 

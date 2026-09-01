@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Admin;
 
+use App\Models\BarsIndicator;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use App\Models\IndicatorScore;
 use App\Models\Participant;
+use App\Models\Role;
 use App\Services\Scoring\ReliabilityRenderer;
 use RuntimeException;
 
@@ -95,8 +97,10 @@ final class AdminEvaluationSerializer
         }
 
         $output = [];
+        $catalogue = $this->indicatorCatalogue($participant);
+
         foreach ($orderedResults as $code => $result) {
-            $output[$code] = $this->serializeCompetencyResult($result);
+            $output[$code] = $this->serializeCompetencyResult($result, $catalogue);
         }
 
         return $output;
@@ -192,14 +196,105 @@ final class AdminEvaluationSerializer
      *     unscorable_reason: string|null
      * }
      */
-    private function serializeCompetencyResult(CompetencyResult $result): array
+    /**
+     * Indicator names for this participant's role, in the ACTIVE locale, keyed
+     * `COMPETENCY_CODE:position`.
+     *
+     * One query for the whole report rather than one per indicator — a
+     * competency has several, and a report has many competencies.
+     *
+     * Keyed on `(competency_code, position)` because that is the pair an
+     * `IndicatorScore` actually carries: it stores the text it was scored
+     * against, not a foreign key to the catalogue row, so there is no id to
+     * join on. Position is stable within a competency by definition — it is
+     * what orders the anchors — and the framework version is pinned at project
+     * creation and never retargeted (CLAUDE.md ruling 3), so the pair cannot
+     * drift under a live project.
+     *
+     * Returns an empty map when the participant has no project or no role: the
+     * caller then falls back to the stored text, which is exactly right.
+     *
+     * @return array<string, string>
+     */
+    private function indicatorCatalogue(Participant $participant): array
+    {
+        // The FK-backed relation is inferred NON-null by Larastan, so `?->`
+        // on it is reported as dead code — the participant's own `role_code`
+        // is read as the fallback for a project that has none.
+        $roleCode = $participant->project->role_code ?? $participant->role_code;
+
+        if ($roleCode === null) {
+            return [];
+        }
+
+        $role = Role::where('code', $roleCode)->first();
+
+        if ($role === null) {
+            return [];
+        }
+
+        $map = [];
+
+        BarsIndicator::where('role_id', $role->id)
+            ->with('competency:id,code')
+            ->get()
+            ->each(function (BarsIndicator $indicator) use (&$map): void {
+                $code = $indicator->competency?->code;
+
+                if ($code === null) {
+                    return;
+                }
+
+                // `getTranslation` with the active locale, falling back
+                // through spatie's own chain — an indicator authored in only
+                // one language must still render, and CLAUDE.md records that
+                // non-English anchors are an OPEN question (ruling 6).
+                $map[$code.':'.$indicator->position] = (string) $indicator->getTranslation(
+                    'text',
+                    app()->getLocale(),
+                    true,
+                );
+            });
+
+        return $map;
+    }
+
+    /**
+     * @param  array<string, string>  $catalogue  indicator names in the reader's
+     *                                            locale, keyed `CODE:position`
+     * @return array{
+     *     score: float|null,
+     *     reliability: string,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     unscorable_reason: string|null
+     * }
+     */
+    private function serializeCompetencyResult(CompetencyResult $result, array $catalogue = []): array
     {
         return [
             'score' => $result->score,
             'reliability' => $this->reliabilityRenderer->render($result->reliability).'%',
             'behaviors' => $result->indicatorScores
                 ->map(fn (IndicatorScore $indicator): array => [
-                    'indicator' => $indicator->indicator_text,
+                    // Rendered in the READER's language, from the catalogue.
+                    //
+                    // `indicator_text` is frozen at scoring time in the
+                    // PROJECT's language, which is right for evidence — an
+                    // explanation of what a candidate said is a record of an
+                    // assessment conducted in one language, not UI copy. An
+                    // indicator NAME is neither: it is catalogue data authored
+                    // in both languages, and the operator reading the report is
+                    // not the candidate. An Italian operator was reading
+                    // English indicator names on every English-language
+                    // project.
+                    //
+                    // Falls back to the stored text, which is the only correct
+                    // answer when the pinned framework version no longer
+                    // carries that indicator: a report must render the
+                    // indicator that was actually scored, not the nearest
+                    // surviving one.
+                    'indicator' => $catalogue[$result->competency_code.':'.$indicator->position]
+                        ?? $indicator->indicator_text,
                     // -1 is the unassessable sentinel — never emitted as a literal score.
                     'score' => $indicator->score === -1 ? null : $indicator->score,
                     'explanation' => $indicator->explanation,

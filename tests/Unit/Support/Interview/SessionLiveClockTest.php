@@ -193,7 +193,7 @@ test('close() caps at the platform Tavus ceiling for a tavus session, distinct f
         ->not->toBe(ProviderFieldSpecs::HEYGEN_MAX_SECONDS);
 });
 
-test('an org\'s active avatar template configuring a LOWER ceiling wins over the platform default', function (): void {
+test('the template a project PINS, configuring a LOWER ceiling, wins over the platform default', function (): void {
     $org = clockOrg();
     $session = clockSession($org); // provider = heygen (factory default)
 
@@ -205,6 +205,18 @@ test('an org\'s active avatar template configuring a LOWER ceiling wins over the
         'config' => ['avatarId' => 'a', 'voiceId' => 'v', 'maxSessionDurationSec' => 300],
         'is_active' => true,
     ])->save();
+
+    // The session's PROJECT must pin this template, and that is the behaviour
+    // change rather than test bookkeeping. `projects.avatar_template_id` is now
+    // required, so `ActiveTemplateResolver` returns what the project pinned —
+    // and the factory pins a bare template of its own. Merely making this one
+    // `is_active` no longer reaches the clock, because the organization-wide
+    // active template is only the answer for callers that name no project.
+    //
+    // Which is the point of the column: the ceiling a session runs under is now
+    // the one ITS project chose, not whichever template the organization
+    // happened to have activated.
+    $session->project->forceFill(['avatar_template_id' => $template->id])->save();
 
     $clock = new SessionLiveClock;
     $clock->open($session, 'ref-1');

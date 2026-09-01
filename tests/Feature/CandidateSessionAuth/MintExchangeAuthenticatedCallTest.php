@@ -111,6 +111,7 @@ function mintChainSsoLink(Project $project, Organization $org, string $ref = 'ca
     return CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
         'display_name' => 'Genuine Chain Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => $project->role_code,

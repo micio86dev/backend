@@ -177,7 +177,10 @@ final class LlmCredentialController extends Controller
         if ($boundTemplateNames !== []) {
             return response()->json([
                 'error' => 'credential_in_use',
-                'message' => 'Unbind every template using this credential before deleting it.',
+                // A code, not a sentence: the API has no idea what language
+                // the operator reads, and `templates` below already names the
+                // ones blocking the delete.
+                'message' => 'credential_in_use',
                 'templates' => $boundTemplateNames,
             ], Response::HTTP_CONFLICT);
         }

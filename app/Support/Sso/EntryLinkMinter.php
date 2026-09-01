@@ -42,6 +42,7 @@ final class EntryLinkMinter
         Project $project,
         string $candidateRef,
         string $displayName,
+        string $email,
         ?string $roleCode,
         ?string $lang,
     ): MintedEntryLink {
@@ -84,6 +85,11 @@ final class EntryLinkMinter
         $token = CandidateTokenFactory::mintSsoLink([
             'candidate_ref' => $candidateRef,
             'display_name' => $displayName,
+            // Carried in the token because the participant row is not written
+            // here — the EXCHANGE writes it, and it can only write what the
+            // token tells it. A required column whose value is left behind at
+            // mint time is a required column the exchange cannot satisfy.
+            'email' => $email,
             'project_id' => $project->id,
             'org_id' => $project->organization_id,
             'role_code' => $resolvedRoleCode,

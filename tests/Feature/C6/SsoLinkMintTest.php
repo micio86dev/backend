@@ -79,6 +79,7 @@ test('happy path: POST /api/m2m/sso-link → 201 with token', function (): void 
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test Candidate',
+            'email' => uniqid('cand-').'@example.test',
             'role_code' => 'ICO',
             'lang' => 'en',
         ]);
@@ -106,6 +107,7 @@ test('missing sso_link:generate ability → 403', function (): void {
             'project_id' => 1,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertForbidden();
 });
@@ -141,6 +143,7 @@ test('role_code mismatch for standard project → 422', function (): void {
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
             'role_code' => 'FLL', // mismatch
         ])
         ->assertStatus(422);
@@ -156,6 +159,7 @@ test('role_code supplied for potential project → 422', function (): void {
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
             'role_code' => 'ICO', // must not be supplied for potential
         ])
         ->assertStatus(422);
@@ -175,6 +179,7 @@ test('past deadline_at → 403', function (): void {
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertStatus(403);
 });
@@ -189,6 +194,7 @@ test('goes_live_at NULL → project is accessible (mints normally)', function ()
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertStatus(201);
 });
@@ -203,6 +209,7 @@ test('deadline_at NULL → project is accessible (mints normally)', function ():
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertStatus(201);
 });
@@ -217,6 +224,7 @@ test('before goes_live_at → 403', function (): void {
             'project_id' => $project->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertStatus(403);
 });
@@ -237,6 +245,7 @@ test('mint gate: participant status=completato → 409, reason completed', funct
         'project_id' => $project->id,
         'candidate_ref' => 'done-cand',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione', // must be set via valid chain
     ]);
     $p->save();
@@ -250,6 +259,7 @@ test('mint gate: participant status=completato → 409, reason completed', funct
             'project_id' => $project->id,
             'candidate_ref' => 'done-cand',
             'display_name' => 'Done',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertStatus(409)
         ->assertJson([
@@ -269,6 +279,7 @@ test('mint gate: participant status=errore → 409, reason failed, message never
         'project_id' => $project->id,
         'candidate_ref' => 'errored-cand',
         'display_name' => 'Errored',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();
@@ -281,6 +292,7 @@ test('mint gate: participant status=errore → 409, reason failed, message never
             'project_id' => $project->id,
             'candidate_ref' => 'errored-cand',
             'display_name' => 'Errored',
+            'email' => uniqid('cand-').'@example.test',
         ]);
 
     $response->assertStatus(409)->assertJson(['reason' => 'failed']);
@@ -298,6 +310,7 @@ test('mint gate: participant status=in_attesa → mints normally (201)', functio
         'project_id' => $project->id,
         'candidate_ref' => 'existing-attesa',
         'display_name' => 'In Attesa',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();
@@ -307,6 +320,7 @@ test('mint gate: participant status=in_attesa → mints normally (201)', functio
             'project_id' => $project->id,
             'candidate_ref' => 'existing-attesa',
             'display_name' => 'In Attesa',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertStatus(201);
 });
@@ -332,6 +346,7 @@ test('cross-org project_id → 404', function (): void {
             'project_id' => $projectB->id,
             'candidate_ref' => 'cand-001',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ])
         ->assertNotFound();
 });
@@ -350,6 +365,7 @@ test('no Redis sso_jti: key written at mint time', function (): void {
             'project_id' => $project->id,
             'candidate_ref' => 'cand-redis-test',
             'display_name' => 'Test',
+            'email' => uniqid('cand-').'@example.test',
         ]);
 
     $response->assertStatus(201);
@@ -381,6 +397,7 @@ test('an omitted role_code is inherited from a standard project', function (): v
         'project_id' => $project->id,
         'candidate_ref' => 'inherit-1',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertCreated();
@@ -399,6 +416,7 @@ test('a token minted without an explicit role_code is redeemable', function (): 
         'project_id' => $project->id,
         'candidate_ref' => 'inherit-2',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ])->json('token');
 
     // The whole point: a 201 must mean the token in that response works.
@@ -416,6 +434,7 @@ test('a supplied role_code is still asserted, not silently replaced', function (
         'project_id' => $project->id,
         'candidate_ref' => 'inherit-3',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
         'role_code' => 'BUL',
     ])->assertStatus(422);
 });
@@ -429,6 +448,7 @@ test('a potential project still mints a null role_code', function (): void {
         'project_id' => $project->id,
         'candidate_ref' => 'inherit-4',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertCreated();

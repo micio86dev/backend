@@ -270,6 +270,7 @@ test('slug reuse after soft-delete same org same slug → 201', function (): voi
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertCreated();
 });

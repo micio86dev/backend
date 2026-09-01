@@ -51,6 +51,7 @@ function ownershipParticipant(Organization $org, Project $project, string $suffi
         'project_id' => $project->id,
         'candidate_ref' => 'own-'.($suffix ?: uniqid()),
         'display_name' => 'Ownership Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_corso',
     ]);
     $p->save();
