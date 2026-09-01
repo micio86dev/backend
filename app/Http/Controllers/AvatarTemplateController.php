@@ -271,6 +271,53 @@ final class AvatarTemplateController extends Controller
         return (new AvatarTemplateResource($fresh))->additional($this->recordSync($fresh));
     }
 
+    /**
+     * Take a template out of service without deleting it.
+     *
+     * Only `activate` existed, so the only ways to stop offering a template
+     * were to activate a different one — which needs a different one to exist —
+     * or to delete it, which is destructive and is now refused outright while
+     * any project pins it.
+     *
+     * What deactivation MEANS changed with the mandatory pin, and for the
+     * better. `is_active` used to be the organization-wide fallback, so
+     * switching it off silently changed which template every unpinned project
+     * ran on. Every project now names its own, so `is_active` is only "the one
+     * offered as the default for new projects" — turning it off is reversible
+     * bookkeeping, not a live reconfiguration.
+     *
+     * NO config revalidation, unlike `activate()`. That check exists to catch a
+     * stale config before a candidate meets it; withdrawing a template can only
+     * reduce exposure, and refusing to withdraw an ALREADY-invalid one would
+     * trap an operator with exactly the template they most want to retire.
+     *
+     * Idempotent: deactivating an inactive template is a no-op, so a double
+     * click or two operators acting at once never produce a failure for a state
+     * that is already correct.
+     */
+    public function deactivate(int $id): AvatarTemplateResource
+    {
+        $template = AvatarTemplate::findOrFail($id);
+        $this->authorize('activate', $template);
+
+        $wasActive = $template->is_active;
+
+        if ($wasActive) {
+            $template->update(['is_active' => false]);
+
+            // Only when something actually changed — an audit trail of no-ops
+            // is noise that makes the real entries harder to find.
+            app(AuditRecorder::class)->record(
+                'avatar_template.deactivated',
+                'avatar_template',
+                $template->id,
+                before: ['name' => $template->name, 'provider' => $template->provider],
+            );
+        }
+
+        return new AvatarTemplateResource($template->fresh());
+    }
+
     public function destroy(int $id): JsonResponse
     {
         $template = AvatarTemplate::findOrFail($id);

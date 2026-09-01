@@ -230,6 +230,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import']);
     Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
+    Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
 
     Route::get('/avatar-templates', [AvatarTemplateController::class, 'index']);
     Route::post('/avatar-templates', [AvatarTemplateController::class, 'store']);

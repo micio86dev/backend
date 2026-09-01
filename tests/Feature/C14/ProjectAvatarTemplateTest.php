@@ -392,3 +392,98 @@ test('the API refuses that deletion with a readable conflict, not a 500', functi
     $response->assertJsonPath('error', 'template_in_use');
     $response->assertJsonPath('project_count', 1);
 });
+
+// ─── Deactivation ─────────────────────────────────────────────────────────────
+
+/**
+ * An admin can take a template out of service without deleting it.
+ *
+ * Only `activate` existed, so the only way to stop offering a template was to
+ * activate a different one — which needs a different one to exist — or to
+ * delete it, which is destructive and now refused outright while any project
+ * pins it.
+ *
+ * What deactivation means changed with the mandatory pin, and for the better.
+ * `is_active` used to be the org-wide FALLBACK, so switching it off silently
+ * changed which template every unpinned project ran on. Every project now names
+ * its own, so `is_active` is just "the one offered as the default for new
+ * projects" — and turning it off is a safe, reversible bookkeeping act rather
+ * than a live reconfiguration.
+ */
+test('an admin can deactivate a template', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    app(TenantResolver::class)->setOrgId($org->id);
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Active one '.uniqid(),
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'is_active' => true,
+    ]));
+
+    $response = $this->withToken($token)
+        ->postJson('/api/avatar-templates/'.$template->id.'/deactivate');
+
+    $response->assertOk();
+    $response->assertJsonPath('data.is_active', false);
+    expect($template->fresh()->is_active)->toBeFalse();
+});
+
+test('deactivating leaves the projects that pin it running on it', function (): void {
+    // The whole reason this is safe now. A pinned template does not have to be
+    // active — `ActiveTemplateResolver` returns what the project pinned — so
+    // taking it out of the default list must not disturb anything live.
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    app(TenantResolver::class)->setOrgId($org->id);
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Pinned and active '.uniqid(),
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'is_active' => true,
+    ]));
+    $project = Project::factory()->create(['avatar_template_id' => $template->id]);
+
+    $this->withToken($token)
+        ->postJson('/api/avatar-templates/'.$template->id.'/deactivate')
+        ->assertOk();
+
+    expect($project->fresh()->avatar_template_id)->toBe($template->id);
+
+    $resolved = TenantContextScope::runFor(
+        $org->id,
+        fn () => app(ActiveTemplateResolver::class)->resolve('heygen', $project->id),
+    );
+
+    expect($resolved?->id)->toBe($template->id);
+});
+
+test('deactivating an already-inactive template is a no-op, not an error', function (): void {
+    // Idempotent on purpose: an operator double-clicking, or two of them acting
+    // at once, must not see a failure for a state that is already correct.
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    app(TenantResolver::class)->setOrgId($org->id);
+    $template = projTemplateFor($org); // created with is_active = false
+
+    $this->withToken($token)
+        ->postJson('/api/avatar-templates/'.$template->id.'/deactivate')
+        ->assertOk();
+
+    expect($template->fresh()->is_active)->toBeFalse();
+});
+
+test("another organization's template cannot be deactivated", function (): void {
+    // A 404, never a 403: the tenant scope means the row is not found at all,
+    // and a 403 would confirm the id exists.
+    $mine = Organization::factory()->create();
+    $theirs = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($mine);
+    $foreign = projTemplateFor($theirs);
+
+    $this->withToken($token)
+        ->postJson('/api/avatar-templates/'.$foreign->id.'/deactivate')
+        ->assertNotFound();
+});
