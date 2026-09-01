@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Organization;
 use App\Models\User;
 use App\Notifications\UserInvitationNotification;
 use App\Support\Http\BackofficeOrigin;
+use App\Support\Mail\EmailBranding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -106,6 +108,16 @@ final class SendUserInvitationJob implements ShouldQueue
             return;
         }
 
+        // The invitation carries the organization's colour (CLAUDE.md ruling
+        // 10: the words are standard, the chrome is per-tenant). Read here
+        // rather than passed in because this job already loads the user, and
+        // an unscoped read of ONE organization by the id on that user crosses
+        // no boundary the request had not already decided.
+        $branding = app(EmailBranding::class);
+        $branding->set(
+            Organization::withoutGlobalScopes()->find($user->organization_id)?->primary_color
+        );
+
         $token = Password::broker()->createToken($user);
         $expiresInMinutes = (int) config('auth.passwords.users.expire');
 
@@ -120,5 +132,9 @@ final class SendUserInvitationJob implements ShouldQueue
                 $this->organizationName,
             ))->locale($user->locale ?? (string) config('app.locale'))
         );
+
+        // Cleared explicitly: a worker handling the next tenant's mail must
+        // not inherit this one's colour.
+        $branding->forget();
     }
 }

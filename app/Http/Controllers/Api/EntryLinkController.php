@@ -164,6 +164,7 @@ final class EntryLinkController extends Controller
                 // feel machine-assembled.
                 $expiresLabel,
                 $minted->lang,
+                $project->organization?->primary_color,
             );
         }
 

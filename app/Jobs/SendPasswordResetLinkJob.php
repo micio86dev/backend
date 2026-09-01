@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\Organization;
 use App\Models\User;
 use App\Notifications\ResetPasswordNotification;
 use App\Support\Http\BackofficeOrigin;
+use App\Support\Mail\EmailBranding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -126,6 +128,14 @@ final class SendPasswordResetLinkJob implements ShouldQueue
         // the route throttle does that — but it IS what stops a repeated
         // request from mail-bombing one inbox, and it runs here rather than
         // in the request precisely because of AD-3.
+        // Branded like the other two. A superadmin has no organization, so
+        // `find(null)` returns null and the message renders in the product's
+        // own colour — which is the correct answer, not a gap.
+        $branding = app(EmailBranding::class);
+        $branding->set(
+            Organization::withoutGlobalScopes()->find($user->organization_id)?->primary_color
+        );
+
         $token = Password::broker()->createToken($user);
 
         $expiresInMinutes = (int) config('auth.passwords.users.expire');
@@ -138,5 +148,7 @@ final class SendPasswordResetLinkJob implements ShouldQueue
                 $expiresInMinutes,
             ))->locale($user->locale ?? (string) config('app.locale'))
         );
+
+        $branding->forget();
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Notifications\CandidateInvitationNotification;
+use App\Support\Mail\EmailBranding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -49,6 +50,14 @@ final class SendCandidateInvitationJob implements ShouldQueue
         private readonly string $projectName,
         private readonly string $expiresAtLabel,
         private readonly string $locale,
+        /**
+         * The organization's `#rrggbb`, or null for the product's own.
+         *
+         * A SCALAR, like everything else this job holds — it is not read back
+         * from a row, so the job still makes no tenant-scoped query and there
+         * is nothing here for a tenant boundary to be crossed by.
+         */
+        private readonly ?string $brandColor = null,
     ) {}
 
     /**
@@ -84,6 +93,13 @@ final class SendCandidateInvitationJob implements ShouldQueue
             return;
         }
 
+        // Set for the duration of this send and cleared after, so a worker
+        // handling the next tenant's mail cannot inherit this one's colour.
+        // CLAUDE.md ruling 10: the words are standard, the chrome is
+        // per-tenant.
+        $branding = app(EmailBranding::class);
+        $branding->set($this->brandColor);
+
         // Routed to an ADDRESS, not to a notifiable model. A Participant is not
         // a user of this system and must never become one — giving it a
         // `routeNotification` method would make every future `notify()` call a
@@ -97,5 +113,7 @@ final class SendCandidateInvitationJob implements ShouldQueue
                 $this->expiresAtLabel,
             ))->locale($this->locale)
         );
+
+        $branding->forget();
     }
 }

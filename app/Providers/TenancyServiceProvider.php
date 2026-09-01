@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Support\Mail\EmailBranding;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
@@ -24,6 +25,12 @@ class TenancyServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(TenantResolver::class, fn () => new TenantResolver);
+
+        // Scoped for the same reason and with the same hazard: a queue worker
+        // is a long-lived process handling one tenant's mail after another's,
+        // and a brand colour that outlived its send would put one
+        // organization's colour on another organization's message.
+        $this->app->scoped(EmailBranding::class, fn () => new EmailBranding);
     }
 
     /**
@@ -80,6 +87,11 @@ class TenancyServiceProvider extends ServiceProvider
             $resolver->setOrgId(null);
             $resolver->setBypass(false);
             $registrar->setPermissionsTeamId(null);
+
+            // A job that brands a message must set this itself, from its own
+            // organization. Inheriting whatever the previous job left is how
+            // one tenant's colour ends up on another tenant's mail.
+            $this->app->make(EmailBranding::class)->forget();
         });
 
         $restore = function () use (&$previousOrgId, &$previousBypass, &$previousTeamId): void {
