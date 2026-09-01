@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
+use App\Models\Project;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\ConfigValidator;
@@ -281,7 +282,23 @@ final class AvatarTemplateController extends Controller
             // well-formed, the state is what refuses it.
             return response()->json([
                 'error' => 'template_active',
-                'message' => 'Activate another template before deleting this one.',
+                'message' => 'template_active',
+            ], Response::HTTP_CONFLICT);
+        }
+
+        // `projects.avatar_template_id` is NOT NULL with `restrictOnDelete`, so
+        // the database would refuse this anyway — as a raw foreign-key
+        // violation, which reaches the operator as a 500 and tells them
+        // nothing. Refusing here turns it into the same well-formed 409 the
+        // active-template case already returns, and names the count so the
+        // operator knows how much work reassigning it is before they start.
+        $projectCount = Project::where('avatar_template_id', $template->id)->count();
+
+        if ($projectCount > 0) {
+            return response()->json([
+                'error' => 'template_in_use',
+                'message' => 'template_in_use',
+                'project_count' => $projectCount,
             ], Response::HTTP_CONFLICT);
         }
 

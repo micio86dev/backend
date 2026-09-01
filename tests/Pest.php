@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -518,3 +520,33 @@ pest()->use(RefreshDatabase::class)
 // `gemini-3-flash-preview` fails on `llm_models_key_unique`.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Deploy');
+
+// ─── projects.avatar_template_id is NOT NULL ──────────────────────────────────
+
+/**
+ * The current tenant's avatar template id, creating one if it has none.
+ *
+ * `projects.avatar_template_id` is required, so every payload that creates a
+ * project through the API has to carry one. Shared here rather than copied into
+ * each suite's payload builder: ten test files POST to `/api/projects`, and a
+ * per-file copy would be ten places to fix the next time this constraint moves.
+ *
+ * Resolves through the tenant-scoped model on purpose. The template is looked
+ * up — and created — inside whatever tenant context the test has already set,
+ * so it can never belong to a different organization than the project that is
+ * about to reference it, which the org-scoped `Rule::exists` would reject.
+ *
+ * REUSES an existing template when there is one. Creating unconditionally would
+ * mean a suite building three projects silently owned three templates, and any
+ * assertion counting an organization's templates would then drift with however
+ * many projects its setup happened to make.
+ */
+function templateIdForCurrentOrg(): int
+{
+    return AvatarTemplate::query()->value('id')
+        ?? AvatarTemplate::create([
+            'name' => 'Test template '.Str::random(10),
+            'provider' => 'heygen',
+            'config' => [],
+        ])->id;
+}

@@ -47,6 +47,7 @@ function crudStandardPayload(int $fvId, array $competencyIds = []): array
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => $competencyIds,
     ];
 }

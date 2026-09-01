@@ -194,8 +194,19 @@ test('14.3: /start response does NOT contain TAVUS_API_KEY value', function (): 
 
     $org = secretOrg();
     $project = secretProject($org);
-    // Force Tavus on the project
-    $project->forceFill(['provider_override' => 'tavus'])->save();
+    // Force Tavus by PINNING a Tavus template, not by `provider_override`.
+    //
+    // `projects.avatar_template_id` is required and the pinned template decides
+    // the provider, so `provider_override` can no longer be reached — it sat
+    // below the template in the precedence chain and nothing can pin nothing
+    // any more. Leaving it here would have left this test starting a HeyGen
+    // interview against a Tavus fake, which is the 500 it produced.
+    $tavusTemplate = AvatarTemplate::create([
+        'name' => 'Secret tavus '.uniqid(),
+        'provider' => 'tavus',
+        'config' => [],
+    ]);
+    $project->forceFill(['avatar_template_id' => $tavusTemplate->id])->save();
     $comp = Competency::factory()->create();
     DB::table('project_competencies')->insert([
         'project_id' => $project->id,

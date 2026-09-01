@@ -14,8 +14,19 @@ declare(strict_types=1);
  * had no way to say which one a given project used. The `INTERVIEW_PROVIDER`
  * default silently decided for them.
  *
- * Nullable throughout: the organization-wide active template stays the
- * fallback, so a project that pins nothing behaves exactly as it did.
+ * REQUIRED, and it did not start that way. It shipped nullable with the
+ * organization-wide active template as the fallback, so no existing project had
+ * to change — but that fallback is precisely what let the configuration choose
+ * instead of the project, which is the defect the column was added to fix. It
+ * is now NOT NULL, backfilled from what the fallback would have resolved for
+ * each project.
+ *
+ * Two consequences, both real behaviour changes rather than bookkeeping:
+ *
+ *   - The FK is `restrictOnDelete`, forced by NOT NULL — `nullOnDelete` cannot
+ *     null a NOT NULL column. Deleting a template a project uses is refused.
+ *   - `provider_override` is now UNREACHABLE. It sat below the template in the
+ *     precedence chain, and nothing can pin nothing any more.
  */
 
 use App\Models\AvatarTemplate;
@@ -26,6 +37,8 @@ use App\Models\User;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
 use App\Support\Tenancy\TenantContextScope;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -76,14 +89,47 @@ function projTemplateFramework(Organization $org): FrameworkVersion
 
 // ─── Persistence and default ─────────────────────────────────────────────────
 
-test('the column is optional and defaults to null', function (): void {
-    // Pinning nothing is a supported configuration, not a missing setting:
-    // the organization's active template is what such a project falls back to,
-    // which is exactly what every project did before this column existed.
+test('the column is REQUIRED — a project always names the template it runs on', function (): void {
+    // It shipped nullable, with the organization's active template as the
+    // fallback. That fallback is exactly what let the configuration choose
+    // silently instead of the project, which is the defect the column was added
+    // to fix, so the fallback is gone and the column is NOT NULL.
     $org = Organization::factory()->create();
     app(TenantResolver::class)->setOrgId($org->id);
 
-    expect(Project::factory()->create()->fresh()->avatar_template_id)->toBeNull();
+    expect(Project::factory()->create()->fresh()->avatar_template_id)->not->toBeNull();
+});
+
+test('the constraint lives in the SCHEMA, not only in a FormRequest', function (): void {
+    // "Every project has a template" has to be true for the portability import
+    // path and any future writer, not only for requests that happen to go
+    // through validation — so it is a NOT NULL column, and this reads the
+    // catalogue to prove it.
+    //
+    // Asserted by INSPECTION rather than by provoking a violation: in Postgres
+    // a failed statement aborts the surrounding transaction, and
+    // `RefreshDatabase` wraps each test in one, so a deliberate constraint
+    // breach leaves the connection unusable for the rest of the test and
+    // destabilises its rollback.
+    $nullable = DB::selectOne(
+        "select is_nullable from information_schema.columns
+         where table_name = 'projects' and column_name = 'avatar_template_id'"
+    );
+
+    expect($nullable?->is_nullable)->toBe('NO');
+
+    // And the FK is RESTRICT, not the `nullOnDelete` it shipped with — the two
+    // are mutually exclusive once the column is NOT NULL.
+    $rule = DB::selectOne(
+        "select rc.delete_rule
+         from information_schema.referential_constraints rc
+         join information_schema.table_constraints tc
+           on tc.constraint_name = rc.constraint_name
+         where tc.table_name = 'projects'
+           and tc.constraint_name = 'projects_avatar_template_id_foreign'"
+    );
+
+    expect($rule?->delete_rule)->toBe('RESTRICT');
 });
 
 // ─── Write surface ───────────────────────────────────────────────────────────
@@ -118,9 +164,14 @@ test('an operator can pin a template on update', function (): void {
     $response->assertJsonPath('data.avatar_template_id', $template->id);
 });
 
-test('an operator can UNPIN, returning the project to the organization fallback', function (): void {
-    // Without an explicit route back to null, pinning would be a one-way door:
-    // an operator could never restore the org-wide default they started from.
+test('UNPINNING is refused — there is nothing to unpin to any more', function (): void {
+    // The mirror image of the earlier behaviour, and deliberately so. While the
+    // column was nullable, an explicit null was a legal unpin back to the
+    // organization fallback. That fallback is gone, so a null would leave the
+    // project with no template — and its interviews running on whatever the
+    // configuration happened to say, which is the defect this column exists to
+    // remove. `sometimes` WITHOUT `nullable` is what encodes that: a PATCH may
+    // omit the field, but it may not empty it.
     $org = Organization::factory()->create();
     ['token' => $token] = projTemplateAdmin($org);
     app(TenantResolver::class)->setOrgId($org->id);
@@ -131,9 +182,37 @@ test('an operator can UNPIN, returning the project to the organization fallback'
         'avatar_template_id' => null,
     ]);
 
+    $response->assertUnprocessable();
+    $response->assertJsonValidationErrors(['avatar_template_id']);
+    expect($project->fresh()->avatar_template_id)->toBe($template->id);
+});
+
+test('a PATCH that does not mention the template leaves it alone', function (): void {
+    // `sometimes` still has to mean "untouched", or every unrelated edit would
+    // demand the operator restate the binding.
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    app(TenantResolver::class)->setOrgId($org->id);
+    $template = projTemplateFor($org);
+    $project = Project::factory()->create(['avatar_template_id' => $template->id]);
+
+    $response = $this->withToken($token)->patchJson('/api/projects/'.$project->id, [
+        'name' => 'Renamed, nothing else',
+    ]);
+
     $response->assertOk();
-    $response->assertJsonPath('data.avatar_template_id', null);
-    expect($project->fresh()->avatar_template_id)->toBeNull();
+    expect($project->fresh()->avatar_template_id)->toBe($template->id);
+});
+
+test('creating a project without a template is refused', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    $fv = projTemplateFramework($org);
+
+    $response = $this->withToken($token)->postJson('/api/projects', projTemplatePayload($fv->id));
+
+    $response->assertUnprocessable();
+    $response->assertJsonValidationErrors(['avatar_template_id']);
 });
 
 // ─── Tenancy ─────────────────────────────────────────────────────────────────
@@ -219,16 +298,31 @@ test('a pinned template decides the provider, overriding the env default', funct
     expect(projTemplateResolvedProvider($project->fresh()))->toBe('tavus');
 });
 
-test('provider_override still applies when nothing is pinned', function (): void {
-    // The precedence chain's middle rung must keep working: pinning is an
-    // ADDITION above `provider_override`, never a replacement for it.
+test('the pinned template outranks provider_override, which is now unreachable', function (): void {
+    // A CONSEQUENCE of making the template required, recorded rather than left
+    // to be rediscovered. `provider_override` used to be the middle rung of the
+    // precedence chain and applied whenever a project pinned nothing. Nothing
+    // can pin nothing any more, so that rung can never be reached: the template
+    // always decides.
+    //
+    // The column is deliberately NOT removed here. It predates this change
+    // (C7a), the migration below reads it while backfilling, and deleting a
+    // column to tidy a precedence chain is a separate decision with its own
+    // migration. What must not happen is a test asserting behaviour the schema
+    // has made impossible — that is a test that can only ever pass by accident.
     config(['interview.provider' => 'heygen']);
 
     $org = Organization::factory()->create();
     app(TenantResolver::class)->setOrgId($org->id);
-    $project = Project::factory()->create(['provider_override' => 'tavus']);
 
-    expect(projTemplateResolvedProvider($project->fresh()))->toBe('tavus');
+    $heygenTemplate = projTemplateFor($org, 'heygen');
+    $project = Project::factory()->create([
+        'avatar_template_id' => $heygenTemplate->id,
+        'provider_override' => 'tavus',
+    ]);
+
+    // The override says tavus, the template says heygen, and the template wins.
+    expect(projTemplateResolvedProvider($project->fresh()))->toBe('heygen');
 });
 
 test('two projects on the same provider can run different templates', function (): void {
@@ -255,17 +349,46 @@ test('two projects on the same provider can run different templates', function (
 
 // ─── Deleting the template must not delete the project ───────────────────────
 
-test('deleting a pinned template returns its projects to the fallback, never deletes them', function (): void {
-    // `nullOnDelete`, not `cascadeOnDelete`. A project is a far heavier object
-    // than a template, and losing one because a cosmetic setting was removed
-    // would be catastrophic and completely unexpected.
+test('deleting a template a project uses is REFUSED, never cascaded', function (): void {
+    // `restrictOnDelete`, forced by NOT NULL: the two earlier options are both
+    // gone. `nullOnDelete` cannot null a NOT NULL column, and `cascadeOnDelete`
+    // would delete PROJECTS because a cosmetic setting was removed — a project
+    // is a far heavier object than a template, and losing one that way would be
+    // catastrophic and completely unexpected.
+    //
+    // Asserted at the database, so it holds for any writer, not only the
+    // controller that returns the friendly 409.
     $org = Organization::factory()->create();
     app(TenantResolver::class)->setOrgId($org->id);
     $template = projTemplateFor($org);
     $project = Project::factory()->create(['avatar_template_id' => $template->id]);
 
-    TenantContextScope::runFor($org->id, fn () => $template->delete());
+    // Only the throw is asserted, and that is a Postgres constraint rather than
+    // a shortcut: a failed statement ABORTS the surrounding transaction, and
+    // `RefreshDatabase` wraps each test in one — so any `$project->fresh()`
+    // after this point fails with "current transaction is aborted" and would
+    // report a false negative about the project's survival. That the project
+    // survives is what `restrictOnDelete` MEANS (the delete never happens), and
+    // the API-level test below observes it outside an aborted transaction.
+    expect($project->exists)->toBeTrue();
 
-    expect($project->fresh())->not->toBeNull();
-    expect($project->fresh()->avatar_template_id)->toBeNull();
+    expect(fn () => TenantContextScope::runFor($org->id, fn () => $template->delete()))
+        ->toThrow(QueryException::class);
+});
+
+test('the API refuses that deletion with a readable conflict, not a 500', function (): void {
+    // Without this guard the FK violation surfaces as an unhandled exception —
+    // a 500 that tells the operator nothing about what to do. The count is
+    // included so they know how much reassigning is involved before starting.
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    app(TenantResolver::class)->setOrgId($org->id);
+    $template = projTemplateFor($org);
+    Project::factory()->create(['avatar_template_id' => $template->id]);
+
+    $response = $this->withToken($token)->deleteJson('/api/avatar-templates/'.$template->id);
+
+    $response->assertConflict();
+    $response->assertJsonPath('error', 'template_in_use');
+    $response->assertJsonPath('project_count', 1);
 });

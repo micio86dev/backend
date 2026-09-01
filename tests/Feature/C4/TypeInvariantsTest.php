@@ -64,6 +64,7 @@ test('valid standard project with correct role and subset → 201', function ():
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$competencyId],
     ])->assertCreated();
 });
@@ -83,6 +84,7 @@ test('standard + invalid role_code → 422', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'INVALID',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertUnprocessable();
 });
@@ -109,6 +111,7 @@ test('standard + out-of-role competency → 422', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$fllOnlyId],
     ])->assertUnprocessable();
 });
@@ -134,6 +137,7 @@ test('standard + potential competency (MTG) → 422', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$mtg->id],
     ])->assertUnprocessable();
 });
@@ -164,6 +168,7 @@ test('valid potential project with MTG + LAT seeded → 201', function (): void 
         'assessment_type' => 'potential',
         'role_code' => null,
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$mtg->id, $lat->id],
     ])->assertCreated();
 });
@@ -183,6 +188,7 @@ test('potential + non-null role_code → 422', function (): void {
         'assessment_type' => 'potential',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertUnprocessable();
 });
@@ -212,6 +218,7 @@ test('potential + standard competency (PRS) → 422', function (): void {
         'assessment_type' => 'potential',
         'role_code' => null,
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$prs->id],
     ])->assertUnprocessable();
 });
@@ -241,6 +248,7 @@ test('mixed standard+potential competencies → 422', function (): void {
         'assessment_type' => 'potential',
         'role_code' => null,
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$stdId, $mtg->id],
     ])->assertUnprocessable();
 });
@@ -263,6 +271,7 @@ test('potential + neither MTG/LAT seeded → 422 POTENTIAL_CATALOG_INCOMPLETE', 
         'assessment_type' => 'potential',
         'role_code' => null,
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ]);
     $response->assertUnprocessable();
@@ -294,6 +303,7 @@ test('potential + only MTG seeded → 422 POTENTIAL_CATALOG_INCOMPLETE', functio
         'assessment_type' => 'potential',
         'role_code' => null,
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ]);
     $response->assertUnprocessable();

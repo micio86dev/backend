@@ -51,6 +51,7 @@ function c10StandardProjectPayload(int $fvId): array
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
     ];
 }
 

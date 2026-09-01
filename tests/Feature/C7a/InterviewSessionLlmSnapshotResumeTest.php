@@ -84,6 +84,22 @@ function llmSnapshotTemplate(int $orgId, ?int $modelId, ?int $credentialId, ?str
     });
 }
 
+/**
+ * Point a project at a template.
+ *
+ * These tests create the template and the project in either order, and while
+ * `ActiveTemplateResolver` answered with the organization-wide active template
+ * that was enough — activating one changed what the session resolved. It is not
+ * any more: `projects.avatar_template_id` is NOT NULL and the resolver returns
+ * what the PROJECT pinned, so a template built after its project would never be
+ * reached and the snapshot would record `unbound` against a binding the test
+ * had carefully set up.
+ */
+function llmSnapshotPin(Project $project, AvatarTemplate $template): void
+{
+    $project->forceFill(['avatar_template_id' => $template->id])->saveQuietly();
+}
+
 function llmSnapshotSession(int $orgId, Project $project, Participant $participant): InterviewSession
 {
     $resolver = app(TenantResolver::class);
@@ -120,6 +136,7 @@ test('avatar_template_id and llm_model_key are write-once — a resume with a di
     $model = llmSnapshotModel();
     $credential = llmSnapshotCredential($org->id);
     $templateA = llmSnapshotTemplate($org->id, $model->id, $credential->id, 'synced');
+    llmSnapshotPin($project, $templateA);
 
     $session = llmSnapshotSession($org->id, $project, $participant);
 
@@ -173,6 +190,7 @@ test('llm_binding_status is write-once then DOWNGRADE-ONLY — applied never cli
     $model = llmSnapshotModel();
     $credential = llmSnapshotCredential($org->id);
     $template = llmSnapshotTemplate($org->id, $model->id, $credential->id, 'synced');
+    llmSnapshotPin($project, $template);
 
     $session = llmSnapshotSession($org->id, $project, $participant);
 
@@ -255,7 +273,14 @@ test('an unbound resolved template (or none) snapshots unbound, llm_model_key nu
     ]);
     $participant->save();
 
-    // No active template at all for 'heygen'.
+    // A template with NO LLM binding — which is what "unbound" means here.
+    //
+    // This used to read "no active template at all", and that state no longer
+    // exists: `projects.avatar_template_id` is NOT NULL, so every project names
+    // one. The distinction the test is really about is untouched and is the
+    // interesting one: a template can exist, be pinned, and still carry no
+    // model/credential pair, and the snapshot must record that honestly rather
+    // than reporting a binding it does not have.
     $session = llmSnapshotSession($org->id, $project, $participant);
 
     $stamper = app(InterviewSessionLlmSnapshot::class);
@@ -264,7 +289,10 @@ test('an unbound resolved template (or none) snapshots unbound, llm_model_key nu
 
     expect($session->llm_binding_status)->toBe(LlmBindingStatus::Unbound->value)
         ->and($session->llm_model_key)->toBeNull()
-        ->and($session->avatar_template_id)->toBeNull();
+        // The TEMPLATE is recorded — it exists and the session ran on it. Only
+        // the BINDING is absent, and conflating the two would lose which
+        // template a session used whenever that template had no LLM attached.
+        ->and($session->avatar_template_id)->not->toBeNull();
 });
 
 test('a successfully applied binding snapshots applied, llm_model_key equals the bound model key', function (): void {
@@ -286,6 +314,7 @@ test('a successfully applied binding snapshots applied, llm_model_key equals the
     $model = llmSnapshotModel();
     $credential = llmSnapshotCredential($org->id);
     $template = llmSnapshotTemplate($org->id, $model->id, $credential->id, 'synced');
+    llmSnapshotPin($project, $template);
 
     $session = llmSnapshotSession($org->id, $project, $participant);
 

@@ -232,6 +232,22 @@ final class DemoWriter
      */
     private function writeProjects(Organization $organization, FrameworkVersion $version): array
     {
+        // `projects.avatar_template_id` is NOT NULL — every project names the
+        // template it runs on. `writeAvatarTemplates()` runs BEFORE this method
+        // for exactly that reason, so one always exists by now; the guard is
+        // here because a silent null would surface as a raw constraint
+        // violation halfway through seeding, with no indication of which step
+        // was actually at fault.
+        $templateId = AvatarTemplate::query()->orderByDesc('is_active')->orderBy('id')->value('id');
+
+        if ($templateId === null) {
+            throw new RuntimeException(
+                'Demo seeding cannot create projects: no avatar template exists for this '
+                .'organization, and `projects.avatar_template_id` is required. '
+                .'`writeAvatarTemplates()` must run first.'
+            );
+        }
+
         $projects = [];
 
         foreach (DemoDataset::projects() as $definition) {
@@ -248,6 +264,9 @@ final class DemoWriter
                     'status' => $definition['status'],
                     'pause_every_n_competencies' => $definition['pause_every_n_competencies'],
                     'nudge_min_chars' => $definition['nudge_min_chars'],
+                    // Active-first, so the demo's projects run on the template
+                    // an operator would see selected — not an arbitrary one.
+                    'avatar_template_id' => $templateId,
                 ]);
 
                 $competencyIds = Competency::whereIn('code', $definition['competencies'])
