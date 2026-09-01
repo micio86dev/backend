@@ -19,9 +19,12 @@ declare(strict_types=1);
  * the only check in the chain that reads both sides.
  */
 
+use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
@@ -114,4 +117,42 @@ test('GET /api/auth/me returns exactly the envelope the spec declares', function
     sort($declaredGroups);
 
     expect($actualGroups)->toBe($declaredGroups);
+});
+
+test('GET /api/candidate/session returns exactly what the candidate resource declares', function (): void {
+    // The one that proves the point twice over: `branding` was in the response
+    // and missing from the `@scramble-return` docblock, so the candidate app's
+    // generated client had no field to read and the white-label promise
+    // stopped at the backoffice — with nothing failing anywhere.
+    //
+    // The key set is also a SECURITY assertion here. A candidate is an
+    // outsider holding a short-lived token; a field added to this resource
+    // later must be a deliberate decision to show them, not something that
+    // arrived because a spread got wider.
+    $org = Organization::factory()->create();
+    app(TenantResolver::class)->setOrgId($org->id);
+
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'organization_id' => $org->id,
+        'framework_version_id' => $fv->id,
+    ]);
+    $participant = Participant::factory()->create([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+    ]);
+
+    $token = CandidateTokenFactory::mintCandidateToken($participant->fresh());
+
+    $response = $this->withToken($token)->getJson('/api/candidate/session');
+    $response->assertOk();
+
+    $actual = array_keys($response->json('data'));
+    sort($actual);
+
+    expect($actual)->toBe(specProperties('App.Http.Resources.ParticipantResource'));
+
+    // organization_id is excluded by design — no internal-id leak to someone
+    // outside the tenant.
+    expect($actual)->not->toContain('organization_id');
 });

@@ -4926,6 +4926,27 @@
                             "null"
                         ]
                     },
+                    "branding": {
+                        "type": "object",
+                        "properties": {
+                            "primary_color": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "logo_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "primary_color",
+                            "logo_url"
+                        ]
+                    },
                     "project": {
                         "type": [
                             "object",
@@ -4984,6 +5005,7 @@
                     "started_at",
                     "completed_at",
                     "created_at",
+                    "branding",
                     "project"
                 ],
                 "title": "App.Http.Resources.ParticipantResource"
