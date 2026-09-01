@@ -521,6 +521,32 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Deploy');
 
+// ─── Directories added by later slices ────────────────────────────────────────
+//
+// EVERY Feature subdirectory has to be named here. `->in('Feature')` at the top
+// of this file deliberately does NOT apply RefreshDatabase — `Feature/HealthTest`
+// is DB-free — so a directory nobody remembered to register runs against the
+// REAL test database with no transaction, and its rows outlive the run. That
+// does not fail loudly; it fails as "email has already been taken" in an
+// unrelated test on the second execution.
+//
+// `tests/Arch/FeatureDirectoriesRegisteredArchTest.php` fails when a new one is
+// added and not listed here, because remembering is not a mechanism.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Authorization');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Contract');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Invitations');
+
+// PRE-EXISTING, found by the arch test above rather than by anyone noticing:
+// `Feature/Admin/EvaluationMetaTest.php` creates rows with factories and was
+// registered nowhere, so its rows survived every run.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Admin');
+
 // ─── projects.avatar_template_id is NOT NULL ──────────────────────────────────
 
 /**
