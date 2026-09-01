@@ -108,7 +108,13 @@ test('binding a template is audited as avatar_template.llm_bound with names, nev
     expect($log)->not->toBeNull();
     expect($log->after['model_key'])->toBe('gemini-3-flash-preview');
     expect($log->after['credential_name'])->toBe('Bind action credential');
-    expect(json_encode($log->after))->not->toContain((string) $model->id);
+    // Compared VALUE BY VALUE, not as a substring of the encoded payload.
+    // `$model->id` is a small auto-increment integer, so a substring check
+    // reads "3" out of `gemini-3-flash-preview` and fails on a payload that is
+    // perfectly correct — the test broke on the id the sequence happened to
+    // hand out, not on anything the code did.
+    expect(array_values($log->after))->not->toContain($model->id)
+        ->and(array_values($log->after))->not->toContain((string) $model->id);
     expect(json_encode($log->after))->not->toContain('sk-real-key');
 });
 

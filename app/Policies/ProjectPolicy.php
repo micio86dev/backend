@@ -61,6 +61,16 @@ class ProjectPolicy
      */
     public function delete(User $user, Project $project): bool
     {
-        return $user->hasRole('admin') || $user->hasRole('operator');
+        // ADMIN ONLY, narrowed from admin-or-operator.
+        //
+        // A project carries every participant, session, transcript and
+        // evaluation beneath it. Deleting one is not the same class of act as
+        // editing its settings — which an operator still may do — and the two
+        // had been sharing a permission.
+        //
+        // Soft delete, so this hides rather than destroys; that makes the
+        // narrowing safe to apply retroactively rather than a reason to skip
+        // it.
+        return $user->hasRole('admin');
     }
 }

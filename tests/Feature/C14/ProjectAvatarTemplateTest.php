@@ -29,6 +29,7 @@ declare(strict_types=1);
  *     precedence chain, and nothing can pin nothing any more.
  */
 
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Models\AvatarTemplate;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
@@ -363,16 +364,28 @@ test('deleting a template a project uses is REFUSED, never cascaded', function (
     $template = projTemplateFor($org);
     $project = Project::factory()->create(['avatar_template_id' => $template->id]);
 
-    // Only the throw is asserted, and that is a Postgres constraint rather than
-    // a shortcut: a failed statement ABORTS the surrounding transaction, and
-    // `RefreshDatabase` wraps each test in one — so any `$project->fresh()`
-    // after this point fails with "current transaction is aborted" and would
-    // report a false negative about the project's survival. That the project
-    // survives is what `restrictOnDelete` MEANS (the delete never happens), and
-    // the API-level test below observes it outside an aborted transaction.
+    // The enforcement point MOVED when the template learned to soft-delete.
+    // A soft delete is an UPDATE of `deleted_at`, and no foreign key inspects
+    // an update — so `restrictOnDelete` silently stopped covering the ordinary
+    // delete path and now only covers a FORCE delete. Both are asserted, at
+    // the layer that actually holds each one, because a template that
+    // disappears out from under a project is the same catastrophe either way:
+    // the project stays valid at the database and unusable in the product.
     expect($project->exists)->toBeTrue();
 
+    // Soft path — the model guard.
     expect(fn () => TenantContextScope::runFor($org->id, fn () => $template->delete()))
+        ->toThrow(AvatarTemplateInUseException::class);
+
+    expect($project->fresh())->not->toBeNull()
+        ->and(AvatarTemplate::find($template->id))->not->toBeNull();
+
+    // Hard path — still the Postgres constraint. Asserted last and nothing is
+    // read after it: a failed statement ABORTS the surrounding transaction,
+    // and `RefreshDatabase` wraps each test in one, so any query following it
+    // fails with "current transaction is aborted" and would report a false
+    // negative about the project's survival.
+    expect(fn () => TenantContextScope::runFor($org->id, fn () => $template->forceDelete()))
         ->toThrow(QueryException::class);
 });
 
