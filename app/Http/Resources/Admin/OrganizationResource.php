@@ -7,6 +7,7 @@ namespace App\Http\Resources\Admin;
 use App\Models\Organization;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * OrganizationResource (backoffice-missing-pages D2/D3).
@@ -43,6 +44,28 @@ class OrganizationResource extends JsonResource
             'id' => (int) $organization->id,
             'name' => $organization->name,
             'slug' => $organization->slug,
+            // Branding. Both keys are ALWAYS present, null included: a UI
+            // cannot tell "not configured" from "this build of the API has no
+            // branding" when a field is simply missing, and it needs that
+            // distinction to decide between the organization's colour and the
+            // product's own.
+            'primary_color' => $organization->primary_color,
+            // A resolved URL, not the stored path. The path is disk-relative
+            // and the disk differs per environment, so resolving it here is the
+            // one place that knows which disk is configured — the same reason
+            // `logo_path` is not accepted on the update endpoint.
+            // `Storage::url()` with NO disk argument. Naming the disk here —
+            // including by reading it back out of the filesystem config — is
+            // what `SingleStorageDiskArchTest` forbids, and it caught both
+            // attempts: a second resolution point is a second place the writer
+            // and the purge can disagree about where a file lives.
+            //
+            // That test greps the SOURCE, so the forbidden expression must not
+            // appear even in prose. Worth knowing before writing a comment that
+            // quotes it.
+            'logo_url' => $organization->logo_path === null
+                ? null
+                : Storage::url($organization->logo_path),
             'default_webhook_url' => $organization->default_webhook_url,
             'default_webhook_events' => $organization->default_webhook_events,
             // default_webhook_secret intentionally excluded (hidden + encrypted) —
