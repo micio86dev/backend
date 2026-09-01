@@ -10,6 +10,7 @@ use App\Support\Auth\RefreshRotateResult;
 use App\Support\Auth\RefreshRotateStatus;
 use App\Support\Auth\RefreshTokenCookie;
 use App\Support\Auth\RefreshTokenStore;
+use App\Support\Authorization\UserAbilities;
 use App\Support\ProfilePhotoUrlSigner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -178,6 +179,12 @@ final class AuthController extends Controller
                 'name' => $org->name,
             ] : null,
             'roles' => $user->getRoleNames(),
+            // Resolved by the POLICIES, not by reading the role names above.
+            // The backoffice renders navigation and action buttons from this,
+            // so a policy change removes the button on the next page load and
+            // the two repositories cannot drift. It is a rendering hint and
+            // never the enforcement point — every endpoint still authorizes.
+            'abilities' => app(UserAbilities::class)->for($user),
         ]);
     }
 

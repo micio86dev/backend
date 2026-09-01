@@ -6,6 +6,8 @@ namespace App\Http\Resources;
 
 use App\Models\Competency;
 use App\Models\Project;
+use App\Models\User;
+use App\Support\Authorization\UserAbilities;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -92,6 +94,16 @@ class ProjectResource extends JsonResource
                     'type' => $c->type,
                     'position' => (int) $c->pivot->getAttribute('position'),
                 ])->all())
+                : [],
+            // Per-record, resolved by ProjectPolicy — never re-derived from a
+            // role name in the client. Deleting is admin-only while editing is
+            // not, so a single "is this user privileged" flag cannot express
+            // it and the row has to carry its own answer.
+            //
+            // A rendering hint, not a control: the endpoints authorize
+            // independently, and a hidden button is not a closed door.
+            'can' => $request->user() instanceof User
+                ? app(UserAbilities::class)->forModel($request->user(), $project, ['update', 'delete'])
                 : [],
         ];
     }

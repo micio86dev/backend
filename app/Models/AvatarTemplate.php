@@ -135,6 +135,38 @@ class AvatarTemplate extends TenantModel
             }
         });
 
+        static::deleted(function (self $template): void {
+            if ($template->isForceDeleting()) {
+                return;
+            }
+
+            // A soft-deleted template keeps its ROW, and its row keeps its
+            // `llm_credential_id` — which `llm_credentials` references with
+            // ON DELETE RESTRICT. The credential-deletion guard counts BOUND
+            // templates to decide whether removing a credential is safe, and
+            // that count applies the soft-delete scope while the foreign key
+            // does not. The two disagreed: the guard saw nothing, allowed the
+            // delete, and Postgres refused it as an unhandled 500.
+            //
+            // The binding is torn down at the provider before the template is
+            // deleted (HeygenLlmRegistrar::forget), so it is already dead by
+            // the time we get here — nulling it makes the row agree with
+            // reality rather than inventing a new rule. Both columns go
+            // together because I1's CHECK constraint refuses a half-bound row.
+            //
+            // Written through the query builder deliberately: `runSoftDelete`
+            // updates ONLY `deleted_at`, so dirty attributes set in a
+            // `deleting` hook are silently dropped, and this has to happen
+            // after the row is already marked deleted.
+            static::withoutGlobalScopes()
+                ->whereKey($template->getKey())
+                ->update(['llm_model_id' => null, 'llm_credential_id' => null]);
+
+            $template->llm_model_id = null;
+            $template->llm_credential_id = null;
+            $template->syncOriginalAttributes(['llm_model_id', 'llm_credential_id']);
+        });
+
         static::saving(function (self $template): void {
             // Unbound is always legal; I1's CHECK handles the half-bound
             // case at the database. Nothing to check here.
