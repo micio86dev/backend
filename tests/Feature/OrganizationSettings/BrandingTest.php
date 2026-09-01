@@ -18,7 +18,11 @@ declare(strict_types=1);
  */
 
 use App\Models\Organization;
+use App\Models\Participant;
+use App\Models\Project;
 use App\Models\User;
+use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantContextScope;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -343,4 +347,95 @@ test('one organization cannot touch another organization logo', function (): voi
     $this->withToken($token)->deleteJson('/api/organization/logo')->assertOk();
 
     expect($theirs->fresh()->logo_path)->toBe('organization-logos/999/x.png');
+});
+
+// ─── The candidate app needs the branding too ─────────────────────────────────
+
+function brandingParticipant(Organization $org): Participant
+{
+    return TenantContextScope::runFor($org->id, function () use ($org): Participant {
+        $project = Project::factory()->create(['organization_id' => $org->id, 'status' => 'active']);
+
+        $participant = new Participant;
+        $participant->forceFill([
+            'organization_id' => $org->id,
+            'project_id' => $project->id,
+            'candidate_ref' => 'brand-'.uniqid(),
+            'display_name' => 'Branding Candidate',
+            'status' => 'in_attesa',
+        ]);
+        $participant->save();
+
+        return $participant;
+    });
+}
+
+function brandingCandidateToken(Participant $participant): string
+{
+    return CandidateTokenFactory::mintCandidateToken($participant);
+}
+
+test('the candidate session carries the branding, so the interview looks like the client', function (): void {
+    // The candidate is NOT a user of the organization and cannot call
+    // `/api/organization` — that endpoint is admin-authenticated. Branding
+    // therefore rides along with the bootstrap the app already makes, rather
+    // than needing a second endpoint and a second round trip before the page
+    // can paint.
+    Storage::fake();
+
+    $org = Organization::factory()->create(['primary_color' => '#7C3AED']);
+    ['token' => $adminToken] = brandingUser($org, 'admin');
+
+    $this->withToken($adminToken)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $participant = brandingParticipant($org);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.brandingCandidateToken($participant),
+    ])->getJson('/api/candidate/session');
+
+    $response->assertOk();
+    $response->assertJsonPath('data.branding.primary_color', '#7C3AED');
+    expect($response->json('data.branding.logo_url'))->not->toBeNull();
+});
+
+test('the candidate session exposes branding and NOTHING else about the organization', function (): void {
+    // The tenant boundary. A candidate is an outsider holding a short-lived
+    // token; the organization's name, webhook configuration and every other
+    // setting are none of their business. Only the two fields the page has to
+    // paint with are exposed, asserted as an exact key set so a future field
+    // added to `OrganizationResource` cannot leak here by accident.
+    $org = Organization::factory()->create([
+        'primary_color' => '#123456',
+        'default_webhook_url' => 'https://secret.example.test/hook',
+    ]);
+    $participant = brandingParticipant($org);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.brandingCandidateToken($participant),
+    ])->getJson('/api/candidate/session');
+
+    $response->assertOk();
+    expect(array_keys($response->json('data.branding')))
+        ->toEqualCanonicalizing(['primary_color', 'logo_url']);
+    expect(json_encode($response->json()))->not->toContain('secret.example.test');
+});
+
+test('an organization with no branding sends nulls, never a fabricated default', function (): void {
+    // Null means "use the product palette", and the candidate app decides that
+    // by NOT overriding its own tokens. Sending the Quint purple from here
+    // would put a second copy of that constant on the wire, and the two would
+    // drift.
+    $org = Organization::factory()->create();
+    $participant = brandingParticipant($org);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.brandingCandidateToken($participant),
+    ])->getJson('/api/candidate/session');
+
+    $response->assertOk();
+    $response->assertJsonPath('data.branding.primary_color', null);
+    $response->assertJsonPath('data.branding.logo_url', null);
 });

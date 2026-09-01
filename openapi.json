@@ -572,6 +572,52 @@
                 }
             }
         },
+        "/avatar-templates/{id}/deactivate": {
+            "post": {
+                "operationId": "avatarTemplate.deactivate",
+                "description": "Only `activate` existed, so the only ways to stop offering a template\nwere to activate a different one \u2014 which needs a different one to exist \u2014\nor to delete it, which is destructive and is now refused outright while\nany project pins it.\n\nWhat deactivation MEANS changed with the mandatory pin, and for the\nbetter. `is_active` used to be the organization-wide fallback, so\nswitching it off silently changed which template every unpinned project\nran on. Every project now names its own, so `is_active` is only \"the one\n     * offered as the default for new projects\" \u2014 turning it off is reversible\nbookkeeping, not a live reconfiguration.\n\nNO config revalidation, unlike `activate()`. That check exists to catch a\nstale config before a candidate meets it; withdrawing a template can only\nreduce exposure, and refusing to withdraw an ALREADY-invalid one would\ntrap an operator with exactly the template they most want to retire.\n\nIdempotent: deactivating an inactive template is a no-op, so a double\nclick or two operators acting at once never produce a failure for a state\nthat is already correct.",
+                "summary": "Take a template out of service without deleting it",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/avatar-templates": {
             "get": {
                 "operationId": "avatarTemplate.index",
@@ -851,20 +897,46 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "error": {
-                                            "type": "string",
-                                            "const": "template_active"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "template_in_use"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "template_in_use"
+                                                },
+                                                "project_count": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "message",
+                                                "project_count"
+                                            ]
                                         },
-                                        "message": {
-                                            "type": "string",
-                                            "const": "Activate another template before deleting this one."
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "template_active"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "template_active"
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "message"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "error",
-                                        "message"
                                     ]
                                 }
                             }
@@ -2406,6 +2478,98 @@
                 }
             }
         },
+        "/organization/logo": {
+            "post": {
+                "operationId": "organizationLogo.store",
+                "tags": [
+                    "OrganizationLogo"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "logo": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "contentMediaType": "application/octet-stream",
+                                        "description": "Shape only. `mimes` checks the CLAIM \u2014 a browser sends whatever\nMIME type it likes \u2014 so it is a cheap first filter, never the\ndecision. Step 2 is the decision."
+                                    }
+                                },
+                                "required": [
+                                    "logo"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "organizationLogo.destroy",
+                "description": "Absent is a supported state, not a broken one \u2014 DESIGN.md's Quint logo is\nwhat renders when none is configured \u2014 so this is a legitimate action\nrather than an undo.",
+                "summary": "Remove the logo, returning the organization to the product's own mark",
+                "tags": [
+                    "OrganizationLogo"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/participants": {
             "get": {
                 "operationId": "participant.index",
@@ -3779,7 +3943,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "A CODE, not a sentence. A response body is machine-facing (CLAUDE.md:\nmachine-readable values \"are NOT user-facing and are returned\n literally in every locale\"), and only the UI knows the reader's\nlocale. The English prose that used to be here was rendered verbatim\nby the backoffice, so an Italian operator on an Italian page read\nEnglish.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3787,7 +3951,7 @@
                                     "properties": {
                                         "message": {
                                             "type": "string",
-                                            "const": "Your password has been reset. Every device you were signed in on must sign in again."
+                                            "const": "password_reset"
                                         }
                                     },
                                     "required": [
@@ -6372,11 +6536,8 @@
                         "maxLength": 2048
                     },
                     "avatar_template_id": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ],
-                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row."
+                        "type": "integer",
+                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row.\nREQUIRED. It shipped nullable with the organization's active\ntemplate as a fallback, and the fallback is exactly what let the\nconfiguration choose silently instead of the project \u2014 the defect\nthe column was added to fix. An organization that owns no\ntemplate therefore cannot create a project until it has one:\ndeliberate, and surfaced as a validation error on this field\nrather than as an interview that runs on something nobody chose."
                     },
                     "webhook_secret": {
                         "type": [
@@ -6416,7 +6577,8 @@
                     "slug",
                     "name",
                     "assessment_type",
-                    "language"
+                    "language",
+                    "avatar_template_id"
                 ],
                 "title": "StoreProjectRequest"
             },
@@ -6551,6 +6713,14 @@
                                 "evaluation"
                             ]
                         }
+                    },
+                    "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The primary colour is CSS, and is validated as CSS rather than as\na string that happens to look like one. It is interpolated into a custom property in both Nuxt apps, so a\nvalue that is not a colour becomes a stylesheet that silently\ndoes not apply, and one carrying `;` or `}` appends rules of its\nown to every page an operator's candidates load.\n\n`\\z`, NOT `$`, and that difference is the whole security of this\nrule. In PCRE `$` also matches immediately BEFORE a final\nnewline, so `/^#[0-9a-f]{6}$/` accepts `\"#123456\\n\"` \u2014 and the\nnewline is exactly what lets a payload open a second declaration\nonce it is interpolated into a stylesheet. `\\z` matches only at\nthe true end of the subject. Caught by the injection test, which\nfailed against the `$` version of this rule.\n\nThree-digit shorthand is deliberately refused so the apps never\nhave to expand it \u2014 one canonical form, and an operator pasting\n`#abc` is told so rather than getting a colour that quietly\ndiffers from the one they copied.\n\n`nullable` is the route back to the product palette; without it,\nchoosing a colour would be a one-way door.",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
                     }
                 },
                 "title": "UpdateOrganizationRequest"
