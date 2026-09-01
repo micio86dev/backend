@@ -30,6 +30,19 @@ use App\Models\User;
  */
 class AvatarTemplatePolicy
 {
+    /**
+     * STILL admin-only, and deliberately so.
+     *
+     * Widening this was tried and reverted. An operator does need to pick a
+     * template for every project they create — `projects.avatar_template_id`
+     * is NOT NULL — but this resource carries `config`, and that holds
+     * provider-side identifiers (avatarId, voiceId, faceId, palId) which are
+     * closer to credentials than to settings. Handing an operator the whole
+     * record to let them read a name is a bad trade.
+     *
+     * `listOptions` below is the narrow answer: id, name and provider, which
+     * is exactly what choosing one requires and nothing else.
+     */
     public function viewAny(User $user): bool
     {
         return $user->hasRole('admin');
@@ -38,6 +51,18 @@ class AvatarTemplatePolicy
     public function view(User $user, AvatarTemplate $template): bool
     {
         return $user->hasRole('admin');
+    }
+
+    /**
+     * Who may see the PICKER list — id, name, provider, and nothing else.
+     *
+     * Every role, because every project must name a template and a viewer
+     * reading a project's configuration should be able to see which one it
+     * names rather than a bare id.
+     */
+    public function listOptions(User $user): bool
+    {
+        return $user->hasRole('admin') || $user->hasRole('operator') || $user->hasRole('viewer');
     }
 
     public function create(User $user): bool

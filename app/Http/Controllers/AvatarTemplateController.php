@@ -41,6 +41,45 @@ final class AvatarTemplateController extends Controller
     }
 
     /**
+     * The picker list: id, name, provider. Nothing else.
+     *
+     * `index()` above stays admin-only because this resource carries `config`,
+     * and that holds provider-side identifiers (avatarId, voiceId, faceId,
+     * palId) which are closer to credentials than to settings. But
+     * `projects.avatar_template_id` is NOT NULL, so every operator creating a
+     * project has to choose one — and an operator who cannot list templates
+     * cannot choose. Their select came back empty and the form refused its own
+     * submit, with nothing they could do about it.
+     *
+     * So this is the narrow answer rather than a widened `viewAny`: exactly
+     * the three fields choosing a template requires. A viewer gets it too —
+     * reading a project's configuration should show which template it names,
+     * not a bare id.
+     *
+     * The shape is hand-built rather than run through `AvatarTemplateResource`
+     * ON PURPOSE. A resource is a list of fields somebody will add to; this
+     * endpoint's entire value is that it cannot grow one, and a future field on
+     * that resource must not silently become readable by every role.
+     */
+    public function options(): JsonResponse
+    {
+        $this->authorize('listOptions', AvatarTemplate::class);
+
+        $options = AvatarTemplate::orderByDesc('is_active')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (AvatarTemplate $template): array => [
+                'id' => (int) $template->id,
+                'name' => $template->name,
+                'provider' => $template->provider,
+                'is_active' => (bool) $template->is_active,
+            ])
+            ->all();
+
+        return response()->json(['data' => $options]);
+    }
+
+    /**
      * The field specs both providers accept.
      *
      * Served rather than duplicated in the Nuxt app, so the form, the

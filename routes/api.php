@@ -235,6 +235,15 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // interviews run on. Declared BEFORE /{id} so the literal paths win.
     Route::get('/avatar-templates/export', [AvatarTemplatePortabilityController::class, 'export']);
     Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import']);
+    // Declared BEFORE /{id}, like `field-specs` and for the same reason:
+    // registered after, Laravel matches "options" as an id and the endpoint
+    // 404s with no hint as to why.
+    //
+    // NOT admin-only, unlike every other route in this group. It returns id,
+    // name and provider — what choosing a template for a project requires —
+    // because `projects.avatar_template_id` is NOT NULL and operators create
+    // projects. See AvatarTemplateController::options().
+    Route::get('/avatar-templates/options', [AvatarTemplateController::class, 'options']);
     Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
