@@ -13,6 +13,7 @@ use App\Http\Middleware\CheckAbility;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetLocaleFromRequest;
 use App\Http\Middleware\TenantContext;
 use App\Models\RefreshToken;
 use Illuminate\Console\Scheduling\Schedule;
@@ -116,6 +117,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // TenantContext reads $request->user() which is only available after auth:api
         // has authenticated the bearer token and loaded the User from the DB.
         // IMPORTANT: TenantContext must never run before auth:api — it would receive null user.
+        // Prepended, so it runs BEFORE anything that might render a
+        // user-facing message — a validation failure or an authorization
+        // refusal answered in the wrong language is exactly the case the
+        // "every server message is localized" rule exists for, and both of
+        // those happen inside middleware that would otherwise run first.
+        //
+        // Replaces `FrameworkController::resolveLocale()`, which three
+        // endpoints called by hand: the backoffice could be in Italian and an
+        // evaluation report still came back in English, because the surface
+        // serving it had never heard of the mechanism. A rule enforced by
+        // remembering to call a private method is not a rule.
+        $middleware->prependToGroup('api', SetLocaleFromRequest::class);
+
         $middleware->appendToGroup('api', TenantContext::class);
 
         // user-profile-self-service (design D3): registered AFTER TenantContext,
