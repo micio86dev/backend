@@ -5164,6 +5164,10 @@
             "DashboardActivityResource": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The row's own id, so the feed can LINK to the candidate instead\nof naming them. `candidate_ref` below is the calling system's\nopaque identifier and addresses nothing in this product \u2014 a feed\nthat says who just moved and gives no way to go and look is a\npage you read and then leave to use the search box."
+                    },
                     "candidate_ref": {
                         "type": "string"
                     },
@@ -5181,6 +5185,7 @@
                     }
                 },
                 "required": [
+                    "id",
                     "candidate_ref",
                     "display_name",
                     "status",

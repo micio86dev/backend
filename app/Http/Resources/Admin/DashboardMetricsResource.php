@@ -24,7 +24,8 @@ class DashboardMetricsResource extends JsonResource
      *     participants_by_status: array<string, int>,
      *     evaluations_by_status: array<string, int>,
      *     completion_rate: float,
-     *     ai_usage: array{input_tokens: int, output_tokens: int, latency_ms_p50: int|null, latency_ms_p95: int|null}
+     *     ai_usage: array{input_tokens: int, output_tokens: int, latency_ms_p50: int|null, latency_ms_p95: int|null},
+     *     costs: array{scoring_usd: float, conversation_usd: float, total_usd: float, currency: string}
      * }  $resource
      */
     public function __construct(array $resource)

@@ -96,8 +96,7 @@ test('GET /api/auth/me returns exactly the envelope the spec declares', function
     $response->assertOk();
 
     $spec = json_decode((string) file_get_contents(base_path('openapi.json')), true);
-    $declared = $spec['paths']['/auth/me']['get']['responses']['200']
-        ['content']['application/json']['schema']['properties'];
+    $declared = $spec['paths']['/auth/me']['get']['responses']['200']['content']['application/json']['schema']['properties'];
 
     $actualTop = array_keys($response->json());
     sort($actualTop);
