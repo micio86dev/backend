@@ -55,6 +55,7 @@ test('teardown removes every demo row and storage object, leaves a real particip
             'project_id' => $project->id,
             'candidate_ref' => 'real-candidate-001',
             'display_name' => 'Real Human',
+            'email' => uniqid('cand-').'@example.test',
             'role_code' => $project->role_code,
             'language' => $project->language,
             'status' => 'completato',
@@ -140,6 +141,7 @@ test('a non-demo participant found inside a demo project blocks teardown entirel
             'project_id' => $demoProject->id,
             'candidate_ref' => 'someone-minted-a-real-sso-link',
             'display_name' => 'Unexpected Human',
+            'email' => uniqid('cand-').'@example.test',
             'role_code' => $demoProject->role_code,
             'language' => $demoProject->language,
             'status' => 'in_attesa',
@@ -169,10 +171,24 @@ test('a non-demo row still referencing beai-demo-1.0.0 after every other delete 
         // An operator created a REAL (non-demo) project pinned to the demo
         // framework version — unusual, but exactly the case this guard
         // exists for.
+        //
+        // Its avatar template is created here explicitly, and NOT left to the
+        // factory. `projects.avatar_template_id` is required, so the factory
+        // reuses whatever template the tenant already owns — which after a demo
+        // seed is a DEMO template. The project would then hold a demo template
+        // hostage and the teardown would fail on THAT instead, testing a
+        // different guard than the one this case is named for.
+        $realTemplate = AvatarTemplate::create([
+            'name' => 'acme-real-template',
+            'provider' => 'heygen',
+            'config' => [],
+        ]);
+
         Project::factory()->create([
             'organization_id' => $this->org->id,
             'slug' => 'acme-pinned-to-demo-fv',
             'framework_version_id' => $version->id,
+            'avatar_template_id' => $realTemplate->id,
         ]);
     });
 

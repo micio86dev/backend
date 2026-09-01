@@ -105,9 +105,13 @@ final class ResetPasswordController extends Controller
 
         $this->recordAudit($user);
 
-        return response()->json([
-            'message' => 'Your password has been reset. Every device you were signed in on must sign in again.',
-        ]);
+        // A CODE, not a sentence. A response body is machine-facing (CLAUDE.md:
+        // machine-readable values "are NOT user-facing and are returned
+        // literally in every locale"), and only the UI knows the reader's
+        // locale. The English prose that used to be here was rendered verbatim
+        // by the backoffice, so an Italian operator on an Italian page read
+        // English.
+        return response()->json(['message' => 'password_reset']);
     }
 
     /**
@@ -116,8 +120,13 @@ final class ResetPasswordController extends Controller
      */
     private function fail(): never
     {
+        // ONE code for all four causes, which is the whole point of this method
+        // — a distinguishable message would rebuild the enumeration oracle the
+        // endpoint refuses to be. A code rather than prose for the reason above
+        // `password_reset`: this string is the only thing that reaches the
+        // operator, so it is also the only one that has to be translatable.
         throw ValidationException::withMessages([
-            'token' => ['This password reset link is invalid or has expired. Request a new one.'],
+            'token' => ['reset_link_invalid'],
         ]);
     }
 

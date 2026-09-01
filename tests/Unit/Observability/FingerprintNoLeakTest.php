@@ -40,6 +40,7 @@ test('no column of a failed ai_requests row contains any substring of the raw re
         'project_id' => $project->id,
         'candidate_ref' => 'noleak-'.uniqid(),
         'display_name' => 'Fingerprint No-Leak Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

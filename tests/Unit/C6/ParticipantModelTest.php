@@ -79,6 +79,7 @@ test('status default is in_attesa', function (): void {
         'project_id' => $project->id,
         'candidate_ref' => 'default-test',
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     $participant->save();
 
@@ -126,6 +127,7 @@ function createParticipant(Project $project, Organization $org, string $ref): Pa
         'project_id' => $project->id,
         'candidate_ref' => $ref,
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

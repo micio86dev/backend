@@ -52,6 +52,7 @@ test('viewer → POST /api/projects → 403', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertForbidden();
 });
@@ -96,6 +97,7 @@ test('operator → POST → 201; PATCH → 200', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ]);
     $response->assertCreated();

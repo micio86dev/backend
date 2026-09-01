@@ -34,6 +34,15 @@ class Organization extends Model
         'default_webhook_url',
         'default_webhook_secret',
         'default_webhook_events',
+        // Per-organization branding. Both NULLABLE permanently: an organization
+        // that configures neither renders in the Quint palette DESIGN.md
+        // defines, so null is a real state rather than an unfilled one.
+        //
+        // `logo_path` is a PATH on the configured disk, never a URL — the disk
+        // differs per environment (`local` in development, `s3` in production),
+        // so a stored URL would bake one environment's host into the row.
+        'logo_path',
+        'primary_color',
     ];
 
     /**

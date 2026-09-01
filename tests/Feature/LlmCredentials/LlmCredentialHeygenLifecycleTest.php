@@ -193,7 +193,20 @@ test('deleting a bound HeyGen template deletes its vendor configuration — no o
     Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
         && str_contains($request->url(), '/v1/llm-configurations/cfg_live'));
 
-    expect(AvatarTemplate::withoutGlobalScopes()->find($template->id))->toBeNull();
+    // `withoutGlobalScopes()` would drop the SOFT-DELETE scope along with the
+    // tenant one and find the trashed row, asserting nothing. Only the tenant
+    // scope is dropped, so this still means "gone as far as anyone can see".
+    expect(AvatarTemplate::withoutGlobalScope('tenant')->find($template->id))->toBeNull();
+
+    // And gone WITHOUT leaving a stale binding behind. The row survives a soft
+    // delete, and a surviving `llm_credential_id` is what the credential's own
+    // deletion guard counts — a template nobody can see would otherwise refuse
+    // a credential deletion forever, or worse, let it through into a raw
+    // foreign-key 500.
+    $trashed = AvatarTemplate::withoutGlobalScope('tenant')->withTrashed()->find($template->id);
+    expect($trashed?->trashed())->toBeTrue()
+        ->and($trashed?->llm_credential_id)->toBeNull()
+        ->and($trashed?->llm_model_id)->toBeNull();
 });
 
 test('deleting a HeyGen template whose vendor account is unreachable still deletes the template', function (): void {
@@ -235,5 +248,18 @@ test('deleting a HeyGen template whose vendor account is unreachable still delet
     $this->withToken($token)->deleteJson("/api/avatar-templates/{$template->id}")
         ->assertStatus(204);
 
-    expect(AvatarTemplate::withoutGlobalScopes()->find($template->id))->toBeNull();
+    // `withoutGlobalScopes()` would drop the SOFT-DELETE scope along with the
+    // tenant one and find the trashed row, asserting nothing. Only the tenant
+    // scope is dropped, so this still means "gone as far as anyone can see".
+    expect(AvatarTemplate::withoutGlobalScope('tenant')->find($template->id))->toBeNull();
+
+    // And gone WITHOUT leaving a stale binding behind. The row survives a soft
+    // delete, and a surviving `llm_credential_id` is what the credential's own
+    // deletion guard counts — a template nobody can see would otherwise refuse
+    // a credential deletion forever, or worse, let it through into a raw
+    // foreign-key 500.
+    $trashed = AvatarTemplate::withoutGlobalScope('tenant')->withTrashed()->find($template->id);
+    expect($trashed?->trashed())->toBeTrue()
+        ->and($trashed?->llm_credential_id)->toBeNull()
+        ->and($trashed?->llm_model_id)->toBeNull();
 });

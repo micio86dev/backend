@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Http\Resources\Admin\UserResource;
+use App\Jobs\SendUserInvitationJob;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Users\UserAdminReader;
@@ -83,7 +84,21 @@ class UserController extends Controller
         $user->password_changed_at = now()->startOfSecond();
         $user->save();
 
-        $this->assignRole($user, $orgId, (string) $request->validated('role'));
+        $role = (string) $request->validated('role');
+        $this->assignRole($user, $orgId, $role);
+
+        // Dispatched AFTER the role is assigned — the invitation describes what
+        // the recipient can do, and a job that raced the role write would
+        // describe the wrong thing. Queued rather than sent inline so a mail
+        // provider having a bad minute cannot make creating a user fail: the
+        // account exists, and refusing to report that is the wrong failure to
+        // surface.
+        SendUserInvitationJob::dispatch(
+            $user->id,
+            $role,
+            $currentUser->name,
+            Organization::findOrFail($orgId)->name,
+        );
 
         return (new UserResource($user->fresh()))
             ->response()

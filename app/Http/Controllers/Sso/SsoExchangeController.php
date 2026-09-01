@@ -140,14 +140,26 @@ final class SsoExchangeController extends Controller
 
         // ON CONFLICT(project_id, candidate_ref) DO UPDATE WHERE status='in_attesa'
         // SET clause MUST NOT include organization_id, project_id, or candidate_ref.
+        // `participants.email` is NOT NULL (CLAUDE.md ruling 8, reversed
+        // 2026-09-01), and this upsert is the only writer on the SSO path. A
+        // token minted before the column existed carries no `email` claim, so
+        // it falls back to the same deterministic, undeliverable placeholder
+        // the backfill migration used rather than failing the exchange: a
+        // candidate standing in front of an interview must not be turned away
+        // because the link in their inbox predates a schema change.
+        // `.local` is reserved by RFC 6762 and resolves nowhere, so the
+        // placeholder can never reach a real person, and it is greppable.
+        $email = (string) ($payload->get('email') ?? $candidateRef.'@invalid.beai.local');
+
         DB::statement("
             INSERT INTO participants
-                (organization_id, project_id, candidate_ref, display_name, role_code, language, status, created_at, updated_at)
+                (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, created_at, updated_at)
             VALUES
-                (?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
+                (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
             ON CONFLICT (project_id, candidate_ref)
             DO UPDATE SET
                 display_name = EXCLUDED.display_name,
+                email        = EXCLUDED.email,
                 role_code    = EXCLUDED.role_code,
                 language     = EXCLUDED.language,
                 updated_at   = EXCLUDED.updated_at
@@ -157,6 +169,7 @@ final class SsoExchangeController extends Controller
             $project->id,
             $candidateRef,
             $displayName,
+            $email,
             $roleCode,
             $lang,
             $now,

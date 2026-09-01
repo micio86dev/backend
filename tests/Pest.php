@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -518,3 +520,59 @@ pest()->use(RefreshDatabase::class)
 // `gemini-3-flash-preview` fails on `llm_models_key_unique`.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Deploy');
+
+// ─── Directories added by later slices ────────────────────────────────────────
+//
+// EVERY Feature subdirectory has to be named here. `->in('Feature')` at the top
+// of this file deliberately does NOT apply RefreshDatabase — `Feature/HealthTest`
+// is DB-free — so a directory nobody remembered to register runs against the
+// REAL test database with no transaction, and its rows outlive the run. That
+// does not fail loudly; it fails as "email has already been taken" in an
+// unrelated test on the second execution.
+//
+// `tests/Arch/FeatureDirectoriesRegisteredArchTest.php` fails when a new one is
+// added and not listed here, because remembering is not a mechanism.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Authorization');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Contract');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Invitations');
+
+// PRE-EXISTING, found by the arch test above rather than by anyone noticing:
+// `Feature/Admin/EvaluationMetaTest.php` creates rows with factories and was
+// registered nowhere, so its rows survived every run.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Admin');
+
+// ─── projects.avatar_template_id is NOT NULL ──────────────────────────────────
+
+/**
+ * The current tenant's avatar template id, creating one if it has none.
+ *
+ * `projects.avatar_template_id` is required, so every payload that creates a
+ * project through the API has to carry one. Shared here rather than copied into
+ * each suite's payload builder: ten test files POST to `/api/projects`, and a
+ * per-file copy would be ten places to fix the next time this constraint moves.
+ *
+ * Resolves through the tenant-scoped model on purpose. The template is looked
+ * up — and created — inside whatever tenant context the test has already set,
+ * so it can never belong to a different organization than the project that is
+ * about to reference it, which the org-scoped `Rule::exists` would reject.
+ *
+ * REUSES an existing template when there is one. Creating unconditionally would
+ * mean a suite building three projects silently owned three templates, and any
+ * assertion counting an organization's templates would then drift with however
+ * many projects its setup happened to make.
+ */
+function templateIdForCurrentOrg(): int
+{
+    return AvatarTemplate::query()->value('id')
+        ?? AvatarTemplate::create([
+            'name' => 'Test template '.Str::random(10),
+            'provider' => 'heygen',
+            'config' => [],
+        ])->id;
+}

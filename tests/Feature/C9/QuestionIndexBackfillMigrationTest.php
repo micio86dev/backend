@@ -75,6 +75,7 @@ function qioOrgProjectParticipant(int $competencyCount): array
         'project_id' => $project->id,
         'candidate_ref' => 'qio-mig-'.uniqid(),
         'display_name' => 'QIO Migration Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

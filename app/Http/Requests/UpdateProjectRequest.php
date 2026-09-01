@@ -87,15 +87,15 @@ class UpdateProjectRequest extends FormRequest
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
-            // `sometimes` + `nullable`, together deliberately: `sometimes`
-            // keeps an untouched field untouched, and `nullable` is what makes
-            // an EXPLICIT null a legal unpin rather than a validation error.
-            // Without the second, pinning would be a one-way door — an
-            // operator could never return the project to the organization
-            // fallback they started from.
+            // `sometimes` WITHOUT `nullable`, and the pairing is the whole
+            // rule: `sometimes` keeps a PATCH that does not mention the field
+            // from touching it, while dropping `nullable` makes an explicit
+            // null a validation error rather than an unpin. There is no longer
+            // anything to unpin TO — the organization-wide fallback is gone,
+            // and a project with no template is a project whose interviews run
+            // on whatever the configuration happens to say.
             'avatar_template_id' => [
                 'sometimes',
-                'nullable',
                 'integer',
                 Rule::exists('avatar_templates', 'id')->where('organization_id', $orgId),
             ],

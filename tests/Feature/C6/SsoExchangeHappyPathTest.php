@@ -44,6 +44,7 @@ function mintValidSsoLink(Project $project, Organization $org, string $ref = 'ca
     return CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
         'display_name' => $display,
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => $project->role_code,
@@ -139,6 +140,7 @@ test('language resolved from sso-link lang claim', function (): void {
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-lang-es',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => $project->role_code,
@@ -158,6 +160,7 @@ test('language falls back to project.language when lang claim absent', function 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-lang-fallback',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => $project->role_code,

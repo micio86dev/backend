@@ -55,6 +55,7 @@ function mintEx403Token(Project $project, Organization $org, array $overrides = 
     return CandidateTokenFactory::mintSsoLink(array_merge([
         'candidate_ref' => 'cand-'.uniqid(),
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => $project->role_code,
@@ -70,6 +71,7 @@ function forceParticipantStatus(Project $project, Organization $org, string $ref
         'project_id' => $project->id,
         'candidate_ref' => $ref,
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

@@ -232,6 +232,22 @@ final class DemoWriter
      */
     private function writeProjects(Organization $organization, FrameworkVersion $version): array
     {
+        // `projects.avatar_template_id` is NOT NULL — every project names the
+        // template it runs on. `writeAvatarTemplates()` runs BEFORE this method
+        // for exactly that reason, so one always exists by now; the guard is
+        // here because a silent null would surface as a raw constraint
+        // violation halfway through seeding, with no indication of which step
+        // was actually at fault.
+        $templateId = AvatarTemplate::query()->orderByDesc('is_active')->orderBy('id')->value('id');
+
+        if ($templateId === null) {
+            throw new RuntimeException(
+                'Demo seeding cannot create projects: no avatar template exists for this '
+                .'organization, and `projects.avatar_template_id` is required. '
+                .'`writeAvatarTemplates()` must run first.'
+            );
+        }
+
         $projects = [];
 
         foreach (DemoDataset::projects() as $definition) {
@@ -248,6 +264,9 @@ final class DemoWriter
                     'status' => $definition['status'],
                     'pause_every_n_competencies' => $definition['pause_every_n_competencies'],
                     'nudge_min_chars' => $definition['nudge_min_chars'],
+                    // Active-first, so the demo's projects run on the template
+                    // an operator would see selected — not an arbitrary one.
+                    'avatar_template_id' => $templateId,
                 ]);
 
                 $competencyIds = Competency::whereIn('code', $definition['competencies'])
@@ -367,6 +386,13 @@ final class DemoWriter
                     'project_id' => $project->id,
                     'candidate_ref' => $definition['ref'],
                     'display_name' => $definition['name'],
+                    // Derived from the ref rather than listed per candidate,
+                    // and pointed at a domain that resolves NOWHERE. `.invalid`
+                    // is reserved by RFC 2606 for exactly this: demo data is
+                    // seeded into real environments, and an address that could
+                    // ever be delivered to is one interview invitation away
+                    // from mailing a stranger.
+                    'email' => $definition['ref'].'@beai-demo.invalid',
                     'role_code' => $project->role_code,
                     'language' => $project->language,
                     'status' => $definition['status'],
@@ -713,9 +739,28 @@ final class DemoWriter
                         $excerpts = [$sentences[$answer['excerpt_sentence']]];
                     }
 
+                    // The PROJECT's language, not the fallback.
+                    //
+                    // `$indicator->text` resolves through the translatable
+                    // fallback, which is English — so an Italian demo project
+                    // produced a report whose indicators read in English while
+                    // everything around them read in Italian. The real scoring
+                    // path never had this bug: `PromptBuilder` takes the
+                    // project locale and THROWS when a translation is missing,
+                    // and the explanation comes back from the model in the
+                    // language it was prompted in. Only this seeder ignored it.
+                    //
+                    // The same two lines already read `$project->language` for
+                    // the competency content a few lines above, which is what
+                    // made the mismatch visible: half the report was localized.
+                    $locale = $project->language;
+                    $indicatorText = $indicator->hasTranslation('text', $locale)
+                        ? $indicator->getTranslation('text', $locale)
+                        : $indicator->text;
+
                     $dto = new IndicatorScoreDTO(
                         position: $position,
-                        indicatorText: $indicator->text,
+                        indicatorText: $indicatorText,
                         score: $score,
                         explanation: '',
                         excerpts: $excerpts,
@@ -730,11 +775,14 @@ final class DemoWriter
                     $indicatorScore->forceFill([
                         'competency_result_id' => $result->id,
                         'position' => $position,
-                        'indicator_text' => $indicator->text,
+                        'indicator_text' => $indicatorText,
                         'score' => $score,
-                        'explanation' => $score === -1
-                            ? 'The candidate provided no episode addressing this indicator.'
-                            : 'Matched against the reference anchor for level '.$score.'.',
+                        // Localized for the same reason. These stand in for
+                        // text a model writes in the project's language, so
+                        // leaving them English made the demo misrepresent what
+                        // a real report looks like — which is the one thing a
+                        // demo must not do.
+                        'explanation' => self::demoExplanation($locale, $score),
                         'excerpts' => $excerpts,
                         // Demo data has no validation-failure path — every -1 here is
                         // the fixture DECLARING no episode, i.e. model_declared, never
@@ -1238,5 +1286,26 @@ final class DemoWriter
                 ['Notification logs', $summary['notification_log_count'].' (sent/suppressed/failed)'],
             ],
         );
+    }
+
+    /**
+     * Stand-in explanation text, in the project's language.
+     *
+     * Two locales only, matching the mandatory `it`/`en` pair. An unexpected
+     * locale falls back to English rather than throwing: this is demo data, and
+     * failing a seed over a missing sample sentence would be a worse outcome
+     * than a sentence in the wrong language.
+     */
+    private static function demoExplanation(string $locale, int $score): string
+    {
+        if ($score === -1) {
+            return $locale === 'it'
+                ? 'Il candidato non ha fornito alcun episodio riferibile a questo indicatore.'
+                : 'The candidate provided no episode addressing this indicator.';
+        }
+
+        return $locale === 'it'
+            ? 'Confrontato con l\'ancora di riferimento per il livello '.$score.'.'
+            : 'Matched against the reference anchor for level '.$score.'.';
     }
 }

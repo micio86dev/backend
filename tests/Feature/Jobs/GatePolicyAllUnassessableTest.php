@@ -66,6 +66,7 @@ function gatePolicyAllUnassessableSetup(): array
         'project_id' => $project->id,
         'candidate_ref' => 'gate-policy-'.uniqid(),
         'display_name' => 'Gate Policy Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

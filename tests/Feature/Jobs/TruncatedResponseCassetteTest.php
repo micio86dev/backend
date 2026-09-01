@@ -59,6 +59,7 @@ test('a truncated response is recorded as truncated/llm_truncated, never llm_par
         'project_id' => $project->id,
         'candidate_ref' => 'truncated-'.uniqid(),
         'display_name' => 'Truncated Response Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

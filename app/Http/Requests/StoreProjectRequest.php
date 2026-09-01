@@ -82,8 +82,15 @@ class StoreProjectRequest extends FormRequest
             // above — a foreign template must be refused HERE, not merely
             // ignored by `ActiveTemplateResolver` later. Ignoring it would
             // still leave a cross-tenant id persisted in our row.
+            // REQUIRED. It shipped nullable with the organization's active
+            // template as a fallback, and the fallback is exactly what let the
+            // configuration choose silently instead of the project — the defect
+            // the column was added to fix. An organization that owns no
+            // template therefore cannot create a project until it has one:
+            // deliberate, and surfaced as a validation error on this field
+            // rather than as an interview that runs on something nobody chose.
             'avatar_template_id' => [
-                'nullable',
+                'required',
                 'integer',
                 Rule::exists('avatar_templates', 'id')->where('organization_id', $orgId),
             ],

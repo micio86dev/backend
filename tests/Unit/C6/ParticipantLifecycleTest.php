@@ -36,6 +36,7 @@ function makeLifecycleParticipant(Project $project, Organization $org, array $ov
         'project_id' => $project->id,
         'candidate_ref' => 'lc-ref-'.uniqid(),
         'display_name' => 'LC Test',
+        'email' => uniqid('cand-').'@example.test',
     ], $overrides));
     $p->save();
 
@@ -84,6 +85,7 @@ test('organization_id is stamped from project (forceFill pattern, not from reque
         'organization_id' => $project->organization_id,
         'candidate_ref' => 'lc-ref-org-test',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     $p->save();
 

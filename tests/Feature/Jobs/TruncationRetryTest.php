@@ -55,6 +55,7 @@ function truncationRetrySetup(): array
         'project_id' => $project->id,
         'candidate_ref' => 'truncation-retry-'.uniqid(),
         'display_name' => 'Truncation Retry Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

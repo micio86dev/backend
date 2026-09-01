@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\LlmCredentialController;
 use App\Http\Controllers\Api\LlmModelController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\OrganizationLogoController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ParticipantRecoveryController;
@@ -160,6 +161,12 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/organization', [OrganizationController::class, 'show']);
     Route::patch('/organization', [OrganizationController::class, 'update']);
+    // Separate from the PATCH above, deliberately: `logo_path` is written ONLY
+    // by an endpoint that knows a file was actually stored. Accepting it as a
+    // field on the settings PATCH would let a client point the logo at any path
+    // on the disk.
+    Route::post('/organization/logo', [OrganizationLogoController::class, 'store']);
+    Route::delete('/organization/logo', [OrganizationLogoController::class, 'destroy']);
 });
 
 // ─── User Self-Service Profile (user-profile-self-service, design D1) ────────
@@ -230,6 +237,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import']);
     Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
+    Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
 
     Route::get('/avatar-templates', [AvatarTemplateController::class, 'index']);
     Route::post('/avatar-templates', [AvatarTemplateController::class, 'store']);

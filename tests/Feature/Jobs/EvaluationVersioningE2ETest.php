@@ -43,6 +43,7 @@ test('full job run: Evaluation versioning fields (framework_version_id, model_ve
         'project_id' => $project->id,
         'candidate_ref' => 'versioning-e2e-'.uniqid(),
         'display_name' => 'Versioning E2E Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

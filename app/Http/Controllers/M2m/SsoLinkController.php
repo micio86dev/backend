@@ -70,6 +70,7 @@ final class SsoLinkController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
@@ -86,6 +87,7 @@ final class SsoLinkController extends Controller
                 $project,
                 $validated['candidate_ref'],
                 $validated['display_name'],
+                $validated['email'],
                 $validated['role_code'] ?? null,
                 $validated['lang'] ?? null,
             );

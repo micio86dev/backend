@@ -83,6 +83,7 @@ test('soft-deleted project → 401 at exchange (SoftDeletingScope still active)'
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-softdel-scope',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -103,6 +104,7 @@ test('exchange returns 200 for active (non-deleted) project', function (): void 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-active-scope',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',

@@ -80,6 +80,7 @@ function c10EndWebhookParticipant(Organization $org, Project $project, string $s
         'project_id' => $project->id,
         'candidate_ref' => 'c10-end-'.uniqid(),
         'display_name' => 'C10 End Seam Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

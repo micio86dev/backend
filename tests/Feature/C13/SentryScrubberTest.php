@@ -62,6 +62,7 @@ test('candidate identifiers never reach the sink', function (): void {
     $event = scrubbedEvent([
         'candidate_ref' => 'acme-672',
         'display_name' => 'Mario Rossi',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $encoded = json_encode($event->getExtra());

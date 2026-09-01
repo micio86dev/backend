@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Models\AvatarTemplate;
 use App\Models\FrameworkVersion;
 use App\Models\Project;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -41,6 +42,39 @@ class ProjectFactory extends Factory
             'status' => 'draft',
             'webhook_url' => null,
             'webhook_secret' => null,
+            // `avatar_template_id` is NOT NULL — a project must name the
+            // template it runs on. A closure, not an eager
+            // `AvatarTemplate::factory()`, so it resolves at CREATE time inside
+            // whatever tenant context the test has already set: the template
+            // gets its `organization_id` from the same TenantResolver stamping
+            // the project, and the two cannot land in different tenants.
+            //
+            // Reuses an existing template for the current tenant when there is
+            // one. Without that, a test creating three projects would silently
+            // create three templates, and any assertion counting an
+            // organization's templates would drift with the number of projects
+            // its setup happens to make.
+            // Created inline rather than through a factory: `AvatarTemplate`
+            // has none, because its rows are shaped by provider-specific config
+            // and every existing test builds them explicitly.
+            // ACTIVE FIRST, and that ordering is load-bearing rather than
+            // tidiness. A test that builds an active template and then a
+            // project is describing "the project runs on this template" —
+            // before the column existed it got that for free from the
+            // organization-wide fallback. Picking an arbitrary row here would
+            // pin a bare one instead and silently change what the test
+            // measures, which is exactly how the live-clock ceiling test
+            // started reading the platform default instead of the 300s the
+            // template configured.
+            'avatar_template_id' => fn (): int => AvatarTemplate::query()
+                ->orderByDesc('is_active')
+                ->orderBy('id')
+                ->value('id')
+                ?? AvatarTemplate::create([
+                    'name' => 'Factory template '.Str::random(10),
+                    'provider' => 'heygen',
+                    'config' => [],
+                ])->id,
         ];
     }
 

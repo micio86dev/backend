@@ -53,6 +53,7 @@ function isolParticipant(Project $project, Organization $org, ?string $ref = nul
         'project_id' => $project->id,
         'candidate_ref' => $ref ?? 'ref-'.uniqid(),
         'display_name' => 'Isolation Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

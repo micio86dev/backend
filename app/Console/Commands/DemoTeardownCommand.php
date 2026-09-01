@@ -139,6 +139,31 @@ final class DemoTeardownCommand extends Command
         $demoTemplates = AvatarTemplate::where('name', 'like', DemoMarker::PREFIX.'%')->get();
 
         foreach ($demoTemplates as $template) {
+            // `projects.avatar_template_id` is NOT NULL with `restrictOnDelete`,
+            // so a REAL project pinned to a demo template makes this delete
+            // impossible. Without this check the database refuses it as a raw
+            // foreign-key violation — an exception naming a constraint, which
+            // tells an operator nothing about which project to repoint.
+            //
+            // Same shape as the FrameworkVersion guard below: name what holds
+            // the row, and fail the command rather than half-tearing-down.
+            $holders = Project::withTrashed()
+                ->where('avatar_template_id', $template->id)
+                ->pluck('slug')
+                ->all();
+
+            if ($holders !== []) {
+                $this->error(sprintf(
+                    'Cannot remove the demo avatar template "%s": still used by %s. '
+                    .'Repoint %s to another template first.',
+                    $template->name,
+                    implode(', ', $holders),
+                    count($holders) === 1 ? 'that project' : 'those projects',
+                ));
+
+                return self::FAILURE;
+            }
+
             $template->delete();
         }
 

@@ -60,6 +60,7 @@ function crossOrgParticipantWithEvaluation(Organization $org): Participant
     $participant = Participant::factory()->forProject($project)->withStatus('completato')->create([
         'candidate_ref' => 'org-b-secret-ref',
         'display_name' => 'Org B Secret Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);

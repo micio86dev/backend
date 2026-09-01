@@ -68,6 +68,7 @@ function activityParticipant(Project $project, string $ref, string $status, stri
         'project_id' => $project->id,
         'candidate_ref' => $ref,
         'display_name' => 'Name '.$ref,
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
 

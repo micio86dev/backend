@@ -44,7 +44,7 @@ test('admin can viewAny, view, create, update, delete', function (): void {
     expect($policy->delete($admin, $project))->toBeTrue();
 });
 
-test('operator can viewAny, view, create, update, delete', function (): void {
+test('operator can viewAny, view, create and update — but NOT delete', function (): void {
     $org = Organization::factory()->create();
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
@@ -56,7 +56,11 @@ test('operator can viewAny, view, create, update, delete', function (): void {
     expect($policy->view($operator, $project))->toBeTrue();
     expect($policy->create($operator))->toBeTrue();
     expect($policy->update($operator, $project))->toBeTrue();
-    expect($policy->delete($operator, $project))->toBeTrue();
+
+    // Deleting a project is not "editing it, harder". Every participant,
+    // session, transcript and evaluation hangs beneath it, so the act belongs
+    // to an admin even though editing its settings does not.
+    expect($policy->delete($operator, $project))->toBeFalse();
 });
 
 test('viewer can viewAny and view but NOT create, update, or delete', function (): void {

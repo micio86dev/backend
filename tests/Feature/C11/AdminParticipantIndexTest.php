@@ -81,6 +81,7 @@ test('GET /api/participants filters by project_id, status, and q', function (): 
         'status' => 'completato',
         'candidate_ref' => 'ref-alpha-001',
         'display_name' => 'Alpha Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
     indexTestParticipant($projectOne, ['status' => 'in_corso', 'candidate_ref' => 'ref-beta-002']);
     indexTestParticipant($projectTwo, ['status' => 'completato', 'candidate_ref' => 'ref-gamma-003']);

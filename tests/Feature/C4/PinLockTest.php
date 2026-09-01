@@ -57,6 +57,7 @@ test('creating first project pins FV: is_locked flips to true', function (): voi
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertCreated();
 
@@ -78,6 +79,7 @@ test('second project reusing locked FV succeeds (201)', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertCreated();
 });
@@ -99,6 +101,7 @@ test('cross-org FV pin → 422', function (): void {
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'language' => 'en',
+        'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [],
     ])->assertUnprocessable();
 });

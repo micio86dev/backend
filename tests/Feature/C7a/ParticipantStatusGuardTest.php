@@ -52,6 +52,7 @@ function guardParticipant(Organization $org, Project $project, string $status): 
         'project_id' => $project->id,
         'candidate_ref' => 'guard-'.uniqid(),
         'display_name' => 'Guard Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

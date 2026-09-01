@@ -407,8 +407,8 @@
         "/auth/me": {
             "get": {
                 "operationId": "auth.me",
-                "description": "GET /api/auth/me\nProtected: auth:api",
-                "summary": "Return the authenticated user, their organization, and their roles",
+                "description": "GET /api/auth/me\nProtected: auth:api\n\nThe `abilities` shape is spelled out for Scramble. Inferred, it comes\nout as a bare `string` \u2014 `app(UserAbilities::class)->for()` is a\ncontainer call it cannot follow \u2014 and a wrong type in the spec is worse\nthan no type: both Nuxt apps generate their client from this file, so a\n`string` there makes every `abilities.users.viewAny` read a compile\nerror in the two repositories that consume it.",
+                "summary": "Return the authenticated user, their organization, their roles, and\nwhat they may do",
                 "tags": [
                     "Auth"
                 ],
@@ -433,15 +433,13 @@
                                                     "type": "string"
                                                 },
                                                 "locale": {
+                                                    "type": "string"
+                                                },
+                                                "photo_url": {
                                                     "type": [
                                                         "string",
                                                         "null"
-                                                    ],
-                                                    "description": "user-profile-self-service: previously the column and\n$fillable entry existed but /auth/me never returned it."
-                                                },
-                                                "photo_url": {
-                                                    "type": "string",
-                                                    "description": "user-avatar-image (design D4): the SAME signer ProfileResource\nuses \u2014 /auth/me is the shell-identity contract useCurrentUser\ncaches once per page load, so this is the second (and only\nother) caller of ProfilePhotoUrlSigner."
+                                                    ]
                                                 }
                                             },
                                             "required": [
@@ -472,13 +470,119 @@
                                         },
                                         "roles": {
                                             "type": "array",
-                                            "items": {}
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "abilities": {
+                                            "type": "object",
+                                            "properties": {
+                                                "organization": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "view": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "update": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "view",
+                                                        "update"
+                                                    ]
+                                                },
+                                                "apiClients": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "create": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny",
+                                                        "create"
+                                                    ]
+                                                },
+                                                "users": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "create": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny",
+                                                        "create"
+                                                    ]
+                                                },
+                                                "llmCredentials": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "create": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny",
+                                                        "create"
+                                                    ]
+                                                },
+                                                "avatarTemplates": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "create": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny",
+                                                        "create"
+                                                    ]
+                                                },
+                                                "projects": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "create": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny",
+                                                        "create"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "organization",
+                                                "apiClients",
+                                                "users",
+                                                "llmCredentials",
+                                                "avatarTemplates",
+                                                "projects"
+                                            ]
                                         }
                                     },
                                     "required": [
                                         "user",
                                         "organization",
-                                        "roles"
+                                        "roles",
+                                        "abilities"
                                     ]
                                 }
                             }
@@ -531,6 +635,52 @@
                 "operationId": "avatarTemplate.activate",
                 "description": "The swap runs in ONE transaction, deactivate-then-activate. The order is\nforced: the partial unique index refuses a second active row, so\nactivating first would simply fail. Doing it outside a transaction would\nleave a window with no active template at all, during which an interview\nstarting would quietly fall back to the environment defaults \u2014 the exact\nbehaviour this whole change exists to replace.",
                 "summary": "Make this the organization's active template",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`AvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates/{id}/deactivate": {
+            "post": {
+                "operationId": "avatarTemplate.deactivate",
+                "description": "Only `activate` existed, so the only ways to stop offering a template\nwere to activate a different one \u2014 which needs a different one to exist \u2014\nor to delete it, which is destructive and is now refused outright while\nany project pins it.\n\nWhat deactivation MEANS changed with the mandatory pin, and for the\nbetter. `is_active` used to be the organization-wide fallback, so\nswitching it off silently changed which template every unpinned project\nran on. Every project now names its own, so `is_active` is only \"the one\n     * offered as the default for new projects\" \u2014 turning it off is reversible\nbookkeeping, not a live reconfiguration.\n\nNO config revalidation, unlike `activate()`. That check exists to catch a\nstale config before a candidate meets it; withdrawing a template can only\nreduce exposure, and refusing to withdraw an ALREADY-invalid one would\ntrap an operator with exactly the template they most want to retire.\n\nIdempotent: deactivating an inactive template is a no-op, so a double\nclick or two operators acting at once never produce a failure for a state\nthat is already correct.",
+                "summary": "Take a template out of service without deleting it",
                 "tags": [
                     "AvatarTemplate"
                 ],
@@ -851,20 +1001,46 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "error": {
-                                            "type": "string",
-                                            "const": "template_active"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "template_in_use"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "template_in_use"
+                                                },
+                                                "project_count": {
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "message",
+                                                "project_count"
+                                            ]
                                         },
-                                        "message": {
-                                            "type": "string",
-                                            "const": "Activate another template before deleting this one."
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "template_active"
+                                                },
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "template_active"
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "message"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "error",
-                                        "message"
                                     ]
                                 }
                             }
@@ -1132,6 +1308,11 @@
                                         "type": "string",
                                         "maxLength": 255
                                     },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "maxLength": 255
+                                    },
                                     "display_name": {
                                         "type": "string",
                                         "maxLength": 255
@@ -1149,11 +1330,16 @@
                                             "null"
                                         ],
                                         "maxLength": 10
+                                    },
+                                    "send_email": {
+                                        "type": "boolean",
+                                        "description": "Defaults to TRUE. The operator pressed \"invite a candidate\";\nproducing a link and silently not sending it is the behaviour\nthat made this feature necessary in the first place. An operator\nwho wants to deliver the link some other way opts out explicitly."
                                     }
                                 },
                                 "required": [
                                     "project_id",
                                     "candidate_ref",
+                                    "email",
                                     "display_name"
                                 ]
                             }
@@ -1173,11 +1359,16 @@
                                         },
                                         "expires_at": {
                                             "type": "string"
+                                        },
+                                        "email_sent": {
+                                            "type": "boolean",
+                                            "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
                                         }
                                     },
                                     "required": [
                                         "entry_url",
-                                        "expires_at"
+                                        "expires_at",
+                                        "email_sent"
                                     ]
                                 }
                             }
@@ -1194,7 +1385,7 @@
                                             "properties": {
                                                 "message": {
                                                     "type": "string",
-                                                    "const": "Conflict: participant has already completed this assessment."
+                                                    "const": "entry_link_participant_completed"
                                                 },
                                                 "reason": {
                                                     "type": "string",
@@ -1211,7 +1402,7 @@
                                             "properties": {
                                                 "message": {
                                                     "type": "string",
-                                                    "const": "Conflict: this participant's assessment failed and must be re-opened by an operator before a new link can be issued."
+                                                    "const": "entry_link_participant_failed"
                                                 },
                                                 "reason": {
                                                     "type": "string",
@@ -2265,7 +2456,8 @@
                                         },
                                         "message": {
                                             "type": "string",
-                                            "const": "Unbind every template using this credential before deleting it."
+                                            "description": "A code, not a sentence: the API has no idea what language\nthe operator reads, and `templates` below already names the\nones blocking the delete.",
+                                            "const": "credential_in_use"
                                         },
                                         "templates": {
                                             "type": "object",
@@ -2402,6 +2594,98 @@
                     },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/organization/logo": {
+            "post": {
+                "operationId": "organizationLogo.store",
+                "tags": [
+                    "OrganizationLogo"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "logo": {
+                                        "type": "string",
+                                        "format": "binary",
+                                        "contentMediaType": "application/octet-stream",
+                                        "description": "Shape only. `mimes` checks the CLAIM \u2014 a browser sends whatever\nMIME type it likes \u2014 so it is a cheap first filter, never the\ndecision. Step 2 is the decision."
+                                    }
+                                },
+                                "required": [
+                                    "logo"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "organizationLogo.destroy",
+                "description": "Absent is a supported state, not a broken one \u2014 DESIGN.md's Quint logo is\nwhat renders when none is configured \u2014 so this is a legitimate action\nrather than an undo.",
+                "summary": "Remove the logo, returning the organization to the product's own mark",
+                "tags": [
+                    "OrganizationLogo"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
                     }
                 }
             }
@@ -2711,6 +2995,12 @@
                                         "type": "string",
                                         "maxLength": 255
                                     },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "description": "Required: the email IS the candidate's identity across projects\nand organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and\nthe column is NOT NULL. There is no legacy contract to keep \u2014\nthis product is greenfield by ruling.",
+                                        "maxLength": 255
+                                    },
                                     "display_name": {
                                         "type": "string",
                                         "maxLength": 255
@@ -2739,6 +3029,7 @@
                                 "required": [
                                     "project_id",
                                     "candidate_ref",
+                                    "email",
                                     "display_name"
                                 ]
                             }
@@ -3779,7 +4070,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "A CODE, not a sentence. A response body is machine-facing (CLAUDE.md:\nmachine-readable values \"are NOT user-facing and are returned\n literally in every locale\"), and only the UI knows the reader's\nlocale. The English prose that used to be here was rendered verbatim\nby the backoffice, so an Italian operator on an Italian page read\nEnglish.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3787,7 +4078,7 @@
                                     "properties": {
                                         "message": {
                                             "type": "string",
-                                            "const": "Your password has been reset. Every device you were signed in on must sign in again."
+                                            "const": "password_reset"
                                         }
                                     },
                                     "required": [
@@ -4090,6 +4381,11 @@
                                         "type": "string",
                                         "maxLength": 255
                                     },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "maxLength": 255
+                                    },
                                     "display_name": {
                                         "type": "string",
                                         "maxLength": 255
@@ -4112,6 +4408,7 @@
                                 "required": [
                                     "project_id",
                                     "candidate_ref",
+                                    "email",
                                     "display_name"
                                 ]
                             }
@@ -4658,6 +4955,27 @@
                             "null"
                         ]
                     },
+                    "branding": {
+                        "type": "object",
+                        "properties": {
+                            "primary_color": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "logo_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "primary_color",
+                            "logo_url"
+                        ]
+                    },
                     "project": {
                         "type": [
                             "object",
@@ -4716,6 +5034,7 @@
                     "started_at",
                     "completed_at",
                     "created_at",
+                    "branding",
                     "project"
                 ],
                 "title": "App.Http.Resources.ParticipantResource"
@@ -4896,6 +5215,10 @@
             "DashboardActivityResource": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The row's own id, so the feed can LINK to the candidate instead\nof naming them. `candidate_ref` below is the calling system's\nopaque identifier and addresses nothing in this product \u2014 a feed\nthat says who just moved and gives no way to go and look is a\npage you read and then leave to use the search box."
+                    },
                     "candidate_ref": {
                         "type": "string"
                     },
@@ -4913,6 +5236,7 @@
                     }
                 },
                 "required": [
+                    "id",
                     "candidate_ref",
                     "display_name",
                     "status",
@@ -5222,6 +5546,18 @@
                     "slug": {
                         "type": "string"
                     },
+                    "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "logo_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "default_webhook_url": {
                         "type": [
                             "string",
@@ -5257,6 +5593,8 @@
                     "id",
                     "name",
                     "slug",
+                    "primary_color",
+                    "logo_url",
                     "default_webhook_url",
                     "default_webhook_events",
                     "has_default_webhook_secret",
@@ -5275,6 +5613,9 @@
                         "type": "string"
                     },
                     "display_name": {
+                        "type": "string"
+                    },
+                    "email": {
                         "type": "string"
                     },
                     "role_code": {
@@ -5490,6 +5831,7 @@
                     "id",
                     "candidate_ref",
                     "display_name",
+                    "email",
                     "role_code",
                     "language",
                     "status",
@@ -5514,6 +5856,9 @@
                         "type": "string"
                     },
                     "display_name": {
+                        "type": "string"
+                    },
+                    "email": {
                         "type": "string"
                     },
                     "role_code": {
@@ -5570,6 +5915,7 @@
                     "id",
                     "candidate_ref",
                     "display_name",
+                    "email",
                     "role_code",
                     "language",
                     "status",
@@ -5800,6 +6146,21 @@
                                 "position"
                             ]
                         }
+                    },
+                    "can": {
+                        "type": "object",
+                        "properties": {
+                            "update": {
+                                "type": "boolean"
+                            },
+                            "delete": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "update",
+                            "delete"
+                        ]
                     }
                 },
                 "required": [
@@ -5824,7 +6185,8 @@
                     "created_at",
                     "updated_at",
                     "pin_context",
-                    "competencies"
+                    "competencies",
+                    "can"
                 ],
                 "title": "ProjectResource"
             },
@@ -6372,11 +6734,8 @@
                         "maxLength": 2048
                     },
                     "avatar_template_id": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ],
-                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row."
+                        "type": "integer",
+                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row.\nREQUIRED. It shipped nullable with the organization's active\ntemplate as a fallback, and the fallback is exactly what let the\nconfiguration choose silently instead of the project \u2014 the defect\nthe column was added to fix. An organization that owns no\ntemplate therefore cannot create a project until it has one:\ndeliberate, and surfaced as a validation error on this field\nrather than as an interview that runs on something nobody chose."
                     },
                     "webhook_secret": {
                         "type": [
@@ -6416,7 +6775,8 @@
                     "slug",
                     "name",
                     "assessment_type",
-                    "language"
+                    "language",
+                    "avatar_template_id"
                 ],
                 "title": "StoreProjectRequest"
             },
@@ -6551,6 +6911,14 @@
                                 "evaluation"
                             ]
                         }
+                    },
+                    "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The primary colour is CSS, and is validated as CSS rather than as\na string that happens to look like one. It is interpolated into a custom property in both Nuxt apps, so a\nvalue that is not a colour becomes a stylesheet that silently\ndoes not apply, and one carrying `;` or `}` appends rules of its\nown to every page an operator's candidates load.\n\n`\\z`, NOT `$`, and that difference is the whole security of this\nrule. In PCRE `$` also matches immediately BEFORE a final\nnewline, so `/^#[0-9a-f]{6}$/` accepts `\"#123456\\n\"` \u2014 and the\nnewline is exactly what lets a payload open a second declaration\nonce it is interpolated into a stylesheet. `\\z` matches only at\nthe true end of the subject. Caught by the injection test, which\nfailed against the `$` version of this rule.\n\nThree-digit shorthand is deliberately refused so the apps never\nhave to expand it \u2014 one canonical form, and an operator pasting\n`#abc` is told so rather than getting a colour that quietly\ndiffers from the one they copied.\n\n`nullable` is the route back to the product palette; without it,\nchoosing a colour would be a one-way door.",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
                     }
                 },
                 "title": "UpdateOrganizationRequest"

@@ -52,6 +52,7 @@ function makeC7aParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'c7a-'.uniqid(),
         'display_name' => 'C7a Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

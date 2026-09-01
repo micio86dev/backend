@@ -82,6 +82,7 @@ function defParticipant(Organization $org, Project $project, string $status = 'i
         'project_id' => $project->id,
         'candidate_ref' => 'def-'.uniqid(),
         'display_name' => 'Defensive Branch Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();
@@ -351,6 +352,7 @@ test('(3) runScoringPipeline: participant with non-existent project_id → no-op
         'project_id' => 99999,   // does not exist → project() relation returns null
         'candidate_ref' => $participant->candidate_ref,
         'display_name' => $participant->display_name,
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
 
@@ -695,6 +697,7 @@ test('(9) resolveFrameworkVersionId: null project → RuntimeException thrown', 
         'project_id' => 99998,  // does not exist
         'candidate_ref' => $participant->candidate_ref,
         'display_name' => $participant->display_name,
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
 

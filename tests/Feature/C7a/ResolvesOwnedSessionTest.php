@@ -67,6 +67,7 @@ function makeResolverParticipant(Organization $org, Project $project, string $su
         'project_id' => $project->id,
         'candidate_ref' => 'res-'.($suffix ?: uniqid()),
         'display_name' => 'Resolver Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();

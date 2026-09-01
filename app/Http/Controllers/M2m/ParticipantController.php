@@ -48,6 +48,11 @@ final class ParticipantController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
+            // Required: the email IS the candidate's identity across projects
+            // and organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and
+            // the column is NOT NULL. There is no legacy contract to keep —
+            // this product is greenfield by ruling.
+            'email' => ['required', 'email', 'max:255'],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'language' => ['nullable', 'string', 'max:10'],
@@ -65,6 +70,7 @@ final class ParticipantController extends Controller
             'project_id' => $project->id,
             'candidate_ref' => $validated['candidate_ref'],
             'display_name' => $validated['display_name'],
+            'email' => $validated['email'],
             'role_code' => $validated['role_code'] ?? null,
             'language' => $validated['language'] ?? null,
             'status' => $validated['status'] ?? 'in_attesa',
