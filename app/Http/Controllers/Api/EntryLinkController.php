@@ -92,26 +92,37 @@ final class EntryLinkController extends Controller
                 // 409, only the message + machine-facing `reason` differ. An
                 // `errore` participant is recoverable by an operator — reporting
                 // it as "completed" would be false.
+                // `message` carries the CODE, not a sentence. A response body
+                // is machine-facing (CLAUDE.md), the API has no idea what
+                // language the reader speaks, and the backoffice already
+                // translates codes through `translateServerCode`. `reason` is
+                // kept as-is: it is the documented field integrators match on,
+                // and changing a published contract to tidy a duplicate would
+                // be the wrong trade.
                 EntryLinkRefusalReason::Completed => response()->json(
                     [
-                        'message' => 'Conflict: participant has already completed this assessment.',
+                        'message' => 'entry_link_participant_completed',
                         'reason' => 'completed',
                     ],
                     409
                 ),
                 EntryLinkRefusalReason::Failed => response()->json(
                     [
-                        'message' => "Conflict: this participant's assessment failed and must be re-opened by an operator before a new link can be issued.",
+                        'message' => 'entry_link_participant_failed',
                         'reason' => 'failed',
                     ],
                     409
                 ),
+                // The framework's own 422 wording, kept verbatim: this shape
+                // is what every client already parses for `errors`, and the
+                // per-field message inside it is the one that actually reaches
+                // the operator.
                 EntryLinkRefusalReason::RoleCode => response()->json([
                     'message' => 'The given data was invalid.',
                     'errors' => ['role_code' => [$e->getMessage()]],
                 ], 422),
                 EntryLinkRefusalReason::Gates => response()->json(
-                    ['message' => 'Access denied.'],
+                    ['message' => 'entry_link_project_closed'],
                     403
                 ),
             };

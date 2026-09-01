@@ -131,7 +131,9 @@ test('a completed participant refuses the mint with 409 and reason completed', f
     ])
         ->assertStatus(409)
         ->assertJson([
-            'message' => 'Conflict: participant has already completed this assessment.',
+            // A CODE, not a sentence. The body is machine-facing; the
+            // backoffice translates it for whoever is reading.
+            'message' => 'entry_link_participant_completed',
             'reason' => 'completed',
         ]);
 });

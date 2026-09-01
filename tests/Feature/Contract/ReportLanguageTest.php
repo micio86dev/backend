@@ -18,6 +18,7 @@ declare(strict_types=1);
  * remembered to call. Now it is middleware on the whole api group.
  */
 
+use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
@@ -55,7 +56,7 @@ function reportLanguageFixture(): array
     $role = FrameworkRole::firstOrCreate(['code' => 'ICO'], FrameworkRole::factory()->raw(['code' => 'ICO']));
     $competency = Competency::firstOrCreate(['code' => 'COM'], Competency::factory()->raw(['code' => 'COM']));
 
-    $indicator = new App\Models\BarsIndicator;
+    $indicator = new BarsIndicator;
     $indicator->role_id = $role->id;
     $indicator->competency_id = $competency->id;
     $indicator->position = 1;
