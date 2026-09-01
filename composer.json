@@ -2,14 +2,14 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "beai/api",
     "type": "project",
-    "description": "BEAI API — Business Evaluation AI backend (Laravel 13, API-only).",
+    "description": "BEAI API \u2014 Business Evaluation AI backend (Laravel 13, API-only).",
     "keywords": [
         "beai",
         "laravel",
         "api"
     ],
     "license": "MIT",
-    "version": "0.38.0",
+    "version": "0.39.0",
     "require": {
         "php": "^8.5",
         "dedoc/scramble": "^0.13",
