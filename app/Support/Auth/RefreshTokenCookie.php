@@ -103,8 +103,10 @@ final class RefreshTokenCookie
             return true;
         }
 
-        $request = request();
-
-        return $request === null || $request->isSecure();
+        // `request()` never returns null — outside an HTTP request Laravel
+        // builds one from globals, and `isSecure()` is then false. That is
+        // harmless here: this cookie is only ever emitted while answering a
+        // request, so the console path is unreachable rather than downgraded.
+        return request()->isSecure();
     }
 }
