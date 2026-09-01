@@ -53,6 +53,7 @@ function costParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'cost-'.uniqid(),
         'display_name' => 'Cost Record Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

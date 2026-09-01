@@ -50,6 +50,7 @@ test('two sequential exchange requests for same (project_id, candidate_ref) → 
     $token1 = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
         'display_name' => 'First',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -61,6 +62,7 @@ test('two sequential exchange requests for same (project_id, candidate_ref) → 
     $token2 = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => $ref,
         'display_name' => 'Second',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -85,32 +87,34 @@ test('ON CONFLICT upsert on (project_id, candidate_ref) — direct DB test', fun
     // Insert first row
     DB::statement("
         INSERT INTO participants
-            (organization_id, project_id, candidate_ref, display_name, role_code, language, status, created_at, updated_at)
+            (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, created_at, updated_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
         ON CONFLICT (project_id, candidate_ref)
         DO UPDATE SET
             display_name = EXCLUDED.display_name,
+            email        = EXCLUDED.email,
             role_code    = EXCLUDED.role_code,
             language     = EXCLUDED.language,
             updated_at   = EXCLUDED.updated_at
         WHERE participants.status = 'in_attesa'
-    ", [$org->id, $project->id, $ref, 'First Display', 'ICO', 'en', $now, $now]);
+    ", [$org->id, $project->id, $ref, 'First Display', 'first@example.test', 'ICO', 'en', $now, $now]);
 
     // Second insert with same conflict key — should update, not error
     DB::statement("
         INSERT INTO participants
-            (organization_id, project_id, candidate_ref, display_name, role_code, language, status, created_at, updated_at)
+            (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, created_at, updated_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
         ON CONFLICT (project_id, candidate_ref)
         DO UPDATE SET
             display_name = EXCLUDED.display_name,
+            email        = EXCLUDED.email,
             role_code    = EXCLUDED.role_code,
             language     = EXCLUDED.language,
             updated_at   = EXCLUDED.updated_at
         WHERE participants.status = 'in_attesa'
-    ", [$org->id, $project->id, $ref, 'Second Display', 'ICO', 'en', $now, $now]);
+    ", [$org->id, $project->id, $ref, 'Second Display', 'second@example.test', 'ICO', 'en', $now, $now]);
 
     $count = Participant::where('project_id', $project->id)->where('candidate_ref', $ref)->count();
     $participant = Participant::where('project_id', $project->id)->where('candidate_ref', $ref)->first();

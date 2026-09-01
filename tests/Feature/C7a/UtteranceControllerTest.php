@@ -50,6 +50,7 @@ function utteranceParticipant(Organization $org, Project $project, string $statu
         'project_id' => $project->id,
         'candidate_ref' => 'utt-'.($suffix ?: uniqid()),
         'display_name' => 'Utterance Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

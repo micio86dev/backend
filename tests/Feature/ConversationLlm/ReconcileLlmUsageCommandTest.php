@@ -40,6 +40,7 @@ function reconcileModel(): LlmModel
         [
             'vendor' => 'google',
             'display_name' => 'Gemini 3 Flash Preview',
+            'email' => uniqid('cand-').'@example.test',
             'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
             'capability' => 'text',
             'is_available' => true,
@@ -67,6 +68,7 @@ function reconcileFixture(string $status, string $llmBindingStatus, ?Carbon $upd
         'project_id' => $project->id,
         'candidate_ref' => 'reconcile-'.uniqid(),
         'display_name' => 'Reconcile Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'errore',
     ]);
     $participant->save();

@@ -362,6 +362,7 @@ function brandingParticipant(Organization $org): Participant
             'project_id' => $project->id,
             'candidate_ref' => 'brand-'.uniqid(),
             'display_name' => 'Branding Candidate',
+            'email' => uniqid('cand-').'@example.test',
             'status' => 'in_attesa',
         ]);
         $participant->save();

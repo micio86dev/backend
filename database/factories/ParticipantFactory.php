@@ -33,6 +33,10 @@ class ParticipantFactory extends Factory
         return [
             'candidate_ref' => $this->faker->unique()->uuid(),
             'display_name' => $this->faker->name(),
+            // Unique, because `(project_id, email)` is unique at the database
+            // and a factory that reuses one address makes every test that
+            // creates two participants fail for a reason it is not about.
+            'email' => $this->faker->unique()->safeEmail(),
             'role_code' => 'ICO',
             'language' => 'en',
             'status' => 'in_attesa',

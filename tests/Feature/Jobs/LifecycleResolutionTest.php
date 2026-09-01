@@ -59,6 +59,7 @@ function lcParticipant(Organization $org, Project $project, string $status = 'in
         'project_id' => $project->id,
         'candidate_ref' => 'lc-'.uniqid(),
         'display_name' => 'Lifecycle Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

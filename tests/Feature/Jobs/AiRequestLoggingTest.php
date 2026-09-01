@@ -76,6 +76,7 @@ function aiLogParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'ailog-'.uniqid(),
         'display_name' => 'AI Log Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

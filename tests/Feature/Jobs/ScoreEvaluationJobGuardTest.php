@@ -47,6 +47,7 @@ function c9GuardParticipant(Organization $org, Project $project, string $status 
         'project_id' => $project->id,
         'candidate_ref' => 'c9-guard-'.uniqid(),
         'display_name' => 'C9 Guard Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

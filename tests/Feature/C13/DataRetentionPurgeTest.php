@@ -70,6 +70,7 @@ function roundTripCandidateFixture(Organization $org): array
         'project_id' => $project->id,
         'candidate_ref' => 'retention-'.uniqid(),
         'display_name' => 'Retention Round-Trip',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_corso',
     ]);
     $participant->save();

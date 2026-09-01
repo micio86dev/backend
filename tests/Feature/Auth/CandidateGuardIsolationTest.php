@@ -30,6 +30,7 @@ function guardIsolationParticipant(): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'isolation-'.uniqid(),
         'display_name' => 'Isolation Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();

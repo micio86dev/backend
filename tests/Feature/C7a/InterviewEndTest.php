@@ -83,6 +83,7 @@ function endParticipant(Organization $org, Project $project, string $status = 'i
         'project_id' => $project->id,
         'candidate_ref' => 'end-'.uniqid(),
         'display_name' => 'End Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

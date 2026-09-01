@@ -51,6 +51,7 @@ function integrityParticipant(Organization $org, Project $project, string $statu
         'project_id' => $project->id,
         'candidate_ref' => 'int-'.($suffix ?: uniqid()),
         'display_name' => 'Integrity Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

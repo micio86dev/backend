@@ -43,7 +43,7 @@ test('mint returns a MintedEntryLink for an accessible project', function (): vo
     $org = Organization::factory()->create();
     $project = minterActiveProject($org);
 
-    $minted = (new EntryLinkMinter)->mint($project, 'cand-1', 'Mario Rossi', null, 'en');
+    $minted = (new EntryLinkMinter)->mint($project, 'cand-1', 'Mario Rossi', uniqid('cand-').'@example.test', null, 'en');
 
     expect($minted)->toBeInstanceOf(MintedEntryLink::class);
     expect($minted->token)->toBeString();
@@ -55,7 +55,7 @@ test('a project failing an entry gate refuses the mint with reason gates', funct
     $project = minterActiveProject($org, ['deadline_at' => now()->subHour()]);
 
     try {
-        (new EntryLinkMinter)->mint($project, 'cand-2', 'Mario Rossi', null, null);
+        (new EntryLinkMinter)->mint($project, 'cand-2', 'Mario Rossi', uniqid('cand-').'@example.test', null, null);
         expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
     } catch (EntryLinkRefused $e) {
         expect($e->reason)->toBe(EntryLinkRefusalReason::Gates);
@@ -67,7 +67,7 @@ test('a role_code mismatch on a standard project refuses the mint with reason ro
     $project = minterActiveProject($org, ['role_code' => 'ICO']);
 
     try {
-        (new EntryLinkMinter)->mint($project, 'cand-3', 'Mario Rossi', 'FLL', null);
+        (new EntryLinkMinter)->mint($project, 'cand-3', 'Mario Rossi', uniqid('cand-').'@example.test', 'FLL', null);
         expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
     } catch (EntryLinkRefused $e) {
         expect($e->reason)->toBe(EntryLinkRefusalReason::RoleCode);
@@ -80,7 +80,7 @@ test('a role_code supplied for a potential project refuses the mint with reason 
     $project = minterActiveProject($org, ['assessment_type' => 'potential', 'role_code' => null]);
 
     try {
-        (new EntryLinkMinter)->mint($project, 'cand-3b', 'Mario Rossi', 'ICO', null);
+        (new EntryLinkMinter)->mint($project, 'cand-3b', 'Mario Rossi', uniqid('cand-').'@example.test', 'ICO', null);
         expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
     } catch (EntryLinkRefused $e) {
         expect($e->reason)->toBe(EntryLinkRefusalReason::RoleCode);
@@ -97,13 +97,14 @@ test('a completed participant refuses the mint with reason completed', function 
         'project_id' => $project->id,
         'candidate_ref' => 'terminal-cand',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();
     DB::table('participants')->where('id', $p->id)->update(['status' => 'completato']);
 
     try {
-        (new EntryLinkMinter)->mint($project, 'terminal-cand', 'Done', null, null);
+        (new EntryLinkMinter)->mint($project, 'terminal-cand', 'Done', uniqid('cand-').'@example.test', null, null);
         expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
     } catch (EntryLinkRefused $e) {
         expect($e->reason)->toBe(EntryLinkRefusalReason::Completed);
@@ -120,13 +121,14 @@ test('a failed (errore) participant refuses the mint with reason failed', functi
         'project_id' => $project->id,
         'candidate_ref' => 'errored-cand',
         'display_name' => 'Errored',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();
     DB::table('participants')->where('id', $p->id)->update(['status' => 'errore']);
 
     try {
-        (new EntryLinkMinter)->mint($project, 'errored-cand', 'Errored', null, null);
+        (new EntryLinkMinter)->mint($project, 'errored-cand', 'Errored', uniqid('cand-').'@example.test', null, null);
         expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
     } catch (EntryLinkRefused $e) {
         expect($e->reason)->toBe(EntryLinkRefusalReason::Failed);
@@ -137,7 +139,7 @@ test('expires_at equals the decoded exp claim of the minted token', function ():
     $org = Organization::factory()->create();
     $project = minterActiveProject($org);
 
-    $minted = (new EntryLinkMinter)->mint($project, 'cand-4', 'Mario Rossi', null, 'it');
+    $minted = (new EntryLinkMinter)->mint($project, 'cand-4', 'Mario Rossi', uniqid('cand-').'@example.test', null, 'it');
 
     $payload = JWTAuth::setToken($minted->token)->getPayload();
 
@@ -148,7 +150,7 @@ test('an omitted role_code is inherited from a standard project', function (): v
     $org = Organization::factory()->create();
     $project = minterActiveProject($org, ['assessment_type' => 'standard', 'role_code' => 'ICO']);
 
-    $minted = (new EntryLinkMinter)->mint($project, 'cand-5', 'Mario Rossi', null, null);
+    $minted = (new EntryLinkMinter)->mint($project, 'cand-5', 'Mario Rossi', uniqid('cand-').'@example.test', null, null);
 
     $payload = JWTAuth::setToken($minted->token)->getPayload();
 
@@ -159,7 +161,7 @@ test('a potential project mints a null role_code when omitted', function (): voi
     $org = Organization::factory()->create();
     $project = minterActiveProject($org, ['assessment_type' => 'potential', 'role_code' => null]);
 
-    $minted = (new EntryLinkMinter)->mint($project, 'cand-6', 'Mario Rossi', null, null);
+    $minted = (new EntryLinkMinter)->mint($project, 'cand-6', 'Mario Rossi', uniqid('cand-').'@example.test', null, null);
 
     $payload = JWTAuth::setToken($minted->token)->getPayload();
 
@@ -170,7 +172,7 @@ test('lang omitted falls back to the project language', function (): void {
     $org = Organization::factory()->create();
     $project = minterActiveProject($org, ['language' => 'en']);
 
-    $minted = (new EntryLinkMinter)->mint($project, 'cand-7', 'Mario Rossi', null, null);
+    $minted = (new EntryLinkMinter)->mint($project, 'cand-7', 'Mario Rossi', uniqid('cand-').'@example.test', null, null);
 
     expect($minted->lang)->toBe('en');
 });

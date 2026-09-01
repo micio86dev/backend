@@ -44,6 +44,7 @@ test('FinalizeInterview emits ScoringRequested and dispatches ScoreEvaluationJob
         'project_id' => $project->id,
         'candidate_ref' => 'finalize-hook-'.uniqid(),
         'display_name' => 'FinalizeInterview Hook Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();
@@ -76,6 +77,7 @@ test('FinalizeInterview dispatches ScoreEvaluationJob via listener when events a
         'project_id' => $project->id,
         'candidate_ref' => 'finalize-dispatch-'.uniqid(),
         'display_name' => 'FinalizeInterview Dispatch Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

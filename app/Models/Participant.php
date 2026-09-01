@@ -70,6 +70,7 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
         'project_id',
         'candidate_ref',
         'display_name',
+        'email',
         'role_code',
         'language',
         'status',

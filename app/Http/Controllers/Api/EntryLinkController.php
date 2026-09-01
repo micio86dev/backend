@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Exceptions\Sso\EntryLinkRefusalReason;
 use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
+use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
 use App\Support\Sso\EntryLinkMinter;
@@ -60,9 +61,15 @@ final class EntryLinkController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
+            // Defaults to TRUE. The operator pressed "invite a candidate";
+            // producing a link and silently not sending it is the behaviour
+            // that made this feature necessary in the first place. An operator
+            // who wants to deliver the link some other way opts out explicitly.
+            'send_email' => ['sometimes', 'boolean'],
         ]);
 
         // Project is resolved manually (not route model binding), scoped by
@@ -75,6 +82,7 @@ final class EntryLinkController extends Controller
                 $project,
                 $validated['candidate_ref'],
                 $validated['display_name'],
+                $validated['email'],
                 $validated['role_code'] ?? null,
                 $validated['lang'] ?? null,
             );
@@ -114,9 +122,46 @@ final class EntryLinkController extends Controller
         // 201 carrying a malformed link.
         $entryUrl = $this->composer->compose($minted->token, $minted->lang);
 
+        // Queued, not sent inline: the link exists and is valid whether or not
+        // a mail provider is having a good minute, and failing the request
+        // would leave the operator believing nothing happened when the token
+        // has already been minted and its jti already spent.
+        $emailSent = (bool) ($validated['send_email'] ?? true);
+
+        // The candidate's own language, formatted in it. A date rendered in
+        // the operator's locale inside a message written in the candidate's is
+        // the kind of seam that makes a product feel machine-assembled.
+        //
+        // `locale()` is a getter AND a setter on Carbon, so its return type is
+        // `static|string` and chaining off it does not type-check. Set it as a
+        // statement on a copy, then format — the copy also keeps this from
+        // mutating the instance the response reads `toISOString()` from.
+        $expiresAt = $minted->expiresAt->copy();
+        $expiresAt->locale($minted->lang);
+        $expiresLabel = $expiresAt->isoFormat('LLL');
+
+        if ($emailSent) {
+            SendCandidateInvitationJob::dispatch(
+                $validated['email'],
+                $entryUrl,
+                $validated['display_name'],
+                (string) $project->organization?->name,
+                $project->name,
+                // The candidate's own language, formatted in it. A date
+                // rendered in the operator's locale inside a message written
+                // in the candidate's is the kind of seam that makes a product
+                // feel machine-assembled.
+                $expiresLabel,
+                $minted->lang,
+            );
+        }
+
         return response()->json([
             'entry_url' => $entryUrl,
             'expires_at' => $minted->expiresAt->toISOString(),
+            // Reported back so the UI can say "sent to grace@example.test"
+            // rather than leaving the operator to guess whether it went.
+            'email_sent' => $emailSent,
         ], 201);
     }
 }

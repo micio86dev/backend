@@ -93,6 +93,7 @@ function secretParticipant(Organization $org, Project $project, string $status =
         'project_id' => $project->id,
         'candidate_ref' => 'sec-'.uniqid(),
         'display_name' => 'Secret Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();
@@ -299,6 +300,7 @@ test('P4: the Gemini credential key appears in no response, no exception, and no
         'key' => 'gemini-3-flash-preview',
         'vendor' => 'google',
         'display_name' => 'Gemini 3 Flash Preview',
+        'email' => uniqid('cand-').'@example.test',
         'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
         'capability' => 'text',
         'is_available' => true,

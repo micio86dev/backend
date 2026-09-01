@@ -386,6 +386,13 @@ final class DemoWriter
                     'project_id' => $project->id,
                     'candidate_ref' => $definition['ref'],
                     'display_name' => $definition['name'],
+                    // Derived from the ref rather than listed per candidate,
+                    // and pointed at a domain that resolves NOWHERE. `.invalid`
+                    // is reserved by RFC 2606 for exactly this: demo data is
+                    // seeded into real environments, and an address that could
+                    // ever be delivered to is one interview invitation away
+                    // from mailing a stranger.
+                    'email' => $definition['ref'].'@beai-demo.invalid',
                     'role_code' => $project->role_code,
                     'language' => $project->language,
                     'status' => $definition['status'],

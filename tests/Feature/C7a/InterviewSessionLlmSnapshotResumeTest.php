@@ -37,6 +37,7 @@ function llmSnapshotModel(): LlmModel
         'key' => 'gemini-3-flash-preview',
         'vendor' => 'google',
         'display_name' => 'Gemini 3 Flash Preview',
+        'email' => uniqid('cand-').'@example.test',
         'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
         'capability' => 'text',
         'is_available' => true,
@@ -129,6 +130,7 @@ test('avatar_template_id and llm_model_key are write-once — a resume with a di
         'project_id' => $project->id,
         'candidate_ref' => 'snap-'.uniqid(),
         'display_name' => 'Snapshot Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();
@@ -156,6 +158,7 @@ test('avatar_template_id and llm_model_key are write-once — a resume with a di
         'key' => 'gemini-3-pro-preview',
         'vendor' => 'google',
         'display_name' => 'Gemini 3 Pro Preview',
+        'email' => uniqid('cand-').'@example.test',
         'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
         'capability' => 'text',
         'is_available' => true,
@@ -183,6 +186,7 @@ test('llm_binding_status is write-once then DOWNGRADE-ONLY — applied never cli
         'project_id' => $project->id,
         'candidate_ref' => 'snap-'.uniqid(),
         'display_name' => 'Snapshot Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();
@@ -234,6 +238,7 @@ test('system_prompt_chars is write-once and never overwritten from a null on the
         'project_id' => $project->id,
         'candidate_ref' => 'snap-'.uniqid(),
         'display_name' => 'Snapshot Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();
@@ -269,6 +274,7 @@ test('an unbound resolved template (or none) snapshots unbound, llm_model_key nu
         'project_id' => $project->id,
         'candidate_ref' => 'snap-'.uniqid(),
         'display_name' => 'Snapshot Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();
@@ -307,6 +313,7 @@ test('a successfully applied binding snapshots applied, llm_model_key equals the
         'project_id' => $project->id,
         'candidate_ref' => 'snap-'.uniqid(),
         'display_name' => 'Snapshot Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();

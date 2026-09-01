@@ -125,6 +125,12 @@ test('every ShouldQueue job under app/ references TenantContextScope or is expli
         // rather than being read back through a scope, precisely so this job
         // performs no tenant-scoped read at all.
         'App\\Jobs\\SendUserInvitationJob' => 'Cross-tenant by construction: reads one User (a plain, non-TenantModel Model) by id and writes only password_reset_tokens, which has no organization_id. The organization name is passed in, never read back, so the job makes no tenant-scoped query.',
+        // SendCandidateInvitationJob holds no ids and reads no rows — every
+        // value it needs arrives as a scalar from a request that had already
+        // authorized the mint. It therefore makes no tenant-scoped query at
+        // all, which is a stronger property than opening a scope would give
+        // it: there is nothing here for a tenant boundary to be crossed BY.
+        'App\\Jobs\\SendCandidateInvitationJob' => 'Reads nothing. Every value arrives as a scalar from the already-authorized request, so the job performs no query, tenant-scoped or otherwise.',
     ];
 
     $violations = c10DiscoverShouldQueueViolations(app_path(), 'App', $allowlist);

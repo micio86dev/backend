@@ -44,6 +44,7 @@ test('project with 0 project_competencies → participant errore, no EvaluationC
         'project_id' => $project->id,
         'candidate_ref' => 'zero-comp-'.uniqid(),
         'display_name' => 'Zero Competencies Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

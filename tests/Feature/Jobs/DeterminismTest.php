@@ -71,6 +71,7 @@ function detParticipant(Organization $org, Project $project): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'det-'.uniqid(),
         'display_name' => 'Determinism Test Participant',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

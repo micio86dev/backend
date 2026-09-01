@@ -64,6 +64,7 @@ function intermediateParticipant(Organization $org, Project $project): Participa
         'project_id' => $project->id,
         'candidate_ref' => 'intermediate-'.uniqid(),
         'display_name' => 'Intermediate Scale Cassette Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();

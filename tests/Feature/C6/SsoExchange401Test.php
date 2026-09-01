@@ -72,6 +72,7 @@ test('expired sso-link token → 401', function (): void {
         'typ' => 'sso-link',
         'candidate_ref' => 'cand-expired-ref',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => 1,
         'org_id' => 1,
         'role_code' => 'ICO',
@@ -111,6 +112,7 @@ test('wrong typ: candidate JWT at exchange → 401 (typ !== sso-link)', function
         'project_id' => $project->id,
         'candidate_ref' => 'ref-typ-test',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $participant->save();
@@ -136,6 +138,7 @@ test('replay: jti already consumed → 401', function (): void {
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-replay',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $project->id,
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -154,6 +157,7 @@ test('missing project (non-existent project_id in token) → 401', function (): 
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-noproject',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => 999999,  // non-existent
         'org_id' => $org->id,
         'role_code' => 'ICO',
@@ -171,6 +175,7 @@ test('soft-deleted project → 401 (SoftDeletingScope still active at public exc
     $token = CandidateTokenFactory::mintSsoLink([
         'candidate_ref' => 'cand-softdel',
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'project_id' => $projectId,
         'org_id' => $org->id,
         'role_code' => 'ICO',

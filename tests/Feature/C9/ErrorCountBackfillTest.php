@@ -68,6 +68,7 @@ test('the backfill records the spent attempt on rows already at error', function
         'project_id' => $project->id,
         'candidate_ref' => 'bf-'.uniqid(),
         'display_name' => 'Backfill Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_corso',
     ]);
     $p->save();

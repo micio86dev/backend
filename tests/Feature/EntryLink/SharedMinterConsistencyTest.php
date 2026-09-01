@@ -82,12 +82,14 @@ test('a gates refusal (past deadline_at) is 403 on both the M2M mint and the ope
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-gates',
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $operatorResponse = $this->withToken($operatorToken)->postJson('/api/entry-links', [
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-gates',
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $m2mResponse->assertStatus(403);
@@ -105,6 +107,7 @@ test('a role_code refusal (mismatch for a standard project) is 422 on both mints
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-role',
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'role_code' => 'FLL',
     ]);
 
@@ -112,6 +115,7 @@ test('a role_code refusal (mismatch for a standard project) is 422 on both mints
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-role',
         'display_name' => 'Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'role_code' => 'FLL',
     ]);
 
@@ -132,6 +136,7 @@ test('a terminal-status refusal (completato) is 409 on both mints', function ():
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-terminal',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();
@@ -141,12 +146,14 @@ test('a terminal-status refusal (completato) is 409 on both mints', function ():
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-terminal',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $operatorResponse = $this->withToken($operatorToken)->postJson('/api/entry-links', [
         'project_id' => $project->id,
         'candidate_ref' => 'consistency-terminal',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $m2mResponse->assertStatus(409);

@@ -128,6 +128,7 @@ function startParticipant(Organization $org, Project $project, string $status = 
         'project_id' => $project->id,
         'candidate_ref' => 'start-'.uniqid(),
         'display_name' => 'Start Test Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();

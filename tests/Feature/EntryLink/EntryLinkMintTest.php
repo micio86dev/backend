@@ -65,6 +65,7 @@ test('a successful mint returns entry_url and expires_at, no bare token', functi
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand',
         'display_name' => 'Mint Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'lang' => 'en',
     ]);
 
@@ -85,6 +86,7 @@ test('a project failing an entry gate refuses the mint with 403', function (): v
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-gate',
         'display_name' => 'Mint Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ])->assertStatus(403);
 });
 
@@ -98,6 +100,7 @@ test('a role_code mismatch refuses the mint with 422', function (): void {
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-role',
         'display_name' => 'Mint Candidate',
+        'email' => uniqid('cand-').'@example.test',
         'role_code' => 'FLL',
     ])->assertStatus(422);
 });
@@ -114,6 +117,7 @@ test('a completed participant refuses the mint with 409 and reason completed', f
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-terminal',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $p->save();
@@ -123,6 +127,7 @@ test('a completed participant refuses the mint with 409 and reason completed', f
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-terminal',
         'display_name' => 'Done',
+        'email' => uniqid('cand-').'@example.test',
     ])
         ->assertStatus(409)
         ->assertJson([
@@ -143,6 +148,7 @@ test('a failed (errore) participant refuses the mint with 409, reason failed, an
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-failed',
         'display_name' => 'Errored',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_attesa',
     ]);
     $p->save();
@@ -152,6 +158,7 @@ test('a failed (errore) participant refuses the mint with 409, reason failed, an
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-failed',
         'display_name' => 'Errored',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertStatus(409)->assertJson(['reason' => 'failed']);
@@ -173,6 +180,7 @@ test('lang omitted resolves end-to-end through the composer: project.language=en
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-lang-fallback',
         'display_name' => 'Mint Candidate',
+        'email' => uniqid('cand-').'@example.test',
         // lang omitted — must fall back to project.language.
     ]);
 
@@ -190,6 +198,7 @@ test('lang omitted with project.language=it produces an unprefixed entry_url (th
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-lang-fallback-it',
         'display_name' => 'Mint Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertStatus(201);
@@ -208,6 +217,7 @@ test('a missing CANDIDATE_APP_URL fails loud with 500, not a malformed 201', fun
         'project_id' => $project->id,
         'candidate_ref' => 'mint-cand-unconfigured',
         'display_name' => 'Mint Candidate',
+        'email' => uniqid('cand-').'@example.test',
     ]);
 
     $response->assertStatus(500);

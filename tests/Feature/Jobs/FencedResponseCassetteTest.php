@@ -47,6 +47,7 @@ function fencedCassetteSetup(): array
         'project_id' => $project->id,
         'candidate_ref' => 'fenced-'.uniqid(),
         'display_name' => 'Fenced Response Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => 'in_valutazione',
     ]);
     $participant->save();

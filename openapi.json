@@ -1308,6 +1308,11 @@
                                         "type": "string",
                                         "maxLength": 255
                                     },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "maxLength": 255
+                                    },
                                     "display_name": {
                                         "type": "string",
                                         "maxLength": 255
@@ -1325,11 +1330,16 @@
                                             "null"
                                         ],
                                         "maxLength": 10
+                                    },
+                                    "send_email": {
+                                        "type": "boolean",
+                                        "description": "Defaults to TRUE. The operator pressed \"invite a candidate\";\nproducing a link and silently not sending it is the behaviour\nthat made this feature necessary in the first place. An operator\nwho wants to deliver the link some other way opts out explicitly."
                                     }
                                 },
                                 "required": [
                                     "project_id",
                                     "candidate_ref",
+                                    "email",
                                     "display_name"
                                 ]
                             }
@@ -1349,11 +1359,16 @@
                                         },
                                         "expires_at": {
                                             "type": "string"
+                                        },
+                                        "email_sent": {
+                                            "type": "boolean",
+                                            "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
                                         }
                                     },
                                     "required": [
                                         "entry_url",
-                                        "expires_at"
+                                        "expires_at",
+                                        "email_sent"
                                     ]
                                 }
                             }
@@ -2979,6 +2994,12 @@
                                         "type": "string",
                                         "maxLength": 255
                                     },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "description": "Required: the email IS the candidate's identity across projects\nand organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and\nthe column is NOT NULL. There is no legacy contract to keep \u2014\nthis product is greenfield by ruling.",
+                                        "maxLength": 255
+                                    },
                                     "display_name": {
                                         "type": "string",
                                         "maxLength": 255
@@ -3007,6 +3028,7 @@
                                 "required": [
                                     "project_id",
                                     "candidate_ref",
+                                    "email",
                                     "display_name"
                                 ]
                             }
@@ -4358,6 +4380,11 @@
                                         "type": "string",
                                         "maxLength": 255
                                     },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "maxLength": 255
+                                    },
                                     "display_name": {
                                         "type": "string",
                                         "maxLength": 255
@@ -4380,6 +4407,7 @@
                                 "required": [
                                     "project_id",
                                     "candidate_ref",
+                                    "email",
                                     "display_name"
                                 ]
                             }
@@ -5586,6 +5614,9 @@
                     "display_name": {
                         "type": "string"
                     },
+                    "email": {
+                        "type": "string"
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -5799,6 +5830,7 @@
                     "id",
                     "candidate_ref",
                     "display_name",
+                    "email",
                     "role_code",
                     "language",
                     "status",
@@ -5823,6 +5855,9 @@
                         "type": "string"
                     },
                     "display_name": {
+                        "type": "string"
+                    },
+                    "email": {
                         "type": "string"
                     },
                     "role_code": {
@@ -5879,6 +5914,7 @@
                     "id",
                     "candidate_ref",
                     "display_name",
+                    "email",
                     "role_code",
                     "language",
                     "status",

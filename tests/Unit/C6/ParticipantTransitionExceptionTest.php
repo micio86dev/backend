@@ -36,6 +36,7 @@ function makeParticipantWithStatus(string $status): Participant
         'project_id' => $project->id,
         'candidate_ref' => 'guard-test-'.uniqid(),
         'display_name' => 'Test',
+        'email' => uniqid('cand-').'@example.test',
         'status' => $status,
     ]);
     $p->save();
