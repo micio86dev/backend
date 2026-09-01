@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Authorization;
 
+use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\Organization;
@@ -45,7 +46,14 @@ final class UserAbilities
      * read it as a level of nesting that is not there — so the structure says
      * what it means instead.
      *
-     * @return array<string, array<string, bool>>
+     * @return array{
+     *     organization: array{view: bool, update: bool},
+     *     apiClients: array{viewAny: bool, create: bool},
+     *     users: array{viewAny: bool, create: bool},
+     *     llmCredentials: array{viewAny: bool, create: bool},
+     *     avatarTemplates: array{viewAny: bool, create: bool},
+     *     projects: array{viewAny: bool, create: bool},
+     * }
      */
     public function for(User $user): array
     {
@@ -61,6 +69,10 @@ final class UserAbilities
             'organization' => [
                 'view' => $gate->allows('view', $organization),
                 'update' => $gate->allows('update', $organization),
+            ],
+            'apiClients' => [
+                'viewAny' => $gate->allows('viewAny', ApiClient::class),
+                'create' => $gate->allows('create', ApiClient::class),
             ],
             'users' => [
                 'viewAny' => $gate->allows('viewAny', User::class),

@@ -31,9 +31,9 @@ class OrganizationResource extends JsonResource
      * return bigint as string, and the contract must be true regardless of
      * that PDO detail.
      *
-     * @return array{id: int, name: string, slug: string, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     * @return array{id: int, name: string, slug: string, primary_color: string|null, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      *
-     * @scramble-return array{id: int, name: string, slug: string, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     * @scramble-return array{id: int, name: string, slug: string, primary_color: string|null, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      */
     public function toArray(Request $request): array
     {

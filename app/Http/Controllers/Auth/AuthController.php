@@ -147,10 +147,32 @@ final class AuthController extends Controller
     }
 
     /**
-     * Return the authenticated user, their organization, and their roles.
+     * Return the authenticated user, their organization, their roles, and
+     * what they may do.
      *
      * GET /api/auth/me
      * Protected: auth:api
+     *
+     * The `abilities` shape is spelled out for Scramble. Inferred, it comes
+     * out as a bare `string` — `app(UserAbilities::class)->for()` is a
+     * container call it cannot follow — and a wrong type in the spec is worse
+     * than no type: both Nuxt apps generate their client from this file, so a
+     * `string` there makes every `abilities.users.viewAny` read a compile
+     * error in the two repositories that consume it.
+     *
+     * @scramble-return array{
+     *     user: array{id: int, name: string, email: string, locale: string, photo_url: string|null},
+     *     organization: array{id: int, name: string}|null,
+     *     roles: list<string>,
+     *     abilities: array{
+     *         organization: array{view: bool, update: bool},
+     *         apiClients: array{viewAny: bool, create: bool},
+     *         users: array{viewAny: bool, create: bool},
+     *         llmCredentials: array{viewAny: bool, create: bool},
+     *         avatarTemplates: array{viewAny: bool, create: bool},
+     *         projects: array{viewAny: bool, create: bool},
+     *     },
+     * }
      */
     public function me(Request $request): JsonResponse
     {

@@ -7,9 +7,9 @@ namespace App\Http\Resources;
 use App\Models\Competency;
 use App\Models\Project;
 use App\Models\User;
-use App\Support\Authorization\UserAbilities;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * ProjectResource (C4 Project Configuration).
@@ -35,9 +35,9 @@ class ProjectResource extends JsonResource
      * `(int)` cast; nullable ints use the ternary form so `null` never
      * becomes `0`.
      *
-     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
+     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      *
-     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>}
+     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      */
     public function toArray(Request $request): array
     {
@@ -102,9 +102,30 @@ class ProjectResource extends JsonResource
             //
             // A rendering hint, not a control: the endpoints authorize
             // independently, and a hidden button is not a closed door.
-            'can' => $request->user() instanceof User
-                ? app(UserAbilities::class)->forModel($request->user(), $project, ['update', 'delete'])
-                : [],
+            'can' => [
+                'update' => $this->allows($request, 'update', $project),
+                'delete' => $this->allows($request, 'delete', $project),
+            ],
         ];
+    }
+
+    /**
+     * One policy answer for this record, for the user making the request.
+     *
+     * Spelled out as two literal keys at the call site rather than built from
+     * a list, because that is what makes the generated OpenAPI spec — and so
+     * the typed client both Nuxt apps consume — carry `can.update` and
+     * `can.delete` as required booleans. Returned from a loop, the field comes
+     * out untyped or optional, and an optional `can` pushes a `?.` into every
+     * call site where `can?.delete` reads as "allowed" under a truthiness
+     * test. A missing answer is a NO, and this is what keeps it one.
+     */
+    private function allows(Request $request, string $ability, Project $project): bool
+    {
+        $user = $request->user();
+
+        // Reached on the M2M and candidate token paths, whose callers are not
+        // people and have no buttons to render.
+        return $user instanceof User && Gate::forUser($user)->allows($ability, $project);
     }
 }
