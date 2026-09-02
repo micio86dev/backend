@@ -1,7 +1,7 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "Laravel",
+        "title": "BEAI",
         "version": "0.41.0"
     },
     "servers": [
@@ -5017,6 +5017,12 @@
                     "branding": {
                         "type": "object",
                         "properties": {
+                            "name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
                             "primary_color": {
                                 "type": [
                                     "string",
@@ -5031,6 +5037,7 @@
                             }
                         },
                         "required": [
+                            "name",
                             "primary_color",
                             "logo_url"
                         ]
