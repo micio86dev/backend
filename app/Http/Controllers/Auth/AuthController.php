@@ -161,7 +161,7 @@ final class AuthController extends Controller
      * error in the two repositories that consume it.
      *
      * @scramble-return array{
-     *     user: array{id: int, name: string, email: string, locale: string, photo_url: string|null},
+     *     user: array{id: int, name: string, email: string, locale: string, photo_url: string|null, is_superadmin: bool},
      *     organization: array{id: int, name: string}|null,
      *     roles: list<string>,
      *     abilities: array{

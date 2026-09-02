@@ -10,13 +10,16 @@ use App\Models\User;
 /**
  * AvatarTemplatePolicy (C14).
  *
- * Admin only, for every ability including read.
+ * Read is admin-only; MANAGING is platform-only (2026-09-02).
  *
- * | ability            | admin | operator | viewer |
- * |--------------------|-------|----------|--------|
- * | viewAny / view     |  ✅   |    ❌    |   ❌   |
- * | create / update    |  ✅   |    ❌    |   ❌   |
- * | activate / delete  |  ✅   |    ❌    |   ❌   |
+ * | ability            | superadmin | admin | operator | viewer |
+ * |--------------------|------------|-------|----------|--------|
+ * | viewAny / view     |     ✅     |  ✅   |    ❌    |   ❌   |
+ * | listOptions        |     ✅     |  ✅   |    ✅    |   ✅   |
+ * | create / update    |     ✅     |  ❌   |    ❌    |   ❌   |
+ * | activate / delete  |     ✅     |  ❌   |    ❌    |   ❌   |
+ *
+ * The superadmin column is served by `Gate::before`, not by branches here.
  *
  * Read is withheld from operator and viewer deliberately. Choosing the face and
  * voice every candidate of an organization meets is a brand decision rather
@@ -65,23 +68,38 @@ class AvatarTemplatePolicy
         return $user->hasRole('admin') || $user->hasRole('operator') || $user->hasRole('viewer');
     }
 
+    /**
+     * MANAGING a template is a PLATFORM action, not a client one (2026-09-02).
+     *
+     * A client selects a template for a project; it does not author one. The
+     * four mutating abilities therefore deny every organization role, and the
+     * superadmin reaches them through `Gate::before` — which is why no
+     * superadmin branch is repeated in each method below. Adding one would put
+     * a second copy of that rule beside the one in AppServiceProvider, and the
+     * copy would drift.
+     *
+     * READING did not move: `viewAny`/`view` above stay admin-only, so the
+     * templates page remains consultable. Read-only is the shape of "you
+     * select from these", and removing the page would answer a question nobody
+     * asked.
+     */
     public function create(User $user): bool
     {
-        return $user->hasRole('admin');
+        return false;
     }
 
     public function update(User $user, AvatarTemplate $template): bool
     {
-        return $user->hasRole('admin');
+        return false;
     }
 
     public function delete(User $user, AvatarTemplate $template): bool
     {
-        return $user->hasRole('admin');
+        return false;
     }
 
     public function activate(User $user, AvatarTemplate $template): bool
     {
-        return $user->hasRole('admin');
+        return false;
     }
 }

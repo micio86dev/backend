@@ -123,7 +123,7 @@ test('deleting an unbound credential with a HeyGen secret deletes the vendor sec
     config()->set('interview.heygen.api_key', 'platform-heygen-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
 
     $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
         $c = new LlmCredential;
@@ -155,7 +155,7 @@ test('deleting a bound HeyGen template deletes its vendor configuration — no o
     $model = heygenLifecycleModel();
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
 
     $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
         $c = new LlmCredential;
@@ -214,7 +214,7 @@ test('deleting a HeyGen template whose vendor account is unreachable still delet
     $model = heygenLifecycleModel();
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
 
     $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
         $c = new LlmCredential;

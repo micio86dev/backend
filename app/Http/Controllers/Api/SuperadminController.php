@@ -53,6 +53,14 @@ class SuperadminController extends Controller
      * name to put in a menu, and every other read stays behind the acting
      * organization the caller then selects.
      */
+    /**
+     * The shape is declared for Scramble, and not as documentation for its own
+     * sake: both Nuxt apps generate their typed client from this spec, so an
+     * undeclared `response()->json()` produced `data: string` and the switcher
+     * failed to compile against its own API.
+     *
+     * @scramble-return array{data: list<array{id: int, name: string}>, acting_organization_id: int|null}
+     */
     public function organizations(Request $request): JsonResponse
     {
         $user = $this->assertSuperadmin($request);
@@ -75,6 +83,9 @@ class SuperadminController extends Controller
      * id would otherwise scope every subsequent read to an organization that
      * does not exist, and the superadmin would see an empty product with no
      * explanation.
+     */
+    /**
+     * @scramble-return array{acting_organization_id: int|null}
      */
     public function setActingOrganization(Request $request): JsonResponse
     {

@@ -48,6 +48,19 @@ use Spatie\Permission\PermissionRegistrar;
 /**
  * @return array{user: User, token: string}
  */
+/**
+ * The SUPERADMIN acting as this organization, for the tests that MANAGE a
+ * template (activate/deactivate/delete). Managing templates stopped being a
+ * client action on 2026-09-02 — a client selects one, it does not author one.
+ *
+ * The project tests in this file keep `projTemplateAdmin`: projects ARE client
+ * data, and nothing about who owns them changed.
+ */
+function projTemplatePlatform(Organization $org): array
+{
+    return ['token' => authTokenForRole($org, 'platform')];
+}
+
 function projTemplateAdmin(Organization $org): array
 {
     $user = User::factory()->create(['organization_id' => $org->id]);
@@ -396,7 +409,7 @@ test('the API refuses that deletion with a readable conflict, not a 500', functi
     // a 500 that tells the operator nothing about what to do. The count is
     // included so they know how much reassigning is involved before starting.
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
     $template = projTemplateFor($org);
     Project::factory()->create(['avatar_template_id' => $template->id]);
@@ -425,9 +438,9 @@ test('the API refuses that deletion with a readable conflict, not a 500', functi
  * projects" — and turning it off is a safe, reversible bookkeeping act rather
  * than a live reconfiguration.
  */
-test('an admin can deactivate a template', function (): void {
+test('the platform can deactivate a template', function (): void {
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
 
     $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
@@ -450,7 +463,7 @@ test('deactivating leaves the projects that pin it running on it', function (): 
     // active — `ActiveTemplateResolver` returns what the project pinned — so
     // taking it out of the default list must not disturb anything live.
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
 
     $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
@@ -479,7 +492,7 @@ test('deactivating an already-inactive template is a no-op, not an error', funct
     // Idempotent on purpose: an operator double-clicking, or two of them acting
     // at once, must not see a failure for a state that is already correct.
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
     $template = projTemplateFor($org); // created with is_active = false
 

@@ -29,8 +29,19 @@ use Spatie\Permission\PermissionRegistrar;
 /**
  * @return array{user: User, token: string}
  */
+/**
+ * `platform` means the SUPERADMIN acting as this organization — who manages
+ * avatar templates since 2026-09-02, while PROJECTS below stay client data and
+ * keep their org-admin actor.
+ */
 function deletionUser(Organization $org, string $role): array
 {
+    if ($role === 'platform') {
+        app(TenantResolver::class)->setOrgId($org->id);
+
+        return ['user' => null, 'token' => authTokenForRole($org, 'platform')];
+    }
+
     $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $spatie = SpatieRole::firstOrCreate(['name' => $role, 'guard_name' => 'api', 'team_id' => $org->id]);
@@ -90,11 +101,11 @@ test('an operator cannot delete a template', function (): void {
     expect(AvatarTemplate::withTrashed()->find($template->id)?->trashed())->toBeFalse();
 });
 
-test('an admin deleting a template SOFT-deletes it', function (): void {
+test('the platform deleting a template SOFT-deletes it', function (): void {
     // `interview_sessions.avatar_template_id` and every historical cost row
     // reference this. A hard delete either breaks them or takes the history.
     $org = Organization::factory()->create();
-    ['token' => $token] = deletionUser($org, 'admin');
+    ['token' => $token] = deletionUser($org, 'platform');
     $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
         'name' => 'Deletable '.uniqid(),
         'provider' => 'heygen',

@@ -75,7 +75,7 @@ function llmBindingCredentialForOrg(int $orgId, string $vendor = 'google'): LlmC
 
 test('a native_duplex model is rejected on create', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmBindingNativeDuplexModel();
     $credential = llmBindingCredentialForOrg($org->id);
 
@@ -93,7 +93,7 @@ test('a native_duplex model is rejected on create', function (): void {
 
 test('a native_duplex model is rejected on update, and the row is unchanged', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmBindingNativeDuplexModel();
     $credential = llmBindingCredentialForOrg($org->id);
 
@@ -137,7 +137,7 @@ test('a native_duplex model is rejected via forceFill()->save() — the portabil
 
 test('a vendor mismatch between model and credential is rejected on create', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmBindingManagedModel();
     $credential = llmBindingCredentialForOrg($org->id, vendor: 'not-google');
 
@@ -153,7 +153,7 @@ test('a vendor mismatch between model and credential is rejected on create', fun
 
 test('a vendor mismatch between model and credential is rejected on update', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmBindingManagedModel();
     $credential = llmBindingCredentialForOrg($org->id, vendor: 'not-google');
 
@@ -237,7 +237,7 @@ test('binding with no tenant context established fails closed', function (): voi
 
 test('a managed-capability model binds successfully via PATCH', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmBindingManagedModel();
     $credential = llmBindingCredentialForOrg($org->id);
 

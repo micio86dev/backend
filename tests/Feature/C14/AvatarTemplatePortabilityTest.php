@@ -22,8 +22,31 @@ use App\Support\Tenancy\TenantResolver;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
-function portabilityUser(Organization $org, string $role = 'admin'): string
+function portabilityUser(Organization $org, string $role = 'platform'): string
 {
+    // The SUPERADMIN acting as this organization. Managing avatar templates
+    // stopped being a client action on 2026-09-02 — a client selects a
+    // template, it does not author one — and the templates themselves stay
+    // TENANT data, because AvatarTemplate is a TenantModel that binds a
+    // tenant-scoped `llm_credential_id`. Acting as the org is therefore the
+    // product behaviour, not a test shortcut: a superadmin with no client
+    // selected cannot create a tenant-scoped model at all.
+    if ($role === 'platform') {
+        $token = authTokenForRole($org, 'platform');
+
+        // The resolver is set here for the SAME reason the org path below sets
+        // it: these tests create AvatarTemplates directly through the model,
+        // and TenantScoped fails closed without a tenant context. The
+        // superadmin short-circuit skipped it and every direct create then
+        // threw MissingTenantContextException — a real failure of this helper,
+        // not of the product.
+        $resolver = app(TenantResolver::class);
+        $resolver->setOrgId($org->id);
+        $resolver->setBypass(false);
+
+        return $token;
+    }
+
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $user = User::factory()->create(['organization_id' => $org->id]);
     $spatieRole = SpatieRole::firstOrCreate(['name' => $role, 'guard_name' => 'api', 'team_id' => $org->id]);

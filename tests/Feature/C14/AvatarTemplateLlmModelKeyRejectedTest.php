@@ -18,7 +18,7 @@ use App\Models\Organization;
 
 test('a Tavus config carrying config.llmModel is rejected 422 as unknown', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
 
     $this->withToken($token)->postJson('/api/avatar-templates', [
         'name' => 'Rejected template',

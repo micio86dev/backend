@@ -63,7 +63,7 @@ function llmAvailabilityCredentialForOrg(int $orgId): LlmCredential
 
 test('binding to an is_available=false model is rejected 422 with a stable code, and nothing is persisted', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmAvailabilityModel(isAvailable: false);
     $credential = llmAvailabilityCredentialForOrg($org->id);
 
@@ -81,7 +81,7 @@ test('binding to an is_available=false model is rejected 422 with a stable code,
 
 test('binding to an is_available=false model is rejected 422 on update, and the row is unchanged', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmAvailabilityModel(isAvailable: false);
     $credential = llmAvailabilityCredentialForOrg($org->id);
 
@@ -102,7 +102,7 @@ test('binding to an is_available=false model is rejected 422 on update, and the 
 
 test('a template already bound to a model that later becomes unavailable can still be saved for an unrelated field change', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = llmAvailabilityModel(isAvailable: true);
     $credential = llmAvailabilityCredentialForOrg($org->id);
 

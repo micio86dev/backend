@@ -53,7 +53,7 @@ test('unbinding a HeyGen template clears its heygen_llm_configuration_id', funct
     config()->set('interview.heygen.api_key', 'platform-heygen-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = bindActionModel();
     $credential = bindActionCredential($org->id);
 
@@ -88,7 +88,7 @@ test('unbinding a HeyGen template clears its heygen_llm_configuration_id', funct
 
 test('binding a template is audited as avatar_template.llm_bound with names, never ids', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = bindActionModel();
     $credential = bindActionCredential($org->id);
 
@@ -120,7 +120,7 @@ test('binding a template is audited as avatar_template.llm_bound with names, nev
 
 test('unbinding a template is audited as avatar_template.llm_unbound with no key at any depth', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = bindActionModel();
     $credential = bindActionCredential($org->id);
 
