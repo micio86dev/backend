@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\ParticipantRecoveryController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\ProjectQuestionController;
 use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
@@ -150,6 +151,23 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::apiResource('projects', ProjectController::class);
+
+    // Predefined interview questions, nested under the project
+    // (potential-competencies-and-authored-questions).
+    //
+    // `{project}` is route-model bound to a TenantModel, so another
+    // organization's id does not resolve and the request 404s — never 403,
+    // which would confirm the project exists and turn this into an existence
+    // oracle across tenants.
+    //
+    // `order` is declared BEFORE `{question}`: registered the other way round,
+    // `PUT /questions/order` would match the update route with the literal
+    // "order" as the id, and fail as a bad integer instead of reordering.
+    Route::get('projects/{project}/questions', [ProjectQuestionController::class, 'index']);
+    Route::post('projects/{project}/questions', [ProjectQuestionController::class, 'store']);
+    Route::put('projects/{project}/questions/order', [ProjectQuestionController::class, 'reorder']);
+    Route::patch('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'update']);
+    Route::delete('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'destroy']);
 });
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
