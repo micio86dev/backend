@@ -178,5 +178,25 @@
       "en": "Promote a culture of respect towards individuals and their unique backgrounds, cultures, values, and viewpoints: support individuals from diverse backgrounds and cultures in making meaningful contributions and achieving success within the organization; strive to harness the various personalities and backgrounds of individuals to enhance the organization's overall performance; actively explores ways to accommodate the varied needs of a diverse workforce.",
       "it": "Promuovere una cultura di rispetto verso le persone e i loro background, culture, valori e punti di vista unici: sostenere le persone provenienti da background e culture diverse nel fornire contributi significativi e nel raggiungere il successo all'interno dell'organizzazione; adoperarsi per valorizzare le diverse personalità e i diversi background delle persone al fine di migliorare la performance complessiva dell'organizzazione; esplorare attivamente modalità per rispondere alle diverse esigenze di una forza lavoro eterogenea."
     }
+  },
+  "MTG": {
+    "name": {
+      "en": "Managing",
+      "it": "Gestione"
+    },
+    "definition": {
+      "en": "Organize work, resources and priorities so that others can deliver; set clear expectations and delegate with the right level of support; follow through on commitments and hold people accountable without removing their ownership; develop capability in others rather than absorbing their work.",
+      "it": "Organizzare lavoro, risorse e priorità in modo che altri possano produrre risultati; definire aspettative chiare e delegare con il giusto livello di supporto; dare seguito agli impegni e responsabilizzare le persone senza sottrarre loro la titolarità; sviluppare le capacità altrui anziché assorbirne il lavoro."
+    }
+  },
+  "LAT": {
+    "name": {
+      "en": "Leadership Attributes",
+      "it": "Attributi di leadership"
+    },
+    "definition": {
+      "en": "Take responsibility beyond the formal remit and act on what the situation requires; earn followership through credibility and example rather than position; hold judgement and composure under pressure, ambiguity and disagreement; state a position and revise it on evidence rather than on volume.",
+      "it": "Assumersi responsabilità oltre il mandato formale e agire in base a ciò che la situazione richiede; guadagnare seguito attraverso credibilità ed esempio anziché posizione gerarchica; mantenere lucidità e compostezza sotto pressione, ambiguità e disaccordo; esprimere una posizione e rivederla sulla base delle evidenze anziché del tono."
+    }
   }
 }

@@ -24,7 +24,14 @@ use Spatie\Translatable\HasTranslations;
  * translation_gap: true when any of the four translatable fields lacks an IT authoring translation.
  * Detected via hasTranslation('field', 'it') — NOT by testing empty value.
  *
- * @property int $role_id
+ * @property int|null $role_id NULL means "not role-scoped": the indicator
+ *           belongs to a competency and to no role. That is how MTG and LAT
+ *           are stored, since a `potential` project has `role_code = null` by
+ *           rule and the five roles are a closed set that must not gain a
+ *           sixth. Role-less rows are constrained by a PARTIAL unique index on
+ *           (competency_id, position) — the composite one including role_id
+ *           does not constrain them, because Postgres treats NULLs as
+ *           distinct.
  * @property int $competency_id
  * @property string $text (resolved via current locale)
  * @property string $anchor_5 (resolved via current locale)
