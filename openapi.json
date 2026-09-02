@@ -1,7 +1,7 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "Laravel",
+        "title": "BEAI",
         "version": "0.41.0"
     },
     "servers": [
@@ -440,6 +440,9 @@
                                                         "string",
                                                         "null"
                                                     ]
+                                                },
+                                                "is_superadmin": {
+                                                    "type": "boolean"
                                                 }
                                             },
                                             "required": [
@@ -447,7 +450,8 @@
                                                 "name",
                                                 "email",
                                                 "locale",
-                                                "photo_url"
+                                                "photo_url",
+                                                "is_superadmin"
                                             ]
                                         },
                                         "organization": {
@@ -3953,6 +3957,304 @@
                 }
             }
         },
+        "/projects/{project}/questions": {
+            "get": {
+                "operationId": "projectQuestion.index",
+                "tags": [
+                    "ProjectQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `ProjectQuestionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ProjectQuestionResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "projectQuestion.store",
+                "tags": [
+                    "ProjectQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreProjectQuestionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`ProjectQuestionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProjectQuestionResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/projects/{project}/questions/order": {
+            "put": {
+                "operationId": "projectQuestion.reorder",
+                "description": "Drag-and-drop knows the final order, and sending it in full is what\nmakes the partial unique index satisfiable: moving rows one at a time\nwould collide with the position each is moving into. Positions are\nrewritten from scratch inside one transaction, so a failure halfway\nleaves the previous order rather than a half-applied one.",
+                "summary": "Reorder, taking the WHOLE ordered list",
+                "tags": [
+                    "ProjectQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "ids": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer"
+                                        },
+                                        "minItems": 1
+                                    }
+                                },
+                                "required": [
+                                    "ids"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Reordered."
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/projects/{project}/questions/{questionId}": {
+            "patch": {
+                "operationId": "projectQuestion.update",
+                "tags": [
+                    "ProjectQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "questionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": {
+                                        "type": "object",
+                                        "properties": {
+                                            "en": {
+                                                "type": "string",
+                                                "maxLength": 2000
+                                            },
+                                            "it": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ],
+                                                "maxLength": 2000
+                                            }
+                                        },
+                                        "required": [
+                                            "en"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "text"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`ProjectQuestionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ProjectQuestionResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "projectQuestion.destroy",
+                "tags": [
+                    "ProjectQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "questionId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/health/queue": {
             "get": {
                 "operationId": "queueHealth",
@@ -4566,6 +4868,118 @@
                 }
             }
         },
+        "/admin/organizations": {
+            "get": {
+                "operationId": "superadmin.organizations",
+                "summary": "The shape is declared for Scramble, and not as documentation for its own\nsake: both Nuxt apps generate their typed client from this spec, so an\nundeclared `response()->json()` produced `data: string` and the switcher\nfailed to compile against its own API",
+                "tags": [
+                    "Superadmin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "name"
+                                                ]
+                                            }
+                                        },
+                                        "acting_organization_id": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/acting-organization": {
+            "put": {
+                "operationId": "superadmin.setActingOrganization",
+                "tags": [
+                    "Superadmin"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "organization_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "organization_id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "acting_organization_id": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "operationId": "user.index",
@@ -5017,6 +5431,12 @@
                     "branding": {
                         "type": "object",
                         "properties": {
+                            "name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
                             "primary_color": {
                                 "type": [
                                     "string",
@@ -5031,6 +5451,7 @@
                             }
                         },
                         "required": [
+                            "name",
                             "primary_color",
                             "logo_url"
                         ]
@@ -6046,6 +6467,52 @@
                 ],
                 "title": "ProfileResource"
             },
+            "ProjectQuestionResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "project_id": {
+                        "type": "integer"
+                    },
+                    "competency_id": {
+                        "type": "integer"
+                    },
+                    "competency_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "text": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "position": {
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "project_id",
+                    "competency_id",
+                    "competency_code",
+                    "text",
+                    "position",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "ProjectQuestionResource"
+            },
             "ProjectResource": {
                 "type": "object",
                 "properties": {
@@ -6126,12 +6593,19 @@
                             },
                             "provider": {
                                 "type": "string"
+                            },
+                            "llm_model": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             }
                         },
                         "required": [
                             "id",
                             "name",
-                            "provider"
+                            "provider",
+                            "llm_model"
                         ]
                     },
                     "webhook_url": {
@@ -6730,6 +7204,41 @@
                     "llm_cost_usd"
                 ],
                 "title": "SessionSummaryResource"
+            },
+            "StoreProjectQuestionRequest": {
+                "type": "object",
+                "description": "Validates a predefined question\n(potential-competencies-and-authored-questions, AD-4).\n\nHOW MANY questions are allowed is a function of the project's assessment\ntype, and that rule lives HERE rather than in the model or the table: it is\nthe same kind of invariant as `competencies \u2286 {MTG, LAT}` and `role_code\nmust be null`, which already live in the project FormRequests.\n\n  standard  \u2014 at most ONE per competency\n              (\"the first question per competency may be predefined\")\n  potential \u2014 at most FOUR per competency\n              (\"4 predefined questions per competency\", SA-08)\n\nThe cap is a maximum, never a minimum. A `standard` project with no authored\nquestion is the normal case \u2014 the AI opens the competency itself, exactly as\nit does today \u2014 and a half-configured `potential` project must be savable\nwhile the operator is still writing the other three.",
+                "properties": {
+                    "competency_id": {
+                        "type": "integer",
+                        "description": "Scoped to the catalogue, not to the project's own competencies:\nthe cross-check that the competency actually belongs to this\nproject's type happens below, where the reason can be stated."
+                    },
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string",
+                                "description": "`en` is required and `it` is not, matching the catalogue: an\nEnglish fallback always exists, and a missing Italian degrades\nto it rather than to an empty question.",
+                                "maxLength": 2000
+                            },
+                            "it": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2000
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    }
+                },
+                "required": [
+                    "competency_id",
+                    "text"
+                ],
+                "title": "StoreProjectQuestionRequest"
             },
             "StoreProjectRequest": {
                 "type": "object",

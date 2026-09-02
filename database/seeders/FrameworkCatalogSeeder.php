@@ -130,6 +130,21 @@ class FrameworkCatalogSeeder extends Seeder
 
     private string $barsDir;
 
+    /**
+     * The competencies that belong to `potential` and to no role.
+     *
+     * A constant rather than a field in competencies.json: the domain fixes
+     * this set (docs/app_description/02-domain/01-roles-and-competencies.md —
+     * MTG "Managing", LAT "Leadership Attributes", both "Potential type
+     * only"), and `StoreProjectRequest::validatePotential()` already hardcodes
+     * the same two. Adding a `type` key to all twenty entries so that
+     * eighteen could say "standard" would be ceremony, and a second place for
+     * the pair to disagree with the validator.
+     *
+     * @var list<string>
+     */
+    private const POTENTIAL_CODES = ['MTG', 'LAT'];
+
     public function __construct(
         ?string $rolesFile = null,
         ?string $competenciesFile = null,
@@ -249,7 +264,9 @@ class FrameworkCatalogSeeder extends Seeder
                 }
             } else {
                 // New row (or unlocked mode): insert / upsert is allowed.
-                $competency->type = 'standard';
+                $competency->type = in_array($code, self::POTENTIAL_CODES, true)
+                    ? 'potential'
+                    : 'standard';
                 $this->setAllLocales($competency, 'name', $nameLocales);
                 $this->setAllLocales($competency, 'definition', $definitionLocales);
                 $competency->save();
@@ -581,8 +598,34 @@ class FrameworkCatalogSeeder extends Seeder
                 ->update(['status' => 'resolved']);
         }
 
-        // ─── 4. Record MTG/LAT potential competency gaps ──────────────────────
-        foreach (['MTG', 'LAT'] as $potentialCode) {
+        // ─── 4. Potential competencies: seed their BARS, then reconcile the gap ──
+        //
+        // This block used to record both codes as `pending_authoring`
+        // UNCONDITIONALLY, on every run, without ever asking whether the
+        // competency it was reporting missing had since been authored. The gap
+        // was therefore permanent by construction, and `potential` projects
+        // stayed unusable even after the catalogue gained the definitions.
+        $this->seedPotentialIndicators($competencyIdsByCode);
+
+        foreach (self::POTENTIAL_CODES as $potentialCode) {
+            $authored = isset($competencyIdsByCode[$potentialCode])
+                && BarsIndicator::whereNull('role_id')
+                    ->where('competency_id', $competencyIdsByCode[$potentialCode])
+                    ->exists();
+
+            if ($authored) {
+                // Resolve rather than delete, for the installations that
+                // already carry the row: it is the record that this was once
+                // missing. On a fresh catalogue no row is ever written, which
+                // is the correct state and not an omission.
+                FrameworkGap::where('kind', 'missing_potential_competency')
+                    ->where('competency_code', $potentialCode)
+                    ->where('status', 'pending_authoring')
+                    ->update(['status' => 'resolved']);
+
+                continue;
+            }
+
             FrameworkGap::updateOrCreate(
                 ['kind' => 'missing_potential_competency', 'role_code' => null, 'competency_code' => $potentialCode],
                 ['note' => "{$potentialCode} potential competency definition absent — pending expert authoring", 'status' => 'pending_authoring'],
@@ -849,5 +892,68 @@ class FrameworkCatalogSeeder extends Seeder
         );
 
         return false;
+    }
+
+    /**
+     * Seed the BARS indicators for the competencies that belong to no role.
+     *
+     * Separate from the per-role loop rather than folded into it, and that is
+     * the honest shape: a potential competency has no role, no
+     * `framework_role_competency` pivot row, and none of the per-role gap
+     * semantics — orphan sweeps, `competency_no_bars`, per-role translation
+     * gaps — that loop exists to maintain. Threading a null role through it
+     * would mean a null check at every one of those steps, each of which could
+     * only ever mean "skip".
+     *
+     * The file is optional. An installation without it keeps the
+     * `pending_authoring` gap the caller records, which is exactly the state
+     * this catalogue was in before the definitions were written.
+     *
+     * @param  array<string, int>  $competencyIdsByCode
+     */
+    private function seedPotentialIndicators(array $competencyIdsByCode): void
+    {
+        $file = "{$this->barsDir}/POTENTIAL.json";
+
+        if (! is_file($file)) {
+            return;
+        }
+
+        /** @var array<string, list<array<string, mixed>>> $json */
+        $json = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+
+        foreach ($json as $code => $indicators) {
+            if (! isset($competencyIdsByCode[$code])) {
+                // Named in the BARS file but absent from competencies.json.
+                // Skipped rather than invented: a competency conjured from an
+                // anchor file would have no definition to score against.
+                continue;
+            }
+
+            $competencyId = $competencyIdsByCode[$code];
+
+            foreach (array_values($indicators) as $position => $raw) {
+                $indicator = BarsIndicator::firstOrNew([
+                    'role_id' => null,
+                    'competency_id' => $competencyId,
+                    'position' => $position,
+                ]);
+
+                $indicator->role_id = null;
+                $this->setAllLocales($indicator, 'text', $this->readLocaleMap(
+                    $raw['indicator'] ?? null,
+                    "bars/POTENTIAL.json:{$code}[{$position}].indicator",
+                ));
+
+                foreach (['5' => 'anchor_5', '3' => 'anchor_3', '1' => 'anchor_1'] as $level => $column) {
+                    $this->setAllLocales($indicator, $column, $this->readLocaleMap(
+                        $raw['scale'][$level] ?? null,
+                        "bars/POTENTIAL.json:{$code}[{$position}].scale.{$level}",
+                    ));
+                }
+
+                $indicator->save();
+            }
+        }
     }
 }

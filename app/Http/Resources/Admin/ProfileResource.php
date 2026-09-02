@@ -53,6 +53,11 @@ class ProfileResource extends JsonResource
             'email' => $user->email,
             'locale' => $user->locale,
             'role' => $user->getRoleNames()->first(),
+            // Explicit boolean, never an absent key. A UI that branches on
+            // `undefined` treats "not sent" and "not a superadmin" the same,
+            // and would start showing the client switcher the day this field
+            // is renamed.
+            'is_superadmin' => (bool) $user->is_superadmin,
             'organization' => $user->organization !== null ? [
                 'id' => $user->organization->id,
                 'name' => $user->organization->name,

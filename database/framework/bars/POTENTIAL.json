@@ -1,0 +1,126 @@
+{
+  "MTG": [
+    {
+      "indicator": {
+        "en": "Organizes work and priorities so that others can deliver.",
+        "it": "Organizza lavoro e priorità in modo che altri possano produrre risultati."
+      },
+      "scale": {
+        "1": {
+          "en": "Organizes own work but leaves others to find their own sequence; blockages surface late.",
+          "it": "Organizza il proprio lavoro ma lascia che gli altri trovino da sé la sequenza; i blocchi emergono tardi."
+        },
+        "3": {
+          "en": "Plans and assigns work clearly for a known scope; handles dependencies once they surface rather than before.",
+          "it": "Pianifica e assegna il lavoro in modo chiaro su un perimetro noto; gestisce le dipendenze quando emergono anziché in anticipo."
+        },
+        "5": {
+          "en": "Sets direction far enough ahead that others are rarely blocked, and re-plans openly when dependencies change.",
+          "it": "Definisce la direzione con sufficiente anticipo perché gli altri siano raramente bloccati e ripianifica apertamente quando le dipendenze cambiano."
+        }
+      }
+    },
+    {
+      "indicator": {
+        "en": "Delegates with the right level of support, and holds people accountable.",
+        "it": "Delega con il giusto livello di supporto e responsabilizza le persone."
+      },
+      "scale": {
+        "1": {
+          "en": "Hands over with no follow-up, or takes the task back at the first difficulty; ownership never moves.",
+          "it": "Delega senza dare seguito, oppure riprende il compito alla prima difficoltà; la responsabilità non si sposta mai."
+        },
+        "3": {
+          "en": "Delegates clearly defined tasks and checks the outcome; support is offered on request rather than anticipated.",
+          "it": "Delega compiti ben definiti e verifica l'esito; il supporto è offerto su richiesta anziché anticipato."
+        },
+        "5": {
+          "en": "Matches oversight to the person and the risk, and follows up without taking the work back.",
+          "it": "Adegua la supervisione alla persona e al rischio e dà seguito all'impegno senza riprendersi il lavoro."
+        }
+      }
+    },
+    {
+      "indicator": {
+        "en": "Builds capability in others rather than absorbing their work.",
+        "it": "Sviluppa le capacità altrui anziché assorbirne il lavoro."
+      },
+      "scale": {
+        "1": {
+          "en": "Does the difficult parts personally because it is quicker; nobody around them becomes more capable.",
+          "it": "Svolge personalmente le parti difficili perché è più rapido; nessuno intorno diventa più capace."
+        },
+        "3": {
+          "en": "Explains and corrects when asked; development happens as a by-product of the work rather than by design.",
+          "it": "Spiega e corregge quando richiesto; lo sviluppo avviene come effetto collaterale del lavoro anziché per scelta."
+        },
+        "5": {
+          "en": "Treats work as a chance to grow someone specific, accepting a slower first attempt for a faster tenth.",
+          "it": "Tratta il lavoro come occasione per far crescere una persona precisa, accettando un primo tentativo più lento per averne un decimo più rapido."
+        }
+      }
+    }
+  ],
+  "LAT": [
+    {
+      "indicator": {
+        "en": "Takes responsibility beyond the formal remit.",
+        "it": "Si assume responsabilità oltre il mandato formale."
+      },
+      "scale": {
+        "1": {
+          "en": "Stops at the boundary of the role and treats what falls outside it as somebody else’s problem.",
+          "it": "Si ferma al confine del ruolo e considera ciò che ne resta fuori un problema di altri."
+        },
+        "3": {
+          "en": "Steps in when the gap is clear and adjacent; waits for a mandate on anything further.",
+          "it": "Interviene quando la lacuna è evidente e adiacente; per il resto attende un mandato."
+        },
+        "5": {
+          "en": "Acts on what the situation needs before being asked, and carries the consequences of doing so.",
+          "it": "Agisce su ciò che la situazione richiede prima che glielo si chieda e ne assume le conseguenze."
+        }
+      }
+    },
+    {
+      "indicator": {
+        "en": "Earns followership through credibility rather than position.",
+        "it": "Guadagna seguito attraverso la credibilità anziché la posizione."
+      },
+      "scale": {
+        "1": {
+          "en": "Relies on hierarchy, insistence or volume to carry a point; agreement fades once the pressure stops.",
+          "it": "Si appoggia a gerarchia, insistenza o tono per far passare un punto; il consenso svanisce appena cessa la pressione."
+        },
+        "3": {
+          "en": "Is listened to on their own subject; influence outside it depends on who is in the room.",
+          "it": "È ascoltato sulla propria materia; fuori da quella l'influenza dipende da chi è presente."
+        },
+        "5": {
+          "en": "Is consulted before decisions by people who do not report to them, because past positions proved sound.",
+          "it": "Riceve richieste di parere prima delle decisioni da persone fuori dalla propria linea gerarchica, perché le posizioni passate si sono rivelate solide."
+        }
+      }
+    },
+    {
+      "indicator": {
+        "en": "Holds judgement and composure under pressure and disagreement.",
+        "it": "Mantiene lucidità e compostezza sotto pressione e nel disaccordo."
+      },
+      "scale": {
+        "1": {
+          "en": "Escalates, withdraws or hardens the original position; the quality of the reasoning drops as the pressure rises.",
+          "it": "Alza i toni, si sfila o irrigidisce la posizione iniziale; la qualità del ragionamento cala al crescere della pressione."
+        },
+        "3": {
+          "en": "Keeps composure in familiar pressure; under genuine ambiguity defers the decision rather than framing it.",
+          "it": "Mantiene la compostezza nella pressione consueta; di fronte a vera ambiguità rinvia la decisione anziché impostarla."
+        },
+        "5": {
+          "en": "Stays deliberate when urgent and contested; states a position, invites the strongest objection, and revises on evidence.",
+          "it": "Mantiene lucidità quando la situazione è urgente e controversa; espone una posizione, invita l'obiezione più forte e la rivede sulle evidenze."
+        }
+      }
+    }
+  ]
+}

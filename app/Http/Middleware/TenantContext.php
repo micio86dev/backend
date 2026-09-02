@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantResolver;
 use Closure;
 use Illuminate\Http\Request;
@@ -74,6 +75,26 @@ final class TenantContext
 
         // org_id is null — only superadmins may proceed with bypass.
         if ($user->is_superadmin === true) {
+            // A superadmin may NARROW the bypass to one client
+            // (RATIFIED 2026-09-02, option b). Read from the server-side store,
+            // never from a request header: a client-supplied lever would have
+            // to be honoured correctly by every endpoint, and one mistake
+            // becomes a cross-tenant leak.
+            $actingOrgId = app(ActingOrganization::class)->for((int) $user->id);
+
+            if ($actingOrgId !== null) {
+                // Scoped exactly like an ordinary member of that organization,
+                // bypass OFF. Leaving bypass on and merely setting the org
+                // would make the global scope skip its filter and show
+                // everything anyway — the selection would appear to work and
+                // silently do nothing.
+                $this->resolver->setOrgId($actingOrgId);
+                $this->resolver->setBypass(false);
+                app(PermissionRegistrar::class)->setPermissionsTeamId($actingOrgId);
+
+                return $next($request);
+            }
+
             // Explicit bypass: superadmin queries cross all tenants.
             // setPermissionsTeamId(null) is required for RBAC hygiene
             // (clears any stale team context from a previous request).

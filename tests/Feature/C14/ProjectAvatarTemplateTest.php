@@ -32,6 +32,8 @@ declare(strict_types=1);
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Models\AvatarTemplate;
 use App\Models\FrameworkVersion;
+use App\Models\LlmCredential;
+use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Models\Project;
 use App\Models\User;
@@ -46,6 +48,19 @@ use Spatie\Permission\PermissionRegistrar;
 /**
  * @return array{user: User, token: string}
  */
+/**
+ * The SUPERADMIN acting as this organization, for the tests that MANAGE a
+ * template (activate/deactivate/delete). Managing templates stopped being a
+ * client action on 2026-09-02 — a client selects one, it does not author one.
+ *
+ * The project tests in this file keep `projTemplateAdmin`: projects ARE client
+ * data, and nothing about who owns them changed.
+ */
+function projTemplatePlatform(Organization $org): array
+{
+    return ['token' => authTokenForRole($org, 'platform')];
+}
+
 function projTemplateAdmin(Organization $org): array
 {
     $user = User::factory()->create(['organization_id' => $org->id]);
@@ -394,7 +409,7 @@ test('the API refuses that deletion with a readable conflict, not a 500', functi
     // a 500 that tells the operator nothing about what to do. The count is
     // included so they know how much reassigning is involved before starting.
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
     $template = projTemplateFor($org);
     Project::factory()->create(['avatar_template_id' => $template->id]);
@@ -423,9 +438,9 @@ test('the API refuses that deletion with a readable conflict, not a 500', functi
  * projects" — and turning it off is a safe, reversible bookkeeping act rather
  * than a live reconfiguration.
  */
-test('an admin can deactivate a template', function (): void {
+test('the platform can deactivate a template', function (): void {
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
 
     $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
@@ -448,7 +463,7 @@ test('deactivating leaves the projects that pin it running on it', function (): 
     // active — `ActiveTemplateResolver` returns what the project pinned — so
     // taking it out of the default list must not disturb anything live.
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
 
     $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
@@ -477,7 +492,7 @@ test('deactivating an already-inactive template is a no-op, not an error', funct
     // Idempotent on purpose: an operator double-clicking, or two of them acting
     // at once, must not see a failure for a state that is already correct.
     $org = Organization::factory()->create();
-    ['token' => $token] = projTemplateAdmin($org);
+    ['token' => $token] = projTemplatePlatform($org);
     app(TenantResolver::class)->setOrgId($org->id);
     $template = projTemplateFor($org); // created with is_active = false
 
@@ -562,4 +577,79 @@ test('the index does not issue one query per project for the template', function
         ->count();
 
     expect($templateQueries)->toBeLessThanOrEqual(1);
+});
+
+/**
+ * WHICH MODEL the template talks to.
+ *
+ * The provider says HeyGen or Tavus; it does not say whether the conversation
+ * runs on Gemini Flash or something else, and that is the line item an
+ * operator scanning a project list actually needs — it decides both cost and
+ * behaviour. It hangs off the TEMPLATE, not the project, so it belongs in the
+ * same nested object rather than as a fourth top-level key.
+ */
+test('the resource names the LLM model the template is bound to', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    $fv = projTemplateFramework($org);
+
+    $model = LlmModel::create([
+        'key' => 'gemini-3-flash-preview',
+        'vendor' => 'google',
+        'display_name' => 'Gemini 3 Flash Preview',
+        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        'capability' => 'text',
+        'is_available' => true,
+        'sort_order' => 0,
+        'text_input_usd_per_million' => '0.075000',
+        'text_output_usd_per_million' => '0.300000',
+    ]);
+
+    // A model cannot be bound without a matching credential: AvatarTemplate's
+    // own `saving` guard requires one from the SAME organization and the SAME
+    // vendor. Honoured here rather than bypassed — a test that sidesteps the
+    // invariant proves the resource works in a state production cannot reach.
+    $template = projTemplateFor($org);
+    TenantContextScope::runFor($org->id, function () use ($template, $model): void {
+        $credential = LlmCredential::create([
+            'name' => 'Primary key',
+            'vendor' => 'google',
+            'api_key' => 'sk-real-key',
+            'key_last_four' => 'real',
+            'key_fingerprint' => hash('sha256', 'sk-real-key'),
+        ]);
+
+        $template->update([
+            'llm_model_id' => $model->id,
+            'llm_credential_id' => $credential->id,
+        ]);
+    });
+
+    $response = $this->withToken($token)->postJson('/api/projects', array_merge(
+        projTemplatePayload($fv->id),
+        ['avatar_template_id' => $template->id],
+    ));
+
+    $response->assertCreated();
+    $response->assertJsonPath('data.avatar_template.llm_model', 'Gemini 3 Flash Preview');
+});
+
+/**
+ * A template with no model bound sends null, never a fabricated default — the
+ * column is nullable and "not configured" is a real state the list must be
+ * able to show honestly.
+ */
+test('a template with no LLM model bound sends null', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    $fv = projTemplateFramework($org);
+    $template = projTemplateFor($org);
+
+    $response = $this->withToken($token)->postJson('/api/projects', array_merge(
+        projTemplatePayload($fv->id),
+        ['avatar_template_id' => $template->id],
+    ));
+
+    $response->assertCreated();
+    $response->assertJsonPath('data.avatar_template.llm_model', null);
 });

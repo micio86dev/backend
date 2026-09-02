@@ -99,7 +99,7 @@ function i3TriggerSuperadminBypass(): void
 
 test('the INSERT path derives the owning org from the resolver, before the creating stamp runs', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = i3ManagedModel();
     $credential = i3CredentialForOrg($org->id);
 

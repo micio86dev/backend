@@ -82,6 +82,29 @@ class AppServiceProvider extends ServiceProvider
         $this->forcePublicRootUrl();
 
         // C4 — Register ProjectPolicy for Gate-based authorization.
+        /**
+         * A superadmin passes every gate.
+         *
+         * The tenancy bypass alone was not enough, and the gap was invisible
+         * until a superadmin actually tried to read something: `TenantScoped`
+         * stopped filtering rows, and then the POLICY refused the request —
+         * because a superadmin has no organization, therefore no Spatie team,
+         * therefore no roles and no permissions at all. Every read returned
+         * 403 while the data layer was working perfectly.
+         *
+         * Returning `true` short-circuits; returning NULL (not `false`) falls
+         * through to the normal policy for everyone else. `false` here would
+         * deny every ordinary user in the product.
+         *
+         * The narrowing to one client is NOT done here. It happens in
+         * TenantContext, which scopes the resolver — so acting as a client
+         * gives that client's DATA with the superadmin's own authority, rather
+         * than impersonating one of their users.
+         */
+        Gate::before(static function (User $user, string $ability): ?bool {
+            return $user->is_superadmin === true ? true : null;
+        });
+
         Gate::policy(Project::class, ProjectPolicy::class);
 
         // C5 — Register ApiClientPolicy for Gate-based authorization.

@@ -19,9 +19,16 @@ beforeEach(function (): void {
     (new FrameworkCatalogSeeder)->run();
 });
 
-test('seeder creates exactly 5 roles and 18 competencies', function (): void {
+test('seeder creates exactly 5 roles and 20 competencies', function (): void {
+    // 20, not 18: the eighteen STANDARD competencies plus MTG and LAT, which
+    // belong to `potential` and to no role
+    // (potential-competencies-and-authored-questions). The role pivot counts
+    // below stay at 18 — a potential competency is assigned to no role, and
+    // that is what keeps a standard project from ever selecting one.
     expect(Role::count())->toBe(5)
-        ->and(Competency::count())->toBe(18);
+        ->and(Competency::count())->toBe(20)
+        ->and(Competency::where('type', 'standard')->count())->toBe(18)
+        ->and(Competency::where('type', 'potential')->count())->toBe(2);
 });
 
 test('per-role pivot counts match JSON definitions', function (): void {

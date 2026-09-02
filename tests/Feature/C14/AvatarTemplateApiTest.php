@@ -15,13 +15,39 @@ declare(strict_types=1);
 use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
+/**
+ * @param  string  $role  An organization role — admin/operator/viewer — or the
+ *                        pseudo-role `platform`, meaning the SUPERADMIN acting
+ *                        as this organization.
+ *
+ * `platform` exists because managing avatar templates stopped being a client
+ * action on 2026-09-02: a client selects a template, it does not author one.
+ * The templates themselves stay TENANT data — `AvatarTemplate` is a
+ * TenantModel and binds `llm_credential_id`, which is tenant-scoped too, so a
+ * platform-wide template could not reference one — and the superadmin manages
+ * them by acting as the client that owns them.
+ *
+ * That is why this returns a superadmin WITH an acting organization rather
+ * than a bare one: a superadmin with no client selected cannot create a
+ * tenant-scoped model at all (TenantScoped throws
+ * MissingTenantContextException), which is the product behaviour, not a
+ * limitation of the test.
+ */
 function templateActor(Organization $org, string $role): string
 {
+    if ($role === 'platform') {
+        $user = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+        app(ActingOrganization::class)->set((int) $user->id, $org->id);
+
+        return auth('api')->login($user);
+    }
+
     $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $user->assignRole(SpatieRole::firstOrCreate([
@@ -70,7 +96,7 @@ test('an admin may list', function (): void {
     $org = Organization::factory()->create();
     seedTemplate($org);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->getJson('/api/avatar-templates')
         ->assertOk()
         ->assertJsonCount(1, 'data');
@@ -83,7 +109,7 @@ test('a listing never shows another tenant\'s templates', function (): void {
     $theirs = Organization::factory()->create();
     seedTemplate($theirs, ['name' => 'Not yours']);
 
-    $this->withToken(templateActor($mine, 'admin'))
+    $this->withToken(templateActor($mine, 'platform'))
         ->getJson('/api/avatar-templates')
         ->assertOk()
         ->assertJsonCount(0, 'data');
@@ -96,17 +122,17 @@ test('another tenant\'s template is a 404, not a 403', function (): void {
 
     // 404 rather than 403 on purpose: a 403 would confirm the id exists, which
     // turns the endpoint into an enumeration oracle for other tenants' data.
-    $this->withToken(templateActor($mine, 'admin'))
+    $this->withToken(templateActor($mine, 'platform'))
         ->getJson("/api/avatar-templates/{$template->id}")
         ->assertNotFound();
 });
 
 // ─── Create ──────────────────────────────────────────────────────────────────
 
-test('an admin can create a template', function () use ($validPayload): void {
+test('the platform can create a template', function () use ($validPayload): void {
     $org = Organization::factory()->create();
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson('/api/avatar-templates', $validPayload)
         ->assertCreated()
         ->assertJsonPath('data.name', 'Recruiter voice')
@@ -117,7 +143,7 @@ test('a created template is never active', function () use ($validPayload): void
     $org = Organization::factory()->create();
     $existing = seedTemplate($org, ['is_active' => true]);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson('/api/avatar-templates', $validPayload)
         ->assertCreated();
 
@@ -130,7 +156,7 @@ test('a created template is never active', function () use ($validPayload): void
 test('an invalid config is rejected with every error at once, keyed per field', function (): void {
     $org = Organization::factory()->create();
 
-    $response = $this->withToken(templateActor($org, 'admin'))
+    $response = $this->withToken(templateActor($org, 'platform'))
         ->postJson('/api/avatar-templates', [
             'name' => 'Broken',
             'provider' => 'heygen',
@@ -151,7 +177,7 @@ test('an invalid config is rejected with every error at once, keyed per field', 
 test('an unknown provider is rejected', function (): void {
     $org = Organization::factory()->create();
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson('/api/avatar-templates', ['name' => 'X', 'provider' => 'openai', 'config' => []])
         ->assertStatus(422);
 });
@@ -162,7 +188,7 @@ test('a duplicate name in the same org is a 422, not a 500', function (): void {
 
     // The unique index would otherwise surface as a QueryException → 500. A
     // name collision is a thing the operator can fix, so it must read as one.
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson('/api/avatar-templates', ['name' => 'Taken', 'provider' => 'heygen', 'config' => ['avatarId' => 'a', 'voiceId' => 'v']])
         ->assertStatus(422);
 });
@@ -174,7 +200,7 @@ test('activating a template deactivates the previous one', function (): void {
     $old = seedTemplate($org, ['is_active' => true]);
     $new = seedTemplate($org);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson("/api/avatar-templates/{$new->id}/activate")
         ->assertOk()
         ->assertJsonPath('data.is_active', true);
@@ -187,7 +213,7 @@ test('activation never leaves the organization with two active templates', funct
     seedTemplate($org, ['is_active' => true]);
     $new = seedTemplate($org);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson("/api/avatar-templates/{$new->id}/activate")
         ->assertOk();
 
@@ -204,7 +230,7 @@ test('activating a Tavus template does not deactivate an active HeyGen template 
     $heygen = seedTemplate($org, ['provider' => 'heygen', 'is_active' => true]);
     $tavus = seedTemplate($org, ['provider' => 'tavus', 'name' => 'T-tavus-'.uniqid(), 'config' => ['faceId' => 'f', 'palId' => 'p']]);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson("/api/avatar-templates/{$tavus->id}/activate")
         ->assertOk()
         ->assertJsonPath('data.is_active', true);
@@ -220,7 +246,7 @@ test('activating a template still deactivates the prior active template on the S
     $oldTavus = seedTemplate($org, ['provider' => 'tavus', 'is_active' => true, 'config' => ['faceId' => 'f1', 'palId' => 'p1']]);
     $newTavus = seedTemplate($org, ['provider' => 'tavus', 'name' => 'T-tavus-new-'.uniqid(), 'config' => ['faceId' => 'f2', 'palId' => 'p2']]);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson("/api/avatar-templates/{$newTavus->id}/activate")
         ->assertOk()
         ->assertJsonPath('data.is_active', true);
@@ -240,7 +266,7 @@ test('activating the already-active template is a no-op, not an error', function
     $active = seedTemplate($org, ['is_active' => true]);
 
     // Idempotent because a double-click is not a mistake worth an error page.
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson("/api/avatar-templates/{$active->id}/activate")
         ->assertOk()
         ->assertJsonPath('data.is_active', true);
@@ -253,7 +279,7 @@ test('a template with an invalid config cannot be activated', function (): void 
     // old one is still sitting there.
     $broken = seedTemplate($org, ['config' => ['avatarId' => 'only-half']]);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->postJson("/api/avatar-templates/{$broken->id}/activate")
         ->assertStatus(422);
 
@@ -276,18 +302,18 @@ test('a template from another tenant cannot be activated', function (): void {
     $theirs = Organization::factory()->create();
     $template = seedTemplate($theirs);
 
-    $this->withToken(templateActor($mine, 'admin'))
+    $this->withToken(templateActor($mine, 'platform'))
         ->postJson("/api/avatar-templates/{$template->id}/activate")
         ->assertNotFound();
 });
 
 // ─── Update and delete ───────────────────────────────────────────────────────
 
-test('an admin can rename a template', function (): void {
+test('the platform can rename a template', function (): void {
     $org = Organization::factory()->create();
     $template = seedTemplate($org, ['name' => 'Before']);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->patchJson("/api/avatar-templates/{$template->id}", ['name' => 'After'])
         ->assertOk()
         ->assertJsonPath('data.name', 'After');
@@ -297,7 +323,7 @@ test('the provider cannot be changed after creation', function (): void {
     $org = Organization::factory()->create();
     $template = seedTemplate($org, ['provider' => 'heygen']);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->patchJson("/api/avatar-templates/{$template->id}", ['provider' => 'tavus'])
         ->assertStatus(422);
 
@@ -311,7 +337,7 @@ test('deleting the active template is refused', function (): void {
     $org = Organization::factory()->create();
     $active = seedTemplate($org, ['is_active' => true]);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->deleteJson("/api/avatar-templates/{$active->id}")
         ->assertStatus(409);
 
@@ -324,7 +350,7 @@ test('deleting an inactive template returns 204', function (): void {
     $org = Organization::factory()->create();
     $template = seedTemplate($org);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->deleteJson("/api/avatar-templates/{$template->id}")
         ->assertNoContent();
 });
@@ -338,7 +364,7 @@ test('deleting a bound HeyGen template issues the DELETE and clears the ledger c
 
     Http::fake(['*liveavatar.com/v1/llm-configurations/cfg-to-delete' => Http::response([], 200)]);
 
-    $this->withToken(templateActor($org, 'admin'))
+    $this->withToken(templateActor($org, 'platform'))
         ->deleteJson("/api/avatar-templates/{$template->id}")
         ->assertNoContent();
 
@@ -351,7 +377,7 @@ test('deleting a bound HeyGen template issues the DELETE and clears the ledger c
 test('the field spec endpoint describes both providers', function (): void {
     $org = Organization::factory()->create();
 
-    $response = $this->withToken(templateActor($org, 'admin'))
+    $response = $this->withToken(templateActor($org, 'platform'))
         ->getJson('/api/avatar-templates/field-specs')
         ->assertOk();
 
@@ -365,7 +391,7 @@ test('the field spec endpoint describes both providers', function (): void {
 test('the field spec carries label KEYS, never rendered text', function (): void {
     $org = Organization::factory()->create();
 
-    $response = $this->withToken(templateActor($org, 'admin'))
+    $response = $this->withToken(templateActor($org, 'platform'))
         ->getJson('/api/avatar-templates/field-specs');
 
     foreach ($response->json('data.heygen') as $field) {
