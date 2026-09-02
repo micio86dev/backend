@@ -6,6 +6,31 @@
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
+{{--
+    The tenant colour, for the TEXT.
+
+    The button took it already; links and the header wordmark did not, so a
+    message showed a correctly-branded call to action sitting beside Quint
+    purple everywhere else. Both hardcode `#771AAF` in the theme stylesheet,
+    which is a static file and cannot know which tenant is being written to.
+
+    NOT inside a media query, and that is load-bearing: Laravel's CSS inliner
+    skips media-query rules (which is exactly why the mobile overrides below
+    need `!important`). A plain rule here is inlined onto the anchors the same
+    way the theme's own rules are, so it reaches clients that strip <style>
+    blocks entirely.
+
+    Emits NOTHING when no colour is configured — the stylesheet's own value
+    then stands, and the brand constant keeps living in exactly one place.
+--}}
+@php($brandColor = app(App\Support\Mail\EmailBranding::class)->primaryColor())
+@if ($brandColor !== null)
+<style>
+a, .header a, .inner-body a, .subcopy a {
+color: {{ $brandColor }};
+}
+</style>
+@endif
 <style>
 @media only screen and (max-width: 600px) {
 .inner-body {
