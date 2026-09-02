@@ -11,7 +11,9 @@ use App\Models\AiRequest;
 use App\Models\Evaluation;
 use App\Models\InterviewSessionLlmUsage;
 use App\Support\Admin\AdminParticipantReader;
+use App\Support\Admin\DashboardDateRange;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -81,9 +83,14 @@ final class DashboardController extends Controller
      * `with('project:id,name')` is not an optimisation detail — without it
      * every row would fire its own query for a single string.
      */
-    public function activity(): JsonResponse
+    public function activity(Request $request): JsonResponse
     {
-        $recent = $this->reader->listQuery()
+        // The SAME parser the tiles use. Two ranges derived separately would
+        // eventually disagree, and a dashboard whose list and numbers describe
+        // different periods contradicts itself with nothing on screen saying so.
+        $range = DashboardDateRange::fromRequest($request);
+
+        $recent = $range->apply($this->reader->listQuery())
             ->with('project:id,name')
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
@@ -93,9 +100,11 @@ final class DashboardController extends Controller
         return DashboardActivityResource::collection($recent)->response();
     }
 
-    public function metrics(): JsonResponse
+    public function metrics(Request $request): JsonResponse
     {
-        $participantsByStatus = $this->reader->listQuery()
+        $range = DashboardDateRange::fromRequest($request);
+
+        $participantsByStatus = $range->apply($this->reader->listQuery())
             ->selectRaw('status, count(*) as aggregate')
             ->groupBy('status')
             ->pluck('aggregate', 'status')
@@ -107,13 +116,13 @@ final class DashboardController extends Controller
             ? round($completedParticipants / $totalParticipants, 4)
             : 0.0;
 
-        $evaluationsByStatus = Evaluation::query()
+        $evaluationsByStatus = $range->apply(Evaluation::query())
             ->selectRaw('status, count(*) as aggregate')
             ->groupBy('status')
             ->pluck('aggregate', 'status')
             ->map(fn ($count) => (int) $count);
 
-        $sortedLatencies = AiRequest::query()
+        $sortedLatencies = $range->apply(AiRequest::query())
             ->pluck('latency_ms')
             ->map(fn ($value) => (int) $value)
             ->sort()
@@ -124,12 +133,12 @@ final class DashboardController extends Controller
             'evaluations_by_status' => $evaluationsByStatus->all(),
             'completion_rate' => $completionRate,
             'ai_usage' => [
-                'input_tokens' => (int) AiRequest::query()->sum('input_tokens'),
-                'output_tokens' => (int) AiRequest::query()->sum('output_tokens'),
+                'input_tokens' => (int) $range->apply(AiRequest::query())->sum('input_tokens'),
+                'output_tokens' => (int) $range->apply(AiRequest::query())->sum('output_tokens'),
                 'latency_ms_p50' => $this->percentile($sortedLatencies, 0.5),
                 'latency_ms_p95' => $this->percentile($sortedLatencies, 0.95),
             ],
-            'costs' => $this->costs(),
+            'costs' => $this->costs($range),
         ]))->response();
     }
 
@@ -146,14 +155,22 @@ final class DashboardController extends Controller
      *
      * @return array{scoring_usd: float, conversation_usd: float, total_usd: float, currency: string}
      */
-    private function costs(): array
+    /**
+     * @param  DashboardDateRange  $range  Applied here too, so the cost tile
+     *                                     covers the same period as the rest.
+     *                                     A dashboard where four tiles read a
+     *                                     month and the fifth reads all time
+     *                                     is a spend figure nobody can trust.
+     * @return array{scoring_usd: float, conversation_usd: float, total_usd: float, currency: string}
+     */
+    private function costs(DashboardDateRange $range): array
     {
-        $scoring = (float) AiRequest::query()->sum('estimated_cost_usd');
+        $scoring = (float) $range->apply(AiRequest::query())->sum('estimated_cost_usd');
 
         // COALESCE, not two sums added together: a row whose provider has
         // settled the figure carries BOTH an estimate and an actual, and
         // summing each column separately would count that interview twice.
-        $conversation = (float) InterviewSessionLlmUsage::query()
+        $conversation = (float) $range->apply(InterviewSessionLlmUsage::query())
             ->sum(DB::raw('coalesce(actual_cost_usd, estimated_cost_usd, 0)'));
 
         return [

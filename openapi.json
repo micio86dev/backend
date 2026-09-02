@@ -440,6 +440,9 @@
                                                         "string",
                                                         "null"
                                                     ]
+                                                },
+                                                "is_superadmin": {
+                                                    "type": "boolean"
                                                 }
                                             },
                                             "required": [
@@ -447,7 +450,8 @@
                                                 "name",
                                                 "email",
                                                 "locale",
-                                                "photo_url"
+                                                "photo_url",
+                                                "is_superadmin"
                                             ]
                                         },
                                         "organization": {
@@ -4867,24 +4871,41 @@
         "/admin/organizations": {
             "get": {
                 "operationId": "superadmin.organizations",
-                "description": "Reachable ONLY by a superadmin, so the cross-tenant read is the point\nrather than a leak \u2014 and it returns identity only. Nothing about\nwebhooks, credentials or settings crosses here: the switcher needs a\nname to put in a menu, and every other read stays behind the acting\norganization the caller then selects.",
-                "summary": "Every client, for the switcher",
+                "summary": "The shape is declared for Scramble, and not as documentation for its own\nsake: both Nuxt apps generate their typed client from this spec, so an\nundeclared `response()->json()` produced `data: string` and the switcher\nfailed to compile against its own API",
                 "tags": [
                     "Superadmin"
                 ],
                 "responses": {
                     "200": {
-                        "description": "Through ClientDirectory, not an unscoped query here:\nAdminTenancySafetyArchTest forbids `withoutGlobalScopes(` anywhere\nunder app/Http/, and that rule is right \u2014 an unscoped query in a\ncontroller is the shape a cross-tenant leak takes. The one\ndeliberate cross-tenant read lives in a single auditable class.",
+                        "description": "",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "string"
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "name"
+                                                ]
+                                            }
                                         },
                                         "acting_organization_id": {
-                                            "type": "string"
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -4904,8 +4925,6 @@
         "/admin/acting-organization": {
             "put": {
                 "operationId": "superadmin.setActingOrganization",
-                "description": "The id is validated against the table rather than trusted: an unknown\nid would otherwise scope every subsequent read to an organization that\ndoes not exist, and the superadmin would see an empty product with no\nexplanation.",
-                "summary": "Select a client to act as, or `null` to see them all again",
                 "tags": [
                     "Superadmin"
                 ],
