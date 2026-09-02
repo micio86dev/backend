@@ -47,11 +47,18 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $goes_live_at
  * @property Carbon|null $deleted_at
  * @property int|null $avatar_template_id
- * @property-read AvatarTemplate|null $avatarTemplate Null is the COMMON case
- *           (no template pinned — the organization's active one applies), not
- *           an edge case. Annotated explicitly because Larastan otherwise
- *           infers a BelongsTo accessor as non-null and reports the `?->` that
- *           reads it as unnecessary, which would be exactly backwards.
+ * @property-read AvatarTemplate|null $avatarTemplate Nullable in the TYPE, not
+ *           in the data: `avatar_template_id` is NOT NULL and required by both
+ *           FormRequests, so every project names the template it runs on. The
+ *           null stands for "the relation was not eager-loaded", which is why
+ *           readers still use `?->` — an unloaded relation must render as
+ *           absent, never fatal. Annotated explicitly because Larastan
+ *           otherwise infers a BelongsTo accessor as non-null and reports that
+ *           `?->` as unnecessary, which would be exactly backwards.
+ *
+ *           This said "Null is the COMMON case (no template pinned — the
+ *           organization's active one applies)" until the column went NOT NULL
+ *           and was backfilled; the fallback it described no longer exists.
  */
 class Project extends TenantModel
 {

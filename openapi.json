@@ -6112,6 +6112,28 @@
                             "null"
                         ]
                     },
+                    "avatar_template": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "provider": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "provider"
+                        ]
+                    },
                     "webhook_url": {
                         "type": [
                             "string",
@@ -6236,6 +6258,7 @@
                     "nudge_min_chars",
                     "exit_redirect_url",
                     "avatar_template_id",
+                    "avatar_template",
                     "webhook_url",
                     "webhook_events",
                     "has_webhook_secret",
