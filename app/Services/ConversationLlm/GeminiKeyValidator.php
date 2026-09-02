@@ -19,7 +19,8 @@ use Throwable;
  * Timeout and retry count are config-driven (`config/conversation_llm.php`,
  * `timeout_seconds` / `validation_retries`) — NOT literals. The retry applies
  * ONLY to a transport failure (timeout / connection exception); a deterministic
- * vendor response (401/403/429) is never retried — see the `validate()` loop.
+ * vendor response (any 4xx, including the 400 Google returns for a refused
+ * key, or a 429) is never retried — see the `validate()` loop.
  *
  * The original 8s timeout was a plan estimate, never measured. Measured
  * 2026-08-26 against the live endpoint (`POST
@@ -83,8 +84,8 @@ final class GeminiKeyValidator
             } catch (Throwable) {
                 // Transport failure (timeout / connection exception): retry
                 // once, per the measured evidence above. A deterministic
-                // vendor response never reaches this branch, so 401/403/429
-                // are NEVER retried.
+                // vendor response never reaches this branch, so a 4xx or a
+                // 429 is NEVER retried.
                 if ($attempt < $maxAttempts) {
                     continue;
                 }
@@ -94,8 +95,30 @@ final class GeminiKeyValidator
 
             return match (true) {
                 $response->successful() => 'valid',
-                in_array($response->status(), [401, 403], true) => 'invalid_key',
                 $response->status() === 429 => 'rate_limited',
+                // A 4xx means the vendor ANSWERED and refused us, so it is
+                // never `unreachable` — the one code that promises the
+                // operator an automatic retry.
+                //
+                // 400 is in here because Google's OpenAI-compat surface
+                // answers an auth failure with 400 and NEVER 401/403.
+                // Measured against the live endpoint 2026-09-02:
+                //   no Authorization header -> 400 "Missing or invalid
+                //       Authorization header."
+                //   bogus key               -> 400 "Please pass a valid API key"
+                // The old 401/403 branch was therefore unreachable for this
+                // vendor and every refused key fell through to `unreachable`,
+                // telling the operator we could not reach a provider that had
+                // answered in ~160ms, and promising a retry that can never
+                // succeed.
+                //
+                // Classified on STATUS, not on the vendor's prose: matching
+                // "API key" in a message is a rule Google can invalidate with
+                // a copy edit, and the bug would come back with no test
+                // failing. The range subsumes 401/403 too, so a proxy or a
+                // future vendor that does use them still lands correctly.
+                $response->status() >= 400 && $response->status() < 500 => 'invalid_key',
+                // 5xx is the one server-side answer worth retrying.
                 default => 'unreachable',
             };
         }
