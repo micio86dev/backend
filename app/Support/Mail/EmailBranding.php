@@ -30,6 +30,8 @@ final class EmailBranding
 {
     private ?string $primaryColor = null;
 
+    private ?string $organizationName = null;
+
     /**
      * A `#rrggbb` string, or null for "use the product's own".
      *
@@ -45,9 +47,43 @@ final class EmailBranding
             : null;
     }
 
+    /**
+     * The name the message is signed with, in the header wordmark and the
+     * footer copyright.
+     *
+     * Both used to render `config('app.name')`, so every message went out
+     * signed "Laravel". Ruling 10 keeps the WORDS of a transactional email out
+     * of tenant reach, but the name it is signed with is CHROME in exactly the
+     * sense the logo and the colour already are — a candidate deciding whether
+     * to trust an invitation is looking at who sent it.
+     *
+     * Trimmed to null rather than stored blank, so an organization with an
+     * empty name falls back to the product's own instead of signing the
+     * message with nothing. Escaping is the view's job and it does it — this
+     * value is operator-supplied and reaches a rendered document.
+     */
+    public function setOrganizationName(?string $name): void
+    {
+        $trimmed = is_string($name) ? trim($name) : '';
+
+        $this->organizationName = $trimmed === '' ? null : $trimmed;
+    }
+
+    /**
+     * Null when there is no tenant to sign with — a superadmin has no
+     * organization — and the caller then falls back to `config('app.name')`.
+     * That fallback is the reason `APP_NAME` must never be left at Laravel's
+     * default.
+     */
+    public function organizationName(): ?string
+    {
+        return $this->organizationName;
+    }
+
     public function forget(): void
     {
         $this->primaryColor = null;
+        $this->organizationName = null;
     }
 
     /**

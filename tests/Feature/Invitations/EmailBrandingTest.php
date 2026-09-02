@@ -95,3 +95,60 @@ test('it does not survive its own send', function (): void {
 
     expect($branding->primaryColor())->toBeNull();
 });
+
+/**
+ * THE NAME, not just the colour.
+ *
+ * The header wordmark and the footer copyright both rendered
+ * `config('app.name')`, so every message a candidate or an operator received
+ * was signed "Laravel". Ruling 10 puts the WORDS out of tenant reach but the
+ * CHROME in it, and the name a message is signed with is chrome in exactly the
+ * sense the logo and the colour already are.
+ */
+test('the organization name signs the message, not the framework default', function (): void {
+    config()->set('app.name', 'BEAI');
+
+    $branding = app(EmailBranding::class);
+    $branding->setOrganizationName('Acme Selezione');
+
+    $html = renderedInvitation();
+
+    expect($html)->toContain('Acme Selezione')
+        ->and($html)->not->toContain('Laravel');
+});
+
+/**
+ * A superadmin has no organization, so there is no tenant name to sign with.
+ * That falls back to the PRODUCT name — the same shape as the colour's "render
+ * in the product's own", and the reason `app.name` must never read "Laravel".
+ */
+test('no organization falls back to the product name', function (): void {
+    config()->set('app.name', 'BEAI');
+
+    app(EmailBranding::class)->forget();
+
+    $html = renderedInvitation();
+
+    expect($html)->toContain('BEAI');
+});
+
+/**
+ * The name lands in a rendered document, so it is escaped like any other
+ * untrusted string. An organization name is operator-supplied.
+ */
+test('the name is escaped, never injected as markup', function (): void {
+    app(EmailBranding::class)->setOrganizationName('<script>alert(1)</script>');
+
+    $html = renderedInvitation();
+
+    expect($html)->not->toContain('<script>alert(1)</script>');
+});
+
+/** Cleared with the colour — one tenant's name must not sign another's mail. */
+test('the name does not survive its own send', function (): void {
+    $branding = app(EmailBranding::class);
+    $branding->setOrganizationName('Acme Selezione');
+    $branding->forget();
+
+    expect($branding->organizationName())->toBeNull();
+});

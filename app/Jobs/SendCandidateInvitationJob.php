@@ -99,6 +99,11 @@ final class SendCandidateInvitationJob implements ShouldQueue
         // per-tenant.
         $branding = app(EmailBranding::class);
         $branding->set($this->brandColor);
+        // The same name the body already greets them with now also signs the
+        // header and the footer, which rendered `config('app.name')` — so a
+        // candidate read an invitation from their prospective employer signed
+        // by our web framework.
+        $branding->setOrganizationName($this->organizationName);
 
         // Routed to an ADDRESS, not to a notifiable model. A Participant is not
         // a user of this system and must never become one — giving it a
