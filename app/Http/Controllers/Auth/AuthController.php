@@ -195,6 +195,15 @@ final class AuthController extends Controller
                 // caches once per page load, so this is the second (and only
                 // other) caller of ProfilePhotoUrlSigner.
                 'photo_url' => app(ProfilePhotoUrlSigner::class)->urlFor($user->profile_photo_path),
+                // The shell renders the client switcher from this, so it has
+                // to be HERE and not only on /api/profile: `/auth/me` is the
+                // identity contract useCurrentUser caches once per page load,
+                // and the switcher must exist before the first navigation.
+                //
+                // An explicit boolean, never an absent key: a UI branching on
+                // `undefined` treats "not sent" and "not a superadmin" alike,
+                // and would start showing the switcher the day this is renamed.
+                'is_superadmin' => (bool) $user->is_superadmin,
             ],
             'organization' => $org !== null ? [
                 'id' => $org->id,

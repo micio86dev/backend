@@ -71,6 +71,13 @@ test('the profile tells the backoffice it is talking to a superadmin', function 
     $this->withToken($token)->getJson('/api/profile')
         ->assertOk()
         ->assertJsonPath('data.is_superadmin', true);
+
+    // And on /auth/me, which is the contract the SHELL reads: useCurrentUser
+    // caches it once per page load, so the switcher has to exist before the
+    // first navigation rather than after a second request.
+    $this->withToken($token)->getJson('/api/auth/me')
+        ->assertOk()
+        ->assertJsonPath('user.is_superadmin', true);
 });
 
 test('an ordinary admin is not one, and is told so explicitly', function (): void {
