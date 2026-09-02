@@ -6133,12 +6133,19 @@
                             },
                             "provider": {
                                 "type": "string"
+                            },
+                            "llm_model": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
                             }
                         },
                         "required": [
                             "id",
                             "name",
-                            "provider"
+                            "provider",
+                            "llm_model"
                         ]
                     },
                     "webhook_url": {

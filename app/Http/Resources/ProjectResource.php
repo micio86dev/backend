@@ -35,9 +35,9 @@ class ProjectResource extends JsonResource
      * `(int)` cast; nullable ints use the ternary form so `null` never
      * becomes `0`.
      *
-     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
+     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string, llm_model: string|null}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      *
-     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
+     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string, llm_model: string|null}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      */
     public function toArray(Request $request): array
     {
@@ -82,6 +82,13 @@ class ProjectResource extends JsonResource
                 'id' => (int) $project->avatarTemplate->id,
                 'name' => $project->avatarTemplate->name,
                 'provider' => $project->avatarTemplate->provider,
+                // WHICH model the conversation runs on. The provider says
+                // HeyGen or Tavus; it does not say Gemini Flash, and that is
+                // the line an operator scanning a list actually needs — it
+                // decides cost and behaviour. Null is a real state: the column
+                // is nullable and "not configured" must be showable honestly
+                // rather than papered over with a default.
+                'llm_model' => $project->avatarTemplate->llmModel?->display_name,
             ],
             'webhook_url' => $project->webhook_url,
             'webhook_events' => $project->webhook_events,

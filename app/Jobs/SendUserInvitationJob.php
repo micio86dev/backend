@@ -121,6 +121,7 @@ final class SendUserInvitationJob implements ShouldQueue
         $branding = app(EmailBranding::class);
         $branding->set($organization?->primary_color);
         $branding->setOrganizationName($organization?->name);
+        $branding->setLogoUrl($organization?->absoluteLogoUrl());
 
         $token = Password::broker()->createToken($user);
         $expiresInMinutes = (int) config('auth.passwords.users.expire');

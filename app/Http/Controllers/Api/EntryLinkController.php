@@ -165,6 +165,7 @@ final class EntryLinkController extends Controller
                 $expiresLabel,
                 $minted->lang,
                 $project->organization?->primary_color,
+                $project->organization?->absoluteLogoUrl(),
             );
         }
 

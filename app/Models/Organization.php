@@ -8,6 +8,7 @@ use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -63,6 +64,38 @@ class Organization extends Model
             'default_webhook_secret' => 'encrypted',
             'default_webhook_events' => 'array',
         ];
+    }
+
+    /**
+     * The logo as an ABSOLUTE url, or null when none is configured.
+     *
+     * Separate from the relative `Storage::url()` the API resources return,
+     * and deliberately so rather than by oversight: a resource is read by an
+     * app that HAS an origin and can resolve a relative path against it. An
+     * EMAIL has none, so `/storage/logos/acme.png` is a broken image in every
+     * client — which is precisely the failure the original "no logo in mail"
+     * ruling predicted, arriving through a different door.
+     *
+     * Anchored on `APP_URL` because that is the same source
+     * `AppServiceProvider::forcePublicRootUrl()` already uses to build public
+     * URLs, so mail and the rest of the application cannot disagree about
+     * where this deployment lives.
+     */
+    public function absoluteLogoUrl(): ?string
+    {
+        if ($this->logo_path === null) {
+            return null;
+        }
+
+        $url = Storage::url($this->logo_path);
+
+        // Already absolute on an S3-style disk; only the local disk returns a
+        // rooted path that needs anchoring.
+        if (preg_match('#\Ahttps?://#i', $url) === 1) {
+            return $url;
+        }
+
+        return rtrim((string) config('app.url'), '/').'/'.ltrim($url, '/');
     }
 
     /**
