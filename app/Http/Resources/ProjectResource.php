@@ -35,9 +35,9 @@ class ProjectResource extends JsonResource
      * `(int)` cast; nullable ints use the ternary form so `null` never
      * becomes `0`.
      *
-     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
+     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      *
-     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
+     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      */
     public function toArray(Request $request): array
     {
@@ -65,6 +65,24 @@ class ProjectResource extends JsonResource
             // applies", NOT "no template will be used". The backoffice needs
             // the two states distinguishable to label the control honestly.
             'avatar_template_id' => $project->avatar_template_id,
+            // The id alone cannot fill a column in the projects table: it says
+            // 7, not "Ada on Tavus". The PROVIDER especially — the template is
+            // what decides whether a project runs on HeyGen or Tavus, since
+            // `provider_override` became unreachable once the column went NOT
+            // NULL — and that belongs at a glance rather than behind opening
+            // every project in turn.
+            //
+            // Nested, like `pin_context` and `competencies`, rather than two
+            // flat keys: these are one thing's attributes, and flattening
+            // invites a third field added in one place and forgotten in the
+            // other. Null-guarded even though the column is NOT NULL, because
+            // this reads through a relation the caller must eager-load and an
+            // unloaded one must render as absent, never fatal.
+            'avatar_template' => $project->avatarTemplate === null ? null : [
+                'id' => (int) $project->avatarTemplate->id,
+                'name' => $project->avatarTemplate->name,
+                'provider' => $project->avatarTemplate->provider,
+            ],
             'webhook_url' => $project->webhook_url,
             'webhook_events' => $project->webhook_events,
             // webhook_secret intentionally excluded (hidden + encrypted).

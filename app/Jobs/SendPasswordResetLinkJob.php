@@ -131,10 +131,14 @@ final class SendPasswordResetLinkJob implements ShouldQueue
         // Branded like the other two. A superadmin has no organization, so
         // `find(null)` returns null and the message renders in the product's
         // own colour — which is the correct answer, not a gap.
+        // ONE lookup, both fields. The colour and the name are the same
+        // decision — who this message is from — so splitting them into two
+        // reads would be two chances for them to disagree.
+        $organization = Organization::withoutGlobalScopes()->find($user->organization_id);
+
         $branding = app(EmailBranding::class);
-        $branding->set(
-            Organization::withoutGlobalScopes()->find($user->organization_id)?->primary_color
-        );
+        $branding->set($organization?->primary_color);
+        $branding->setOrganizationName($organization?->name);
 
         $token = Password::broker()->createToken($user);
 

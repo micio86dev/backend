@@ -113,10 +113,14 @@ final class SendUserInvitationJob implements ShouldQueue
         // rather than passed in because this job already loads the user, and
         // an unscoped read of ONE organization by the id on that user crosses
         // no boundary the request had not already decided.
+        // ONE lookup, both fields. The colour and the name are the same
+        // decision — who this message is from — so splitting them into two
+        // reads would be two chances for them to disagree.
+        $organization = Organization::withoutGlobalScopes()->find($user->organization_id);
+
         $branding = app(EmailBranding::class);
-        $branding->set(
-            Organization::withoutGlobalScopes()->find($user->organization_id)?->primary_color
-        );
+        $branding->set($organization?->primary_color);
+        $branding->setOrganizationName($organization?->name);
 
         $token = Password::broker()->createToken($user);
         $expiresInMinutes = (int) config('auth.passwords.users.expire');

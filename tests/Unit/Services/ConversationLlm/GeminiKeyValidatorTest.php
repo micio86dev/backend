@@ -233,3 +233,63 @@ test('the retry count is read from config, not hardcoded', function (): void {
     // With validation_retries = 0, only the initial attempt is made — no retry.
     expect($attempts)->toBe(1);
 });
+
+/**
+ * Google's OpenAI-compat surface answers an auth failure with 400, NEVER
+ * 401/403. Measured against the live endpoint 2026-09-02 from inside the api
+ * container:
+ *
+ *   no Authorization header -> 400 {"error":{"code":400,
+ *       "message":"Missing or invalid Authorization header.",
+ *       "status":"INVALID_ARGUMENT"}}
+ *   bogus key               -> 400 {"error":{"code":400,
+ *       "message":"Please pass a valid API key",
+ *       "status":"INVALID_ARGUMENT"}}
+ *
+ * So the 401/403 branch was unreachable for this vendor and every refused key
+ * fell through `default` to `unreachable` — telling the operator "we could not
+ * reach the provider, it will be retried automatically" when the provider had
+ * answered in ~160ms and retrying can never help.
+ *
+ * Classified on STATUS, deliberately not on the vendor's prose: matching
+ * "API key" in a message is a rule Google can silently invalidate with a copy
+ * edit, and this bug would return with no test failing.
+ */
+test('a 400 classifies as invalid_key, not unreachable', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([
+            'error' => [
+                'code' => 400,
+                'message' => 'Please pass a valid API key',
+                'status' => 'INVALID_ARGUMENT',
+            ],
+        ], 400),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('bogus'))->toBe('invalid_key');
+});
+
+/**
+ * A 5xx is the one server-side answer worth retrying, so it stays
+ * `unreachable` — the code that promises an automatic retry — while a 4xx
+ * never does.
+ */
+test('a 500 stays unreachable', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response(['error' => 'boom'], 500),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('unreachable');
+});
+
+/** A 429 keeps its own code — it is neither a bad key nor an outage. */
+test('a 429 still classifies as rate_limited', function (): void {
+    seedCheapestGeminiModel();
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response(['error' => 'slow down'], 429),
+    ]);
+
+    expect(app(GeminiKeyValidator::class)->validate('sk-real-key'))->toBe('rate_limited');
+});

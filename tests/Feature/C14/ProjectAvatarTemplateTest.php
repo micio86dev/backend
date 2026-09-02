@@ -500,3 +500,66 @@ test("another organization's template cannot be deactivated", function (): void 
         ->postJson('/api/avatar-templates/'.$foreign->id.'/deactivate')
         ->assertNotFound();
 });
+
+/**
+ * THE ID IS NOT ENOUGH FOR A LIST.
+ *
+ * `ProjectResource` exposed `avatar_template_id` and nothing else, so the
+ * projects table could show an operator the integer 7 and no way to learn what
+ * it runs on. The provider especially: the template is what DECIDES whether a
+ * project runs on HeyGen or Tavus (`provider_override` is unreachable now that
+ * nothing can pin nothing), and that is a fact worth reading at a glance rather
+ * than by opening every project in turn.
+ *
+ * A nested object, matching `pin_context` and `competencies`, rather than two
+ * flat `avatar_template_name` / `avatar_template_provider` keys: they are one
+ * thing's attributes, and flattening invites a future third field to be added
+ * in one place and forgotten in the other.
+ */
+test('the resource names the template and its provider, not just the id', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    $fv = projTemplateFramework($org);
+    $template = projTemplateFor($org, 'tavus');
+
+    $response = $this->withToken($token)->postJson('/api/projects', array_merge(
+        projTemplatePayload($fv->id),
+        ['avatar_template_id' => $template->id],
+    ));
+
+    $response->assertCreated();
+    $response->assertJsonPath('data.avatar_template.id', $template->id);
+    $response->assertJsonPath('data.avatar_template.name', $template->name);
+    $response->assertJsonPath('data.avatar_template.provider', 'tavus');
+});
+
+/**
+ * The list endpoint is where this is READ, so it is where the relation has to
+ * be eager-loaded. Asserted by counting queries rather than by trusting the
+ * `with()` call to stay there: a list that costs one query per row is the
+ * defect this column's own display would otherwise introduce.
+ */
+test('the index does not issue one query per project for the template', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = projTemplateAdmin($org);
+    $fv = projTemplateFramework($org);
+
+    foreach (range(1, 3) as $i) {
+        $template = projTemplateFor($org, 'heygen');
+        $this->withToken($token)->postJson('/api/projects', array_merge(
+            projTemplatePayload($fv->id),
+            ['slug' => 'proj-'.$i.'-'.uniqid(), 'avatar_template_id' => $template->id],
+        ))->assertCreated();
+    }
+
+    DB::enableQueryLog();
+    $this->withToken($token)->getJson('/api/projects')->assertOk();
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    $templateQueries = collect($queries)
+        ->filter(fn (array $q): bool => str_contains($q['query'], 'avatar_templates'))
+        ->count();
+
+    expect($templateQueries)->toBeLessThanOrEqual(1);
+});
