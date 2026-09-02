@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectQuestionController;
 use App\Http\Controllers\Api\SessionReviewController;
+use App\Http\Controllers\Api\SuperadminController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
@@ -168,6 +169,20 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::put('projects/{project}/questions/order', [ProjectQuestionController::class, 'reorder']);
     Route::patch('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'update']);
     Route::delete('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'destroy']);
+});
+
+// ─── Superadmin: clients and the acting-organization switch ──────────────────
+// RATIFIED 2026-09-02 (option b): the switch is SERVER-SIDE. The rejected
+// alternative was `X-Organization-Id` on every request, which puts a
+// cross-tenant lever anywhere a caller can set a header — every endpoint would
+// then have to honour it correctly, and one mistake is a cross-tenant leak.
+//
+// Behind TenantContext like everything else: a superadmin reaches it through
+// the same middleware that grants their bypass, so there is no second path
+// into the tenant layer to keep in step with the first.
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::get('admin/organizations', [SuperadminController::class, 'organizations']);
+    Route::put('admin/acting-organization', [SuperadminController::class, 'setActingOrganization']);
 });
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────

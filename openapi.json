@@ -4864,6 +4864,103 @@
                 }
             }
         },
+        "/admin/organizations": {
+            "get": {
+                "operationId": "superadmin.organizations",
+                "description": "Reachable ONLY by a superadmin, so the cross-tenant read is the point\nrather than a leak \u2014 and it returns identity only. Nothing about\nwebhooks, credentials or settings crosses here: the switcher needs a\nname to put in a menu, and every other read stays behind the acting\norganization the caller then selects.",
+                "summary": "Every client, for the switcher",
+                "tags": [
+                    "Superadmin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Through ClientDirectory, not an unscoped query here:\nAdminTenancySafetyArchTest forbids `withoutGlobalScopes(` anywhere\nunder app/Http/, and that rule is right \u2014 an unscoped query in a\ncontroller is the shape a cross-tenant leak takes. The one\ndeliberate cross-tenant read lives in a single auditable class.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        },
+                                        "acting_organization_id": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/acting-organization": {
+            "put": {
+                "operationId": "superadmin.setActingOrganization",
+                "description": "The id is validated against the table rather than trusted: an unknown\nid would otherwise scope every subsequent read to an organization that\ndoes not exist, and the superadmin would see an empty product with no\nexplanation.",
+                "summary": "Select a client to act as, or `null` to see them all again",
+                "tags": [
+                    "Superadmin"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "organization_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "organization_id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "acting_organization_id": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "operationId": "user.index",
