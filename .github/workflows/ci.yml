@@ -46,6 +46,18 @@ jobs:
       # that happened to match the committed file by accident of the default
       # (generated-client-truth-and-session-safety D2).
       APP_URL: http://localhost
+      # Pinned for the SAME reason as APP_URL directly above, and discovered the
+      # same way it was: `scramble:export` builds `info.title` from
+      # `config('app.name')`, so the committed spec said "BEAI" when exported by
+      # a developer whose .env sets APP_NAME and "Laravel" when exported by CI,
+      # which sets nothing. The freshness gate below then failed on the title —
+      # a real difference, but not a contract change, and not one anybody could
+      # fix by editing the API.
+      #
+      # BEAI, not Laravel: the published spec names the product. Two values that
+      # depend on the exporter's shell are two answers to one question, which is
+      # the reason APP_URL is pinned two lines up.
+      APP_NAME: BEAI
       # Throwaway 32-byte key for CI only (aes-256-cbc); NOT a production secret.
       # The placeholder previously here was an invalid cipher length and broke
       # any test that encrypts a field (e.g. webhook_secret encrypted cast).
