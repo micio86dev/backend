@@ -23,6 +23,8 @@ declare(strict_types=1);
  * the whole contract, so they are asserted directly.
  */
 
+use Database\Seeders\FrameworkCatalogSeeder;
+use Database\Seeders\PlatformSuperadminSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -108,6 +110,65 @@ final class RecordingSyncStub extends Command
     }
 }
 
+/**
+ * Records that the framework catalogue seed ran.
+ *
+ * `db:seed --class=FrameworkCatalogSeeder` is the step that fills
+ * `framework_competencies`, `framework_roles` and the BARS anchors. Nothing in
+ * any deploy path ran it, and the consequences were not theoretical: a
+ * production database seeded before MTG/LAT were added to the catalogue stayed
+ * without them forever, so every attempt to create a `potential` project came
+ * back `POTENTIAL_CATALOG_INCOMPLETE`. A database that has never been seeded at
+ * all is worse — `projects.framework_version_id` is NOT NULL, so no project of
+ * any type can be created.
+ */
+final class RecordingSeedStub extends Command
+{
+    public static bool $ran = false;
+
+    /** @var list<string> Every --class value this stub was called with, in order. */
+    public static array $classes = [];
+
+    public static string $class = '';
+
+    protected $signature = 'db:seed {--class=} {--force} {--database=}';
+
+    protected $description = 'Stub that records invocation.';
+
+    public function handle(): int
+    {
+        self::$ran = true;
+        self::$class = (string) $this->option('class');
+        self::$classes[] = self::$class;
+
+        return self::SUCCESS;
+    }
+}
+
+final class FailingSeedStub extends Command
+{
+    protected $signature = 'db:seed {--class=} {--force} {--database=}';
+
+    protected $description = 'Stub that always fails.';
+
+    public function handle(): int
+    {
+        return self::FAILURE;
+    }
+}
+
+final class ThrowingSeedStub extends Command
+{
+    protected $signature = 'db:seed {--class=} {--force} {--database=}';
+
+    protected $description = 'Stub that always throws.';
+
+    public function handle(): int
+    {
+        throw new RuntimeException('SQLSTATE[08006]: connection refused');
+    }
+}
+
 function registerDeployStub(Command $stub): void
 {
     app(Kernel::class)->registerCommand($stub);
@@ -115,6 +176,9 @@ function registerDeployStub(Command $stub): void
 
 beforeEach(function (): void {
     RecordingSyncStub::$ran = false;
+    RecordingSeedStub::$ran = false;
+    RecordingSeedStub::$class = '';
+    RecordingSeedStub::$classes = [];
     ForceSpyMigrateStub::$forced = false;
 });
 
@@ -205,4 +269,82 @@ test('a migration that THROWS also aborts the deploy — a QueryException is the
         ->assertFailed();
 
     expect(RecordingSyncStub::$ran)->toBeFalse();
+});
+
+// ─── Framework catalogue seed ────────────────────────────────────────────────
+
+test('the deploy seeds the framework catalogue', function (): void {
+    // The step that was missing. Without it a deploy migrates an EMPTY
+    // catalogue into place and every project creation fails on a NOT NULL
+    // `framework_version_id` — and an existing deployment never receives a
+    // competency added to the catalogue after it was first seeded, which is
+    // exactly how MTG/LAT went missing and broke `potential` projects.
+    registerDeployStub(new RecordingSeedStub);
+
+    $this->artisan('beai:deploy')->assertExitCode(Command::SUCCESS);
+
+    expect(RecordingSeedStub::$ran)->toBeTrue();
+    expect(RecordingSeedStub::$classes)->toContain(FrameworkCatalogSeeder::class);
+});
+
+test('the catalogue seed runs AFTER migrations, never before', function (): void {
+    // It writes to tables the migrations create. Running it first is not a
+    // slower deploy, it is a failed one.
+    registerDeployStub(new FailingMigrateStub);
+    registerDeployStub(new RecordingSeedStub);
+
+    $this->artisan('beai:deploy')->assertFailed();
+
+    expect(RecordingSeedStub::$ran)->toBeFalse();
+});
+
+test('a failed catalogue seed warns but still exits 0', function (): void {
+    // Same rule as the registry sync, for the same reason: this is catalogue
+    // DATA, not schema. A transient fault over it must not refuse a release —
+    // the previous revision keeps serving with the catalogue it already has.
+    registerDeployStub(new FailingSeedStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] WARNING: framework catalogue seed failed')
+        ->expectsOutputToContain('[deploy] done')
+        ->assertExitCode(Command::SUCCESS);
+});
+
+test('a catalogue seed that throws is caught and still exits 0', function (): void {
+    registerDeployStub(new ThrowingSeedStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] WARNING: framework catalogue seed failed')
+        ->assertExitCode(Command::SUCCESS);
+});
+
+// ─── Platform superadmin ─────────────────────────────────────────────────────
+
+test('the deploy provisions the platform superadmin', function (): void {
+    // `PlatformSuperadminSeeder` existed, was tested, and was called by
+    // NOTHING: not by `DatabaseSeeder` (it is opt-in), not by the entrypoint,
+    // not by `preDeployCommand`. Setting SUPERADMIN_EMAIL/PASSWORD on the
+    // deployment therefore did exactly nothing, and the only superadmin
+    // anywhere was one created by hand on a laptop.
+    //
+    // Safe to run every time BECAUSE of the seeder's own two rules: it skips
+    // entirely when SUPERADMIN_EMAIL is unset, and it never touches the
+    // password of an account that already exists — so a redeploy cannot undo a
+    // rotation.
+    registerDeployStub(new RecordingSeedStub);
+
+    $this->artisan('beai:deploy')->assertExitCode(Command::SUCCESS);
+
+    expect(RecordingSeedStub::$classes)->toContain(PlatformSuperadminSeeder::class);
+});
+
+test('a failed superadmin provisioning warns but still exits 0', function (): void {
+    // The seeder THROWS when an email is configured with no password, which is
+    // a misconfiguration worth shouting about and not worth refusing a release
+    // for: the rest of the platform serves fine without a superadmin.
+    registerDeployStub(new ThrowingSeedStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] WARNING: superadmin provisioning failed')
+        ->assertExitCode(Command::SUCCESS);
 });
