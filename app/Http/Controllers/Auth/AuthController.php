@@ -166,11 +166,12 @@ final class AuthController extends Controller
      *     roles: list<string>,
      *     abilities: array{
      *         organization: array{view: bool, update: bool},
-     *         apiClients: array{viewAny: bool, create: bool},
-     *         users: array{viewAny: bool, create: bool},
-     *         llmCredentials: array{viewAny: bool, create: bool},
-     *         avatarTemplates: array{viewAny: bool, create: bool},
-     *         projects: array{viewAny: bool, create: bool},
+     *         apiClients: array{viewAny: bool, create: bool, delete: bool},
+     *         users: array{viewAny: bool, create: bool, update: bool, deactivate: bool, activate: bool},
+     *         llmCredentials: array{viewAny: bool, create: bool, update: bool, delete: bool},
+     *         avatarTemplates: array{viewAny: bool, create: bool, update: bool, activate: bool, delete: bool},
+     *         projects: array{viewAny: bool, create: bool, update: bool, delete: bool},
+     *         participants: array{viewAny: bool, create: bool, recover: bool},
      *     },
      * }
      */
