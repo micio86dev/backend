@@ -20,6 +20,7 @@ use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
@@ -34,6 +35,7 @@ use App\Support\Interview\SessionLiveClock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Log;
@@ -89,6 +91,15 @@ class InterviewController extends Controller
      *   - Retry issue(). On success, persist ref and flip to in_corso.
      *
      * FIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.
+     *
+     * The 201 shape is spelled out for Scramble because it cannot follow
+     * `buildSuccessResponse()` — a private helper two call sites deep, whose
+     * fields come from method calls on `$this`. Left inferred, it produced a
+     * shape MISSING `audio_only` entirely, and the candidate app generates its
+     * client from this spec: the field existed on the wire, was absent from the
+     * type, and reading it was a compile error in the app that needs it.
+     *
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}}
      *
      * @throws \Throwable
      */
@@ -536,6 +547,11 @@ class InterviewController extends Controller
                 // the prompt told it to utter a placeholder it had never been
                 // given, so no question ever ended by itself.
                 advancePhrase: $advancePhrase,
+                // What the OPERATOR wrote for this competency. Loaded here
+                // because this is the one place that already knows both the
+                // project and the competency; the composer stays a pure
+                // function of what it is handed.
+                authoredQuestions: $this->authoredQuestionsFor($project, $competency->id),
             );
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -986,7 +1002,37 @@ class InterviewController extends Controller
             return;
         }
 
+        // `organization_id` is a PREDICATE here, not an argument about call
+        // sites. `Participant` extends plain Model — no global scope — and the
+        // repo rule is that it is never queried without this filter. Every
+        // other Participant access in app/ carries it; this was the one that
+        // did not, and it is a WRITE.
+        //
+        // Not exploitable today, because `$participantId` arrives either from
+        // the authenticated candidate or from a session resolved through
+        // `ResolvesOwnedSession` (InterviewSession IS a TenantModel). But that
+        // is an argument about three call sites, and the next call site added
+        // is the one that breaks it. Read from the project rather than trusted
+        // from the caller, so the invariant is local to this query.
+        $orgId = Project::whereKey($projectId)->value('organization_id');
+
+        if ($orgId === null) {
+            // The filter is correct and stays. What must not be silent is the
+            // case where it cannot be resolved: `Project` soft-deletes and runs
+            // through the tenant scope, so a null here makes the update match
+            // zero rows, `$won !== 1`, and the participant stays `in_corso`
+            // with no scoring, no webhook and no notification — verbatim the
+            // stranding this method exists to end, reached by another route.
+            Log::error('C7a: cannot settle completion — project did not resolve', [
+                'participant_id' => $participantId,
+                'project_id' => $projectId,
+            ]);
+
+            return;
+        }
+
         $won = Participant::where('id', $participantId)
+            ->where('organization_id', $orgId)
             ->where('status', 'in_corso')
             ->update(['status' => 'in_valutazione']);
 
@@ -1037,7 +1083,7 @@ class InterviewController extends Controller
             DB::table('utterances')->where('interview_session_id', $session->id)->delete();
         }
 
-        DB::table('utterances')->insert(array_map(fn (array $row) => [
+        DB::table('utterances')->insert(array_map(fn (array $row): array => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,
             'speaker' => $row['speaker'],
@@ -1118,6 +1164,93 @@ class InterviewController extends Controller
     }
 
     /**
+     * The operator's own questions for this project × competency, localized.
+     *
+     * `project_questions` has been writable from the backoffice since C4 and
+     * was read by NOTHING: the model, its controller, its request and its
+     * resource referenced each other and no part of the interview referenced
+     * any of them. An operator could author the exact question they needed
+     * asked, watch it save, and then listen to the avatar improvise something
+     * else. This is the read that was missing.
+     *
+     * Ordered by `position`, because an operator writing a second question as
+     * a follow-up to the first means it to come second.
+     *
+     * LOCALE RESOLUTION: the PROJECT's language, falling back to the platform
+     * default and then to whatever single translation exists. A question the
+     * operator wrote only in Italian is still the question they want asked;
+     * dropping it because the project is `en` would silently return the
+     * write-only behaviour for exactly the operators most likely to hit it.
+     *
+     * @return list<string>
+     */
+    private function authoredQuestionsFor(Project $project, int $competencyId): array
+    {
+        $fallback = (string) config('app.fallback_locale', 'en');
+        $locale = $project->language ?? $fallback;
+
+        return ProjectQuestion::where('project_id', $project->id)
+            ->where('competency_id', $competencyId)
+            ->orderBy('position')
+            ->orderBy('id')
+            ->pluck('text')
+            ->map(function (mixed $text) use ($locale, $fallback): string {
+                if (! is_array($text)) {
+                    return '';
+                }
+
+                $resolved = $text[$locale] ?? $text[$fallback] ?? null;
+
+                if (! is_string($resolved)) {
+                    // Last resort: the first non-empty translation there is.
+                    $resolved = collect($text)->first(
+                        static fn (mixed $value): bool => is_string($value) && trim($value) !== ''
+                    );
+                }
+
+                return is_string($resolved) ? trim($resolved) : '';
+            })
+            ->filter(static fn (string $question): bool => $question !== '')
+            ->values()
+            // Typed, so the list-ness is proven rather than asserted: the
+            // composer's boundary is `list<string>`, and `filter()` does not
+            // promise a list through its signature.
+            ->pipe(static fn (Collection $questions): array => array_values($questions->all()));
+    }
+
+    /**
+     * Whether this session's project runs voice-only.
+     *
+     * Resolved HERE, from the session, rather than threaded through the
+     * question-context DTO: `/start` answers on two paths (fresh issue and
+     * resume) and only one of them passes through the block that already reads
+     * the pinned template. Deriving it from the session is correct on both by
+     * construction, at the cost of one indexed lookup per competency start —
+     * which happens once per question, not per frame.
+     *
+     * FALSE, never null, when nothing is configured. An explicit boolean means
+     * a client branching on it cannot conflate "not configured" with "not
+     * audio-only", and cannot start hiding the avatar the day the key is
+     * renamed and the read silently returns undefined.
+     */
+    private function resolveAudioOnly(InterviewSession $session): bool
+    {
+        $templateId = Project::whereKey($session->project_id)->value('avatar_template_id');
+
+        if ($templateId === null) {
+            return false;
+        }
+
+        $config = AvatarTemplate::whereKey($templateId)->value('config');
+
+        if (! is_array($config)) {
+            return false;
+        }
+
+        return ($config['audioOnly'] ?? false) === true;
+    }
+
+    /**
      * Build a 201 success response.
      *
      * SECURITY: NEVER include API key material. Only the ephemeral token/URL
@@ -1155,6 +1288,19 @@ class InterviewController extends Controller
         return response()->json([
             'session_id' => $session->id,
             'provider' => $token->provider,
+            // Voice-only interviews, so the client knows not to mount a video
+            // element it will never receive a track for.
+            //
+            // The knob already existed and already reached the provider
+            // (`TemplatePayload` maps it to Tavus's `audio_only`); it simply
+            // never reached the BROWSER. The candidate app kept attaching the
+            // stream to a `<video>`, which painted an undecoded frame — green
+            // and black vertical banding where a face belongs.
+            //
+            // Carries no vendor identity, which is what makes it safe to hand
+            // a candidate: "this interview has no video" is a fact about the
+            // interview, not about who renders it.
+            'audio_only' => $this->resolveAudioOnly($session),
             // HeyGen: token; Tavus: null
             'provider_token' => $token->token,
             // Tavus: conversation_url; HeyGen: null
@@ -1260,7 +1406,7 @@ class InterviewController extends Controller
             DB::table('utterances')->where('interview_session_id', $session->id)->delete();
         }
 
-        $rows = array_map(fn (array $row) => [
+        $rows = array_map(fn (array $row): array => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,
             'speaker' => $row['speaker'],

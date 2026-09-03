@@ -16,6 +16,7 @@ use App\Models\FrameworkGap;
 use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Models\PlatformSetting;
 use App\Models\RefreshToken;
 use App\Models\Role;
 use App\Models\TenantModel;
@@ -86,6 +87,18 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // exists, breaking every rotation. RefreshToken has no organization_id
         // column at all — it is user-scoped via the `user_id` foreign key only.
         RefreshToken::class,
+        // Platform settings — intentionally NOT a TenantModel, and this is the
+        // whole reason the table exists separately from `organizations`. A row
+        // here belongs to the PLATFORM: the per-competency question cap is a
+        // property of the assessment METHOD, not a client's preference, and a
+        // tenant able to raise it would turn a BARS interview into a
+        // questionnaire while still calling it a BARS interview.
+        //
+        // There is no `organization_id` column at all, and the only identity
+        // allowed to write one is the superadmin — who belongs to no
+        // organization, so a tenant global scope would hide these rows from
+        // the only person entitled to them.
+        PlatformSetting::class,
     ];
 
     $violations = [];

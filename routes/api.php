@@ -183,6 +183,12 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('admin/organizations', [SuperadminController::class, 'organizations']);
     Route::put('admin/acting-organization', [SuperadminController::class, 'setActingOrganization']);
+
+    // Platform-wide settings — BEAI's own knobs, not a tenant's. Superadmin
+    // only; every tenant role gets 403 (see SuperadminController's doctrine on
+    // 403-vs-404 for capability endpoints).
+    Route::get('admin/settings', [SuperadminController::class, 'settings']);
+    Route::patch('admin/settings', [SuperadminController::class, 'updateSettings']);
 });
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
