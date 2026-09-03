@@ -1,36 +1,41 @@
 {
-  "commit-msg": {
-    "enabled": false,
-    "actions": []
-  },
-  "pre-commit": {
-    "enabled": true,
-    "actions": [
-      {
-        "action": "./vendor/bin/pint --dirty",
-        "options": [],
-        "conditions": []
-      }
-    ]
-  },
-  "pre-push": {
-    "enabled": false,
-    "actions": []
-  },
-  "post-checkout": {
-    "enabled": false,
-    "actions": []
-  },
-  "post-merge": {
-    "enabled": false,
-    "actions": []
-  },
-  "post-change": {
-    "enabled": false,
-    "actions": []
-  },
-  "prepare-commit-msg": {
-    "enabled": false,
-    "actions": []
-  }
+    "commit-msg": {
+        "enabled": false,
+        "actions": []
+    },
+    "pre-commit": {
+        "enabled": true,
+        "actions": [
+            {
+                "action": "./vendor/bin/pint --dirty",
+                "options": [],
+                "conditions": []
+            },
+            {
+                "action": "gga run",
+                "options": [],
+                "conditions": []
+            }
+        ]
+    },
+    "pre-push": {
+        "enabled": false,
+        "actions": []
+    },
+    "post-checkout": {
+        "enabled": false,
+        "actions": []
+    },
+    "post-merge": {
+        "enabled": false,
+        "actions": []
+    },
+    "post-change": {
+        "enabled": false,
+        "actions": []
+    },
+    "prepare-commit-msg": {
+        "enabled": false,
+        "actions": []
+    }
 }
