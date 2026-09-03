@@ -403,11 +403,21 @@ test('the candidate session carries the branding, so the interview looks like th
 });
 
 test('the candidate session exposes branding and NOTHING else about the organization', function (): void {
-    // The tenant boundary. A candidate is an outsider holding a short-lived
-    // token; the organization's name, webhook configuration and every other
-    // setting are none of their business. Only the two fields the page has to
-    // paint with are exposed, asserted as an exact key set so a future field
-    // added to `OrganizationResource` cannot leak here by accident.
+    // The tenant boundary, and it still holds — the set is exact so a field
+    // added to `OrganizationResource` cannot leak here by accident. What
+    // changed is WHICH fields are in it.
+    //
+    // `name` was deliberately excluded when this was written, on the reading
+    // that a candidate is an outsider and the organization's name is none of
+    // their business. That reasoning does not survive contact with the
+    // product: the candidate is invited BY that organization, by name, in an
+    // email this system sends and signs with it. Withholding on the page a
+    // fact we already put in their inbox protected nothing and left the
+    // interview looking like it came from nobody.
+    //
+    // Ratified 2026-09-02 by the product owner after the boundary was raised
+    // explicitly. `webhook configuration and every other setting` stay out,
+    // which is what this assertion is really guarding.
     $org = Organization::factory()->create([
         'primary_color' => '#123456',
         'default_webhook_url' => 'https://secret.example.test/hook',
@@ -420,7 +430,7 @@ test('the candidate session exposes branding and NOTHING else about the organiza
 
     $response->assertOk();
     expect(array_keys($response->json('data.branding')))
-        ->toEqualCanonicalizing(['primary_color', 'logo_url']);
+        ->toEqualCanonicalizing(['primary_color', 'logo_url', 'name']);
     expect(json_encode($response->json()))->not->toContain('secret.example.test');
 });
 
@@ -439,4 +449,25 @@ test('an organization with no branding sends nulls, never a fabricated default',
     $response->assertOk();
     $response->assertJsonPath('data.branding.primary_color', null);
     $response->assertJsonPath('data.branding.logo_url', null);
+});
+
+/**
+ * The candidate sees WHOSE interview this is.
+ *
+ * The frontend renders the product's own wordmark plus the organization's
+ * name; without this field it could only show the former, so a candidate
+ * invited by Acme reached a page that named nobody. The same name already
+ * signs the invitation email they arrived from (EmailBranding), so this
+ * makes the page agree with the message rather than revealing anything new.
+ */
+test('the candidate session carries the organization name', function (): void {
+    $org = Organization::factory()->create(['name' => 'Acme Selezione']);
+    $participant = brandingParticipant($org);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.brandingCandidateToken($participant),
+    ])->getJson('/api/candidate/session');
+
+    $response->assertOk();
+    $response->assertJsonPath('data.branding.name', 'Acme Selezione');
 });

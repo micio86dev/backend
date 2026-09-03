@@ -3,6 +3,7 @@
 use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\Tenancy\ActingOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -281,6 +282,24 @@ function authTokenForRole(Organization $org, string $role): string
  */
 function authUserAndTokenForRole(Organization $org, string $role): array
 {
+    // `platform` is not a Spatie role: it is the SUPERADMIN acting as this
+    // organization, which is who manages avatar templates since 2026-09-02 —
+    // a client selects a template, it does not author one.
+    //
+    // Acting as the org rather than a bare superadmin, and that is the product
+    // behaviour rather than a test convenience: templates stay TENANT data
+    // (AvatarTemplate is a TenantModel, and it binds `llm_credential_id`,
+    // which is tenant-scoped too, so a platform-wide template could not
+    // reference one). A superadmin with no client selected cannot create a
+    // tenant-scoped model at all — TenantScoped throws
+    // MissingTenantContextException, by design.
+    if ($role === 'platform') {
+        $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+        app(ActingOrganization::class)->set((int) $superadmin->id, $org->id);
+
+        return ['user' => $superadmin, 'token' => auth('api')->login($superadmin)];
+    }
+
     $user = User::factory()->create(['organization_id' => $org->id]);
     app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
 

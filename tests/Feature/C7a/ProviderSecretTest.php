@@ -294,7 +294,9 @@ test('P4: the Gemini credential key appears in no response, no exception, and no
     $geminiKey = 'GEMINI_KEY_MUST_NOT_LEAK_ANYWHERE_777';
 
     $org = secretOrg();
-    $token = authTokenForRole($org, 'admin');
+    // Platform actor: this assertion creates a template to prove the Gemini
+    // key never leaves the server, and creating one is a platform action now.
+    $token = authTokenForRole($org, 'platform');
 
     $model = LlmModel::create([
         'key' => 'gemini-3-flash-preview',

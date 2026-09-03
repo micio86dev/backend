@@ -57,7 +57,7 @@ function creditInUseCredential(int $orgId): LlmCredential
 
 test('deleting a credential bound to two templates is refused 409, naming both, and makes no HeyGen call', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = creditInUseModel();
     $credential = creditInUseCredential($org->id);
 
@@ -90,7 +90,7 @@ test('deleting a credential bound to two templates is refused 409, naming both, 
 
 test('unbinding one template leaves the sibling bound, and deletion then succeeds', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = creditInUseModel();
     $credential = creditInUseCredential($org->id);
 
@@ -120,7 +120,7 @@ test('unbinding one template leaves the sibling bound, and deletion then succeed
 
 test('an unbound credential deletes with 200', function (): void {
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $credential = creditInUseCredential($org->id);
 
     $this->withToken($token)->deleteJson("/api/llm-credentials/{$credential->id}")
@@ -143,7 +143,7 @@ test('a SOFT-DELETED template no longer blocks deleting the credential it was bo
     // broke was the INTERACTION and a unit test of either half would have
     // stayed green throughout.
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = creditInUseModel();
     $credential = creditInUseCredential($org->id);
 

@@ -35,9 +35,9 @@ class ParticipantResource extends JsonResource
      * `project.assessment_type` union (closed by the FormRequest + model
      * immutability guard, `Project.php:147-150`) and `project.id` `(int)`.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, branding: array{primary_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, branding: array{name: string|null, primary_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, branding: array{primary_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', started_at: string|null, completed_at: string|null, created_at: string|null, branding: array{name: string|null, primary_color: string|null, logo_url: string|null}, project: array{id: int, role_code: string|null, language: string, assessment_type: 'standard'|'potential', exit_redirect_url: string|null, error_redirect_url: string|null}|null}
      */
     public function toArray(Request $request): array
     {
@@ -77,6 +77,19 @@ class ParticipantResource extends JsonResource
              * constant on the wire for the two to drift apart.
              */
             'branding' => [
+                // WHOSE interview this is. Excluded when this block was first
+                // written, on the reading that a candidate is an outsider and
+                // the organization's name is none of their business — but the
+                // candidate is invited BY that organization, by name, in an
+                // email this system sends and signs with it. Withholding on
+                // the page what we already put in their inbox protected
+                // nothing and left the interview looking like it came from
+                // nobody. Ratified 2026-09-02.
+                //
+                // Everything else about the organization stays out, and
+                // BrandingTest asserts the key set exactly so it keeps
+                // staying out.
+                'name' => $participant->organization?->name,
                 'primary_color' => $participant->organization?->primary_color,
                 'logo_url' => $participant->organization?->logo_path === null
                     ? null

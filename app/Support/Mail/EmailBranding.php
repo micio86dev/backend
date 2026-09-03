@@ -32,6 +32,8 @@ final class EmailBranding
 
     private ?string $organizationName = null;
 
+    private ?string $logoUrl = null;
+
     /**
      * A `#rrggbb` string, or null for "use the product's own".
      *
@@ -80,10 +82,43 @@ final class EmailBranding
         return $this->organizationName;
     }
 
+    /**
+     * The organization's mark, as an ABSOLUTE url.
+     *
+     * This class used to refuse the logo outright, and said so: every major
+     * client blocked remote images by default, so a tenant logo would render
+     * as a broken-image icon on a message a candidate was deciding whether to
+     * trust. Gmail and Apple Mail now load images by default and the ruling
+     * was reversed on 2026-09-02 — but the concern it was protecting is
+     * answered rather than dropped: the view renders the ORGANIZATION'S NAME
+     * as the `alt`, so a client that still blocks images shows who invited the
+     * candidate in words instead of an empty rectangle.
+     *
+     * ABSOLUTE ONLY, and this is a correctness rule rather than tidiness. An
+     * email has no origin to resolve a relative path against, so
+     * `/storage/logos/acme.png` is a broken image in every client on earth —
+     * the exact failure the original ruling predicted, arriving through a
+     * different door. A relative value is refused and the message falls back
+     * to the wordmark, which renders.
+     */
+    public function setLogoUrl(?string $url): void
+    {
+        $this->logoUrl = is_string($url) && preg_match('#\Ahttps?://#i', $url) === 1
+            ? $url
+            : null;
+    }
+
+    /** Null when unset or refused — the caller then renders the wordmark. */
+    public function logoUrl(): ?string
+    {
+        return $this->logoUrl;
+    }
+
     public function forget(): void
     {
         $this->primaryColor = null;
         $this->organizationName = null;
+        $this->logoUrl = null;
     }
 
     /**

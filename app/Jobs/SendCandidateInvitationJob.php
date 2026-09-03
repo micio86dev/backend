@@ -58,6 +58,14 @@ final class SendCandidateInvitationJob implements ShouldQueue
          * is nothing here for a tenant boundary to be crossed by.
          */
         private readonly ?string $brandColor = null,
+        /**
+         * The organization's logo, ABSOLUTE. A scalar like everything else
+         * here, so the job still reads no row and crosses no tenant boundary
+         * — and absolute because a mail has no origin to resolve a path
+         * against. `EmailBranding::setLogoUrl()` refuses a relative value
+         * rather than rendering a broken image.
+         */
+        private readonly ?string $brandLogoUrl = null,
     ) {}
 
     /**
@@ -104,6 +112,7 @@ final class SendCandidateInvitationJob implements ShouldQueue
         // candidate read an invitation from their prospective employer signed
         // by our web framework.
         $branding->setOrganizationName($this->organizationName);
+        $branding->setLogoUrl($this->brandLogoUrl);
 
         // Routed to an ADDRESS, not to a notifiable model. A Participant is not
         // a user of this system and must never become one — giving it a

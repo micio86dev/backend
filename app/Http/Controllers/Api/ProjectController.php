@@ -60,7 +60,7 @@ class ProjectController extends Controller
         // `avatarTemplate` eager-loaded because ProjectResource now renders the
         // template's name and provider: without it this list costs one extra
         // query per row, and ProjectAvatarTemplateTest counts them.
-        $projects = Project::with(['frameworkVersion', 'competencies', 'avatarTemplate'])->get();
+        $projects = Project::with(['frameworkVersion', 'competencies', 'avatarTemplate.llmModel'])->get();
 
         return ProjectResource::collection($projects);
     }

@@ -16,19 +16,17 @@ declare(strict_types=1);
  */
 
 use App\Models\Organization;
-use App\Models\User;
-use Spatie\Permission\Models\Role as SpatieRole;
-use Spatie\Permission\PermissionRegistrar;
 
 function configErrorActor(Organization $org): string
 {
-    $user = User::factory()->create(['organization_id' => $org->id]);
-    app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
-    $user->assignRole(SpatieRole::firstOrCreate([
-        'name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id,
-    ]));
-
-    return auth('api')->login($user);
+    // The SUPERADMIN acting as this organization. Managing avatar templates
+    // stopped being a client action on 2026-09-02 — a client selects a
+    // template, it does not author one — and the templates themselves stay
+    // TENANT data, because AvatarTemplate is a TenantModel that binds a
+    // tenant-scoped `llm_credential_id`. Acting as the org is therefore the
+    // product behaviour, not a test shortcut: a superadmin with no client
+    // selected cannot create a tenant-scoped model at all.
+    return authTokenForRole($org, 'platform');
 }
 
 test('two invalid knobs produce two field-keyed errors, never a combined config key', function (): void {

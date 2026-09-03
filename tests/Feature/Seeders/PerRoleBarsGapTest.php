@@ -73,9 +73,19 @@ test('all seeded gap rows are pending_authoring, except missing_translation whic
         ->where('status', 'pending_authoring')
         ->count();
 
+    // `$nonTranslationTotal` is no longer required to be > 0. It used to be,
+    // because MTG and LAT were unauthored and the seeder wrote a
+    // `missing_potential_competency` row for each on every run. Both are
+    // authored now (potential-competencies-and-authored-questions), so on a
+    // fresh catalogue that gap is never created at all — which is the correct
+    // state, not a missing row.
+    //
+    // What still holds, and is what this test is actually for: any
+    // non-translation gap that DOES exist must be pending. A resolved one of
+    // those kinds would mean something marked itself fixed without being
+    // reauthored.
     expect($total)->toBeGreaterThan(0)
-        ->and($nonTranslationTotal)->toBeGreaterThan(0)
-        ->and($nonTranslationPending)->toBe($nonTranslationTotal, 'every non-translation gap kind (e.g. missing_potential_competency) must still be pending');
+        ->and($nonTranslationPending)->toBe($nonTranslationTotal, 'every non-translation gap kind that exists must still be pending');
 
     // The real catalogue ships 100% it-translated (bars-catalogue-completion),
     // so the global missing_translation row must be resolved, with a note

@@ -64,7 +64,7 @@ test('a failed Tavus PAL sync persists llm_sync_status !== synced, and a later s
     config()->set('interview.tavus.api_key', 'test-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = syncStateModel();
     $credential = syncStateCredential($org->id);
 
@@ -124,7 +124,7 @@ test('a successful Tavus PAL sync persists llm_sync_status = synced, and a later
     config()->set('interview.tavus.api_key', 'test-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = syncStateModel();
     $credential = syncStateCredential($org->id);
 
@@ -153,7 +153,7 @@ test('recordSync persists via saveQuietly — it fires no saving/saved model eve
     config()->set('interview.tavus.api_key', 'test-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = syncStateModel();
     $credential = syncStateCredential($org->id);
 

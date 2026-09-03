@@ -61,7 +61,7 @@ test('a failed HeyGen configuration sync persists llm_sync_status !== synced, an
     config()->set('interview.heygen.api_key', 'platform-heygen-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = heygenSyncStateModel();
     $credential = heygenSyncStateCredential($org->id);
 
@@ -93,7 +93,7 @@ test('a successful HeyGen configuration sync persists llm_sync_status = synced, 
     config()->set('interview.heygen.api_key', 'platform-heygen-key');
 
     $org = Organization::factory()->create();
-    $token = authTokenForRole($org, 'admin');
+    $token = authTokenForRole($org, 'platform');
     $model = heygenSyncStateModel();
     $credential = heygenSyncStateCredential($org->id);
 

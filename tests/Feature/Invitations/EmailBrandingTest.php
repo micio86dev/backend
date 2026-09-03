@@ -152,3 +152,110 @@ test('the name does not survive its own send', function (): void {
 
     expect($branding->organizationName())->toBeNull();
 });
+
+/**
+ * THE LOGO.
+ *
+ * `EmailBranding` used to carry only the colour, and said so in its docblock:
+ * every major client blocked remote images by default, so a tenant logo would
+ * render as a broken-image icon on a message a candidate was deciding whether
+ * to trust. Gmail and Apple Mail now load images by default, and the product
+ * owner reversed that ruling on 2026-09-02.
+ *
+ * The original concern is answered rather than ignored. The `alt` text is the
+ * ORGANIZATION'S NAME, so a client that still blocks images shows the name in
+ * words instead of an empty rectangle — the candidate learns who invited them
+ * either way, which was the whole point of refusing the logo in the first
+ * place.
+ */
+test('a configured logo reaches the rendered message', function (): void {
+    $branding = app(EmailBranding::class);
+    $branding->setOrganizationName('Acme Selezione');
+    $branding->setLogoUrl('https://cdn.test/acme-logo.png');
+
+    $html = renderedInvitation();
+
+    expect($html)->toContain('https://cdn.test/acme-logo.png')
+        // Named, not decorative: with images blocked this is all the candidate
+        // gets, so it must say WHO rather than "logo".
+        ->and($html)->toContain('alt="Acme Selezione"');
+});
+
+/**
+ * No logo falls back to the wordmark, never to nothing. Same rule the
+ * candidate app's NoticeShell follows: "no logo configured" must never mean
+ * "no logo at all".
+ */
+test('no logo falls back to the product wordmark', function (): void {
+    config()->set('app.name', 'BEAI');
+    app(EmailBranding::class)->forget();
+
+    $html = renderedInvitation();
+
+    expect($html)->toContain('BEAI')
+        ->and($html)->not->toContain('<img');
+});
+
+/**
+ * A relative path is REFUSED. An email has no origin to resolve it against,
+ * so `/storage/logo.png` renders as a broken image in every client — the exact
+ * failure the original ruling predicted, arriving through a different door.
+ */
+test('a non-absolute logo URL is refused rather than rendered broken', function (): void {
+    $branding = app(EmailBranding::class);
+    $branding->setLogoUrl('/storage/logos/acme.png');
+
+    expect($branding->logoUrl())->toBeNull();
+});
+
+/** Cleared with the rest — one tenant's mark must not sign another's mail. */
+test('the logo does not survive its own send', function (): void {
+    $branding = app(EmailBranding::class);
+    $branding->setLogoUrl('https://cdn.test/acme-logo.png');
+    $branding->forget();
+
+    expect($branding->logoUrl())->toBeNull();
+});
+
+/**
+ * THE TEXT, not only the button.
+ *
+ * The button already took the tenant colour; links and the header wordmark
+ * did not, so a message rendered a correctly-branded call to action sitting
+ * beside Quint purple everywhere else. Both hardcoded `#771AAF` in the theme
+ * stylesheet, which is a static file and cannot know the tenant.
+ */
+test('the tenant colour reaches the links, not just the button', function (): void {
+    app(EmailBranding::class)->set('#ff6600');
+
+    $html = renderedInvitation();
+
+    // Emitted per send into the layout's own <style>, which Laravel's CSS
+    // inliner then applies to the anchors — the same path the theme's rules
+    // already travel.
+    // The header wordmark, inline so it wins the cascade.
+    expect($html)->toMatch('/<a[^>]+style="[^"]*color: #ff6600/');
+    // And the links, through the per-send rule the inliner applies.
+    expect(substr_count($html, '#ff6600'))->toBeGreaterThan(1);
+
+    // NOT asserted by counting raw `#771aaf` occurrences. The theme's
+    // `border-bottom: 8px solid #771AAF` shorthands survive in the button's
+    // style attribute and are then OVERRIDDEN by the `border-color` the button
+    // sets after them — the rendered button is correctly branded while the
+    // purple string is still present. Counting strings would fail on a button
+    // that works, and would pass on a header that does not.
+});
+
+/**
+ * No colour configured emits NOTHING, so the stylesheet's own value stands.
+ * Writing the Quint purple here would be a second copy of the brand constant
+ * for the two to drift apart — the same rule applyBrandColor follows in both
+ * Nuxt apps.
+ */
+test('no tenant colour leaves the product palette alone', function (): void {
+    app(EmailBranding::class)->forget();
+
+    $html = renderedInvitation();
+
+    expect(strtolower($html))->toContain('#771aaf');
+});
