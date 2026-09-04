@@ -29,6 +29,7 @@ use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -692,4 +693,109 @@ test('W1 potential-type project on RESUME in_corso path → 422 assessment_type_
 
     // No provider HTTP call made
     Http::assertNothingSent();
+});
+
+// ─── Operator-authored questions reach the interviewer ───────────────────────
+
+test('an operator-authored question reaches the provider inside the system prompt', function (): void {
+    /**
+     * The end-to-end proof for a feature that was write-only.
+     *
+     * The backoffice has offered a per-competency question editor since C4.
+     * `ProjectQuestion` rows saved, listed and edited correctly — and no part
+     * of the interview ever read them. An operator could author the exact
+     * question they needed asked, watch it persist, open the interview, and
+     * hear the avatar improvise something else entirely.
+     *
+     * Asserted on the PROVIDER's outbound body rather than on the /start
+     * response, for the same reason 5.5 above does: the composed prompt must
+     * reach the provider server-to-server and must never be visible to the
+     * candidate being assessed.
+     */
+    Queue::fake();
+
+    $capturedContextBody = [];
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedContextBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-authored']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-authored', 'session_token' => 'tok-authored']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scenario = c8SeedStandardScenario('en');
+
+    // Two questions, authored out of order, to prove `position` is what
+    // decides the order rather than insertion.
+    ProjectQuestion::create([
+        'project_id' => $scenario['project']->id,
+        'competency_id' => $scenario['competency']->id,
+        'text' => ['en' => 'Second authored question.'],
+        'position' => 2,
+    ]);
+    ProjectQuestion::create([
+        'project_id' => $scenario['project']->id,
+        'competency_id' => $scenario['competency']->id,
+        'text' => ['en' => 'First authored question.'],
+        'position' => 1,
+    ]);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    expect($capturedContextBody)->toHaveKey('prompt');
+    expect($capturedContextBody['prompt'])->toContain('First authored question.');
+    expect($capturedContextBody['prompt'])->toContain('Second authored question.');
+
+    $first = strpos($capturedContextBody['prompt'], 'First authored question.');
+    $second = strpos($capturedContextBody['prompt'], 'Second authored question.');
+
+    expect($first)->toBeLessThan($second);
+});
+
+test('an authored question written only in another locale is still asked', function (): void {
+    // A question authored in Italian on an English project is still the
+    // question the operator wants asked. Dropping it for a locale mismatch
+    // would restore the write-only behaviour for exactly the operators most
+    // likely to hit it.
+    Queue::fake();
+
+    $capturedContextBody = [];
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedContextBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-locale']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-locale', 'session_token' => 'tok-locale']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scenario = c8SeedStandardScenario('en');
+
+    ProjectQuestion::create([
+        'project_id' => $scenario['project']->id,
+        'competency_id' => $scenario['competency']->id,
+        'text' => ['it' => 'Raccontami di una volta in cui hai gestito un conflitto.'],
+        'position' => 1,
+    ]);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    expect($capturedContextBody['prompt'])->toContain('Raccontami di una volta in cui hai gestito un conflitto.');
 });
