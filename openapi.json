@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.43.0"
+        "version": "0.44.0"
     },
     "servers": [
         {
@@ -2341,6 +2341,63 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/candidate/interview/suspend": {
+            "post": {
+                "operationId": "interview.suspend",
+                "description": "WHY A PAUSE HAS TO DO THIS\n--------------------------\nThe client used to pause by muting the candidate's own microphone and\nnothing else. Two things followed, and both were reported from a real\ninterview: the avatar kept its turn and kept talking through the pause,\nand the provider conversation stayed open. Tavus and HeyGen bill live\nconversation minutes, so a candidate who stepped away was billed for an\ninterview nobody was having.\n\nInterrupting the avatar and muting its audio locally would fix the first\nsymptom and none of the second. Only ending the provider session stops\nthe meter, so that is what pause does.\n\nWHY THAT IS CHEAP RATHER THAN DRASTIC\n-------------------------------------\nThis is the FIRST HALF of `handleResumeInCorso()`, which already exists\nand is already relied upon: harvest the outgoing transcript while it is\nstill readable, close the live-clock stretch, tear the provider session\ndown. The second half \u2014 issuing a fresh token \u2014 is what `/start` does,\nand `OpeningTextComposer` already carries a `resume` variant written for\nexactly this.\n\nSo resume needs no new endpoint. Suspend leaves the session `in_corso`\nwith a NULL ref, which is precisely the state `/start` already resumes:\n`handleResumeInCorso()` guards its harvest and teardown with\n`$oldRef !== null`, so it skips straight to issuing.\n\nWHAT IT DELIBERATELY DOES NOT TOUCH\n-----------------------------------\n`status`, `ended_at`, the participant, and the scoring dispatch. A paused\ninterview is not a finished one, and a pause that reached `/end`'s\nmachinery would score a candidate on the half of an answer they had given\nwhen they stepped away.\n\nIDEMPOTENT. The client sends this on the pause gesture and again on\npage-hide; both can fire for one action. A null ref means there is\nnothing left to tear down, which is success, not an error state to show\na candidate mid-interview.",
+                "summary": "Pause the interview by TEARING THE PROVIDER SESSION DOWN",
+                "tags": [
+                    "Interview"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "session_id": {
+                                        "type": "integer"
+                                    }
+                                },
+                                "required": [
+                                    "session_id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "suspended": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "suspended"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"

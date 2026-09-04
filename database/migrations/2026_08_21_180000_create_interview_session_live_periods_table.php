@@ -24,9 +24,11 @@ use Illuminate\Support\Facades\Schema;
  * survives `single-session-interview` unchanged: a ref spanning several
  * competencies still sums to that ref's true lifetime across its periods.
  *
- * `closed_reason` ∈ {resume, end, error} answers "which stretches were cut
- * short by a reconnect?" — the first question anyone asks of a surprising
- * total.
+ * `closed_reason` ∈ {resume, end, error, pause} answers "which stretches were
+ * cut short, and by what?" — the first question anyone asks of a surprising
+ * total. `pause` joined the set when /suspend shipped; the column is a plain
+ * nullable string with no constraint, so the set lives in SessionLiveClock's
+ * docblock and here, and the two must not drift.
  *
  * `ended_at IS NULL` ⇔ the stretch is still live. The partial UNIQUE index
  * below is the D5 invariant: at most one open period per session, enforced
@@ -63,8 +65,8 @@ return new class extends Migration
             // NULL ⇔ the stretch is still live.
             $table->timestampTz('ended_at')->nullable();
 
-            // {resume, end, error} — which of the three exits from in_corso
-            // closed this stretch.
+            // {resume, end, error, pause} — which of the four exits from
+            // in_corso closed this stretch.
             $table->string('closed_reason')->nullable();
 
             $table->timestamps();
