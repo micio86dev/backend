@@ -306,6 +306,128 @@ class InterviewController extends Controller
     }
 
     // =========================================================================
+    // POST /api/candidate/interview/suspend
+    // =========================================================================
+
+    /**
+     * Pause the interview by TEARING THE PROVIDER SESSION DOWN.
+     *
+     * WHY A PAUSE HAS TO DO THIS
+     * --------------------------
+     * The client used to pause by muting the candidate's own microphone and
+     * nothing else. Two things followed, and both were reported from a real
+     * interview: the avatar kept its turn and kept talking through the pause,
+     * and the provider conversation stayed open. Tavus and HeyGen bill live
+     * conversation minutes, so a candidate who stepped away was billed for an
+     * interview nobody was having.
+     *
+     * Interrupting the avatar and muting its audio locally would fix the first
+     * symptom and none of the second. Only ending the provider session stops
+     * the meter, so that is what pause does.
+     *
+     * WHY THAT IS CHEAP RATHER THAN DRASTIC
+     * -------------------------------------
+     * This is the FIRST HALF of `handleResumeInCorso()`, which already exists
+     * and is already relied upon: harvest the outgoing transcript while it is
+     * still readable, close the live-clock stretch, tear the provider session
+     * down. The second half — issuing a fresh token — is what `/start` does,
+     * and `OpeningTextComposer` already carries a `resume` variant written for
+     * exactly this.
+     *
+     * So resume needs no new endpoint. Suspend leaves the session `in_corso`
+     * with a NULL ref, which is precisely the state `/start` already resumes:
+     * `handleResumeInCorso()` guards its harvest and teardown with
+     * `$oldRef !== null`, so it skips straight to issuing.
+     *
+     * WHAT IT DELIBERATELY DOES NOT TOUCH
+     * -----------------------------------
+     * `status`, `ended_at`, the participant, and the scoring dispatch. A paused
+     * interview is not a finished one, and a pause that reached `/end`'s
+     * machinery would score a candidate on the half of an answer they had given
+     * when they stepped away.
+     *
+     * IDEMPOTENT. The client sends this on the pause gesture and again on
+     * page-hide; both can fire for one action. A null ref means there is
+     * nothing left to tear down, which is success, not an error state to show
+     * a candidate mid-interview.
+     *
+     * @response array{suspended: true}
+     */
+    public function suspend(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'session_id' => ['required', 'integer'],
+        ]);
+
+        // 404 when the session is not this participant's — the same ownership
+        // and org isolation every other session-scoped path uses. An
+        // unauthorized caller must not be able to hang up someone else's
+        // interview.
+        $session = $this->resolveOwnedSession((int) $validated['session_id']);
+
+        // Only a LIVE competency can be paused, matching /end's FIX-3 guard and
+        // for the same reason: ParticipantStatusGuard gates the PARTICIPANT,
+        // not the session, so a candidate mid-interview can send the id of a
+        // competency that already ended. Without this, that request re-harvests
+        // a transcript /end already wrote and tears down a provider session that
+        // is already gone — an unguarded write path reached with a stale id.
+        //
+        // 409, not 422: the request is well-formed and the session is real; it
+        // is the STATE that refuses. Same code /end answers for the same case.
+        if ($session->status !== 'in_corso') {
+            return response()->json(['error' => 'session_not_live'], Response::HTTP_CONFLICT);
+        }
+
+        $ref = $session->provider_session_ref;
+
+        if ($ref === null) {
+            return response()->json(['suspended' => true], Response::HTTP_OK);
+        }
+
+        $provider = $this->resolveProvider($session->provider);
+
+        // Ordered exactly as the resume path orders it, for the same reasons.
+        //
+        // Harvest FIRST: this is the last moment the outgoing transcript is
+        // readable, and a suspend that skipped it would discard everything said
+        // before the pause. The harvest is scoped to THIS ref, so the stretch it
+        // stores is the one it fetched and nothing else is touched — which is
+        // what makes pausing twice safe, and is why this endpoint waited for
+        // that scoping to land before shipping.
+        $this->harvestOutgoingTranscript($session, $provider, $ref);
+
+        // Then close the stretch, OUTSIDE any guard on the teardown succeeding:
+        // a live period is BEAI's own observation of elapsed interview time, not
+        // a mirror of the provider's state. Left open, every sum built on that
+        // table counts the paused minutes as live ones.
+        $this->liveClock->close($session, 'pause');
+
+        try {
+            $provider->teardown(ProviderToken::fromRef($session->provider, $ref));
+        } catch (\Throwable $e) {
+            // Non-fatal, matching the resume path. A teardown we could not
+            // confirm is a provider session that may still be billing, which is
+            // bad; refusing to let a candidate pause because of it is worse, and
+            // would leave the ref pointing at a session we have stopped using
+            // either way.
+            Log::warning('C7a: teardown on suspend failed (non-fatal)', [
+                'session_id' => $session->id,
+                'ref' => $ref,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Forget the ref LAST. Until this line the row still points at the
+        // session being torn down, so a crash anywhere above leaves a
+        // recoverable state rather than an orphaned provider conversation
+        // nothing references.
+        $session->provider_session_ref = null;
+        $session->save();
+
+        return response()->json(['suspended' => true], Response::HTTP_OK);
+    }
+
+    // =========================================================================
     // POST /api/candidate/interview/end
     // =========================================================================
 

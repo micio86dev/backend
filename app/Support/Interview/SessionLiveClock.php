@@ -63,7 +63,7 @@ final class SessionLiveClock
      * (a session that never reached the provider) costs nothing: callers
      * never need to check first.
      *
-     * `$reason` ∈ {resume, end, error} — which of the three exits from
+     * `$reason` ∈ {resume, end, error, pause} — which of the four exits from
      * `in_corso` closed this stretch.
      *
      * D4a — THE CLOSE BOUNDARY IS CAP-BOUNDED, NEVER RAW `now()`.

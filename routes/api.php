@@ -469,6 +469,12 @@ Route::prefix('candidate')
                 // POST /api/candidate/interview/start — create/resume provider session (PR 3)
                 Route::post('/start', [InterviewController::class, 'start']);
 
+                // POST /api/candidate/interview/suspend — pause: tear the
+                // provider session down so it stops billing. There is no
+                // matching /resume: suspend leaves the session in_corso with a
+                // null ref, which is the state /start already resumes.
+                Route::post('/suspend', [InterviewController::class, 'suspend']);
+
                 // POST /api/candidate/interview/end — end session, reconcile, dispatch scoring (PR 3)
                 Route::post('/end', [InterviewController::class, 'end']);
 
