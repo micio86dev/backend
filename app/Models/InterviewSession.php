@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Database\Factories\InterviewSessionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -82,9 +83,9 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property string|null $ended_reason
  * @property int $error_count
- * @property Carbon|null $transcript_harvested_at
- * @property Carbon|null $started_at
- * @property Carbon|null $ended_at
+ * @property CarbonImmutable|null $transcript_harvested_at
+ * @property CarbonImmutable|null $started_at
+ * @property CarbonImmutable|null $ended_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
@@ -143,6 +144,13 @@ class InterviewSession extends TenantModel
             'started_at' => 'immutable_datetime',
             'ended_at' => 'immutable_datetime',
             'system_prompt_chars' => 'integer',
+            // An uncast column comes back from pdo_pgsql as a STRING, which
+            // makes the `@property CarbonImmutable|null` annotation above false at
+            // runtime while PHPStan keeps trusting it. This column has been
+            // annotated and left uncast since it was added — nothing broke only
+            // because every read round-trips it without touching it, so the
+            // first `?->format(...)` would have passed the analyser and fataled.
+            'transcript_harvested_at' => 'immutable_datetime',
         ];
     }
 

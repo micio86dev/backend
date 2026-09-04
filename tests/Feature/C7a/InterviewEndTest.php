@@ -280,15 +280,32 @@ test('POST /end with HeyGen provider: replaceUtterances — prior utterances del
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
+    // Tagged with the CURRENT provider session, which is what the live
+    // /utterance writer now stamps: the ref is read from the session row inside
+    // the same atomic INSERT that checks the status.
     Utterance::create([
         'interview_session_id' => $session->id,
         'organization_id' => $org->id,
+        'provider_session_ref' => $session->provider_session_ref,
         'speaker' => 'candidate',
         'text' => 'Old live utterance.',
         'ts' => now()->subMinutes(2)->toIso8601String(),
     ]);
 
-    expect(Utterance::where('interview_session_id', $session->id)->count())->toBe(1);
+    // And one from an EARLIER stretch of the same resumed competency. /end
+    // fetches the current provider session only, so it has no copy of this turn
+    // and no claim to delete it — deleting it is the data loss this scoping
+    // exists to prevent.
+    Utterance::create([
+        'interview_session_id' => $session->id,
+        'organization_id' => $org->id,
+        'provider_session_ref' => 'ref-from-an-earlier-stretch',
+        'speaker' => 'candidate',
+        'text' => 'Spoken before the resume.',
+        'ts' => now()->subMinutes(9)->toIso8601String(),
+    ]);
+
+    expect(Utterance::where('interview_session_id', $session->id)->count())->toBe(2);
 
     $response = $this
         ->withHeaders(['Authorization' => 'Bearer '.$token])
@@ -299,13 +316,16 @@ test('POST /end with HeyGen provider: replaceUtterances — prior utterances del
 
     $response->assertStatus(200);
 
-    // Old utterance was DELETED; server transcript (2 rows) was INSERTED
+    // This stretch's live row was REPLACED by the server transcript (2 rows);
+    // the earlier stretch's row survives untouched.
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
-    $utterances = Utterance::where('interview_session_id', $session->id)->get();
-    expect($utterances->count())->toBe(2);
-    expect($utterances->pluck('text')->toArray())->toContain('My answer.');
-    expect($utterances->pluck('text')->toArray())->toContain('Good answer.');
+    $texts = Utterance::where('interview_session_id', $session->id)->pluck('text')->toArray();
+    expect($texts)->toHaveCount(3);
+    expect($texts)->toContain('My answer.');
+    expect($texts)->toContain('Good answer.');
+    expect($texts)->toContain('Spoken before the resume.');
+    expect($texts)->not->toContain('Old live utterance.');
 });
 
 /**
