@@ -30,7 +30,11 @@ use Illuminate\Database\Eloquent\Collection;
  *      a per-project override follows as `project-followup-budget`).
  *   5. Nudge: if answer < nudge_min_chars, re-prompt once — does NOT consume a follow-up slot.
  *      Omitted when nudge_min_chars is null or 0.
- *   6. Advance rule: speak end_phrase only after (coverage OR budget exhausted) AND the
+ *   6. Required questions: the operator's own questions for this project ×
+ *      competency, when any exist. Injected BEFORE the advance rule and not
+ *      after — the advance rule is what tells the model it may close, and a
+ *      question it has not been told about yet cannot be one it waits to ask.
+ *   7. Advance rule: speak end_phrase only after (coverage OR budget exhausted) AND the
  *      effective minimum question count is reached.
  *
  * i18n hard-fail (M-2): reuses AnchorTranslationMissingException semantics from
@@ -55,10 +59,20 @@ final class SystemPromptComposer
      * @param  int  $roleId  Role primary key — MUST match the project's role.
      * @param  int  $competencyId  Competency primary key.
      * @param  string  $projectLocale  Project language code ('en' or 'it').
-     * @param  int  $budget  Maximum follow-up questions (ratified default = 4).
+     * @param  int  $budget  Maximum follow-up questions (ratified default = 4). The
+     *                       authored-question count is ADDED to it, so the prompt can
+     *                       neither forbid a question it mandates nor spend the whole
+     *                       budget on questions that are not follow-ups.
      * @param  int|null  $nudgeMinChars  Min chars for a "sufficient" answer; null = nudge disabled.
+     * @param  string|null  $advancePhrase  The sentence the avatar must SPEAK to end its
+     *                                      turn. Its absence is what previously killed
+     *                                      HeyGen sessions with MAX_DURATION_REACHED —
+     *                                      see buildAdvanceSection().
      * @param  int|null  $minQuestions  Minimum questions before closing; null = platform default.
      *                                  CLAMPED to what the budget permits — see effectiveMinimum().
+     * @param  list<string>  $authoredQuestions  Operator-written questions for this project ×
+     *                                           competency, in the order they must be asked.
+     *                                           Their COUNT is ADDED to the budget.
      *
      * @throws CompositionException When no indicators exist for the role+competency pair.
      * @throws AnchorTranslationMissingException When any indicator field lacks a $projectLocale translation.
@@ -72,6 +86,7 @@ final class SystemPromptComposer
         ?int $nudgeMinChars,
         ?string $advancePhrase = null,
         ?int $minQuestions = null,
+        array $authoredQuestions = [],
     ): ComposedPrompt {
         $indicators = $this->loader->forRoleCompetency($roleId, $competencyId);
 
@@ -82,13 +97,40 @@ final class SystemPromptComposer
             );
         }
 
-        $effectiveMinimum = $this->effectiveMinimum($minQuestions, $budget);
+        // The budget must make ROOM for the authored questions, not be shared with
+        // them. The section below tells the avatar it MUST ask every authored
+        // question before ending the competency; the budget section caps how many
+        // it may ask. A cap below the count mandates and forbids the same
+        // question: the advance condition becomes unsatisfiable, the model never
+        // speaks the closing phrase, matchesEndPhrase() never matches, and the
+        // session runs to MAX_DURATION_REACHED. That is the failure
+        // effectiveMinimum() exists to prevent, reached by a route that knew
+        // nothing about the budget — the count is a superadmin setting clamped
+        // only at the floor.
+        //
+        // ADDITIVE, not max(). An authored question is not a follow-up: it is
+        // scripted content the operator required. Taking the larger of the two
+        // would let the mandatory questions CONSUME the whole budget, leaving
+        // zero slots to probe the answers with — which the same section asks for
+        // two sentences later. At the ratified potential defaults (budget 4, cap
+        // 4) that lands exactly on zero.
+        //
+        // Normalised ONCE, here, so the count that raises the budget and the
+        // list that gets injected are the same list. The declared contract is
+        // `list<string>`, which permits blanks the section would drop — counting
+        // before dropping them would inflate the budget by questions nobody asks.
+        $authoredQuestions = self::normalizeAuthoredQuestions($authoredQuestions);
+
+        $effectiveBudget = $budget + count($authoredQuestions);
+
+        $effectiveMinimum = $this->effectiveMinimum($minQuestions, $effectiveBudget);
 
         $coverageSection = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
         $starSection = $this->buildStarSection();
-        $budgetSection = $this->buildBudgetSection($budget);
+        $budgetSection = $this->buildBudgetSection($effectiveBudget);
         $nudgeSection = $this->buildNudgeSection($nudgeMinChars);
         $advanceSection = $this->buildAdvanceSection($advancePhrase, $effectiveMinimum);
+        $authoredSection = $this->buildAuthoredQuestionsSection($authoredQuestions);
 
         $text = $this->assemblePrompt(
             $competencyCode,
@@ -97,9 +139,18 @@ final class SystemPromptComposer
             $budgetSection,
             $nudgeSection,
             $advanceSection,
+            $authoredSection,
         );
 
-        $version = (string) config('conversation.prompt_version', 'conv-2026-07-23');
+        // No fallback, and a BLANK is refused rather than stamped. The literal
+        // here used to read 'conv-2026-07-23', two bumps behind the config
+        // default, so on a missing-key path the two composers would stamp
+        // DIFFERENT prompt_version values onto the same interview. Removing the
+        // literal was not enough on its own: `(string) null` is `''`, which
+        // stamps an EMPTY version just as silently. That string is what C9 uses
+        // for provenance — an interview nobody can trace back to a prompt is the
+        // failure this key exists to prevent, so it fails at composition instead.
+        $version = self::promptVersion();
 
         return new ComposedPrompt(text: $text, version: $version);
     }
@@ -245,16 +296,24 @@ STAR;
      * REQ: SA-02 — at most N follow-up questions per competency. N=4 RATIFIED
      * 2026-08-25 (was 2, provisional since C8). A per-project override arrives
      * with `project-followup-budget`; this method reads whatever it is handed.
+     *
+     * The BUDGET ONLY. This section used to restate the advance rule as
+     * "Advance (speak end_phrase) only after ..." — the very literal
+     * buildAdvanceSection() documents as the bug it was repaired for: an
+     * unbound `end_phrase` token the avatar was told to utter without ever
+     * being given its value. It also stated the condition as
+     * `coverage OR budget`, dropping the minimum-questions conjunct that
+     * section 7 requires, so the two sections of one prompt disagreed about
+     * when the interview may close, and the weaker one read as permission.
+     * The advance rule belongs in exactly one place, and it has one.
      */
     private function buildBudgetSection(int $budget): string
     {
-        return "Ask at most {$budget} follow-up questions per competency. "
-            .'Advance (speak end_phrase) only after all coverage topics are addressed OR '
-            ."the follow-up budget of {$budget} is exhausted.";
+        return "Ask at most {$budget} follow-up questions per competency.";
     }
 
     /**
-     * Section 4: Nudge instruction (SA-03). Omitted when nudge_min_chars is null or 0.
+     * Section 5: Nudge instruction (SA-03). Omitted when nudge_min_chars is null or 0.
      *
      * REQ: SA-03 — if answer < threshold chars, re-prompt once without consuming a follow-up slot.
      */
@@ -270,7 +329,88 @@ STAR;
     }
 
     /**
-     * Section 6: Advance rule — speak end_phrase only after
+     * The conversation prompt version, refused when blank.
+     *
+     * @throws CompositionException When conversation.prompt_version is unset or empty.
+     */
+    private static function promptVersion(): string
+    {
+        $version = trim((string) config('conversation.prompt_version'));
+
+        if ($version === '') {
+            throw new CompositionException(
+                'conversation.prompt_version is not configured. Every composed prompt is '
+                .'stamped with it, and an evaluation carrying a blank version cannot be '
+                .'traced back to the prompt that produced it.',
+            );
+        }
+
+        return $version;
+    }
+
+    /**
+     * Trim the authored questions and drop the blanks.
+     *
+     * Called once in compose(), before anything reads the list — the count feeds
+     * the effective budget and the same list feeds the prompt section, and those
+     * two must not be able to disagree.
+     *
+     * @param  list<string>  $questions
+     * @return list<string>
+     */
+    private static function normalizeAuthoredQuestions(array $questions): array
+    {
+        return array_values(array_filter(
+            array_map(static fn (string $question): string => trim($question), $questions),
+            static fn (string $question): bool => $question !== '',
+        ));
+    }
+
+    /**
+     * Section 6: questions an operator wrote for this project and this competency.
+     *
+     * WHY THIS EXISTS. The backoffice has offered a per-competency question
+     * editor since C4, and nothing ever read what it saved. `ProjectQuestion`
+     * was reachable only from its own controller, request and resource — no
+     * part of the interview touched it — so an operator could write the exact
+     * question they needed asked, watch it persist, and then listen to the
+     * avatar improvise something else entirely. The feature was write-only.
+     *
+     * WHY THE PROMPT AND NOT THE SPOKEN OPENING. The opening greets and hands
+     * over; what to ASK is an instruction to the interviewer. Recited as an
+     * opening, the avatar would say the question and then have no idea it was
+     * supposed to have asked it — it would probe as if the exchange had not
+     * happened, and the operator's question would be a line of narration.
+     *
+     * MANDATORY, not suggested. "Topics you might explore" yields an interview
+     * that sometimes asks them, which from the operator's side is
+     * indistinguishable from the bug this fixes.
+     *
+     * @param  list<string>  $questions
+     */
+    private function buildAuthoredQuestionsSection(array $questions): string
+    {
+        if ($questions === []) {
+            return '';
+        }
+
+        $lines = [
+            'The operator running this assessment wrote the following question(s) for this '
+            .'competency. You MUST ask every one of them, in this order, phrased as written, '
+            .'before you end the competency. Ask them as part of the conversation rather than '
+            .'reading a list, and probe each answer with your ordinary follow-up rules.',
+            '',
+        ];
+
+        foreach ($questions as $index => $question) {
+            $lines[] = ($index + 1).'. '.$question;
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Section 7: Advance rule — speak end_phrase only after
      * (coverage OR budget exhausted) AND the effective minimum is reached.
      *
      * REQ: R-5 advance signal, star-interviewer-protocol D-4.
@@ -319,6 +459,7 @@ STAR;
         string $budgetSection,
         string $nudgeSection,
         string $advanceSection,
+        string $authoredSection = '',
     ): string {
         $parts = [
             'You are an adaptive interviewer conducting a BARS-based competency assessment '
@@ -347,6 +488,15 @@ STAR;
             $parts[] = '';
             $parts[] = 'NUDGE RULE:';
             $parts[] = $nudgeSection;
+        }
+
+        // BEFORE the advance rule, and that placement is the point: the advance
+        // rule tells the model when it may END the competency, and a question it
+        // has not been told about yet cannot be one it waits to ask.
+        if ($authoredSection !== '') {
+            $parts[] = '';
+            $parts[] = 'REQUIRED QUESTIONS:';
+            $parts[] = $authoredSection;
         }
 
         $parts[] = '';

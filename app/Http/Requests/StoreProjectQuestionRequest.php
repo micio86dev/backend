@@ -7,6 +7,7 @@ namespace App\Http\Requests;
 use App\Models\Competency;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
+use App\Support\Settings\PlatformSettings;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -19,10 +20,15 @@ use Illuminate\Validation\Validator;
  * the same kind of invariant as `competencies ⊆ {MTG, LAT}` and `role_code
  * must be null`, which already live in the project FormRequests.
  *
- *   standard  — at most ONE per competency
+ *   standard  — at most ONE per competency by default
  *               ("the first question per competency may be predefined")
- *   potential — at most FOUR per competency
+ *   potential — at most FOUR per competency by default
  *               ("4 predefined questions per competency", SA-08)
+ *
+ * Those two numbers are now PLATFORM SETTINGS (`App\Support\Settings\
+ * PlatformSettings`) rather than a constant here, so a superadmin can move
+ * them without a release. They remain platform-level and not tenant-level:
+ * the cap describes the assessment method, not a client's preference.
  *
  * The cap is a maximum, never a minimum. A `standard` project with no authored
  * question is the normal case — the AI opens the competency itself, exactly as
@@ -31,8 +37,6 @@ use Illuminate\Validation\Validator;
  */
 class StoreProjectQuestionRequest extends FormRequest
 {
-    private const MAX_PER_COMPETENCY = ['standard' => 1, 'potential' => 4];
-
     /**
      * The route parameter is an ID, not a bound model: `SubstituteBindings`
      * runs before `TenantContext`, so binding here would resolve with no
@@ -95,16 +99,37 @@ class StoreProjectQuestionRequest extends FormRequest
             if ($competency->type !== $expectedType) {
                 $v->errors()->add(
                     'competency_id',
-                    "Competency '{$competency->code}' is type={$competency->type}; this project requires {$expectedType}.",
+                    // Localized: an operator reads this in the backoffice, in
+                    // whatever language they are working in. `SetLocaleFromRequest`
+                    // is prepended to the whole `api` group, so `__()` already
+                    // resolves to the request's locale here.
+                    // Both types through the SAME lookup the cap message uses.
+                    // Interpolated raw, an Italian operator read "…è di tipo
+                    // standard; questo progetto richiede potential." — two
+                    // untranslated tokens in a translated sentence, which is
+                    // exactly what the sibling key was fixed for.
+                    __('messages.project_questions.competency_type_mismatch', [
+                        'code' => $competency->code,
+                        'actual' => __("messages.project_questions.assessment_type.{$competency->type}"),
+                        'expected' => __("messages.project_questions.assessment_type.{$expectedType}"),
+                    ]),
                 );
 
                 return;
             }
 
-            // No `?? 1` fallback: `assessment_type` is a closed union the
-            // model's own guards enforce, so the offset always exists and a
-            // default would be unreachable code pretending to be safety.
-            $max = self::MAX_PER_COMPETENCY[$project->assessment_type];
+            // Read from the PLATFORM settings, not from a constant in this
+            // file. It was `private const MAX_PER_COMPETENCY = ['standard' =>
+            // 1, 'potential' => 4]` here, which meant moving it required a
+            // release; it is now a superadmin knob with those same numbers as
+            // its defaults.
+            //
+            // Still not a tenant setting. How many predefined questions a
+            // `standard` interview may carry is a property of the assessment
+            // METHOD — the adaptivity is the product — and a client able to
+            // raise it would turn a BARS interview into a questionnaire while
+            // still calling it a BARS interview.
+            $max = app(PlatformSettings::class)->maxQuestionsPerCompetency($project->assessment_type);
 
             $existing = ProjectQuestion::where('project_id', $project->id)
                 ->where('competency_id', $competency->id)
@@ -113,7 +138,14 @@ class StoreProjectQuestionRequest extends FormRequest
             if ($existing >= $max) {
                 $v->errors()->add(
                     'competency_id',
-                    "A {$project->assessment_type} project allows at most {$max} question(s) per competency.",
+                    // trans_choice for the count, and a TRANSLATED type: the raw
+                    // enum interpolated into an Italian sentence read "Un
+                    // progetto standard…" with an untranslated token in the
+                    // middle of it, and ":max domande" said "1 domande" at the
+                    // default cap.
+                    trans_choice('messages.project_questions.max_per_competency', $max, [
+                        'type' => __("messages.project_questions.assessment_type.{$project->assessment_type}"),
+                    ]),
                 );
             }
         });

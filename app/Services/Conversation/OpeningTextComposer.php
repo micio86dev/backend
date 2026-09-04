@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Conversation;
 
 use App\DTOs\Conversation\ComposedOpening;
+use App\Exceptions\Conversation\CompositionException;
 use Illuminate\Support\Facades\Lang;
 
 /**
@@ -76,7 +77,18 @@ final class OpeningTextComposer
         $resolvedLocale = Lang::has($key, $locale) ? $locale : $fallback;
 
         $text = (string) Lang::get($key, ['competency' => $competencyName], $resolvedLocale);
-        $version = (string) config('conversation.prompt_version');
+        // Refused when blank, matching SystemPromptComposer: `(string) null` is
+        // `''`, which would stamp an empty version onto the interview just as
+        // silently as a stale literal would stamp a wrong one.
+        $version = trim((string) config('conversation.prompt_version'));
+
+        if ($version === '') {
+            throw new CompositionException(
+                'conversation.prompt_version is not configured. Every composed opening is '
+                .'stamped with it, and an evaluation carrying a blank version cannot be '
+                .'traced back to the prompt that produced it.',
+            );
+        }
 
         return new ComposedOpening($text, $version);
     }

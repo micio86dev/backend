@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.42.0"
+        "version": "0.43.0"
     },
     "servers": [
         {
@@ -504,11 +504,15 @@
                                                         },
                                                         "create": {
                                                             "type": "boolean"
+                                                        },
+                                                        "delete": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
-                                                        "create"
+                                                        "create",
+                                                        "delete"
                                                     ]
                                                 },
                                                 "users": {
@@ -519,11 +523,23 @@
                                                         },
                                                         "create": {
                                                             "type": "boolean"
+                                                        },
+                                                        "update": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "deactivate": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "activate": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
-                                                        "create"
+                                                        "create",
+                                                        "update",
+                                                        "deactivate",
+                                                        "activate"
                                                     ]
                                                 },
                                                 "llmCredentials": {
@@ -534,11 +550,19 @@
                                                         },
                                                         "create": {
                                                             "type": "boolean"
+                                                        },
+                                                        "update": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "delete": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
-                                                        "create"
+                                                        "create",
+                                                        "update",
+                                                        "delete"
                                                     ]
                                                 },
                                                 "avatarTemplates": {
@@ -549,11 +573,23 @@
                                                         },
                                                         "create": {
                                                             "type": "boolean"
+                                                        },
+                                                        "update": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "activate": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "delete": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
-                                                        "create"
+                                                        "create",
+                                                        "update",
+                                                        "activate",
+                                                        "delete"
                                                     ]
                                                 },
                                                 "projects": {
@@ -564,11 +600,38 @@
                                                         },
                                                         "create": {
                                                             "type": "boolean"
+                                                        },
+                                                        "update": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "delete": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
-                                                        "create"
+                                                        "create",
+                                                        "update",
+                                                        "delete"
+                                                    ]
+                                                },
+                                                "participants": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "create": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "recover": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny",
+                                                        "create",
+                                                        "recover"
                                                     ]
                                                 }
                                             },
@@ -578,7 +641,8 @@
                                                 "users",
                                                 "llmCredentials",
                                                 "avatarTemplates",
-                                                "projects"
+                                                "projects",
+                                                "participants"
                                             ]
                                         }
                                     },
@@ -2187,7 +2251,7 @@
         "/candidate/interview/start": {
             "post": {
                 "operationId": "interview.start",
-                "description": "Sequence (from design data flow \u2014 CRITICAL: provider call is OUTSIDE any DB txn):\n(1) Resolve next competency by project_competencies.position ASC.\n(2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException \u2192 re-query.\n(3) ProviderSessionService.issue() \u2014 OUTSIDE any DB transaction.\n(4a) Provider success \u2192 short DB txn: UPDATE session + participant (FIX-8).\n(4b) Provider 5xx \u2192 session error + participant errore + 502.\n(4c) Provider 429 \u2192 session stays pending + 429 provider_busy (NOT errore).\n(4d) DB failure after provider success \u2192 teardown(in-memory token) + 500.\n\nRESUME in_corso:\n  - issue() FRESH token.\n  - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).\n  - Persist new ref.\n\nRESUME pending:\n  - Retry issue(). On success, persist ref and flip to in_corso.\n\nFIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.",
+                "description": "Sequence (from design data flow \u2014 CRITICAL: provider call is OUTSIDE any DB txn):\n(1) Resolve next competency by project_competencies.position ASC.\n(2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException \u2192 re-query.\n(3) ProviderSessionService.issue() \u2014 OUTSIDE any DB transaction.\n(4a) Provider success \u2192 short DB txn: UPDATE session + participant (FIX-8).\n(4b) Provider 5xx \u2192 session error + participant errore + 502.\n(4c) Provider 429 \u2192 session stays pending + 429 provider_busy (NOT errore).\n(4d) DB failure after provider success \u2192 teardown(in-memory token) + 500.\n\nRESUME in_corso:\n  - issue() FRESH token.\n  - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).\n  - Persist new ref.\n\nRESUME pending:\n  - Retry issue(). On success, persist ref and flip to in_corso.\n\nFIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.\n\nThe 201 shape is spelled out for Scramble because it cannot follow\n`buildSuccessResponse()` \u2014 a private helper two call sites deep, whose\nfields come from method calls on `$this`. Left inferred, it produced a\nshape MISSING `audio_only` entirely, and the candidate app generates its\nclient from this spec: the field existed on the wire, was absent from the\ntype, and reading it was a compile error in the app that needs it.",
                 "summary": "Create or resume a provider session for the next competency interview",
                 "tags": [
                     "Interview"
@@ -2198,7 +2262,82 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object"
+                                    "type": "object",
+                                    "properties": {
+                                        "session_id": {
+                                            "type": "integer"
+                                        },
+                                        "provider": {
+                                            "type": "string"
+                                        },
+                                        "provider_token": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "conversation_url": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "audio_only": {
+                                            "type": "boolean"
+                                        },
+                                        "question_context": {
+                                            "type": "object",
+                                            "properties": {
+                                                "competency_code": {
+                                                    "type": "string"
+                                                },
+                                                "question_index": {
+                                                    "type": "integer"
+                                                },
+                                                "end_phrase": {
+                                                    "type": "string"
+                                                },
+                                                "final_phrase": {
+                                                    "type": "string"
+                                                },
+                                                "prompt_version": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "competency_ordinal": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "total_competencies": {
+                                                    "type": [
+                                                        "integer",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "competency_code",
+                                                "question_index",
+                                                "end_phrase",
+                                                "final_phrase",
+                                                "prompt_version",
+                                                "competency_ordinal",
+                                                "total_competencies"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "session_id",
+                                        "provider",
+                                        "provider_token",
+                                        "conversation_url",
+                                        "audio_only",
+                                        "question_context"
+                                    ]
                                 }
                             }
                         }
@@ -2212,7 +2351,7 @@
         "/candidate/interview/end": {
             "post": {
                 "operationId": "interview.end",
-                "description": "Sequence (CRITICAL-3 atomicity boundary = steps 3\u20136 in ONE explicit txn):\n(1) resolveOwnedSession \u2192 404 if not owned.\n(2) Validate ended_reason \u2208 {completed, timeout, skipped}; reject 'error' \u2192 422 (FIX-11).\n(3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.\n(4) FIX-3 guard: if session.status !== 'in_corso' \u2192 ROLLBACK \u2192 409.\n(5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.\n(6) UPDATE session status = ended_reason, ended_at = now().\n(7) Count ended sessions (status \u2208 {completed, timeout, skipped}) for this participant+project.\n(8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).\n    Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().\n(9) COMMIT. Return 200.\n\nPR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS\n`ProviderTranscriptShapeException` on a shape-mismatched transcript response\ninstead of silently degrading to `[]`. Because the throw happens BEFORE\n`replaceUtterances()` runs its DELETE, and propagates out of THIS transaction\nclosure, `DB::transaction()` rolls back the ENTIRE txn automatically \u2014 the\nDELETE never commits, ended_at is never stamped, and FinalizeInterview is\nnever dispatched. Caught below and surfaced as 502 (Upstream classification).",
+                "description": "Sequence (CRITICAL-3 atomicity boundary = steps 3\u20136 in ONE explicit txn):\n(1) resolveOwnedSession \u2192 404 if not owned.\n(2) Validate ended_reason \u2208 {completed, timeout, skipped}; reject 'error' \u2192 422 (FIX-11).\n(3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.\n(4) FIX-3 guard: if session.status !== 'in_corso' \u2192 ROLLBACK \u2192 409.\n(5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.\n(6) UPDATE session status = ended_reason, ended_at = now().\n(7) Count ended sessions for this participant+project, via CompetencyTally::ended():\n    status \u2208 {completed, timeout, skipped}, OR status = 'error' with\n    error_count >= MAX_ERROR_ATTEMPTS. That last disjunct is not optional \u2014\n    settleCompletionIfFinished()'s docblock below explains at length that a\n    tally disagreeing with resolveNextCompetency() is what stranded participants.\n(8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).\n    Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().\n(9) COMMIT. Return 200.\n\nPR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS\n`ProviderTranscriptShapeException` on a shape-mismatched transcript response\ninstead of silently degrading to `[]`. Because the throw happens BEFORE\n`replaceUtterances()` runs its DELETE, and propagates out of THIS transaction\nclosure, `DB::transaction()` rolls back the ENTIRE txn automatically \u2014 the\nDELETE never commits, ended_at is never stamped, and FinalizeInterview is\nnever dispatched. Caught below and surfaced as 502 (Upstream classification).\n\nThe 200 body is spelled out for Scramble, which could not follow it\nthrough `buildDirective()` and therefore published this endpoint as\nreturning NOTHING. That is not a cosmetic gap: the candidate app's whole\ndirective state machine \u2014 continue / pause / done \u2014 plus the progress\nreadout on the end-of-question and transition screens all read these three\nfields, so the generated client said the body was empty while the app\ndepended on it. The drift check stayed green because it compares the spec\nto the generated types and cannot see a hand-written inline generic.",
                 "summary": "End a provider session, reconcile the transcript, and (on last question) dispatch scoring",
                 "tags": [
                     "Interview"
@@ -2246,22 +2385,31 @@
                 },
                 "responses": {
                     "200": {
-                        "description": ""
-                    },
-                    "502": {
                         "description": "",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "error": {
+                                        "ended_competencies": {
+                                            "type": "integer"
+                                        },
+                                        "total_competencies": {
+                                            "type": "integer"
+                                        },
+                                        "next_action": {
                                             "type": "string",
-                                            "const": "provider_error"
+                                            "enum": [
+                                                "continue",
+                                                "pause",
+                                                "done"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "error"
+                                        "ended_competencies",
+                                        "total_competencies",
+                                        "next_action"
                                     ]
                                 }
                             }
@@ -4871,7 +5019,8 @@
         "/admin/organizations": {
             "get": {
                 "operationId": "superadmin.organizations",
-                "summary": "The shape is declared for Scramble, and not as documentation for its own\nsake: both Nuxt apps generate their typed client from this spec, so an\nundeclared `response()->json()` produced `data: string` and the switcher\nfailed to compile against its own API",
+                "description": "Reachable ONLY by a superadmin, so the cross-tenant read is the point\nrather than a leak \u2014 and it returns identity only. Nothing about\nwebhooks, credentials or settings crosses here: the switcher needs a\nname to put in a menu, and every other read stays behind the acting\norganization the caller then selects.\n\nThe shape is declared for Scramble, and not as documentation for its own\nsake: both Nuxt apps generate their typed client from this spec, so an\nundeclared `response()->json()` produced `data: string` and the switcher\nfailed to compile against its own API.",
+                "summary": "Every client, for the switcher",
                 "tags": [
                     "Superadmin"
                 ],
@@ -4925,6 +5074,8 @@
         "/admin/acting-organization": {
             "put": {
                 "operationId": "superadmin.setActingOrganization",
+                "description": "The id is validated against the table rather than trusted: an unknown\nid would otherwise scope every subsequent read to an organization that\ndoes not exist, and the superadmin would see an empty product with no\nexplanation.",
+                "summary": "Select a client to act as, or `null` to see them all again",
                 "tags": [
                     "Superadmin"
                 ],
@@ -4966,6 +5117,147 @@
                                     },
                                     "required": [
                                         "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/settings": {
+            "get": {
+                "operationId": "superadmin.settings",
+                "description": "Superadmin only, 403 for everyone else, for the same reason the client\nlist above is: these endpoints hold no record whose existence needs\nhiding \u2014 they are a capability, and the caller is authenticated.\n\nThe shape is spelled out for Scramble, like `/auth/me`'s and for the same\nreason: `app(PlatformSettings::class)->\u2026` is a container call it cannot\nfollow, so the inferred type came out as a bare `string`. The backoffice\ngenerates its client from this spec, which turned every\n`max_questions_per_competency.standard` read into a compile error in the\nrepository that consumes it.",
+                "summary": "GET /api/admin/settings \u2014 the platform's own knobs",
+                "tags": [
+                    "Superadmin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "max_questions_per_competency": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "standard": {
+                                                            "type": "integer"
+                                                        },
+                                                        "potential": {
+                                                            "type": "integer"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "standard",
+                                                        "potential"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "max_questions_per_competency"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "superadmin.updateSettings",
+                "description": "PARTIAL by design: naming only `standard` must leave `potential` where\nit was. A settings endpoint that treats an unmentioned key as \"set it to\n     * nothing\" turns every narrow edit into a wide one.\n\nThe floor of 1 is not decoration. A cap of 0 does not read as \"unlimited\"\nand does not read as \"authoring is off\" \u2014 it reads as every save failing\nwith a message about a maximum, which is the least explicable state this\nknob could be left in. The ceiling keeps a `standard` interview an\ninterview: past a handful of predefined questions the adaptivity that is\nthe product has nothing left to do.",
+                "summary": "PATCH /api/admin/settings \u2014 change a platform knob",
+                "tags": [
+                    "Superadmin"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "max_questions_per_competency": {
+                                        "type": "object",
+                                        "properties": {
+                                            "standard": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 10
+                                            },
+                                            "potential": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 10
+                                            }
+                                        },
+                                        "required": [
+                                            "standard",
+                                            "potential"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "max_questions_per_competency"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "max_questions_per_competency": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "standard": {
+                                                            "type": "integer"
+                                                        },
+                                                        "potential": {
+                                                            "type": "integer"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "standard",
+                                                        "potential"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "max_questions_per_competency"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
                                     ]
                                 }
                             }
@@ -5188,7 +5480,7 @@
         "/candidate/interview/utterance": {
             "post": {
                 "operationId": "utterance.store",
-                "description": "resolveOwnedSession MUST be called FIRST \u2014 it enforces participant_id + org isolation\nand returns 404 for any non-owned, cross-org, or nonexistent session.",
+                "description": "resolveOwnedSession MUST be called FIRST \u2014 it enforces participant_id + org isolation\nand returns 404 for any non-owned, cross-org, or nonexistent session.\n\n`ts` is validated as a DATE, not a string. It is bound into a\n`?::timestamptz` cast below, so an unparseable value used to reach\nPostgres and come back as a QueryException \u2014 a 500 and an error-level log\nline for what is a validation failure, on the highest-volume write in the\nproduct. This method promises 422 for exactly that.\n\nThe reasoning lives here rather than beside the rule: Scramble publishes\ncomments inside the validation array into `openapi.json`, and from there\ninto the generated TS clients of both Nuxt apps. Notes about our own 500s\nare not part of a contract a candidate app consumes.",
                 "summary": "Ingest a live transcript utterance (best-effort)",
                 "tags": [
                     "Utterance"
@@ -5214,7 +5506,8 @@
                                         "type": "string"
                                     },
                                     "ts": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "format": "date-time"
                                     }
                                 },
                                 "required": [
@@ -7207,7 +7500,7 @@
             },
             "StoreProjectQuestionRequest": {
                 "type": "object",
-                "description": "Validates a predefined question\n(potential-competencies-and-authored-questions, AD-4).\n\nHOW MANY questions are allowed is a function of the project's assessment\ntype, and that rule lives HERE rather than in the model or the table: it is\nthe same kind of invariant as `competencies \u2286 {MTG, LAT}` and `role_code\nmust be null`, which already live in the project FormRequests.\n\n  standard  \u2014 at most ONE per competency\n              (\"the first question per competency may be predefined\")\n  potential \u2014 at most FOUR per competency\n              (\"4 predefined questions per competency\", SA-08)\n\nThe cap is a maximum, never a minimum. A `standard` project with no authored\nquestion is the normal case \u2014 the AI opens the competency itself, exactly as\nit does today \u2014 and a half-configured `potential` project must be savable\nwhile the operator is still writing the other three.",
+                "description": "Validates a predefined question\n(potential-competencies-and-authored-questions, AD-4).\n\nHOW MANY questions are allowed is a function of the project's assessment\ntype, and that rule lives HERE rather than in the model or the table: it is\nthe same kind of invariant as `competencies \u2286 {MTG, LAT}` and `role_code\nmust be null`, which already live in the project FormRequests.\n\n  standard  \u2014 at most ONE per competency by default\n              (\"the first question per competency may be predefined\")\n  potential \u2014 at most FOUR per competency by default\n              (\"4 predefined questions per competency\", SA-08)\n\nThose two numbers are now PLATFORM SETTINGS (`App\\Support\\Settings\\\nPlatformSettings`) rather than a constant here, so a superadmin can move\nthem without a release. They remain platform-level and not tenant-level:\nthe cap describes the assessment method, not a client's preference.\n\nThe cap is a maximum, never a minimum. A `standard` project with no authored\nquestion is the normal case \u2014 the AI opens the competency itself, exactly as\nit does today \u2014 and a half-configured `potential` project must be savable\nwhile the operator is still writing the other three.",
                 "properties": {
                     "competency_id": {
                         "type": "integer",

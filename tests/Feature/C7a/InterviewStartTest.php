@@ -737,3 +737,91 @@ test('POST /start on a recovered participant (status=in_attesa, started_at alrea
             && ! str_contains($body['opening_text'] ?? '', 'Hi, and welcome');
     });
 });
+
+// ─── audio_only (voice-only templates) ───────────────────────────────────────
+
+/**
+ * The candidate app cannot render a voice-only interview it is never told about.
+ *
+ * `audioOnly` is a template knob that reaches the PROVIDER (TemplatePayload maps
+ * it to Tavus's `audio_only`) and stopped there. The browser kept mounting the
+ * avatar onto a `<video>` element that receives a stream with no video track,
+ * and painted an undecoded frame — the green-and-black vertical banding a
+ * candidate actually saw where a face should be.
+ *
+ * Machine-facing, so the field name and the boolean are literal in every
+ * locale. It carries no vendor identity, which is why it is safe to hand a
+ * candidate at all (`tests/unit/provider-anonymity.spec.ts` on the client side
+ * holds the rest of that line).
+ */
+function tavusSuccessResponse(): array
+{
+    return [
+        '*tavusapi*/v2/conversations*' => Http::response([
+            'conversation_id' => 'conv-audio-only',
+            'conversation_url' => 'https://tavus.io/conv-audio-only',
+        ], 200),
+        '*tavusapi*/v2/conversations/*' => Http::response([], 200), // teardown
+    ];
+}
+
+function startProjectWithAudioOnly(Organization $org, bool $audioOnly): array
+{
+    [$project, $comps] = startProjectWithCompetencies($org, 2, 'tavus');
+
+    AvatarTemplate::whereKey($project->avatar_template_id)
+        ->update(['config' => json_encode(['audioOnly' => $audioOnly])]);
+
+    return [$project, $comps];
+}
+
+test('POST /start reports audio_only=true when the pinned template is voice-only', function (): void {
+    Http::fake(tavusSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    [$project] = startProjectWithAudioOnly($org, true);
+    $participant = startParticipant($org, $project, 'in_attesa');
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.startBearer($participant)])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+    $response->assertJsonPath('audio_only', true);
+});
+
+test('POST /start reports audio_only=false for a normal template', function (): void {
+    Http::fake(tavusSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    [$project] = startProjectWithAudioOnly($org, false);
+    $participant = startParticipant($org, $project, 'in_attesa');
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.startBearer($participant)])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+    $response->assertJsonPath('audio_only', false);
+});
+
+test('POST /start reports audio_only=false when the template says nothing about it', function (): void {
+    // An explicit boolean, never an absent key. A client branching on
+    // `undefined` treats "not configured" and "not audio-only" alike today and
+    // starts hiding the avatar the day the field is renamed.
+    Http::fake(tavusSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    [$project] = startProjectWithCompetencies($org, 2, 'tavus');
+    $participant = startParticipant($org, $project, 'in_attesa');
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.startBearer($participant)])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+    $response->assertJsonPath('audio_only', false);
+});

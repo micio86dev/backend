@@ -17,9 +17,14 @@ declare(strict_types=1);
  *                       the closing phrase. CLAMPED by SystemPromptComposer to what the
  *                       budget permits — a minimum above `budget + 1` would be
  *                       unsatisfiable and would strand the competency at its session cap.
- *   nudge_min_chars   — default minimum character threshold for a "sufficient" answer.
- *                       null means nudge is disabled by default at the platform level;
- *                       each Project may override via project.nudge_min_chars.
+ * There is deliberately NO nudge_min_chars key here. This block used to document
+ * one, describing a "platform level" default that does not exist: the array
+ * below never returned it, .env.example never named it, and nothing in the repo
+ * read it. The real and only source is the `projects.nudge_min_chars` column,
+ * passed to the composer at InterviewController::start(). An operator who
+ * believed the prose would have set an env var that did nothing, silently and
+ * forever — the same two-documents-one-truth drift CLAUDE.md records for
+ * AGENTS.md and for the BARS indicator count.
  *
  * REQ: config/conversation.php (C8 RV-4)
  */
@@ -38,7 +43,7 @@ return [
     | wired independently of scoring (KD-3 mirrors C9 discipline).
     |
     */
-    'prompt_version' => env('CONVERSATION_PROMPT_VERSION', 'conv-2026-08-25.2'),
+    'prompt_version' => env('CONVERSATION_PROMPT_VERSION', 'conv-2026-09-04'),
 
     /*
     |--------------------------------------------------------------------------

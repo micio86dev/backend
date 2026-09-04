@@ -19,6 +19,7 @@ use App\Models\Organization;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
 use App\Models\User;
+use App\Support\Settings\PlatformSettings;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -51,11 +52,13 @@ function pqProject(Organization $org): Project
     });
 }
 
-function pqCompetency(): Competency
+function pqCompetency(string $type = 'standard'): Competency
 {
+    $code = $type === 'standard' ? 'PRS' : 'MTG';
+
     return Competency::firstOrCreate(
-        ['code' => 'PRS'],
-        ['name' => ['en' => 'Problem Solving'], 'definition' => ['en' => 'x'], 'type' => 'standard'],
+        ['code' => $code],
+        ['name' => ['en' => 'Problem Solving'], 'definition' => ['en' => 'x'], 'type' => $type],
     );
 }
 
@@ -168,4 +171,173 @@ test("another organization's project is invisible, not forbidden", function (): 
     $this->withToken($token)
         ->getJson("/api/projects/{$foreign->id}/questions")
         ->assertNotFound();
+});
+
+// ─── Validation messages follow the operator's language ──────────────────────
+
+/**
+ * These are OPERATOR-FACING sentences, and they were English string literals.
+ *
+ * An operator working in the Italian backoffice hit the per-competency cap and
+ * was told, mid-Italian-screen: "A standard project allows at most 1
+ * question(s) per competency." The i18n mandate covers exactly this — the
+ * MACHINE-facing half of a response (field names, enum values, HTTP status)
+ * stays literal in every locale, but a sentence a human reads does not.
+ *
+ * `SetLocaleFromRequest` is prepended to the whole `api` middleware group, so
+ * the locale is already resolved by the time a FormRequest validates.
+ */
+test('the per-competency cap message is returned in the requested language', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    // First one fills the `standard` cap of 1.
+    $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'The one allowed question.'],
+    ])->assertCreated();
+
+    $italian = $this->withToken($token)
+        ->withHeaders(['Accept-Language' => 'it'])
+        ->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $competency->id,
+            'text' => ['en' => 'One too many.'],
+        ]);
+
+    $italian->assertStatus(422);
+
+    $message = $italian->json('errors.competency_id.0');
+
+    expect($message)->toContain('al massimo');
+    expect($message)->not->toContain('allows at most');
+});
+
+test('the same cap message is English for an English operator', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'The one allowed question.'],
+    ])->assertCreated();
+
+    $english = $this->withToken($token)
+        ->withHeaders(['Accept-Language' => 'en'])
+        ->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $competency->id,
+            'text' => ['en' => 'One too many.'],
+        ]);
+
+    $english->assertStatus(422);
+    expect($english->json('errors.competency_id.0'))->toContain('at most');
+});
+
+test('raising the platform cap lets an operator author a second question', function (): void {
+    // The proof the setting is WIRED, not merely stored. A knob that persists
+    // and changes nothing is worse than no knob: the superadmin moves it,
+    // watches it save, and the product keeps refusing.
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'First question.'],
+    ])->assertCreated();
+
+    // At the default cap of 1, the second is refused.
+    $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'Second question.'],
+    ])->assertStatus(422);
+
+    app(PlatformSettings::class)
+        ->setMaxQuestionsPerCompetency(['standard' => 2]);
+
+    $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'Second question.'],
+    ])->assertCreated();
+});
+
+/**
+ * The plural branch of the cap message, which the cap test stops one request
+ * short of ever rendering.
+ *
+ * `trans_choice` was chosen over interpolation precisely because "1 questions"
+ * is wrong in English and has no "(s)" escape hatch in Italian — so the [2,*]
+ * form is the whole reason the key has two branches, and nothing rendered it.
+ */
+test('the cap message uses the plural form once the cap is above one', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    app(PlatformSettings::class)->setMaxQuestionsPerCompetency(['standard' => 2]);
+
+    foreach (['First question.', 'Second question.'] as $text) {
+        $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $competency->id,
+            'text' => ['en' => $text],
+        ])->assertCreated();
+    }
+
+    $english = $this->withToken($token)
+        ->withHeaders(['Accept-Language' => 'en'])
+        ->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $competency->id,
+            'text' => ['en' => 'Third question.'],
+        ])->assertStatus(422);
+
+    expect($english->json('message'))->toContain('at most 2 questions');
+
+    $italian = $this->withToken($token)
+        ->withHeaders(['Accept-Language' => 'it'])
+        ->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $competency->id,
+            'text' => ['en' => 'Third question.'],
+        ])->assertStatus(422);
+
+    // Italian too: the plural branch and the translated assessment type both
+    // have to render, and neither may leave a raw token in the sentence.
+    expect($italian->json('message'))->toContain('2 domande');
+    expect($italian->json('message'))->not->toContain('standard;');
+    expect($italian->json('message'))->not->toContain(':count');
+});
+
+/**
+ * The type-mismatch message, which had no coverage at all.
+ *
+ * This is the one refusal that names TWO assessment types, and both used to
+ * arrive as raw enum values mid-sentence. Delete either nested translation and
+ * this goes red.
+ */
+test('the competency type mismatch message translates both assessment types', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $mismatched = pqCompetency('potential');
+
+    $response = $this->withToken($token)
+        ->withHeaders(['Accept-Language' => 'it'])
+        ->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $mismatched->id,
+            'text' => ['en' => 'A question for the wrong competency type.'],
+        ])->assertStatus(422);
+
+    $message = $response->json('message');
+
+    // Both types render translated, and the sentence stays grammatical with
+    // either. The Italian 'potential' reads 'di potenziale', which the previous
+    // template turned into "è di tipo di potenziale".
+    expect($message)->toContain('di potenziale');
+    expect($message)->toContain('standard');
+    expect($message)->not->toContain('di tipo di');
+    expect($message)->not->toContain('messages.project_questions');
 });

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
 
 /**
  * Tenant-scoped Utterance model (C7a — Interview Session Mechanics).
@@ -25,9 +25,10 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $interview_session_id
  * @property int $organization_id
+ * @property string|null $provider_session_ref
  * @property string $speaker
  * @property string $text
- * @property Carbon $ts
+ * @property CarbonImmutable $ts
  */
 class Utterance extends TenantModel
 {
@@ -40,6 +41,11 @@ class Utterance extends TenantModel
      */
     protected $fillable = [
         'interview_session_id',
+        // The provider session this turn was spoken on. A resumed competency
+        // spans several, and a provider answers for one — so this is what tells
+        // a fetch which stored rows it may replace and which belong to a stretch
+        // it knows nothing about.
+        'provider_session_ref',
         'speaker',
         'text',
         'ts',

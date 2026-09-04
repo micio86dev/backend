@@ -125,7 +125,7 @@ test('(c) composed text contains all indicator text values (EN, 3 indicators)', 
     expect($result->text)->toContain('Consistently delivers on commitments');
 });
 
-test('(d) composed text contains budget instruction (N=2) and end_phrase advance rule', function (): void {
+test('(d) composed text carries the budget and the advance rule, and no unbound placeholder', function (): void {
     $role = Role::factory()->create(['code' => 'BUD_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'BUD_'.uniqid()]);
     composerMakeIndicator($role->id, $competency->id, 0);
@@ -136,8 +136,17 @@ test('(d) composed text contains budget instruction (N=2) and end_phrase advance
     // Budget assertion — pin the instruction phrase, not a bare digit that appears incidentally
     expect($result->text)->toContain('at most 2 follow-up');
 
-    // end_phrase advance rule must be present
-    expect($result->text)->toContain('end_phrase');
+    // The advance rule is present, and stated ONCE.
+    expect($result->text)->toContain('ADVANCE RULE:');
+    expect($result->text)->toContain('Speak the closing phrase ONLY when');
+
+    // And the prompt never ships the bare token. This assertion used to be its
+    // opposite: it pinned `end_phrase` as REQUIRED text, which is the literal
+    // buildAdvanceSection() documents as the bug — the avatar was told to utter
+    // a placeholder whose value it had never been given, so it never said the
+    // sentence, matchesEndPhrase() never matched, and HeyGen sessions ran to
+    // MAX_DURATION_REACHED. The test was pinning the defect in place.
+    expect($result->text)->not->toContain('end_phrase');
 });
 
 test('(d2) budget N=3 is injected into the prompt text', function (): void {
@@ -471,4 +480,201 @@ test('(z) the prompt tells the model its opening ALREADY asked for an episode', 
 
     expect($prompt)->toContain('ALREADY asked them to describe a specific episode')
         ->and($prompt)->toContain('Do NOT open by asking for one again');
+});
+
+// ─── Operator-authored questions ─────────────────────────────────────────────
+
+/**
+ * Questions an operator wrote for THIS project and THIS competency.
+ *
+ * The backoffice has offered this since C4: a question editor per competency,
+ * stored in `project_questions`, ordered. Nothing ever read them. `ProjectQuestion`
+ * was referenced by its own controller, request and resource — and by no part of
+ * the interview at all — so an operator could write the exact question they
+ * needed asked, save it, watch it persist, and then listen to the avatar
+ * improvise something else. The feature was write-only.
+ *
+ * They belong in the SYSTEM PROMPT rather than in the spoken opening: the
+ * opening greets and hands over, while what to ask is an instruction to the
+ * interviewer. Put in the opening, the avatar would recite the question and
+ * then have no idea it was supposed to have asked it.
+ */
+test('authored questions are injected into the prompt, in order', function (): void {
+    $role = Role::factory()->create(['code' => 'AQ_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'AQ_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $composer = makeComposer();
+
+    $result = $composer->compose(
+        competencyCode: $competency->code,
+        roleId: $role->id,
+        competencyId: $competency->id,
+        projectLocale: 'en',
+        budget: 2,
+        nudgeMinChars: null,
+        authoredQuestions: [
+            'Tell me about a time you rebuilt a team after a reorganisation.',
+            'What did the first week look like?',
+        ],
+    );
+
+    expect($result->text)->toContain('Tell me about a time you rebuilt a team after a reorganisation.');
+    expect($result->text)->toContain('What did the first week look like?');
+
+    // Order matters: an operator writing a follow-up as their second question
+    // means it to come second.
+    $first = strpos($result->text, 'Tell me about a time you rebuilt');
+    $second = strpos($result->text, 'What did the first week look like?');
+
+    expect($first)->toBeLessThan($second);
+});
+
+test('a competency with no authored questions composes exactly as before', function (): void {
+    // The overwhelmingly common case, and the one that must not change: most
+    // projects author nothing and rely entirely on the BARS-driven adaptivity.
+    $role = Role::factory()->create(['code' => 'AQN_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'AQN_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $composer = makeComposer();
+
+    $without = $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, null);
+    $withEmpty = $composer->compose(
+        competencyCode: $competency->code,
+        roleId: $role->id,
+        competencyId: $competency->id,
+        projectLocale: 'en',
+        budget: 2,
+        nudgeMinChars: null,
+        authoredQuestions: [],
+    );
+
+    expect($withEmpty->text)->toBe($without->text);
+});
+
+test('authored questions are stated as mandatory, not as suggestions', function (): void {
+    // The distinction the operator cares about. A prompt that lists them as
+    // "topics you might explore" produces an interview that sometimes asks
+    // them, which is indistinguishable from the bug this fixes.
+    $role = Role::factory()->create(['code' => 'AQM_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'AQM_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $result = makeComposer()->compose(
+        competencyCode: $competency->code,
+        roleId: $role->id,
+        competencyId: $competency->id,
+        projectLocale: 'en',
+        budget: 2,
+        nudgeMinChars: null,
+        authoredQuestions: ['Describe a decision you regret.'],
+    );
+
+    expect($result->text)->toContain('MUST');
+});
+
+/**
+ * The advance condition must stay satisfiable no matter what a superadmin sets.
+ *
+ * Section 6 tells the avatar it MUST ask every authored question before ending
+ * the competency; section 4 caps how many it may ask. The authored count is a
+ * platform setting clamped only at the floor, so it can exceed the follow-up
+ * budget — and then the prompt mandates and forbids the same question. The model
+ * never speaks the closing phrase, matchesEndPhrase() never matches, and the
+ * session runs to MAX_DURATION_REACHED: the exact failure effectiveMinimum()
+ * exists to prevent, reached by a route that bypassed it.
+ */
+test('(d3) more authored questions than the budget raises the budget rather than contradicting it', function (): void {
+    $role = Role::factory()->create(['code' => 'AQB_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'AQB_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $authored = [
+        'Tell me about a deadline you missed.',
+        'What did you change afterwards?',
+        'Who else was affected?',
+        'How did you measure the improvement?',
+        'What would you do differently now?',
+        'Who disagreed with you at the time?',
+    ];
+
+    $composer = makeComposer();
+    $result = $composer->compose(
+        $competency->code,
+        $role->id,
+        $competency->id,
+        'en',
+        2,
+        null,
+        'Thank you for your time.',
+        null,
+        $authored,
+    );
+
+    // Budget 2 PLUS 6 required questions. Not max(): taking the larger would
+    // read "at most 6", which is six mandatory questions filling six slots and
+    // nothing left to probe the answers with — while the same section asks the
+    // avatar to probe each one. Drop the arithmetic entirely and this reads
+    // "at most 2", a cap below the number of questions it is ordered to ask.
+    expect($result->text)->toContain('at most 8 follow-up');
+    expect($result->text)->not->toContain('at most 2 follow-up');
+    expect($result->text)->not->toContain('at most 6 follow-up');
+
+    foreach ($authored as $question) {
+        expect($result->text)->toContain($question);
+    }
+});
+
+/**
+ * The blanks are dropped BEFORE the count that raises the budget.
+ *
+ * The section filters them either way, so the arithmetic is the only thing that
+ * can disagree: counting first inflates the budget by questions nobody asks.
+ * Move the normalisation below the count and this goes red.
+ */
+test('(d4) blank authored questions raise neither the budget nor the section', function (): void {
+    $role = Role::factory()->create(['code' => 'AQN_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'AQN_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $composer = makeComposer();
+    $result = $composer->compose(
+        $competency->code,
+        $role->id,
+        $competency->id,
+        'en',
+        2,
+        null,
+        'Thank you for your time.',
+        null,
+        ['Real question.', '   ', '', 'Another real question.'],
+    );
+
+    // Budget 2 plus the TWO real questions, not the four slots given.
+    expect($result->text)->toContain('at most 4 follow-up');
+    expect($result->text)->not->toContain('at most 6 follow-up');
+
+    expect($result->text)->toContain('Real question.');
+    expect($result->text)->toContain('Another real question.');
+});
+
+/**
+ * A blank prompt_version is refused rather than stamped.
+ *
+ * `(string) null` is `''`, so removing the stale hard-coded fallback alone would
+ * have swapped a wrong version for an empty one — just as untraceable, and
+ * quieter. C9 reads this string as an evaluation's provenance.
+ */
+test('(d5) an unset conversation.prompt_version fails composition instead of stamping a blank', function (): void {
+    $role = Role::factory()->create(['code' => 'AQV_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'AQV_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    config(['conversation.prompt_version' => '']);
+
+    $composer = makeComposer();
+
+    expect(fn () => $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, null))
+        ->toThrow(CompositionException::class);
 });

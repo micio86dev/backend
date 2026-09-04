@@ -20,6 +20,7 @@ use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
@@ -31,9 +32,12 @@ use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\Interview\CompetencyTally;
 use App\Support\Interview\SessionLiveClock;
+use App\Support\Logging\SafeDbContext;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Log;
@@ -90,9 +94,18 @@ class InterviewController extends Controller
      *
      * FIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.
      *
+     * The 201 shape is spelled out for Scramble because it cannot follow
+     * `buildSuccessResponse()` — a private helper two call sites deep, whose
+     * fields come from method calls on `$this`. Left inferred, it produced a
+     * shape MISSING `audio_only` entirely, and the candidate app generates its
+     * client from this spec: the field existed on the wire, was absent from the
+     * type, and reading it was a compile error in the app that needs it.
+     *
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}}
+     *
      * @throws \Throwable
      */
-    public function start(Request $request): JsonResponse
+    public function start(): JsonResponse
     {
         /** @var Participant $participant */
         $participant = auth('api-candidate')->user();
@@ -306,7 +319,11 @@ class InterviewController extends Controller
      * (4) FIX-3 guard: if session.status !== 'in_corso' → ROLLBACK → 409.
      * (5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.
      * (6) UPDATE session status = ended_reason, ended_at = now().
-     * (7) Count ended sessions (status ∈ {completed, timeout, skipped}) for this participant+project.
+     * (7) Count ended sessions for this participant+project, via CompetencyTally::ended():
+     *     status ∈ {completed, timeout, skipped}, OR status = 'error' with
+     *     error_count >= MAX_ERROR_ATTEMPTS. That last disjunct is not optional —
+     *     settleCompletionIfFinished()'s docblock below explains at length that a
+     *     tally disagreeing with resolveNextCompetency() is what stranded participants.
      * (8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).
      *     Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().
      * (9) COMMIT. Return 200.
@@ -318,6 +335,17 @@ class InterviewController extends Controller
      * closure, `DB::transaction()` rolls back the ENTIRE txn automatically — the
      * DELETE never commits, ended_at is never stamped, and FinalizeInterview is
      * never dispatched. Caught below and surfaced as 502 (Upstream classification).
+     *
+     * The 200 body is spelled out for Scramble, which could not follow it
+     * through `buildDirective()` and therefore published this endpoint as
+     * returning NOTHING. That is not a cosmetic gap: the candidate app's whole
+     * directive state machine — continue / pause / done — plus the progress
+     * readout on the end-of-question and transition screens all read these three
+     * fields, so the generated client said the body was empty while the app
+     * depended on it. The drift check stayed green because it compares the spec
+     * to the generated types and cannot see a hand-written inline generic.
+     *
+     * @scramble-return array{ended_competencies: int, total_competencies: int, next_action: 'continue'|'pause'|'done'}
      */
     public function end(Request $request): JsonResponse
     {
@@ -369,7 +397,7 @@ class InterviewController extends Controller
 
                 // (6) UPDATE session status + ended_at
                 $locked->status = $endedReason;
-                $locked->ended_at = now();
+                $locked->ended_at = now()->toImmutable();
                 $locked->ended_reason = $endedReason;
                 $locked->save();
 
@@ -394,9 +422,12 @@ class InterviewController extends Controller
                 // paths that can finish an interview reach the same code.
                 $this->settleCompletionIfFinished($pid, $projectId);
 
-                // (D7) The directive, computed HERE — inside the transaction that
-                // already holds the counters, so it costs one extra query (the
-                // project's cadence) rather than a second tally.
+                // (D7) The directive, computed HERE — inside the transaction, so
+                // the numbers it reports and the completion just settled cannot
+                // disagree. It is NOT free: buildDirective() runs its own tally
+                // and its own project lookup, so this is a second tally, not the
+                // one extra query an earlier version of this comment claimed.
+                // Worth it for the consistency, not for a saving it never made.
                 $directive = $this->buildDirective($pid, $projectId);
 
                 // C10 D5: set ONLY on the success path — every abort() above (:225,
@@ -536,6 +567,11 @@ class InterviewController extends Controller
                 // the prompt told it to utter a placeholder it had never been
                 // given, so no question ever ended by itself.
                 advancePhrase: $advancePhrase,
+                // What the OPERATOR wrote for this competency. Loaded here
+                // because this is the one place that already knows both the
+                // project and the competency; the composer stays a pure
+                // function of what it is handed.
+                authoredQuestions: $this->authoredQuestionsFor($project, $competency->id),
             );
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -781,7 +817,7 @@ class InterviewController extends Controller
                 $session->status = 'in_corso';
                 // (D2) `??=` — a no-op here for any row that truly resumed
                 // (started_at is already set from the first stretch).
-                $session->started_at ??= now();
+                $session->started_at ??= now()->toImmutable();
                 // (pluggable-conversation-llm PR P6a, design D5) issue() IS
                 // re-invoked on resume — stamp() carries its own write-once /
                 // downgrade-only / null-guard rules, mirroring started_at's
@@ -797,6 +833,17 @@ class InterviewController extends Controller
             });
         } catch (\Throwable $e) {
             // DB failure after provider success → teardown the NEW in-memory token (WARNING-6)
+            // Log the CAUSE, not only the compensation. Without this the
+            // candidate gets a 500 and the API records nothing about why the
+            // transaction failed — the teardown line below fires only when the
+            // compensation ALSO fails, and describes that, not this.
+            //
+            Log::error('C7a: db failure after provider success', [
+                'stage' => 'resume',
+                'session_id' => $session->id,
+                ...SafeDbContext::for($e),
+            ]);
+
             try {
                 $provider->teardown($freshToken);
             } catch (\Throwable) {
@@ -845,7 +892,7 @@ class InterviewController extends Controller
                 // already-lived session to `pending`, so a re-offered
                 // competency reaches here with a start already recorded, and
                 // that value must survive (D6).
-                $session->started_at ??= now();
+                $session->started_at ??= now()->toImmutable();
                 // (pluggable-conversation-llm PR P6a, design D5) Same
                 // write-once / downgrade-only / null-guard stamp as the
                 // RESUME path above — this site is also reached by a
@@ -886,6 +933,17 @@ class InterviewController extends Controller
             });
         } catch (\Throwable $e) {
             // (4d) DB failure after provider success → teardown in-memory token (WARNING-6)
+            // Log the CAUSE, not only the compensation. Without this the
+            // candidate gets a 500 and the API records nothing about why the
+            // transaction failed — the teardown line below fires only when the
+            // compensation ALSO fails, and describes that, not this.
+            //
+            Log::error('C7a: db failure after provider success', [
+                'stage' => 'start',
+                'session_id' => $session->id,
+                ...SafeDbContext::for($e),
+            ]);
+
             try {
                 $provider->teardown($token);
             } catch (\Throwable) {
@@ -986,7 +1044,37 @@ class InterviewController extends Controller
             return;
         }
 
+        // `organization_id` is a PREDICATE here, not an argument about call
+        // sites. `Participant` extends plain Model — no global scope — and the
+        // repo rule is that it is never queried without this filter. Every
+        // other Participant access in app/ carries it; this was the one that
+        // did not, and it is a WRITE.
+        //
+        // Not exploitable today, because `$participantId` arrives either from
+        // the authenticated candidate or from a session resolved through
+        // `ResolvesOwnedSession` (InterviewSession IS a TenantModel). But that
+        // is an argument about three call sites, and the next call site added
+        // is the one that breaks it. Read from the project rather than trusted
+        // from the caller, so the invariant is local to this query.
+        $orgId = Project::whereKey($projectId)->value('organization_id');
+
+        if ($orgId === null) {
+            // The filter is correct and stays. What must not be silent is the
+            // case where it cannot be resolved: `Project` soft-deletes and runs
+            // through the tenant scope, so a null here makes the update match
+            // zero rows, `$won !== 1`, and the participant stays `in_corso`
+            // with no scoring, no webhook and no notification — verbatim the
+            // stranding this method exists to end, reached by another route.
+            Log::error('C7a: cannot settle completion — project did not resolve', [
+                'participant_id' => $participantId,
+                'project_id' => $projectId,
+            ]);
+
+            return;
+        }
+
         $won = Participant::where('id', $participantId)
+            ->where('organization_id', $orgId)
             ->where('status', 'in_corso')
             ->update(['status' => 'in_valutazione']);
 
@@ -995,6 +1083,36 @@ class InterviewController extends Controller
             // (/end) and dispatches immediately when there is not (the two /start
             // call sites, which hold no transaction).
             FinalizeInterview::dispatch($participantId)->afterCommit();
+        }
+    }
+
+    /**
+     * Insert utterance rows with the bound values kept out of the log.
+     *
+     * An unguarded bulk insert here throws a QueryException that escapes to
+     * Laravel's default handler, which logs `getMessage()` in full — that is,
+     * every utterance's text, verbatim, in plaintext. See SafeDbContext.
+     *
+     * The rethrow deliberately passes NO previous exception: chaining the
+     * QueryException would hand the handler the same interpolated string this
+     * method exists to withhold. Callers keep their existing failure behaviour;
+     * only what reaches the log changes.
+     *
+     * The rows are NOT required to be a list: this is a thin wrapper around
+     * `DB::insert()`, which accepts any array of row arrays, and one caller
+     * builds its rows with `array_map()` over provider turns whose keys it does
+     * not control.
+     *
+     * @param  array<array-key, array<string, mixed>>  $rows
+     */
+    private function insertUtterances(array $rows): void
+    {
+        try {
+            DB::table('utterances')->insert($rows);
+        } catch (QueryException $e) {
+            Log::error('C9: utterance insert failed', SafeDbContext::for($e));
+
+            throw new \RuntimeException('utterance_insert_failed');
         }
     }
 
@@ -1026,29 +1144,68 @@ class InterviewController extends Controller
             return;
         }
 
-        $existing = DB::table('utterances')
-            ->where('interview_session_id', $session->id)
-            ->count();
-
-        // The live /utterance path may already have stored some of these. Replace
-        // this session's slice wholesale with the provider's authoritative copy,
-        // which is a superset of what arrived live.
-        if ($existing > 0) {
-            DB::table('utterances')->where('interview_session_id', $session->id)->delete();
-        }
-
-        DB::table('utterances')->insert(array_map(fn (array $row) => [
+        // DELETE ONLY WHAT THIS PROVIDER SESSION OWNS.
+        //
+        // The fetch is single-session: HeyGen answers for `$oldRef` only, and
+        // every resume mints a new ref. So the DELETE that makes fetch-then-store
+        // authoritative has to be bounded to the stretch being replaced, and
+        // BOTH unbounded answers are wrong:
+        //
+        //   - delete everything → the second resume erases the turns harvested
+        //     from the first provider session. BARS scores a fragment.
+        //   - delete nothing after the first harvest → `UtteranceController` is
+        //     provider-agnostic (its only predicate is `status = in_corso`), so
+        //     the live rows for this stretch are already stored, and the
+        //     provider's copy of those same turns lands on top. BARS scores the
+        //     candidate saying everything twice.
+        //
+        // The bound is the ref itself, carried on every row. An auto-increment
+        // watermark was tried first and cannot express this: the provider's rows
+        // are always inserted after the live rows they replace, so any id high
+        // enough to protect the former also buries the latter.
+        $rows = array_map(fn (array $row): array => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,
+            'provider_session_ref' => $oldRef,
             'speaker' => $row['speaker'],
             'text' => $row['text'],
             'ts' => $row['ts'],
-        ], $turns));
+        ], $turns);
 
-        // Marks everything stored so far as already harvested, so /end's own
-        // reconciliation APPENDS its session rather than replacing the lot.
-        $session->transcript_harvested_at = now();
-        $session->save();
+        // Its OWN transaction, so a failure cannot poison an enclosing one.
+        // Postgres aborts a transaction on the first error and refuses every
+        // later statement in it, so swallowing this exception is only safe if
+        // the failure is contained: nested, Laravel makes this a SAVEPOINT and
+        // rolls back to it; unnested — the production path — it is a plain
+        // transaction around one delete and one insert.
+        //
+        // BEST-EFFORT, like the fetch above it. A transcript we cannot store is
+        // turns we never had; losing the candidate's access to a live interview
+        // over it would be a different and worse outcome — and a concrete one:
+        // issue() has already minted a FRESH provider session by this point, so
+        // an exception escaping here returns 500 with the new ref unpersisted and
+        // never torn down, billing to its ceiling while the candidate is locked
+        // out. replaceUtterances() keeps the throw on purpose: it runs inside
+        // /end's explicit transaction, where a rollback is the right answer.
+        //
+        // KNOWN RESIDUAL: a live `/utterance` for this stretch that lands AFTER
+        // this DELETE commits keeps its `$oldRef` tag and is never replaced, so
+        // if the provider's copy also contained that turn it appears twice. The
+        // window is the gap between this commit and the client noticing the new
+        // session, and closing it fully would mean refusing live writes mid-
+        // resume — which loses the turn instead of repeating it. A repeated turn
+        // is the lesser harm to a BARS transcript, and it is disclosed rather
+        // than papered over.
+        try {
+            DB::transaction(function () use ($session, $rows, $oldRef): void {
+                $this->replaceUtteranceStretch($session, $rows, $oldRef);
+            });
+        } catch (\Throwable $e) {
+            Log::error('C9: harvest insert failed, continuing the resume', [
+                'session_id' => $session->id,
+                ...SafeDbContext::for($e),
+            ]);
+        }
     }
 
     /**
@@ -1074,8 +1231,10 @@ class InterviewController extends Controller
             $session->save();
 
             // (interview-session-started-at, D4) Close the open period, if
-            // any — a no-op for a session that never left `pending` (the
-            // ClientError/Throttle branches never reach here at all). KNOWN
+            // any. A no-op for a session that never left `pending`, which is the
+            // Throttle branch — it short-circuits before this method. ClientError
+            // does NOT: it routes straight here, and on a RESUME it arrives with
+            // the session `in_corso`, so this close() is a real write. KNOWN
             // RESIDUAL: a RESUME whose issue() throws never reaches
             // teardown, so the old provider session may keep billing to its
             // ceiling while this closes the period only up to the moment
@@ -1118,6 +1277,93 @@ class InterviewController extends Controller
     }
 
     /**
+     * The operator's own questions for this project × competency, localized.
+     *
+     * `project_questions` has been writable from the backoffice since C4 and
+     * was read by NOTHING: the model, its controller, its request and its
+     * resource referenced each other and no part of the interview referenced
+     * any of them. An operator could author the exact question they needed
+     * asked, watch it save, and then listen to the avatar improvise something
+     * else. This is the read that was missing.
+     *
+     * Ordered by `position`, because an operator writing a second question as
+     * a follow-up to the first means it to come second.
+     *
+     * LOCALE RESOLUTION: the PROJECT's language, falling back to the platform
+     * default and then to whatever single translation exists. A question the
+     * operator wrote only in Italian is still the question they want asked;
+     * dropping it because the project is `en` would silently return the
+     * write-only behaviour for exactly the operators most likely to hit it.
+     *
+     * @return list<string>
+     */
+    private function authoredQuestionsFor(Project $project, int $competencyId): array
+    {
+        $fallback = (string) config('app.fallback_locale', 'en');
+        $locale = $project->language ?? $fallback;
+
+        return ProjectQuestion::where('project_id', $project->id)
+            ->where('competency_id', $competencyId)
+            ->orderBy('position')
+            ->orderBy('id')
+            ->pluck('text')
+            ->map(function (mixed $text) use ($locale, $fallback): string {
+                if (! is_array($text)) {
+                    return '';
+                }
+
+                $resolved = $text[$locale] ?? $text[$fallback] ?? null;
+
+                if (! is_string($resolved)) {
+                    // Last resort: the first non-empty translation there is.
+                    $resolved = collect($text)->first(
+                        static fn (mixed $value): bool => is_string($value) && trim($value) !== ''
+                    );
+                }
+
+                return is_string($resolved) ? trim($resolved) : '';
+            })
+            ->filter(static fn (string $question): bool => $question !== '')
+            ->values()
+            // Typed, so the list-ness is proven rather than asserted: the
+            // composer's boundary is `list<string>`, and `filter()` does not
+            // promise a list through its signature.
+            ->pipe(static fn (Collection $questions): array => array_values($questions->all()));
+    }
+
+    /**
+     * Whether this session's project runs voice-only.
+     *
+     * Resolved HERE, from the session, rather than threaded through the
+     * question-context DTO: `/start` answers on two paths (fresh issue and
+     * resume) and only one of them passes through the block that already reads
+     * the pinned template. Deriving it from the session is correct on both by
+     * construction, at the cost of one indexed lookup per competency start —
+     * which happens once per question, not per frame.
+     *
+     * FALSE, never null, when nothing is configured. An explicit boolean means
+     * a client branching on it cannot conflate "not configured" with "not
+     * audio-only", and cannot start hiding the avatar the day the key is
+     * renamed and the read silently returns undefined.
+     */
+    private function resolveAudioOnly(InterviewSession $session): bool
+    {
+        $templateId = Project::whereKey($session->project_id)->value('avatar_template_id');
+
+        if ($templateId === null) {
+            return false;
+        }
+
+        $config = AvatarTemplate::whereKey($templateId)->value('config');
+
+        if (! is_array($config)) {
+            return false;
+        }
+
+        return ($config['audioOnly'] ?? false) === true;
+    }
+
+    /**
      * Build a 201 success response.
      *
      * SECURITY: NEVER include API key material. Only the ephemeral token/URL
@@ -1155,6 +1401,19 @@ class InterviewController extends Controller
         return response()->json([
             'session_id' => $session->id,
             'provider' => $token->provider,
+            // Voice-only interviews, so the client knows not to mount a video
+            // element it will never receive a track for.
+            //
+            // The knob already existed and already reached the provider
+            // (`TemplatePayload` maps it to Tavus's `audio_only`); it simply
+            // never reached the BROWSER. The candidate app kept attaching the
+            // stream to a `<video>`, which painted an undecoded frame — green
+            // and black vertical banding where a face belongs.
+            //
+            // Carries no vendor identity, which is what makes it safe to hand
+            // a candidate: "this interview has no video" is a fact about the
+            // interview, not about who renders it.
+            'audio_only' => $this->resolveAudioOnly($session),
             // HeyGen: token; Tavus: null
             'provider_token' => $token->token,
             // Tavus: conversation_url; HeyGen: null
@@ -1252,23 +1511,70 @@ class InterviewController extends Controller
             return;
         }
 
-        // DELETE-then-INSERT is authoritative for ONE provider session. Once a
-        // resume has harvested an earlier one, the stored rows belong to a
-        // session this fetch knows nothing about, and deleting them destroys
-        // turns the candidate actually spoke. Append in that case.
-        if ($session->transcript_harvested_at === null) {
-            DB::table('utterances')->where('interview_session_id', $session->id)->delete();
-        }
+        // Scoped to the ref this fetch covers, for the same reason: the provider
+        // answers for ONE session and a resumed competency spans several. See
+        // harvestOutgoingTranscript() for why the ref is the boundary.
+        $ref = $session->provider_session_ref;
 
-        $rows = array_map(fn (array $row) => [
+        $rows = array_map(fn (array $row): array => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,
+            'provider_session_ref' => $ref,
             'speaker' => $row['speaker'],
             'text' => $row['text'],
             'ts' => $row['ts'],
         ], $transcript);
 
-        DB::table('utterances')->insert($rows);
+        // No catch here: this runs inside /end's explicit transaction, where a
+        // rollback is the correct answer to a failed transcript write.
+        $this->replaceUtteranceStretch($session, $rows, $ref);
+    }
+
+    /**
+     * Replace the utterances belonging to one provider session with `$rows`.
+     *
+     * The DELETE is scoped by `organization_id` even though the session is
+     * ownership-verified upstream. `Utterance` extends TenantModel and the
+     * paired INSERT stamps the column by hand — `DB::table()` bypasses the
+     * `creating` event — and this file's own argument at
+     * settleCompletionIfFinished() is that "the next call site added is the one
+     * that breaks it": an invariant is worth more inside the query than in the
+     * provenance of its caller.
+     *
+     * A null `$ref` deletes nothing. That is deliberate: rows predating the
+     * column carry no ref, and a fetch that cannot name its own stretch has no
+     * claim to replace anyone else's.
+     *
+     * @param  array<array-key, array<string, mixed>>  $rows
+     */
+    private function replaceUtteranceStretch(InterviewSession $session, array $rows, ?string $ref): void
+    {
+        if ($ref !== null) {
+            DB::table('utterances')
+                ->where('interview_session_id', $session->id)
+                ->where('organization_id', $session->organization_id)
+                ->where('provider_session_ref', $ref)
+                ->delete();
+        }
+
+        $this->insertUtterances($rows);
+
+        // Still stamped, because /end's own reconciliation reads it to decide
+        // whether anything has been harvested at all. It no longer bounds the
+        // DELETE — the ref does that — so a stale value can no longer decide
+        // which turns survive.
+        //
+        // ONLY this column. A plain save() flushes every dirty attribute, and on
+        // the harvest path this transaction commits BEFORE handleResumeInCorso()
+        // step (c) — the one that owns the session write and sits inside the
+        // teardown compensation boundary. Anything liveClock->close() or
+        // provider->issue() left dirty would be committed early and outside it,
+        // a coupling invisible from either call site.
+        $session->transcript_harvested_at = now()->toImmutable();
+        $session->newQuery()
+            ->whereKey($session->getKey())
+            ->update(['transcript_harvested_at' => $session->transcript_harvested_at]);
+        $session->syncOriginalAttribute('transcript_harvested_at');
     }
 
     /**
