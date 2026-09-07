@@ -1,9 +1,12 @@
 <?php
 
 use App\Models\AvatarTemplate;
+use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Models\Project;
 use App\Models\User;
 use App\Support\Tenancy\ActingOrganization;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role as SpatieRole;

@@ -182,6 +182,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // into the tenant layer to keep in step with the first.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('admin/organizations', [SuperadminController::class, 'organizations']);
+    Route::get('admin/clients', [SuperadminController::class, 'clients']);
     Route::put('admin/acting-organization', [SuperadminController::class, 'setActingOrganization']);
 
     // Platform-wide settings — BEAI's own knobs, not a tenant's. Superadmin

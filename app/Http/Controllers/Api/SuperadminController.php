@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Support\Settings\PlatformSettings;
 use App\Support\Superadmin\ClientDirectory;
+use App\Support\Superadmin\ClientOverviewReader;
 use App\Support\Tenancy\ActingOrganization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,6 +73,39 @@ class SuperadminController extends Controller
         // deliberate cross-tenant read lives in a single auditable class.
         return response()->json([
             'data' => app(ClientDirectory::class)->all(),
+            'acting_organization_id' => app(ActingOrganization::class)->for((int) $user->id),
+        ]);
+    }
+
+    /**
+     * Every client, with the platform-wide statistics the console renders.
+     *
+     * Reachable ONLY by a superadmin. `ClientOverviewReader` strips the
+     * tenant scope itself — an "Act as" selection MUST NOT narrow this
+     * estate to one client (design D2 Trap 1): the superadmin's own ambient
+     * bypass goes OFF the moment they act as somebody, and a scoped read
+     * would then return one organization instead of every client the page
+     * exists to show.
+     *
+     * The shape is declared for Scramble for the same reason `organizations()`
+     * and `settings()` already are: `app(ClientOverviewReader::class)->all()`
+     * is a container call it cannot follow.
+     *
+     * @scramble-return array{
+     *     data: list<array{
+     *         id: int, name: string, created_at: string|null,
+     *         projects: int, candidates: int, completed: int, errored: int,
+     *         last_activity_at: string|null,
+     *     }>,
+     *     acting_organization_id: int|null,
+     * }
+     */
+    public function clients(Request $request): JsonResponse
+    {
+        $user = $this->assertSuperadmin($request);
+
+        return response()->json([
+            'data' => app(ClientOverviewReader::class)->all(),
             'acting_organization_id' => app(ActingOrganization::class)->for((int) $user->id),
         ]);
     }

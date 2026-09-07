@@ -20,48 +20,18 @@ declare(strict_types=1);
  * avoid.
  */
 
-use App\Models\FrameworkVersion;
 use App\Models\Organization;
-use App\Models\Project;
-use App\Models\User;
-use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Spatie\Permission\Models\Role as SpatieRole;
-use Spatie\Permission\PermissionRegistrar;
 
 uses(RefreshDatabase::class);
 
-function saSuperadmin(): array
-{
-    // No organization, and that is what makes them one: TenantContext grants
-    // bypass ONLY for a null org WITH the flag, and fails closed otherwise.
-    $user = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
-
-    return ['user' => $user, 'token' => auth('api')->login($user)];
-}
-
-function saOrgAdmin(Organization $org): array
-{
-    $user = User::factory()->create(['organization_id' => $org->id]);
-    app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
-    $role = SpatieRole::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
-    $user->assignRole($role);
-
-    return ['user' => $user, 'token' => auth('api')->login($user)];
-}
-
-function saProject(Organization $org, string $slug): Project
-{
-    return TenantContextScope::runFor($org->id, function () use ($org, $slug): Project {
-        $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
-
-        return Project::factory()->create([
-            'organization_id' => $org->id,
-            'framework_version_id' => $fv->id,
-            'slug' => $slug,
-        ]);
-    });
-}
+// saSuperadmin() / saOrgAdmin() / saProject() moved to tests/Pest.php.
+// They were declared HERE and used from ClientOverviewTest.php too, which made
+// that file impossible to run on its own: `pest <thatfile>` never loads this
+// one, so every test in it died on "Call to undefined function saProject()".
+// The whole suite stayed green because both files load together — a test file
+// that only passes with a neighbour present is not a test file you can trust
+// in isolation, and it silently turned a mutation check into a false positive.
 
 test('the profile tells the backoffice it is talking to a superadmin', function (): void {
     // Without this the UI cannot branch at all: `is_superadmin` was exposed in

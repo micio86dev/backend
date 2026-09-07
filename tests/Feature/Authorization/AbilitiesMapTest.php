@@ -48,6 +48,8 @@ function expectedAbilities(): array
             'avatarTemplates' => ['viewAny' => true, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false],
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => true],
             'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
+            'clients' => ['viewAny' => false],
+            'platformSettings' => ['viewAny' => false],
         ],
         'operator' => [
             'organization' => ['view' => true, 'update' => false],
@@ -59,6 +61,8 @@ function expectedAbilities(): array
             // everything beneath it stopped sharing one permission.
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => false],
             'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
+            'clients' => ['viewAny' => false],
+            'platformSettings' => ['viewAny' => false],
         ],
         'viewer' => [
             'organization' => ['view' => true, 'update' => false],
@@ -68,6 +72,8 @@ function expectedAbilities(): array
             'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false],
             'projects' => ['viewAny' => true, 'create' => false, 'update' => false, 'delete' => false],
             'participants' => ['viewAny' => true, 'create' => false, 'recover' => false],
+            'clients' => ['viewAny' => false],
+            'platformSettings' => ['viewAny' => false],
         ],
     ];
 }
@@ -104,4 +110,28 @@ test('the superadmin is told they may manage avatar templates', function (): voi
         'activate' => true,
         'delete' => true,
     ]);
+});
+
+test('a superadmin receives clients.viewAny', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $response = $this->withToken($token)->getJson('/api/auth/me');
+
+    $response->assertOk();
+    expect($response->json('abilities.clients'))->toEqual(['viewAny' => true]);
+});
+
+test('a superadmin receives platformSettings.viewAny', function (): void {
+    // The Settings nav item is superadmin-only exactly like the Clients one,
+    // and published no ability at all — so the backoffice derived one from an
+    // ability and the other from `is_superadmin`, in the same menu. Two
+    // mechanisms for one kind of question is the drift this map exists to end.
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $response = $this->withToken($token)->getJson('/api/auth/me');
+
+    $response->assertOk();
+    expect($response->json('abilities.platformSettings'))->toEqual(['viewAny' => true]);
 });
