@@ -26,7 +26,34 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class DashboardActivityResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * The shape is spelled out rather than left as `array<string, mixed>`, and
+     * `project_name` is declared NULLABLE on purpose.
+     *
+     * `$this->project?->name` makes null genuinely reachable, and Scramble does
+     * not infer nullability from a nullsafe call — so the published contract
+     * said `project_name: string`, non-nullable, while the API could and did
+     * return null. Every consumer generated a type that was wrong, and the
+     * backoffice hid it by hand-writing `string | null` instead of importing
+     * the generated one: the drift was absorbed silently rather than failing a
+     * typecheck and pointing here.
+     *
+     * `display_name` stays NON-nullable, and that distinction is the point.
+     * Widening it alongside `project_name` would have been the mirror image of
+     * the bug being fixed: `participants.display_name` is NOT NULL in the
+     * migration, the model declares `@property string`, and
+     * `Admin\ParticipantResource` publishes `string` for the same column on the
+     * same model. Declaring it nullable forces every generated client to null-
+     * check a value the API cannot return, and leaves the next reader unable to
+     * tell which of the two fields is telling the truth. One lie removed, one
+     * added.
+     *
+     * BOTH tags, matching `ApiClientResource`: `@return` is what PHPStan reads,
+     * `@scramble-return` is what the exporter reads. The `@return` alone left
+     * the spec unchanged — verified by regenerating and diffing.
+     *
+     * @return array{id: int, candidate_ref: string, display_name: string, status: string, project_name: string|null, updated_at: string}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, status: string, project_name: string|null, updated_at: string}
      */
     public function toArray(Request $request): array
     {
