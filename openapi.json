@@ -633,6 +633,28 @@
                                                         "create",
                                                         "recover"
                                                     ]
+                                                },
+                                                "clients": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny"
+                                                    ]
+                                                },
+                                                "platformSettings": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "viewAny": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "viewAny"
+                                                    ]
                                                 }
                                             },
                                             "required": [
@@ -642,7 +664,9 @@
                                                 "llmCredentials",
                                                 "avatarTemplates",
                                                 "projects",
-                                                "participants"
+                                                "participants",
+                                                "clients",
+                                                "platformSettings"
                                             ]
                                         }
                                     },
@@ -5104,6 +5128,91 @@
                                                 "required": [
                                                     "id",
                                                     "name"
+                                                ]
+                                            }
+                                        },
+                                        "acting_organization_id": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/clients": {
+            "get": {
+                "operationId": "superadmin.clients",
+                "description": "Reachable ONLY by a superadmin. `ClientOverviewReader` strips the\ntenant scope itself \u2014 an \"Act as\" selection MUST NOT narrow this\nestate to one client (design D2 Trap 1): the superadmin's own ambient\nbypass goes OFF the moment they act as somebody, and a scoped read\nwould then return one organization instead of every client the page\nexists to show.\n\nThe shape is declared for Scramble for the same reason `organizations()`\nand `settings()` already are: `app(ClientOverviewReader::class)->all()`\nis a container call it cannot follow.",
+                "summary": "Every client, with the platform-wide statistics the console renders",
+                "tags": [
+                    "Superadmin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "created_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "projects": {
+                                                        "type": "integer"
+                                                    },
+                                                    "candidates": {
+                                                        "type": "integer"
+                                                    },
+                                                    "completed": {
+                                                        "type": "integer"
+                                                    },
+                                                    "errored": {
+                                                        "type": "integer"
+                                                    },
+                                                    "last_activity_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "name",
+                                                    "created_at",
+                                                    "projects",
+                                                    "candidates",
+                                                    "completed",
+                                                    "errored",
+                                                    "last_activity_at"
                                                 ]
                                             }
                                         },

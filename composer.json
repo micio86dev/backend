@@ -53,7 +53,8 @@
             "tests/Helpers/C9Fixtures.php",
             "tests/Helpers/C10Fixtures.php",
             "tests/Helpers/ScoringFixtures.php",
-            "tests/Helpers/QueueWorkCommandFixtures.php"
+            "tests/Helpers/QueueWorkCommandFixtures.php",
+            "tests/Helpers/SuperadminFixtures.php"
         ]
     },
     "scripts": {
