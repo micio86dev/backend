@@ -130,6 +130,24 @@ class AppServiceProvider extends ServiceProvider
         // credential is closer to a secret than a setting.
         Gate::policy(LlmCredential::class, LlmCredentialPolicy::class);
 
+        // superadmin-clients-console D4 — a Gate with no policy and no model.
+        // There is no Client model to authorize against: the subject is the
+        // CALLER, not a row, which is the same reasoning assertSuperadmin()
+        // gives for not being a policy either. This is NOT the enforcement
+        // point — SuperadminController::assertSuperadmin() still aborts 403 —
+        // it exists so UserAbilities::for() answers from a real Gate call
+        // instead of re-deriving is_superadmin a second time.
+        Gate::define('viewAnyClients', static fn (User $user): bool => $user->is_superadmin === true);
+
+        // The platform SETTINGS section, for the same reason and by the same
+        // mechanism. `GET/PATCH /api/admin/settings` is superadmin-only and is
+        // enforced by the same assertSuperadmin(), but it published no ability
+        // — so the backoffice had to re-derive that nav item from
+        // `is_superadmin` while deriving the neighbouring one from an ability.
+        // Two capabilities of the same kind answered two different ways in the
+        // same menu is exactly the drift UserAbilities exists to end.
+        Gate::define('viewPlatformSettings', static fn (User $user): bool => $user->is_superadmin === true);
+
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //
         // Two conditions, deliberately, and this is a considered DEVIATION from

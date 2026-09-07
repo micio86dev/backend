@@ -89,6 +89,8 @@ final class UserAbilities
      *     avatarTemplates: array{viewAny: bool, create: bool, update: bool, activate: bool, delete: bool},
      *     projects: array{viewAny: bool, create: bool, update: bool, delete: bool},
      *     participants: array{viewAny: bool, create: bool, recover: bool},
+     *     clients: array{viewAny: bool},
+     *     platformSettings: array{viewAny: bool},
      * }
      */
     public function for(User $user): array
@@ -197,6 +199,18 @@ final class UserAbilities
                 // alone, because recovery is a capability rather than a
                 // judgement about one participant.
                 'recover' => $gate->allows('recover', Participant::class),
+            ],
+            // No subject, like `participants.recover` above: the ability is
+            // about the caller (superadmin-clients-console D4), not a row —
+            // there is no Client model to authorize against.
+            'clients' => [
+                'viewAny' => $gate->allows('viewAnyClients'),
+            ],
+            // Same shape, same reasoning: platform rows belong to BEAI rather
+            // than to any organization, so no org-scoped policy can describe
+            // who may edit them.
+            'platformSettings' => [
+                'viewAny' => $gate->allows('viewPlatformSettings'),
             ],
         ];
     }

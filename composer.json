@@ -9,7 +9,7 @@
         "api"
     ],
     "license": "MIT",
-    "version": "0.44.1",
+    "version": "0.45.0",
     "require": {
         "php": "^8.5",
         "dedoc/scramble": "^0.13",
@@ -53,7 +53,8 @@
             "tests/Helpers/C9Fixtures.php",
             "tests/Helpers/C10Fixtures.php",
             "tests/Helpers/ScoringFixtures.php",
-            "tests/Helpers/QueueWorkCommandFixtures.php"
+            "tests/Helpers/QueueWorkCommandFixtures.php",
+            "tests/Helpers/SuperadminFixtures.php"
         ]
     },
     "scripts": {
