@@ -343,3 +343,15 @@ jobs:
       # `sync` in the main `test` job.
       - name: Run real-worker redis driver test
         run: ./vendor/bin/pest tests/Feature/Queue/RealWorkerRedisDriverTest.php
+
+      # The redis CACHE store, for the same reason the redis QUEUE driver is
+      # exercised above: the rest of the suite runs `CACHE_STORE=array`
+      # (phpunit.xml), and a value's TYPE coming back out of the cache is a
+      # property of the STORE. That gap shipped a real defect — RedisStore
+      # writes finite numerics unserialized and reads them back as strings, so
+      # the superadmin's acting-organization id failed an `is_int()` guard and
+      # every client selection silently resolved to null in production while
+      # the whole suite stayed green. This is the one job with a redis SERVER,
+      # so it is the only place that round-trip can actually be proven.
+      - name: Run redis cache-store test
+        run: ./vendor/bin/pest tests/Unit/Support/Tenancy/ActingOrganizationCacheStoreTest.php
