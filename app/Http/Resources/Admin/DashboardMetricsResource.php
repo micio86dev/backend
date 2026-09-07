@@ -12,10 +12,15 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * Wraps the array produced by DashboardController::metrics(). Org-scoped
  * usage metrics only — DB-backed token counts and latency percentiles from
- * `ai_requests`. NEVER carries a cost/currency field: no price column exists
- * anywhere in the schema (2026_07_22_000004_create_ai_requests_table.php:54-61)
- * and no billing/subscription/MRR data exists either (observability delta,
- * ruling 3).
+ * `ai_requests`, PLUS the estimated spend derived from them.
+ *
+ * This said "NEVER carries a cost/currency field", seven lines above a
+ * constructor `@param` declaring `costs`. True when written and false since a
+ * later change added the estimate — the same two-documents-one-truth drift that
+ * made `AGENTS.md` a symlink rather than a copy. What remains true, and is a
+ * different statement, is that there is no BILLING data: no price column, no
+ * subscription, no MRR (observability delta, ruling 3). The costs here are
+ * derived estimates, not invoices.
  */
 class DashboardMetricsResource extends JsonResource
 {
@@ -34,7 +39,25 @@ class DashboardMetricsResource extends JsonResource
     }
 
     /**
+     * The shape is declared for the exporter, not left as `array<string,
+     * mixed>`.
+     *
+     * Scramble reads `@scramble-return`; without it this resource published a
+     * bare object, so the backoffice hand-wrote the interface and defended it
+     * with "Scramble cannot trace a shape through a passthrough `toArray()`".
+     * That was never the problem — the tag was simply missing, while the
+     * constructor `@param` above had spelled the shape out all along. The
+     * consequence was real: rename `costs.total_usd` here and nothing failed,
+     * not the client-drift check and not a typecheck, and the figure an
+     * operator reconciles against an invoice rendered from `undefined`.
+     *
+     * Mirrors the `@param` deliberately. Two declarations of one shape is the
+     * defect this file already carries elsewhere; they are adjacent so a change
+     * to either is visibly a change to both.
+     *
      * @return array<string, mixed>
+     *
+     * @scramble-return array{participants_by_status: array<string, int>, evaluations_by_status: array<string, int>, completion_rate: float, ai_usage: array{input_tokens: int, output_tokens: int, latency_ms_p50: int|null, latency_ms_p95: int|null}, costs: array{scoring_usd: float, conversation_usd: float, total_usd: float, currency: string}}
      */
     public function toArray(Request $request): array
     {

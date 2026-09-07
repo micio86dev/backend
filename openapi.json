@@ -1378,6 +1378,32 @@
                 "tags": [
                     "Dashboard"
                 ],
+                "parameters": [
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Inclusive lower bound (`YYYY-MM-DD`). Omit for no lower bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "Inclusive upper bound (`YYYY-MM-DD`), covering the whole of that\nday. Must be on or after `from`. Omit for no upper bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "`DashboardMetricsResource`",
@@ -1399,6 +1425,9 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 }
             }
@@ -1410,6 +1439,32 @@
                 "summary": "The most recently updated candidates, newest first",
                 "tags": [
                     "Dashboard"
+                ],
+                "parameters": [
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Inclusive lower bound (`YYYY-MM-DD`). Omit for no lower bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "Inclusive upper bound (`YYYY-MM-DD`), covering the whole of that\nday. Must be on or after `from`. Omit for no upper bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    }
                 ],
                 "responses": {
                     "200": {
@@ -1435,6 +1490,9 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 }
             }
@@ -6155,8 +6213,7 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer",
-                        "description": "The row's own id, so the feed can LINK to the candidate instead\nof naming them. `candidate_ref` below is the calling system's\nopaque identifier and addresses nothing in this product \u2014 a feed\nthat says who just moved and gives no way to go and look is a\npage you read and then leave to use the search box."
+                        "type": "integer"
                     },
                     "candidate_ref": {
                         "type": "string"
@@ -6168,7 +6225,10 @@
                         "type": "string"
                     },
                     "project_name": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "updated_at": {
                         "type": "string"
@@ -6186,7 +6246,82 @@
             },
             "DashboardMetricsResource": {
                 "type": "object",
-                "additionalProperties": {},
+                "properties": {
+                    "participants_by_status": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        }
+                    },
+                    "evaluations_by_status": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        }
+                    },
+                    "completion_rate": {
+                        "type": "number"
+                    },
+                    "ai_usage": {
+                        "type": "object",
+                        "properties": {
+                            "input_tokens": {
+                                "type": "integer"
+                            },
+                            "output_tokens": {
+                                "type": "integer"
+                            },
+                            "latency_ms_p50": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "latency_ms_p95": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "input_tokens",
+                            "output_tokens",
+                            "latency_ms_p50",
+                            "latency_ms_p95"
+                        ]
+                    },
+                    "costs": {
+                        "type": "object",
+                        "properties": {
+                            "scoring_usd": {
+                                "type": "number"
+                            },
+                            "conversation_usd": {
+                                "type": "number"
+                            },
+                            "total_usd": {
+                                "type": "number"
+                            },
+                            "currency": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "scoring_usd",
+                            "conversation_usd",
+                            "total_usd",
+                            "currency"
+                        ]
+                    }
+                },
+                "required": [
+                    "participants_by_status",
+                    "evaluations_by_status",
+                    "completion_rate",
+                    "ai_usage",
+                    "costs"
+                ],
                 "title": "DashboardMetricsResource"
             },
             "EvaluationIndexResource": {
