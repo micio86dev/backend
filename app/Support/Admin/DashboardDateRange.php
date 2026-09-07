@@ -31,17 +31,16 @@ final class DashboardDateRange
     /**
      * Both ends are optional; absent means "all time", which is exactly the
      * behaviour every caller had before this existed.
+     *
+     * PARSES ONLY — the rules live in `DashboardRangeRequest`, which both
+     * callers type-hint. They used to live here as a `$request->validate()`
+     * call, and Scramble cannot see a helper's validation: the spec published
+     * `parameters: null` for both endpoints while the API honoured `from`/`to`
+     * all along. Keeping a copy of the rules here as well would put the same
+     * contract in two places, which is how it drifted the first time.
      */
     public static function fromRequest(Request $request): self
     {
-        $request->validate([
-            'from' => ['sometimes', 'nullable', 'date'],
-            // `after_or_equal` rather than `after`: a single-day range is a
-            // legitimate question ("what happened on the 3rd"), and refusing
-            // it would be an arbitrary restriction dressed as validation.
-            'to' => ['sometimes', 'nullable', 'date', 'after_or_equal:from'],
-        ]);
-
         // `filled()` rather than isset + !== null: the validator lets both an
         // absent key and an explicit null through, and both mean "no bound".
         $from = $request->filled('from')

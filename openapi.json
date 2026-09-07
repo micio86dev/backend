@@ -1378,6 +1378,32 @@
                 "tags": [
                     "Dashboard"
                 ],
+                "parameters": [
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Inclusive lower bound (`YYYY-MM-DD`). Omit for no lower bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "Inclusive upper bound (`YYYY-MM-DD`), covering the whole of that\nday. Must be on or after `from`. Omit for no upper bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "`DashboardMetricsResource`",
@@ -1399,6 +1425,9 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 }
             }
@@ -1410,6 +1439,32 @@
                 "summary": "The most recently updated candidates, newest first",
                 "tags": [
                     "Dashboard"
+                ],
+                "parameters": [
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Inclusive lower bound (`YYYY-MM-DD`). Omit for no lower bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "Inclusive upper bound (`YYYY-MM-DD`), covering the whole of that\nday. Must be on or after `from`. Omit for no upper bound.",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date-time"
+                        }
+                    }
                 ],
                 "responses": {
                     "200": {
@@ -1435,6 +1490,9 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 }
             }

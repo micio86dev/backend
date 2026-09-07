@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DashboardRangeRequest;
 use App\Http\Resources\Admin\DashboardActivityResource;
 use App\Http\Resources\Admin\DashboardMetricsResource;
 use App\Models\AiRequest;
@@ -13,7 +14,6 @@ use App\Models\InterviewSessionLlmUsage;
 use App\Support\Admin\AdminParticipantReader;
 use App\Support\Admin\DashboardDateRange;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -83,7 +83,7 @@ final class DashboardController extends Controller
      * `with('project:id,name')` is not an optimisation detail — without it
      * every row would fire its own query for a single string.
      */
-    public function activity(Request $request): JsonResponse
+    public function activity(DashboardRangeRequest $request): JsonResponse
     {
         // The SAME parser the tiles use. Two ranges derived separately would
         // eventually disagree, and a dashboard whose list and numbers describe
@@ -100,7 +100,7 @@ final class DashboardController extends Controller
         return DashboardActivityResource::collection($recent)->response();
     }
 
-    public function metrics(Request $request): JsonResponse
+    public function metrics(DashboardRangeRequest $request): JsonResponse
     {
         $range = DashboardDateRange::fromRequest($request);
 
@@ -153,9 +153,6 @@ final class DashboardController extends Controller
      * bills in, and inventing a conversion here would put a rate nobody chose
      * in front of a number an operator may reconcile against an invoice.
      *
-     * @return array{scoring_usd: float, conversation_usd: float, total_usd: float, currency: string}
-     */
-    /**
      * @param  DashboardDateRange  $range  Applied here too, so the cost tile
      *                                     covers the same period as the rest.
      *                                     A dashboard where four tiles read a
