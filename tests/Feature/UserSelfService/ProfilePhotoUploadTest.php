@@ -227,3 +227,130 @@ test('replacing a photo leaves exactly one object for that user', function (): v
     $objectsUnderPrefix = collect(Storage::allFiles("profile-photos/{$this->photoUser->id}"));
     expect($objectsUnderPrefix)->toHaveCount(1);
 });
+
+/**
+ * The message is a machine CODE, never a sentence (profile-photo-error-codes).
+ *
+ * A response body is machine-facing: this API has no idea what language the
+ * reader speaks, and i18n it/en is binding on error states. These three used
+ * to send English prose straight through `applyServerFieldErrors` into an
+ * Italian operator's field error. The logo endpoint next door already returns
+ * `logo_invalid_image` and friends.
+ */
+test('a rejected photo reports a machine code, not an English sentence', function (): void {
+    $file = UploadedFile::fake()->createWithContent('photo.jpg', 'not-an-image-at-all');
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_invalid_image');
+});
+
+test('an oversized photo reports its own code', function (): void {
+    config(['profile.photo.max_bytes' => 10]);
+    $file = UploadedFile::fake()->createWithContent('photo.png', validPngBytes());
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_too_large');
+});
+
+test('an over-large decoded image reports its own code', function (): void {
+    config(['profile.photo.max_dimension' => 0]);
+    $file = UploadedFile::fake()->createWithContent('photo.png', validPngBytes());
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_dimensions_invalid');
+});
+
+/**
+ * The layer an oversized file ACTUALLY reaches.
+ *
+ * `max:2048` on the FormRequest is 2048 KB — exactly the
+ * `profile.photo.max_bytes` default — so it fires first and the controller's
+ * own check never runs at default config. Renaming only the controller's
+ * messages would have left this path answering in English.
+ */
+test('an oversized photo reports a code at DEFAULT config, where the FormRequest catches it', function (): void {
+    $file = UploadedFile::fake()->create('photo.png', 3000, 'image/png');
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_too_large');
+});
+
+test('a missing photo reports a code', function (): void {
+    $response = $this->withToken($this->photoToken)->postJson('/api/profile/photo', []);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_required');
+});
+
+/**
+ * The oversize path production ACTUALLY takes.
+ *
+ * config/profile.php records it: there is no php.ini in api/docker/, so PHP's
+ * compiled upload_max_filesize=2M is the real ceiling and fires before Laravel
+ * sees the size. isValid() is then false and the `file` rule fails — so a
+ * fixed photo_invalid_image would tell an operator their perfectly good photo
+ * was corrupt when it was merely large.
+ */
+test('a file PHP itself refused for size reports too_large, not invalid_image', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'photo').'.png';
+    file_put_contents($path, validPngBytes());
+
+    $file = new UploadedFile($path, 'photo.png', 'image/png', UPLOAD_ERR_INI_SIZE, true);
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_too_large');
+});
+
+test('a genuinely corrupt file still reports invalid_image', function (): void {
+    // The other half of the same branch: without it, mapping photo.file to
+    // too_large would pass and every malformed upload would be reported as
+    // oversized.
+    $file = UploadedFile::fake()->createWithContent('photo.jpg', 'not-an-image-at-all');
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_invalid_image');
+});
+
+/**
+ * The other arm of the same ternary.
+ *
+ * A partial transfer is a genuine upload failure, not a size problem, and
+ * telling the operator "too large" would send them shrinking a file that was
+ * never the trouble. Without this case that branch could carry any string,
+ * English prose included, and the suite would stay green.
+ */
+test('a partial upload reports upload_failed, not too_large', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'photo').'.png';
+    file_put_contents($path, validPngBytes());
+
+    $file = new UploadedFile($path, 'photo.png', 'image/png', UPLOAD_ERR_PARTIAL, true);
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_upload_failed');
+});
+
+test('a missing tmp directory reports upload_failed too', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'photo').'.png';
+    file_put_contents($path, validPngBytes());
+
+    $file = new UploadedFile($path, 'photo.png', 'image/png', UPLOAD_ERR_NO_TMP_DIR, true);
+
+    $response = uploadPhotoAs($this, $this->photoToken, $file);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.photo.0'))->toBe('photo_upload_failed');
+});
