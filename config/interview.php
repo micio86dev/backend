@@ -34,6 +34,20 @@ return [
     'provider' => env('INTERVIEW_PROVIDER', 'heygen'),
 
     /*
+     * How long an interview session may sit with NO activity before the
+     * scheduled sweep ends it (stale-interview-reaper D3).
+     *
+     * Measured from the LAST activity — the later of the session's start and
+     * its most recent utterance — never from the start alone, which would end
+     * a long interview that is still going.
+     *
+     * 30 minutes because the product's own target for a competency is minutes,
+     * so half an hour of complete silence is not a pause: it is a tab that is
+     * gone. Configurable because that is a judgement, not a fact.
+     */
+    'stale_after_minutes' => (int) env('INTERVIEW_STALE_AFTER_MINUTES', 30),
+
+    /*
     |--------------------------------------------------------------------------
     | HeyGen Provider Configuration
     |--------------------------------------------------------------------------

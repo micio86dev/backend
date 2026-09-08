@@ -3788,6 +3788,205 @@
                 }
             }
         },
+        "/admin/platform-users": {
+            "get": {
+                "operationId": "platformUser.index",
+                "tags": [
+                    "PlatformUser"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `PlatformUserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PlatformUserResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "platformUser.store",
+                "summary": "`organization_id` and `is_superadmin` are never read from the request \u2014\nthey are decided here, exactly as `UserController::store()` decides them\nfor an organization's people. A field that is never read cannot be\ncrafted",
+                "tags": [
+                    "PlatformUser"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StorePlatformUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`PlatformUserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformUserResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/admin/platform-users/{id}": {
+            "patch": {
+                "operationId": "platformUser.update",
+                "tags": [
+                    "PlatformUser"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdatePlatformUserRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`PlatformUserResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformUserResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
+        "/admin/platform-users/{id}/deactivate": {
+            "post": {
+                "operationId": "platformUser.deactivate",
+                "summary": "The guarded verb. Reaching zero active superadmins is unrecoverable from\ninside the product, so the count and the write share one transaction and\none row lock \u2014 see PlatformUserGuards",
+                "tags": [
+                    "PlatformUser"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/platform-users/{id}/activate": {
+            "post": {
+                "operationId": "platformUser.activate",
+                "summary": "Never guarded: activating only ever ADDS a survivor, so there is no\ninvariant for it to break",
+                "tags": [
+                    "PlatformUser"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/profile": {
             "get": {
                 "operationId": "profile.show",
@@ -4634,6 +4833,21 @@
                                         },
                                         "redis_eviction_policy": {
                                             "type": "string"
+                                        },
+                                        "mail": {
+                                            "type": "object",
+                                            "properties": {
+                                                "mailer": {
+                                                    "type": "string"
+                                                },
+                                                "delivers": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "mailer",
+                                                "delivers"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -4641,7 +4855,8 @@
                                         "worker",
                                         "queue",
                                         "failed",
-                                        "redis_eviction_policy"
+                                        "redis_eviction_policy",
+                                        "mail"
                                     ]
                                 }
                             }
@@ -4684,6 +4899,21 @@
                                         },
                                         "redis_eviction_policy": {
                                             "type": "string"
+                                        },
+                                        "mail": {
+                                            "type": "object",
+                                            "properties": {
+                                                "mailer": {
+                                                    "type": "string"
+                                                },
+                                                "delivers": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "mailer",
+                                                "delivers"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -4691,7 +4921,8 @@
                                         "worker",
                                         "queue",
                                         "failed",
-                                        "redis_eviction_policy"
+                                        "redis_eviction_policy",
+                                        "mail"
                                     ]
                                 }
                             }
@@ -7001,6 +7232,44 @@
                 ],
                 "title": "ParticipantResource"
             },
+            "PlatformUserResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "is_deactivated": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "is_deactivated",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "PlatformUserResource"
+            },
             "ProfileResource": {
                 "type": "object",
                 "properties": {
@@ -7799,6 +8068,32 @@
                 ],
                 "title": "SessionSummaryResource"
             },
+            "StorePlatformUserRequest": {
+                "type": "object",
+                "description": "Validates POST /api/admin/platform-users (platform-user-management D2).\n\nThere is no `role` rule and no `organization_id` rule, and their absence is\nthe point rather than an omission: both are DECIDED by the surface, exactly\nas `/api/users` decides them for an organization's people. A field that is\nnever read cannot be crafted.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Unique across EVERY user, not only platform ones: `email` is the\nlogin identity for this whole system, and two rows sharing it\nwould make authentication ambiguous.",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    }
+                },
+                "required": [
+                    "name",
+                    "email",
+                    "password"
+                ],
+                "title": "StorePlatformUserRequest"
+            },
             "StoreProjectQuestionRequest": {
                 "type": "object",
                 "description": "Validates a predefined question\n(potential-competencies-and-authored-questions, AD-4).\n\nHOW MANY questions are allowed is a function of the project's assessment\ntype, and that rule lives HERE rather than in the model or the table: it is\nthe same kind of invariant as `competencies \u2286 {MTG, LAT}` and `role_code\nmust be null`, which already live in the project FormRequests.\n\n  standard  \u2014 at most ONE per competency by default\n              (\"the first question per competency may be predefined\")\n  potential \u2014 at most FOUR per competency by default\n              (\"4 predefined questions per competency\", SA-08)\n\nThose two numbers are now PLATFORM SETTINGS (`App\\Support\\Settings\\\nPlatformSettings`) rather than a constant here, so a superadmin can move\nthem without a release. They remain platform-level and not tenant-level:\nthe cap describes the assessment method, not a client's preference.\n\nThe cap is a maximum, never a minimum. A `standard` project with no authored\nquestion is the normal case \u2014 the AI opens the competency itself, exactly as\nit does today \u2014 and a half-configured `potential` project must be savable\nwhile the operator is still writing the other three.",
@@ -8130,6 +8425,27 @@
                     "password_confirmation"
                 ],
                 "title": "UpdatePasswordRequest"
+            },
+            "UpdatePlatformUserRequest": {
+                "type": "object",
+                "description": "Validates PATCH /api/admin/platform-users/{id} (platform-user-management D2).\n\nEvery field is `sometimes`: a partial update must not blank what it does not\nmention. `role` and `organization_id` are absent for the same reason as on\nthe store request \u2014 they are the surface's to decide, not the caller's.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "Ignoring THIS row, or renaming a user without changing their\naddress would fail against their own record.",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "minLength": 8
+                    }
+                },
+                "title": "UpdatePlatformUserRequest"
             },
             "UpdateProfilePhotoRequest": {
                 "type": "object",

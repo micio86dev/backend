@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Support\Mail\MailDeliveryProbe;
 use App\Support\Queue\QueueRuntimeInvariant;
 use Illuminate\Console\Command;
 
@@ -66,10 +67,14 @@ class QueueWorkCommand extends Command
 
     protected $description = 'Start the queue worker with every reliability number sourced from config(queue.runtime.*) — the only supported worker entrypoint';
 
-    public function handle(QueueRuntimeInvariant $invariant): int
+    public function handle(QueueRuntimeInvariant $invariant, MailDeliveryProbe $mail): int
     {
         if ($this->option('validate-only')) {
             return $this->runValidation($invariant);
+        }
+
+        if (! $this->mailCanBeDelivered($mail)) {
+            return self::FAILURE;
         }
 
         return (int) $this->call('queue:work', [
@@ -79,6 +84,49 @@ class QueueWorkCommand extends Command
             '--queue' => implode(',', (array) config('queue.runtime.worker_queues')),
             '--sleep' => (string) config('queue.runtime.worker_sleep_seconds'),
         ]);
+    }
+
+    /**
+     * Refuse to start a worker that cannot deliver mail (mail-delivery-guard).
+     *
+     * EVERY notification in this system is queued, so this process is the only
+     * one that sends. The Railway `worker` service had no `MAIL_MAILER`,
+     * `config/mail.php:17` resolved it to `log`, and invitations, password
+     * resets and operator alerts were written to a log file and reported as
+     * delivered — for months, with a green health check throughout.
+     *
+     * `MailSelfTestCommand` could already detect exactly this, and was never
+     * run. That is the argument for a gate that runs by itself: a
+     * misconfigured deploy fails to start, loudly, instead of silently
+     * discarding every message.
+     *
+     * PRODUCTION ONLY, and that is not timidity. `log` and `array` are the
+     * correct answers locally and in CI — `phpunit.xml` pins `array`
+     * deliberately so the suite never sends — and a gate that failed the
+     * suite would be switched off within a day and protect nothing.
+     */
+    private function mailCanBeDelivered(MailDeliveryProbe $mail): bool
+    {
+        if (! $this->getLaravel()->environment('production')) {
+            return true;
+        }
+
+        $refusal = $mail->refusal();
+
+        if ($refusal === null) {
+            return true;
+        }
+
+        $this->error('Refusing to start: this worker cannot deliver mail.');
+        $this->line('');
+        $this->warn('  '.$refusal->detail);
+        $this->warn('  Every queued notification would be accepted and reach no one.');
+        $this->line('');
+        $this->line('  Set MAIL_MAILER on THIS service. It is a separate Railway service with');
+        $this->line('  its own variables, and it is the one that actually sends.');
+        $this->line('  Verify with: php artisan beai:mail-selftest --to=you@real.tld');
+
+        return false;
     }
 
     private function runValidation(QueueRuntimeInvariant $invariant): int

@@ -143,3 +143,103 @@ test("compose('retry') falls back to the default locale for an unknown one", fun
 
     expect($composer->compose('retry', 'Networking', 'xx')->text)->toContain('Networking');
 });
+
+/**
+ * RED — authored questions open the competency (image/interview follow-up,
+ * reported 2026-09-08).
+ *
+ * An operator authored questions for a competency, and the avatar opened with
+ * "Parliamo di problem solving… raccontami un episodio" — a template sentence
+ * they never wrote. Their questions WERE reaching the system prompt as
+ * mandatory, but the spoken opening already asked a generic question first, so
+ * the first thing a candidate ever heard was never the operator's.
+ *
+ * Ratified 2026-09-08: when a competency has an authored question, that
+ * question IS the opening, verbatim, with no greeting wrapped around it.
+ */
+test('an authored question REPLACES the opening template entirely, verbatim', function (): void {
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('first', 'Problem Solving', 'it', 'Raccontami di una volta in cui hai gestito un cliente ostile.');
+
+    expect($result->text)->toBe('Raccontami di una volta in cui hai gestito un cliente ostile.');
+    // No welcome, no "parliamo di", no competency name bolted on.
+    expect($result->text)->not->toContain('Problem Solving');
+    expect($result->text)->not->toContain('benvenuto');
+});
+
+test('the same replacement applies to a subsequent competency', function (): void {
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('next', 'Collaboration', 'it', 'Parlami di un conflitto in team.');
+
+    expect($result->text)->toBe('Parlami di un conflitto in team.');
+});
+
+test('a RESUME keeps its template — the candidate is mid-episode, not starting one', function (): void {
+    // Re-asking the authored question here would throw away what they have
+    // already said and read as not having been listened to.
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('resume', 'Collaboration', 'it', 'Parlami di un conflitto in team.');
+
+    expect($result->text)->toBe(trans('interview.opening.resume', ['competency' => 'Collaboration'], 'it'));
+});
+
+test('a RETRY keeps its apology and ends on the authored question', function (): void {
+    // The apology is not a greeting: the candidate just hit a failure on OUR
+    // side, and dropping the explanation makes the repeat read as not having
+    // been heard.
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('retry', 'Collaboration', 'it', 'Parlami di un conflitto in team.');
+
+    expect($result->text)->toContain('problema tecnico');
+    expect($result->text)->toEndWith('Parlami di un conflitto in team.');
+});
+
+test('a blank authored question falls back to the template rather than opening on silence', function (): void {
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('first', 'Problem Solving', 'it', '   ');
+
+    expect($result->text)->toBe(trans('interview.opening.first', ['competency' => 'Problem Solving'], 'it'));
+});
+
+test('the version is stamped identically whether or not a question was authored', function (): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose('first', 'X', 'it', 'Domanda mia.')->version)
+        ->toBe($composer->compose('first', 'X', 'it')->version);
+});
+
+/**
+ * The ENGLISH `retry_authored`, which is not merely one more locale.
+ *
+ * `en` is `app.fallback_locale`, so it is what every project in a language
+ * without its own phrase file receives — fr, de, es, pt today, and whatever
+ * comes next. Only the Italian string was asserted, so a typo'd `:question`
+ * in `lang/en/interview.php` would leave this suite green while the avatar
+ * read a raw placeholder aloud to every non-Italian candidate.
+ */
+test('the retry apology substitutes :question in the fallback locale too', function (): void {
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('retry', 'Collaboration', 'en', 'Tell me about a team conflict.');
+
+    expect($result->text)->toEndWith('Tell me about a team conflict.');
+    expect($result->text)->not->toContain(':question');
+});
+
+test('an unknown locale falls back to English for the authored retry, not to a placeholder', function (): void {
+    // The fallback path is the one no project exercises directly and every
+    // future locale lands on.
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('retry', 'Collaboration', 'pt', 'Conte-me sobre um conflito.');
+
+    expect($result->text)->toBe(
+        trans('interview.opening.retry_authored', ['question' => 'Conte-me sobre um conflito.'], 'en')
+    );
+    expect($result->text)->not->toContain(':question');
+});

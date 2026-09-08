@@ -41,7 +41,7 @@ final class UserInvitationNotification extends Notification
         private readonly int $expiresInMinutes,
         private readonly string $role,
         private readonly string $inviterName,
-        private readonly string $organizationName,
+        private readonly ?string $organizationName,
     ) {}
 
     /** @return array<int, string> */
@@ -55,10 +55,15 @@ final class UserInvitationNotification extends Notification
         return (new MailMessage)
             ->subject(__('user_invitation.subject'))
             ->greeting(__('user_invitation.greeting'))
-            ->line(__('user_invitation.intro', [
-                'inviter' => $this->inviterName,
-                'organization' => $this->organizationName,
-            ]))
+            // A platform invitation has no organization to name, and
+            // substituting BEAI would read ":inviter added you to BEAI on
+            // BEAI." — see `intro_platform` (platform-user-management D2).
+            ->line($this->organizationName === null
+                ? __('user_invitation.intro_platform', ['inviter' => $this->inviterName])
+                : __('user_invitation.intro', [
+                    'inviter' => $this->inviterName,
+                    'organization' => $this->organizationName,
+                ]))
             // What the product IS, before what their role is: somebody who has
             // never heard of BEAI cannot make sense of "you can review
             // evaluations".
@@ -89,6 +94,11 @@ final class UserInvitationNotification extends Notification
     private function roleLine(): string
     {
         return match ($this->role) {
+            // NOT covered by the observer fallback below, and that is not a
+            // nicety: falling through would tell a superadmin they can change
+            // nothing, which is the opposite of true, and the fallback is
+            // documented as safe precisely because it only ever UNDERSTATES.
+            'superadmin' => __('user_invitation.role_superadmin'),
             'admin' => __('user_invitation.role_admin'),
             'operator' => __('user_invitation.role_operator'),
             default => __('user_invitation.role_viewer'),

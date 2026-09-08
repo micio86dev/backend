@@ -390,6 +390,20 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Unit/Support/Users');
 
+// Feature/Interview — RefreshDatabase: the reaper sweeps every `in_corso`
+// session on the platform, so a session left behind by an earlier test is one
+// it would legitimately end, and the counts below would report it.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Interview');
+
+// Feature/PlatformUsers — RefreshDatabase, and it is load-bearing rather than
+// tidy: PlatformUserGuards counts the ACTIVE superadmins on the whole
+// platform, so a superadmin left behind by an earlier test is a survivor the
+// guard then declines to fire for. Without this the last-superadmin cases
+// returned 204 and passed for the wrong reason.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PlatformUsers');
+
 // Feature/UserManagement — RefreshDatabase: the privilege-escalation and
 // last-admin-guard matrix is asserted against real users/roles rows, not mocks.
 pest()->use(RefreshDatabase::class)

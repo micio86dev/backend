@@ -17,6 +17,9 @@ declare(strict_types=1);
  * strings are also the fallback for any project language without its own phrase file.
  *
  * `opening.*` (PR3, design D9): the avatar's spoken opening greeting per variant,
+ * composed by App\Services\Conversation\OpeningTextComposer. `:competency` is
+ * interpolated with the competency's display name, and `:question` — in
+ * `retry_authored` only — with the operator's own authored question.
  *
  * EVERY variant ENDS IN A QUESTION, and that is not cosmetic. They used to
  * announce the topic and stop: the provider spoke the line, the LLM had no user
@@ -27,10 +30,9 @@ declare(strict_types=1);
  * `resume` invites the candidate to CARRY ON rather than to start: someone
  * resuming was already inside an episode, and asking for a new one would throw
  * away what they had already told us.
- * composed by App\Services\Conversation\OpeningTextComposer. `:competency` is
- * interpolated with the competency's display name. Interim/replaceable wording —
- * changing it is a lang-file + `conversation.prompt_version` bump, never a
- * provider wire-contract change.
+ *
+ * Interim/replaceable wording — changing it is a lang-file +
+ * `conversation.prompt_version` bump, never a provider wire-contract change.
  */
 return [
     'end_phrase' => "Let's move on to the next question.",
@@ -41,5 +43,14 @@ return [
         'next' => "Great, let's move on and talk about :competency. Tell me about one specific episode where this came up: what happened?",
         'resume' => "Let's pick up where we left off, talking about :competency. Please carry on from where you stopped.",
         'retry' => 'Sorry, we had a technical problem on our side. Let us start :competency again. Tell me about one specific episode where this came up: what happened?',
+
+        /*
+         * `retry` when the operator authored the question. `first`/`next` use
+         * no template at all in that case — the authored question IS the
+         * opening. `retry` is not an exception for its own sake: the apology
+         * is not a greeting, it explains a failure on OUR side, and dropping
+         * it makes the repeat read as not having been listened to.
+         */
+        'retry_authored' => "Sorry, we had a technical problem on our side. Let's start over. :question",
     ],
 ];
