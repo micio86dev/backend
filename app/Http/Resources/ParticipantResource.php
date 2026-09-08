@@ -7,7 +7,6 @@ namespace App\Http\Resources;
 use App\Models\Participant;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * ParticipantResource (C6 — Participant + SSO Ingress).
@@ -91,9 +90,10 @@ class ParticipantResource extends JsonResource
                 // staying out.
                 'name' => $participant->organization?->name,
                 'primary_color' => $participant->organization?->primary_color,
-                'logo_url' => $participant->organization?->logo_path === null
-                    ? null
-                    : Storage::url($participant->organization->logo_path),
+                // Absolute, for the same reason as OrganizationResource: the
+                // candidate frontend is a separate origin from this API, so a
+                // rooted `/storage/...` path resolved against the wrong host.
+                'logo_url' => $participant->organization?->absoluteLogoUrl(),
             ],
             'project' => $project ? [
                 'id' => (int) $project->id,

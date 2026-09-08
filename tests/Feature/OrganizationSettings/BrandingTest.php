@@ -247,6 +247,62 @@ test('an admin can upload a logo, and the response carries a resolvable URL', fu
     expect($org->fresh()->logo_path)->not->toBeNull();
 });
 
+test('the settings resource returns an ABSOLUTE logo URL, resolvable from another origin', function (): void {
+    // `Storage::url()` on the local disk returns a ROOT-RELATIVE path
+    // (`/storage/...`, FilesystemAdapter::getLocalUrl). The backoffice is a
+    // separate origin from this API — :3000 against :8000 locally, distinct
+    // hosts on Railway — so the browser resolved that path against the
+    // BACKOFFICE and 404'd. The file was stored correctly the whole time; the
+    // URL was simply never reachable from the app that renders it.
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $response = $this->withToken($token)->getJson('/api/organization');
+
+    $response->assertOk();
+    expect($response->json('data.logo_url'))->toStartWith('http://api.test/');
+});
+
+test('the candidate session resource returns an ABSOLUTE logo URL too', function (): void {
+    // Same defect, same fix: the candidate frontend is likewise a separate
+    // origin from this API.
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $adminToken] = brandingUser($org, 'admin');
+
+    $this->withToken($adminToken)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $participant = brandingParticipant($org);
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.brandingCandidateToken($participant),
+    ])->getJson('/api/candidate/session');
+
+    $response->assertOk();
+    expect($response->json('data.branding.logo_url'))->toStartWith('http://api.test/');
+});
+
+test('no logo configured still means null, never a partial URL', function (): void {
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->getJson('/api/organization')->assertJsonPath('data.logo_url', null);
+});
+
 test('a PHP script renamed to .png is refused, and never reaches the disk', function (): void {
     // `mimes:png` passes this — the browser's claim and the filename are both
     // attacker-controlled. The magic bytes are not.
