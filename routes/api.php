@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\OrganizationLogoController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ParticipantRecoveryController;
+use App\Http\Controllers\Api\PlatformUserController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
@@ -190,6 +191,21 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // 403-vs-404 for capability endpoints).
     Route::get('admin/settings', [SuperadminController::class, 'settings']);
     Route::patch('admin/settings', [SuperadminController::class, 'updateSettings']);
+
+    // BEAI's own PEOPLE, not a tenant's (platform-user-management D1). The
+    // all-clients counterpart of /users: same five verbs, a different
+    // population, and a reader whose predicate is the exact inverse of the
+    // org one's — so neither surface can ever reach the other's rows.
+    //
+    // Separate from /users rather than a scope-aware branch inside it:
+    // UserAdminReader states "a platform superadmin is never manageable
+    // through a tenant's user-management surface" in its WHERE clause,
+    // precisely because a conditional is what gets forgotten.
+    Route::get('admin/platform-users', [PlatformUserController::class, 'index']);
+    Route::post('admin/platform-users', [PlatformUserController::class, 'store']);
+    Route::patch('admin/platform-users/{id}', [PlatformUserController::class, 'update']);
+    Route::post('admin/platform-users/{id}/deactivate', [PlatformUserController::class, 'deactivate']);
+    Route::post('admin/platform-users/{id}/activate', [PlatformUserController::class, 'activate']);
 });
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
