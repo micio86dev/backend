@@ -11,6 +11,7 @@ use App\Http\Resources\Admin\UserResource;
 use App\Jobs\SendUserInvitationJob;
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\Auth\RefreshTokenStore;
 use App\Support\Users\UserAdminReader;
 use App\Support\Users\UserGuards;
 use Illuminate\Http\JsonResponse;
@@ -46,6 +47,7 @@ class UserController extends Controller
     public function __construct(
         private readonly UserAdminReader $reader,
         private readonly UserGuards $guards,
+        private readonly RefreshTokenStore $refreshTokens,
     ) {}
 
     /**
@@ -147,6 +149,19 @@ class UserController extends Controller
         if ($request->has('password')) {
             $target->password_changed_at = now()->startOfSecond();
             $target->save();
+
+            // The OTHER half, and it is not covered by the stamp above.
+            // `POST /api/auth/refresh` is public — routes/api.php gives it
+            // only RequireRefreshCsrfHeader, never `auth:api` — so
+            // `RejectStaleCredentials` returns early on a null user and never
+            // consults `password_changed_at` at all. Without this, an admin
+            // resets a compromised user's password and the attacker's stolen
+            // refresh cookie keeps minting fresh access tokens.
+            //
+            // Both password-RESET paths already revoke
+            // (ResetPasswordController, ResetUserPasswordCommand); the admin
+            // surfaces did not.
+            $this->refreshTokens->revokeAllForUser((int) $target->id);
         }
 
         return (new UserResource($target->fresh()))->response();
@@ -207,11 +222,28 @@ class UserController extends Controller
      * turns that structural guarantee into an explicit, typed fact rather
      * than a nullable value threaded through the rest of the method.
      */
+    /**
+     * The caller's organization, or a legible refusal (platform-user-management D4).
+     *
+     * 409 with a machine CODE, not 500. A superadmin viewing all clients
+     * legitimately has no organization, and `Gate::before` grants them every
+     * ability — so `authorize()` waves them straight through to here, and the
+     * product puts that state one click from this endpoint. An internal server
+     * error describes a fault in the system; this is a caller in the wrong
+     * scope, and it was additionally paging people about it.
+     *
+     * A code rather than a sentence: a response body is machine-facing, this
+     * API has no idea what language the reader speaks, and the backoffice
+     * already renders codes through `translateServerCode`.
+     *
+     * BEAI's own people are managed on `/api/admin/platform-users`, which is
+     * the surface this scope actually wants.
+     */
     private function requireOrgId(User $user): int
     {
         $orgId = $user->organization_id;
 
-        abort_if($orgId === null, 500, 'User management requires organization context.');
+        abort_if($orgId === null, Response::HTTP_CONFLICT, 'organization_context_required');
 
         return $orgId;
     }

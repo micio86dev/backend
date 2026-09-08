@@ -54,7 +54,7 @@ final class SendUserInvitationJob implements ShouldQueue
         private readonly int $userId,
         private readonly string $role,
         private readonly string $inviterName,
-        private readonly string $organizationName,
+        private readonly ?string $organizationName,
     ) {}
 
     /**
@@ -116,7 +116,13 @@ final class SendUserInvitationJob implements ShouldQueue
         // ONE lookup, both fields. The colour and the name are the same
         // decision — who this message is from — so splitting them into two
         // reads would be two chances for them to disagree.
-        $organization = Organization::withoutGlobalScopes()->find($user->organization_id);
+        // A PLATFORM user belongs to no organization, so this is null on every
+        // BEAI-team invitation. `find(null)` issues a `where id = null` that can
+        // never match — a query asked once per invitation for an answer already
+        // known.
+        $organization = $user->organization_id === null
+            ? null
+            : Organization::withoutGlobalScopes()->find($user->organization_id);
 
         $branding = app(EmailBranding::class);
         $branding->set($organization?->primary_color);

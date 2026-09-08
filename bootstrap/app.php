@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\ReapStaleInterviews;
 use App\Console\Commands\ReconcileLlmUsage;
 use App\Exceptions\Admin\LifecycleNotReadyException;
 use App\Exceptions\Conversation\CompositionException;
@@ -73,6 +74,27 @@ return Application::configure(basePath: dirname(__DIR__))
         // best-effort approximation — the SAME estimator, over the SAME
         // persisted rows, `firstOrCreate()`-guarded against a late /end.
         $schedule->command(ReconcileLlmUsage::class)->dailyAt('04:00')->onOneServer();
+
+        // End interviews the browser never ended (stale-interview-reaper).
+        //
+        // `POST /end` is the only thing that closes a session, so the whole
+        // chain rests on the candidate's tab living long enough to make one
+        // more HTTP call. When it does not — the avatar never speaks its
+        // closing phrase, the tab is closed, the laptop sleeps — the
+        // transcript is already safe on the server and nothing scores it.
+        //
+        // Every fifteen minutes rather than daily: the cost of waiting is an
+        // operator staring at a participant stuck on "in corso" with no way to
+        // tell whether anything is happening.
+        //
+        // `withoutOverlapping()` as well as `onOneServer()`: two sweeps over
+        // the same rows would both try to end the same session, and the second
+        // would spend a scoring job on a participant the first already
+        // advanced.
+        $schedule->command(ReapStaleInterviews::class)
+            ->everyFifteenMinutes()
+            ->onOneServer()
+            ->withoutOverlapping();
     })
     ->withMiddleware(function (Middleware $middleware): void {
         // This application is API-only (CLAUDE.md: "API-only, no Blade UI").

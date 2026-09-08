@@ -7,7 +7,6 @@ namespace App\Http\Resources\Admin;
 use App\Models\Organization;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * OrganizationResource (backoffice-missing-pages D2/D3).
@@ -54,18 +53,21 @@ class OrganizationResource extends JsonResource
             // and the disk differs per environment, so resolving it here is the
             // one place that knows which disk is configured — the same reason
             // `logo_path` is not accepted on the update endpoint.
-            // `Storage::url()` with NO disk argument. Naming the disk here —
-            // including by reading it back out of the filesystem config — is
-            // what `SingleStorageDiskArchTest` forbids, and it caught both
-            // attempts: a second resolution point is a second place the writer
-            // and the purge can disagree about where a file lives.
             //
-            // That test greps the SOURCE, so the forbidden expression must not
-            // appear even in prose. Worth knowing before writing a comment that
-            // quotes it.
-            'logo_url' => $organization->logo_path === null
-                ? null
-                : Storage::url($organization->logo_path),
+            // ABSOLUTE, via the model's own accessor, which resolves through
+            // the single storage configuration point with NO disk argument —
+            // naming the disk here is what `SingleStorageDiskArchTest`
+            // forbids, and it caught both attempts. That test greps the
+            // SOURCE, so the forbidden expression must not appear even in
+            // prose.
+            //
+            // Absolute rather than the rooted path this returned until
+            // image-upload-crop-field: the local disk yields `/storage/...`,
+            // and the backoffice is a different origin from this API, so the
+            // browser resolved that against the BACKOFFICE and 404'd. The
+            // file was stored correctly the whole time. An S3-style disk
+            // already answers absolutely and passes through untouched.
+            'logo_url' => $organization->absoluteLogoUrl(),
             'default_webhook_url' => $organization->default_webhook_url,
             'default_webhook_events' => $organization->default_webhook_events,
             // default_webhook_secret intentionally excluded (hidden + encrypted) —

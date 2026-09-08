@@ -4,15 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Support\Mail\MailDeliveryProbe;
 use Illuminate\Console\Command;
-use Illuminate\Mail\Transport\ArrayTransport;
-use Illuminate\Mail\Transport\LogTransport;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
-use ReflectionProperty;
-use Symfony\Component\Mailer\Transport\NullTransport;
-use Symfony\Component\Mailer\Transport\RoundRobinTransport;
-use Symfony\Component\Mailer\Transport\TransportInterface;
 use Throwable;
 
 /**
@@ -51,36 +46,6 @@ use Throwable;
  */
 class MailSelfTestCommand extends Command
 {
-    /**
-     * Transports that accept a message and deliver it nowhere. Reporting
-     * success on these is the exact lie this command exists to prevent.
-     */
-    private const NON_DELIVERING = ['log', 'array'];
-
-    /**
-     * Transport CLASSES that accept a message and deliver it nowhere.
-     *
-     * The name list above is not enough on its own, and the gap is not
-     * hypothetical: `failover` is a stock mailer in `config/mail.php:82-89`
-     * whose default members are `['smtp', 'log']`. Symfony's failover
-     * transport falls through to the next member the moment one fails, so a
-     * production `MAIL_MAILER=failover` with a broken SMTP host lands every
-     * message in `log` — and `failover` is not a name on the list, so this
-     * command printed `Sent.` and exited 0 on it. That is precisely the lie
-     * the command exists to prevent, reachable without editing any config.
-     *
-     * So the gate follows the transport that actually RESOLVES, whatever the
-     * mailer is called. `failover` and `roundrobin` are deliberately NOT
-     * added to the name list: both can genuinely deliver, and refusing them
-     * outright would trade a false pass for a false fail. A gate that cries
-     * wolf gets bypassed, which leaves you worse off than the hole it closed.
-     */
-    private const NON_DELIVERING_TRANSPORTS = [
-        ArrayTransport::class,
-        LogTransport::class,
-        NullTransport::class,
-    ];
-
     protected $signature = 'beai:mail-selftest
         {--to= : Recipient address (required). Use a real inbox on staging/prod; anything on local, Mailpit accepts it all}';
 
@@ -100,7 +65,7 @@ class MailSelfTestCommand extends Command
         repeatedly against any address, including one you do not own.
         HELP;
 
-    public function handle(): int
+    public function handle(MailDeliveryProbe $probe): int
     {
         $to = $this->option('to');
 
@@ -121,58 +86,60 @@ class MailSelfTestCommand extends Command
         $this->info("to:      {$to}");
         $this->line('');
 
-        // Step 1 — refuse a transport that cannot deliver.
+        // Steps 1 and 1b — refuse a transport that cannot deliver, BEFORE the
+        // network and before the credentials. A `log` mailer would sail
+        // through every step below and print the success this command exists
+        // to never print.
         //
-        // Before the network, before the credentials: a `log` mailer would
-        // sail through every step below and print a success this command
-        // exists to never print.
-        if (in_array($mailer, self::NON_DELIVERING, true)) {
-            $this->error("MAIL_MAILER is '{$mailer}' — this transport delivers NOTHING.");
+        // The detection lives in MailDeliveryProbe now, not here. It was
+        // correct in this file and it was never run: production sent nothing
+        // for months while this command sat unexecuted. The probe is what the
+        // worker's boot gate and the queue health surface also ask, so there
+        // is exactly one implementation and no second copy to drift.
+        $refusal = $probe->refusal();
+
+        if ($refusal !== null) {
+            // The wording is this command's own, rendered from the refusal's
+            // STRUCTURED fields rather than reusing its `detail`. Operators
+            // read these sentences and the suite pins them; the probe's detail
+            // is written for a log line and a boot gate.
+            $this->error(match ($refusal->code) {
+                'non_delivering_mailer' => "MAIL_MAILER is '{$refusal->mailer}' — this transport delivers NOTHING.",
+                'non_delivering_chain' => "MAIL_MAILER is '{$refusal->mailer}' — its transport chain reaches '{$refusal->deadEnd}', which delivers NOTHING.",
+                default => "MAIL_MAILER is '{$refusal->mailer}', but it could not be resolved to a transport.",
+            });
             $this->line('');
+
+            if ($refusal->code === 'unresolvable_transport') {
+                $this->warn('  '.$refusal->detail);
+                $this->warn('  Nothing was sent. An unresolvable transport is not a working one.');
+
+                return self::FAILURE;
+            }
+
             $this->warn('  A message sent now is written away and reaches no one, with no error.');
             $this->warn('  Every operator notification on this service is doing that right now.');
             $this->line('');
+
+            if ($refusal->code === 'non_delivering_chain') {
+                $this->warn('  The mailer NAME looked fine; the transport underneath it does not.');
+                $this->warn('  A composite (failover / roundrobin) delivers nothing the moment it');
+                $this->warn('  falls through to a member that delivers nothing.');
+                $this->line('');
+                $this->line('  Staging / prod:   every member of the chain must be a real transport.');
+
+                return self::FAILURE;
+            }
+
             $this->line('  Local:            MAIL_MAILER=smtp with MAIL_HOST=mailpit (compose pins this already)');
-            $this->line('  Staging / prod:   MAIL_MAILER=resend, RESEND_API_KEY, and a MAIL_FROM_ADDRESS');
-            $this->line('                    on a domain VERIFIED in the Resend dashboard.');
-
-            return self::FAILURE;
-        }
-
-        // Step 1b — refuse the transport that actually RESOLVES.
-        //
-        // Step 1 judges the label; this judges the thing. They are not the
-        // same question, and only one of them survives `MAIL_MAILER=failover`
-        // (see NON_DELIVERING_TRANSPORTS). It runs AFTER the name check so
-        // the overwhelmingly common `MAIL_MAILER=log` still gets its specific
-        // message without depending on a transport instantiation that can
-        // itself throw, and BEFORE the `from` check so the failure that is
-        // silent in production is always the one named first.
-        try {
-            $transport = Mail::getSymfonyTransport();
-        } catch (Throwable $e) {
-            // A typo'd MAIL_MAILER, or a driver that is not installed. Before
-            // this, the exception escaped as a stack trace. A gate must be
-            // able to say no legibly, and "cannot tell" is a no.
-            $this->error("MAIL_MAILER is '{$mailer}', but it could not be resolved to a transport.");
-            $this->line('');
-            $this->warn('  '.$e->getMessage());
-            $this->warn('  Nothing was sent. An unresolvable transport is not a working one.');
-
-            return self::FAILURE;
-        }
-
-        $deadEnd = $this->firstNonDeliveringTransport($transport);
-
-        if ($deadEnd !== null) {
-            $this->error("MAIL_MAILER is '{$mailer}' — its transport chain reaches '{$deadEnd}', which delivers NOTHING.");
-            $this->line('');
-            $this->warn('  The mailer NAME looked fine; the transport underneath it does not.');
-            $this->warn('  A composite (failover / roundrobin) delivers nothing the moment it');
-            $this->warn('  falls through to a member that delivers nothing.');
-            $this->line('');
-            $this->line("  Full chain:       {$transport}");
-            $this->line('  Staging / prod:   every member of the chain must be a real transport.');
+            // Deliberately provider-neutral. This line used to name Resend as
+            // the production transport; the deployment it describes runs on
+            // SMTP, and an instruction that contradicts the environment is the
+            // same class of stale guidance that let this failure survive.
+            $this->line('  Staging / prod:   a real transport, its credentials, and a MAIL_FROM_ADDRESS');
+            $this->line('                    on a domain VERIFIED with that provider.');
+            $this->line('  Set them on THIS service — api and worker are separate Railway services');
+            $this->line('  with separate variable sets, and the worker is the one that sends.');
 
             return self::FAILURE;
         }
@@ -242,72 +209,5 @@ class MailSelfTestCommand extends Command
         $this->warn('  its own variables, and it is the one that sends operator alerts.');
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Walk a resolved transport tree and return the name of the first member
-     * that delivers nothing, or null if every leaf can actually deliver.
-     *
-     * Returns a NAME rather than a bool on purpose. "Refused" tells an
-     * operator to go looking; "refused: the chain reaches 'log'" tells them
-     * what to change.
-     */
-    private function firstNonDeliveringTransport(TransportInterface $transport): ?string
-    {
-        // FailoverTransport EXTENDS RoundRobinTransport, so this one branch
-        // covers both stock composites — and any future one built on them.
-        if ($transport instanceof RoundRobinTransport) {
-            foreach ($this->membersOf($transport) as $member) {
-                $found = $this->firstNonDeliveringTransport($member);
-
-                if ($found !== null) {
-                    return $found;
-                }
-            }
-
-            return null;
-        }
-
-        foreach (self::NON_DELIVERING_TRANSPORTS as $class) {
-            if ($transport instanceof $class) {
-                // Every one of these stringifies to its driver name
-                // ('log', 'array', 'null://').
-                return (string) $transport;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * The members of a composite transport.
-     *
-     * Read by reflection because Symfony declares `$transports` as a PRIVATE
-     * promoted constructor property with no accessor
-     * (symfony/mailer/Transport/RoundRobinTransport.php:39). The alternative —
-     * re-walking `config('mail.mailers.*.mailers')` — would judge the config
-     * rather than the object, which is the mistake being corrected here: a
-     * composite registered through `Mail::extend()` has no such config to
-     * read.
-     *
-     * The ReflectionProperty is taken from the DECLARING class, not from
-     * `$transport::class`. A private property belongs to the class that
-     * declares it, so asking a FailoverTransport instance for its own
-     * `transports` property would not find it.
-     *
-     * @return list<TransportInterface>
-     */
-    private function membersOf(RoundRobinTransport $transport): array
-    {
-        $members = (new ReflectionProperty(RoundRobinTransport::class, 'transports'))->getValue($transport);
-
-        if (! is_array($members)) {
-            return [];
-        }
-
-        return array_values(array_filter(
-            $members,
-            static fn (mixed $member): bool => $member instanceof TransportInterface,
-        ));
     }
 }

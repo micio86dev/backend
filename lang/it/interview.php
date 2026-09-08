@@ -18,7 +18,8 @@ declare(strict_types=1);
  *
  * `opening.*` (PR3, design D9): il saluto iniziale pronunciato dall'avatar per
  * ciascuna variante, composto da App\Services\Conversation\OpeningTextComposer.
- * `:competency` viene sostituito con il nome visualizzato della competenza.
+ * `:competency` viene sostituito con il nome visualizzato della competenza, e
+ * `:question` — solo in `retry_authored` — con la domanda scritta dall'operatore.
  *
  * OGNI variante TERMINA CON UNA DOMANDA, e non è cosmesi. Prima annunciavano
  * soltanto l'argomento: il provider pronunciava la frase, l'LLM non aveva alcun
@@ -38,5 +39,15 @@ return [
         'next' => 'Bene, passiamo ora a parlare di :competency. Raccontami un episodio specifico in cui questo è emerso: cosa è successo?',
         'resume' => 'Riprendiamo da dove eravamo rimasti, parlando di :competency. Vai pure avanti da dove ti eri fermato.',
         'retry' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo con :competency. Raccontami un episodio specifico in cui questo è emerso: cosa è successo?',
+
+        /*
+         * `retry` quando l'operatore ha scritto lui la domanda. Le varianti
+         * `first`/`next` in quel caso non usano alcun template: la domanda
+         * autorale È l'apertura. `retry` no, e non è un'eccezione cosmetica:
+         * le scuse non sono un saluto, sono la spiegazione di un guasto
+         * NOSTRO. Toglierle farebbe leggere la ripetizione come "non mi hai
+         * ascoltato".
+         */
+        'retry_authored' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo. :question',
     ],
 ];

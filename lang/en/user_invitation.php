@@ -36,7 +36,16 @@ return [
         .'Candidates talk to an AI interviewer, and BEAI scores what they said against '
         .'behavioural competency anchors, producing a structured evaluation.',
 
+    // A platform invitation names no organization: substituting BEAI would
+    // read ":inviter added you to BEAI on BEAI."
+    'intro_platform' => ':inviter added you to the BEAI platform team.',
+
     'your_role_heading' => 'What you can do',
+
+    'role_superadmin' => 'You are a PLATFORM ADMINISTRATOR of BEAI. You can see and act on every '
+        .'client on the platform, switch between them, change platform-wide settings, '
+        .'and invite other members of the BEAI team. This is the widest access the '
+        .'product has: nothing here is scoped to a single organization.',
 
     'role_admin' => 'You are an ADMINISTRATOR. You can do everything an operator can, '
         .'and you alone can change organization settings — branding, API keys, model '

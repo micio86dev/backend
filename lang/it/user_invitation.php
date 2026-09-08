@@ -23,7 +23,16 @@ return [
         .'valuta quanto hanno detto rispetto ad ancore comportamentali di competenza, '
         .'producendo una valutazione strutturata.',
 
+    // A platform invitation names no organization: substituting BEAI would
+    // read ":inviter added you to BEAI on BEAI."
+    'intro_platform' => ':inviter ti ha aggiunto al team di piattaforma BEAI.',
+
     'your_role_heading' => 'Cosa puoi fare',
+
+    'role_superadmin' => 'Sei un AMMINISTRATORE DI PIATTAFORMA di BEAI. Puoi vedere e operare su ogni '
+        .'cliente della piattaforma, passare dall\'uno all\'altro, modificare le impostazioni '
+        .'globali e invitare altri membri del team BEAI. È l\'accesso più ampio che il '
+        .'prodotto preveda: qui nulla è limitato a una singola organizzazione.',
 
     'role_admin' => 'Sei un AMMINISTRATORE. Puoi fare tutto ciò che fa un operatore e, '
         .'in più, sei l\'unico a poter modificare le impostazioni dell\'organizzazione '
