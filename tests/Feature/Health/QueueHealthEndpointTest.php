@@ -15,6 +15,7 @@ use App\Contracts\RedisEvictionPolicyProbe;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 // RED — 3.9 (backoffice-session-refresh-hardening D3): the resolved Redis
@@ -170,4 +171,84 @@ test('reservation_stalled is true and status is degraded when a reserved job exc
         ->assertJsonPath('status', 'degraded');
 
     expect($response->json('queue.oldest_reserved_age_seconds'))->toBeGreaterThanOrEqual(1400);
+});
+
+/**
+ * RED — the resolved mailer is on the payload (mail-delivery-guard, 2026-09-08).
+ *
+ * The worker boot gate catches a misconfigured DEPLOY. It cannot catch a
+ * variable changed after the process started, and it says nothing to anyone
+ * watching a dashboard. This does both: the mailer this worker actually
+ * resolved is reported on every response, in every state.
+ */
+test('the resolved mailer is reported on an ok payload', function (): void {
+    Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
+    config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'mailpit']);
+    Mail::forgetMailers();
+
+    $this->getJson('/api/health/queue')
+        ->assertStatus(200)
+        ->assertJsonPath('mail.mailer', 'smtp')
+        ->assertJsonPath('mail.delivers', true);
+});
+
+test('the mailer is reported even while the worker is DOWN', function (): void {
+    // Surfaced on every branch, not only the healthy one — the same rule
+    // redis_eviction_policy follows, and for the same reason: config drift
+    // must stay observable while the thing is broken.
+    Cache::forget('beai:queue:heartbeat');
+    config(['mail.default' => 'log']);
+    Mail::forgetMailers();
+
+    $this->getJson('/api/health/queue')
+        ->assertStatus(503)
+        ->assertJsonPath('mail.mailer', 'log')
+        ->assertJsonPath('mail.delivers', false);
+});
+
+test('a non-delivering mailer degrades the payload IN PRODUCTION', function (): void {
+    Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
+    DB::table('failed_jobs')->delete();
+    app()->detectEnvironment(static fn (): string => 'production');
+    config(['mail.default' => 'log']);
+    Mail::forgetMailers();
+
+    $this->getJson('/api/health/queue')
+        ->assertStatus(200)
+        ->assertJsonPath('status', 'degraded')
+        ->assertJsonPath('mail.delivers', false);
+});
+
+test('a non-delivering mailer does NOT degrade outside production', function (): void {
+    // `array` is what phpunit.xml pins and what local dev uses. Reporting
+    // this suite as degraded would train everyone to ignore the field.
+    Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
+    DB::table('failed_jobs')->delete();
+    config(['mail.default' => 'array']);
+    Mail::forgetMailers();
+
+    $this->getJson('/api/health/queue')
+        ->assertStatus(200)
+        ->assertJsonPath('status', 'ok')
+        ->assertJsonPath('mail.delivers', false);
+});
+
+test('the payload never carries the mail credentials', function (): void {
+    // This endpoint is UNAUTHENTICATED. It reports counts, ages and booleans;
+    // a host and a username are neither, and neither belongs on a surface a
+    // Railway probe can reach without a token.
+    Cache::put('beai:queue:heartbeat', now()->timestamp, 300);
+    config([
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'out.example.test',
+        'mail.mailers.smtp.username' => 'a-username',
+        'mail.mailers.smtp.password' => 'a-password',
+    ]);
+    Mail::forgetMailers();
+
+    $body = $this->getJson('/api/health/queue')->content();
+
+    expect($body)->not->toContain('out.example.test');
+    expect($body)->not->toContain('a-username');
+    expect($body)->not->toContain('a-password');
 });

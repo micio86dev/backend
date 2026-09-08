@@ -6,7 +6,9 @@ namespace App\Http\Controllers;
 
 use App\Contracts\RedisEvictionPolicyProbe;
 use App\Providers\QueueRuntimeServiceProvider;
+use App\Support\Mail\MailDeliveryProbe;
 use App\Support\Queue\ReservedJobAgeProbe;
+use Illuminate\Foundation\Application;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -35,12 +37,35 @@ use Illuminate\Support\Facades\Queue;
  */
 class QueueHealthController extends Controller
 {
-    public function __invoke(ReservedJobAgeProbe $reservedJobAgeProbe, RedisEvictionPolicyProbe $evictionPolicyProbe): JsonResponse
-    {
+    public function __invoke(
+        ReservedJobAgeProbe $reservedJobAgeProbe,
+        RedisEvictionPolicyProbe $evictionPolicyProbe,
+        MailDeliveryProbe $mailProbe,
+    ): JsonResponse {
         // backoffice-session-refresh-hardening D3: surfaced on EVERY response
         // (not only the "ok" branch) so eviction-policy drift is observable
         // even while the worker itself is down.
         $redisEvictionPolicy = $evictionPolicyProbe->resolve();
+
+        // mail-delivery-guard: the mailer THIS process resolved, on every
+        // branch — same rule as redis_eviction_policy above, and for the same
+        // reason. The worker's boot gate catches a misconfigured deploy; it
+        // cannot catch a variable changed after the process started, and it
+        // tells nobody watching a dashboard.
+        //
+        // The NAME and a boolean, never the host, username or password: this
+        // endpoint is unauthenticated so a Railway probe can reach it, and a
+        // credential is not a count, an age or a boolean.
+        $mail = [
+            'mailer' => $mailProbe->mailerName(),
+            'delivers' => $mailProbe->delivers(),
+        ];
+
+        // Degrading is PRODUCTION-only. `log` and `array` are the correct
+        // answers locally and in CI (phpunit.xml pins `array` so the suite
+        // never sends), and a field that reports every developer machine as
+        // degraded is a field everyone learns to ignore.
+        $mailDegraded = $mail['delivers'] === false && $this->app()->environment('production');
 
         $heartbeatAt = Cache::get(QueueRuntimeServiceProvider::HEARTBEAT_KEY);
         $heartbeatAgeSeconds = $heartbeatAt !== null ? max(0, now()->getTimestamp() - (int) $heartbeatAt) : null;
@@ -62,6 +87,7 @@ class QueueHealthController extends Controller
                 'queue' => null,
                 'failed' => null,
                 'redis_eviction_policy' => $redisEvictionPolicy,
+                'mail' => $mail,
             ], 503);
         }
 
@@ -83,7 +109,7 @@ class QueueHealthController extends Controller
             ? max(0, now()->getTimestamp() - Carbon::parse($oldestFailedAt)->getTimestamp())
             : null;
 
-        $degraded = $stalled || $reservationStalled || $failedCount > 0;
+        $degraded = $stalled || $reservationStalled || $failedCount > 0 || $mailDegraded;
 
         return response()->json([
             'status' => $degraded ? 'degraded' : 'ok',
@@ -103,6 +129,13 @@ class QueueHealthController extends Controller
                 'oldest_age_seconds' => $failedOldestAgeSeconds,
             ],
             'redis_eviction_policy' => $redisEvictionPolicy,
+            'mail' => $mail,
         ], 200);
+    }
+
+    /** Resolved through the container so the environment is the app's, not a global. */
+    private function app(): Application
+    {
+        return app();
     }
 }

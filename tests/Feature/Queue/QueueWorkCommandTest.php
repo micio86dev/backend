@@ -29,6 +29,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\QueueWorkCommand;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Console\Exception\InvalidOptionException;
 
 test('beai:queue-work has no --tries option in its definition', function (): void {
@@ -84,4 +85,65 @@ test('beai:queue-work forwards a comma-joined --queue when multiple worker_queue
 
     expect($command->recordedCalls)->toHaveCount(1)
         ->and($command->recordedCalls[0][1]['--queue'])->toBe('default,webhooks');
+});
+
+/**
+ * RED — the worker refuses to start when it cannot deliver mail
+ * (mail-delivery-guard, 2026-09-08).
+ *
+ * The Railway `worker` service had no `MAIL_MAILER`, so `config/mail.php:17`
+ * resolved it to `log`. Every notification in this system is queued, which
+ * makes the worker the only process that sends — so invitations, password
+ * resets and operator alerts were written to a log file and reported as
+ * delivered, for months, with a green health check the whole time.
+ *
+ * `MailSelfTestCommand` could already detect it and was never run. This gate
+ * runs by itself, on every container start: a misconfigured deploy does not
+ * start, instead of quietly discarding mail.
+ *
+ * Scoped to production. `log` and `array` are correct locally and in CI —
+ * `phpunit.xml` pins `array` precisely so the suite never sends — and a gate
+ * that failed there would be turned off within a day.
+ */
+test('the worker REFUSES to start in production when the mailer delivers nothing', function (): void {
+    app()->instance(QueueWorkCommand::class, new RecordingQueueWorkCommand);
+    app()->detectEnvironment(static fn (): string => 'production');
+    config(['mail.default' => 'log']);
+
+    $exit = Artisan::call('beai:queue-work');
+
+    expect($exit)->toBe(1);
+    expect(Artisan::output())->toContain('log');
+});
+
+test('the refusal names the mailer, so the fix is the next thing an operator reads', function (): void {
+    app()->instance(QueueWorkCommand::class, new RecordingQueueWorkCommand);
+    app()->detectEnvironment(static fn (): string => 'production');
+    config(['mail.default' => 'log']);
+
+    Artisan::call('beai:queue-work');
+
+    expect(Artisan::output())->toContain('MAIL_MAILER');
+});
+
+test('a production worker with a real transport starts normally', function (): void {
+    $recording = new RecordingQueueWorkCommand;
+    app()->instance(QueueWorkCommand::class, $recording);
+    app()->detectEnvironment(static fn (): string => 'production');
+    config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'mailpit']);
+    Mail::forgetMailers();
+
+    expect(Artisan::call('beai:queue-work'))->toBe(0);
+    expect($recording->recordedCalls[0][0] ?? null)->toBe('queue:work');
+});
+
+test('the gate does NOT fire outside production — array is correct in CI', function (): void {
+    // A gate that failed the test suite, where `array` is pinned on purpose,
+    // would be disabled within a day and protect nothing.
+    $recording = new RecordingQueueWorkCommand;
+    app()->instance(QueueWorkCommand::class, $recording);
+    config(['mail.default' => 'array']);
+
+    expect(Artisan::call('beai:queue-work'))->toBe(0);
+    expect($recording->recordedCalls[0][0] ?? null)->toBe('queue:work');
 });
