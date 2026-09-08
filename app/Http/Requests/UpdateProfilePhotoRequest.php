@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\UploadedFile;
 
 /**
  * UpdateProfilePhotoRequest (user-avatar-image, design D3/D3b).
@@ -55,6 +56,56 @@ class UpdateProfilePhotoRequest extends FormRequest
     {
         return [
             'photo' => ['required', 'file', 'max:2048'],
+        ];
+    }
+
+    /**
+     * Machine CODES here too, matching the controller (profile-photo-error-codes).
+     *
+     * This layer runs FIRST, and its `max:2048` is 2048 KB — exactly the
+     * `profile.photo.max_bytes` default of 2 097 152. So at default config the
+     * controller's own `photo_too_large` is unreachable: every oversized file
+     * is already rejected here, and it was rejected with Laravel's English
+     * prose. Renaming only the controller's messages left the path an operator
+     * actually hits still answering in the wrong language.
+     *
+     * The controller's checks stay: they read the CONFIG rather than this
+     * literal, so they remain the enforcement the moment the two diverge.
+     *
+     * `photo.file` answers TWO different questions, so its code is resolved
+     * from the upload error rather than fixed. `config/profile.php` records
+     * why: there is no `php.ini` in `api/docker/`, so PHP's compiled
+     * `upload_max_filesize=2M` is the REAL ceiling and fires before Laravel
+     * sees the size at all. `UploadedFile::isValid()` is then false, the
+     * `file` rule fails, and a fixed `photo_invalid_image` would tell an
+     * operator their perfectly good photo was corrupt when it was merely
+     * large — the most common oversize path in production, answered wrongly.
+     *
+     * The key is `photo.uploaded`, not `photo.file`: Laravel's `file` rule
+     * delegates to `uploaded`, and that is the message a PHP-level failure
+     * resolves against. And only the SIZE errors map to too_large — a partial
+     * transfer or a missing tmp directory is a genuine upload failure, and
+     * calling it "too large" would send the operator shrinking a file that was
+     * never the problem.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        $photo = $this->file('photo');
+
+        // PHP's own size refusals, which never reach Laravel's `max:`.
+        $refusedForSize = $photo instanceof UploadedFile
+            && in_array($photo->getError(), [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true);
+
+        return [
+            'photo.required' => 'photo_required',
+            'photo.file' => 'photo_invalid_image',
+            // `file` delegates to `uploaded`, so THIS is the key a PHP-level
+            // upload failure lands on — not `photo.file`, which is what the
+            // first attempt assumed and what the test caught.
+            'photo.uploaded' => $refusedForSize ? 'photo_too_large' : 'photo_upload_failed',
+            'photo.max' => 'photo_too_large',
         ];
     }
 }

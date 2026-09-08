@@ -25,6 +25,13 @@ use Throwable;
  * `/api/profile` resource, never inside it. Self-resolving exactly like
  * ProfileController: the subject is `$request->user()`, never a route
  * parameter (guarded by ProfileNoIdParamArchTest).
+ * MESSAGES ARE MACHINE CODES, never sentences (profile-photo-error-codes).
+ * A response body is machine-facing: this API has no idea what language the
+ * reader speaks, and i18n it/en is binding on error states. The three
+ * rejections here used to send English prose straight through
+ * `applyServerFieldErrors` into an Italian operator's field error. The logo
+ * endpoint next door already returns `logo_invalid_image` and friends, and
+ * the backoffice already renders codes through `translateServerCode`.
  */
 class ProfilePhotoController extends Controller
 {
@@ -62,7 +69,7 @@ class ProfilePhotoController extends Controller
 
         if ($extension === null) {
             throw ValidationException::withMessages([
-                'photo' => ['The photo must be a valid JPEG or PNG image.'],
+                'photo' => ['photo_invalid_image'],
             ]);
         }
 
@@ -76,7 +83,7 @@ class ProfilePhotoController extends Controller
 
         if ($file->getSize() > $maxBytes) {
             throw ValidationException::withMessages([
-                'photo' => ['The photo exceeds the maximum allowed size.'],
+                'photo' => ['photo_too_large'],
             ]);
         }
 
@@ -85,7 +92,7 @@ class ProfilePhotoController extends Controller
 
         if ($dimensions === false || $dimensions[0] > $maxDimension || $dimensions[1] > $maxDimension) {
             throw ValidationException::withMessages([
-                'photo' => ['The photo dimensions are invalid or exceed the maximum allowed size.'],
+                'photo' => ['photo_dimensions_invalid'],
             ]);
         }
 
