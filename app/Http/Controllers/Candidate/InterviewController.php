@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
+use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
 use App\Enums\ProviderFailureClass;
@@ -63,6 +64,7 @@ class InterviewController extends Controller
     public function __construct(
         private readonly SystemPromptComposer $composer,
         private readonly OpeningTextComposer $openingComposer,
+        private readonly SettleParticipantCompletion $settleCompletion,
         private readonly SessionLiveClock $liveClock,
         private readonly InterviewSessionLlmSnapshot $llmSnapshot,
         private readonly RecordConversationLlmUsage $recordLlmUsage,
@@ -270,9 +272,30 @@ class InterviewController extends Controller
             $isFirst => 'first',
             default => 'next',
         };
-        $competencyName = Competency::where('code', $nextCompetency['competency_code'])->first()
-            ?->getTranslation('name', $project->language) ?? $nextCompetency['competency_code'];
-        $openingText = $this->openingComposer->compose($openingVariant, $competencyName, $project->language)->text;
+        $openingCompetency = Competency::where('code', $nextCompetency['competency_code'])->first();
+        $competencyName = $openingCompetency?->getTranslation('name', $project->language)
+            ?? $nextCompetency['competency_code'];
+
+        // The operator's OWN first question for this competency, when there is
+        // one (ratified 2026-09-08). Reported from production: an operator
+        // authored their questions and the avatar still opened with the
+        // template's generic "raccontami un episodio", so the first thing any
+        // candidate ever heard was never the operator's. The questions were
+        // already reaching the system prompt as mandatory — the trouble was
+        // ORDER, not plumbing.
+        //
+        // Only the FIRST is handed over. The rest stay in the prompt's
+        // must-ask section, so opening on question one does not consume the
+        // others. The composer decides what to do per variant: `resume`
+        // ignores it entirely, since that variant continues an episode already
+        // under way.
+        $authoredOpening = $openingCompetency === null
+            ? null
+            : ($this->authoredQuestionsFor($project, $openingCompetency->id)[0] ?? null);
+
+        $openingText = $this->openingComposer
+            ->compose($openingVariant, $competencyName, $project->language, $authoredOpening)
+            ->text;
 
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
@@ -1129,83 +1152,21 @@ class InterviewController extends Controller
     }
 
     /**
-     * Settle the participant when every competency of the project is terminal (D5).
+     * Settle the participant when every competency of the project is terminal.
      *
-     * Extracted from `/end` steps (7)+(8) and called from three places, because an
-     * interview can finish in three ways and only one of them was covered:
-     *   1. `/end` — a competency ends normally.
-     *   2. `handleProviderFailure()` — the LAST competency dies at the provider.
-     *   3. `start()`'s `no_competency_remaining` branch — idempotent self-heal for a
-     *      participant stranded before this change who comes back.
+     * The body MOVED to `App\Actions\Interview\SettleParticipantCompletion`
+     * (stale-interview-reaper D1). It was already documented as existing "so
+     * the two other paths that can finish an interview reach the same code";
+     * the scheduled sweep that ends an ABANDONED interview is the fourth such
+     * path, and it could not call a private method.
      *
-     * THE DEFECT THIS REPAIRS: the tally counted only `completed|timeout|skipped`
-     * while `resolveNextCompetency()` treats `error` as terminal and skips it. A
-     * participant with one errored competency exhausted every competency while the
-     * count stayed at `total - 1`, so the CAS never fired — no scoring, no webhook,
-     * no notification, and nothing anywhere reported it.
-     *
-     * An `error` counts only once it has spent its re-offer. This predicate and the
-     * re-offer branch in `resolveNextCompetency()` are two halves of ONE behaviour
-     * and cannot ship apart: count errors too early and a single transient provider
-     * 4xx — our own bug — ends the interview with no second chance; count them too
-     * late and a competency the resolver skips is never tallied, which is the
-     * stranding this method exists to end, wearing a different name.
-     *
-     * The `where('status','in_corso')` predicate is the single-winner guard and the
-     * reason this is safe to call from anywhere: a participant already at
-     * `in_valutazione`, `errore` or `completato` matches zero rows, so a second call
-     * is a no-op rather than a second dispatch.
+     * This wrapper stays so the three existing call sites read unchanged, and
+     * so there is still exactly one name in this file for "settle if the
+     * interview is over".
      */
     private function settleCompletionIfFinished(int $participantId, int $projectId): void
     {
-        $tally = new CompetencyTally;
-        $endedCount = $tally->ended($participantId, $projectId);
-        $totalCompetencies = $tally->total($projectId);
-
-        if ($endedCount !== $totalCompetencies || $totalCompetencies === 0) {
-            return;
-        }
-
-        // `organization_id` is a PREDICATE here, not an argument about call
-        // sites. `Participant` extends plain Model — no global scope — and the
-        // repo rule is that it is never queried without this filter. Every
-        // other Participant access in app/ carries it; this was the one that
-        // did not, and it is a WRITE.
-        //
-        // Not exploitable today, because `$participantId` arrives either from
-        // the authenticated candidate or from a session resolved through
-        // `ResolvesOwnedSession` (InterviewSession IS a TenantModel). But that
-        // is an argument about three call sites, and the next call site added
-        // is the one that breaks it. Read from the project rather than trusted
-        // from the caller, so the invariant is local to this query.
-        $orgId = Project::whereKey($projectId)->value('organization_id');
-
-        if ($orgId === null) {
-            // The filter is correct and stays. What must not be silent is the
-            // case where it cannot be resolved: `Project` soft-deletes and runs
-            // through the tenant scope, so a null here makes the update match
-            // zero rows, `$won !== 1`, and the participant stays `in_corso`
-            // with no scoring, no webhook and no notification — verbatim the
-            // stranding this method exists to end, reached by another route.
-            Log::error('C7a: cannot settle completion — project did not resolve', [
-                'participant_id' => $participantId,
-                'project_id' => $projectId,
-            ]);
-
-            return;
-        }
-
-        $won = Participant::where('id', $participantId)
-            ->where('organization_id', $orgId)
-            ->where('status', 'in_corso')
-            ->update(['status' => 'in_valutazione']);
-
-        if ($won === 1) {
-            // afterCommit() attaches to the caller's transaction when there is one
-            // (/end) and dispatches immediately when there is not (the two /start
-            // call sites, which hold no transaction).
-            FinalizeInterview::dispatch($participantId)->afterCommit();
-        }
+        $this->settleCompletion->settleIfFinished($participantId, $projectId);
     }
 
     /**
@@ -1588,9 +1549,13 @@ class InterviewController extends Controller
     {
         $fallback = (string) config('app.fallback_locale');
 
-        $locale = ($language !== null && Lang::has('interview.end_phrase', $language))
-            ? $language
-            : $fallback;
+        // `Lang::get()` resolves the fallback itself, so the locale goes
+        // straight through. The removed `Lang::has($key, $language)` guard
+        // claimed to check the EXACT locale; `Translator::has()`'s third
+        // argument defaults to true, so it answered true for locales with no
+        // file on disk — and `Lang::get()` fell back regardless, which made
+        // the guard unobservable. Same correction as OpeningTextComposer's.
+        $locale = $language ?? $fallback;
 
         // Both keys resolve to scalar strings (leaf entries in lang/{locale}/interview.php).
         $endPhrase = (string) Lang::get('interview.end_phrase', [], $locale);

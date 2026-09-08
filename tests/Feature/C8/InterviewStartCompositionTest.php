@@ -799,3 +799,94 @@ test('an authored question written only in another locale is still asked', funct
 
     expect($capturedContextBody['prompt'])->toContain('Raccontami di una volta in cui hai gestito un conflitto.');
 });
+
+test('the SPOKEN opening is the operator\'s first authored question, not a template', function (): void {
+    /**
+     * RED — reported from production 2026-09-08.
+     *
+     * An operator authored their questions, opened the interview, and heard
+     * "Parliamo di problem solving… raccontami un episodio" — a sentence they
+     * had never written. Their questions were reaching the system prompt as
+     * mandatory the whole time; the trouble was ORDER. The template already
+     * asked a generic question, so the first thing any candidate ever heard
+     * was never the operator's own.
+     *
+     * Asserted on `opening_text` — the field HeygenProvider sends as the
+     * avatar's first spoken line — because that IS the thing the candidate
+     * hears. Asserting on the prompt would pass on the broken behaviour.
+     */
+    Queue::fake();
+
+    $capturedContextBody = [];
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedContextBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-opening']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-opening', 'session_token' => 'tok-opening']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scenario = c8SeedStandardScenario('en');
+
+    ProjectQuestion::create([
+        'project_id' => $scenario['project']->id,
+        'competency_id' => $scenario['competency']->id,
+        'text' => ['en' => 'Second authored question.'],
+        'position' => 2,
+    ]);
+    ProjectQuestion::create([
+        'project_id' => $scenario['project']->id,
+        'competency_id' => $scenario['competency']->id,
+        'text' => ['en' => 'Walk me through a time you handled a hostile client.'],
+        'position' => 1,
+    ]);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    expect($capturedContextBody['opening_text'])
+        ->toBe('Walk me through a time you handled a hostile client.');
+
+    // The remaining authored questions are still mandatory in the prompt —
+    // opening on the first one must not consume the rest.
+    expect($capturedContextBody['prompt'])->toContain('Second authored question.');
+});
+
+test('a competency with NO authored question keeps the welcome template', function (): void {
+    // The template is not dead code: it is what an operator who authored
+    // nothing still gets, and it must keep ending in a question or the LLM has
+    // no user turn to answer and waits.
+    Queue::fake();
+
+    $capturedContextBody = [];
+    Http::fake(function ($request) use (&$capturedContextBody) {
+        if (str_contains($request->url(), '/contexts')) {
+            $capturedContextBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-template']], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-template', 'session_token' => 'tok-template']], 200);
+        }
+
+        return Http::response([], 200);
+    });
+
+    $scenario = c8SeedStandardScenario('en');
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    expect($capturedContextBody['opening_text'])
+        ->toBe(trans('interview.opening.first', ['competency' => $scenario['competency']->getTranslation('name', 'en')], 'en'));
+});
