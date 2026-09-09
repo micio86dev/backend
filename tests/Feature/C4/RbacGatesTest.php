@@ -113,7 +113,13 @@ test('admin → DELETE → 204', function (): void {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
-    $project = Project::factory()->create(['framework_version_id' => $fv->id]);
+    // ARCHIVED: this case is about the ROLE gate. A draft would pass the
+    // status gate too — `destroy` refuses only `active` — so this is the
+    // realistic shape of the act, not a workaround.
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'archived',
+    ]);
 
     $this->withToken($token)->deleteJson("/api/projects/{$project->id}")->assertNoContent();
 });

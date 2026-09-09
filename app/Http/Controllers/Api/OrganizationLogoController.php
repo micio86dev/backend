@@ -58,6 +58,30 @@ final class OrganizationLogoController extends Controller
             // MIME type it likes — so it is a cheap first filter, never the
             // decision. Step 2 is the decision.
             'logo' => ['required', 'file', 'mimes:jpg,jpeg,png', 'max:2048'],
+        ], [
+            // CODES, matching the ones the two checks below already throw. A
+            // rule with no code answers in English prose under the same `logo`
+            // key, and the backoffice — which cannot translate what it has no
+            // key for — prints that sentence into an Italian field error.
+            //
+            // `logo.uploaded`, not `logo.file`, is the key that resolves when
+            // the upload itself failed: Laravel's `file` rule DELEGATES to
+            // `uploaded`. And that is the path production actually takes.
+            // There is no `php.ini` in `api/docker/`, so PHP's compiled
+            // `upload_max_filesize=2M` fires before Laravel ever sees the
+            // size, and `config/branding.php` says an oversize logo "is almost
+            // always an unoptimised export" — the ordinary case, not the edge.
+            //
+            // Only the SIZE errors map to too_large. A partial transfer or a
+            // missing tmp directory is a genuine upload failure, and calling
+            // it "too large" sends the operator shrinking a file that was
+            // never the problem. Same resolution
+            // `UpdateProfilePhotoRequest::messages()` already documents.
+            'logo.required' => 'logo_required',
+            'logo.file' => 'logo_invalid_image',
+            'logo.mimes' => 'logo_invalid_image',
+            'logo.uploaded' => $this->refusedForSize($request) ? 'logo_too_large' : 'logo_upload_failed',
+            'logo.max' => 'logo_too_large',
         ]);
 
         /** @var UploadedFile $file */
@@ -163,5 +187,19 @@ final class OrganizationLogoController extends Controller
                 'exception' => $e::class,
             ]);
         }
+    }
+
+    /**
+     * PHP's own size refusals, which never reach Laravel's `max:` rule.
+     *
+     * `UPLOAD_ERR_INI_SIZE` / `UPLOAD_ERR_FORM_SIZE` mean the file WAS too
+     * large; every other upload error means the transfer broke.
+     */
+    private function refusedForSize(Request $request): bool
+    {
+        $logo = $request->file('logo');
+
+        return $logo instanceof UploadedFile
+            && in_array($logo->getError(), [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true);
     }
 }

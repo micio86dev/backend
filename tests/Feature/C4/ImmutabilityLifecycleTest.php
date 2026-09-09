@@ -255,6 +255,8 @@ test('slug reuse after soft-delete same org same slug → 201', function (): voi
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
         'slug' => 'reusable-slug',
+        // ARCHIVED: deletion is gated on it, and this case is about slug reuse.
+        'status' => 'archived',
     ]);
 
     // Soft-delete it

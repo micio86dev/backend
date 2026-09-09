@@ -35,9 +35,9 @@ class ProjectResource extends JsonResource
      * `(int)` cast; nullable ints use the ternary form so `null` never
      * becomes `0`.
      *
-     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string, llm_model: string|null}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
+     * @return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, error_redirect_url: string|null, avatar_template_id: int, avatar_template: array{id: int, name: string, provider: string, llm_model: string|null}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      *
-     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_template_id: int|null, avatar_template: array{id: int, name: string, provider: string, llm_model: string|null}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
+     * @scramble-return array{id: int, organization_id: int, framework_version_id: int, slug: string, name: string, assessment_type: 'standard'|'potential', role_code: string|null, language: string, status: 'draft'|'active'|'archived', pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, error_redirect_url: string|null, avatar_template_id: int, avatar_template: array{id: int, name: string, provider: string, llm_model: string|null}|null, webhook_url: string|null, webhook_events: list<string>, has_webhook_secret: bool, deadline_at: string|null, goes_live_at: string|null, created_at: string|null, updated_at: string|null, pin_context: array{id: int, version: string, label: string|null, is_locked: bool}|null, competencies: list<array{id: int, code: string, type: string, position: int}>, can: array{update: bool, delete: bool}}
      */
     public function toArray(Request $request): array
     {
@@ -61,9 +61,19 @@ class ProjectResource extends JsonResource
                 ? null
                 : (int) $project->nudge_min_chars,
             'exit_redirect_url' => $project->exit_redirect_url,
-            // Null means "no template pinned — the organization's active one
-            // applies", NOT "no template will be used". The backoffice needs
-            // the two states distinguishable to label the control honestly.
+            // Round-trips like every other writable setting. It did not: both
+            // FormRequests accept it and `$fillable` carries it, but no
+            // admin-facing response gave it back, so the edit form could not
+            // render what was configured. `ParticipantResource` exposes it to
+            // the CANDIDATE's browser for error recovery — a different
+            // consumer, and not a substitute for the operator seeing their own
+            // setting.
+            'error_redirect_url' => $project->error_redirect_url,
+            // Never null: the column is NOT NULL since the 2026-09-01
+            // migration and both FormRequests require it, which is why the
+            // published shape says `int`. It used to read "null means no
+            // template pinned — the organization's active one applies", and
+            // that fallback no longer exists.
             'avatar_template_id' => $project->avatar_template_id,
             // The id alone cannot fill a column in the projects table: it says
             // 7, not "Ada on Tavus". The PROVIDER especially — the template is
@@ -75,9 +85,20 @@ class ProjectResource extends JsonResource
             // Nested, like `pin_context` and `competencies`, rather than two
             // flat keys: these are one thing's attributes, and flattening
             // invites a third field added in one place and forgotten in the
-            // other. Null-guarded even though the column is NOT NULL, because
-            // this reads through a relation the caller must eager-load and an
-            // unloaded one must render as absent, never fatal.
+            // other. Null-guarded, and the real null case is neither of the
+            // two an earlier comment here claimed. The FK is NOT NULL, and
+            // nothing in this app calls `preventLazyLoading()` — so a caller
+            // who forgets the eager-load gets a silent N+1, not a null and not
+            // a loud failure.
+            //
+            // What DOES produce null is a SOFT-DELETED template:
+            // `AvatarTemplate` uses SoftDeletes, so a project can legitimately
+            // point at a row the default scope no longer returns. Rendering
+            // `avatar_template: null` beside a non-null `avatar_template_id`
+            // is the honest answer to that — the pin still names a template,
+            // and the template is gone. `InterviewController` states the same
+            // fact at its `$pinnedProvider` read and falls back to the
+            // configured provider there.
             'avatar_template' => $project->avatarTemplate === null ? null : [
                 'id' => (int) $project->avatarTemplate->id,
                 'name' => $project->avatarTemplate->name,
@@ -129,7 +150,14 @@ class ProjectResource extends JsonResource
             // independently, and a hidden button is not a closed door.
             'can' => [
                 'update' => $this->allows($request, 'update', $project),
-                'delete' => $this->allows($request, 'delete', $project),
+                // The POLICY half AND the state half. The policy deliberately
+                // answers only `who` — `Gate::before` short-circuits it, so a
+                // lifecycle invariant cannot live there — but this flag draws
+                // a button, and a button that is always answered with a 409
+                // is worse than one that is not offered. The endpoint still
+                // enforces both independently; this is the rendering hint.
+                'delete' => $this->allows($request, 'delete', $project)
+                    && $project->status !== 'active',
             ],
         ];
     }

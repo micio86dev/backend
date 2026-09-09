@@ -90,6 +90,43 @@ class FrameworkController extends Controller
     }
 
     /**
+     * GET /api/framework/potential-competencies
+     *
+     * The competencies a `potential` assessment scores: MTG and LAT.
+     *
+     * They belong to NO role — that is what makes them the potential set —
+     * so `roleCompetencies` above cannot serve them, and the backoffice was
+     * building them locally from two hardcoded codes with no `id`. Without an
+     * id `CompetencyPicker` refuses to tick a box, so a `potential` project
+     * could not have its competencies selected at all: both boxes rendered,
+     * neither responded, and an already-persisted set rendered unchecked.
+     *
+     * Driven by `type`, never by a hardcoded code list: the catalogue decides
+     * which competencies are potential, and a third one must appear here the
+     * day it is authored rather than the day someone edits this method.
+     *
+     * `bars_available` is deliberately false for every row. Coverage is a
+     * question about a role×competency pair, and these belong to no role —
+     * the same reason the frontend's local list answered `null` for it.
+     */
+    public function potentialCompetencies(Request $request): JsonResponse
+    {
+        $this->resolveLocale($request);
+
+        $competencies = Competency::query()
+            ->where('type', 'potential')
+            ->orderBy('code')
+            ->get();
+
+        $resources = $competencies->map(
+            fn (Competency $competency): CompetencyResource => (new CompetencyResource($competency))
+                ->additional(['bars_covered_ids' => []])
+        );
+
+        return CompetencyResource::collection($resources)->response();
+    }
+
+    /**
      * GET /api/framework/roles/{roleCode}/competencies/{competencyCode}/indicators
      *
      * Returns BARS indicators + anchors for a role×competency pair.

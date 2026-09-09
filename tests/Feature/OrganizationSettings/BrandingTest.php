@@ -124,10 +124,120 @@ test('a value that is not a hex colour is refused', function (): void {
     foreach (['red', '#abc', '#12345', '#1234567', 'rgb(1,2,3)', '#12345g'] as $bad) {
         $this->withToken($token)
             ->patchJson('/api/organization', ['primary_color' => $bad])
-            ->assertUnprocessable();
+            ->assertUnprocessable()
+            // A CODE, never prose. Without `messages()` this answered "The
+            // primary color field format is invalid." — an English sentence
+            // the backoffice can only print verbatim, into an Italian field
+            // error, because `te()` has nothing to translate.
+            ->assertJsonPath('errors.primary_color.0', 'primary_color_invalid');
     }
 
     expect($org->fresh()->primary_color)->toBeNull();
+});
+
+test('the logo upload answers with a code on every shape rejection too', function (): void {
+    // The two magic-byte checks below the validator already throw codes. The
+    // validator itself did not, so `logo` required/mimes/max came back as
+    // English sentences under the SAME key — indistinguishable to the caller,
+    // and untranslatable by the app that renders them.
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    // The MAPPING is what is under test, so each case asserts its own code.
+    // A shape assertion (`/\A[a-z_]+\z/`) would pass if `required` answered
+    // `logo_too_large`, which is the one thing a hand-written map gets wrong.
+    $cases = [
+        [[], 'logo_required'],
+        [['logo' => UploadedFile::fake()->create('doc.pdf', 10, 'application/pdf')], 'logo_invalid_image'],
+        // A non-file SCALAR — the only input that resolves `logo.file`. The
+        // `uploaded` short-circuit never fires here, `required` passes, and
+        // `file` fails normally. Without this case that rule's code could be
+        // deleted and all 29 other tests would stay green.
+        [['logo' => 'just-a-string'], 'logo_invalid_image'],
+        [['logo' => UploadedFile::fake()->create('big.png', 4096, 'image/png')], 'logo_too_large'],
+    ];
+
+    foreach ($cases as [$payload, $code]) {
+        $response = $this->withToken($token)
+            ->postJson('/api/organization/logo', $payload)
+            ->assertUnprocessable();
+
+        expect($response->json('errors.logo.0'))->toBe($code);
+    }
+});
+
+/**
+ * The path production actually takes, and the one three valid uploads cannot
+ * reach.
+ *
+ * There is no `php.ini` in `api/docker/`, so PHP's compiled
+ * `upload_max_filesize=2M` fires before Laravel sees the size at all.
+ * `isValid()` is then false, and Laravel's `file` rule DELEGATES to
+ * `uploaded` — so `logo.file` is not the key that resolves, and a map without
+ * `logo.uploaded` answers "The logo failed to upload." in English.
+ */
+test('a logo PHP itself refused for size reports too_large, not a sentence', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $path = tempnam(sys_get_temp_dir(), 'logo').'.png';
+    file_put_contents($path, brandingRealPng());
+
+    $response = $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => new UploadedFile($path, 'logo.png', 'image/png', UPLOAD_ERR_INI_SIZE, true),
+    ], ['Accept' => 'application/json']);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.logo.0'))->toBe('logo_too_large');
+});
+
+test('a partial logo upload reports upload_failed, not too_large', function (): void {
+    // The other arm of the same ternary. A broken transfer is not a size
+    // problem, and "too large" would send the operator shrinking a file that
+    // was never the trouble. Without this case the branch could carry any
+    // string, English prose included, and the suite would stay green.
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $path = tempnam(sys_get_temp_dir(), 'logo').'.png';
+    file_put_contents($path, brandingRealPng());
+
+    $response = $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => new UploadedFile($path, 'logo.png', 'image/png', UPLOAD_ERR_PARTIAL, true),
+    ], ['Accept' => 'application/json']);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.logo.0'))->toBe('logo_upload_failed');
+});
+
+test('every rule on this endpoint answers with a code, never a sentence', function (): void {
+    // One case per declared rule. A rule with no code is a sentence waiting to
+    // reach an operator, and it will be the one nobody exercised.
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $cases = [
+        ['name' => str_repeat('a', 256)],
+        ['default_webhook_url' => 'not-a-url'],
+        ['default_webhook_url' => 'https://example.test/'.str_repeat('a', 2048)],
+        ['default_webhook_secret' => str_repeat('a', 1025)],
+        ['default_webhook_events' => 'not-an-array'],
+        ['default_webhook_events' => ['no_such_event']],
+        ['primary_color' => 'red'],
+    ];
+
+    foreach ($cases as $payload) {
+        $errors = $this->withToken($token)
+            ->patchJson('/api/organization', $payload)
+            ->assertUnprocessable()
+            ->json('errors');
+
+        foreach ($errors as $field => $messages) {
+            foreach ($messages as $message) {
+                expect($message)->toMatch('/\A[a-z][a-z0-9_]*\z/', "{$field} answered with prose: {$message}");
+            }
+        }
+    }
 });
 
 test('an empty string clears the colour rather than failing', function (): void {

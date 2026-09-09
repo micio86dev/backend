@@ -22,6 +22,7 @@ declare(strict_types=1);
 use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
@@ -308,4 +309,109 @@ test('potential + only MTG seeded → 422 POTENTIAL_CATALOG_INCOMPLETE', functio
     ]);
     $response->assertUnprocessable();
     expect($response->json('code'))->toBe('POTENTIAL_CATALOG_INCOMPLETE');
+});
+
+/**
+ * The sentinel and its translator have to travel together.
+ *
+ * `__potential_catalog__` is an internal key `failedValidation()` rewrites
+ * into the documented `{message, code}` shape. The rule that raises it moved
+ * into a shared trait and the translator stayed behind, so a PATCH answered
+ * with the raw sentinel as a public field name — no `code`, and
+ * unrecognisable to a client that already handles the POST contract.
+ */
+test('PATCH answers POTENTIAL_CATALOG_INCOMPLETE in the documented shape too', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = typeAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    // The catalogue without MTG/LAT — the state this response exists to report.
+    Competency::whereIn('code', ['MTG', 'LAT'])->delete();
+
+    $response = $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
+        'assessment_type' => 'potential',
+        'role_code' => null,
+    ]);
+
+    $response->assertUnprocessable();
+    expect($response->json('code'))->toBe('POTENTIAL_CATALOG_INCOMPLETE')
+        ->and($response->json('errors'))->toBeNull();
+});
+
+test('an unseeded catalogue answers the same way on PATCH as on POST, even with a bad competency id', function (): void {
+    // The hoist is the whole point: when MTG/LAT are missing,
+    // `competency_ids.*`'s `exists` rule fails first, the errors gate
+    // returns, and the operator is told "the selected competency_ids is
+    // invalid" — about a catalogue the platform never loaded. POST hoisted
+    // the check above that gate; PATCH did not, so the same input answered
+    // two different ways depending on the verb.
+    $org = Organization::factory()->create();
+    ['token' => $token] = typeAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    Competency::whereIn('code', ['MTG', 'LAT'])->delete();
+
+    $response = $this->withToken($token)->patchJson("/api/projects/{$project->id}", [
+        'assessment_type' => 'potential',
+        'role_code' => null,
+        'competency_ids' => [999_999],
+    ]);
+
+    $response->assertUnprocessable();
+    expect($response->json('code'))->toBe('POTENTIAL_CATALOG_INCOMPLETE');
+});
+
+test('a non-string assessment_type is a 422, not a 500', function (): void {
+    // The catalogue guard runs ABOVE the errors gate — that is the point of
+    // the hoist — so `assessment_type` reaches it UNVALIDATED. A typed
+    // `?string` parameter turned `["potential"]` into a TypeError under
+    // strict_types, and `(string) $array` into "Array to string conversion".
+    // Both 500s, where the `string`/`in` rules answer plainly.
+    $org = Organization::factory()->create();
+    ['token' => $token] = typeAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    foreach ([['potential'], 123, ['a' => 'b']] as $bad) {
+        $this->withToken($token)
+            ->patchJson("/api/projects/{$project->id}", ['assessment_type' => $bad])
+            ->assertUnprocessable();
+
+        $this->withToken($token)
+            ->postJson('/api/projects', [
+                'framework_version_id' => $fv->id,
+                'slug' => 'x-'.uniqid(),
+                'name' => 'x',
+                'assessment_type' => $bad,
+                'language' => 'it',
+                'avatar_template_id' => 1,
+            ])
+            ->assertUnprocessable();
+    }
 });

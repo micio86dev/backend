@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
-use App\Models\Competency;
+use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
@@ -29,6 +27,8 @@ use Illuminate\Validation\Validator;
  */
 class StoreProjectRequest extends FormRequest
 {
+    use ValidatesProjectComposition;
+
     public function authorize(): bool
     {
         return $this->user()?->can('create', Project::class) ?? false;
@@ -67,33 +67,19 @@ class StoreProjectRequest extends FormRequest
             'assessment_type' => ['required', 'string', Rule::in(['standard', 'potential'])],
             'role_code' => ['nullable', 'string'],
             'language' => ['required', 'string', Rule::in($supportedLocales)],
-            'competency_ids' => ['nullable', 'array'],
-            'competency_ids.*' => ['integer'],
+            'competency_ids' => ['nullable', 'array', 'list'],
+            // `exists` is load-bearing: `validateStandard` iterates
+            // `whereIn(...)->get()`, so an unknown id is never looped over and
+            // reached the foreign key as a 500.
+            'competency_ids.*' => ['integer', 'distinct', Rule::exists('framework_competencies', 'id')],
             'pause_every_n_competencies' => ['nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['nullable', 'url', 'max:2048'],
-            // Which avatar template this project runs on. Nullable: absent
-            // means "use the organization's active template", the behaviour
-            // every project had before this field existed.
-            //
-            // Org-scoped `Rule::exists`, exactly like `framework_version_id`
-            // above — a foreign template must be refused HERE, not merely
-            // ignored by `ActiveTemplateResolver` later. Ignoring it would
-            // still leave a cross-tenant id persisted in our row.
-            // REQUIRED. It shipped nullable with the organization's active
-            // template as a fallback, and the fallback is exactly what let the
-            // configuration choose silently instead of the project — the defect
-            // the column was added to fix. An organization that owns no
-            // template therefore cannot create a project until it has one:
-            // deliberate, and surfaced as a validation error on this field
-            // rather than as an interview that runs on something nobody chose.
-            'avatar_template_id' => [
-                'required',
-                'integer',
-                Rule::exists('avatar_templates', 'id')->where('organization_id', $orgId),
-            ],
+            // REQUIRED, and org-scoped: see `avatarTemplateRule()` in the
+            // trait for why, and for the soft-delete clause.
+            'avatar_template_id' => $this->avatarTemplateRule($orgId, 'required'),
             'webhook_secret' => ['nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
             // the config, never a hardcoded list.
@@ -110,132 +96,24 @@ class StoreProjectRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $v): void {
-            // Only run cross-field validation if basic rules passed
+            $type = $this->input('assessment_type');
+
+            // Above the "basic rules passed" gate — see the trait for why.
+            if ($this->guardPotentialCatalog($v, $type)) {
+                return;
+            }
+
+            // Only run the rest of the cross-field work if basic rules passed
             if ($v->errors()->isNotEmpty()) {
                 return;
             }
 
-            $type = $this->input('assessment_type');
             $competencyIds = $this->input('competency_ids', []);
             if (! is_array($competencyIds)) {
                 $competencyIds = [];
             }
 
-            if ($type === 'potential') {
-                $this->validatePotential($v, $competencyIds);
-            } elseif ($type === 'standard') {
-                $this->validateStandard($v, $competencyIds);
-            }
+            $this->validateComposition($v, $type, $this->input('role_code'), $competencyIds);
         });
-    }
-
-    /**
-     * Validate potential assessment_type invariants.
-     * Order: POTENTIAL_CATALOG_INCOMPLETE check FIRST, then subset + role_code check.
-     *
-     * @param  array<int, int>  $competencyIds
-     */
-    private function validatePotential(Validator $v, array $competencyIds): void
-    {
-        // 1. role_code must be null for potential
-        if ($this->input('role_code') !== null) {
-            $v->errors()->add('role_code', 'role_code must be null for potential assessment type.');
-
-            return;
-        }
-
-        // 2. POTENTIAL_CATALOG_INCOMPLETE — MUST run BEFORE subset check.
-        //    Uses code-based lookup (not type-count) to distinguish which specific codes are missing.
-        if (Competency::whereIn('code', ['MTG', 'LAT'])->count() < 2) {
-            // Abort with structured 422 — use failedValidation to return a custom response.
-            $v->errors()->add('__potential_catalog__', 'POTENTIAL_CATALOG_INCOMPLETE');
-
-            return; // skip subset check (catalog isn't ready)
-        }
-
-        // 3. Competencies must be ⊆ {MTG, LAT} and all type='potential'
-        if (! empty($competencyIds)) {
-            $competencies = Competency::whereIn('id', $competencyIds)->get();
-
-            foreach ($competencies as $competency) {
-                if ($competency->type !== 'potential') {
-                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is type=standard; potential projects require only potential-type competencies.");
-
-                    return;
-                }
-                if (! in_array($competency->code, ['MTG', 'LAT'], true)) {
-                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is not in {MTG, LAT}.");
-
-                    return;
-                }
-            }
-        }
-    }
-
-    /**
-     * Validate standard assessment_type invariants.
-     *
-     * @param  array<int, int>  $competencyIds
-     */
-    private function validateStandard(Validator $v, array $competencyIds): void
-    {
-        $roleCode = $this->input('role_code');
-        $validRoles = ['ICO', 'FLL', 'MLL', 'BUL', 'SRX'];
-
-        if (! in_array($roleCode, $validRoles, true)) {
-            $v->errors()->add('role_code', 'role_code must be one of: '.implode(', ', $validRoles).'.');
-
-            return;
-        }
-
-        if (! empty($competencyIds)) {
-            // Validate each competency: must be type=standard and assigned to this role
-            $role = Role::where('code', $roleCode)->first();
-            if ($role === null) {
-                $v->errors()->add('role_code', "Role '{$roleCode}' not found in catalog.");
-
-                return;
-            }
-
-            $assignedIds = DB::table('framework_role_competency')
-                ->where('role_id', $role->id)
-                ->pluck('competency_id')
-                ->toArray();
-
-            $competencies = Competency::whereIn('id', $competencyIds)->get();
-
-            foreach ($competencies as $competency) {
-                if ($competency->type !== 'standard') {
-                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is type=potential; standard projects require only standard-type competencies.");
-
-                    return;
-                }
-                if (! in_array($competency->id, $assignedIds, true)) {
-                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is not assigned to role '{$roleCode}'.");
-
-                    return;
-                }
-            }
-        }
-    }
-
-    /**
-     * Override failedValidation to return POTENTIAL_CATALOG_INCOMPLETE as a top-level response
-     * with a machine-readable 'code' field.
-     */
-    protected function failedValidation(\Illuminate\Contracts\Validation\Validator $validator): void
-    {
-        $errors = $validator->errors();
-
-        if ($errors->has('__potential_catalog__')) {
-            throw new HttpResponseException(
-                response()->json([
-                    'message' => 'Potential catalog incomplete: MTG/LAT competencies are not seeded.',
-                    'code' => 'POTENTIAL_CATALOG_INCOMPLETE',
-                ], 422)
-            );
-        }
-
-        parent::failedValidation($validator);
     }
 }

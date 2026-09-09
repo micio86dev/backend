@@ -341,3 +341,261 @@ test('the competency type mismatch message translates both assessment types', fu
     expect($message)->not->toContain('di tipo di');
     expect($message)->not->toContain('messages.project_questions');
 });
+
+/**
+ * The cap the store rule enforces has to be knowable BEFORE the operator
+ * writes the question it will refuse.
+ *
+ * It lives in `platform_settings`, behind the superadmin-only settings
+ * endpoint, so an organization admin had no way to read it — the backoffice
+ * offered "Add question" indefinitely and the limit arrived as a 422 on text
+ * already typed. It depends on the project's `assessment_type`, which this
+ * route has resolved anyway.
+ */
+test('the index publishes the per-competency cap alongside the list', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+
+    $response = $this->withToken($token)->getJson("/api/projects/{$project->id}/questions");
+
+    $response->assertOk();
+
+    $cap = $response->json('meta.max_questions_per_competency');
+
+    expect($cap)->toBeInt()
+        ->and($cap)->toBe(
+            app(PlatformSettings::class)
+                ->maxQuestionsPerCompetency((string) $project->assessment_type)
+        );
+});
+
+test('the published cap follows the assessment type, not a constant', function (): void {
+    // `potential` and `standard` have independent caps. Publishing either one
+    // for both would be worse than publishing none: the button would be wrong
+    // in one direction or the other, confidently.
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+
+    $settings = app(PlatformSettings::class);
+    $settings->setMaxQuestionsPerCompetency(['standard' => 2, 'potential' => 7]);
+
+    $standard = TenantContextScope::runFor($org->id, function () use ($org): Project {
+        $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+
+        return Project::factory()->create([
+            'organization_id' => $org->id,
+            'framework_version_id' => $fv->id,
+            'assessment_type' => 'standard',
+        ]);
+    });
+
+    $potential = TenantContextScope::runFor($org->id, function () use ($org): Project {
+        $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+
+        return Project::factory()->create([
+            'organization_id' => $org->id,
+            'framework_version_id' => $fv->id,
+            'assessment_type' => 'potential',
+        ]);
+    });
+
+    expect(
+        $this->withToken($token)->getJson("/api/projects/{$standard->id}/questions")
+            ->json('meta.max_questions_per_competency')
+    )->toBe(2);
+
+    expect(
+        $this->withToken($token)->getJson("/api/projects/{$potential->id}/questions")
+            ->json('meta.max_questions_per_competency')
+    )->toBe(7);
+});
+
+/**
+ * A partial list of VALID ids used to 500.
+ *
+ * The belonging check is satisfied by any subset, and a subset renumbers from
+ * 0 while the rows it omitted still hold those positions — so
+ * `project_questions_position_unique` rejected the write and an operator's
+ * reorder came back as a server error instead of a refusal they could read.
+ */
+test('reordering a subset is refused, not a 500', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    $ids = [];
+
+    foreach ([0, 1, 2] as $position) {
+        $ids[] = TenantContextScope::runFor($org->id, fn () => ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $competency->id,
+            'text' => ['en' => "q{$position}"],
+            'position' => $position,
+        ])->id);
+    }
+
+    $response = $this->withToken($token)
+        ->putJson("/api/projects/{$project->id}/questions/order", ['ids' => [$ids[2]]]);
+
+    $response->assertUnprocessable();
+    expect($response->json('code'))->toBe('QUESTION_SET_INCOMPLETE');
+
+    // And nothing moved.
+    expect(
+        array_column(
+            $this->withToken($token)->getJson("/api/projects/{$project->id}/questions")->json('data'),
+            'position'
+        )
+    )->toBe([0, 1, 2]);
+});
+
+test('reordering one competency does not require the questions of another', function (): void {
+    // The control for the rule above: drag-and-drop reorders ONE group, so
+    // demanding the project's entire question set would refuse every legal
+    // reorder on a multi-competency project.
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    // Two DISTINCT competencies: `pqCompetency()` is a firstOrCreate on a
+    // fixed code, so calling it twice hands back the same row.
+    $first = pqCompetency();
+    $second = Competency::firstOrCreate(
+        ['code' => 'STG'],
+        ['name' => ['en' => 'Strategy'], 'definition' => ['en' => 'x'], 'type' => 'standard'],
+    );
+
+    $make = fn (Competency $c, int $position) => TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $c->id,
+            'text' => ['en' => "c{$c->id}p{$position}"],
+            'position' => $position,
+        ])->id
+    );
+
+    $a = [$make($first, 0), $make($first, 1)];
+    $make($second, 0);
+
+    $this->withToken($token)
+        ->putJson("/api/projects/{$project->id}/questions/order", ['ids' => [$a[1], $a[0]]])
+        ->assertOk();
+
+    $rows = collect($this->withToken($token)
+        ->getJson("/api/projects/{$project->id}/questions")
+        ->json('data'))
+        ->where('competency_id', $first->id)
+        ->sortBy('position')
+        ->pluck('id')
+        ->values()
+        ->all();
+
+    expect($rows)->toBe([$a[1], $a[0]]);
+});
+
+test('the update endpoint answers with codes, not prose', function (): void {
+    // The rules moved into a Form Request; the codes moved with them, because
+    // an inline `validate()` answers in English and the backoffice can only
+    // print what it cannot translate.
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    $question = TenantContextScope::runFor($org->id, fn () => ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'original'],
+        'position' => 0,
+    ]));
+
+    $response = $this->withToken($token)->patchJson(
+        "/api/projects/{$project->id}/questions/{$question->id}",
+        ['text' => ['en' => str_repeat('a', 2001)]]
+    );
+
+    $response->assertUnprocessable();
+    // The field key CONTAINS a dot, so it cannot be read as a json path.
+    expect($response->json('errors')['text.en'][0] ?? null)->toBe('text_en_too_long');
+});
+
+test('reorder answers with codes too, the last prose hole in this file', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+
+    foreach ([[], ['ids' => 'not-an-array'], ['ids' => ['x']]] as $payload) {
+        $errors = $this->withToken($token)
+            ->putJson("/api/projects/{$project->id}/questions/order", $payload)
+            ->assertUnprocessable()
+            ->json('errors');
+
+        foreach ($errors as $field => $messages) {
+            foreach ($messages as $message) {
+                expect($message)->toMatch('/\A[a-z][a-z0-9_]*\z/', "{$field} answered with prose: {$message}");
+            }
+        }
+    }
+});
+
+test('the store endpoint answers with the SAME codes as update', function (): void {
+    // One field, one rule, two verbs. Only the update side carried codes, so
+    // `text.en` too long came back as `text_en_too_long` on PATCH and as an
+    // English sentence on POST — and the backoffice would have had to branch
+    // on the HTTP method to render one error.
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $competency = pqCompetency();
+
+    $response = $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
+        'competency_id' => $competency->id,
+        'text' => ['en' => str_repeat('a', 2001)],
+    ]);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors')['text.en'][0] ?? null)->toBe('text_en_too_long');
+});
+
+/**
+ * Another organization's project is NOT FOUND on every verb, and the shape of
+ * the body must not change that answer.
+ *
+ * Moving the update rules into a FormRequest moved validation ahead of the
+ * tenant lookup — Laravel resolves a FormRequest during method-argument
+ * resolution, before the controller body — so a PATCH to a foreign project
+ * answered 422 for an invalid body and 404 for a valid one. Two different
+ * answers for the same project is the difference an oracle is built from,
+ * and the file's own doctrine says 404.
+ */
+test('a foreign project is 404 on every verb, whatever the body', function (): void {
+    $mine = Organization::factory()->create();
+    $theirs = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($mine);
+    $foreign = pqProject($theirs);
+    $competency = pqCompetency();
+
+    $this->withToken($token)
+        ->getJson("/api/projects/{$foreign->id}/questions")
+        ->assertNotFound();
+
+    foreach ([[], ['competency_id' => $competency->id, 'text' => ['en' => 'ok']]] as $body) {
+        $this->withToken($token)
+            ->postJson("/api/projects/{$foreign->id}/questions", $body)
+            ->assertNotFound();
+    }
+
+    foreach ([[], ['text' => ['en' => 'ok']]] as $body) {
+        $this->withToken($token)
+            ->patchJson("/api/projects/{$foreign->id}/questions/1", $body)
+            ->assertNotFound();
+    }
+
+    foreach ([[], ['ids' => [1]]] as $body) {
+        $this->withToken($token)
+            ->putJson("/api/projects/{$foreign->id}/questions/order", $body)
+            ->assertNotFound();
+    }
+});

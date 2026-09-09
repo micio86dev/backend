@@ -16,10 +16,18 @@ use App\Models\User;
  * | ability             | admin | operator | viewer |
  * |---------------------|-------|----------|--------|
  * | viewAny / view      |  ✅   |   ✅     |  ✅   |
- * | create / update /   |  ✅   |   ✅     |  ❌   |
- * | delete              |       |          |        |
+ * | create / update     |  ✅   |   ✅     |  ❌   |
+ * | delete              |  ✅   |   ❌     |  ❌   |
  *
- * No owner_id filter: operator and admin can read/write ALL projects in the org.
+ * `delete` has its own row because it is no longer the operator's: a project
+ * carries every participant, session and evaluation beneath it. It also
+ * carries a STATE condition the table cannot express — never while the
+ * project is `active` — which
+ * lives in the controller rather than here, because `Gate::before` returns
+ * true for a superadmin and short-circuits every method in this class.
+ *
+ * No owner_id filter: operator and admin can read/write ALL projects in the
+ * org. Delete is the one exception to that sentence.
  * Controller calls $this->authorize() which resolves via Gate → this policy.
  */
 class ProjectPolicy
@@ -57,7 +65,7 @@ class ProjectPolicy
     }
 
     /**
-     * Delete (soft-delete) a project — admin and operator only.
+     * Delete (soft-delete) a project — admin only.
      */
     public function delete(User $user, Project $project): bool
     {
@@ -70,7 +78,14 @@ class ProjectPolicy
         //
         // Soft delete, so this hides rather than destroys; that makes the
         // narrowing safe to apply retroactively rather than a reason to skip
-        // it.
+        // it. Superadmins pass through `Gate::before`, as everywhere.
+        //
+        // The ARCHIVED-only rule is deliberately NOT here. `Gate::before`
+        // returns true for a superadmin and short-circuits this method
+        // entirely, so a lifecycle invariant expressed in a policy is an
+        // invariant every superadmin silently skips. It lives in the
+        // controller, where nothing bypasses it. This method answers WHO, and
+        // only WHO.
         return $user->hasRole('admin');
     }
 }
