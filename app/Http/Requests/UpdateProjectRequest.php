@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
@@ -31,6 +32,8 @@ use Illuminate\Validation\Validator;
  */
 class UpdateProjectRequest extends FormRequest
 {
+    use ValidatesProjectComposition;
+
     public function authorize(): bool
     {
         // Resolve project manually within tenant scope (SubstituteBindings runs before TenantContext).
@@ -76,12 +79,18 @@ class UpdateProjectRequest extends FormRequest
             ],
             'name' => ['sometimes', 'string', 'max:255'],
             'assessment_type' => ['sometimes', 'string', Rule::in(['standard', 'potential'])],
-            'role_code' => ['nullable', 'string'],
+            'role_code' => ['sometimes', 'nullable', 'string'],
             'language' => ['sometimes', 'string', Rule::in($supportedLocales)],
             // Approved status enum: draft|active|archived (no gone_live)
             'status' => ['sometimes', 'string', Rule::in(['draft', 'active', 'archived'])],
-            'competency_ids' => ['sometimes', 'nullable', 'array'],
-            'competency_ids.*' => ['integer'],
+            'competency_ids' => ['sometimes', 'nullable', 'array', 'list'],
+            // `exists`, and it is load-bearing: `validateStandard` iterates
+            // `whereIn(...)->get()`, so an id that is NOT FOUND is never
+            // looped over and no cross-field rule can see it. It went
+            // straight into attach()/sync() and hit the foreign key as a
+            // 500 — the same failure class as a non-list payload, one
+            // value away.
+            'competency_ids.*' => ['integer', 'distinct', Rule::exists('framework_competencies', 'id')],
             'pause_every_n_competencies' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
@@ -97,7 +106,18 @@ class UpdateProjectRequest extends FormRequest
             'avatar_template_id' => [
                 'sometimes',
                 'integer',
-                Rule::exists('avatar_templates', 'id')->where('organization_id', $orgId),
+                // `whereNull('deleted_at')`, matching the `slug` rule two
+                // entries above. `Rule::exists` is a raw query-builder rule
+                // and does NOT apply the model's SoftDeletes scope, so a
+                // trashed template validated fine — and an UNUSED one deletes
+                // fine, because the model's `deleting` guard only refuses when
+                // a project points at it. Pinning one reinstates the exact
+                // defect this column was made required to remove: the resolver
+                // finds nothing, and the configured provider decides silently
+                // instead of the project.
+                Rule::exists('avatar_templates', 'id')
+                    ->where('organization_id', $orgId)
+                    ->whereNull('deleted_at'),
             ],
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
@@ -169,6 +189,61 @@ class UpdateProjectRequest extends FormRequest
             if ($this->has('status') && $currentStatus !== $requestedStatus) {
                 if (! in_array([$currentStatus, $requestedStatus], $allowed, true)) {
                     $v->errors()->add('status', "Status transition '{$currentStatus}' → '{$requestedStatus}' is not allowed.");
+                }
+            }
+
+            // ── Composition invariants ───────────────────────────────────────
+            // The SAME rules POST enforces, and this endpoint enforced none of
+            // them. `role_code` was `['nullable', 'string']` and the
+            // competencies were unchecked, so on a DRAFT — where the
+            // immutability gate above does not apply — a PATCH could set
+            // `role_code: "NOT_A_ROLE"`, or hang `potential` competencies off
+            // a `standard` project, and get a 200. It surfaced far away and
+            // much later, as an interview that could not compose because the
+            // role code matched no role.
+            //
+            // Resolved values, not submitted ones: a PATCH that changes only
+            // the competencies still has to be judged against the role the
+            // project already has.
+            if ($v->errors()->isEmpty()) {
+                $submitted = $this->input('competency_ids');
+
+                $type = (string) $this->input('assessment_type', $project->assessment_type);
+                $roleCode = $this->input('role_code', $project->role_code);
+
+                // The STORED set is pulled in only when the thing the
+                // invariant DEPENDS ON is changing. A PATCH that moves a draft
+                // from FLL to ICO, or flips it to `potential`, sends no
+                // competencies — and passing `[]` made both branches skip
+                // their loop entirely, so the role changed, the competencies
+                // did not, and nothing compared them.
+                //
+                // Deliberately NOT revalidated on every PATCH: a project whose
+                // composition is already invalid — written before this rule
+                // existed, or straight into the database — would then be
+                // frozen, unable to accept even a rename. The invariant is
+                // checked at the moment its inputs move, which is the moment
+                // it can be broken.
+                $composesDifferently = $type !== $project->assessment_type
+                    || $roleCode !== $project->role_code;
+
+                // Gate the CALL, not just the lookup. Passing `[]` skips
+                // nothing: both branches check `role_code` before they ever
+                // reach their `!empty($competencyIds)` guard, so an
+                // unconditional call revalidates the role on every PATCH.
+                //
+                // That bricks the rows this change exists to stop creating.
+                // PATCH used to accept `role_code: "NOT_A_ROLE"` with a 200,
+                // and such a project could then be promoted to `active` with
+                // no composition check on that path. Once active, a rename
+                // fails on the composition gate and fixing `role_code` fails
+                // on the immutability gate — no way out, in either direction.
+                if ($composesDifferently || is_array($submitted)) {
+                    $competencyIds = is_array($submitted)
+                        ? $submitted
+                        : $project->competencies()->pluck('framework_competencies.id')->all();
+
+                    $this->validateComposition($v, $type, $roleCode, $competencyIds);
                 }
             }
         });

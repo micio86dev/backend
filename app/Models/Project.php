@@ -46,7 +46,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $deadline_at
  * @property Carbon|null $goes_live_at
  * @property Carbon|null $deleted_at
- * @property int|null $avatar_template_id
+ * @property int $avatar_template_id NOT NULL since
+ *                                   2026_09_01_120000_make_project_avatar_template_required, and
+ *                                   required by both FormRequests. Annotated `int|null` long after
+ *                                   that migration landed, which put a nullability into the published
+ *                                   OpenAPI contract that the column does not have — and both Nuxt
+ *                                   clients generate from it.
  * @property-read AvatarTemplate|null $avatarTemplate Nullable in the TYPE, not
  *           in the data: `avatar_template_id` is NOT NULL and required by both
  *           FormRequests, so every project names the template it runs on. The
@@ -90,8 +95,11 @@ class Project extends TenantModel
         'webhook_events',
         'deadline_at',
         'goes_live_at',
-        // Which avatar template THIS project runs on, or null to fall back to
-        // the organization's active one. Fillable, unlike `organization_id`:
+        // Which avatar template THIS project runs on. NOT NULL since the
+        // 2026-09-01 migration and required by both FormRequests — the
+        // "or null to fall back to the organization's active one" this said
+        // for months describes a fallback that migration deleted.
+        // Fillable, unlike `organization_id`:
         // it is a setting an operator chooses, not an identity the payload
         // must never be able to move. The tenant boundary is enforced by an
         // org-scoped `exists` rule in Store/UpdateProjectRequest — a foreign
@@ -204,13 +212,14 @@ class Project extends TenantModel
     }
 
     /**
-     * The avatar template pinned by this project, or null when it uses the
-     * organization's active one.
+     * The avatar template pinned by this project.
      *
-     * Null is a supported, common configuration — not a missing setting — so
-     * every read of this relation must tolerate it. `ActiveTemplateResolver`
-     * is what turns "null here" into "the org's active template", and is the
-     * only place that fallback should live.
+     * The FK is NOT NULL, so the relation is null for exactly ONE reason: it
+     * was not eager-loaded. Every read still tolerates null for that reason —
+     * an unloaded relation must render as absent, never fatal — but null no
+     * longer means "uses the organization's active one". It said so until the
+     * 2026-09-01 migration made the column required, and the correction
+     * landed in the class docblock and stopped there.
      *
      * @return BelongsTo<AvatarTemplate, $this>
      */
