@@ -37,9 +37,14 @@ test('a deactivated admin does not count toward the surviving-admin check', func
     $deactivated->forceFill(['deactivated_at' => now()])->save();
 
     // Exactly one admin can still authenticate, so this demotion must be refused.
+    // The BODY, not only the status. 422 was already returned before the
+    // refusal carried a machine code, so a status-only assertion survives
+    // renaming `error` — while the backoffice, which reads exactly that key,
+    // silently stops explaining the refusal.
     $this->withToken($token)
         ->patchJson("/api/users/{$active->id}", ['role' => 'viewer'])
-        ->assertStatus(422);
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'self_demotion');
 
     expect($active->fresh()->hasRole('admin'))->toBeTrue();
 });
@@ -57,7 +62,8 @@ test('a deactivated admin does not license deactivating the last usable admin', 
 
     $this->withToken($token)
         ->postJson("/api/users/{$active->id}/deactivate")
-        ->assertStatus(422);
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'self_deactivation');
 
     expect($active->fresh()->deactivated_at)->toBeNull();
 });

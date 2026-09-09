@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\Users\UserGuardException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
@@ -127,6 +128,23 @@ class UserController extends Controller
             $currentRole = $target->getRoleNames()->first();
             $targetLosesAdminStatus = $currentRole === 'admin' && $newRole !== 'admin';
 
+            // NOT caught here, unlike deactivate(), and the difference is not
+            // an oversight.
+            //
+            // This endpoint ALREADY declares a 422 — the FormRequest's
+            // ValidationException `{message, errors}` — and Scramble publishes
+            // one response per status. Catching would produce a second shape
+            // under the same code that the spec cannot express, so the client
+            // would still type a `last_admin` rejection as a field-validation
+            // failure. It would be a change that looks like a fix and moves
+            // nothing observable.
+            //
+            // The real answer is that a guard refusal is a CONFLICT with the
+            // resource's current state, not a validation failure of the
+            // payload — 409, not 422 — which would separate the two shapes
+            // cleanly here and everywhere else. That is a deliberate contract
+            // change across every guard-bearing endpoint and deserves its own
+            // pass; the global render() carries it until then.
             $this->guards->ensureAdminSurvivesThenMutate(
                 actor: $currentUser,
                 target: $target,
@@ -170,10 +188,20 @@ class UserController extends Controller
     /**
      * POST /api/users/{id}/deactivate
      *
+     * The guard refusal is RETURNED, not left to `UserGuardException::render()`.
+     * Scramble infers error responses from what a controller visibly answers,
+     * so a globally-rendered 422 never reached the generated client — and the
+     * backoffice reads `{error}` off exactly this rejection to explain the
+     * refusal. A contract the client depends on and the spec does not declare
+     * is one rename away from silently degrading.
+     *
+     * The 422 body is `{error, message}`: `last_admin` when refusing for a
+     * peer, `self_deactivation` when the caller is the last one.
+     *
      * 204 No Content. Soft deactivation only — the row survives so
      * audit-relevant authorship survives (D5).
      */
-    public function deactivate(int $id): Response
+    public function deactivate(int $id): Response|JsonResponse
     {
         $target = $this->reader->read($id);
 
@@ -182,16 +210,24 @@ class UserController extends Controller
         /** @var User $currentUser */
         $currentUser = request()->user();
 
-        $this->guards->ensureAdminSurvivesThenMutate(
-            actor: $currentUser,
-            target: $target,
-            targetLosesAdminStatus: $target->hasRole('admin'),
-            selfErrorCode: 'self_deactivation',
-            mutate: function () use ($target): void {
-                $target->deactivated_at = now();
-                $target->save();
-            },
-        );
+        try {
+            $this->guards->ensureAdminSurvivesThenMutate(
+                actor: $currentUser,
+                target: $target,
+                targetLosesAdminStatus: $target->hasRole('admin'),
+                selfErrorCode: 'self_deactivation',
+                mutate: function () use ($target): void {
+                    $target->deactivated_at = now();
+                    $target->save();
+                },
+            );
+        } catch (UserGuardException $e) {
+            // Refused: the write would leave no active administrator.
+            return response()->json(
+                ['error' => $e->errorCode(), 'message' => $e->getMessage()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        }
 
         return response()->noContent();
     }
