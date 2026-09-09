@@ -7460,6 +7460,9 @@
                             "null"
                         ]
                     },
+                    "is_superadmin": {
+                        "type": "boolean"
+                    },
                     "organization": {
                         "type": [
                             "object",
@@ -7491,6 +7494,7 @@
                     "email",
                     "locale",
                     "role",
+                    "is_superadmin",
                     "organization",
                     "photo_url"
                 ],

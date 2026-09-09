@@ -38,9 +38,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class ProfileResource extends JsonResource
 {
     /**
-     * @return array{id: int, name: string, email: string, locale: string|null, role: string|null, organization: array{id: int, name: string}|null, photo_url: string|null}
+     * @return array{id: int, name: string, email: string, locale: string|null, role: string|null, is_superadmin: bool, organization: array{id: int, name: string}|null, photo_url: string|null}
      *
-     * @scramble-return array{id: int, name: string, email: string, locale: string|null, role: string|null, organization: array{id: int, name: string}|null, photo_url: string|null}
+     * @scramble-return array{id: int, name: string, email: string, locale: string|null, role: string|null, is_superadmin: bool, organization: array{id: int, name: string}|null, photo_url: string|null}
      */
     public function toArray(Request $request): array
     {

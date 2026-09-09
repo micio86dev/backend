@@ -164,3 +164,32 @@ test('a snapshot key forced directly onto the row still presigns nothing', funct
     // itself refuses the key, independent of any HTTP round trip.
     expect(app(ProfilePhotoUrlSigner::class)->urlFor($snapshotKey))->toBeNull();
 });
+
+/**
+ * `is_superadmin` is RETURNED but was never DECLARED.
+ *
+ * The resource has sent it all along and both `@return` and `@scramble-return`
+ * omitted it, so the generated TS client did not know the field existed — and
+ * the backoffice profile page, which needs it to tell a superadmin apart from
+ * an observer, could not read it without a type error.
+ */
+test('the profile publishes is_superadmin, as a real boolean on both branches', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'operator');
+
+    $response = $this->withToken($token)->getJson('/api/profile');
+
+    $response->assertOk();
+    expect($response->json('data.is_superadmin'))->toBeFalse();
+
+    $superadmin = User::factory()->create([
+        'is_superadmin' => true,
+        'organization_id' => $org->id,
+    ]);
+
+    expect(
+        $this->withToken(auth('api')->login($superadmin))
+            ->getJson('/api/profile')
+            ->json('data.is_superadmin')
+    )->toBeTrue();
+});
