@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.47.5"
+        "version": "0.48.0"
     },
     "servers": [
         {
@@ -2154,6 +2154,42 @@
                                             "type": "array",
                                             "items": {
                                                 "$ref": "#/components/schemas/BarsIndicatorResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/framework/potential-competencies": {
+            "get": {
+                "operationId": "framework.potentialCompetencies",
+                "description": "The competencies a `potential` assessment scores: MTG and LAT.\n\nThey belong to NO role \u2014 that is what makes them the potential set \u2014\nso `roleCompetencies` above cannot serve them, and the backoffice was\nbuilding them locally from two hardcoded codes with no `id`. Without an\nid `CompetencyPicker` refuses to tick a box, so a `potential` project\ncould not have its competencies selected at all: both boxes rendered,\nneither responded, and an already-persisted set rendered unchecked.\n\nDriven by `type`, never by a hardcoded code list: the catalogue decides\nwhich competencies are potential, and a third one must appear here the\nday it is authored rather than the day someone edits this method.\n\n`bars_available` is deliberately false for every row. Coverage is a\nquestion about a role\u00d7competency pair, and these belong to no role \u2014\nthe same reason the frontend's local list answered `null` for it.",
+                "summary": "GET /api/framework/potential-competencies",
+                "tags": [
+                    "Framework"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `CompetencyResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CompetencyResource"
                                             }
                                         }
                                     },
@@ -4490,11 +4526,11 @@
                             }
                         }
                     },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationException"
-                    },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
@@ -4503,8 +4539,8 @@
             },
             "delete": {
                 "operationId": "projects.destroy",
-                "description": "Soft-deletes the project. Returns HTTP 204 No Content.\nThe pinned FrameworkVersion remains locked (soft-delete does not unlock).\nProject is resolved manually \u2014 see class docblock.",
-                "summary": "DELETE /api/projects/{project}",
+                "description": "204 on success; 409 while the project is `active`. The pinned\nFrameworkVersion remains locked either way (soft-delete does not\nunlock), and the project is resolved manually \u2014 see class docblock.\n\nNO `@scramble-return` here, deliberately. Annotating it overrode\nper-path inference and published ONE 200 carrying the error body \u2014 the\n204 gone, the 409 invisible, and both Nuxt clients generated against a\nresponse this endpoint never sends. `AvatarTemplateController::destroy`\nhas the same 204/409 shape, carries no annotation, and its spec is\nright.\n\nThe ARCHIVED rule is checked HERE rather than in the policy, and that\nplacement is the whole point: `Gate::before` returns true for a\nsuperadmin and short-circuits every policy method, so a lifecycle\ninvariant written as a permission is one every superadmin skips without\nnoticing. Permission is `who`; this is `what state`.\n\n409, not 403: the caller IS allowed to delete projects. This one is in\nthe wrong state, and telling an admin they lack permission would send\nthem to ask for a role they already have.\n\nThe refused state is `active`, NOT \"anything but archived\", and the\ndifference is not cosmetic. Deleting a `draft` costs nothing \u2014 nobody\nhas been interviewed under it \u2014 while the same button on an `active`\nproject takes a live assessment away from candidates mid-interview, and\nno confirmation dialog makes that recoverable.\n\nDemanding `archived` would have trapped every draft permanently: the\nonly approved transitions are `draft -> active` and\n`active -> archived`, so the one route out of a mistyped draft would\nhave been to PUBLISH it to candidates first \u2014 which also freezes\n`assessment_type` and `role_code` on the way past.",
+                "summary": "DELETE /api/projects/{project} \u2014 soft-delete, never while live",
                 "tags": [
                     "Project"
                 ],
@@ -4522,6 +4558,30 @@
                     "204": {
                         "description": "No content"
                     },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "Archive the project before deleting it."
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "const": "project_is_active"
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
                     },
@@ -4534,6 +4594,8 @@
         "/projects/{project}/questions": {
             "get": {
                 "operationId": "projectQuestion.index",
+                "description": "`StoreProjectQuestionRequest` already refuses the (N+1)th question, but\nthe backoffice had no way to know N before trying: the setting lives\nbehind the superadmin-only platform-settings endpoint, so an operator\nmet the cap as a 422 on a question they had already written. It depends\non the project's `assessment_type`, which is exactly what this route\nalready resolved.",
+                "summary": "The cap travels WITH the list, in `meta`",
                 "tags": [
                     "ProjectQuestion"
                 ],
@@ -4549,7 +4611,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Array of `ProjectQuestionResource`",
+                        "description": "",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4558,12 +4620,66 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/components/schemas/ProjectQuestionResource"
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "project_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "competency_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "competency_code": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "text": {
+                                                        "type": "object",
+                                                        "additionalProperties": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "position": {
+                                                        "type": "integer"
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "updated_at": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "project_id",
+                                                    "competency_id",
+                                                    "competency_code",
+                                                    "text",
+                                                    "position",
+                                                    "created_at",
+                                                    "updated_at"
+                                                ]
                                             }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "max_questions_per_competency": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "max_questions_per_competency"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "data"
+                                        "data",
+                                        "meta"
                                     ]
                                 }
                             }
@@ -4734,31 +4850,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "text": {
-                                        "type": "object",
-                                        "properties": {
-                                            "en": {
-                                                "type": "string",
-                                                "maxLength": 2000
-                                            },
-                                            "it": {
-                                                "type": [
-                                                    "string",
-                                                    "null"
-                                                ],
-                                                "maxLength": 2000
-                                            }
-                                        },
-                                        "required": [
-                                            "en"
-                                        ]
-                                    }
-                                },
-                                "required": [
-                                    "text"
-                                ]
+                                "$ref": "#/components/schemas/UpdateProjectQuestionRequest"
                             }
                         }
                     }
@@ -4785,11 +4877,11 @@
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
                     },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationException"
-                    },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 }
             },
@@ -7404,6 +7496,9 @@
                             "null"
                         ]
                     },
+                    "is_superadmin": {
+                        "type": "boolean"
+                    },
                     "organization": {
                         "type": [
                             "object",
@@ -7435,6 +7530,7 @@
                     "email",
                     "locale",
                     "role",
+                    "is_superadmin",
                     "organization",
                     "photo_url"
                 ],
@@ -7546,11 +7642,14 @@
                             "null"
                         ]
                     },
-                    "avatar_template_id": {
+                    "error_redirect_url": {
                         "type": [
-                            "integer",
+                            "string",
                             "null"
                         ]
+                    },
+                    "avatar_template_id": {
+                        "type": "integer"
                     },
                     "avatar_template": {
                         "type": [
@@ -7704,6 +7803,7 @@
                     "pause_every_n_competencies",
                     "nudge_min_chars",
                     "exit_redirect_url",
+                    "error_redirect_url",
                     "avatar_template_id",
                     "avatar_template",
                     "webhook_url",
@@ -8280,7 +8380,8 @@
                             "null"
                         ],
                         "items": {
-                            "type": "integer"
+                            "type": "integer",
+                            "description": "`exists` is load-bearing: `validateStandard` iterates\n`whereIn(...)->get()`, so an unknown id is never looped over and\nreached the foreign key as a 500."
                         }
                     },
                     "pause_every_n_competencies": {
@@ -8325,7 +8426,7 @@
                     },
                     "avatar_template_id": {
                         "type": "integer",
-                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row.\nREQUIRED. It shipped nullable with the organization's active\ntemplate as a fallback, and the fallback is exactly what let the\nconfiguration choose silently instead of the project \u2014 the defect\nthe column was added to fix. An organization that owns no\ntemplate therefore cannot create a project until it has one:\ndeliberate, and surfaced as a validation error on this field\nrather than as an interview that runs on something nobody chose."
+                        "description": "REQUIRED, and org-scoped: see `avatarTemplateRule()` in the\ntrait for why, and for the soft-delete clause."
                     },
                     "webhook_secret": {
                         "type": [
@@ -8595,6 +8696,35 @@
                     }
                 },
                 "title": "UpdateProfileRequest"
+            },
+            "UpdateProjectQuestionRequest": {
+                "type": "object",
+                "description": "UpdateProjectQuestionRequest.\n\nOnly the WORDING is editable. The competency is deliberately absent from\nthese rules: a question written to probe one competency is not a question\nabout another, and \"moving\" it would silently change what an interview\nmeasures. Delete and re-author instead.\n\nExtracted from an inline `$request->validate()` in the controller that\nduplicated `StoreProjectQuestionRequest`'s shape \u2014 raising `max:2000` in\none would have left the other silently disagreeing.\n\nAuthorization happens HERE, not in the controller, and it has to. A\nFormRequest is resolved during method-argument resolution, which Laravel\nruns BEFORE the controller body \u2014 so leaving the tenant lookup downstream\nlet validation overtake it, and a PATCH to another organization's project\nanswered 422 for an invalid body where the file's own doctrine says 404.",
+                "properties": {
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string",
+                                "maxLength": 2000
+                            },
+                            "it": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2000
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    }
+                },
+                "required": [
+                    "text"
+                ],
+                "title": "UpdateProjectQuestionRequest"
             },
             "UpdateProjectRequest": {
                 "type": "object",

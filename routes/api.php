@@ -120,6 +120,11 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
     Route::get('/roles/{roleCode}/competencies', [FrameworkController::class, 'roleCompetencies']);
     Route::get('/roles/{roleCode}/competencies/{competencyCode}/indicators', [FrameworkController::class, 'competencyBars']);
 
+    // NOT under /roles: MTG and LAT belong to no role, which is exactly what
+    // makes them the `potential` set. Declared BEFORE nothing and after the
+    // role routes purely for readability — the path shares no prefix with them.
+    Route::get('/potential-competencies', [FrameworkController::class, 'potentialCompetencies']);
+
     // C4 — GET /api/framework/versions: list org-scoped FrameworkVersions available for pinning.
     Route::get('/versions', [FrameworkController::class, 'versions']);
 });

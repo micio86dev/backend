@@ -124,6 +124,28 @@ EVALUATION STANDARDS — calibrate severity BEFORE applying the procedure above:
 STANDARDS;
 
     /**
+     * The project's language, named for the model rather than coded.
+     *
+     * An ISO code is an instruction a model can misread as metadata; the
+     * language's own name in English is unambiguous. Unknown codes fall back
+     * to the code itself rather than to English — a locale this map has not
+     * caught up with is still not English, and silently saying so would
+     * reintroduce the exact bug this exists to fix.
+     */
+    private static function languageName(string $locale): string
+    {
+        return match (strtolower(substr($locale, 0, 2))) {
+            'it' => 'Italian',
+            'en' => 'English',
+            'es' => 'Spanish',
+            'fr' => 'French',
+            'de' => 'German',
+            'pt' => 'Portuguese',
+            default => $locale,
+        };
+    }
+
+    /**
      * Build the prompt payload for a single competency scoring call.
      *
      * @param  object  $evaluation  Must expose framework_version_id.
@@ -179,6 +201,7 @@ STANDARDS;
 
         $rubric = implode("\n\n", $rubricLines);
         $indicatorCount = $indicators->count();
+        $outputLanguage = self::languageName($projectLocale);
         $scoringProcedure = self::SCORING_PROCEDURE;
         $evaluationStandards = self::EVALUATION_STANDARDS;
 
@@ -191,6 +214,8 @@ IMPORTANT RULES:
 - Excerpts MUST be verbatim substrings of what the CANDIDATE said. Do NOT paraphrase or invent text, and never quote the interviewer's own question as evidence about the candidate.
 - The transcript below is the WHOLE interview, covering every competency. The segment enclosed between the "=== TARGET COMPETENCY ... PRIMARY EVIDENCE BEGINS/ENDS ===" markers is the competency you are scoring now. Weight that segment first, but evidence the candidate gave elsewhere in the interview IS admissible when it genuinely bears on an indicator. The marker lines themselves are not part of the transcript and must never be quoted.
 - If a behavior is not assessable from the transcript, use score -1 and provide an empty excerpts array.
+- Write every `explanation` in {$outputLanguage}. This is the project's language: the interview was conducted in it and the report is read in it. The rubric below is already in that language; the instructions around it are in English and are NOT a cue about the output.
+- `excerpts` are the exception, and stay VERBATIM in whatever language the candidate spoke. They are quotations, and a translated quotation is no longer evidence — and would fail the substring check that verifies it.
 - Return ONLY the JSON object below, with no additional text or commentary.
 
 {$scoringProcedure}
@@ -206,7 +231,7 @@ OUTPUT FORMAT (strict JSON, return the behaviors array in the SAME ORDER as the 
     {
       "indicator": "<echo the indicator text>",
       "score": <1, 2, 3, 4, 5, or -1>,
-      "explanation": "<brief explanation referencing the anchor; for a score of 4 or 2, name BOTH anchors the evidence falls between>",
+      "explanation": "<brief explanation IN {$outputLanguage}, referencing the anchor; for a score of 4 or 2, name BOTH anchors the evidence falls between>",
       "excerpts": ["<verbatim substring 1>", "<verbatim substring 2>"]
     }
   ]

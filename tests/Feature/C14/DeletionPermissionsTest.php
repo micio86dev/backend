@@ -77,7 +77,9 @@ test('an admin can delete a project, and it is SOFT-deleted', function (): void 
     // rows or take the assessment history with them.
     $org = Organization::factory()->create();
     ['token' => $token] = deletionUser($org, 'admin');
-    $project = Project::factory()->create();
+    // ARCHIVED: deletion is gated on the terminal state, and this case is
+    // about soft-delete preserving the rows beneath, not about the gate.
+    $project = Project::factory()->create(['status' => 'archived']);
 
     $this->withToken($token)->deleteJson('/api/projects/'.$project->id)->assertSuccessful();
 

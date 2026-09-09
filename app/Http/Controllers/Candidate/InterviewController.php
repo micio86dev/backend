@@ -212,13 +212,16 @@ class InterviewController extends Controller
         // template: a legal state, since activation is scoped per provider, in
         // which the project itself had no say.
         // Read the one column this needs, rather than hydrating the whole
-        // related model to reach a single string. Also keeps the null case
-        // explicit: `?->` on a BelongsTo accessor reads as null-tolerant but
-        // is not, because the accessor's inferred type is non-null — the
-        // nullability lives in the FK, which is what is tested here.
-        $pinnedProvider = $project->avatar_template_id === null
-            ? null
-            : AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
+        // related model to reach a single string.
+        //
+        // No null branch on the FK any more: `avatar_template_id` has been NOT
+        // NULL since the 2026-09-01 migration and is required by both
+        // FormRequests. It was still annotated nullable, which is what made a
+        // dead `=== null` arm read as prudence. The `?? null` below is the
+        // real fallback — `value()` returns null for a row that has since been
+        // deleted, and the two configured defaults take over there.
+
+        $pinnedProvider = AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
 
         $providerName = $pinnedProvider
             ?? $project->provider_override
