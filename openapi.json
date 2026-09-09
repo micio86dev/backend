@@ -2170,6 +2170,42 @@
                 }
             }
         },
+        "/framework/potential-competencies": {
+            "get": {
+                "operationId": "framework.potentialCompetencies",
+                "description": "The competencies a `potential` assessment scores: MTG and LAT.\n\nThey belong to NO role \u2014 that is what makes them the potential set \u2014\nso `roleCompetencies` above cannot serve them, and the backoffice was\nbuilding them locally from two hardcoded codes with no `id`. Without an\nid `CompetencyPicker` refuses to tick a box, so a `potential` project\ncould not have its competencies selected at all: both boxes rendered,\nneither responded, and an already-persisted set rendered unchecked.\n\nDriven by `type`, never by a hardcoded code list: the catalogue decides\nwhich competencies are potential, and a third one must appear here the\nday it is authored rather than the day someone edits this method.\n\n`bars_available` is deliberately false for every row. Coverage is a\nquestion about a role\u00d7competency pair, and these belong to no role \u2014\nthe same reason the frontend's local list answered `null` for it.",
+                "summary": "GET /api/framework/potential-competencies",
+                "tags": [
+                    "Framework"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `CompetencyResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CompetencyResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/framework/versions": {
             "get": {
                 "operationId": "framework.versions",
