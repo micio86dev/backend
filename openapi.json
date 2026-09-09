@@ -4534,6 +4534,8 @@
         "/projects/{project}/questions": {
             "get": {
                 "operationId": "projectQuestion.index",
+                "description": "`StoreProjectQuestionRequest` already refuses the (N+1)th question, but\nthe backoffice had no way to know N before trying: the setting lives\nbehind the superadmin-only platform-settings endpoint, so an operator\nmet the cap as a 422 on a question they had already written. It depends\non the project's `assessment_type`, which is exactly what this route\nalready resolved.",
+                "summary": "The cap travels WITH the list, in `meta`",
                 "tags": [
                     "ProjectQuestion"
                 ],
@@ -4549,7 +4551,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Array of `ProjectQuestionResource`",
+                        "description": "",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4558,12 +4560,66 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/components/schemas/ProjectQuestionResource"
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "project_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "competency_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "competency_code": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "text": {
+                                                        "type": "object",
+                                                        "additionalProperties": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "position": {
+                                                        "type": "integer"
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "updated_at": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "project_id",
+                                                    "competency_id",
+                                                    "competency_code",
+                                                    "text",
+                                                    "position",
+                                                    "created_at",
+                                                    "updated_at"
+                                                ]
                                             }
+                                        },
+                                        "meta": {
+                                            "type": "object",
+                                            "properties": {
+                                                "max_questions_per_competency": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "max_questions_per_competency"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "data"
+                                        "data",
+                                        "meta"
                                     ]
                                 }
                             }
@@ -4734,31 +4790,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "text": {
-                                        "type": "object",
-                                        "properties": {
-                                            "en": {
-                                                "type": "string",
-                                                "maxLength": 2000
-                                            },
-                                            "it": {
-                                                "type": [
-                                                    "string",
-                                                    "null"
-                                                ],
-                                                "maxLength": 2000
-                                            }
-                                        },
-                                        "required": [
-                                            "en"
-                                        ]
-                                    }
-                                },
-                                "required": [
-                                    "text"
-                                ]
+                                "$ref": "#/components/schemas/UpdateProjectQuestionRequest"
                             }
                         }
                     }
@@ -4785,11 +4817,11 @@
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
                     },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationException"
-                    },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     }
                 }
             },
@@ -8595,6 +8627,35 @@
                     }
                 },
                 "title": "UpdateProfileRequest"
+            },
+            "UpdateProjectQuestionRequest": {
+                "type": "object",
+                "description": "UpdateProjectQuestionRequest.\n\nOnly the WORDING is editable. The competency is deliberately absent from\nthese rules: a question written to probe one competency is not a question\nabout another, and \"moving\" it would silently change what an interview\nmeasures. Delete and re-author instead.\n\nExtracted from an inline `$request->validate()` in the controller that\nduplicated `StoreProjectQuestionRequest`'s shape \u2014 raising `max:2000` in\none would have left the other silently disagreeing.\n\nAuthorization happens HERE, not in the controller, and it has to. A\nFormRequest is resolved during method-argument resolution, which Laravel\nruns BEFORE the controller body \u2014 so leaving the tenant lookup downstream\nlet validation overtake it, and a PATCH to another organization's project\nanswered 422 for an invalid body where the file's own doctrine says 404.",
+                "properties": {
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string",
+                                "maxLength": 2000
+                            },
+                            "it": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 2000
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    }
+                },
+                "required": [
+                    "text"
+                ],
+                "title": "UpdateProjectQuestionRequest"
             },
             "UpdateProjectRequest": {
                 "type": "object",

@@ -40,21 +40,25 @@ class StoreProjectQuestionRequest extends FormRequest
     /**
      * The route parameter is an ID, not a bound model: `SubstituteBindings`
      * runs before `TenantContext`, so binding here would resolve with no
-     * organization established. Resolved through the tenant scope instead, and
-     * a project belonging to somebody else simply is not found.
+     * organization established. Resolved through the tenant scope instead.
+     *
+     * `findOrFail`, not `find`: a project belonging to somebody else must be
+     * NOT FOUND, which is the doctrine the controller states in its own
+     * docblock — a 403 confirms the project exists, and that is an existence
+     * oracle across tenants. Returning `false` from `authorize()` would answer
+     * 403; throwing here answers 404, and it does so BEFORE validation runs,
+     * so a foreign id cannot be told apart by the shape of its body either.
      */
-    private function project(): ?Project
+    private function project(): Project
     {
         $id = $this->route('project');
 
-        return is_numeric($id) ? Project::find((int) $id) : null;
+        return Project::findOrFail(is_numeric($id) ? (int) $id : 0);
     }
 
     public function authorize(): bool
     {
-        $project = $this->project();
-
-        return $project !== null && ($this->user()?->can('update', $project) ?? false);
+        return $this->user()?->can('update', $this->project()) ?? false;
     }
 
     /**
@@ -76,14 +80,46 @@ class StoreProjectQuestionRequest extends FormRequest
         ];
     }
 
+    /**
+     * Machine codes for the SHAPE rules, mirroring
+     * `UpdateProjectQuestionRequest` exactly.
+     *
+     * The two classes declare the identical `text` rules, and only one of them
+     * answered with codes — so the same field, failing the same rule, came
+     * back as `text_en_too_long` on PATCH and as an English sentence on POST,
+     * and the backoffice had to branch on the HTTP verb to render one field's
+     * error.
+     *
+     * `competency_id`'s cap and type refusals are NOT here on purpose. They
+     * are authored, localized prose composed in `withValidator` below, where
+     * the reason can be stated with the numbers in it; a code would throw away
+     * what makes them useful.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'competency_id.required' => 'competency_required',
+            'competency_id.integer' => 'competency_invalid',
+            'competency_id.exists' => 'competency_invalid',
+            'text.required' => 'text_required',
+            'text.array' => 'text_invalid',
+            'text.en.required' => 'text_en_required',
+            'text.en.string' => 'text_en_invalid',
+            'text.en.max' => 'text_en_too_long',
+            'text.it.string' => 'text_it_invalid',
+            'text.it.max' => 'text_it_too_long',
+        ];
+    }
+
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $v): void {
+            // No null branch: `project()` now throws a 404 rather than
+            // returning null, and it has already run in `authorize()` — this
+            // rule cannot be reached for a project that does not resolve.
             $project = $this->project();
-
-            if ($project === null) {
-                return;
-            }
 
             $competency = Competency::find($this->integer('competency_id'));
 
