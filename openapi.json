@@ -8381,7 +8381,7 @@
                         ],
                         "items": {
                             "type": "integer",
-                            "description": "`exists`, and it is load-bearing: `validateStandard` iterates\n`whereIn(...)->get()`, so an id that is NOT FOUND is never\nlooped over and no cross-field rule can see it. It went\nstraight into attach()/sync() and hit the foreign key as a\n500 \u2014 the same failure class as a non-list payload, one\nvalue away."
+                            "description": "`exists` is load-bearing: `validateStandard` iterates\n`whereIn(...)->get()`, so an unknown id is never looped over and\nreached the foreign key as a 500."
                         }
                     },
                     "pause_every_n_competencies": {
@@ -8426,7 +8426,7 @@
                     },
                     "avatar_template_id": {
                         "type": "integer",
-                        "description": "Which avatar template this project runs on. Nullable: absent\nmeans \"use the organization's active template\", the behaviour\nevery project had before this field existed. Org-scoped `Rule::exists`, exactly like `framework_version_id`\nabove \u2014 a foreign template must be refused HERE, not merely\nignored by `ActiveTemplateResolver` later. Ignoring it would\nstill leave a cross-tenant id persisted in our row.\nREQUIRED. It shipped nullable with the organization's active\ntemplate as a fallback, and the fallback is exactly what let the\nconfiguration choose silently instead of the project \u2014 the defect\nthe column was added to fix. An organization that owns no\ntemplate therefore cannot create a project until it has one:\ndeliberate, and surfaced as a validation error on this field\nrather than as an interview that runs on something nobody chose."
+                        "description": "REQUIRED, and org-scoped: see `avatarTemplateRule()` in the\ntrait for why, and for the soft-delete clause."
                     },
                     "webhook_secret": {
                         "type": [

@@ -42,7 +42,7 @@ class UpdateProjectRequest extends FormRequest
             return false;
         }
 
-        $project = Project::find((int) $projectId);
+        $project = $this->resolvedProject();
         if ($project === null) {
             // Project not found in tenant scope → 404 (not 403, so the tenant can't probe
             // whether IDs from other tenants exist).
@@ -50,6 +50,31 @@ class UpdateProjectRequest extends FormRequest
         }
 
         return $this->user()?->can('update', $project) ?? false;
+    }
+
+    /**
+     * The project this request is about, resolved ONCE.
+     *
+     * `authorize()`, `rules()` and `withValidator()` each looked it up, and
+     * the controller looks it up again — four identical queries per PATCH for
+     * one row. Memoized on the request, which lives exactly as long as the
+     * request does.
+     *
+     * Through the tenant scope, never route-model binding: `SubstituteBindings`
+     * runs before `TenantContext`, so a bound model resolves with no
+     * organization established.
+     */
+    private ?Project $resolved = null;
+
+    private function resolvedProject(): ?Project
+    {
+        $id = $this->route('project');
+
+        if ($id === null) {
+            return null;
+        }
+
+        return $this->resolved ??= Project::find((int) $id);
     }
 
     /**
@@ -61,7 +86,7 @@ class UpdateProjectRequest extends FormRequest
         $user = $this->user();
         $orgId = $user->organization_id;
 
-        $project = Project::find((int) $this->route('project'));
+        $project = $this->resolvedProject();
 
         /** @var list<string> $supportedLocales */
         $supportedLocales = config('app.supported_locales', ['en', 'it']);
@@ -84,41 +109,17 @@ class UpdateProjectRequest extends FormRequest
             // Approved status enum: draft|active|archived (no gone_live)
             'status' => ['sometimes', 'string', Rule::in(['draft', 'active', 'archived'])],
             'competency_ids' => ['sometimes', 'nullable', 'array', 'list'],
-            // `exists`, and it is load-bearing: `validateStandard` iterates
-            // `whereIn(...)->get()`, so an id that is NOT FOUND is never
-            // looped over and no cross-field rule can see it. It went
-            // straight into attach()/sync() and hit the foreign key as a
-            // 500 — the same failure class as a non-list payload, one
-            // value away.
+            // `exists` is load-bearing: `validateStandard` iterates
+            // `whereIn(...)->get()`, so an unknown id is never looped over and
+            // reached the foreign key as a 500.
             'competency_ids.*' => ['integer', 'distinct', Rule::exists('framework_competencies', 'id')],
             'pause_every_n_competencies' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
-            // `sometimes` WITHOUT `nullable`, and the pairing is the whole
-            // rule: `sometimes` keeps a PATCH that does not mention the field
-            // from touching it, while dropping `nullable` makes an explicit
-            // null a validation error rather than an unpin. There is no longer
-            // anything to unpin TO — the organization-wide fallback is gone,
-            // and a project with no template is a project whose interviews run
-            // on whatever the configuration happens to say.
-            'avatar_template_id' => [
-                'sometimes',
-                'integer',
-                // `whereNull('deleted_at')`, matching the `slug` rule two
-                // entries above. `Rule::exists` is a raw query-builder rule
-                // and does NOT apply the model's SoftDeletes scope, so a
-                // trashed template validated fine — and an UNUSED one deletes
-                // fine, because the model's `deleting` guard only refuses when
-                // a project points at it. Pinning one reinstates the exact
-                // defect this column was made required to remove: the resolver
-                // finds nothing, and the configured provider decides silently
-                // instead of the project.
-                Rule::exists('avatar_templates', 'id')
-                    ->where('organization_id', $orgId)
-                    ->whereNull('deleted_at'),
-            ],
+            // `sometimes` WITHOUT `nullable`: see `avatarTemplateRule()`.
+            'avatar_template_id' => $this->avatarTemplateRule($orgId, 'sometimes'),
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
             // the config, never a hardcoded list.
@@ -146,13 +147,30 @@ class UpdateProjectRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $v): void {
+            $project = $this->resolvedProject();
+
+            // ABOVE the "basic rules passed" gate, exactly as POST does. That
+            // placement is the whole point: when MTG/LAT are missing,
+            // `competency_ids.*`'s `exists` rule fails first, the gate below
+            // returns, and the operator is told "the selected competency_ids
+            // is invalid" — about a catalogue the platform never loaded. Same
+            // input, same answer, whichever verb the caller used.
+            // RAW, no cast: the value has not been validated yet, and
+            // `(string) ['potential']` is an "Array to string conversion"
+            // error — a 500 where the rules would answer 422.
+            if ($project !== null && $this->guardPotentialCatalog(
+                $v,
+                $this->input('assessment_type', $project->assessment_type)
+            )) {
+                return;
+            }
+
             if ($v->errors()->isNotEmpty()) {
                 return;
             }
 
-            $project = Project::find((int) $this->route('project'));
             if ($project === null) {
-                $v->errors()->add('project', 'Project not found.');
+                $v->errors()->add('project', 'project_not_found');
 
                 return;
             }
@@ -169,10 +187,25 @@ class UpdateProjectRequest extends FormRequest
                 $submittedType = $this->input('assessment_type', $project->assessment_type);
                 $submittedRole = $this->input('role_code', $project->role_code);
 
-                if ($submittedType !== $project->assessment_type ||
-                    $submittedRole !== $project->role_code
-                ) {
-                    $v->errors()->add('assessment_type', 'Cannot change immutable fields on an active or archived project.');
+                // ON THE FIELD THAT MOVED, and one code per field. The
+                // guard covers two fields; answering both under
+                // `assessment_type` told an operator who changed the ROLE
+                // that the assessment type is immutable, and pointed them at
+                // a field they never touched. The old string was generic
+                // ("cannot change immutable fields") and therefore at least
+                // true; a specific code has to be specifically right.
+                //
+                // Codes rather than sentences for the same reason
+                // `framework_version_id.prohibited` already answers with
+                // `framework_version_immutable`: this names no competency and
+                // no role, so there is nothing a sentence carries that a code
+                // does not.
+                if ($submittedType !== $project->assessment_type) {
+                    $v->errors()->add('assessment_type', 'assessment_type_immutable');
+                }
+
+                if ($submittedRole !== $project->role_code) {
+                    $v->errors()->add('role_code', 'role_code_immutable');
                 }
             }
 
@@ -188,7 +221,10 @@ class UpdateProjectRequest extends FormRequest
 
             if ($this->has('status') && $currentStatus !== $requestedStatus) {
                 if (! in_array([$currentStatus, $requestedStatus], $allowed, true)) {
-                    $v->errors()->add('status', "Status transition '{$currentStatus}' → '{$requestedStatus}' is not allowed.");
+                    // A CODE, for the same reason. The transition pair is
+                    // not information the operator needs spelled out: they
+                    // chose it, and the UI only ever offers the legal one.
+                    $v->errors()->add('status', 'status_transition_forbidden');
                 }
             }
 

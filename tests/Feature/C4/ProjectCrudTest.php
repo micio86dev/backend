@@ -16,6 +16,8 @@ declare(strict_types=1);
  * Refs spec: Org-Scoped Project Entity; CRUD API; cross-tenant isolation.
  */
 
+use App\Http\Requests\StoreProjectRequest;
+use App\Http\Requests\UpdateProjectRequest;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\FrameworkVersion;
@@ -429,10 +431,14 @@ test('PATCH refuses a role_code that is not one of the five', function (): void 
         'role_code' => 'ICO',
     ]);
 
-    $this->withToken($token)
+    // The SPECIFIC rule, not "a 422". Any rule at all satisfies a bare status
+    // assertion — the immutability gate, a slug rule, anything — and the
+    // whole point is that this one now fires.
+    $response = $this->withToken($token)
         ->patchJson("/api/projects/{$project->id}", ['role_code' => 'NOT_A_ROLE'])
         ->assertUnprocessable();
 
+    expect($response->json('errors.role_code.0'))->toBe('role_invalid');
     expect($project->fresh()->role_code)->toBe('ICO');
 });
 
@@ -691,4 +697,291 @@ test('a soft-deleted avatar template cannot be pinned', function (): void {
         crudStandardPayload($fv->id),
         ['avatar_template_id' => $template->id]
     ))->assertUnprocessable();
+});
+
+/**
+ * DERIVED from the declared rules, not hand-picked.
+ *
+ * The first version of this test listed six payloads it thought interesting,
+ * and that is exactly why `exit_redirect_url.string` shipped unmapped: no
+ * case sent a non-string to it. Reading `rules()` means a rule added tomorrow
+ * without a code fails here tomorrow.
+ */
+test('EVERY declared rule on both project requests carries a code', function (): void {
+    // `rules()` reads the caller's `organization_id` to scope its `exists`
+    // rules, so the requests need a user behind them.
+    $org = Organization::factory()->create();
+    ['user' => $user] = crudAdminUser($org);
+    $this->actingAs($user);
+
+    // Collected rather than asserted one by one: the failure message should
+    // name EVERY unmapped rule at once, not the first one found.
+    $missing = [];
+
+    foreach ([new StoreProjectRequest, new UpdateProjectRequest] as $request) {
+        $request->setUserResolver(fn () => $user);
+
+        // POPULATED, not empty. `UpdateProjectRequest::rules()` adds
+        // `framework_version_id => ['prohibited']` only when that key is
+        // PRESENT, so an empty request never declares it — and the one field
+        // this API calls immutable from creation was the single field whose
+        // code could be deleted with every test still green.
+        $request->replace([
+            'framework_version_id' => 1,
+            'slug' => 'x',
+            'name' => 'x',
+            'assessment_type' => 'standard',
+            'role_code' => 'ICO',
+            'language' => 'it',
+            'status' => 'draft',
+            'competency_ids' => [],
+            'avatar_template_id' => 1,
+            'webhook_url' => 'https://example.test',
+            'webhook_secret' => 'x',
+            'webhook_events' => [],
+            'exit_redirect_url' => 'https://example.test',
+            'error_redirect_url' => 'https://example.test',
+            'pause_every_n_competencies' => 1,
+            'nudge_min_chars' => 1,
+            'deadline_at' => '2026-01-01',
+            'goes_live_at' => '2026-01-01',
+        ]);
+
+        $messages = $request->messages();
+
+        foreach ($request->rules() as $field => $rules) {
+            foreach ((is_array($rules) ? $rules : explode('|', (string) $rules)) as $rule) {
+                // OBJECT rules count too. `Rule::unique(...)`, `Rule::exists(...)`
+                // and `Rule::in(...)` are instances, not strings, and skipping
+                // them left `slug.unique` — the duplicate-slug refusal an
+                // operator actually meets — outside this guard entirely. The
+                // class basename IS the rule name Laravel resolves messages by.
+                $name = is_string($rule)
+                    ? (str_contains($rule, ':') ? strstr($rule, ':', true) : $rule)
+                    : strtolower(class_basename($rule));
+
+                // Rules that cannot fail with a message of their own.
+                if (in_array($name, ['sometimes', 'nullable', 'bail'], true)) {
+                    continue;
+                }
+
+                $key = "{$field}.{$name}";
+
+                if (! array_key_exists($key, $messages)) {
+                    $missing[] = $request::class."::{$key}";
+                }
+            }
+        }
+    }
+
+    expect($missing)->toBe([], 'these rules answer with English prose: '.implode(', ', $missing));
+});
+
+test('the project endpoints answer shape rules with codes, never prose', function (): void {
+    // An Italian operator creating a project with a duplicate slug read "The
+    // name has already been taken." under an Italian label. The COMPOSITION
+    // refusals stay authored sentences on purpose — they name the competency
+    // and the role that clash, which is the only part that says what to
+    // change — so this asserts the shape rules only.
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+
+    $this->withToken($token)->postJson('/api/projects', crudStandardPayload($fv->id))
+        ->assertCreated();
+
+    $cases = [
+        ['slug' => str_repeat('a', 300)],
+        ['name' => ''],
+        ['assessment_type' => 'nonsense'],
+        ['language' => 'zz'],
+        ['webhook_url' => 'not-a-url'],
+        ['avatar_template_id' => 999_999],
+        // Non-STRINGS, which the first version of this list forgot — and
+        // which is how `.string` shipped unmapped on all three url fields.
+        ['exit_redirect_url' => 123],
+        ['error_redirect_url' => ['an', 'array']],
+        ['webhook_url' => 123],
+    ];
+
+    // The name says "endpoints", plural. It called only POST, so
+    // `UpdateProjectRequest::messages()` could have been deleted whole and
+    // both cases would still have passed.
+    $existing = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    foreach ($cases as $override) {
+        foreach (['post', 'patch'] as $verb) {
+            $errors = $verb === 'post'
+                ? $this->withToken($token)
+                    ->postJson('/api/projects', array_merge(crudStandardPayload($fv->id), $override))
+                    ->assertUnprocessable()
+                    ->json('errors')
+                : $this->withToken($token)
+                    ->patchJson("/api/projects/{$existing->id}", $override)
+                    ->assertUnprocessable()
+                    ->json('errors');
+
+            foreach ($errors as $field => $messages) {
+                foreach ($messages as $message) {
+                    expect($message)->toMatch('/\A[a-z][a-z0-9_]*\z/', "{$verb} {$field} answered with prose: {$message}");
+                }
+            }
+        }
+    }
+});
+
+test('a duplicate slug answers slug_taken, by name', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+
+    $payload = crudStandardPayload($fv->id);
+
+    $this->withToken($token)->postJson('/api/projects', $payload)->assertCreated();
+
+    $response = $this->withToken($token)->postJson('/api/projects', $payload)->assertUnprocessable();
+
+    expect($response->json('errors.slug.0'))->toBe('slug_taken');
+});
+
+/**
+ * The three refusals `withValidator` composes by hand.
+ *
+ * They are the ones the message map cannot cover, which makes them exactly
+ * the ones a `messages()`-derived test cannot see — and that is how
+ * `assessment_type_immutable` shipped answering for a role change.
+ */
+test('the immutability refusal lands on the field that actually moved', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'active',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    $roleChange = $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['role_code' => 'FLL'])
+        ->assertUnprocessable();
+
+    expect($roleChange->json('errors.role_code.0'))->toBe('role_code_immutable')
+        // The operator never touched this field. Naming it sends them to
+        // revert something they did not change.
+        ->and($roleChange->json('errors.assessment_type'))->toBeNull();
+
+    $typeChange = $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['assessment_type' => 'potential'])
+        ->assertUnprocessable();
+
+    expect($typeChange->json('errors.assessment_type.0'))->toBe('assessment_type_immutable');
+});
+
+test('a forbidden status transition answers with a code', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'active',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    // active -> draft is not an approved transition.
+    $response = $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['status' => 'draft'])
+        ->assertUnprocessable();
+
+    expect($response->json('errors.status.0'))->toBe('status_transition_forbidden');
+    expect($project->fresh()->status)->toBe('active');
+});
+
+test('an approved transition is still accepted', function (): void {
+    // The control: a guard that refused every transition would look identical.
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['status' => 'active'])
+        ->assertOk();
+
+    expect($project->fresh()->status)->toBe('active');
+});
+
+test('the framework pin is refused on PATCH with a code, not with prose', function (): void {
+    // The loudest docblock in the request file, and the only field whose
+    // code an empty-request guard could not see.
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $other = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    $response = $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['framework_version_id' => $other->id])
+        ->assertUnprocessable();
+
+    expect($response->json('errors.framework_version_id.0'))->toBe('framework_version_immutable');
+    expect($project->fresh()->framework_version_id)->toBe($fv->id);
+});
+
+test('a potential project refuses a role_code with a code, not a sentence', function (): void {
+    // `role_code must be null for potential assessment type.` named no
+    // competency and no role, so the composition carve-out never covered it —
+    // it was simply English prose reaching an Italian operator.
+    $org = Organization::factory()->create();
+    ['token' => $token] = crudAdminUser($org);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+
+    $response = $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['assessment_type' => 'potential'])
+        ->assertUnprocessable();
+
+    expect($response->json('errors.role_code.0'))->toBe('role_code_must_be_null');
 });

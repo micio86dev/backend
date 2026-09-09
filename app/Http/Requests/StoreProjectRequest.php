@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
-use App\Models\Competency;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
@@ -69,49 +68,18 @@ class StoreProjectRequest extends FormRequest
             'role_code' => ['nullable', 'string'],
             'language' => ['required', 'string', Rule::in($supportedLocales)],
             'competency_ids' => ['nullable', 'array', 'list'],
-            // `exists`, and it is load-bearing: `validateStandard` iterates
-            // `whereIn(...)->get()`, so an id that is NOT FOUND is never
-            // looped over and no cross-field rule can see it. It went
-            // straight into attach()/sync() and hit the foreign key as a
-            // 500 — the same failure class as a non-list payload, one
-            // value away.
+            // `exists` is load-bearing: `validateStandard` iterates
+            // `whereIn(...)->get()`, so an unknown id is never looped over and
+            // reached the foreign key as a 500.
             'competency_ids.*' => ['integer', 'distinct', Rule::exists('framework_competencies', 'id')],
             'pause_every_n_competencies' => ['nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['nullable', 'url', 'max:2048'],
-            // Which avatar template this project runs on. Nullable: absent
-            // means "use the organization's active template", the behaviour
-            // every project had before this field existed.
-            //
-            // Org-scoped `Rule::exists`, exactly like `framework_version_id`
-            // above — a foreign template must be refused HERE, not merely
-            // ignored by `ActiveTemplateResolver` later. Ignoring it would
-            // still leave a cross-tenant id persisted in our row.
-            // REQUIRED. It shipped nullable with the organization's active
-            // template as a fallback, and the fallback is exactly what let the
-            // configuration choose silently instead of the project — the defect
-            // the column was added to fix. An organization that owns no
-            // template therefore cannot create a project until it has one:
-            // deliberate, and surfaced as a validation error on this field
-            // rather than as an interview that runs on something nobody chose.
-            'avatar_template_id' => [
-                'required',
-                'integer',
-                // `whereNull('deleted_at')`, matching the `slug` rule two
-                // entries above. `Rule::exists` is a raw query-builder rule
-                // and does NOT apply the model's SoftDeletes scope, so a
-                // trashed template validated fine — and an UNUSED one deletes
-                // fine, because the model's `deleting` guard only refuses when
-                // a project points at it. Pinning one reinstates the exact
-                // defect this column was made required to remove: the resolver
-                // finds nothing, and the configured provider decides silently
-                // instead of the project.
-                Rule::exists('avatar_templates', 'id')
-                    ->where('organization_id', $orgId)
-                    ->whereNull('deleted_at'),
-            ],
+            // REQUIRED, and org-scoped: see `avatarTemplateRule()` in the
+            // trait for why, and for the soft-delete clause.
+            'avatar_template_id' => $this->avatarTemplateRule($orgId, 'required'),
             'webhook_secret' => ['nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
             // the config, never a hardcoded list.
@@ -130,16 +98,8 @@ class StoreProjectRequest extends FormRequest
         $validator->after(function (Validator $v): void {
             $type = $this->input('assessment_type');
 
-            // The catalog check runs BEFORE the "basic rules passed" gate, and
-            // it has to. When MTG/LAT are not seeded, `competency_ids.*`'s
-            // `exists` rule fails first, the gate below returns, and the
-            // operator gets "the selected competency_ids is invalid" — for a
-            // catalog the platform never loaded. POTENTIAL_CATALOG_INCOMPLETE
-            // is the one answer that tells them what is actually wrong, and it
-            // is structured precisely so it can be acted on.
-            if ($type === 'potential' && Competency::whereIn('code', ['MTG', 'LAT'])->count() < 2) {
-                $v->errors()->add('__potential_catalog__', 'POTENTIAL_CATALOG_INCOMPLETE');
-
+            // Above the "basic rules passed" gate — see the trait for why.
+            if ($this->guardPotentialCatalog($v, $type)) {
                 return;
             }
 
