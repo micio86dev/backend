@@ -45,4 +45,35 @@ class StoreUserRequest extends FormRequest
             'role' => ['required', 'string', Rule::in(OrgRole::values())],
         ];
     }
+
+    /**
+     * Machine CODES, never Laravel's prose — the same contract the platform
+     * requests carry, and for the same reason: a response body is
+     * machine-facing, and the backoffice is the only layer that knows the
+     * operator's language.
+     *
+     * EVERY declared rule, including `string` and the role allow-list. An
+     * unmapped rule falls straight back to English, which is the defect this
+     * method exists to end.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'name_required',
+            'name.string' => 'name_invalid',
+            'name.max' => 'name_too_long',
+            'email.required' => 'email_required',
+            'email.email' => 'email_invalid',
+            'email.unique' => 'email_taken',
+            'email.max' => 'email_too_long',
+            'password.required' => 'password_required',
+            'password.string' => 'password_invalid',
+            'password.min' => 'password_too_short',
+            'role.required' => 'role_required',
+            'role.string' => 'role_invalid',
+            'role.in' => 'role_invalid',
+        ];
+    }
 }
