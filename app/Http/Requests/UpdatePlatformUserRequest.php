@@ -48,4 +48,33 @@ class UpdatePlatformUserRequest extends FormRequest
             'password' => ['sometimes', 'required', 'string', 'min:8'],
         ];
     }
+
+    /**
+     * Machine CODES, never Laravel's prose.
+     *
+     * A response body is machine-facing: this API has no idea what language
+     * the reader speaks, and i18n it/en is binding on error states. Without
+     * this a duplicate address came back as "The email has already been
+     * taken." and the backoffice rendered it verbatim into an Italian field.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            // EVERY declared rule, not the ones that came to mind: an
+            // unmapped rule falls back to Laravel's English, which is the
+            // whole defect this method exists to end.
+            'name.required' => 'name_required',
+            'name.string' => 'name_invalid',
+            'email.required' => 'email_required',
+            'email.email' => 'email_invalid',
+            'email.unique' => 'email_taken',
+            'email.max' => 'email_too_long',
+            'name.max' => 'name_too_long',
+            'password.required' => 'password_required',
+            'password.string' => 'password_invalid',
+            'password.min' => 'password_too_short',
+        ];
+    }
 }
