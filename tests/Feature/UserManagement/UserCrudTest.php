@@ -195,3 +195,120 @@ test('a name-only change leaves the target logged in', function (): void {
 
     expect($live->fresh()->revoked_at)->toBeNull();
 });
+
+/**
+ * The organization surface answers with codes too.
+ *
+ * `UserForm` serves BOTH populations through one call site. The platform
+ * requests carried codes and these did not, so a duplicate address on the org
+ * path printed "The email has already been taken." verbatim under an Italian
+ * field label — one call site, two populations, one of them fixed.
+ */
+test('validation on the org surface answers with machine codes', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    User::factory()->create(['organization_id' => $org->id, 'email' => 'dup@example.test']);
+
+    $response = $this->withToken($token)->postJson('/api/users', [
+        'email' => 'dup@example.test',
+        'password' => 'short',
+        'role' => 'sovereign',
+    ]);
+
+    expect($response->json('errors.name.0'))->toBe('name_required');
+    expect($response->json('errors.email.0'))->toBe('email_taken');
+    expect($response->json('errors.password.0'))->toBe('password_too_short');
+    expect($response->json('errors.role.0'))->toBe('role_invalid');
+});
+
+/**
+ * EVERY key in both messages() arrays, not a sample.
+ *
+ * The docblocks claim "every declared rule". Six of thirteen keys per array
+ * were asserted nowhere, so deleting them left the suite green — and the
+ * regression the method exists to prevent is exactly an unmapped rule falling
+ * back to "The email field is required." under an Italian label.
+ */
+test('POST /api/users maps every declared rule to a code', function (array $payload, string $field, string $code): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    User::factory()->create(['organization_id' => $org->id, 'email' => 'dup@example.test']);
+
+    $response = $this->withToken($token)->postJson('/api/users', $payload);
+
+    expect($response->json("errors.{$field}.0"))->toBe($code);
+})->with([
+    'name missing' => [['email' => 'a@b.test', 'password' => 'a-strong-password', 'role' => 'operator'], 'name', 'name_required'],
+    'name not a string' => [['name' => ['x'], 'email' => 'a@b.test', 'password' => 'a-strong-password', 'role' => 'operator'], 'name', 'name_invalid'],
+    'name too long' => [['name' => str_repeat('a', 256), 'email' => 'a@b.test', 'password' => 'a-strong-password', 'role' => 'operator'], 'name', 'name_too_long'],
+    'email missing' => [['name' => 'A', 'password' => 'a-strong-password', 'role' => 'operator'], 'email', 'email_required'],
+    'email malformed' => [['name' => 'A', 'email' => 'not-an-email', 'password' => 'a-strong-password', 'role' => 'operator'], 'email', 'email_invalid'],
+    'email taken' => [['name' => 'A', 'email' => 'dup@example.test', 'password' => 'a-strong-password', 'role' => 'operator'], 'email', 'email_taken'],
+    'email too long' => [['name' => 'A', 'email' => str_repeat('a', 250).'@b.test', 'password' => 'a-strong-password', 'role' => 'operator'], 'email', 'email_too_long'],
+    'password missing' => [['name' => 'A', 'email' => 'a@b.test', 'role' => 'operator'], 'password', 'password_required'],
+    'password not a string' => [['name' => 'A', 'email' => 'a@b.test', 'password' => 12345678, 'role' => 'operator'], 'password', 'password_invalid'],
+    'password too short' => [['name' => 'A', 'email' => 'a@b.test', 'password' => 'short', 'role' => 'operator'], 'password', 'password_too_short'],
+    'role missing' => [['name' => 'A', 'email' => 'a@b.test', 'password' => 'a-strong-password'], 'role', 'role_required'],
+    'role not a string' => [['name' => 'A', 'email' => 'a@b.test', 'password' => 'a-strong-password', 'role' => ['operator']], 'role', 'role_invalid'],
+    'role outside the allow-list' => [['name' => 'A', 'email' => 'a@b.test', 'password' => 'a-strong-password', 'role' => 'sovereign'], 'role', 'role_invalid'],
+]);
+
+test('PATCH /api/users/{id} maps every declared rule to a code', function (array $payload, string $field, string $code): void {
+    // Its own array, its own coverage: the store request's cases say nothing
+    // about this class.
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    $target = User::factory()->create(['organization_id' => $org->id]);
+    User::factory()->create(['organization_id' => $org->id, 'email' => 'dup@example.test']);
+
+    $response = $this->withToken($token)->patchJson("/api/users/{$target->id}", $payload);
+
+    expect($response->json("errors.{$field}.0"))->toBe($code);
+})->with([
+    'name blank' => [['name' => ''], 'name', 'name_required'],
+    'name not a string' => [['name' => ['x']], 'name', 'name_invalid'],
+    'name too long' => [['name' => str_repeat('a', 256)], 'name', 'name_too_long'],
+    'email blank' => [['email' => ''], 'email', 'email_required'],
+    'email malformed' => [['email' => 'not-an-email'], 'email', 'email_invalid'],
+    'email taken' => [['email' => 'dup@example.test'], 'email', 'email_taken'],
+    'email too long' => [['email' => str_repeat('a', 250).'@b.test'], 'email', 'email_too_long'],
+    'password blank' => [['password' => ''], 'password', 'password_required'],
+    'password not a string' => [['password' => 12345678], 'password', 'password_invalid'],
+    'password too short' => [['password' => 'short'], 'password', 'password_too_short'],
+    'role blank' => [['role' => ''], 'role', 'role_required'],
+    'role not a string' => [['role' => ['operator']], 'role', 'role_invalid'],
+    'role outside the allow-list' => [['role' => 'sovereign'], 'role', 'role_invalid'],
+]);
+
+/**
+ * `sometimes` alone let an empty string through.
+ *
+ * The field is optional, but if it IS sent it must carry a value — which is
+ * what `sometimes` + `required` means, and what UpdatePlatformUserRequest
+ * already did. Without the pair, a PATCH carrying `{"name": ""}` cleared the
+ * user's name and answered 200.
+ */
+test('a blank name on update is refused, not saved', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    $target = User::factory()->create(['organization_id' => $org->id, 'name' => 'Ada Lovelace']);
+
+    $response = $this->withToken($token)->patchJson("/api/users/{$target->id}", ['name' => '']);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors.name.0'))->toBe('name_required');
+    expect($target->fresh()->name)->toBe('Ada Lovelace');
+});
+
+test('omitting a field entirely is still allowed', function (): void {
+    // The other half: `sometimes` is what makes a partial update partial.
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    $target = User::factory()->create(['organization_id' => $org->id, 'name' => 'Ada Lovelace']);
+
+    $this->withToken($token)
+        ->patchJson("/api/users/{$target->id}", ['name' => 'Ada Byron'])
+        ->assertOk();
+
+    expect($target->fresh()->name)->toBe('Ada Byron');
+});
