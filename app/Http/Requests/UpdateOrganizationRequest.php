@@ -71,4 +71,35 @@ class UpdateOrganizationRequest extends FormRequest
             'primary_color' => ['sometimes', 'nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
         ];
     }
+
+    /**
+     * Machine codes, one per declared rule.
+     *
+     * A response body is machine-facing: the app that renders it is the only
+     * layer that knows the operator's language. Without this map Laravel
+     * answers in prose, in the API's locale, and the three settings forms that
+     * PATCH this endpoint print that English sentence into an Italian field
+     * error — the exact trap `translateServerCode` exists to close.
+     *
+     * EVERY declared rule appears here. A rule with no code is a sentence
+     * waiting to reach an operator, and it will be the one rule nobody
+     * exercised.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'name.string' => 'name_invalid',
+            'name.max' => 'name_too_long',
+            'default_webhook_url.url' => 'webhook_url_invalid',
+            'default_webhook_url.max' => 'webhook_url_too_long',
+            'default_webhook_secret.string' => 'webhook_secret_invalid',
+            'default_webhook_secret.max' => 'webhook_secret_too_long',
+            'default_webhook_events.array' => 'webhook_events_invalid',
+            'default_webhook_events.*.in' => 'webhook_event_unknown',
+            'primary_color.string' => 'primary_color_invalid',
+            'primary_color.regex' => 'primary_color_invalid',
+        ];
+    }
 }
