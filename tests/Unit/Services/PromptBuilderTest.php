@@ -362,7 +362,7 @@ test('(h) residual-score explanation contract names both bounding anchors (D5)',
     );
 
     expect($prompt->systemPrompt)->toContain(
-        '<brief explanation referencing the anchor; for a score of 4 or 2, name BOTH anchors the evidence falls between>'
+        '<brief explanation IN English, referencing the anchor; for a score of 4 or 2, name BOTH anchors the evidence falls between>'
     );
 });
 
@@ -519,4 +519,116 @@ test('(r) task 12.1 — excerpts are constrained to the CANDIDATE, not to the tr
 
     expect($prompt)->toContain('verbatim substrings of what the CANDIDATE said')
         ->and($prompt)->toContain("never quote the interviewer's own question as evidence");
+});
+
+/**
+ * The report is read in the project's language, and the interview was
+ * conducted in it — but nothing in the prompt said so.
+ *
+ * The rubric is injected translated; every instruction around it is in
+ * English, and a model with no explicit instruction writes its prose in the
+ * language of the instructions. So an Italian project produced Italian
+ * anchors, an Italian transcript, and English explanations under
+ * "Perche questo punteggio".
+ */
+test('the prompt names the output language, and it follows the project', function (): void {
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $role = Role::factory()->create();
+    $competency = Competency::factory()->create();
+    $fv = FrameworkVersion::factory()->create();
+    createFullIndicator($role->id, $competency->id, 0);
+
+    $indicators = BarsIndicator::where('role_id', $role->id)
+        ->where('competency_id', $competency->id)
+        ->orderBy('position')
+        ->get();
+
+    $build = fn (string $locale) => (new PromptBuilder)->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: $locale,
+        indicators: $indicators,
+        transcript: 'Candidate: Test answer.',
+    );
+
+    // Named, not coded: an ISO code is something a model can read as metadata.
+    expect($build('it')->systemPrompt)->toContain('Write every `explanation` in Italian.');
+    expect($build('en')->systemPrompt)->toContain('Write every `explanation` in English.');
+
+    // And it is not a fixed string: an English project must not be told to
+    // answer in Italian, which a hardcoded instruction would do.
+    expect($build('en')->systemPrompt)->not->toContain('`explanation` in Italian');
+});
+
+test('excerpts are exempted from the output language, because a quotation is evidence', function (): void {
+    // Translating a quotation destroys it as evidence, and it would fail the
+    // verbatim substring check that verifies it against the transcript.
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $role = Role::factory()->create();
+    $competency = Competency::factory()->create();
+    $fv = FrameworkVersion::factory()->create();
+    createFullIndicator($role->id, $competency->id, 0);
+
+    $prompt = (new PromptBuilder)->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: 'it',
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'Candidate: Test answer.',
+    );
+
+    expect($prompt->systemPrompt)->toContain('`excerpts` are the exception');
+});
+
+test('an unmapped locale is never silently called English', function (): void {
+    // The fallback is the code itself. Defaulting to English would restore
+    // exactly the bug this instruction exists to remove, for the first locale
+    // the map has not caught up with.
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $role = Role::factory()->create();
+    $competency = Competency::factory()->create();
+    $fv = FrameworkVersion::factory()->create();
+    createFullIndicator($role->id, $competency->id, 0, [
+        'text' => ['en' => 'x', 'it' => 'x', 'nl' => 'x'],
+        'anchor_5' => ['en' => 'x', 'it' => 'x', 'nl' => 'x'],
+        'anchor_3' => ['en' => 'x', 'it' => 'x', 'nl' => 'x'],
+        'anchor_1' => ['en' => 'x', 'it' => 'x', 'nl' => 'x'],
+    ]);
+
+    $prompt = (new PromptBuilder)->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: 'nl',
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'Candidate: Test answer.',
+    );
+
+    expect($prompt->systemPrompt)->toContain('Write every `explanation` in nl.')
+        // Precise: the prompt DOES say its own instructions are written in
+        // English. What must not appear is the instruction to ANSWER in it.
+        ->and($prompt->systemPrompt)->not->toContain('`explanation` in English');
 });
