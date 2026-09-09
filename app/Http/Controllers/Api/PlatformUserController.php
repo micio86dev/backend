@@ -158,19 +158,27 @@ class PlatformUserController extends Controller
      * @throws UserGuardException 422 {error, message} —
      *                            `last_superadmin` for a peer, `self_deactivation` for yourself.
      */
-    public function deactivate(Request $request, int $id): Response
+    public function deactivate(Request $request, int $id): Response|JsonResponse
     {
         $currentUser = $this->assertSuperadmin($request);
         $target = $this->reader->read($id);
 
-        $this->guards->ensureSuperadminSurvivesThenMutate(
-            actor: $currentUser,
-            target: $target,
-            mutate: function () use ($target): void {
-                $target->deactivated_at = now();
-                $target->save();
-            },
-        );
+        try {
+            $this->guards->ensureSuperadminSurvivesThenMutate(
+                actor: $currentUser,
+                target: $target,
+                mutate: function () use ($target): void {
+                    $target->deactivated_at = now();
+                    $target->save();
+                },
+            );
+        } catch (UserGuardException $e) {
+            // Refused: the write would leave no active administrator.
+            return response()->json(
+                ['error' => $e->errorCode(), 'message' => $e->getMessage()],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
+        }
 
         return response()->noContent();
     }

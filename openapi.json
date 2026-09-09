@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.47.3"
+        "version": "0.47.4"
     },
     "servers": [
         {
@@ -3948,6 +3948,28 @@
                     "204": {
                         "description": "No content"
                     },
+                    "422": {
+                        "description": "Refused: the write would leave no active administrator.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
                     },
@@ -5873,7 +5895,7 @@
         "/users/{id}/deactivate": {
             "post": {
                 "operationId": "user.deactivate",
-                "description": "204 No Content. Soft deactivation only \u2014 the row survives so\naudit-relevant authorship survives (D5).",
+                "description": "The guard refusal is RETURNED, not left to `UserGuardException::render()`.\nScramble infers error responses from what a controller visibly answers,\nso a globally-rendered 422 never reached the generated client \u2014 and the\nbackoffice reads `{error}` off exactly this rejection to explain the\nrefusal. A contract the client depends on and the spec does not declare\nis one rename away from silently degrading.\n\nThe 422 body is `{error, message}`: `last_admin` when refusing for a\npeer, `self_deactivation` when the caller is the last one.\n\n204 No Content. Soft deactivation only \u2014 the row survives so\naudit-relevant authorship survives (D5).",
                 "summary": "POST /api/users/{id}/deactivate",
                 "tags": [
                     "User"
@@ -5891,6 +5913,28 @@
                 "responses": {
                     "204": {
                         "description": "No content"
+                    },
+                    "422": {
+                        "description": "Refused: the write would leave no active administrator.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
