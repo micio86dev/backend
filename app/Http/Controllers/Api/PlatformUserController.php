@@ -53,26 +53,38 @@ class PlatformUserController extends Controller
     ) {}
 
     /**
-     * Refuse anyone who is not a superadmin.
+     * The caller, once established as a superadmin.
      *
-     * Asserted here rather than in a policy or a FormRequest, following
-     * `SuperadminController`'s doctrine verbatim: there is no model to
-     * authorize against — the subject is the CALLER, not a row. A policy would
-     * also be useless, since `Gate::before` answers every ability `true` for a
-     * superadmin and would never be consulted for anyone else's benefit.
+     * The `abort_unless` itself is written out at every action rather than
+     * hidden here, and that is not duplication for its own sake: Scramble
+     * infers responses from what a controller VISIBLY does, and does not
+     * follow a call into a private helper. With the refusal buried, three of
+     * these five routes declared no 403 at all — a contract the backoffice
+     * renders a `forbidden` state for.
+     *
+     * The check is a caller question, not a row question, which is why it is
+     * here and not in a policy — `SuperadminController`'s doctrine verbatim.
+     * A policy would also be inert: `Gate::before` answers every ability true
+     * for a superadmin and is never consulted for anyone else's benefit.
      */
-    private function assertSuperadmin(Request $request): User
+    private function superadmin(Request $request): User
     {
+        /** @var User $user */
         $user = $request->user();
-
-        abort_unless($user instanceof User && $user->is_superadmin === true, Response::HTTP_FORBIDDEN);
 
         return $user;
     }
 
+    private function isSuperadmin(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user instanceof User && $user->is_superadmin === true;
+    }
+
     public function index(Request $request): AnonymousResourceCollection
     {
-        $this->assertSuperadmin($request);
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
         return PlatformUserResource::collection(
             $this->reader->listQuery()->orderBy('name')->get()
@@ -87,7 +99,9 @@ class PlatformUserController extends Controller
      */
     public function store(StorePlatformUserRequest $request): JsonResponse
     {
-        $currentUser = $this->assertSuperadmin($request);
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $currentUser = $this->superadmin($request);
 
         $user = new User($request->safe()->only(['name', 'email', 'password']));
         $user->organization_id = null;
@@ -121,7 +135,7 @@ class PlatformUserController extends Controller
 
     public function update(UpdatePlatformUserRequest $request, int $id): JsonResponse
     {
-        $this->assertSuperadmin($request);
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
         $target = $this->reader->read($id);
         $target->update($request->safe()->only(['name', 'email', 'password']));
@@ -160,7 +174,9 @@ class PlatformUserController extends Controller
      */
     public function deactivate(Request $request, int $id): Response|JsonResponse
     {
-        $currentUser = $this->assertSuperadmin($request);
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $currentUser = $this->superadmin($request);
         $target = $this->reader->read($id);
 
         try {
@@ -189,7 +205,7 @@ class PlatformUserController extends Controller
      */
     public function activate(Request $request, int $id): Response
     {
-        $this->assertSuperadmin($request);
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
         $target = $this->reader->read($id);
         $target->deactivated_at = null;
