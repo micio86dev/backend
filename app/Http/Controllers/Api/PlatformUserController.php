@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\Users\UserGuardException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePlatformUserRequest;
 use App\Http\Requests\UpdatePlatformUserRequest;
@@ -153,6 +154,9 @@ class PlatformUserController extends Controller
      * The guarded verb. Reaching zero active superadmins is unrecoverable from
      * inside the product, so the count and the write share one transaction and
      * one row lock — see PlatformUserGuards.
+     *
+     * @throws UserGuardException 422 {error, message} —
+     *                            `last_superadmin` for a peer, `self_deactivation` for yourself.
      */
     public function deactivate(Request $request, int $id): Response
     {

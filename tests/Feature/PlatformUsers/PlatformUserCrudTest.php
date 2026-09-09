@@ -156,6 +156,40 @@ describe('creating', function (): void {
             'password' => 'a-strong-password-123',
         ])->assertJsonValidationErrorFor('email');
     });
+
+    test('validation answers with machine codes, not English prose', function (): void {
+        // A response body is machine-facing, and the backoffice is the only
+        // layer that knows the operator's language. Without messages() a
+        // duplicate address came back as "The email has already been taken."
+        // and was rendered verbatim into an Italian field.
+        ['token' => $token] = superadminToken();
+        anotherSuperadmin(['email' => 'dup@beai.test']);
+
+        $response = $this->withToken($token)->postJson('/api/admin/platform-users', [
+            'email' => 'dup@beai.test',
+            'password' => 'short',
+        ]);
+
+        expect($response->json('errors.name.0'))->toBe('name_required');
+        expect($response->json('errors.email.0'))->toBe('email_taken');
+        expect($response->json('errors.password.0'))->toBe('password_too_short');
+    });
+
+    test('every declared rule has a code, including the string rule', function (): void {
+        // Trivially craftable: a JSON array for name, a number for password.
+        // An unmapped rule falls back to Laravel's English, which is exactly
+        // the defect messages() exists to end.
+        ['token' => $token] = superadminToken();
+
+        $response = $this->withToken($token)->postJson('/api/admin/platform-users', [
+            'name' => ['a'],
+            'email' => 'ok@beai.test',
+            'password' => 12345678,
+        ]);
+
+        expect($response->json('errors.name.0'))->toBe('name_invalid');
+        expect($response->json('errors.password.0'))->toBe('password_invalid');
+    });
 });
 
 describe('updating', function (): void {
@@ -213,6 +247,26 @@ describe('updating', function (): void {
 
         expect($target->fresh()->password_changed_at)->toBeNull();
         expect($live->fresh()->revoked_at)->toBeNull();
+    });
+
+    test('the UPDATE request answers with codes too', function (): void {
+        // Its own messages(), its own coverage: the store request's tests say
+        // nothing about this one, and the two are separate classes.
+        ['token' => $token] = superadminToken();
+        $target = anotherSuperadmin();
+        anotherSuperadmin(['email' => 'taken-on-update@beai.test']);
+
+        $response = $this->withToken($token)->patchJson("/api/admin/platform-users/{$target->id}", [
+            'email' => 'taken-on-update@beai.test',
+        ]);
+
+        expect($response->json('errors.email.0'))->toBe('email_taken');
+
+        $bad = $this->withToken($token)->patchJson("/api/admin/platform-users/{$target->id}", [
+            'name' => ['a'],
+        ]);
+
+        expect($bad->json('errors.name.0'))->toBe('name_invalid');
     });
 
     test('an ORGANISATION user cannot be reached by id', function (): void {
