@@ -59,10 +59,12 @@ test('tokens and secrets never reach the sink', function (): void {
 });
 
 test('candidate identifiers never reach the sink', function (): void {
+    $email = uniqid('cand-').'@example.test';
+
     $event = scrubbedEvent([
         'candidate_ref' => 'acme-672',
         'display_name' => 'Mario Rossi',
-        'email' => uniqid('cand-').'@example.test',
+        'email' => $email,
     ]);
 
     $encoded = json_encode($event->getExtra());
@@ -72,6 +74,12 @@ test('candidate identifiers never reach the sink', function (): void {
     // it sits alongside anything else.
     expect($encoded)->not->toContain('acme-672');
     expect($encoded)->not->toContain('Mario Rossi');
+
+    // The email is the candidate's GLOBAL identity key (CLAUDE.md ruling 8,
+    // reversed 2026-09-01) and is named in the GDPR retention sign-off
+    // (ruling 2). It sat in this fixture unasserted: the test read as though
+    // it covered the address while the scrubber shipped it verbatim.
+    expect($encoded)->not->toContain($email);
 });
 
 test('secrets nested at any depth are scrubbed', function (): void {
