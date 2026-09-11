@@ -128,7 +128,27 @@ final class SentryScrubber
         }
 
         foreach ($event->getContexts() as $name => $context) {
-            $event->setContext($name, $this->scrub($context));
+            // The `http` context IS the request, under a second name. Sentry
+            // populates it independently of `$event->getRequest()`, with the same
+            // `url`/`query_string` shapes — so the SSO token that `scrubRequest()`
+            // exists to cut walked out one context over from where it was cut,
+            // through a generic key walk that denies neither `url` nor `query`.
+            $scrubbedContext = $name === 'http'
+                ? $this->scrubRequest($context)
+                : $this->scrub($context);
+
+            // FAIL CLOSED. `setContext()` is a no-op on an empty array
+            // (`if (!empty($data))`, Event.php) while `setRequest()` assigns
+            // unconditionally — two sinks, two semantics. `scrubRequest()` works
+            // by REMOVING keys, so an `http` context made only of removed keys
+            // reduces to `[]`, the setter declines it, and the ORIGINAL stays on
+            // the event: `{"http":{"query_string":"token=…"}}` walked out of the
+            // very branch written to cut it. A scrubber must never default to
+            // disclosure, the same argument `isDenied()` already makes.
+            $event->setContext(
+                $name,
+                $scrubbedContext === [] ? ['scrubbed' => self::REDACTED] : $scrubbedContext
+            );
         }
 
         // Breadcrumbs carry Laravel's log context, and `config/sentry.php` has
@@ -191,6 +211,22 @@ final class SentryScrubber
         if ($exceptions !== []) {
             foreach ($exceptions as $exception) {
                 $exception->setValue($this->redactFreeText($exception->getValue()));
+
+                // Frame `vars` are the function's ARGUMENTS.
+                // `FrameBuilder::getFunctionArguments()` reflects
+                // `$backtraceFrame['args']` into named parameters and the frame
+                // serializer emits them as `vars`, so a method taking
+                // `string $transcript` puts a candidate's words on the wire under
+                // the key `transcript` — a word already on DENIED_KEYS. The
+                // denylist knew; nothing walked frames. Same shape as the
+                // breadcrumb gap above, one object deeper.
+                foreach ($exception->getStacktrace()?->getFrames() ?? [] as $frame) {
+                    $vars = $frame->getVars();
+
+                    if ($vars !== []) {
+                        $frame->setVars($this->scrub($vars));
+                    }
+                }
             }
 
             $event->setExceptions($exceptions);
@@ -252,7 +288,14 @@ final class SentryScrubber
         // exact scenario this class's docblock names. Headers and cookies go for
         // the same reason: `X-Api-Key` is neither denied by name nor caught by
         // the `_key` convention, the separator being a hyphen.
-        unset($scrubbed['query_string'], $scrubbed['cookies'], $scrubbed['headers']);
+        // `query` as well as `query_string`: the request shape uses the latter,
+        // the `http` context the former, and both carry the same `?token=`.
+        unset(
+            $scrubbed['query_string'],
+            $scrubbed['query'],
+            $scrubbed['cookies'],
+            $scrubbed['headers'],
+        );
 
         // `data` is a RAW STRING whenever the parsed body was empty and the
         // Content-Type is not byte-for-byte `application/json` —

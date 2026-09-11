@@ -19,6 +19,8 @@ use App\Support\Observability\SentryScrubber;
 use Sentry\Breadcrumb;
 use Sentry\Event;
 use Sentry\ExceptionDataBag;
+use Sentry\Frame;
+use Sentry\Stacktrace;
 use Sentry\Tracing\Span;
 use Sentry\UserDataBag;
 
@@ -532,4 +534,82 @@ test('a key ending in _messages is denied — the AI payload is a JSON STRING', 
 
     expect($encoded)->not->toContain('I led the migration');
     expect($encoded)->not->toContain('my answer');
+});
+
+test('the http context query string never reaches the sink', function (): void {
+    // `request.query_string` is dropped wholesale, but Sentry ALSO populates an
+    // `http` context whose `query_string`/`query` carry the same value by a
+    // different route. `contexts` is walked by key, and `query` is in no list —
+    // so the SSO token that scrubRequest() exists to cut walked out one context
+    // over from where it was cut.
+    $event = Event::createEvent();
+    $event->setContext('http', [
+        'url' => 'https://api.beai.test/api/sso/exchange?token=eyJLEAKED',
+        'query' => 'token=eyJLEAKED',
+        'method' => 'GET',
+    ]);
+
+    $scrubbed = SentryScrubber::handle($event);
+    $encoded = json_encode($scrubbed->getContexts());
+
+    expect($encoded)->not->toContain('LEAKED');
+    // The method is diagnostic and must survive — an unusable error reporter is
+    // the outcome this class calls worse than a scrubbed one.
+    expect($scrubbed->getContexts()['http']['method'])->toBe('GET');
+});
+
+test('an http context that scrubs down to NOTHING does not leave the original behind', function (): void {
+    // `Event::setContext()` is a no-op on an empty array (`if (!empty($data))`,
+    // Event.php:640) while `setRequest()` assigns unconditionally. `scrubRequest()`
+    // works by REMOVING keys, so a context made up only of removed keys reduces
+    // to `[]`, the setter declines it, and the ORIGINAL stays on the event.
+    //
+    // The previous test could never catch this: its fixture carried `method`,
+    // which survives, so the array was never empty and the one failure mode of
+    // the fix went unexercised.
+    $event = Event::createEvent();
+    $event->setContext('http', ['query_string' => 'token=eyJLEAKED']);
+
+    $scrubbedA = SentryScrubber::handle($event);
+
+    expect(json_encode($scrubbedA->getContexts()))->not->toContain('LEAKED');
+
+    $event2 = Event::createEvent();
+    $event2->setContext('http', [
+        'cookies' => ['session' => 'eyJLEAKED'],
+        'headers' => ['authorization' => 'Bearer LEAKED'],
+    ]);
+
+    expect(json_encode(SentryScrubber::handle($event2)->getContexts()))->not->toContain('LEAKED');
+});
+
+test('exception stacktrace frame vars are scrubbed — they are function ARGUMENTS', function (): void {
+    // `FrameBuilder::getFunctionArguments()` reflects `$backtraceFrame['args']`
+    // into named parameters and `StacktraceFrameSeralizerTrait` emits them as
+    // `vars`. So a method taking `string $transcript` puts the candidate's words
+    // on the wire under the key `transcript` — a word already on DENIED_KEYS.
+    // The denylist knew; nothing walked frames.
+    //
+    // Live rather than theoretical: this needs `zend.exception_ignore_args=Off`,
+    // and the container ships no active php.ini, so the built-in default applies
+    // and arguments ARE captured.
+    $frame = new Frame('scoreInterview', '/app/ScoreInterview.php', 42);
+    $frame->setVars([
+        'transcript' => 'CANDIDATE SAID: I once falsified a report',
+        'token' => 'eyJLEAKED',
+        'line' => 42,
+    ]);
+
+    $event = Event::createEvent();
+    $event->setExceptions([
+        new ExceptionDataBag(new RuntimeException('boom'), new Stacktrace([$frame])),
+    ]);
+
+    $vars = SentryScrubber::handle($event)->getExceptions()[0]->getStacktrace()?->getFrames()[0]->getVars();
+    $encoded = json_encode($vars);
+
+    expect($encoded)->not->toContain('falsified');
+    expect($encoded)->not->toContain('LEAKED');
+    // Non-sensitive frame context survives.
+    expect($vars['line'])->toBe(42);
 });
