@@ -63,6 +63,22 @@ return [
     // signed tokens, evaluation payloads.
     'before_send' => [SentryScrubber::class, 'handle'],
 
+    // Sentry dispatches by event TYPE, and `before_send` only covers errors.
+    // `before_send_transaction` fell back to the SDK's identity pass-through
+    // while RequestIntegration — a global processor with no type gate — set
+    // `url` and `query_string` on transactions as well. With a traces sample
+    // rate configured, a sampled `GET /api/sso/exchange?token=<jwt>` therefore
+    // filed the token unscrubbed: the error path was closed and the performance
+    // path was left open. Identical callback signature, same guarantee.
+    'before_send_transaction' => [SentryScrubber::class, 'handle'],
+
+    // NOT wired deliberately: `before_send_log` takes `callable(Log): ?Log`, a
+    // different type this callback cannot satisfy. It is dormant — `enable_logs`
+    // defaults false and there is no `sentry` channel in config/logging.php —
+    // but `SENTRY_ENABLE_LOGS=true` would reopen it with nothing in the path, so
+    // enabling logs requires its own scrubber first.
+    // 'before_send_log' => ...,
+
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#ignore_exceptions
     // 'ignore_exceptions' => [],
 
