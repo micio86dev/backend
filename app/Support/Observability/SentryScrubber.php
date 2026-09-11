@@ -347,7 +347,7 @@ final class SentryScrubber
         // looser classes' quadratic cost on a long `@`-free string is gone too —
         // it is the anchor that does that, not the TLD run, which has no upper
         // bound.
-        return (string) preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', self::REDACTED, $withoutUrls);
+        return (string) preg_replace('/[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}/', self::REDACTED, $withoutUrls);
     }
 
     /**
@@ -434,15 +434,16 @@ final class SentryScrubber
         }
 
         // Conventions, so a newly-named field is covered without an edit here.
-        return str_ends_with($k, '_token')
-            || str_ends_with($k, '_secret')
-            || str_ends_with($k, '_key')
+        // ONLY `_key` among the credential suffixes. `_token`, `_secret` and
+        // `_messages` were shadowed dead by the last-segment check above —
+        // `token`, `secret` and `messages` are all in DENIED_KEYS, so that
+        // branch always decided first. `key` alone is NOT in the list (too
+        // generic to deny outright), which is why this one stays reachable.
+        return str_ends_with($k, '_key')
             // Any key NAMING an address. `_email` alone missed `email_address`,
             // `emails` and `emailAddress` — `excerpts` was already pluralised in
             // the list above and the same reasoning stopped one word short of
             // the field ruling 8 makes the global identity key.
-            || str_contains($k, 'email')
-            // `gen_ai.input.messages` normalises to `gen_ai_input_messages`.
-            || str_ends_with($k, '_messages');
+            || str_contains($k, 'email');
     }
 }
