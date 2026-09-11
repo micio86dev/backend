@@ -15,13 +15,19 @@ declare(strict_types=1);
  * and no other test in this suite would notice.
  */
 
+use App\Enums\EvaluationStatus;
 use App\Support\Observability\SentryScrubber;
+use Carbon\CarbonImmutable;
 use Sentry\Breadcrumb;
 use Sentry\Event;
 use Sentry\ExceptionDataBag;
 use Sentry\Frame;
 use Sentry\Stacktrace;
 use Sentry\Tracing\Span;
+use Sentry\Tracing\SpanContext;
+use Sentry\Tracing\SpanId;
+use Sentry\Tracing\SpanStatus;
+use Sentry\Tracing\TraceId;
 use Sentry\UserDataBag;
 
 function scrubbedEvent(array $extra = [], array $request = []): Event
@@ -612,4 +618,331 @@ test('exception stacktrace frame vars are scrubbed — they are function ARGUMEN
     expect($encoded)->not->toContain('LEAKED');
     // Non-sensitive frame context survives.
     expect($vars['line'])->toBe(42);
+});
+
+test('the PLURAL credential keys are denied too', function (): void {
+    // The content keys were pluralised (`transcripts`, `answers`, `excerpts`,
+    // `utterances`) and the credential keys never were — same list, same rule,
+    // half applied.
+    $event = scrubbedEvent([
+        'tokens' => ['T1LEAK'],
+        'api_keys' => ['K1LEAK'],
+        'passwords' => ['P1LEAK'],
+        'secrets' => ['S1LEAK'],
+        'cookies' => ['session' => 'SESSLEAK'],
+        // A header name that is in NO list and matches NO convention, so only
+        // the wholesale `headers` drop can catch it. With `authorization` here
+        // the assertion went green off a key that was already denied before this
+        // commit — deleting `'headers'` from the list left it passing.
+        'headers' => ['x-trace-context' => 'sess=HLEAK'],
+    ]);
+
+    expect(json_encode($event->getExtra()))->not->toContain('LEAK');
+});
+
+test('the plural is never weaker than the singular', function (): void {
+    // `stripe_api_keys` was ALLOWED while `stripe_api_key` was denied: the list
+    // gained `api_keys` and the CONVENTION did not, so the plural form of a
+    // credential was strictly weaker than its singular — the defect the plural
+    // entries exist to close, reproduced one rule over. `header` had the mirror
+    // asymmetry: denied as `headers`, allowed on its own.
+    $event = scrubbedEvent([
+        'stripe_api_keys' => ['sk_live_LEAKED'],
+        'provider_api_keys' => ['openai' => 'sk-LEAKED2'],
+        'header' => 'Cookie: sess=LEAKED3',
+    ]);
+
+    expect(json_encode($event->getExtra()))->not->toContain('LEAKED');
+});
+
+test('an address used as an array KEY is redacted too', function (): void {
+    // `isDenied()` inspects what a key is CALLED; `redactFreeText()` inspects
+    // what a value CONTAINS. Nothing inspected what a key contains — so the
+    // class denied `email`, `emails`, `email_address` and `emailAddress` by
+    // name, then handed the address over the moment it moved one position left.
+    // Keying a map by address is the ordinary way to write a delivery-result map.
+    $event = scrubbedEvent([
+        'delivery_results' => ['mario.rossi@example.test' => 'bounced'],
+    ]);
+
+    expect(json_encode($event->getExtra()))->not->toContain('mario.rossi@example.test');
+});
+
+test('request.env goes with the user context, not without it', function (): void {
+    // RequestIntegration populates `env.REMOTE_ADDR` and builds the user bag
+    // from THAT SAME value. The SDK treats them as one datum; dropping the user
+    // and keeping env kept the IP by another name.
+    $event = scrubbedEvent([], [
+        'url' => 'https://api.beai.test/api/health',
+        'method' => 'POST',
+        'env' => ['REMOTE_ADDR' => '203.0.113.77'],
+    ]);
+
+    expect(json_encode($event->getRequest()))->not->toContain('203.0.113.77');
+});
+
+test('a non-string span tag survives as JSON, not as the word Array', function (): void {
+    // A bare `(string)` cast on an array raises "Array to string conversion"
+    // INSIDE before_send — a failure in the error reporter itself — and emits
+    // the literal "Array". Event-level tags already handle this; the span path
+    // did not.
+    $span = new Span;
+    $span->setTags(['route' => 'x', 'attempts' => ['a', 'b']]);
+
+    $transaction = Event::createTransaction();
+    $transaction->setSpans([$span]);
+
+    $tags = SentryScrubber::handle($transaction)->getSpans()[0]->getTags();
+
+    // The real value, not merely "not the literal Array": excluding one string
+    // is not the contract, and replacing the cast with `""` kept it green.
+    expect($tags['attempts'])->toBe('["a","b"]');
+    expect($tags['route'])->toBe('x');
+});
+
+test('an address used as a span data or tag KEY does not survive the merge', function (): void {
+    // `scrub()` RENAMES an address-bearing key rather than overwriting it. That
+    // is safe for `setExtra()`/`setTags()`, which assign — and unsafe for
+    // `Span::setData()`/`setTags()`, which array_merge. Merge cannot remove, so
+    // the renamed copy was appended and the ORIGINAL key kept its value: the
+    // address stayed on the wire as a key name beside a `[redacted]` twin.
+    $span = new Span;
+    $span->setData(['mario.rossi@example.test' => 'delivered', 'op' => 'http']);
+    $span->setTags(['anna.bianchi@example.test' => 'bounced', 'route' => '/x']);
+
+    $transaction = Event::createTransaction();
+    $transaction->setSpans([$span]);
+
+    $scrubbed = SentryScrubber::handle($transaction)->getSpans()[0];
+    $encoded = json_encode([$scrubbed->getData(), $scrubbed->getTags()]);
+
+    expect($encoded)->not->toContain('mario.rossi@example.test');
+    expect($encoded)->not->toContain('anna.bianchi@example.test');
+    // The diagnostic half survives the rebuild.
+    expect($scrubbed->getData()['op'])->toBe('http');
+    expect($scrubbed->getTags()['route'])->toBe('/x');
+});
+
+test('two redacted keys do not collapse into one', function (): void {
+    // Both addresses normalise to the same marker, and a plain assignment would
+    // drop one — a delivery map of five bounced addresses reporting one. Silent
+    // loss of the diagnostic context this class argues is worth keeping.
+    $event = scrubbedEvent([
+        'delivery' => [
+            'mario.rossi@example.test' => 'bounced',
+            'anna.bianchi@example.test' => 'delivered',
+        ],
+    ]);
+
+    $delivery = $event->getExtra()['delivery'];
+
+    expect(json_encode($delivery))->not->toContain('@example.test');
+    expect($delivery)->toHaveCount(2);
+});
+
+test('the span rebuild keeps its origin', function (): void {
+    // `serializeSpan()` emits `getOrigin() ?? 'manual'`, so a rebuild that drops
+    // it relabels every `auto.db.sql` span as hand-instrumented.
+    $span = new Span;
+    $span->setOrigin('auto.db.sql');
+
+    $transaction = Event::createTransaction();
+    $transaction->setSpans([$span]);
+
+    expect(SentryScrubber::handle($transaction)->getSpans()[0]->getOrigin())->toBe('auto.db.sql');
+});
+
+test('a sibling that is already the marker does not swallow its neighbour', function (): void {
+    // The dedupe guard was gated on the key having CHANGED, so a sibling already
+    // spelled `[redacted]` skipped it and overwrote — the same collapse the
+    // guard exists to prevent, one ordering over.
+    $event = scrubbedEvent([
+        'delivery' => ['mario.rossi@example.test' => 'first', '[redacted]' => 'second'],
+    ]);
+
+    expect($event->getExtra()['delivery'])->toHaveCount(2);
+});
+
+test('an OBJECT value is walked, not waved through', function (): void {
+    // `scrub()` recursed on arrays and free-text-redacted strings; everything
+    // else fell through untouched. sentry-laravel passes `$logEntry->context`
+    // RAW into breadcrumb metadata and the serializer JSON-encodes it, so an
+    // Eloquent model emits its whole attribute bag — `email`, `display_name`
+    // and `candidate_ref`, all three on DENIED_KEYS. The denylist knew; nothing
+    // walked into the object.
+    $participant = new class implements JsonSerializable
+    {
+        public function jsonSerialize(): array
+        {
+            return [
+                'email' => 'candidate@example.test',
+                'display_name' => 'Jane Roe',
+                'candidate_ref' => 'REF-1',
+                'project_id' => 7,
+            ];
+        }
+    };
+
+    $event = scrubbedEvent(['participant' => $participant]);
+    $encoded = json_encode($event->getExtra());
+
+    expect($encoded)->not->toContain('candidate@example.test');
+    expect($encoded)->not->toContain('Jane Roe');
+    expect($encoded)->not->toContain('REF-1');
+    // The non-sensitive attribute survives the walk.
+    expect($encoded)->toContain('project_id');
+});
+
+test('the url fragment is cut like the query is', function (): void {
+    // `redactUrl()` cuts at `?` AND `#`. `scrubRequest()` dropped query_string
+    // and query for the stated reason that both carry `?token=` — `fragment` is
+    // the sibling key carrying the same data under a third name.
+    $event = scrubbedEvent([], [
+        'url' => 'https://api.beai.test/api/health',
+        'fragment' => 'token=JWTSECRETLEAK',
+    ]);
+
+    expect(json_encode($event->getRequest()))->not->toContain('LEAK');
+});
+
+test('the span rebuild carries every field it copies by hand', function (): void {
+    // Eleven fields copied one by one is the shape where FORGETTING one is the
+    // characteristic failure — and the first attempt did forget `sampled` and
+    // `origin`. Dropping `parent_span_id` orphans every child span and flattens
+    // the trace tree silently, with nothing in the suite to say so.
+    $parentId = SpanId::generate();
+    $spanId = SpanId::generate();
+    $traceId = TraceId::generate();
+
+    $context = new SpanContext;
+    $context->setTraceId($traceId);
+    $context->setSpanId($spanId);
+    $context->setParentSpanId($parentId);
+    $context->setOp('db.sql.query');
+    $context->setStatus(SpanStatus::ok());
+    $context->setOrigin('auto.db.sql');
+    $context->setStartTimestamp(1000.0);
+    $context->setEndTimestamp(1002.5);
+
+    $transaction = Event::createTransaction();
+    $transaction->setSpans([new Span($context)]);
+
+    $rebuilt = SentryScrubber::handle($transaction)->getSpans()[0];
+
+    expect((string) $rebuilt->getTraceId())->toBe((string) $traceId);
+    expect((string) $rebuilt->getParentSpanId())->toBe((string) $parentId);
+    // `spanId` above all: the constructor MINTS A NEW ONE when the context has
+    // none, so dropping it neither throws nor blanks — it silently repoints the
+    // span while every child's parent_span_id still names the old id. Every
+    // child orphans and the trace tree flattens with nothing to say so.
+    expect((string) $rebuilt->getSpanId())->toBe((string) $spanId);
+    expect($rebuilt->getOp())->toBe('db.sql.query');
+    expect((string) $rebuilt->getStatus())->toBe((string) SpanStatus::ok());
+    expect($rebuilt->getOrigin())->toBe('auto.db.sql');
+    expect($rebuilt->getStartTimestamp())->toBe(1000.0);
+    expect($rebuilt->getEndTimestamp())->toBe(1002.5);
+});
+
+test('a structured message param is key-walked before it is flattened', function (): void {
+    // `stringify()` json_encodes and hands the result to `redactFreeText()`,
+    // which strips only URLs and addresses — DENIED_KEYS never ran. The tag path
+    // does it the right way round: scrub() FIRST, stringify() second. The old
+    // `(string)` cast collapsed an array to "Array", lossy but safe; serializing
+    // it traded a warning for a leak.
+    $event = Event::createEvent();
+    $event->setMessage('scoring failed for %s', [[
+        'display_name' => 'Mario Rossi',
+        'candidate_ref' => 'CR-9',
+        'transcript' => 'I led the team',
+    ]]);
+
+    $encoded = json_encode(SentryScrubber::handle($event)->getMessageParams());
+
+    expect($encoded)->not->toContain('Mario Rossi');
+    expect($encoded)->not->toContain('CR-9');
+    expect($encoded)->not->toContain('I led the team');
+});
+
+test('an enum or timestamp in log context stays readable', function (): void {
+    // The is_object branch is right to fail closed, but its test was
+    // `is_array($decoded)` — so any object serializing to a SCALAR went dark.
+    // Backed enums and Carbon instances are the two most common non-scalars in
+    // a Laravel log context, neither carries PII, and both reported
+    // `[redacted]`. That is the diagnostic loss this class calls the worse
+    // outcome.
+    $event = scrubbedEvent([
+        'stage' => EvaluationStatus::Completed,
+        'occurred' => CarbonImmutable::parse('2026-09-11T10:00:00Z'),
+        'count' => 3,
+    ]);
+
+    $extra = $event->getExtra();
+
+    expect($extra['stage'])->not->toBe('[redacted]');
+    expect($extra['occurred'])->not->toBe('[redacted]');
+    expect($extra['count'])->toBe(3);
+});
+
+test('a recursive or malformed value does not take before_send down with it', function (): void {
+    // Bare `json_encode()` emits E_WARNING on a recursive reference, and
+    // Laravel turns any E_WARNING into a thrown ErrorException — the error
+    // reporter failing while reporting an error. Invalid UTF-8 blanked the
+    // whole value instead of the offending byte.
+    $recursive = new stdClass;
+    $recursive->self = $recursive;
+
+    $event = scrubbedEvent([
+        'loop' => $recursive,
+        'bad_utf8' => "valid\xB1tail",
+        'ratio' => 1.0,
+    ]);
+
+    $extra = $event->getExtra();
+
+    expect($extra)->toHaveKey('loop');
+    // The bad byte is substituted, not the whole string dropped.
+    expect($extra['bad_utf8'])->toContain('valid');
+    expect($extra['ratio'])->toBe(1.0);
+});
+
+test('the EVENT-level stacktrace is walked too, not only the exception one', function (): void {
+    // `Event` carries a second stacktrace, serialized by `EventItem` through the
+    // same frame serializer that emits `vars`. Dormant — `attach_stacktrace`
+    // defaults false and is not a key in config/sentry.php — but that is the
+    // same "one config line from being live" this class refused to accept for
+    // spans.
+    $frame = new Frame('scoreInterview', '/app/ScoreInterview.php', 42);
+    $frame->setVars(['transcript' => 'candidate said X', 'email' => 'mario@x.test']);
+
+    $event = Event::createEvent();
+    $event->setStacktrace(new Stacktrace([$frame]));
+
+    $vars = SentryScrubber::handle($event)->getStacktrace()?->getFrames()[0]->getVars();
+
+    expect(json_encode($vars))->not->toContain('candidate said X');
+    expect(json_encode($vars))->not->toContain('mario@x.test');
+});
+
+test('the formatted message is not a pre-scrub rendering of the params', function (): void {
+    // `formatted` is the string with the RAW param values interpolated. Handing
+    // it back defeated the param scrubbing: `user Jane Doe failed` went out
+    // beside a `[redacted]` param. EventItem rebuilds from
+    // `vsprintf(getMessage(), getMessageParams())`, so null is the SAFE branch.
+    $event = Event::createEvent();
+    $event->setMessage('user %s failed', ['Jane Doe'], 'user Jane Doe failed');
+
+    $scrubbed = SentryScrubber::handle($event);
+
+    expect($scrubbed->getMessageFormatted())->toBeNull();
+});
+
+test('an address in a URL PATH is redacted, not just one in a query', function (): void {
+    // redactUrl() cut `?`, `#` and userinfo and left
+    // `/api/participants/jane.doe@acme.test/transcript` whole. A URL is
+    // client-controlled, so a 404 on a hand-typed path is enough.
+    $event = scrubbedEvent([], [
+        'url' => 'https://api.beai.test/api/participants/jane.doe@acme.test/transcript',
+    ]);
+
+    expect($event->getRequest()['url'])->not->toContain('jane.doe@acme.test');
 });
