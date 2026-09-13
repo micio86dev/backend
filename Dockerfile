@@ -94,7 +94,15 @@ RUN printf '[global]\ndaemonize = no\nerror_log = /dev/stderr\n\n[www]\nlisten =
 
 # X-Powered-By announced the exact PHP patch level to every caller, which tells
 # an attacker which CVEs to try without them having to probe for it.
-RUN printf 'expose_php = Off\n' > /usr/local/etc/php/conf.d/99-hardening.ini
+# `zend.exception_ignore_args=On` closes the leak at the SOURCE as well as at the
+# sink. Without it PHP captures every function argument into the backtrace, the
+# Sentry SDK reflects them into frame `vars`, and a method taking
+# `string $transcript` or `string $token` puts that value on the wire. This image
+# installs no php.ini — `php:8.5.8-fpm-alpine` ships none active and
+# `php.ini-production` is never copied — so the built-in default applied and
+# arguments WERE captured. SentryScrubber walks frame vars too; this is the
+# belt to that pair of braces.
+RUN printf 'expose_php = Off\nzend.exception_ignore_args = On\n' > /usr/local/etc/php/conf.d/99-hardening.ini
 
 # Switch to non-root user
 USER appuser
