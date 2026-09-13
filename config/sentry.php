@@ -72,12 +72,13 @@ return [
     // path was left open. Identical callback signature, same guarantee.
     'before_send_transaction' => [SentryScrubber::class, 'handle'],
 
-    // NOT wired deliberately: `before_send_log` takes `callable(Log): ?Log`, a
-    // different type this callback cannot satisfy. It is dormant — `enable_logs`
-    // defaults false and there is no `sentry` channel in config/logging.php —
-    // but `SENTRY_ENABLE_LOGS=true` would reopen it with nothing in the path, so
-    // enabling logs requires its own scrubber first.
-    // 'before_send_log' => ...,
+    // WIRED, through a separate entry point. `before_send_log` takes
+    // `callable(Log): ?Log`, a type `handle()` cannot satisfy — which is why it
+    // sat unwired — and "dormant behind an env var" is the argument this
+    // scrubber already refused three times: for spans, for the event
+    // stacktrace, and for the fingerprint. `SENTRY_ENABLE_LOGS=true` is one
+    // variable, and a log body is free text with no key for the denylist.
+    'before_send_log' => [SentryScrubber::class, 'handleLog'],
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#ignore_exceptions
     // 'ignore_exceptions' => [],
