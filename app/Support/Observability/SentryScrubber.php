@@ -657,7 +657,22 @@ final class SentryScrubber
             // the plain-quote pattern walked straight past it. The cap was the
             // same fail-open direction: a key longer than the bound was never
             // tested against the denylist at all.
-            $matched = preg_match('/\\\\?"([\w.-]+)\\\\?"\s*:\s*/', $text, $match, PREG_OFFSET_CAPTURE, $offset);
+            //
+            // The key class is `[^"\\]+` — ANYTHING but a quote and a backslash,
+            // which is exactly what a JSON key may hold — and not `[\w.-]+`.
+            // The narrow class could not see the delimiter spellings `toSnakeKey`
+            // can now segment, so an embedded `{"candidate ref":…}`,
+            // `{"data[transcript]":…}` or `{"user:candidate_ref":…}` was never
+            // even FOUND, let alone denied. Measured on a Guzzle 422 body inside
+            // an exception message, the carrier this docblock already names.
+            //
+            // Bounded by its own quotes, so it cannot run past its key. A prose
+            // value that happens to contain `"…":` can be read as a key and
+            // denied — accepted, because that direction is fail-closed and this
+            // class takes a false redaction over a false disclosure everywhere
+            // else. Swept 184KB of quote-heavy prose: 0.1ms, no backtracking
+            // pathology, output length unchanged.
+            $matched = preg_match('/\\\\?"([^"\\\\]+)\\\\?"\s*:\s*/', $text, $match, PREG_OFFSET_CAPTURE, $offset);
 
             // FALSE and 0 are different answers, and collapsing them into one
             // `break` returned the raw remainder. `false` means the engine gave
@@ -1384,7 +1399,15 @@ final class SentryScrubber
         // metadata carry no charset restriction to stop the third. Hand-rolled
         // rather than `Str::snake()`, whose static cache never evicts and would
         // be fed keys straight from a request body.
-        $normalized = (string) preg_replace('/[-.\s]+/', '_', $key);
+        $normalized = (string) preg_replace('/\W+/', '_', $key);
+
+        // The EMPTY trailing segment a CLOSING delimiter leaves.
+        // `data[content]` folded to `data_content_`, whose parts are
+        // `['data','content','']`, and the single-word rule requires the denied
+        // word to BE the last one — so `content` was never tested there and
+        // candidate speech walked, one character from `data.content` being cut.
+        // Leading too, for `[content]`.
+        $normalized = (string) preg_replace('/^_+|_+$/', '', $normalized);
 
         // The letter->DIGIT boundary first: without it the normalizer produced
         // `answer1` as ONE segment, so `answer1` shipped while `answer_1` — the

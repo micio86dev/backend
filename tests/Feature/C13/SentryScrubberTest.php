@@ -528,6 +528,62 @@ test('dotted OpenTelemetry keys reach the denylist', function (): void {
     expect(json_encode($event->getExtra()))->not->toContain('LEAK');
 });
 
+test('a key path the normalizer cannot segment is a key path it cannot deny', function (): void {
+    // Measured leak: `toSnakeKey` folded `-`, `.` and whitespace and nothing
+    // else, so a BRACKET or COLON spelling never split into segments the walk
+    // reaches. `headers[authorization]` shipped a live bearer token and
+    // `data[transcript]` shipped candidate speech, both one character from the
+    // same value being cut correctly. BOTH Nuxt mirrors carried the identical
+    // `[-.\s]+` set, so the gap was symmetric — which is worse than a mirror
+    // break, not better: there was no second copy left to disagree and expose it.
+    $event = scrubbedEvent([
+        'data[transcript]' => 'SPEECHLEAK',
+        'form[answer_1]' => 'SPEECHLEAK',
+        'headers[authorization]' => 'BEARERLEAK',
+        'user:candidate_ref' => 'REFLEAK',
+        'headers/authorization' => 'BEARERLEAK',
+        'user|candidate_ref' => 'REFLEAK',
+        // A CLOSING delimiter leaves an empty trailing segment, and the
+        // single-word rule requires the denied word to BE the last one.
+        // `data[content]` folded to `data_content_` — `['data','content','']` —
+        // so `content` was never tested as the last segment. The cases above
+        // are all blind to it: each ends in a CONTENT WORD or a multi-word
+        // entry, both of which match in any position anyway.
+        'data[content]' => 'SPEECHLEAK',
+        'user[content]' => 'SPEECHLEAK',
+        'data[contents]' => 'SPEECHLEAK',
+    ]);
+
+    expect(json_encode($event->getExtra()))->not->toContain('LEAK');
+});
+
+test('an EMBEDDED document is scanned with the same delimiter spellings the normalizer folds', function (): void {
+    // The normalizer half of this rule was pinned; the SCANNER half was not.
+    // `redactEmbeddedPairs` matched keys with `[\w.-]+`, so a delimiter-bearing
+    // key inside a serialised body was never FOUND — the denylist never got the
+    // chance to refuse it. The carrier is the one this method's own docblock
+    // names: a Guzzle 4xx response body embedded in an exception message.
+    // NO braces: a balanced `{…}` is cut wholesale by `redactEmbeddedDocuments`
+    // one pass earlier, so a document-shaped fixture proves nothing about this
+    // scanner. A TRUNCATED body — the ordinary shape once a provider message has
+    // been clipped — is what actually reaches it.
+    $body = 'HTTP 422 from provider: "candidate ref":"SPEECHLEAK", '
+        .'"data[transcript]":"SPEECHLEAK", "user:candidate_ref":"REFLEAK"';
+
+    $event = scrubbedEvent(['provider_error' => $body]);
+
+    expect(json_encode($event->getExtra()))->not->toContain('LEAK');
+});
+
+test('folding every delimiter must not deny a key whose segments are all benign', function (): void {
+    // The fold must not turn every punctuated key into a denial — that would be
+    // fail-closed by accident rather than by rule, and it would destroy the
+    // diagnostics this class exists to preserve.
+    $event = scrubbedEvent(['view[list]' => 'PROJECTS']);
+
+    expect($event->getExtra())->toBe(['view[list]' => 'PROJECTS']);
+});
+
 test('a key ending in _messages is denied — the AI payload is a JSON STRING', function (): void {
     // AiIntegration::truncateMessages() json_encodes, so the conversation
     // arrives as a string under a single key. A string has no keys for the
