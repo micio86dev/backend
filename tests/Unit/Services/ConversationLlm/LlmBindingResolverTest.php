@@ -20,7 +20,6 @@ use App\Services\ConversationLlm\LlmBinding;
 use App\Services\ConversationLlm\LlmBindingResolver;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -52,10 +51,9 @@ test('a bound template resolves a full LlmBinding', function (): void {
     $org = Organization::factory()->create();
     $model = resolverManagedModel();
 
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Cred',
             'vendor' => 'google',
             'api_key' => 'sk-real-key',
@@ -82,40 +80,41 @@ test('a bound template resolves a full LlmBinding', function (): void {
     expect($binding->apiKey)->toBe('sk-real-key');
 });
 
-test('a cross-org credential (data corruption) resolves null, never throws', function (): void {
-    $orgA = Organization::factory()->create();
-    $orgB = Organization::factory()->create();
+/**
+ * REPLACES 'a cross-org credential (data corruption) resolves null, never throws'.
+ *
+ * That test asserted a null for a credential belonging to another
+ * organization. Credentials belong to no organization now (RATIFIED
+ * 2026-09-14) — one key serves every tenant — so the case it described cannot
+ * occur, and the guard that produced the null is gone with the column it read.
+ *
+ * The surviving half still has to hold: a credential the resolver cannot find
+ * yields null rather than an exception, because an interview must not fail to
+ * start over a cost preference that could not be read.
+ *
+ * Asserted against an UNSAVED template, and that is forced rather than lazy.
+ * `avatar_templates.llm_credential_id` is a foreign key, so a persisted row
+ * pointing at a missing credential cannot be written — not even straight
+ * through the query builder, which is how the deleted test staged its
+ * corruption. The branch is genuine defense in depth: unreachable through the
+ * database, reachable if this class is ever handed a template from anywhere
+ * else, and this is the only honest way to exercise it.
+ */
+test('an unresolvable credential yields null, never throws', function (): void {
     $model = resolverManagedModel();
 
-    $credentialB = TenantContextScope::runFor($orgB->id, function () use ($orgB): LlmCredential {
-        $c = new LlmCredential;
-        $c->forceFill([
-            'organization_id' => $orgB->id,
-            'name' => 'Cred B',
-            'vendor' => 'google',
-            'api_key' => 'sk-real-key',
-            'key_last_four' => 'real',
-            'key_fingerprint' => hash('sha256', uniqid('', true)),
-        ]);
-        $c->save();
-
-        return $c;
-    });
-
-    // Simulate a corrupted row bypassing the model layer's I3 guard entirely.
-    $template = TenantContextScope::runFor($orgA->id, fn (): AvatarTemplate => AvatarTemplate::create([
-        'name' => 'Corrupted',
+    $template = new AvatarTemplate;
+    $template->forceFill([
+        'organization_id' => Organization::factory()->create()->id,
+        'name' => 'Never persisted',
         'provider' => 'tavus',
         'config' => ['faceId' => 'f', 'palId' => 'p'],
-    ]));
-
-    DB::table('avatar_templates')->where('id', $template->id)->update([
         'llm_model_id' => $model->id,
-        'llm_credential_id' => $credentialB->id,
+        'llm_credential_id' => 2_147_483_600,
     ]);
 
-    expect(fn () => app(LlmBindingResolver::class)->resolve($template->fresh()))->not->toThrow(Throwable::class);
-    expect(app(LlmBindingResolver::class)->resolve($template->fresh()))->toBeNull();
+    expect(fn () => app(LlmBindingResolver::class)->resolve($template))->not->toThrow(Throwable::class);
+    expect(app(LlmBindingResolver::class)->resolve($template))->toBeNull();
 });
 
 // ─── resolveStatus() — the tri-state billing decision (design D0) ─────────────
@@ -134,10 +133,10 @@ test('an unbound template resolves status Unbound', function (): void {
 test('a bound template with llm_sync_status=synced resolves status Applied', function (): void {
     $org = Organization::factory()->create();
     $model = resolverManagedModel();
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id, 'name' => 'Synced cred', 'vendor' => 'google',
+            'name' => 'Synced cred', 'vendor' => 'google',
             'api_key' => 'sk-real-key', 'key_last_four' => 'real',
             'key_fingerprint' => hash('sha256', uniqid('', true)),
         ]);
@@ -161,10 +160,10 @@ test('a bound template with llm_sync_status=synced resolves status Applied', fun
 test('a bound template whose llm_sync_status is still NULL resolves status Degraded — an import that never synced', function (): void {
     $org = Organization::factory()->create();
     $model = resolverManagedModel();
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id, 'name' => 'Never synced cred', 'vendor' => 'google',
+            'name' => 'Never synced cred', 'vendor' => 'google',
             'api_key' => 'sk-real-key', 'key_last_four' => 'real',
             'key_fingerprint' => hash('sha256', uniqid('', true)),
         ]);
@@ -191,10 +190,10 @@ test('a bound template whose llm_sync_status is still NULL resolves status Degra
 test('a bound template whose llm_sync_status is failed resolves status Degraded', function (): void {
     $org = Organization::factory()->create();
     $model = resolverManagedModel();
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id, 'name' => 'Failed sync cred', 'vendor' => 'google',
+            'name' => 'Failed sync cred', 'vendor' => 'google',
             'api_key' => 'sk-real-key', 'key_last_four' => 'real',
             'key_fingerprint' => hash('sha256', uniqid('', true)),
         ]);

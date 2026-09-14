@@ -89,10 +89,9 @@ function palGeminiModel(): LlmModel
 
 function palGeminiCredentialForOrg(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Pal-cred-'.uniqid(),
             'vendor' => 'google',
             'api_key' => 'sk-real-gemini-key',
@@ -445,7 +444,13 @@ test('L2: HeyGen /v1/secrets outbound body matches the golden JSON', function ()
     $golden['secret_value'] = $credential->api_key;
     $golden['secret_name'] = $capturedBody['secret_name'];
 
-    expect($capturedBody['secret_name'])->toBe("beai-org{$org->id}-cred{$credential->id}");
+    // No org segment since 2026-09-14: the credential belongs to the platform,
+    // and this label's only audience is BEAI's own HeyGen dashboard, where a
+    // name claiming an owner the row does not have would be misleading.
+    // `secret_name` is not a lookup key on the vendor side (it is not unique
+    // there), so this rename cannot strand an existing secret — `heygen_secret_id`
+    // is the handle, and it is untouched.
+    expect($capturedBody['secret_name'])->toBe("beai-platform-cred{$credential->id}");
     $this->assertEqualsCanonicalizing($golden, $capturedBody);
 });
 

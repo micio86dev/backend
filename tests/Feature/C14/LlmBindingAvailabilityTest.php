@@ -43,10 +43,9 @@ function llmAvailabilityModel(bool $isAvailable): LlmModel
 
 function llmAvailabilityCredentialForOrg(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Cred-'.uniqid(),
             'vendor' => 'google',
             'api_key' => 'sk-real-key',

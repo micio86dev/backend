@@ -30,7 +30,6 @@ function makeCredentialForOrg(Organization $org, string $rawKey = 'sk-super-secr
 
     $credential = new LlmCredential;
     $credential->forceFill([
-        'organization_id' => $org->id,
         'name' => 'Primary Gemini key',
         'vendor' => 'google',
         'api_key' => $rawKey,

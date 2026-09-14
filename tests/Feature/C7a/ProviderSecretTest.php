@@ -309,10 +309,9 @@ test('P4: the Gemini credential key appears in no response, no exception, and no
         'sort_order' => 0,
     ]);
 
-    $credential = TenantContextScope::runFor($org->id, function () use ($org, $geminiKey): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function () use ($geminiKey): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Secret test credential',
             'vendor' => 'google',
             'api_key' => $geminiKey,

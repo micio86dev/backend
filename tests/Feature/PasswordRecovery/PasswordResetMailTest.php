@@ -314,5 +314,8 @@ test('the job owns its retry contract — three tries with backoff, well inside 
     // send, so a link delivered past its own TTL is dead on arrival.
     expect($job->tries())->toBe(3);
     expect($job->backoff())->toBe([10, 60]);
-    expect($job->timeout())->toBeLessThan((int) config('auth.passwords.users.expire') * 60);
+    // A PROPERTY, not a method — see QueuedJobRetryOwnershipArchTest: the
+    // payload never reads a `timeout()` method, so asserting on one proved
+    // nothing about what the worker would actually enforce.
+    expect($job->timeout)->toBeLessThan((int) config('auth.passwords.users.expire') * 60);
 });

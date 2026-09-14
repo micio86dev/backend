@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
 use App\Models\Project;
@@ -52,7 +53,9 @@ final class AvatarTemplateController extends Controller
      * submit, with nothing they could do about it.
      *
      * So this is the narrow answer rather than a widened `viewAny`: exactly
-     * the three fields choosing a template requires. A viewer gets it too —
+     * the four fields choosing a template requires — `id`, `name`, `provider`
+     * and `is_active`, which is what the method below returns and what
+     * `openapi.json` publishes. A viewer gets it too —
      * reading a project's configuration should show which template it names,
      * not a bare id.
      *
@@ -494,29 +497,13 @@ final class AvatarTemplateController extends Controller
             return [];
         }
 
-        $result = match ($template->provider) {
-            'tavus' => app(TavusPalSync::class)->sync($template),
-            'heygen' => app(HeygenLlmRegistrar::class)->ensureConfiguration($template),
-            default => ['status' => 'skipped'],
-        };
-
-        if (in_array($template->provider, ['tavus', 'heygen'], true)) {
-            $isBound = $template->llm_model_id !== null && $template->llm_credential_id !== null;
-
-            // saveQuietly() — NOT save() — IS A RE-ENTRANCY GUARD, NOT A
-            // STYLE CHOICE. A plain save() re-fires the `saving` event,
-            // which re-runs AvatarTemplate::booted()'s I2/I3/I4 invariants
-            // on a binding that already passed them for this same request,
-            // and dispatches `saved` observers a second time for a write
-            // that is bookkeeping ABOUT a sync, not a save a user made. Do
-            // NOT "tidy" this to save() in a future refactor.
-            $template->forceFill([
-                'llm_sync_status' => $result['status'] === 'synced'
-                    ? 'synced'
-                    : ($isBound ? 'failed' : 'not_required'),
-                'llm_synced_at' => $result['status'] === 'synced' ? now() : null,
-            ])->saveQuietly();
-        }
+        // The provider dispatch AND the `llm_sync_status` stamp both moved to
+        // `ResyncTemplateBinding`. They were only ever reachable from here,
+        // which made every other path that re-pushes a binding — credential
+        // rotation above all — a path that left the column stale. This method
+        // keeps the one thing that is genuinely controller business: turning
+        // the result into the response's `warning` key.
+        $result = app(ResyncTemplateBinding::class)->run($template);
 
         return $result['status'] === 'warning'
             ? ['warning' => $result['message'] ?? 'pal_sync_failed']

@@ -131,6 +131,22 @@ test('every ShouldQueue job under app/ references TenantContextScope or is expli
         // all, which is a stronger property than opening a scope would give
         // it: there is nothing here for a tenant boundary to be crossed BY.
         'App\\Jobs\\SendCandidateInvitationJob' => 'Reads nothing. Every value arrives as a scalar from the already-authorized request, so the job performs no query, tenant-scoped or otherwise.',
+        // ResyncCredentialBindingsJob is cross-tenant BY CONSTRUCTION, and
+        // unlike the jobs above it is cross-tenant on the WRITE side too.
+        //
+        // It re-pushes every AvatarTemplate bound to one rotated credential.
+        // Credentials became platform rows (RATIFIED 2026-09-14) — one key
+        // serves every organization — so the set it must reach spans tenants
+        // and there is no single org id to open a scope for.
+        // TenantContextScope::runFor() takes exactly one, so opening a scope
+        // here would not be a safety improvement: it would re-push the new key
+        // for one organization and silently strand every other, which is the
+        // precise failure this job exists to prevent.
+        //
+        // Its writes are bookkeeping ONLY — `llm_sync_status`/`llm_synced_at`
+        // on rows resolved by `llm_credential_id`, never by anything a caller
+        // supplied — and nothing it writes can move a row between tenants.
+        'App\\Jobs\\ResyncCredentialBindingsJob' => 'Cross-tenant by construction: one platform credential serves every organization, so the sweep must reach every tenant\'s bound templates and there is no single org id TenantContextScope::runFor() could be given. Writes only llm_sync_status bookkeeping on rows resolved by llm_credential_id.',
     ];
 
     $violations = c10DiscoverShouldQueueViolations(app_path(), 'App', $allowlist);

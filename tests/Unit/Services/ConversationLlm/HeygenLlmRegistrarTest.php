@@ -17,6 +17,7 @@ declare(strict_types=1);
  * secret_id}` under `data`.
  */
 
+use App\Actions\ConversationLlm\ResyncCredentialBindings;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
@@ -51,10 +52,9 @@ function registrarModel(): LlmModel
 
 function registrarCredentialForOrg(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Registrar-cred-'.uniqid(),
             'vendor' => 'google',
             'api_key' => 'sk-real-gemini-key',
@@ -65,6 +65,28 @@ function registrarCredentialForOrg(int $orgId): LlmCredential
 
         return $credential;
     });
+}
+
+/**
+ * Rotate the secret and then re-push every bound template — the two steps
+ * `LlmCredentialController::update()` performs, in that order.
+ *
+ * `rotateSecret()` owns the SECRET only since 2026-09-14; the sweep moved to
+ * `ResyncCredentialBindings` so it could cover every provider rather than
+ * HeyGen alone. These tests exercise the composition because the composition
+ * is the contract a rotation actually has.
+ *
+ * @return array{status: 'synced'|'warning', message?: string}
+ */
+function registrarRotateAndResync(LlmCredential $credential): array
+{
+    $rotation = app(HeygenLlmRegistrar::class)->rotateSecret($credential);
+
+    if ($rotation['status'] === 'warning') {
+        return $rotation;
+    }
+
+    return app(ResyncCredentialBindings::class)->run($credential->fresh());
 }
 
 function registrarHeygenTemplate(?LlmModel $model = null, ?LlmCredential $credential = null): AvatarTemplate
@@ -354,7 +376,7 @@ test('rotate: DELETEs then POSTs the secret (never PATCH — secrets are immutab
         '*liveavatar.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
     ]);
 
-    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+    $result = registrarRotateAndResync($credential->fresh());
 
     expect($result['status'])->toBe('synced');
     expect($credential->fresh()->heygen_secret_id)->toBe('sec_new');
@@ -501,23 +523,37 @@ test('a malformed configuration envelope warns with llm_config_failed and stores
 
 // ─── Binding integrity: a row handed to us is never trusted ───────────────────
 
-test('a cross-org credential is refused with llm_credential_missing and never reaches the vendor', function (): void {
-    Http::fake();
+/**
+ * REPLACES 'a cross-org credential is refused with llm_credential_missing and
+ * never reaches the vendor'.
+ *
+ * That test built a template in org A bound to org B's credential and asserted
+ * a refusal. Credentials have no organization since 2026-09-14, so the row it
+ * staged is now the ORDINARY one — a template using the single platform key —
+ * and refusing it would break every tenant.
+ *
+ * The property worth pinning is therefore the inverse, and it is the one the
+ * change exists to create: a template belonging to ANY organization resolves
+ * the same one credential and reaches the vendor. Kept in the same position so
+ * the diff reads as the inversion it is.
+ */
+test('a template from any organization resolves the one platform credential', function (): void {
+    Http::fake([
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_shared'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_shared'), 200),
+    ]);
 
-    $orgB = Organization::factory()->create();
-    $foreignCredential = registrarCredentialForOrg($orgB->id);
+    $sharedCredential = registrarCredentialForOrg(Organization::factory()->create()->id);
 
-    // I3 refuses this at save time — `AvatarTemplate::saving` throws
-    // `credential_not_found` — so the row can only be built by bypassing the
-    // model events, which is precisely the shape this defence exists for: a
-    // bad backfill or a direct DB write. `saveQuietly()` is the bypass.
-    $template = registrarHeygenTemplate();
-    $template->forceFill(['llm_credential_id' => $foreignCredential->id])->saveQuietly();
+    // `registrarHeygenTemplate()` makes its OWN organization, so this template
+    // belongs to a DIFFERENT one than the credential was created under — the
+    // exact pairing the deleted test called "cross-org" and refused.
+    $template = registrarHeygenTemplate(null, $sharedCredential);
 
-    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template->fresh());
+    $result = app(HeygenLlmRegistrar::class)->ensureConfiguration($template);
 
-    expect($result)->toBe(['status' => 'warning', 'message' => 'llm_credential_missing']);
-    Http::assertNothingSent();
+    expect($result['status'])->toBe('synced');
+    expect($template->fresh()->heygen_llm_configuration_id)->toBe('cfg_shared');
 });
 
 test('a database failure while loading the binding warns with llm_credential_missing instead of throwing', function (): void {
@@ -733,7 +769,7 @@ test('rotateSecret() warns with llm_secret_failed when the recreate leg fails, a
     $credential = registrarCredentialForOrg(Organization::factory()->create()->id);
     $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
 
-    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+    $result = registrarRotateAndResync($credential->fresh());
 
     expect($result)->toBe(['status' => 'warning', 'message' => 'llm_secret_failed']);
     // The old secret IS deleted vendor-side and the id IS cleared: holding a
@@ -765,7 +801,7 @@ test('rotateSecret() reports llm_config_failed when any bound configuration fail
         '*liveavatar.com/v1/llm-configurations/cfg_a' => Http::response(['error' => 'boom'], 500),
     ]);
 
-    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+    $result = registrarRotateAndResync($credential->fresh());
 
     // The secret rotated fine; only the re-point failed. The caller is told
     // the WEAKER of the two outcomes, never the optimistic one.
@@ -773,7 +809,27 @@ test('rotateSecret() reports llm_config_failed when any bound configuration fail
     expect($credential->fresh()->heygen_secret_id)->toBe('sec_new');
 });
 
-test('rotateSecret() ignores templates bound to a different credential or a non-heygen provider', function (): void {
+/**
+ * INVERTED on 2026-09-14. It used to assert that a rotation "ignores ... a
+ * non-heygen provider", and that assertion was the defect written down as a
+ * requirement.
+ *
+ * `TavusPalSync` puts `api_key` LITERALLY on the wire and Tavus does not
+ * retain it across PATCHes, so a Tavus template skipped by a rotation goes on
+ * authenticating with the OLD key while its row still reads `synced` — which
+ * `LlmBindingResolver::resolveStatus()` reports as `Applied`, the one state
+ * its docblock calls billable. Skipping it was never safe; it only looked
+ * deliberate because a test said so.
+ *
+ * What still holds, and is the half worth keeping: a template bound to a
+ * DIFFERENT credential is untouched.
+ */
+test('a rotation re-syncs every bound template including Tavus, and never one bound elsewhere', function (): void {
+    // The Tavus PAL push needs a platform Tavus key — without it `TavusPalSync`
+    // returns `tavus_key_missing` and the sweep reports a warning, which would
+    // pass for "Tavus was skipped" and hide the very thing under test.
+    config()->set('interview.tavus.api_key', 'platform-tavus-key');
+
     Http::fakeSequence('*liveavatar.com/v1/secrets')
         ->push(heygenSecretResponse('sec_old'), 200)
         ->push(heygenSecretResponse('sec_new'), 200);
@@ -805,17 +861,27 @@ test('rotateSecret() ignores templates bound to a different credential or a non-
     Http::fake([
         '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
         '*liveavatar.com/v1/llm-configurations/cfg_a' => Http::response(heygenConfigurationResponse('cfg_a'), 200),
+        // The Tavus PAL the rotation must now also re-push. Before the
+        // inversion this fake was unnecessary, because nothing called it.
+        'tavusapi.com/*' => Http::response(['persona_id' => 'p'], 200),
     ]);
 
-    $result = app(HeygenLlmRegistrar::class)->rotateSecret($credential->fresh());
+    $result = registrarRotateAndResync($credential->fresh());
 
     expect($result)->toBe(['status' => 'synced']);
 
+    // The HeyGen side: exactly ONE configuration patched — the bound template's.
+    // The template on the OTHER credential is still untouched, which is the
+    // half of the original assertion that was always correct.
     $patched = collect(Http::recorded())->filter(
         fn (array $pair): bool => $pair[0]->method() === 'PATCH' && str_contains($pair[0]->url(), '/v1/llm-configurations/')
     );
 
     expect($patched)->toHaveCount(1);
+
+    // The inversion: the Tavus PAL bound to this same credential WAS re-pushed,
+    // carrying the rotated key. Skipping it is what stranded it on the old one.
+    Http::assertSent(fn ($request): bool => str_contains($request->url(), 'tavusapi.com'));
 });
 
 // ─── Stable codes, never vendor prose ─────────────────────────────────────────
@@ -854,10 +920,9 @@ test('the Gemini key appears in no response, no exception, and no log channel ac
     $geminiKey = 'GEMINI_KEY_MUST_NOT_LEAK_ANYWHERE_HEYGEN';
     $model = registrarModel();
     $org = Organization::factory()->create();
-    $credential = TenantContextScope::runFor($org->id, function () use ($org, $geminiKey): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function () use ($geminiKey): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Secret containment credential',
             'vendor' => 'google',
             'api_key' => $geminiKey,

@@ -104,10 +104,9 @@ test('a bound template forecasts minutes, turns, and ONE usd figure — never a 
         'text_input_usd_per_million' => '1.000000',
         'text_output_usd_per_million' => '2.000000',
     ]);
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Forecast credential',
             'vendor' => 'google',
             'api_key' => 'sk-real-gemini-key',
