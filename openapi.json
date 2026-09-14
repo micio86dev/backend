@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.50.0"
+        "version": "0.51.0"
     },
     "servers": [
         {
@@ -708,7 +708,7 @@
         "/avatar-templates/options": {
             "get": {
                 "operationId": "avatarTemplate.options",
-                "description": "`index()` above stays admin-only because this resource carries `config`,\nand that holds provider-side identifiers (avatarId, voiceId, faceId,\npalId) which are closer to credentials than to settings. But\n`projects.avatar_template_id` is NOT NULL, so every operator creating a\nproject has to choose one \u2014 and an operator who cannot list templates\ncannot choose. Their select came back empty and the form refused its own\nsubmit, with nothing they could do about it.\n\nSo this is the narrow answer rather than a widened `viewAny`: exactly\nthe three fields choosing a template requires. A viewer gets it too \u2014\nreading a project's configuration should show which template it names,\nnot a bare id.\n\nThe shape is hand-built rather than run through `AvatarTemplateResource`\nON PURPOSE. A resource is a list of fields somebody will add to; this\nendpoint's entire value is that it cannot grow one, and a future field on\nthat resource must not silently become readable by every role.",
+                "description": "`index()` above stays admin-only because this resource carries `config`,\nand that holds provider-side identifiers (avatarId, voiceId, faceId,\npalId) which are closer to credentials than to settings. But\n`projects.avatar_template_id` is NOT NULL, so every operator creating a\nproject has to choose one \u2014 and an operator who cannot list templates\ncannot choose. Their select came back empty and the form refused its own\nsubmit, with nothing they could do about it.\n\nSo this is the narrow answer rather than a widened `viewAny`: exactly\nthe four fields choosing a template requires \u2014 `id`, `name`, `provider`\nand `is_active`, which is what the method below returns and what\n`openapi.json` publishes. A viewer gets it too \u2014\nreading a project's configuration should show which template it names,\nnot a bare id.\n\nThe shape is hand-built rather than run through `AvatarTemplateResource`\nON PURPOSE. A resource is a list of fields somebody will add to; this\nendpoint's entire value is that it cannot grow one, and a future field on\nthat resource must not silently become readable by every role.",
                 "summary": "The picker list: id, name, provider. Nothing else",
                 "tags": [
                     "AvatarTemplate"
@@ -2801,18 +2801,47 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`LlmCredentialResource`",
+                        "description": "`LlmCredentialResource`\n\n`LlmCredentialResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/components/schemas/LlmCredentialResource"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/LlmCredentialResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/LlmCredentialResource"
+                                                },
+                                                "warning": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string"
+                                                        },
+                                                        {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "llm_secret_failed"
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "data",
+                                                "warning"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "data"
                                     ]
                                 }
                             }
@@ -2861,7 +2890,7 @@
                                         },
                                         "message": {
                                             "type": "string",
-                                            "description": "A code, not a sentence: the API has no idea what language\nthe operator reads, and `templates` below already names the\nones blocking the delete.",
+                                            "description": "A code, not a sentence: the API has no idea what language\nthe operator reads, and `templates` already names the ones\nblocking the delete.",
                                             "const": "credential_in_use"
                                         },
                                         "templates": {
