@@ -31,5 +31,30 @@ return [
          * the memory is spent before anything measures the result.
          */
         'max_dimension' => (int) env('BRANDING_LOGO_MAX_DIMENSION', 2048),
+
+        /*
+         * Lifetime of the presigned object URL the public logo endpoint
+         * redirects to.
+         *
+         * Invisible to every caller: the URL in the API payload and in an
+         * email is this API's own stable route, and the signature is minted
+         * fresh on each redirect. So this is tuned for the download that
+         * immediately follows a redirect, not for how long a link must keep
+         * working — which is the reason the logo could not simply BE a
+         * presigned URL in the first place.
+         */
+        'url_ttl_minutes' => (int) env('BRANDING_LOGO_URL_TTL_MINUTES', 60),
+
+        /*
+         * How long a client may cache the REDIRECT itself.
+         *
+         * A CEILING, not the value. `OrganizationLogoController::show()`
+         * clamps it to half the signature's lifetime, because a redirect
+         * cached longer than what it points at is a broken image served from
+         * the browser's own cache — nothing on the wire, nothing in a log.
+         * Both knobs are independently env-overridable, so the relationship
+         * between them is enforced in code rather than asserted here.
+         */
+        'redirect_cache_seconds' => (int) env('BRANDING_LOGO_REDIRECT_CACHE_SECONDS', 600),
     ],
 ];

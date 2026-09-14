@@ -226,9 +226,40 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // by an endpoint that knows a file was actually stored. Accepting it as a
     // field on the settings PATCH would let a client point the logo at any path
     // on the disk.
-    Route::post('/organization/logo', [OrganizationLogoController::class, 'store']);
+    // throttle:10,1, matching `POST /profile/photo` below and for the reason
+    // that block already records: every call costs an object-storage PUT, so
+    // an unthrottled upload is a storage-burn primitive for a stolen bearer
+    // token. This endpoint is the same primitive with a wider blast radius —
+    // it also runs `getimagesize()` on a decompression-bomb candidate, so the
+    // burn is CPU as well as storage. Admin-only narrows who can reach it; it
+    // does not make the loop cheaper. DELETE stays free: idempotent, no PUT.
+    Route::post('/organization/logo', [OrganizationLogoController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::delete('/organization/logo', [OrganizationLogoController::class, 'destroy']);
 });
+
+// ─── Organization Logo Read (PUBLIC) ─────────────────────────────────────────
+// The one id-addressed organization route, and the only PUBLIC one. Both are
+// departures from the singular self-resolving doctrine directly above, and
+// both are forced by WHO reads this: an email client fetching a remote image
+// through its own proxy, and the candidate app painting the organization's
+// mark before the candidate has exchanged their link for a token. Neither can
+// present a bearer token, and neither has an org id to resolve from one.
+//
+// It serves a REDIRECT to a short-lived presigned object URL, never the
+// object's own store URL — the bucket is private and shared with candidate
+// proctoring snapshots, so its S3 endpoint answers 401 to a browser. That 401
+// is the defect this route exists to close. `OrganizationLogoController::show`
+// refuses to presign any key outside `organization-logos/`.
+//
+// withoutMiddleware([TenantContext, RejectStaleCredentials]): both are
+// appended to the whole `api` group in bootstrap/app.php and both read
+// `$request->user()`. Same isolation the SSO and candidate blocks below apply,
+// for the same reason — this request is unauthenticated on the `api` guard.
+Route::get('/organizations/{organization}/logo', [OrganizationLogoController::class, 'show'])
+    ->whereNumber('organization')
+    ->name('organizations.logo')
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class]);
 
 // ─── User Self-Service Profile (user-profile-self-service, design D1) ────────
 // Singular, self-resolving resource — NO id in the path, ever, mirroring the

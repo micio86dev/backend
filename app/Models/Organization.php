@@ -8,7 +8,6 @@ use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
@@ -17,6 +16,8 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $default_webhook_url
  * @property list<string>|null $default_webhook_events
  * @property string|null $default_webhook_secret
+ * @property string|null $logo_path
+ * @property string|null $primary_color
  */
 class Organization extends Model
 {
@@ -69,17 +70,33 @@ class Organization extends Model
     /**
      * The logo as an ABSOLUTE url, or null when none is configured.
      *
-     * Separate from the relative `Storage::url()` the API resources return,
-     * and deliberately so rather than by oversight: a resource is read by an
-     * app that HAS an origin and can resolve a relative path against it. An
-     * EMAIL has none, so `/storage/logos/acme.png` is a broken image in every
-     * client — which is precisely the failure the original "no logo in mail"
-     * ruling predicted, arriving through a different door.
+     * The single source for every reader — `OrganizationResource`,
+     * `ParticipantResource` and `EmailBranding` all call this and nothing
+     * builds a logo URL of its own. Absolute rather than relative because an
+     * EMAIL has no origin to resolve a path against, so `/storage/acme.png`
+     * is a broken image in every client on earth; the two Nuxt apps are
+     * likewise separate origins from this API.
      *
-     * Anchored on `APP_URL` because that is the same source
-     * `AppServiceProvider::forcePublicRootUrl()` already uses to build public
-     * URLs, so mail and the rest of the application cannot disagree about
-     * where this deployment lives.
+     * Anchored on `APP_URL` — via `AppServiceProvider::forcePublicRootUrl()`,
+     * which `route()` honours — because that is the same source public URLs
+     * are already built from, so mail and the rest of the application cannot
+     * disagree about where this deployment lives.
+     *
+     * THIS API'S OWN ROUTE, NOT `Storage::url()`, and that is the whole point.
+     * The previous version returned the disk's URL and anchored it on
+     * `APP_URL` only when it came back relative — correct for the `local`
+     * disk, and a no-op for `s3`, where `Storage::url()` is ALREADY absolute:
+     * `AWS_ENDPOINT` + `/bucket/` + key. That host is the S3 API endpoint of a
+     * private bucket, so every such URL answered 401 to the browser and the
+     * logo silently never painted. The bucket cannot be opened up to repair
+     * it: it is the same bucket that holds candidate proctoring snapshots.
+     *
+     * The route is STABLE — it names the organization, never the stored
+     * object — which is what lets the same string sit in an email for days
+     * (`EmailBranding`) and still resolve, and what makes a replaced logo take
+     * effect in already-sent messages instead of breaking them. The
+     * short-lived signature lives behind the redirect, where nothing has to
+     * remember it.
      */
     public function absoluteLogoUrl(): ?string
     {
@@ -87,15 +104,20 @@ class Organization extends Model
             return null;
         }
 
-        $url = Storage::url($this->logo_path);
+        // The PATH from the route table, the HOST from `app.url`, rather than
+        // one absolute `route()` call. `route()` absolute would be anchored on
+        // whatever `AppServiceProvider::forcePublicRootUrl()` forced at boot —
+        // and that method returns early when `APP_URL` is unset or malformed,
+        // leaving the generator on the request's own Host. This API is always
+        // reached through something else (the Nuxt dev proxies, Railway's
+        // edge), so that Host is the INTERNAL one: the exact
+        // `http://api:8000/...` that no browser can resolve, which that same
+        // docblock records having already shipped once. Naming the source here
+        // makes the logo URL independent of boot order and of a route table
+        // that has not been forced.
+        $path = route('organizations.logo', ['organization' => $this->getKey()], absolute: false);
 
-        // Already absolute on an S3-style disk; only the local disk returns a
-        // rooted path that needs anchoring.
-        if (preg_match('#\Ahttps?://#i', $url) === 1) {
-            return $url;
-        }
-
-        return rtrim((string) config('app.url'), '/').'/'.ltrim($url, '/');
+        return rtrim((string) config('app.url'), '/').'/'.ltrim($path, '/');
     }
 
     /**

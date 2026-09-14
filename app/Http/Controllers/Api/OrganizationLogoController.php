@@ -9,7 +9,10 @@ use App\Http\Resources\Admin\OrganizationResource;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Uploads\ImageMagicBytes;
+use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -27,11 +30,16 @@ use Throwable;
  * until every check has passed, and nothing is deleted until the row that
  * replaces it has committed.
  *
- *   1. FormRequest-level shape check — a fast rejection before any file work.
+ *   1. Inline `validate()` shape check — a fast rejection before any file work.
+ *      Inline rather than a FormRequest, unlike the sibling: the rule set is
+ *      one line and the message map exists only to force CODES over prose.
+ *      This text used to say "FormRequest-level", and step 3 below still spoke
+ *      of "the FormRequest's `max:`" — sending a reader looking for a
+ *      `StoreOrganizationLogoRequest` that was never written.
  *   2. MAGIC BYTES, via the shared `ImageMagicBytes`. The claimed MIME type and
  *      the filename are both attacker-controlled; the header is not.
  *   3. The real byte cap, against `config('branding.logo.max_bytes')` and the
- *      actual size. The FormRequest's `max:` is a literal, not the policy.
+ *      actual size. The inline `max:` is a literal, not the policy.
  *   4. Decoded dimensions. The byte cap alone does not stop a decompression
  *      bomb — a few kilobytes of PNG can decode to hundreds of megabytes.
  *   5. Store, with NO `disk()` argument: the disk comes from the single
@@ -45,6 +53,88 @@ use Throwable;
  */
 final class OrganizationLogoController extends Controller
 {
+    /**
+     * The one prefix this endpoint will presign, and the security-critical
+     * line in this class.
+     *
+     * Mirrors `ProfilePhotoUrlSigner::REQUIRED_PREFIX` for the same reason and
+     * with the same force: `show()` is PUBLIC and mints a signed URL for an
+     * object on the bucket that ALSO holds candidate proctoring snapshots
+     * (`{org}/{participant}/{session}/{uuid}.jpg`). Today only `store()`
+     * writes `logo_path`, and it writes this prefix. The guard is what holds
+     * when that stops being true — a settings PATCH that accepts the column, a
+     * portability import, a refactor — instead of an unauthenticated GET
+     * handing out a candidate's webcam frame.
+     */
+    private const LOGO_PREFIX = 'organization-logos/';
+
+    /**
+     * The organization's logo, for anyone at all.
+     *
+     * PUBLIC AND ID-ADDRESSED, both deliberately, and both against the
+     * doctrine the sibling endpoints in this controller follow — so the
+     * departure is argued rather than assumed:
+     *
+     *   - Public, because the two readers that matter cannot present a token.
+     *     An email client fetches a remote image through its own proxy
+     *     (`EmailBranding`), and the candidate app paints the mark before the
+     *     candidate has exchanged their link. A logo is brand material an
+     *     organization already shows every candidate it invites; it is not
+     *     tenant data.
+     *   - Id-addressed, because `POST /organization/logo` resolves the org
+     *     from the authenticated user and there is no authenticated user here.
+     *     The id leaks nothing the response does not already publish, and a
+     *     missing organization and a missing logo both answer 404 so this
+     *     cannot be read as "does organization N exist".
+     *
+     * A REDIRECT, not a stream: the bytes travel from the object store to the
+     * client directly, so a logo on every candidate page and in every message
+     * does not hold a PHP worker open for each transfer.
+     */
+    // Scramble infers `200 application/json` from the return type, which is
+    // the one thing this endpoint never answers. A spec that promises JSON
+    // here is worse than no entry at all: both Nuxt apps generate their typed
+    // client FROM this document, so the lie is what a consumer would be typed
+    // against.
+    #[IgnoreResponse(200)]
+    #[Response(302, description: 'Redirect to a short-lived signed URL for the stored logo.')]
+    public function show(int $organization): RedirectResponse
+    {
+        $key = Organization::query()->whereKey($organization)->value('logo_path');
+
+        // One 404 for three different states — unknown organization, no logo,
+        // and a key this endpoint refuses to sign. Distinguishing them is the
+        // only thing an unauthenticated caller could learn here.
+        if (! is_string($key) || ! str_starts_with($key, self::LOGO_PREFIX)) {
+            abort(404);
+        }
+
+        $ttlMinutes = (int) config('branding.logo.url_ttl_minutes');
+
+        $url = Storage::temporaryUrl($key, now()->addMinutes($ttlMinutes));
+
+        // CLAMPED, not merely documented. `config/branding.php` says the cache
+        // window "must stay comfortably below" the signature's lifetime, and
+        // both values are independently env-overridable — so one
+        // `BRANDING_LOGO_URL_TTL_MINUTES=5` in Railway, against the default
+        // 600-second cache, produces a redirect the browser keeps replaying
+        // after the signature it points at has died. That failure is a broken
+        // image served from the client's own cache: nothing on the wire,
+        // nothing in a log, and nothing in CI. A stated MUST that two
+        // environment variables can violate is prose; `min()` is the invariant.
+        //
+        // Half the TTL rather than all of it, so a redirect handed out in the
+        // last moments of its cache window still has a live signature behind it.
+        $maxAge = min(
+            (int) config('branding.logo.redirect_cache_seconds'),
+            intdiv($ttlMinutes * 60, 2),
+        );
+
+        return redirect()->away($url)->withHeaders([
+            'Cache-Control' => 'public, max-age='.$maxAge,
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         /** @var User $user */
@@ -111,7 +201,7 @@ final class OrganizationLogoController extends Controller
 
         $oldKey = $organization->logo_path;
         $newKey = Storage::putFileAs(
-            'organization-logos/'.$organization->id,
+            self::LOGO_PREFIX.$organization->id,
             $file,
             (string) Str::uuid().'.'.$extension,
         );
