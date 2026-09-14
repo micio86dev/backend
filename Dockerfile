@@ -21,8 +21,39 @@ WORKDIR /var/www
 # Copy composer files first for layer caching
 COPY composer.json composer.lock ./
 
-# Install production dependencies (no dev)
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+# Install production dependencies (no dev).
+#
+# NO `--prefer-dist`, AND BOUNDED RETRIES. Both are about the same failure, and
+# it is not hypothetical: on 2026-09-14 `api.github.com` served HTTP/2 504 on
+# package zipballs for over an hour, and this step failed three builds in a row
+# with `exit code: 100`. Composer said exactly why it could not recover:
+#
+#     Failed to download resend/resend-php from dist: ... (HTTP/2 504)
+#     Source fallback is disabled. Not trying alternative sources.
+#
+# `--prefer-dist` is what disables that fallback. Without the flag, composer
+# still prefers dist for stable packages — the normal path is unchanged and no
+# slower — but a dist that 504s falls back to a git clone instead of killing
+# the build. `git` is installed above precisely so that path exists.
+#
+# The retry covers the case the fallback cannot: GitHub failing BOTH the API
+# and the clone during the same incident. Four attempts with a widening pause,
+# then a real failure — a build that retries forever is a build nobody can
+# read.
+#
+# NOTHING HERE TOUCHES A VERSION. `composer.lock` still decides what is
+# installed, exactly as D37's Dependency Resolution Policy requires: this
+# changes only how a correctly-pinned package is FETCHED when the network
+# misbehaves. A transport failure is not a dependency conflict, and retrying a
+# download is not loosening a constraint.
+RUN set -eu; \
+    for attempt in 1 2 3 4; do \
+      if composer install --no-dev --no-scripts --no-autoloader; then exit 0; fi; \
+      echo "composer install failed (attempt ${attempt}/4); retrying in $((attempt * 20))s"; \
+      sleep $((attempt * 20)); \
+    done; \
+    echo "composer install failed 4 times — see the errors above"; \
+    exit 1
 
 # Copy application source
 COPY . .
