@@ -50,10 +50,9 @@ function i3ManagedModel(): LlmModel
 
 function i3CredentialForOrg(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Cred-'.uniqid(),
             'vendor' => 'google',
             'api_key' => 'sk-real-key',
@@ -119,11 +118,24 @@ test('the INSERT path derives the owning org from the resolver, before the creat
         ->toBe($credential->id);
 });
 
-test('a superadmin cannot bind an Org A template to an Org B credential — I3 under the real bypass', function (): void {
+/**
+ * REPLACES 'a superadmin cannot bind an Org A template to an Org B credential
+ * — I3 under the real bypass'.
+ *
+ * The refusal that test asserted was REMOVED on purpose on 2026-09-14.
+ * Credentials are platform rows now, so "org B's credential" does not name
+ * anything — there is one set, and binding any template to it is the design
+ * rather than the leak.
+ *
+ * The half of I3 that survives is existence, and it still has to hold under
+ * the real superadmin bypass — the state where `TenantResolver` carries NO org
+ * and `Gate::before` has already answered true for every ability. That is the
+ * context in which a guard is most likely to quietly stop running, so the
+ * bypass assertions below are kept exactly as they were.
+ */
+test('a superadmin still cannot bind a template to a credential that does not exist — I3 under the real bypass', function (): void {
     $orgA = Organization::factory()->create();
-    $orgB = Organization::factory()->create();
     $model = i3ManagedModel();
-    $credentialB = i3CredentialForOrg($orgB->id);
 
     $templateA = TenantContextScope::runFor($orgA->id, fn (): AvatarTemplate => AvatarTemplate::create([
         'name' => 'Org A template',
@@ -138,8 +150,35 @@ test('a superadmin cannot bind an Org A template to an Org B credential — I3 u
 
     expect(fn () => $templateA->update([
         'llm_model_id' => $model->id,
-        'llm_credential_id' => $credentialB->id,
+        'llm_credential_id' => 999999,
     ]))->toThrow(InvalidLlmBindingException::class);
 
     expect($templateA->fresh()->llm_credential_id)->toBeNull();
+});
+
+/**
+ * The counterpart, and the property the change exists to create: under the
+ * same bypass, a template in one organization binds the single platform
+ * credential — which was created while acting as a DIFFERENT one — and saves.
+ */
+test('a superadmin binds any template to the one platform credential', function (): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $model = i3ManagedModel();
+    $credential = i3CredentialForOrg($orgB->id);
+
+    $templateA = TenantContextScope::runFor($orgA->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Org A template',
+        'provider' => 'tavus',
+        'config' => ['faceId' => 'f', 'palId' => 'p'],
+    ]));
+
+    i3TriggerSuperadminBypass();
+
+    $templateA->update([
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]);
+
+    expect($templateA->fresh()->llm_credential_id)->toBe($credential->id);
 });

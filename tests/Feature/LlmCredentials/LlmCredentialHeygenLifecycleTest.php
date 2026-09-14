@@ -42,7 +42,7 @@ test('rotating a credential that already has a HeyGen secret deletes and recreat
     heygenLifecycleModel();
 
     $org = Organization::factory()->create();
-    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
 
     Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
 
@@ -94,7 +94,7 @@ test('rotating a credential that has never been used with HeyGen makes no HeyGen
     heygenLifecycleModel();
 
     $org = Organization::factory()->create();
-    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
 
     Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
 
@@ -125,10 +125,9 @@ test('deleting an unbound credential with a HeyGen secret deletes the vendor sec
     $org = Organization::factory()->create();
     $token = authTokenForRole($org, 'platform');
 
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Delete with HeyGen secret',
             'vendor' => 'google',
             'api_key' => 'sk-real-key',
@@ -157,10 +156,9 @@ test('deleting a bound HeyGen template deletes its vendor configuration — no o
     $org = Organization::factory()->create();
     $token = authTokenForRole($org, 'platform');
 
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Template delete credential',
             'vendor' => 'google',
             'api_key' => 'sk-real-key',
@@ -216,10 +214,9 @@ test('deleting a HeyGen template whose vendor account is unreachable still delet
     $org = Organization::factory()->create();
     $token = authTokenForRole($org, 'platform');
 
-    $credential = TenantContextScope::runFor($org->id, function () use ($org): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Unreachable vendor credential',
             'vendor' => 'google',
             'api_key' => 'sk-real-key',
@@ -262,4 +259,258 @@ test('deleting a HeyGen template whose vendor account is unreachable still delet
     expect($trashed?->trashed())->toBeTrue()
         ->and($trashed?->llm_credential_id)->toBeNull()
         ->and($trashed?->llm_model_id)->toBeNull();
+});
+
+/**
+ * A rotation whose re-push FAILS must not leave the template claiming to be
+ * synced — that claim is a billing assertion, not a status badge.
+ *
+ * `LlmBindingResolver::resolveStatus()` reads `llm_sync_status === 'synced'`
+ * as `Applied`, the state its own docblock calls the only BILLABLE one. Before
+ * `rotateSecret()` wrote the status itself, a failed re-push left every
+ * affected template on `synced` — asserting a live billable binding to a
+ * vendor secret `forgetSecret()` had deleted moments earlier.
+ *
+ * The controller discarded `rotateSecret()`'s return value, and rotation does
+ * not pass through `AvatarTemplateController::recordSync()`, which is the only
+ * other place that writes this column. Nothing wrote it, so nothing was wrong
+ * to see.
+ */
+test('a rotation whose re-push fails marks bound templates failed, never left claiming synced', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
+
+    Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
+
+    $created = $this->withToken($token)->postJson('/api/llm-credentials', [
+        'name' => 'Rotate that fails',
+        'vendor' => 'google',
+        'api_key' => 'sk-old-key',
+    ])->assertStatus(201);
+
+    $credential = LlmCredential::query()->find($created->json('data.id'));
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+
+    $model = LlmModel::where('key', 'gemini-3-flash-preview')->firstOrFail();
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Template that goes stale',
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+
+    // The state this test exists to break: a template the system believes is
+    // live and billable.
+    $template->forceFill([
+        'heygen_llm_configuration_id' => 'cfg_old',
+        'llm_sync_status' => 'synced',
+        'llm_synced_at' => now(),
+    ])->saveQuietly();
+
+    // The secret is destroyed and recreated fine; the CONFIGURATION re-push is
+    // what fails — the exact shape that used to go unrecorded.
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_new'], 'message' => 'ok'], 200),
+        '*liveavatar.com/v1/llm-configurations/*' => Http::response([], 500),
+        '*liveavatar.com/v1/llm-configurations' => Http::response([], 500),
+    ]);
+
+    $this->withToken($token)->patchJson('/api/llm-credentials/'.$credential->id, [
+        'api_key' => 'sk-new-key-1234',
+    ])->assertStatus(200);
+
+    $fresh = $template->fresh();
+
+    expect($fresh->llm_sync_status)->toBe('failed');
+    expect($fresh->llm_synced_at)->toBeNull();
+});
+
+test('a rotation that succeeds marks bound templates synced', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
+
+    Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
+
+    $created = $this->withToken($token)->postJson('/api/llm-credentials', [
+        'name' => 'Rotate that works',
+        'vendor' => 'google',
+        'api_key' => 'sk-old-key',
+    ])->assertStatus(201);
+
+    $credential = LlmCredential::query()->find($created->json('data.id'));
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+
+    $model = LlmModel::where('key', 'gemini-3-flash-preview')->firstOrFail();
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Template that stays live',
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+    $template->forceFill(['heygen_llm_configuration_id' => 'cfg_old'])->saveQuietly();
+
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_new'], 'message' => 'ok'], 200),
+        '*liveavatar.com/v1/llm-configurations/cfg_old' => Http::response(['data' => ['id' => 'cfg_old']], 200),
+    ]);
+
+    $this->withToken($token)->patchJson('/api/llm-credentials/'.$credential->id, [
+        'api_key' => 'sk-new-key-1234',
+    ])->assertStatus(200);
+
+    expect($template->fresh()->llm_sync_status)->toBe('synced');
+});
+
+/**
+ * The WORSE rotation failure: the new secret is never created at all.
+ *
+ * `forgetSecret()` has already destroyed the old secret AND nulled
+ * `heygen_secret_id` by the time `ensureSecret()` fails, and
+ * `LlmCredentialController::update()` only calls `rotateSecret()` when that
+ * column is non-null — so no later save ever revisits these rows. Whatever
+ * status they carry when this returns, they carry forever.
+ *
+ * An earlier fix stamped the status only inside the re-push loop, which this
+ * path returns before reaching. It covered "new secret exists, config push
+ * failed" and left "no new secret at all" reading `synced` — a permanent
+ * `Applied`, which `LlmBindingResolver::resolveStatus()` calls billable,
+ * against a vendor secret that no longer exists.
+ */
+test('a rotation that cannot create the new secret still marks bound templates failed', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
+
+    Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
+
+    $created = $this->withToken($token)->postJson('/api/llm-credentials', [
+        'name' => 'Rotate with no new secret',
+        'vendor' => 'google',
+        'api_key' => 'sk-old-key',
+    ])->assertStatus(201);
+
+    $credential = LlmCredential::query()->find($created->json('data.id'));
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+
+    $model = LlmModel::where('key', 'gemini-3-flash-preview')->firstOrFail();
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Template stranded by rotation',
+        'provider' => 'heygen',
+        'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+    $template->forceFill([
+        'heygen_llm_configuration_id' => 'cfg_old',
+        'llm_sync_status' => 'synced',
+        'llm_synced_at' => now(),
+    ])->saveQuietly();
+
+    // The DELETE of the old secret succeeds; the CREATE of the new one does
+    // not. That is the ordering that strands the templates.
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response([], 500),
+    ]);
+
+    $this->withToken($token)->patchJson('/api/llm-credentials/'.$credential->id, [
+        'api_key' => 'sk-new-key-1234',
+    ])->assertStatus(200);
+
+    $fresh = $template->fresh();
+
+    expect($fresh->llm_sync_status)->toBe('failed');
+    expect($fresh->llm_synced_at)->toBeNull();
+});
+
+/**
+ * A rotation that DESTROYS the old secret and cannot create a new one must say so.
+ *
+ * `forgetSecret()` nulls `heygen_secret_id` whether or not the vendor call
+ * succeeded — that is its documented NEVER-THROWS contract — so when
+ * `ensureSecret()` then fails the credential is left with no secret at all and
+ * every bound configuration references something deleted.
+ *
+ * The controller used to discard `rotateSecret()`'s return value and answer a
+ * bare 200, telling the operator a rotation worked. `AvatarTemplateController::
+ * recordSync()` states the doctrine this restores: an operator who is not told
+ * will believe the setting took effect.
+ */
+test('a rotation that cannot recreate the secret answers with a warning, not a bare 200', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
+
+    Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
+
+    $created = $this->withToken($token)->postJson('/api/llm-credentials', [
+        'name' => 'Rotate that loses its secret',
+        'vendor' => 'google',
+        'api_key' => 'sk-old-key',
+    ])->assertStatus(201);
+
+    $credential = LlmCredential::query()->find($created->json('data.id'));
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+
+    // The DELETE lands, the CREATE does not.
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response([], 500),
+    ]);
+
+    $this->withToken($token)->patchJson('/api/llm-credentials/'.$credential->id, [
+        'api_key' => 'sk-new-key-1234',
+    ])->assertStatus(200)
+        ->assertJsonPath('warning', 'llm_secret_failed');
+
+    // And the row records the destruction rather than pretending it has a secret.
+    expect($credential->fresh()->heygen_secret_id)->toBeNull();
+});
+
+test('a rotation that succeeds carries NO warning key', function (): void {
+    config()->set('interview.heygen.api_key', 'platform-heygen-key');
+    heygenLifecycleModel();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'platform');
+
+    Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 200)]);
+
+    $created = $this->withToken($token)->postJson('/api/llm-credentials', [
+        'name' => 'Rotate cleanly',
+        'vendor' => 'google',
+        'api_key' => 'sk-old-key',
+    ])->assertStatus(201);
+
+    $credential = LlmCredential::query()->find($created->json('data.id'));
+    $credential->forceFill(['heygen_secret_id' => 'sec_old'])->saveQuietly();
+
+    Http::fake([
+        'generativelanguage.googleapis.com/*' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets/sec_old' => Http::response([], 200),
+        '*liveavatar.com/v1/secrets' => Http::response(['code' => 1000, 'data' => ['id' => 'sec_new'], 'message' => 'ok'], 200),
+    ]);
+
+    $this->withToken($token)->patchJson('/api/llm-credentials/'.$credential->id, [
+        'api_key' => 'sk-new-key-1234',
+    ])->assertStatus(200)
+        ->assertJsonMissingPath('warning');
 });

@@ -7,10 +7,10 @@ namespace App\Http\Controllers\M2m;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ApiClientResource;
 use App\Models\ApiClient;
-use App\Models\User;
 use App\Services\AbilitiesValidator;
 use App\Services\ApiKeyGenerator;
 use App\Support\Audit\AuditRecorder;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -52,6 +52,20 @@ final class ApiClientController extends Controller
     {
         $this->authorize('create', ApiClient::class);
 
+        // The ORG IN CONTEXT, not the actor's own column. See index() below
+        // for why those are different for a superadmin.
+        $orgId = app(TenantResolver::class)->getOrgId();
+
+        // No client selected. A key belongs to the tenant it authenticates
+        // FOR, so there is nothing to create here — `organization_id` is NOT
+        // NULL and the insert used to die on the constraint with a 500. The
+        // backoffice hides this section in the all-clients view, but the rail
+        // is an affordance and this is the control: refuse, legibly, before
+        // anything is written. Machine-facing body, not localized.
+        if ($orgId === null) {
+            return response()->json(['error' => 'no_client_selected'], 409);
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'abilities' => ['required', 'array'],
@@ -70,14 +84,11 @@ final class ApiClientController extends Controller
         $rawKey = ApiKeyGenerator::generate();
         $hash = ApiKeyGenerator::hash($rawKey);
 
-        /** @var User $user */
-        $user = $request->user();
-
         // key_hash is NOT in $fillable (security invariant: cannot be mass-assigned).
         // Use forceFill to set it once at creation — this is the only place it is ever written.
         $client = new ApiClient;
         $client->forceFill([
-            'organization_id' => $user->organization_id,
+            'organization_id' => $orgId,
             'name' => $validated['name'],
             'abilities' => $validated['abilities'],
             'expires_at' => $validated['expires_at'] ?? null,
@@ -121,14 +132,37 @@ final class ApiClientController extends Controller
      *
      * Never returns key_hash or raw api_key.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(): AnonymousResourceCollection
     {
         $this->authorize('viewAny', ApiClient::class);
 
-        /** @var User $user */
-        $user = $request->user();
+        // THE RESOLVER, never `$request->user()->organization_id`.
+        //
+        // They agree for an ordinary admin and diverge for exactly one
+        // identity. `TenantContext` narrows a superadmin who selected a client
+        // by setting `resolver->setOrgId($actingOrgId)` and deliberately
+        // leaves `users.organization_id` null — that null is what MAKES them a
+        // superadmin, and writing to it would turn a view into an
+        // impersonation. Every TenantModel reads the resolver through
+        // `TenantScoped` and follows the selection for free; `ApiClient` is
+        // not one (the M2M guard must find a key before any tenant context
+        // exists), so this is the one query that has to ask for itself.
+        //
+        // Asking the user instead is what made this list come back EMPTY on
+        // every request a superadmin made while acting as a client: the filter
+        // was `organization_id = null`, which no row can match.
+        $orgId = app(TenantResolver::class)->getOrgId();
 
-        $clients = ApiClient::where('organization_id', $user->organization_id)
+        // No client selected: an empty list, not every tenant's keys. The
+        // superadmin bypass exists so BEAI can operate the platform, but there
+        // is no all-clients view of CREDENTIALS to operate — a key is only
+        // meaningful inside the org it speaks for, and a merged list would be
+        // the cross-tenant read surface the tenancy rules exist to forbid.
+        if ($orgId === null) {
+            return ApiClientResource::collection(collect());
+        }
+
+        $clients = ApiClient::where('organization_id', $orgId)
             ->orderByDesc('is_active')
             ->orderByDesc('created_at')
             ->get();

@@ -106,7 +106,11 @@ test('an admin is told they may reach settings', function (): void {
     $response->assertJsonPath('abilities.organization.update', true);
     $response->assertJsonPath('abilities.users.viewAny', true);
     $response->assertJsonPath('abilities.avatarTemplates.viewAny', true);
-    $response->assertJsonPath('abilities.llmCredentials.viewAny', true);
+    // FALSE since 2026-09-14. LLM credentials became BEAI's own platform rows,
+    // gated on `is_superadmin`, so this is the one settings section an org
+    // admin is now told they may NOT reach — and the backoffice rail hides it
+    // for them on the strength of exactly this answer.
+    $response->assertJsonPath('abilities.llmCredentials.viewAny', false);
 });
 
 test('an operator is told they may NOT, matching what the endpoints do', function (): void {

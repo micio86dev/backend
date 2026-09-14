@@ -176,15 +176,35 @@ final class HeygenLlmRegistrar
 
         try {
             $model = LlmModel::find($template->llm_model_id);
-            $credential = LlmCredential::withoutGlobalScopes()->find($template->llm_credential_id);
-        } catch (Throwable) {
+            $credential = LlmCredential::find($template->llm_credential_id);
+        } catch (Throwable $e) {
+            // The CODE stays `llm_credential_missing`, the LOG says what
+            // actually happened. A connection failure, a QueryException and a
+            // deadlock all reach here, and to an operator that message reads
+            // "your credential is gone" — the same mislabelling this class's
+            // own docblock dissects for `llm_secret_failed` and a 404 that was
+            // really routing.
+            //
+            // Not given a distinct code, deliberately: the code is a published
+            // contract that `LlmBindingResolver` and the backoffice's warning
+            // banner both map, and a test pins this exact value for this exact
+            // path. Changing it is a contract change that belongs in its own
+            // slice; recording the cause costs nothing and is what makes the
+            // difference diagnosable today.
+            Log::warning('HeyGen configuration lookup errored', [
+                'template_id' => $template->id,
+                'exception' => $e::class,
+            ]);
+
             return ['status' => 'warning', 'message' => 'llm_credential_missing'];
         }
 
-        // Defense in depth, mirroring `LlmBindingResolver::resolve()` — I3
-        // already refuses a cross-org credential at save time, but this
-        // class must not trust that a row it is handed still satisfies it.
-        if ($model === null || $credential === null || $credential->organization_id !== $template->organization_id) {
+        // Existence only, mirroring `LlmBindingResolver::resolve()`. The
+        // cross-org half of this guard is gone with the column it read:
+        // credentials are platform rows now (RATIFIED 2026-09-14) and serving
+        // every tenant from one key is the design, not the corruption this
+        // used to defend against.
+        if ($model === null || $credential === null) {
             return ['status' => 'warning', 'message' => 'llm_credential_missing'];
         }
 
@@ -321,8 +341,30 @@ final class HeygenLlmRegistrar
      */
     public function forgetSecret(LlmCredential $credential): void
     {
-        $secretId = $credential->heygen_secret_id;
+        $this->forgetVendorSecret($credential->heygen_secret_id, (int) $credential->id);
 
+        if ($credential->heygen_secret_id !== null) {
+            $credential->forceFill(['heygen_secret_id' => null])->saveQuietly();
+        }
+    }
+
+    /**
+     * The vendor half of `forgetSecret()`, with NO write to our own row.
+     *
+     * Split out for the delete path. `LlmCredentialController::destroy()` has
+     * to destroy the vendor secret AFTER the row is gone — the foreign key is
+     * ON DELETE RESTRICT, so a delete that throws must not have already
+     * destroyed the secret its bound templates are still using — and calling
+     * `forgetSecret()` there would be worse than the ordering it fixes:
+     * `Model::delete()` sets `exists = false`, so the `saveQuietly()` above
+     * would take Eloquent's INSERT branch and RESURRECT the deleted
+     * credential, silently, with a fresh id.
+     *
+     * Never throws (design D8): an unreachable HeyGen account must not block
+     * removing our own row.
+     */
+    public function forgetVendorSecret(?string $secretId, int $credentialId): void
+    {
         if ($secretId === null) {
             return;
         }
@@ -337,57 +379,44 @@ final class HeygenLlmRegistrar
 
                 if (! $response->successful() && $response->status() !== 404) {
                     Log::warning('HeyGen secret delete failed', [
-                        'credential_id' => $credential->id,
+                        'credential_id' => $credentialId,
                         'status' => $response->status(),
                     ]);
                 }
             } catch (Throwable $e) {
                 Log::warning('HeyGen secret delete errored', [
-                    'credential_id' => $credential->id,
+                    'credential_id' => $credentialId,
                     'exception' => $e::class,
                 ]);
             }
         }
-
-        $credential->forceFill(['heygen_secret_id' => null])->saveQuietly();
     }
 
     /**
      * Rotate a credential's HeyGen secret: delete-then-recreate (secrets are
      * IMMUTABLE on the vendor side — `PATCH`/`PUT /v1/secrets/{id}` both
-     * return 405 on the real API), then re-point every configuration bound
-     * to it via the `(organization_id, llm_credential_id)` index.
+     * return 405 on the real API).
      *
-     * @return array{status: 'skipped'|'synced'|'warning', message?: string}
+     * THE SECRET ONLY. Re-pushing the configurations that reference it belongs
+     * to `ResyncCredentialBindings`, and moving it there is the point rather
+     * than tidying: the sweep used to live here behind
+     * `->where('provider', 'heygen')`, so a rotation re-pushed HeyGen
+     * templates and silently stranded every TAVUS template bound to the same
+     * credential — Tavus carries the key literally on the PAL and does not
+     * retain it across PATCHes. A provider's own class is the wrong owner for
+     * a cross-provider concern.
+     *
+     * Callers run this FIRST and the resync after: a HeyGen configuration can
+     * only be re-pushed against a secret that already exists.
+     *
+     * @return array{status: 'synced'|'warning', message?: string}
      */
     public function rotateSecret(LlmCredential $credential): array
     {
         $this->forgetSecret($credential);
 
-        $secretId = $this->ensureSecret($credential);
-
-        if ($secretId === null) {
-            return ['status' => 'warning', 'message' => 'llm_secret_failed'];
-        }
-
-        $templates = AvatarTemplate::withoutGlobalScopes()
-            ->where('organization_id', $credential->organization_id)
-            ->where('llm_credential_id', $credential->id)
-            ->where('provider', 'heygen')
-            ->get();
-
-        $anyFailed = false;
-
-        foreach ($templates as $template) {
-            $result = $this->ensureConfiguration($template);
-
-            if ($result['status'] === 'warning') {
-                $anyFailed = true;
-            }
-        }
-
-        return $anyFailed
-            ? ['status' => 'warning', 'message' => 'llm_config_failed']
+        return $this->ensureSecret($credential) === null
+            ? ['status' => 'warning', 'message' => 'llm_secret_failed']
             : ['status' => 'synced'];
     }
 
@@ -399,7 +428,10 @@ final class HeygenLlmRegistrar
      */
     private function secretName(LlmCredential $credential): string
     {
-        return sprintf('beai-org%d-cred%d', $credential->organization_id, $credential->id);
+        // No org segment: the credential belongs to the platform now, and a
+        // label claiming otherwise would be misleading in BEAI's own HeyGen
+        // dashboard — the one audience this string has.
+        return sprintf('beai-platform-cred%d', $credential->id);
     }
 
     private function configurationDisplayName(AvatarTemplate $template): string

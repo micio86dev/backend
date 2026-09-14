@@ -8,8 +8,6 @@ use App\Enums\LlmMode;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
-use App\Exceptions\Tenancy\MissingTenantContextException;
-use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -197,31 +195,27 @@ class AvatarTemplate extends TenantModel
                 throw new UnsupportedLlmModeException('llm_model_id');
             }
 
-            // I3 — the credential belongs to the template's org, compared
-            // EXPLICITLY against an UNSCOPED read. The tenant global scope
-            // has a documented superadmin bypass (TenantScoped.php) and is
-            // therefore NOT an authorization check.
+            // I3 — the credential must EXIST. It no longer has to belong to
+            // anyone: credentials became platform rows (RATIFIED 2026-09-14),
+            // so the ownership half of this guard was refusing the only
+            // arrangement the product now has.
             //
-            // GOTCHA: `saving` fires BEFORE `creating`, so on an INSERT the
-            // tamper-proof organization_id stamp has NOT run yet — derive
-            // the owning org from the resolver instead. On an UPDATE,
-            // getOriginal() is the PERSISTED value, so a forceFill() of
-            // organization_id cannot move the goalposts mid-check.
-            $ownerOrgId = $template->exists
-                ? $template->getOriginal('organization_id')
-                : app(TenantResolver::class)->getOrgId();
+            // What went with it, and why none of it is a loss:
+            //   - the `$ownerOrgId` derivation, including the `saving`-fires-
+            //     before-`creating` gotcha it existed to dodge — nothing
+            //     compares against an owning org any more;
+            //   - the `MissingTenantContextException` on a null org, which was
+            //     protecting that comparison and not the binding;
+            //   - `withoutGlobalScopes()`, which defeated a tenant scope
+            //     `LlmCredential` no longer carries.
+            //
+            // The existence-oracle concern that shaped the original message is
+            // also moot — there is one visible set of credentials now, so "no
+            // such credential" leaks nothing about anybody else. The code is
+            // kept verbatim because it is a published 422 body.
+            $credential = LlmCredential::find($template->llm_credential_id);
 
-            if ($ownerOrgId === null) {
-                throw new MissingTenantContextException(self::class);
-            }
-
-            $credential = LlmCredential::withoutGlobalScopes()->find($template->llm_credential_id);
-
-            // One code for both outcomes, on purpose: "no such credential"
-            // and "someone else's credential" must not be distinguishable —
-            // that would make this an existence oracle (the same 404-not-403
-            // doctrine D9 states elsewhere, applied to a 422 body here).
-            if ($credential === null || $credential->organization_id !== $ownerOrgId) {
+            if ($credential === null) {
                 throw new InvalidLlmBindingException('llm_credential_id', 'credential_not_found');
             }
 

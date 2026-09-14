@@ -39,10 +39,9 @@ function creditInUseModel(): LlmModel
 
 function creditInUseCredential(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Bound credential',
             'vendor' => 'google',
             'api_key' => 'sk-real-key',

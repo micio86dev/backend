@@ -28,10 +28,9 @@ use Database\Seeders\LlmModelRegistrySeeder;
 
 function bindingReadCredential(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Extremely Secret Credential Name',
             'vendor' => 'google',
             'api_key' => 'sk-should-never-leak',

@@ -13,6 +13,7 @@ use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
 use App\Models\FrameworkGap;
+use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -78,6 +79,15 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // every organization must resolve the SAME registry row for the SAME
         // vendor model id. See design.md D1.
         LlmModel::class,
+        // LlmCredential joined LlmModel here on 2026-09-14, and for the
+        // matching reason. It was a TenantModel — an organization's
+        // bring-your-own key — until that was REVERSED: the key is BEAI's now,
+        // so the token spend is BEAI's too, and one credential serves every
+        // tenant. The `organization_id` column is dropped, so there is no
+        // longer anything for a tenant scope to filter on. Access is gated on
+        // IDENTITY instead (`LlmCredentialPolicy` → `is_superadmin`), which is
+        // what replaces the isolation the scope used to provide.
+        LlmCredential::class,
         // backoffice-session-refresh-hardening — RefreshToken intentionally does
         // NOT extend TenantModel. App\Support\Auth\RefreshTokenStore is reached
         // from POST /api/auth/refresh, which runs OUTSIDE auth:api (by design —

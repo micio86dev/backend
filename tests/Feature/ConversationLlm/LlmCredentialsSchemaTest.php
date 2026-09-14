@@ -26,7 +26,6 @@ test('llm_credentials table exists', function (): void {
 test('llm_credentials has all required columns', function (): void {
     $columns = [
         'id',
-        'organization_id',
         'name',
         'vendor',
         'api_key',
@@ -62,8 +61,8 @@ test('key_fingerprint is CHECK-constrained to a lowercase hex sha256', function 
 
     try {
         DB::statement(
-            "INSERT INTO llm_credentials (organization_id, name, vendor, api_key, key_last_four, key_fingerprint, created_at, updated_at)
-             VALUES (1, 'bad-fingerprint', 'google', 'ciphertext', 'abcd', 'not-a-valid-fingerprint', now(), now())"
+            "INSERT INTO llm_credentials (name, vendor, api_key, key_last_four, key_fingerprint, created_at, updated_at)
+             VALUES ('bad-fingerprint', 'google', 'ciphertext', 'abcd', 'not-a-valid-fingerprint', now(), now())"
         );
     } catch (QueryException $e) {
         $violates = true;
@@ -72,14 +71,27 @@ test('key_fingerprint is CHECK-constrained to a lowercase hex sha256', function 
     expect($violates)->toBeTrue('key_fingerprint must reject a value that is not 64 lowercase hex characters');
 });
 
-test('(organization_id, name) is unique', function (): void {
+/**
+ * `name` is unique across the PLATFORM (RATIFIED 2026-09-14).
+ *
+ * It used to be `UNIQUE(organization_id, name)` — two organizations could each
+ * hold a credential called "Gemini prod". Credentials belong to BEAI now, so
+ * there is one namespace, and the uniqueness has to follow: the import path in
+ * `AvatarTemplatePortabilityController` resolves a credential BY NAME, and that
+ * lookup used to be disambiguated by a tenant scope it no longer has.
+ */
+test('name is unique platform-wide', function (): void {
     $indexes = DB::select(
         "SELECT indexdef FROM pg_indexes
          WHERE tablename = 'llm_credentials'
            AND indexdef LIKE '%UNIQUE%'
-           AND indexdef LIKE '%organization_id%'
-           AND indexdef LIKE '%name%'"
+           AND indexdef LIKE '%(name)%'"
     );
 
-    expect($indexes)->not->toBeEmpty('UNIQUE(organization_id, name) index missing from llm_credentials');
+    expect($indexes)->not->toBeEmpty('UNIQUE(name) index missing from llm_credentials');
+});
+
+test('organization_id is gone — the credential belongs to no tenant', function (): void {
+    expect(Schema::hasColumn('llm_credentials', 'organization_id'))
+        ->toBeFalse('llm_credentials must carry no tenant column: these are platform rows');
 });

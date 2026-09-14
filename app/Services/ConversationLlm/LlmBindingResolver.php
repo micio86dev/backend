@@ -14,12 +14,13 @@ use Throwable;
  * Resolves a template's binding into a ready-to-wire `LlmBinding`
  * (pluggable-conversation-llm PR P3a, design D6).
  *
- * NEVER throws. Returns `null` for unbound, for a revoked/missing
- * credential, and for a cross-org credential (defense in depth against data
- * corruption, since I3 already refuses this at save time) — an interview
- * must not fail to start because a cost preference could not be read, the
- * same doctrine `ActiveTemplateResolver` already states for its own null
- * return.
+ * NEVER throws. Returns `null` for unbound and for a revoked/missing
+ * credential — an interview must not fail to start because a cost preference
+ * could not be read, the same doctrine `ActiveTemplateResolver` already states
+ * for its own null return.
+ *
+ * The third null case — a cross-org credential — is GONE. Credentials became
+ * platform rows (RATIFIED 2026-09-14) and there is no other org to be from.
  */
 final class LlmBindingResolver
 {
@@ -31,15 +32,22 @@ final class LlmBindingResolver
 
         try {
             $model = LlmModel::find($template->llm_model_id);
-            $credential = LlmCredential::withoutGlobalScopes()->find($template->llm_credential_id);
+            $credential = LlmCredential::find($template->llm_credential_id);
 
             if ($model === null || $credential === null) {
                 return null;
             }
 
-            if ($credential->organization_id !== $template->organization_id) {
-                return null;
-            }
+            // NO cross-org comparison any more, and its absence IS the change
+            // rather than an omission. One key serves every tenant now, so
+            // `$credential->organization_id !== $template->organization_id`
+            // would refuse the only arrangement that exists — and the column
+            // it read no longer exists either.
+            //
+            // `withoutGlobalScopes()` went with it: it was there to defeat the
+            // tenant scope so the comparison could be made EXPLICITLY rather
+            // than implicitly, and `LlmCredential` carries no global scope to
+            // defeat now.
 
             return new LlmBinding(
                 modelKey: $model->key,

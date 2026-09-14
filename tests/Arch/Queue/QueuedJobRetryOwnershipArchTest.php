@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Architecture guard: every ShouldQueue job MUST declare its own retry
- * ownership — $tries/tries() AND $timeout/timeout() — never inherit a
+ * ownership — $tries/tries() AND $timeout (property or #[Timeout]) — never inherit a
  * worker-level default silently.
  *
  * This is the LOAD-BEARING half of queue-runtime/spec.md Requirement 4
@@ -42,7 +42,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
  * class name under $namespaceRoot (PSR-4: directory structure mirrors
  * namespace), and return the class names of every ShouldQueue implementor
  * that does NOT declare its own retry attempts ($tries or tries()) AND its
- * own timeout ($timeout or timeout()) — unless allowlisted.
+ * own timeout ($timeout property or #[Timeout]; a timeout() METHOD does not
+ * count — Laravel's queue payload never reads one) — unless allowlisted.
  *
  * @param  array<string, string>  $allowlist  class-string => written justification
  * @return list<string>
@@ -93,8 +94,28 @@ function qwsDiscoverRetryOwnershipViolations(string $rootDir, string $namespaceR
         $declaresTries = ($reflection->hasProperty('tries') && $reflection->getProperty('tries')->getDeclaringClass()->getName() === $class)
             || ($reflection->hasMethod('tries') && $reflection->getMethod('tries')->getDeclaringClass()->getName() === $class);
 
+        // PROPERTY OR ATTRIBUTE ONLY — a `timeout()` METHOD no longer counts,
+        // and narrowing this is the whole point of the change that touched it.
+        //
+        // `Queue::createObjectPayload()` builds the payload's `timeout` from
+        // `getAttributeValue($job, Timeout::class, 'timeout')`, and
+        // `ReadsClassAttributes::getAttributeValue()` reads a property or a
+        // `#[Timeout]` attribute — there is NO `method_exists` branch.
+        // `getJobTries()` and `getJobBackoff()` both have one
+        // (`Queue.php:234`, `:251`), which is precisely why the method form
+        // looks right: two of the three neighbours accept it.
+        //
+        // So this guard used to pass for six jobs that did not own their
+        // timeout at all: the worker fell through to
+        // `config('queue.runtime.worker_timeout')` (1260s) and the invariant
+        // `config/queue.php` states — max declared job timeout < worker
+        // timeout — was vacuous. A guard that cannot fail is worse than no
+        // guard, because it reads as coverage.
+        //
+        // `tries` keeps accepting the method form below: for THAT key the
+        // framework genuinely honours it.
         $declaresTimeout = ($reflection->hasProperty('timeout') && $reflection->getProperty('timeout')->getDeclaringClass()->getName() === $class)
-            || ($reflection->hasMethod('timeout') && $reflection->getMethod('timeout')->getDeclaringClass()->getName() === $class);
+            || $reflection->getAttributes(Illuminate\Queue\Attributes\Timeout::class) !== [];
 
         if (! $declaresTries || ! $declaresTimeout) {
             $violations[] = $class;
@@ -104,7 +125,7 @@ function qwsDiscoverRetryOwnershipViolations(string $rootDir, string $namespaceR
     return $violations;
 }
 
-test('every ShouldQueue job under app/ declares its own $tries/tries() AND $timeout/timeout()', function (): void {
+test('every ShouldQueue job under app/ declares its own $tries/tries() AND a $timeout PROPERTY', function (): void {
     $violations = qwsDiscoverRetryOwnershipViolations(app_path(), 'App', []);
 
     expect($violations)
