@@ -87,10 +87,9 @@ test('a re-run of the seeder never disturbs an AvatarTemplate bound to a seeded 
     $model = LlmModel::where('key', 'gemini-3-flash-preview')->firstOrFail();
 
     $org = Organization::factory()->create();
-    $credential = TenantContextScope::runFor($org->id, function () use ($org, $model): LlmCredential {
+    $credential = TenantContextScope::runFor($org->id, function () use ($model): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $org->id,
             'name' => 'Seeder-bound credential',
             'vendor' => $model->vendor,
             'api_key' => 'sk-real-key',

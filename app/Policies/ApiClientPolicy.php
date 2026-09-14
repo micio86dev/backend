@@ -6,6 +6,7 @@ namespace App\Policies;
 
 use App\Models\ApiClient;
 use App\Models\User;
+use App\Support\Tenancy\TenantResolver;
 
 /**
  * ApiClientPolicy (C5 — M2M API Authentication).
@@ -48,7 +49,18 @@ class ApiClientPolicy
      */
     public function delete(User $user, ApiClient $client): bool
     {
+        // The ORG IN CONTEXT, not the actor's own column — the same
+        // distinction `ApiClientController::index()` documents at length. A
+        // superadmin acting as a client carries a null `organization_id`, so
+        // comparing against it made this branch false for every row; they were
+        // saved only by `Gate::before`, which returns true for them before any
+        // policy runs. For everyone else the two are identical, so this is the
+        // same cross-org refusal it always was — now expressed against the
+        // context the request is actually scoped to.
+        $orgId = app(TenantResolver::class)->getOrgId();
+
         return $user->hasRole('admin')
-            && $client->organization_id === $user->organization_id;
+            && $orgId !== null
+            && $client->organization_id === $orgId;
     }
 }

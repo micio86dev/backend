@@ -84,10 +84,23 @@ final class SendCandidateInvitationJob implements ShouldQueue
         return [10, 60];
     }
 
-    public function timeout(): int
-    {
-        return 30;
-    }
+    /**
+     * A PROPERTY, never a `timeout()` method, and that is a framework fact
+     * rather than a style choice.
+     *
+     * `Queue::createObjectPayload()` builds `'timeout'` from
+     * `getAttributeValue($job, Timeout::class, 'timeout')`, and
+     * `ReadsClassAttributes::getAttributeValue()` reads a PROPERTY or a
+     * `#[Timeout]` attribute — it has no `method_exists` branch. `tries` and
+     * `backoff` DO have one (`Queue.php:234` and `:251`), which is exactly what
+     * makes this easy to get wrong: three neighbours, two different contracts.
+     *
+     * As a method it was dead code. The worker fell through to
+     * `config('queue.runtime.worker_timeout')`, so the budget argued below
+     * never executed and `config/queue.php`'s
+     * `max(declared job timeout) < worker_timeout` invariant was vacuous.
+     */
+    public int $timeout = 30;
 
     public function handle(): void
     {

@@ -36,10 +36,9 @@ function portabilityLlmModel(string $key = 'gemini-3-flash-preview', string $cap
 
 function portabilityLlmCredential(int $orgId, string $name = 'Portable credential', string $vendor = 'google'): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId, $name, $vendor): LlmCredential {
+    return TenantContextScope::runFor($orgId, function () use ($name, $vendor): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $orgId,
             'name' => $name,
             'vendor' => $vendor,
             'api_key' => 'sk-real-key',

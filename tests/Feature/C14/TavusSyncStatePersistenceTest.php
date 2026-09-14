@@ -44,10 +44,9 @@ function syncStateModel(): LlmModel
 
 function syncStateCredential(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Sync-state-cred-'.uniqid(),
             'vendor' => 'google',
             'api_key' => 'sk-real-gemini-key',

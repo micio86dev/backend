@@ -41,10 +41,9 @@ function heygenSyncStateModel(): LlmModel
 
 function heygenSyncStateCredential(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Heygen-sync-state-cred-'.uniqid(),
             'vendor' => 'google',
             'api_key' => 'sk-real-gemini-key',

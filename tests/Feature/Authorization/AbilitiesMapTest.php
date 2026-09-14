@@ -43,7 +43,13 @@ function expectedAbilities(): array
             'organization' => ['view' => true, 'update' => true],
             'apiClients' => ['viewAny' => true, 'create' => true, 'delete' => true],
             'users' => ['viewAny' => true, 'create' => true, 'update' => true, 'deactivate' => true, 'activate' => true],
-            'llmCredentials' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => true],
+            // ALL FALSE since 2026-09-14, and this row is the record of it.
+            // Credentials became BEAI's own platform rows, so `LlmCredentialPolicy`
+            // gates on `is_superadmin` instead of `hasRole('admin')` — an
+            // org-scoped grant cannot describe who may touch a row that belongs
+            // to no org. An `admin` managed these yesterday and cannot today;
+            // that is the intended narrowing, not a regression.
+            'llmCredentials' => ['viewAny' => false, 'create' => false, 'update' => false, 'delete' => false],
             // Read yes, manage no. This row is the bug that started the sweep.
             'avatarTemplates' => ['viewAny' => true, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false],
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => true],

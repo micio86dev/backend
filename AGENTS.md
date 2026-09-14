@@ -19,6 +19,16 @@ made in this codebase, not because it is good practice in the abstract.
   ambient resolver for every job, so ambient context is never available in a worker.
 - **Never use `withoutGlobalScopes()` in HTTP-context code.** It is correct only inside a
   queued job that has established context. In a controller it removes tenant isolation.
+  **One ratified exception, and it is enumerated rather than described** — the named
+  allowlist in `tests/Arch/C11/AdminTenancySafetyArchTest.php` is the authority, and adding
+  to it is a reviewable act. Today it carries `Sso/SsoExchangeController` (resolves a project
+  before any tenant context exists) and, since 2026-09-14,
+  `Api/LlmCredentialController::destroy()`: `llm_credentials` became a platform table while
+  `avatar_templates` stayed tenant-scoped, so its in-use guard has to count across every
+  tenant to agree with a foreign key that is `ON DELETE RESTRICT` platform-wide. A scoped
+  count there is not isolation — it reports "nothing bound" for a credential another tenant
+  is using and turns an integrity error into a 500. If a call site is not in that allowlist,
+  the rule above applies with no argument.
 - **`withoutGlobalScopes()` does NOT bypass model events.** The `creating` listener still
   fires and still stamps `organization_id`.
 

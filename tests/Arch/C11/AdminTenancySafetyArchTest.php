@@ -76,14 +76,45 @@ function phpFilesUnder(string $directory): array
  *
  * @var array<string, string>
  */
+$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm'];
+
 $tenantScopeStripAllowlist = [
-    'Controllers/Sso/SsoExchangeController.php' => 'SSO exchange resolves the project before any '
+    'Http/Controllers/Sso/SsoExchangeController.php' => 'SSO exchange resolves the project before any '
         .'tenant context exists — the scope cannot be respected because it has not been '
         .'established yet. Strips ONLY the named tenant scope, never the plural no-args form, so '
         .'SoftDeletingScope survives and a deleted project stays unreachable.',
+    'Http/Controllers/Api/LlmCredentialController.php' => 'destroy() counts the AvatarTemplates bound to '
+        .'a credential before deleting it, and credentials are PLATFORM rows (RATIFIED '
+        .'2026-09-14) while templates are still tenant-scoped. The foreign key '
+        .'avatar_templates.llm_credential_id is ON DELETE RESTRICT across EVERY tenant, so a '
+        .'scoped count would report "nothing bound" for a credential another organization still '
+        .'uses, allow the delete, and turn an integrity error into an unhandled 500 — the strip '
+        .'makes the guard agree with the constraint it is guarding. Endpoint is superadmin-only '
+        .'and the query reads ONLY names, for a refusal message naming what blocks the delete.',
+    'Actions/ConversationLlm/ResyncCredentialBindings.php' => 'Re-pushes EVERY template bound to '
+        .'a rotated credential, across every provider and every tenant. Credentials are platform '
+        .'rows (RATIFIED 2026-09-14) — one key serves every tenant — so narrowing this sweep by '
+        .'organization would push the new key for exactly one organization and leave it silently '
+        .'stale for the rest, with the rows still reading `synced`. Reached from '
+        .'ResyncCredentialBindingsJob, a QUEUED job dispatched by LlmCredentialController::'
+        .'update() — it is guarded here anyway rather than treated as job-only, because the '
+        .'strip is what makes it cross-tenant and that deserves a named argument wherever it '
+        .'runs. Superadmin-only by the time it is dispatched, and it '
+        .'writes only llm_sync_status bookkeeping on rows it resolved by credential id. '
+        .'(Moved here from HeygenLlmRegistrar, which held the same sweep behind a '
+        .'provider = heygen filter that stranded every Tavus template.)',
 ];
 
-test('no tenant-scope strip exists under app/Http/ outside the named allowlist', function () use ($tenantScopeStripAllowlist): void {
+/**
+ * Extended beyond `app/Http/` on 2026-09-14.
+ *
+ * `HeygenLlmRegistrar::rotateSecret()` strips the tenant scope and is reached
+ * synchronously from `LlmCredentialController::update()` — an HTTP request. It
+ * sat outside this walk, so it was HTTP-context code stripping a tenant scope
+ * that nobody had to argue for: exactly the shape the allowlist docblock above
+ * calls "a gap in the regex" rather than "an allowance somebody argued for".
+ */
+test('no tenant-scope strip exists in a guarded root outside the named allowlist', function () use ($tenantScopeStripAllowlist, $tenantScopeStripGuardedRoots): void {
     $violations = [];
 
     // `withoutGlobalScopes?\(` — BOTH forms. Matches an actual invocation
@@ -91,21 +122,23 @@ test('no tenant-scope strip exists under app/Http/ outside the named allowlist',
     // anti-pattern is not flagged as committing it.
     $callPattern = '/(->|::)withoutGlobalScopes?\(/';
 
-    foreach (phpFilesUnder(base_path('app/Http')) as $file) {
-        $source = file_get_contents($file);
+    foreach ($tenantScopeStripGuardedRoots as $root) {
+        foreach (phpFilesUnder(base_path('app/'.$root)) as $file) {
+            $source = file_get_contents($file);
 
-        if ($source === false || preg_match($callPattern, $source) !== 1) {
-            continue;
-        }
+            if ($source === false || preg_match($callPattern, $source) !== 1) {
+                continue;
+            }
 
-        $relative = str_replace(base_path('app/Http').'/', '', $file);
+            $relative = str_replace(base_path('app').'/', '', $file);
 
-        if (! array_key_exists($relative, $tenantScopeStripAllowlist)) {
-            $violations[] = $relative;
+            if (! array_key_exists($relative, $tenantScopeStripAllowlist)) {
+                $violations[] = $relative;
+            }
         }
     }
 
-    expect($violations)->toBe([], 'Stripping a tenant scope under app/Http/ requires a named entry '
+    expect($violations)->toBe([], 'Stripping a tenant scope in a guarded root requires a named entry '
         .'in $tenantScopeStripAllowlist with the reason it is safe. Unlisted: '
         .implode(', ', $violations));
 })->group('arch');
@@ -116,7 +149,7 @@ test('every allowlisted tenant-scope strip still exists, so the list cannot rot'
     $callPattern = '/(->|::)withoutGlobalScopes?\(/';
 
     foreach (array_keys($tenantScopeStripAllowlist) as $relative) {
-        $file = base_path('app/Http').'/'.$relative;
+        $file = base_path('app').'/'.$relative;
 
         expect(file_exists($file))->toBeTrue("Allowlisted file no longer exists: {$relative}");
 

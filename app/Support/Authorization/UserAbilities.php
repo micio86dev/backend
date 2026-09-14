@@ -65,9 +65,18 @@ final class UserAbilities
      * excludes it by name: the api-m2m guard has to query it unscoped, before
      * any tenant context exists). What makes the class-level answer safe there
      * is not a global scope but an EXPLICIT filter —
-     * `M2m/ApiClientController` lists with
-     * `ApiClient::where('organization_id', $user->organization_id)`. If that
+     * `M2m/ApiClientController::index()` lists with
+     * `ApiClient::where('organization_id', $resolver->getOrgId())`. If that
      * filter ever goes, this answer goes with it.
+     *
+     * That filter reads the RESOLVER, and the `$apiClient` subject built below
+     * is stamped from `$user->organization_id`. The two are the same value for
+     * every identity except one — a superadmin acting as a client carries a
+     * null column and a non-null resolver — and for that one `Gate::before`
+     * answers true before any policy runs, so the subject is never consulted.
+     * Spelled out because the two sources previously WERE the same expression,
+     * and a future reader comparing them would otherwise find a discrepancy
+     * with no note saying it was looked at.
      *
      * Answering once per request is therefore the same answer as answering
      * once per row, minus N gate calls per response and minus a `can` object
@@ -148,10 +157,14 @@ final class UserAbilities
         // the merits — `Gate::before` answers every ability for a superadmin
         // before a policy is consulted, so nothing downstream ever reads the
         // column on these instances.
+        // `$llmCredential` is absent from this list on purpose. Credentials
+        // became PLATFORM rows (RATIFIED 2026-09-14) and carry no
+        // `organization_id` at all, so assigning one would be an undefined
+        // property write. Its policy reads `is_superadmin` and never touches
+        // the subject, so the bare instance is a faithful stand-in.
         if ($orgId !== null) {
             $apiClient->organization_id = $orgId;
             $targetUser->organization_id = $orgId;
-            $llmCredential->organization_id = $orgId;
             $avatarTemplate->organization_id = $orgId;
             $project->organization_id = $orgId;
         }

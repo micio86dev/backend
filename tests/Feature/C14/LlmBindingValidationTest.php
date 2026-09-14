@@ -20,7 +20,6 @@ declare(strict_types=1);
 
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
-use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
@@ -55,10 +54,9 @@ function llmBindingNativeDuplexModel(): LlmModel
 
 function llmBindingCredentialForOrg(int $orgId, string $vendor = 'google'): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId, $vendor): LlmCredential {
+    return TenantContextScope::runFor($orgId, function () use ($vendor): LlmCredential {
         $credential = new LlmCredential;
         $credential->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Cred-'.uniqid(),
             'vendor' => $vendor,
             'api_key' => 'sk-real-key',
@@ -213,12 +211,31 @@ test('a nonexistent llm_model_id is rejected as model_not_found', function (): v
     });
 });
 
-test('binding with no tenant context established fails closed', function (): void {
+/**
+ * Still fails closed with no tenant context — the EXCEPTION changed, not the
+ * outcome.
+ *
+ * I3 used to derive the template's owning org so it could compare the
+ * credential against it, and threw `MissingTenantContextException` when the
+ * resolver carried none. Credentials belong to no organization since
+ * 2026-09-14, so that derivation is gone and with it the reason to care
+ * whether a tenant context exists at THIS guard.
+ *
+ * A bad binding is still refused, now as `InvalidLlmBindingException`
+ * (`credential_not_found`) — which is the more accurate answer anyway: the
+ * credential id here has never existed, and "no tenant context" was only ever
+ * the first thing that happened to notice.
+ *
+ * The tenant context itself is NOT unguarded. `TenantScoped::creating` still
+ * throws `MissingTenantContextException` for a template saved without one; it
+ * simply does so at the stamp rather than at this binding check. That is
+ * asserted where it belongs, on the trait.
+ */
+test('binding with no tenant context established still fails closed', function (): void {
     $model = llmBindingManagedModel();
 
     // No TenantContextScope here — the resolver carries no org, simulating a
-    // console command / job that forgot to establish tenant context before
-    // creating a tenant-scoped model with a binding.
+    // console command / job that forgot to establish tenant context.
     $template = new AvatarTemplate;
     $template->forceFill([
         'organization_id' => 1,
@@ -230,7 +247,7 @@ test('binding with no tenant context established fails closed', function (): voi
         'is_active' => false,
     ]);
 
-    expect(fn () => $template->save())->toThrow(MissingTenantContextException::class);
+    expect(fn () => $template->save())->toThrow(InvalidLlmBindingException::class);
 });
 
 // ─── A managed model binds successfully ───────────────────────────────────────

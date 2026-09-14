@@ -33,10 +33,9 @@ function bindActionModel(): LlmModel
 
 function bindActionCredential(int $orgId): LlmCredential
 {
-    return TenantContextScope::runFor($orgId, function () use ($orgId): LlmCredential {
+    return TenantContextScope::runFor($orgId, function (): LlmCredential {
         $c = new LlmCredential;
         $c->forceFill([
-            'organization_id' => $orgId,
             'name' => 'Bind action credential',
             'vendor' => 'google',
             'api_key' => 'sk-real-key',

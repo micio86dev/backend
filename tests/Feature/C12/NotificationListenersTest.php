@@ -197,5 +197,8 @@ test('the job declares its own retry contract rather than inheriting the worker 
     // silently takes whatever the worker was started with.
     expect($job->tries())->toBe((int) config('notifications.dispatch.tries'));
     expect($job->backoff())->toBe(config('notifications.dispatch.backoff_seconds'));
-    expect($job->timeout())->toBeGreaterThan(0);
+    // A PROPERTY, not a method: Laravel's queue payload reads `$timeout`
+    // (or `#[Timeout]`) and never a `timeout()` method, so the method form was
+    // dead code that let the worker default apply instead.
+    expect($job->timeout)->toBeGreaterThan(0);
 });
