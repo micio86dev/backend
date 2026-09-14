@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.51.0"
+        "version": "0.51.1"
     },
     "servers": [
         {
@@ -3120,6 +3120,41 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/organizations/{organization}/logo": {
+            "get": {
+                "operationId": "organizations.logo",
+                "description": "PUBLIC AND ID-ADDRESSED, both deliberately, and both against the\ndoctrine the sibling endpoints in this controller follow \u2014 so the\ndeparture is argued rather than assumed:\n\n  - Public, because the two readers that matter cannot present a token.\n    An email client fetches a remote image through its own proxy\n    (`EmailBranding`), and the candidate app paints the mark before the\n    candidate has exchanged their link. A logo is brand material an\n    organization already shows every candidate it invites; it is not\n    tenant data.\n  - Id-addressed, because `POST /organization/logo` resolves the org\n    from the authenticated user and there is no authenticated user here.\n    The id leaks nothing the response does not already publish, and a\n    missing organization and a missing logo both answer 404 so this\n    cannot be read as \"does organization N exist\".\n\nA REDIRECT, not a stream: the bytes travel from the object store to the\nclient directly, so a logo on every candidate page and in every message\ndoes not hold a PHP worker open for each transfer.",
+                "summary": "The organization's logo, for anyone at all",
+                "tags": [
+                    "OrganizationLogo"
+                ],
+                "parameters": [
+                    {
+                        "name": "organization",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "302": {
+                        "description": "Redirect to a short-lived signed URL for the stored logo.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -637,3 +637,218 @@ test('the candidate session carries the organization name', function (): void {
     $response->assertOk();
     $response->assertJsonPath('data.branding.name', 'Acme Selezione');
 });
+
+// ─── The logo URL is served by THIS API, never by the object store ───────────
+
+/**
+ * The third door the same defect came through.
+ *
+ * First it was a root-relative `/storage/...` path, resolved against the
+ * WRONG ORIGIN by two Nuxt apps on separate hosts. That was fixed by
+ * anchoring on `APP_URL` — which is correct, and which is also exactly what
+ * the `local` disk needed and no more.
+ *
+ * On the `s3` disk the anchoring never fires, because `Storage::url()` already
+ * returns something absolute: `AWS_ENDPOINT` + `/bucket/` + key. That host is
+ * the R2 **S3 API endpoint**. A GET there without a SigV4 signature is a 401,
+ * so the `<img>` never painted and the operator read it as "the upload did not
+ * save" — while the row held the key correctly the whole time.
+ *
+ * And the bucket cannot be made public to fix it: it is the same bucket that
+ * holds candidate proctoring snapshots (`SingleStorageDiskArchTest` makes the
+ * single-disk rule structural). So the URL has to stop pointing at the store.
+ */
+test('the logo URL points at this API, never at the private object store', function (): void {
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $url = $this->withToken($token)->getJson('/api/organization')->json('data.logo_url');
+
+    // Exact, not a prefix match. A prefix assertion passes for any absolute
+    // URL this API could emit, including the storage endpoint once `AWS_URL`
+    // is set to something that happens to share a host.
+    expect($url)->toBe("http://api.test/api/organizations/{$org->id}/logo");
+});
+
+test('the same stable URL reaches the email and the candidate app', function (): void {
+    // A presigned URL in the payload would have worked for the backoffice and
+    // failed everywhere it matters: `EmailBranding` renders this value into a
+    // message a candidate may open days later, and a signature that has
+    // expired is a broken image on the one document deciding whether they
+    // trust the invitation.
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $adminToken] = brandingUser($org, 'admin');
+
+    $this->withToken($adminToken)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $participant = brandingParticipant($org);
+
+    $candidateUrl = $this->withHeaders([
+        'Authorization' => 'Bearer '.brandingCandidateToken($participant),
+    ])->getJson('/api/candidate/session')->json('data.branding.logo_url');
+
+    expect($candidateUrl)->toBe("http://api.test/api/organizations/{$org->id}/logo")
+        ->and($org->fresh()->absoluteLogoUrl())->toBe($candidateUrl);
+});
+
+test('the logo endpoint redirects to a short-lived object URL', function (): void {
+    // A redirect rather than a stream: the bytes go straight from the object
+    // store to the client, so a logo on every candidate page does not occupy
+    // a PHP worker for the duration of each transfer.
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $response = $this->get("/api/organizations/{$org->id}/logo");
+
+    $response->assertRedirect();
+
+    $location = (string) $response->headers->get('Location');
+
+    expect($location)->toContain((string) $org->fresh()->logo_path)
+        ->and($location)->not->toContain('/api/organizations/');
+});
+
+test('the logo endpoint is public — an email client carries no bearer token', function (): void {
+    // Deliberately unauthenticated. Gmail fetches a remote image through its
+    // own proxy, and the candidate app paints the mark before the candidate
+    // has exchanged their link for a token.
+    Storage::fake();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $this->get("/api/organizations/{$org->id}/logo")->assertRedirect();
+});
+
+test('the logo endpoint 404s when no logo is configured', function (): void {
+    Storage::fake();
+
+    $org = Organization::factory()->create();
+
+    $this->get("/api/organizations/{$org->id}/logo")->assertNotFound();
+});
+
+test('the logo endpoint 404s for an organization that does not exist', function (): void {
+    // The SAME status as "configured no logo", deliberately: a public endpoint
+    // that distinguished the two would answer "does organization N exist?" for
+    // every N.
+    Storage::fake();
+
+    $this->get('/api/organizations/999999/logo')->assertNotFound();
+});
+
+test('the logo endpoint refuses to sign a key outside organization-logos/', function (): void {
+    // THE security-critical assertion in this file, and the same guard
+    // `ProfilePhotoUrlSigner` states structurally. This endpoint is public and
+    // presigns an object on the bucket that ALSO holds candidate proctoring
+    // snapshots (`{org}/{participant}/{session}/{uuid}.jpg`). Were
+    // `logo_path` ever made writable by a weaker path — a settings PATCH that
+    // accepted it, a portability import — an unauthenticated GET here would
+    // mint a signed URL for a candidate's webcam frame.
+    //
+    // The prefix check is what refuses that regardless of what wrote the
+    // column, which is precisely the property a comment cannot enforce.
+    Storage::fake();
+
+    $org = Organization::factory()->create([
+        'logo_path' => '1/42/7/3f0c1b8e-0000-4000-8000-0000000000ff.jpg',
+    ]);
+
+    $this->get("/api/organizations/{$org->id}/logo")->assertNotFound();
+});
+
+test('the logo redirect tells the client how long it may be reused', function (): void {
+    // The header had no test at all: deleting the whole `withHeaders([...])`
+    // call left every assertion in this file green, which made
+    // `branding.logo.redirect_cache_seconds` config nothing had ever watched
+    // fail. A logo is fetched on every candidate page and by every email
+    // proxy, so "may I reuse this" is not a detail.
+    Storage::fake();
+    config([
+        'branding.logo.url_ttl_minutes' => 60,
+        'branding.logo.redirect_cache_seconds' => 600,
+    ]);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    $this->get("/api/organizations/{$org->id}/logo")
+        ->assertRedirect()
+        ->assertHeader('Cache-Control', 'max-age=600, public');
+});
+
+test('the redirect is never cached past the signature it points at', function (): void {
+    // THE invariant `config/branding.php` used to state in prose while two
+    // independent env vars could violate it. A five-minute signature against
+    // the default ten-minute cache is a redirect the browser keeps replaying
+    // after the URL behind it has died — a broken image served from the
+    // client's own cache, with nothing on the wire and nothing in a log to
+    // explain it. `min()` in the controller is what makes that unreachable.
+    Storage::fake();
+    config([
+        'branding.logo.url_ttl_minutes' => 5,
+        'branding.logo.redirect_cache_seconds' => 600,
+    ]);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertOk();
+
+    // Half of 5 minutes, not the configured 600s.
+    $this->get("/api/organizations/{$org->id}/logo")
+        ->assertRedirect()
+        ->assertHeader('Cache-Control', 'max-age=150, public');
+});
+
+test('uploading a logo is rate limited, because each call costs an object PUT', function (): void {
+    // The sibling `POST /profile/photo` carries `throttle:10,1` and its route
+    // block says why: an unthrottled upload is a storage-burn primitive for a
+    // stolen bearer token. This endpoint is the same primitive and also runs
+    // `getimagesize()` on a decompression-bomb candidate, so it burns CPU too.
+    // It had no limiter, and admin-only narrows who can reach the loop without
+    // making the loop cheaper.
+    Storage::fake();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    foreach (range(1, 10) as $ignored) {
+        $this->withToken($token)->post('/api/organization/logo', [
+            'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+        ])->assertOk();
+    }
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'logo.png'),
+    ])->assertStatus(429);
+});
