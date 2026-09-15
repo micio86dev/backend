@@ -12,6 +12,8 @@ use App\Models\ApiClient;
 use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
+use App\Models\FrameworkDefaultQuestion;
 use App\Models\FrameworkGap;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
@@ -57,6 +59,11 @@ test('all non-excluded models with organization_id extend TenantModel', function
         BarsIndicator::class,
         FrameworkGap::class,
         CatalogMeta::class,
+        // framework-catalogue-authoring PR1 — GLOBAL, platform-wide catalogue
+        // revision models (no organization_id by design), the same reasoning
+        // as Role/Competency/BarsIndicator above. See design.md D1.
+        FrameworkCatalogRevision::class,
+        FrameworkDefaultQuestion::class,
         // C5 M2M — ApiClient intentionally does NOT extend TenantModel.
         // The api-m2m guard queries ApiClient RAW/UNSCOPED because TenantResolver
         // is not stamped yet at guard-resolution time (TenantContextM2m runs after

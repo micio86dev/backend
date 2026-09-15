@@ -9,6 +9,7 @@ use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Assert;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -548,6 +549,21 @@ pest()->use(RefreshDatabase::class)
 
 // ─── beai:deploy (release steps) ───────────────────────────────────────────────
 
+// ─── framework-catalogue-authoring ─────────────────────────────────────────
+
+// Feature/Migration — RefreshDatabase is LOAD-BEARING: these tests roll the
+// schema back to before this change's migrations and re-apply them inside
+// the same wrapping transaction (mirrors
+// tests/Feature/C2/Schema/UsersOrganizationMigrationTest.php's pattern), so
+// the seeded rows and the schema mutation both need to be undone together.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Migration');
+
+// Feature/Catalogue — RefreshDatabase: revision/composite-FK/CRUD tests
+// assert real Postgres constraints and read real rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Catalogue');
+
 // Feature/Deploy — RefreshDatabase is LOAD-BEARING, not decoration. The happy
 // path runs the REAL `migrate --force` and the REAL `beai:sync-llm-registry`
 // (stubbing them would prove nothing about the wiring this command exists to
@@ -612,3 +628,5 @@ function templateIdForCurrentOrg(): int
             'config' => [],
         ])->id;
 }
+
+// ─── framework-catalogue-authoring — Postgres constraint assertion helper ─────

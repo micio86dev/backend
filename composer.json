@@ -54,7 +54,8 @@
             "tests/Helpers/C10Fixtures.php",
             "tests/Helpers/ScoringFixtures.php",
             "tests/Helpers/QueueWorkCommandFixtures.php",
-            "tests/Helpers/SuperadminFixtures.php"
+            "tests/Helpers/SuperadminFixtures.php",
+            "tests/Helpers/PostgresConstraintAssertions.php"
         ]
     },
     "scripts": {
