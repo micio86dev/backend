@@ -96,10 +96,25 @@ class CompetencyResult extends TenantModel
     /**
      * Individual indicator scores for this competency result.
      *
+     * Ordered by `position` (gga review finding, framework-catalogue-
+     * authoring PR3b): `behaviors` is a positional list — the SAME order
+     * `AdminEvaluationSerializer::serializeCompetencyResult()` renders it
+     * in, and the docblock's own "the session view and the full report must
+     * never disagree" promise. Ordering it here, on the relation itself,
+     * means every caller inherits it instead of some re-declaring it
+     * (`serializeCompetency()`'s ad hoc `->orderBy('position')->orderBy('id')`)
+     * and others (`serialize()`) reading whatever order PostgreSQL happens to
+     * return — a silent reshuffle of a positional list, never a scoring
+     * defect (indicator NAMES stay correct, keyed `CODE:position`), but
+     * still the exact class of drift this relation exists to prevent.
+     * `id` breaks a tie between two rows written in the same request with
+     * the same `position` (should not happen, but ties order deterministic
+     * regardless).
+     *
      * @return HasMany<IndicatorScore, $this>
      */
     public function indicatorScores(): HasMany
     {
-        return $this->hasMany(IndicatorScore::class);
+        return $this->hasMany(IndicatorScore::class)->orderBy('position')->orderBy('id');
     }
 }

@@ -36,6 +36,7 @@ use App\Services\Webhooks\EvaluationPayloadAssembler;
 use App\Services\Webhooks\ProgressPayloadAssembler;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
@@ -269,7 +270,13 @@ final class DemoWriter
                     'avatar_template_id' => $templateId,
                 ]);
 
+                // Scoped to the FrameworkVersion this demo project pins
+                // (framework-catalogue-authoring PR3b, H1) — an unscoped
+                // `whereIn('code', ...)` would resolve whichever of a
+                // baseline/draft pair sharing these codes Postgres returns
+                // first once a draft is open for unrelated authoring work.
                 $competencyIds = Competency::whereIn('code', $definition['competencies'])
+                    ->where('revision_id', app(CatalogueRevisionResolver::class)->forFrameworkVersion($version))
                     ->get()
                     ->keyBy('code');
 
@@ -681,8 +688,27 @@ final class DemoWriter
                 throw new RuntimeException("Demo project [{$project->slug}] has no role_code — cannot score its participants.");
             }
 
-            $roleIdByCode[$roleCode] ??= Role::where('code', $roleCode)->value('id');
+            // Same revision scoping as the competency lookup in
+            // writeProjects() above (framework-catalogue-authoring PR3b, H1).
+            $roleIdByCode[$roleCode] ??= Role::where('code', $roleCode)
+                ->where('revision_id', app(CatalogueRevisionResolver::class)->forFrameworkVersion($version))
+                ->value('id');
             $roleId = $roleIdByCode[$roleCode];
+
+            if ($roleId === null) {
+                // The scoping above is now strict enough that "the role
+                // exists somewhere" is no longer sufficient — it must exist
+                // in THIS FrameworkVersion's own pinned revision. Silently
+                // continuing would write a CompetencyResult with zero
+                // indicator scores and no error, which is the exact "fail
+                // loudly" contract this file states for itself elsewhere:
+                // the seed ships to PRODUCTION, so a missing role is checked,
+                // never assumed.
+                throw new RuntimeException(
+                    "Demo project [{$project->slug}] role [{$roleCode}] does not exist in the ".
+                    'FrameworkVersion this evaluation is being written against — cannot score its participants.'
+                );
+            }
 
             $validCount = 0;
             $totalCount = count($definition['scores']);

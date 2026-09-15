@@ -90,11 +90,21 @@ test('the loader resolves the exact revision it is asked for, never a different 
     $mismatched = $loader->forRoleCompetency($role1->id, $competency1->id, $revision2Id);
     expect($mismatched)->toBeEmpty();
 
-    // Omitting revisionId entirely preserves today's exact behaviour
-    // (backward-compatible default for every existing, revision-unaware
-    // caller) — resolves by role_id/competency_id alone, which is already
-    // revision-unique because a draft clones full rows rather than reusing ids.
+    // Omitting revisionId is NO LONGER "no filter at all" (framework-
+    // catalogue-authoring PR3b, H1): the default now resolves the LATEST
+    // PUBLISHED revision, which by this point in the test is revision 2 (it
+    // published after revision 1's baseline). A caller for revision 1's own
+    // role/competency ids that forgets to pass its own pinned revision
+    // therefore gets NOTHING back, rather than silently matching another
+    // revision's row that happens to share the same role_id/competency_id
+    // numeric ids — proving exactly why a caller with a project MUST pass
+    // its own pinned revision explicitly instead of relying on the default.
     $noRevisionFilter = $loader->forRoleCompetency($role1->id, $competency1->id);
-    expect($noRevisionFilter)->toHaveCount(1);
-    expect($noRevisionFilter->first()->id)->toBe($indicator1->id);
+    expect($noRevisionFilter)->toBeEmpty();
+
+    // The default DOES resolve revision 2's own ids correctly, since
+    // revision 2 is indeed the latest published revision at this point.
+    $defaultMatchesLatestPublished = $loader->forRoleCompetency($role2->id, $competency2->id);
+    expect($defaultMatchesLatestPublished)->toHaveCount(1);
+    expect($defaultMatchesLatestPublished->first()->id)->toBe($indicator2->id);
 });

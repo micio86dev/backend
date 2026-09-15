@@ -80,8 +80,24 @@ final class SessionEvidenceReader
             return null;
         }
 
+        // The session's OWN `participant` relation, not a fresh lookup by id
+        // (gga review finding): `$session` is already resolved through an
+        // explicit `organization_id` filter by the caller (this class's own
+        // docblock), and `Participant` carries no global scope of its own —
+        // a bare id-based lookup inside the serializer would have no
+        // tenant boundary at all. `participant_id` is a required FK, so a
+        // null relation here means the referenced row was hard-deleted out
+        // from under an otherwise-valid session — treated as "nothing to
+        // show", the same as any other missing-evidence state this method
+        // already returns null for.
+        $participant = $session->participant;
+
+        if ($participant === null) {
+            return null;
+        }
+
         $competency = $this->serializer->serializeCompetency(
-            $session->participant_id,
+            $participant,
             $session->competency_code,
         );
 

@@ -7,8 +7,10 @@ namespace App\Http\Requests;
 use App\Models\Competency;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Settings\PlatformSettings;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
@@ -48,12 +50,23 @@ class StoreProjectQuestionRequest extends FormRequest
      * oracle across tenants. Returning `false` from `authorize()` would answer
      * 403; throwing here answers 404, and it does so BEFORE validation runs,
      * so a foreign id cannot be told apart by the shape of its body either.
+     *
+     * Memoized (gga review finding): `authorize()`, `rules()` and
+     * `withValidator()` each called this independently — three identical
+     * queries per request for one row, the same duplication
+     * `UpdateProjectRequest::resolvedProject()` was already memoized to
+     * avoid.
      */
+    private ?Project $resolvedProject = null;
+
     private function project(): Project
     {
-        $id = $this->route('project');
+        if ($this->resolvedProject === null) {
+            $id = $this->route('project');
+            $this->resolvedProject = Project::findOrFail(is_numeric($id) ? (int) $id : 0);
+        }
 
-        return Project::findOrFail(is_numeric($id) ? (int) $id : 0);
+        return $this->resolvedProject;
     }
 
     public function authorize(): bool
@@ -67,10 +80,25 @@ class StoreProjectQuestionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // Scoped to the catalogue, not to the project's own competencies:
-            // the cross-check that the competency actually belongs to this
-            // project's type happens below, where the reason can be stated.
-            'competency_id' => ['required', 'integer', 'exists:framework_competencies,id'],
+            // Scoped to the catalogue, not to the project's own SELECTED
+            // competencies: the cross-check that the competency actually
+            // belongs to this project's type happens below, where the reason
+            // can be stated. Scoped to the PROJECT'S OWN pinned revision,
+            // though (framework-catalogue-authoring PR3b, H1) — an unscoped
+            // `exists` would accept a competency id from an open draft's
+            // clone of the same catalogue, letting an operator author a
+            // question against content nobody has published yet.
+            // `tryForProject()`, never `forProject()`: this runs inside
+            // `rules()`, before validation — an unresolvable pin must
+            // degrade to "match nothing" (`null` → `whereNull`), never an
+            // uncaught 500 (gga review finding, same doctrine as
+            // `StoreProjectRequest`/`UpdateProjectRequest`).
+            'competency_id' => [
+                'required',
+                'integer',
+                Rule::exists('framework_competencies', 'id')
+                    ->where('revision_id', app(CatalogueRevisionResolver::class)->tryForProject($this->project())),
+            ],
             'text' => ['required', 'array'],
             // `en` is required and `it` is not, matching the catalogue: an
             // English fallback always exists, and a missing Italian degrades

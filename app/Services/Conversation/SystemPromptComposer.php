@@ -73,6 +73,14 @@ final class SystemPromptComposer
      * @param  list<string>  $authoredQuestions  Operator-written questions for this project ×
      *                                           competency, in the order they must be asked.
      *                                           Their COUNT is ADDED to the budget.
+     * @param  int|null  $revisionId  The catalogue revision `$roleId`/`$competencyId` were
+     *                                resolved against — framework-catalogue-authoring PR3b,
+     *                                H1. Threaded straight through to `BarsIndicatorLoader`;
+     *                                appended LAST so every existing positional call site
+     *                                keeps working unmodified. `InterviewController` resolves
+     *                                its project's own pinned revision and always passes it;
+     *                                omitted, the loader defaults to the latest published
+     *                                revision, never "any revision".
      *
      * @throws CompositionException When no indicators exist for the role+competency pair.
      * @throws AnchorTranslationMissingException When any indicator field lacks a $projectLocale translation.
@@ -87,8 +95,9 @@ final class SystemPromptComposer
         ?string $advancePhrase = null,
         ?int $minQuestions = null,
         array $authoredQuestions = [],
+        ?int $revisionId = null,
     ): ComposedPrompt {
-        $indicators = $this->loader->forRoleCompetency($roleId, $competencyId);
+        $indicators = $this->loader->forRoleCompetency($roleId, $competencyId, $revisionId);
 
         if ($indicators->isEmpty()) {
             throw new CompositionException(

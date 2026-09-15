@@ -31,6 +31,7 @@ use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\CompetencyTally;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Logging\SafeDbContext;
@@ -68,6 +69,7 @@ class InterviewController extends Controller
         private readonly SessionLiveClock $liveClock,
         private readonly InterviewSessionLlmSnapshot $llmSnapshot,
         private readonly RecordConversationLlmUsage $recordLlmUsage,
+        private readonly CatalogueRevisionResolver $revisionResolver,
     ) {}
 
     // =========================================================================
@@ -143,6 +145,20 @@ class InterviewController extends Controller
             return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        // The ONE catalogue revision this whole request resolves role/competency
+        // codes against (framework-catalogue-authoring PR3b, H1) — the project's
+        // own pin, never "whichever row Postgres returns first" among a
+        // baseline/draft pair sharing the same code. Resolved ONCE, here (below
+        // both early-return guards above, gga review finding — resolving it
+        // before them pre-empted both documented exits with an unrelated
+        // failure): both the opening-greeting lookup below and
+        // composePromptForCompetency() must agree on the same revision for the
+        // same request. `tryForProject()`, never `forProject()`: an unresolved
+        // pin must degrade the SAME way as "role/competency not found" already
+        // does — a `composition_error` on NEW, a graceful RESUME degrade — never
+        // an uncaught 500 on a live candidate request.
+        $revisionId = $this->revisionResolver->tryForProject($project);
+
         // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
         //
         // Failure semantics depend on whether this is a RESUME or a NEW session:
@@ -184,6 +200,7 @@ class InterviewController extends Controller
         $compositionResult = $this->composePromptForCompetency(
             $project,
             $nextCompetency['competency_code'],
+            $revisionId,
             $advancePhrase,
         );
         if ($compositionResult instanceof JsonResponse) {
@@ -275,7 +292,9 @@ class InterviewController extends Controller
             $isFirst => 'first',
             default => 'next',
         };
-        $openingCompetency = Competency::where('code', $nextCompetency['competency_code'])->first();
+        $openingCompetency = Competency::where('code', $nextCompetency['competency_code'])
+            ->where('revision_id', $revisionId)
+            ->first();
         $competencyName = $openingCompetency?->getTranslation('name', $project->language)
             ?? $nextCompetency['competency_code'];
 
@@ -678,6 +697,7 @@ class InterviewController extends Controller
     private function composePromptForCompetency(
         ?Project $project,
         string $competencyCode,
+        ?int $revisionId,
         ?string $advancePhrase = null,
     ): ComposedPrompt|JsonResponse {
         if ($project === null) {
@@ -685,17 +705,36 @@ class InterviewController extends Controller
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Resolve role_id from project.role_code.
-        // role_code is required for standard assessments; null for potential (deferred — not in C8).
-        $role = Role::where('code', $project->role_code)->first();
+        if ($revisionId === null) {
+            // The project's own pin did not resolve (`CatalogueRevisionResolver::
+            // tryForProject()` — framework-catalogue-authoring PR3b, H1). Treated
+            // identically to "role/competency not found in catalog" below: a
+            // NEW/pending /start hard-fails 422, a RESUME degrades gracefully.
+            // Never falls back to "latest published" here — that would pin an
+            // already-created project onto whatever revision happens to be
+            // newest right now (CLAUDE.md ruling 3).
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Resolve role_id from project.role_code, scoped to the project's OWN
+        // pinned revision (framework-catalogue-authoring PR3b, H1) — a bare
+        // `where('code', ...)` would resolve whichever of the baseline/draft
+        // pair Postgres happens to return first once a draft sharing this
+        // code exists. role_code is required for standard assessments; null
+        // for potential (deferred — not in C8).
+        $role = Role::where('code', $project->role_code)
+            ->where('revision_id', $revisionId)
+            ->first();
 
         if ($role === null) {
             // role_code set on project but not found in catalog → composition failure.
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Resolve competency_id from competency_code.
-        $competency = Competency::where('code', $competencyCode)->first();
+        // Resolve competency_id from competency_code, same revision scoping.
+        $competency = Competency::where('code', $competencyCode)
+            ->where('revision_id', $revisionId)
+            ->first();
 
         if ($competency === null) {
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -720,6 +759,7 @@ class InterviewController extends Controller
                 // project and the competency; the composer stays a pure
                 // function of what it is handed.
                 authoredQuestions: $this->authoredQuestionsFor($project, $competency->id),
+                revisionId: $revisionId,
             );
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
