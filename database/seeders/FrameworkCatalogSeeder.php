@@ -76,14 +76,30 @@ use RuntimeException;
  *     seeder's own tests exercise the branch) still runs the full
  *     delete-stale sync unconditionally, matching the framework-catalog spec
  *     delta's literal "draft baseline still syncs" scenario.
- *   - `framework_gaps` and `catalog_meta` bookkeeping are UNTOUCHED BY THE
- *     GATE in either direction: gap reconciliation (`missing_translation`,
- *     `role_no_bars`, `competency_no_bars`, …) is computed from the source
- *     JSON, not from what this run was allowed to persist, and keeps running
- *     even while catalogue-content writes are blocked. `CatalogMeta::bump()`
- *     needs no special-casing to respect the gate: it already fires only
- *     when `$structuralChange` was set, and nothing sets it while writes are
+ *   - `catalog_meta` bookkeeping is UNTOUCHED BY THE GATE: `CatalogMeta::
+ *     bump()` needs no special-casing, since it already fires only when
+ *     `$structuralChange` was set, and nothing sets it while writes are
  *     blocked.
+ *   - `framework_gaps` reconciliation RUNS regardless of the gate, but its
+ *     WRITES do not all mean the same thing while blocked (post-PR2-review
+ *     correction — the original text here read "computed from the source
+ *     JSON ... keeps running even while catalogue-content writes are
+ *     blocked" for every gap kind, unconditionally, which was the defect).
+ *     **Gap resolution reflects DATABASE state, not the JSON.** Recording a
+ *     gap as still `pending_authoring` is always safe — it describes what
+ *     the JSON currently declares, never a claim about the database — and
+ *     stays unconditional. MARKING a gap `resolved` is a claim that the
+ *     database now satisfies the rule, and while writes are blocked nothing
+ *     reached the database this run: role_no_bars, competency_no_bars,
+ *     missing_role_meta, and the per-pair/global `missing_translation`
+ *     resolutions are therefore skipped entirely while blocked, leaving
+ *     whatever a prior unblocked run left. Before this fix, editing the
+ *     source JSON on a published, already-populated baseline could mark
+ *     these gaps resolved even though the corresponding write never landed
+ *     — while the `missing_potential_competency` check (below) already read
+ *     `BarsIndicator` existence from the DATABASE and was never affected;
+ *     it is the pattern the fix generalizes. `seeder_lock_guard_active` is
+ *     unaffected — it is not derived from JSON at all.
  *
  * **Everything the old per-row ADDITIVE lock-guard did is deleted, not
  * adapted.** The prior `hasLockedVersions()` gate ran a nuanced per-call-site
@@ -343,17 +359,20 @@ class FrameworkCatalogSeeder extends Seeder
             // From here, $role is guaranteed non-null: either found above, or
             // just created in the branch immediately preceding.
 
-            // Flag empty responsibilities (always — operational gap, not
-            // catalog mutation; framework_gaps is exempt from the gate).
+            // Flag empty responsibilities (always — recording a still-pending
+            // gap is safe regardless of the write gate: it describes what the
+            // JSON currently declares, not a claim about the database).
             if (($roleResponsibilitiesLocales['en'] ?? '') === '') {
                 FrameworkGap::updateOrCreate(
                     ['kind' => 'missing_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
                     ['note' => "Role {$roleCode} responsibilities is empty string — pending authoring", 'status' => 'pending_authoring'],
                 );
-            } else {
-                // Gap resolution: responsibilities is now authored in the JSON —
-                // resolve any pending gap. Computed from the JSON, not DB state, so
-                // this proceeds even while catalogue-content writes are blocked.
+            } elseif (! $writesBlocked) {
+                // Gap RESOLUTION, by contrast, is a claim that the database now
+                // satisfies the rule — see "Gap resolution reflects DATABASE
+                // state, not the JSON" in the class docblock. Only reachable
+                // while writes are not blocked, i.e. the write just made
+                // (or a prior unblocked run) actually landed this text.
                 FrameworkGap::where('kind', 'missing_role_meta')
                     ->where('role_code', $roleCode)
                     ->where('status', 'pending_authoring')
@@ -411,12 +430,15 @@ class FrameworkCatalogSeeder extends Seeder
             }
 
             // Gap resolution: bars file now exists — resolve any pending
-            // role_no_bars gap. Computed from the filesystem, not DB state, so this
-            // proceeds even while catalogue-content writes are blocked.
-            FrameworkGap::where('kind', 'role_no_bars')
-                ->where('role_code', $roleCode)
-                ->where('status', 'pending_authoring')
-                ->update(['status' => 'resolved']);
+            // role_no_bars gap. Gated by the write gate: the file existing in
+            // the JSON tree is not evidence the rows were actually written to
+            // the database this run (see the class docblock).
+            if (! $writesBlocked) {
+                FrameworkGap::where('kind', 'role_no_bars')
+                    ->where('role_code', $roleCode)
+                    ->where('status', 'pending_authoring')
+                    ->update(['status' => 'resolved']);
+            }
 
             /** @var array<string, list<array{indicator: array<string,string>, scale: array{5: array<string,string>, 3: array<string,string>, 1: array<string,string>}}>> $barsJson */
             $barsJson = json_decode(file_get_contents($barsFile), true, 512, JSON_THROW_ON_ERROR);
@@ -519,7 +541,7 @@ class FrameworkCatalogSeeder extends Seeder
                 // the total must include pairs that were NEVER missing anything, not just
                 // pairs that at some point had a gap row recorded for them.
                 $translationPairsTotal++;
-                if (! $this->resolveOrRecordTranslationGap($roleCode, $competencyCode, $dto->indicators)) {
+                if (! $this->resolveOrRecordTranslationGap($roleCode, $competencyCode, $dto->indicators, $writesBlocked)) {
                     $translationPairsPending++;
                 }
             }
@@ -532,7 +554,7 @@ class FrameworkCatalogSeeder extends Seeder
                         ['kind' => 'competency_no_bars', 'role_code' => $roleCode, 'competency_code' => $competencyCode],
                         ['note' => "Competency {$competencyCode} assigned to {$roleCode} but absent from BARS file", 'status' => 'pending_authoring'],
                     );
-                } else {
+                } elseif (! $writesBlocked) {
                     FrameworkGap::where('kind', 'competency_no_bars')
                         ->where('role_code', $roleCode)
                         ->where('competency_code', $competencyCode)
@@ -541,23 +563,27 @@ class FrameworkCatalogSeeder extends Seeder
                 }
             }
 
-            // Gap resolution, orphan case: a competency_no_bars gap whose pair
-            // roles.json no longer assigns to this role at all is moot — resolve it too.
-            // Mirrors CI Direction 2 of catalog_stale_competency_gap_exemptions.
-            FrameworkGap::where('kind', 'competency_no_bars')
-                ->where('role_code', $roleCode)
-                ->where('status', 'pending_authoring')
-                ->whereNotIn('competency_code', $assignedCodes)
-                ->update(['status' => 'resolved']);
+            if (! $writesBlocked) {
+                // Gap resolution, orphan case: a competency_no_bars gap whose pair
+                // roles.json no longer assigns to this role at all is moot — resolve it too.
+                // Mirrors CI Direction 2 of catalog_stale_competency_gap_exemptions.
+                // Gated: "moot" is a claim about the pivot the database actually
+                // holds, which a blocked run never wrote.
+                FrameworkGap::where('kind', 'competency_no_bars')
+                    ->where('role_code', $roleCode)
+                    ->where('status', 'pending_authoring')
+                    ->whereNotIn('competency_code', $assignedCodes)
+                    ->update(['status' => 'resolved']);
 
-            // Orphan sweep (design D5) for missing_translation, same shape as
-            // competency_no_bars above: a per-pair gap whose pair is no longer assigned to
-            // this role at all is moot.
-            FrameworkGap::where('kind', 'missing_translation')
-                ->where('role_code', $roleCode)
-                ->where('status', 'pending_authoring')
-                ->whereNotIn('competency_code', $assignedCodes)
-                ->update(['status' => 'resolved']);
+                // Orphan sweep (design D5) for missing_translation, same shape as
+                // competency_no_bars above: a per-pair gap whose pair is no longer assigned to
+                // this role at all is moot.
+                FrameworkGap::where('kind', 'missing_translation')
+                    ->where('role_code', $roleCode)
+                    ->where('status', 'pending_authoring')
+                    ->whereNotIn('competency_code', $assignedCodes)
+                    ->update(['status' => 'resolved']);
+            }
         }
 
         // ─── 4. Potential competencies: seed their BARS, then reconcile the gap ──
@@ -642,13 +668,20 @@ class FrameworkCatalogSeeder extends Seeder
             default => "it locale: {$translationPairsPending} of {$translationPairsTotal} role×competency pairs pending",
         };
 
-        FrameworkGap::updateOrCreate(
-            ['kind' => 'missing_translation', 'role_code' => null, 'competency_code' => null],
-            [
-                'note' => $translationGapNote,
-                'status' => $translationGapResolved ? 'resolved' : 'pending_authoring',
-            ],
-        );
+        // Gated as a whole, not just the resolve direction: this one
+        // `updateOrCreate` can flip the row EITHER way from JSON-derived
+        // counters that are meaningless while blocked (no pair's indicators
+        // were actually written this run), so leaving the row exactly as a
+        // prior unblocked run left it is the only claim that stays true.
+        if (! $writesBlocked) {
+            FrameworkGap::updateOrCreate(
+                ['kind' => 'missing_translation', 'role_code' => null, 'competency_code' => null],
+                [
+                    'note' => $translationGapNote,
+                    'status' => $translationGapResolved ? 'resolved' : 'pending_authoring',
+                ],
+            );
+        }
 
         // ─── 6. Bump catalog_meta revision if structural changes occurred ─────
         // CatalogMeta::bump() needs no gate-specific handling: it fires for a
@@ -806,9 +839,11 @@ class FrameworkCatalogSeeder extends Seeder
      * @param  list<IndicatorDTO>  $indicators
      * @return bool Whether this pair's `it` locale is fully translated (12 of 12 strings).
      *              The caller uses this to accumulate the global-row denominator (step 5)
-     *              instead of re-deriving it from framework_gaps rows afterwards.
+     *              instead of re-deriving it from framework_gaps rows afterwards. Returned
+     *              regardless of `$writesBlocked` — the counter itself is harmless; only the
+     *              WRITE that claims the pair is resolved is gated (see below).
      */
-    private function resolveOrRecordTranslationGap(string $roleCode, string $competencyCode, array $indicators): bool
+    private function resolveOrRecordTranslationGap(string $roleCode, string $competencyCode, array $indicators, bool $writesBlocked): bool
     {
         $itComplete = true;
 
@@ -822,11 +857,17 @@ class FrameworkCatalogSeeder extends Seeder
         }
 
         if ($itComplete) {
-            FrameworkGap::where('kind', 'missing_translation')
-                ->where('role_code', $roleCode)
-                ->where('competency_code', $competencyCode)
-                ->where('status', 'pending_authoring')
-                ->update(['status' => 'resolved']);
+            // Gated: the JSON being complete is not evidence the `it` values
+            // were actually written to this pair's indicator rows — a blocked
+            // run never wrote them. See the class docblock, "Gap resolution
+            // reflects DATABASE state, not the JSON".
+            if (! $writesBlocked) {
+                FrameworkGap::where('kind', 'missing_translation')
+                    ->where('role_code', $roleCode)
+                    ->where('competency_code', $competencyCode)
+                    ->where('status', 'pending_authoring')
+                    ->update(['status' => 'resolved']);
+            }
 
             return true;
         }

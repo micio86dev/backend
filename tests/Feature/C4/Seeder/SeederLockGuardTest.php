@@ -30,8 +30,15 @@ declare(strict_types=1);
  *    draft baseline naturally) still runs the full delete-stale sync,
  *    matching the framework-catalog spec delta's "draft baseline still
  *    syncs" scenario literally.
- * 5. `framework_gaps` reconciliation proceeds regardless of the gate —
- *    bookkeeping, not catalogue content (D2).
+ * 5. `framework_gaps` gap RESOLUTION reflects DATABASE state, not the JSON
+ *    (fix, post-PR2-review): a `pending_authoring` gap for a pair whose text
+ *    the JSON now declares complete is NOT marked resolved while writes are
+ *    blocked — nothing reached the database this run, so nothing was
+ *    verified. The same forced-pending gap DOES resolve once writes are not
+ *    blocked (a draft baseline), proving resolution still functions when the
+ *    write it is claiming about actually happened. Recording a gap as still
+ *    `pending_authoring`, by contrast, is unaffected either way — it never
+ *    claims anything about the database.
  * 6. Idempotence and the per-role seeded counts (ICO 45, FLL 54, MLL 54,
  *    BUL 42, SRX 54) hold once the baseline is populated.
  *
@@ -217,25 +224,35 @@ test('a draft baseline still runs the full delete-stale sync', function (): void
     cleanupSeederLockGuardFixtureTree($tmpDir);
 });
 
-// ─── Scenario 5: framework_gaps reconciliation proceeds regardless of the gate ──
+// ─── Scenario 5: gap resolution reflects DATABASE state, not the JSON ─────────
 
-test('framework_gaps reconciliation proceeds even while writes are blocked', function (): void {
+/**
+ * The deterministic ICO × (its lowest competency_id) pivot pair, ordered
+ * explicitly rather than relying on `first()`'s unspecified row order —
+ * review advisory R3-5 on the sibling BarsIndicatorLoaderRevisionResolutionTest
+ * named the same class of hazard.
+ */
+function seederLockGuardDeterministicPair(FrameworkCatalogRevision $baseline, Role $ico): object
+{
+    return DB::table('framework_role_competency')
+        ->where('framework_role_competency.role_id', $ico->id)
+        ->where('framework_role_competency.revision_id', $baseline->id)
+        ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
+        ->orderBy('framework_role_competency.competency_id')
+        ->firstOrFail();
+}
+
+test('a pending gap is NOT marked resolved from the JSON alone while writes are blocked', function (): void {
     (new FrameworkCatalogSeeder)->run(); // populate — writes NOT blocked
 
     $baseline = seederLockGuardBaseline();
     $ico = Role::where('revision_id', $baseline->id)->where('code', 'ICO')->firstOrFail();
-    $pivotRow = DB::table('framework_role_competency')
-        ->where('framework_role_competency.role_id', $ico->id)
-        ->where('framework_role_competency.revision_id', $baseline->id)
-        ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
-        ->first();
+    $pivotRow = seederLockGuardDeterministicPair($baseline, $ico);
 
     // Force a stale pending gap for an already-anchored, already-fully-
-    // translated pair (the real fixture's own ICO×first-competency pair),
-    // mirroring the spec scenario "a framework_gaps row for a now-anchored
-    // pair ... is still resolved". Written directly — the seeder itself
-    // would never have created a pending row for a pair that already
-    // satisfies the rule.
+    // translated pair (the real fixture's own ICO × lowest-competency-id
+    // pair). Written directly — the seeder itself would never have created a
+    // pending row for a pair that already satisfies the rule.
     FrameworkGap::updateOrCreate(
         ['kind' => 'missing_translation', 'role_code' => 'ICO', 'competency_code' => $pivotRow->code],
         ['note' => 'forced pending, for this test only', 'status' => 'pending_authoring'],
@@ -249,7 +266,45 @@ test('framework_gaps reconciliation proceeds even while writes are blocked', fun
             ->where('competency_code', $pivotRow->code)
             ->where('status', 'pending_authoring')
             ->exists()
-    )->toBeFalse('gap reconciliation must resolve an already-satisfied pending gap even while catalogue writes are blocked');
+    )->toBeTrue(
+        'a blocked run wrote nothing to the database this run, so it has no basis to claim the '
+        .'gap is resolved — even though the (unedited) JSON happens to agree with what the '
+        .'database already holds from a prior run. Resolving here would be right by accident, '
+        .'for the wrong reason, and wrong the moment the JSON and the database ever disagree.'
+    );
+});
+
+test('the same forced-pending gap DOES resolve once writes are not blocked', function (): void {
+    (new FrameworkCatalogSeeder)->run(); // populate — writes NOT blocked
+
+    $baseline = seederLockGuardBaseline();
+    $ico = Role::where('revision_id', $baseline->id)->where('code', 'ICO')->firstOrFail();
+    $pivotRow = seederLockGuardDeterministicPair($baseline, $ico);
+
+    FrameworkGap::updateOrCreate(
+        ['kind' => 'missing_translation', 'role_code' => 'ICO', 'competency_code' => $pivotRow->code],
+        ['note' => 'forced pending, for this test only', 'status' => 'pending_authoring'],
+    );
+
+    // The ONLY way to make this run's writes NOT blocked against an
+    // already-populated baseline: force it back to draft (the same
+    // query-builder bypass Scenario 4 uses) — a real draft revision runs the
+    // full sync, which re-verifies every pair against the source JSON.
+    DB::table('framework_catalog_revisions')
+        ->where('id', $baseline->id)
+        ->update(['state' => 'draft', 'published_at' => null]);
+
+    (new FrameworkCatalogSeeder)->run();
+
+    expect(
+        FrameworkGap::where('kind', 'missing_translation')
+            ->where('role_code', 'ICO')
+            ->where('competency_code', $pivotRow->code)
+            ->where('status', 'pending_authoring')
+            ->exists()
+    )->toBeFalse('once the run actually re-verified this pair against the database, the forced '
+        .'pending gap must resolve — the gate does not disable resolution outright, only while '
+        .'nothing was verified.');
 });
 
 // ─── Scenario 6: idempotence + per-role seeded counts ──────────────────────────
