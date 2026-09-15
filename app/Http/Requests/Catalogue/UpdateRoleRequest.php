@@ -30,7 +30,13 @@ class UpdateRoleRequest extends FormRequest
      */
     public function rules(): array
     {
-        $draftId = $this->openDraftRevisionId();
+        // Read-only: an UPDATE never opens a new draft — see
+        // `existingOpenDraftRevisionId()`'s own docblock. `null` scopes the
+        // uniqueness rule to a revision_id that matches no row, which is
+        // harmless: the controller's own `findOrFail` 404s regardless when
+        // no draft is open, since there is nothing this request could be
+        // updating.
+        $draftId = $this->existingOpenDraftRevisionId();
         $roleId = (int) $this->route('role');
 
         return [

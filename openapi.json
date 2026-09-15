@@ -674,6 +674,17 @@
                                                     "required": [
                                                         "viewAny"
                                                     ]
+                                                },
+                                                "catalogue": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "manage": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "manage"
+                                                    ]
                                                 }
                                             },
                                             "required": [
@@ -685,7 +696,8 @@
                                                 "projects",
                                                 "participants",
                                                 "clients",
-                                                "platformSettings"
+                                                "platformSettings",
+                                                "catalogue"
                                             ]
                                         }
                                     },
@@ -1384,6 +1396,500 @@
                     },
                     "403": {
                         "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/bars-indicators": {
+            "get": {
+                "operationId": "barsIndicator.index",
+                "tags": [
+                    "BarsIndicator"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `CatalogueBarsIndicatorResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CatalogueBarsIndicatorResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "barsIndicator.store",
+                "tags": [
+                    "BarsIndicator"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreBarsIndicatorRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`CatalogueBarsIndicatorResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueBarsIndicatorResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/bars-indicators/{indicator}": {
+            "patch": {
+                "operationId": "barsIndicator.update",
+                "tags": [
+                    "BarsIndicator"
+                ],
+                "parameters": [
+                    {
+                        "name": "indicator",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateBarsIndicatorRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`CatalogueBarsIndicatorResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueBarsIndicatorResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "barsIndicator.destroy",
+                "tags": [
+                    "BarsIndicator"
+                ],
+                "parameters": [
+                    {
+                        "name": "indicator",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/competencies": {
+            "get": {
+                "operationId": "competency.index",
+                "tags": [
+                    "Competency"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `CatalogueCompetencyResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CatalogueCompetencyResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "competency.store",
+                "tags": [
+                    "Competency"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreCompetencyRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`CatalogueCompetencyResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueCompetencyResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/competencies/{competency}": {
+            "patch": {
+                "operationId": "competency.update",
+                "tags": [
+                    "Competency"
+                ],
+                "parameters": [
+                    {
+                        "name": "competency",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateCompetencyRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`CatalogueCompetencyResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueCompetencyResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "competency.destroy",
+                "tags": [
+                    "Competency"
+                ],
+                "parameters": [
+                    {
+                        "name": "competency",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -5236,6 +5742,472 @@
                 }
             }
         },
+        "/catalogue/revisions/current": {
+            "get": {
+                "operationId": "revision.current",
+                "summary": "READ-ONLY (gga review finding, blocking): this used to auto-open a\ndraft on every call, which breaks HTTP safety on a GET \u2014 a prefetch,\nretry, or monitoring probe from a superadmin session would clone\n~450 rows for a request nobody asked to be a write. Auto-open on\n\"first edit\" still happens, correctly, where an edit actually\noccurs: every `store()` action across the catalogue controllers\ncalls `OpenDraftRevision::open()` itself. This endpoint only reports\nwhatever is currently true \u2014 `null` when nothing is open yet",
+                "tags": [
+                    "Revision"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/components/schemas/CatalogueRevisionResource"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/revisions/publish": {
+            "post": {
+                "operationId": "revision.publish",
+                "summary": "`422` with the FULL violations list on a failing sweep \u2014 one response\nnaming every problem, `state` left `draft` (design D3)",
+                "tags": [
+                    "Revision"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueRevisionResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "violations": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    },
+                                                    "minItems": 0,
+                                                    "maxItems": 0,
+                                                    "additionalItems": false
+                                                },
+                                                {
+                                                    "type": "array",
+                                                    "prefixItems": [
+                                                        {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        },
+                                                        {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        },
+                                                        {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        },
+                                                        {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        },
+                                                        {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        },
+                                                        {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "rule": {
+                                                                        "type": "string",
+                                                                        "const": "cross_role_duplicate_anchor_new_to_revision"
+                                                                    },
+                                                                    "subject": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "detail": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "rule",
+                                                                    "subject",
+                                                                    "detail"
+                                                                ]
+                                                            }
+                                                        }
+                                                    ],
+                                                    "minItems": 6,
+                                                    "maxItems": 6,
+                                                    "additionalItems": false
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "violations"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                "no open draft revision to publish"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/roles": {
+            "get": {
+                "operationId": "role.index",
+                "tags": [
+                    "Role"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `CatalogueRoleResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CatalogueRoleResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "role.store",
+                "summary": "`responsibilities` is optional on `StoreRoleRequest` \u2014 matching the\nseeder's own \"not yet authored\" sentinel (a blank `en` value, not an\nABSENT column: `responsibilities` has no DB default and is NOT\nNULL). A `create()` call that never mentions the key writes SQL\nNULL, not an empty locale map, so it is defaulted here to keep the\ntwo \"not yet authored\" representations in agreement",
+                "tags": [
+                    "Role"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreRoleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`CatalogueRoleResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueRoleResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/roles/{role}": {
+            "patch": {
+                "operationId": "role.update",
+                "summary": "Never opens a draft (gga review finding) \u2014 the target `$role` either\nalready belongs to an existing open draft or it does not exist to\nupdate at all; opening a fresh clone here would copy ~450 rows only\nto 404 immediately after, since a freshly-cloned row's id can never\nequal the id named in the URL",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "name": "role",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateRoleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`CatalogueRoleResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueRoleResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "role.destroy",
+                "summary": "Pre-publish only \u2014 a role's revision is, by definition, always an\nopen draft here (a published revision's content never reaches this\nfar: `findOrFail` scoped to the open draft 404s first)",
+                "tags": [
+                    "Role"
+                ],
+                "parameters": [
+                    {
+                        "name": "role",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/candidate/session": {
             "get": {
                 "operationId": "session.show",
@@ -6692,6 +7664,178 @@
                     "translation_gap"
                 ],
                 "title": "BarsIndicatorResource"
+            },
+            "CatalogueBarsIndicatorResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "revision_id": {
+                        "type": "integer"
+                    },
+                    "role_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "competency_id": {
+                        "type": "integer"
+                    },
+                    "position": {
+                        "type": "integer"
+                    },
+                    "text": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "anchor_5": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "anchor_3": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "anchor_1": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "revision_id",
+                    "role_id",
+                    "competency_id",
+                    "position",
+                    "text",
+                    "anchor_5",
+                    "anchor_3",
+                    "anchor_1"
+                ],
+                "title": "CatalogueBarsIndicatorResource"
+            },
+            "CatalogueCompetencyResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "revision_id": {
+                        "type": "integer"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "definition": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "code",
+                    "revision_id",
+                    "type",
+                    "name",
+                    "definition"
+                ],
+                "title": "CatalogueCompetencyResource"
+            },
+            "CatalogueRevisionResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "state": {
+                        "type": "string"
+                    },
+                    "is_baseline": {
+                        "type": "boolean"
+                    },
+                    "label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "published_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "parent_revision_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "state",
+                    "is_baseline",
+                    "label",
+                    "published_at",
+                    "parent_revision_id"
+                ],
+                "title": "CatalogueRevisionResource"
+            },
+            "CatalogueRoleResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "revision_id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "responsibilities": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "code",
+                    "revision_id",
+                    "name",
+                    "responsibilities"
+                ],
+                "title": "CatalogueRoleResource"
             },
             "CompetencyResource": {
                 "type": "object",
@@ -8361,6 +9505,144 @@
                 ],
                 "title": "SessionSummaryResource"
             },
+            "StoreBarsIndicatorRequest": {
+                "type": "object",
+                "description": "`POST /api/catalogue/bars-indicators` (framework-catalogue-authoring\nPR3, D3). Refuses a 4th indicator for `(revision, role, competency)` \u2014\n`catalogue-authoring` spec: \"Each BARS indicator write MUST enforce\n * exactly 3 indicators per role\u00d7competency pair ... at the FormRequest and\n * DB-constraint layer, not only at seed time.\"",
+                "properties": {
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "anchor_5": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "anchor_3": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "anchor_1": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "competency_id": {
+                        "type": "integer"
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "role_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "Nullable: a `potential` competency's indicators MUST carry\n`role_id = null` (PublishRevision's own sweep, D3) \u2014 the\nFormRequest does not refuse null here, only validates the\nvalue's shape when present."
+                    }
+                },
+                "required": [
+                    "text",
+                    "anchor_5",
+                    "anchor_3",
+                    "anchor_1",
+                    "competency_id",
+                    "position"
+                ],
+                "title": "StoreBarsIndicatorRequest"
+            },
+            "StoreCompetencyRequest": {
+                "type": "object",
+                "description": "`POST /api/catalogue/competencies` (framework-catalogue-authoring PR3).",
+                "properties": {
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "definition": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z0-9_]+$",
+                        "maxLength": 16
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "standard",
+                            "potential"
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "definition",
+                    "code",
+                    "type"
+                ],
+                "title": "StoreCompetencyRequest"
+            },
             "StorePlatformUserRequest": {
                 "type": "object",
                 "description": "Validates POST /api/admin/platform-users (platform-user-management D2).\n\nThere is no `role` rule and no `organization_id` rule, and their absence is\nthe point rather than an omission: both are DECIDED by the surface, exactly\nas `/api/users` decides them for an organization's people. A field that is\nnever read cannot be crafted.",
@@ -8554,6 +9836,47 @@
                 ],
                 "title": "StoreProjectRequest"
             },
+            "StoreRoleRequest": {
+                "type": "object",
+                "description": "`POST /api/catalogue/roles` (framework-catalogue-authoring PR3, D3/D12).\n\nThe five roles are a closed set (ICO/FLL/MLL/BUL/SRX) \u2014 `catalogue-\nauthoring` spec: \"Creating a sixth role MUST be rejected\". `authorize()`\nstill repeats the superadmin check (`StorePlatformUserRequest`'s own\nprecedent): a FormRequest validates BEFORE the controller runs, so an\nunauthorized caller must get 403 before 422 enumerates this endpoint's\nfield rules.",
+                "properties": {
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "responsibilities": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z0-9_]+$",
+                        "maxLength": 16
+                    }
+                },
+                "required": [
+                    "name",
+                    "code"
+                ],
+                "title": "StoreRoleRequest"
+            },
             "StoreUserRequest": {
                 "type": "object",
                 "description": "StoreUserRequest (backoffice-missing-pages D4).\n\nValidates POST /api/users. `organization_id` and `is_superadmin` are\ndeliberately NOT rules here \u2014 they are never read from the request at\nall (the controller only ever passes $request->safe()->only([...]) the\nfour whitelisted fields to User::create()), so a crafted value in either\nkey is ignored, never validated-then-rejected.\n\n`role` validates against the code-level OrgRole::values() allow-list \u2014\nNEVER `Rule::exists('roles', 'name')`, which would make the assignable\nset DATA (any seeder/migration/future feature that inserts a `roles` row\nwould instantly make it grantable, and it would also accept another\ntenant's role name). `role_code` is never a rule here at all: it is\nignored, not validated-then-rejected \u2014 this surface governs authorization\nroles only, never the BEAI organizational role_code.",
@@ -8648,6 +9971,102 @@
                     "sessions"
                 ],
                 "title": "TranscriptResource"
+            },
+            "UpdateBarsIndicatorRequest": {
+                "type": "object",
+                "description": "`PATCH /api/catalogue/bars-indicators/{indicator}` (framework-catalogue-\nauthoring PR3). No 4th-indicator check here \u2014 editing text/anchors on an\nEXISTING row never changes the count for its pair. Reassigning\n`role_id`/`competency_id` on an existing indicator is out of scope for\nthis PR (D3's twin scopes the count check to creation).",
+                "properties": {
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "anchor_5": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "anchor_3": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "anchor_1": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "title": "UpdateBarsIndicatorRequest"
+            },
+            "UpdateCompetencyRequest": {
+                "type": "object",
+                "description": "`PATCH /api/catalogue/competencies/{competency}` (framework-catalogue-\nauthoring PR3).",
+                "properties": {
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "definition": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z0-9_]+$",
+                        "maxLength": 16
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "standard",
+                            "potential"
+                        ]
+                    }
+                },
+                "title": "UpdateCompetencyRequest"
             },
             "UpdateOrganizationRequest": {
                 "type": "object",
@@ -8813,6 +10232,40 @@
                 "type": "object",
                 "description": "UpdateProjectRequest (C4 Project Configuration).\n\nValidates PATCH /api/projects/{id} payload.\n\nKey invariants:\n- framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).\n  Any PATCH that includes this field is rejected with 422 \u2014 even the same value, even on draft.\n- slug: self-ignoring unique rule (->ignore) with soft-delete exclusion\n- Immutability: changing assessment_type or role_code when the resulting status is 'active' or\n  'archived' \u2192 422\n- Lifecycle: allowed transitions are draft\u2192active and active\u2192archived only.\n  Forbidden (active\u2192draft, archived\u2192active, archived\u2192draft) \u2192 422.\n\nSubstituteBindings note: the route parameter 'project' is an int (no implicit model binding \u2014\nSubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding\nwould resolve Project before the tenant scope is set). Manual findOrFail() inside controller\nand FormRequest methods ensures the TenantScoped global scope is active at resolution time.",
                 "title": "UpdateProjectRequest"
+            },
+            "UpdateRoleRequest": {
+                "type": "object",
+                "description": "`PATCH /api/catalogue/roles/{role}` (framework-catalogue-authoring PR3).\nNo sixth-role check here \u2014 that only applies to creating a NEW role;\nrenaming an existing one never changes the count.",
+                "properties": {
+                    "name": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "responsibilities": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "code": {
+                        "type": "string",
+                        "pattern": "^[A-Z0-9_]+$",
+                        "maxLength": 16
+                    }
+                },
+                "title": "UpdateRoleRequest"
             },
             "UpdateUserRequest": {
                 "type": "object",

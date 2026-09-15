@@ -29,7 +29,9 @@ class UpdateCompetencyRequest extends FormRequest
      */
     public function rules(): array
     {
-        $draftId = $this->openDraftRevisionId();
+        // Read-only — see `existingOpenDraftRevisionId()`'s own docblock and
+        // the identical note on `UpdateRoleRequest`.
+        $draftId = $this->existingOpenDraftRevisionId();
         $competencyId = (int) $this->route('competency');
 
         return [
