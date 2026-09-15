@@ -51,6 +51,11 @@ test('re-seeding with one competency removed from a role deletes stale pivot and
     mkdir($tempDir, 0755, true);
     file_put_contents("{$tempDir}/roles.json", json_encode($modifiedRoles));
 
+    // framework-catalogue-authoring PR2 (D2): forced to draft so this
+    // re-seed can write at all — this test is about delete-stale sync, not
+    // the write gate (a separate, already-covered concern).
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
+
     // Re-seed with modified roles and the seeder's injected rolesFile
     $seeder2 = new FrameworkCatalogSeeder(rolesFile: "{$tempDir}/roles.json");
     $seeder2->run();

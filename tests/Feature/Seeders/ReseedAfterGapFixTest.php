@@ -16,6 +16,7 @@ use App\Models\BarsIndicator;
 use App\Models\FrameworkGap;
 use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
 
 test('re-seeding after adding SRX bars inserts SRX indicators', function (): void {
     // First seed — SRX bars absent (seeder uses its barsDir arg)
@@ -46,6 +47,14 @@ test('re-seeding after adding SRX bars inserts SRX indicators', function (): voi
         ],
     ];
     file_put_contents("{$tempDir}/SRX.json", json_encode($srxBars));
+
+    // framework-catalogue-authoring PR2 (D2): forced to draft so this
+    // re-seed can write the new SRX indicators at all — this test is about
+    // the gap-fix-triggers-insertion mechanic, not the write gate (a
+    // separate, already-covered concern; gap reconciliation itself DOES
+    // still run unconditionally, but the row insertion this test also
+    // asserts does not).
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
 
     // Re-seed with SRX.json now present
     $seeder->run();

@@ -7,8 +7,8 @@ namespace Database\Seeders;
 use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkGap;
-use App\Models\FrameworkVersion;
 use App\Models\Role;
 use App\Services\FrameworkCatalog\CompetencyNormalizer;
 use App\Services\FrameworkCatalog\DTO\IndicatorDTO;
@@ -18,52 +18,86 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * FrameworkCatalogSeeder (C3 + C4 lock-guard + framework-catalog-it-translations locale writing).
+ * FrameworkCatalogSeeder (C3 + framework-catalog-it-translations locale
+ * writing + framework-catalogue-authoring PR2 revision gate).
  *
- * Seeds the global BEAI framework catalog from split-file JSON:
+ * Seeds the **baseline** `framework_catalog_revisions` row from split-file
+ * JSON:
  *   docs/app_description/02-domain/framework/roles.json
  *   docs/app_description/02-domain/framework/competencies.json
  *   docs/app_description/02-domain/framework/bars/{ROLE}.json
+ *
+ * Every catalogue-content row this seeder writes is scoped to the baseline
+ * revision's id (framework-catalogue-authoring PR1, D1) — this seeder never
+ * targets any other revision. PR 3's `OpenDraftRevision`/`PublishRevision`
+ * own every other revision's lifecycle.
  *
  * Locale dimension (framework-catalog-it-translations, design D1/D4): every
  * translatable field's JSON value is a locale map — `{"en": "...", "it":
  * "..."}`, `en` mandatory, `it` optional until authored. The seeder writes
  * `setTranslation($field, $locale, $value)` for EVERY locale present in the
- * source map, not `en` only — so an authored `it` value is picked up by the
- * SAME write path as `en`, with no separate "IT-writing mode".
+ * source map, not `en` only.
  *
  * Idempotent + delete-stale (sync):
- *   - updateOrCreate() for roles and competencies (by code)
- *   - sync() for role_competency pivot (removes stale assignments) [when NOT locked]
- *   - syncWithoutDetaching() for role_competency pivot [when locked]
- *   - upsert + delete-stale for bars_indicators per (role, competency) [when NOT locked]
+ *   - upsert (find-by-revision-and-code, else new) for roles and competencies
+ *   - sync() for the role_competency pivot (removes stale assignments)
+ *   - upsert + delete-stale for bars_indicators per (role, competency)
  *   - updateOrCreate() for all framework_gaps (NULLS NOT DISTINCT at DB layer)
  *
- * C4 lock-guard: when any FrameworkVersion has is_locked=true, the seeder becomes
- * PURELY ADDITIVE:
- *   - No existing catalog rows are mutated (setTranslation/save skipped for existing rows)
- *   - No rows are deleted (sync → syncWithoutDetaching; BarsIndicator::delete() suppressed)
- *   - Only genuinely new rows (not yet in DB by natural key) are inserted
- *   - framework_gaps upserts and CatalogMeta::bump() are EXEMPT (operational tables)
- *   - seeder_lock_guard_active signal emitted ONCE (as FrameworkGap + Log::warning)
+ * **Baseline-revision write gate (framework-catalogue-authoring PR2, D2)**,
+ * replacing the old platform-wide `FrameworkVersion.is_locked` lock-guard
+ * entirely — that flag no longer has any bearing on this seeder:
  *
- * **Fill-empty-locale exception under lock** (framework-catalog-it-translations
- * design D4, the PRIMARY path — not an edge case: `ProjectController::store`
- * locks a FrameworkVersion the moment any tenant creates a project, so
- * production has zero locked FVs only until the first real signup). Extends
- * the existing `Role.responsibilities` EN-fill-when-empty precedent (fix 5b,
- * unchanged, see below) with a SEPARATE, more general exception: for ANY
- * translatable field on an EXISTING row, under lock, a NON-`en` locale MAY be
- * written iff the row does not already carry a translation for that locale.
- * `en` is NEVER touched by this exception, and a non-empty existing non-`en`
- * value is NEVER overwritten. See `fillEmptyLocalesUnderLock()`.
+ *   - The baseline revision is ALWAYS `published` by construction (PR1's
+ *     backfill migration inserts it that way unconditionally — see that
+ *     migration's own docblock: "already-shipped, already-scored content ...
+ *     not mutable"). A bare `state === 'published'` gate would therefore
+ *     refuse the very FIRST seed on a freshly migrated, empty database —
+ *     `php artisan migrate --seed` runs this seeder immediately after the
+ *     backfill migration creates a published baseline with zero rows in it
+ *     (see `DatabaseSeeder::run()`). That is the fresh-install contradiction
+ *     PR2's own task notes flag, and it is resolved here rather than by
+ *     making the migration conditionally insert a draft baseline: every
+ *     existing PR1 invariant test asserts the baseline is unconditionally
+ *     `published` immediately after migration, with no seeding —
+ *     `FrameworkCatalogRevisionInvariantsTest::test('the baseline revision is
+ *     published, not draft')` chief among them — and changing that would
+ *     reopen settled, tested PR1 behaviour rather than fix PR2's own gap.
+ *   - The gate therefore asks "does the baseline already carry content", not
+ *     merely "is it published": `writesAreBlocked()` is true only when the
+ *     baseline is `published` AND `framework_competencies` already has a row
+ *     for it. A published-but-empty baseline is populated normally; a
+ *     published baseline that already carries content is immutable, full
+ *     stop — no additive insert, no mutation of an existing row, nothing.
+ *   - A **draft** baseline (never produced by this schema today — the
+ *     Eloquent immutability guard on `FrameworkCatalogRevision` refuses to
+ *     flip a published row back to draft; only a raw `DB::table()` write
+ *     bypassing that guard can construct one, which is exactly how this
+ *     seeder's own tests exercise the branch) still runs the full
+ *     delete-stale sync unconditionally, matching the framework-catalog spec
+ *     delta's literal "draft baseline still syncs" scenario.
+ *   - `framework_gaps` and `catalog_meta` bookkeeping are UNTOUCHED BY THE
+ *     GATE in either direction: gap reconciliation (`missing_translation`,
+ *     `role_no_bars`, `competency_no_bars`, …) is computed from the source
+ *     JSON, not from what this run was allowed to persist, and keeps running
+ *     even while catalogue-content writes are blocked. `CatalogMeta::bump()`
+ *     needs no special-casing to respect the gate: it already fires only
+ *     when `$structuralChange` was set, and nothing sets it while writes are
+ *     blocked.
  *
- * **Per-pair `missing_translation` gap resolution** (design D5): computed
- * from the SOURCE JSON, not DB state (proceeds under lock, like every other
- * gap-resolution point here) — a role×competency pair's 12 strings (3
- * indicators × {text, anchor_5, anchor_3, anchor_1}) must ALL carry an `it`
- * value before that pair's gap resolves. 11 of 12 counts as 0 (mirrors the
- * scoring-engine's own per-competency hard-fail unit).
+ * **Everything the old per-row ADDITIVE lock-guard did is deleted, not
+ * adapted.** The prior `hasLockedVersions()` gate ran a nuanced per-call-site
+ * `$model->exists` mode — new rows inserted, existing rows preserved, plus a
+ * "fill an empty locale slot even on an existing row" exception
+ * (`fillEmptyLocalesUnderLock()` / `recordLockedFillEmptyLocaleGap()`) so a
+ * catalogue locked by ANY tenant's first project could still gain an `it`
+ * translation. Revision immutability replaces that nuance entirely (design
+ * D2): a `published`-with-content baseline accepts NO writes at all,
+ * additive or otherwise, because immutability is now a property of the
+ * revision row a superadmin explicitly publishes (PR 3), not something
+ * inferred from any `FrameworkVersion` being locked anywhere on the
+ * platform. There is no more partially-writable state, so there is nothing
+ * left for a fill-empty-locale exception to fill.
  *
  * Atomicity (post-verification hardening, finding #1): the whole run, INCLUDING
  * CatalogMeta::bump(), executes inside a single DB::transaction(). Before this,
@@ -87,13 +121,12 @@ use RuntimeException;
  * again, because it is computed within the same execution that determines
  * what actually lands in the DB — there is no window where the flag says
  * false while something is nonetheless persisted. This holds for every path
- * through this method, INCLUDING the locked-FrameworkVersion additive-only
- * branch (it still sets $structuralChange for genuinely new rows, still
- * inside the same transaction) and INCLUDING a hypothetical failure AFTER
- * bump() (bump() is the last statement in the same transaction, so such a
- * failure would roll the bump back together with the rows that justified it
- * — retry then recomputes cleanly from a truly empty diff, not a corrupted
- * one).
+ * through this method, INCLUDING the write-blocked branch (it never sets
+ * $structuralChange, still inside the same transaction) and INCLUDING a
+ * hypothetical failure AFTER bump() (bump() is the last statement in the same
+ * transaction, so such a failure would roll the bump back together with the
+ * rows that justified it — retry then recomputes cleanly from a truly empty
+ * diff, not a corrupted one).
  *
  * A before/after state-diff (hash the catalog, bump if it moved, in a
  * finally-block that runs even on exception) was considered and rejected: it
@@ -102,10 +135,10 @@ use RuntimeException;
  * bookkeeping already threaded through the mutation sites), and — worse — it
  * would bump the revision for a PARTIAL, crashed catalog state and make it
  * visible to caches/ETags as if it were a completed seed. That directly
- * contradicts this seeder's own discipline elsewhere (C4 lock-guard: purely
- * additive, never partial) — a half-written catalog going live with a fresh
- * revision number is a worse outcome than the seed command exiting non-zero
- * with nothing changed.
+ * contradicts this seeder's own discipline elsewhere (published-baseline
+ * gate: all-or-nothing, never partial) — a half-written catalog going live
+ * with a fresh revision number is a worse outcome than the seed command
+ * exiting non-zero with nothing changed.
  *
  * NOT everything in this method is DB work, and none of the non-DB work
  * needs to be excluded from the transaction: Log::warning() calls write to
@@ -199,20 +232,22 @@ class FrameworkCatalogSeeder extends Seeder
         $translationPairsTotal = 0;
         $translationPairsPending = 0;
 
-        // ─── C4 Lock-Guard ────────────────────────────────────────────────────
-        // Must use withoutGlobalScopes() — no HTTP request / tenant context during artisan seeding.
-        // This is a cross-tenant aggregate check ("does ANY locked FV exist?") — intentionally unscoped.
-        $locked = $this->hasLockedVersions();
+        // ─── Baseline-revision write gate (framework-catalogue-authoring PR2, D2) ──
+        $baseline = $this->resolveBaselineRevision();
+        $baselineId = $baseline->id;
+        $writesBlocked = $this->writesAreBlocked($baseline);
 
-        if ($locked) {
-            // Emit the lock-guard signal ONCE, before any catalog processing begins.
-            // This is EXEMPT from mutation-suppression (it is an operational signal, not catalog content).
+        if ($writesBlocked) {
+            // Emitted ONCE per run, before any catalog processing begins —
+            // exempt from the gate itself (bookkeeping, not catalogue
+            // content), mirroring the old lock-guard signal's kind/shape so
+            // an operator's existing runbook check still finds it.
             FrameworkGap::updateOrCreate(
                 ['kind' => 'seeder_lock_guard_active', 'role_code' => null, 'competency_code' => null],
-                ['note' => 'FrameworkCatalogSeeder is running in ADDITIVE mode (a locked FrameworkVersion exists). No catalog mutations or deletes will be performed.', 'status' => 'info'],
+                ['note' => "FrameworkCatalogSeeder is running against a PUBLISHED baseline revision (id={$baselineId}) that already carries content. No catalog writes will be performed.", 'status' => 'info'],
             );
-            Log::warning('FrameworkCatalogSeeder: running in ADDITIVE mode (locked FrameworkVersion detected). No catalog mutations or deletes performed.', [
-                'locked_fv_count' => FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->count(),
+            Log::warning('FrameworkCatalogSeeder: baseline revision is published and already carries content. No catalog writes performed.', [
+                'baseline_revision_id' => $baselineId,
             ]);
         }
 
@@ -242,118 +277,60 @@ class FrameworkCatalogSeeder extends Seeder
         $competencyIdsByCode = [];
 
         foreach ($competenciesJson as $code => $data) {
-            $competency = Competency::firstOrNew(['code' => $code]);
             $nameLocales = $this->readLocaleMap($data['name'] ?? null, "competencies.json:{$code}.name");
             $definitionLocales = $this->readLocaleMap($data['definition'] ?? null, "competencies.json:{$code}.definition");
 
-            if ($locked && $competency->exists) {
-                // Pre-existing row in locked mode: capture id. `en` is NEVER touched.
-                $competencyIdsByCode[$code] = $competency->id;
+            // Scoped to the baseline — natural-key lookup by code ALONE would
+            // bind to whichever revision's row Postgres happens to return
+            // first once a second revision (with its own cloned "code") can
+            // exist (framework-catalogue-authoring PR2 landmine, flagged by
+            // PR1's review gate). See SeederRevisionScopedLookupTest.
+            $competency = Competency::where('revision_id', $baselineId)->where('code', $code)->first();
 
-                // Fill-empty-locale exception (design D4) — non-en locales only.
-                $changed = $this->fillEmptyLocalesUnderLock($competency, 'name', $nameLocales);
-                $changed = $this->fillEmptyLocalesUnderLock($competency, 'definition', $definitionLocales) || $changed;
-
-                if ($changed) {
-                    $competency->save();
-                    $this->recordLockedFillEmptyLocaleGap(null, $code, "Competency {$code}");
-
-                    if ($competency->wasChanged()) {
-                        $structuralChange = true;
-                    }
+            if ($writesBlocked) {
+                if ($competency !== null) {
+                    $competencyIdsByCode[$code] = $competency->id;
                 }
-            } else {
-                // New row (or unlocked mode): insert / upsert is allowed.
-                $competency->type = in_array($code, self::POTENTIAL_CODES, true)
-                    ? 'potential'
-                    : 'standard';
-                $this->setAllLocales($competency, 'name', $nameLocales);
-                $this->setAllLocales($competency, 'definition', $definitionLocales);
-                $competency->save();
-                $competencyIdsByCode[$code] = $competency->id;
+                // A competency not yet in the baseline is never created while
+                // writes are blocked — no additive insert (D2).
 
-                if ($locked && ! $competency->wasRecentlyCreated) {
-                    // This branch is reachable, not merely theoretical: the
-                    // `$competency->exists` check above and this save() are
-                    // two separate statements, and nothing between them holds
-                    // a DB lock (no lockForUpdate, no unique-constraint
-                    // upsert, no advisory lock). A CONCURRENT seeder run that
-                    // inserts this same competency row in that window makes
-                    // `firstOrNew` above see exists=false (this branch's own
-                    // guard), yet `wasRecentlyCreated` come back false here
-                    // too — the other process's insert won the race, and this
-                    // one silently re-saved a row it did not create. Left
-                    // unguarded on purpose for this fix: the seeder is not run
-                    // concurrently in any deploy path today, and this is a
-                    // no-op either way, but the invariant this comment used to
-                    // assert ("we only reach here for new rows") does not
-                    // actually hold — do not rely on it.
-                }
+                continue;
+            }
 
-                // Track structural change for a genuinely new row OR an
-                // actual mutation of an existing one (Eloquent's own answer
-                // to "did this row actually change" — see design D4 /
-                // framework-catalog-it-translations Phase 3). A true no-op
-                // re-seed leaves wasChanged() false, so idempotency survives.
-                if ($competency->wasRecentlyCreated || $competency->wasChanged()) {
-                    $structuralChange = true;
-                }
+            $competency ??= new Competency(['revision_id' => $baselineId, 'code' => $code]);
+            $competency->type = in_array($code, self::POTENTIAL_CODES, true)
+                ? 'potential'
+                : 'standard';
+            $this->setAllLocales($competency, 'name', $nameLocales);
+            $this->setAllLocales($competency, 'definition', $definitionLocales);
+            $competency->save();
+            $competencyIdsByCode[$code] = $competency->id;
+
+            // Track structural change for a genuinely new row OR an actual
+            // mutation of an existing one (Eloquent's own answer to "did
+            // this row actually change"). A true no-op re-seed leaves
+            // wasChanged() false, so idempotency survives.
+            if ($competency->wasRecentlyCreated || $competency->wasChanged()) {
+                $structuralChange = true;
             }
         }
 
         // ─── 3. Seed roles + pivot + BARS ────────────────────────────────────
         foreach ($rolesJson as $roleCode => $roleData) {
-            // 3a. Upsert role — use firstOrNew to set translations before initial INSERT
-            $role = Role::firstOrNew(['code' => $roleCode]);
             $roleNameLocales = $this->readLocaleMap($roleData['name'] ?? null, "roles.json:{$roleCode}.name");
             $roleResponsibilitiesLocales = $this->readLocaleMap($roleData['responsibilities'] ?? null, "roles.json:{$roleCode}.responsibilities", allowBlankEn: true);
 
-            if ($locked && $role->exists) {
-                // Pre-existing role row in locked mode: `name` is NEVER touched under lock.
-                //
-                // Fill-empty-only exception (fix 5b, UNCHANGED precedent): `responsibilities`
-                // is display-only (its one consumer is RoleResource — it feeds no scoring, no
-                // prompt), so filling an EMPTY stored EN value from the JSON cannot move a
-                // score in a locked version, which is what the lock exists to protect. A
-                // non-empty stored value is NEVER overwritten, even under this exception. This
-                // is EN-specific and pre-dates the locale dimension — kept exactly as-is.
-                $storedResponsibilitiesEn = $role->getTranslation('responsibilities', 'en');
-                $jsonResponsibilitiesEn = $roleResponsibilitiesLocales['en'] ?? '';
+            // Same landmine fix as competencies, above: scoped to the baseline.
+            $role = Role::where('revision_id', $baselineId)->where('code', $roleCode)->first();
 
-                if (($storedResponsibilitiesEn === null || $storedResponsibilitiesEn === '') && $jsonResponsibilitiesEn !== '') {
-                    $role->setTranslation('responsibilities', 'en', $jsonResponsibilitiesEn);
-                    $role->save();
+            if ($writesBlocked && $role === null) {
+                // A role not yet in the baseline has no pivot, BARS, or gaps
+                // to reconcile against either — nothing more to do for it.
+                continue;
+            }
 
-                    FrameworkGap::updateOrCreate(
-                        ['kind' => 'locked_fill_empty_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
-                        ['note' => "Role {$roleCode} responsibilities filled under a locked FrameworkVersion (fill-empty-only exception)", 'status' => 'info'],
-                    );
-                    Log::warning("FrameworkCatalogSeeder: filled empty responsibilities for role {$roleCode} under a locked FrameworkVersion (fill-empty-only exception).", [
-                        'role' => $roleCode,
-                    ]);
-
-                    if ($role->wasChanged()) {
-                        $structuralChange = true;
-                    }
-                }
-
-                // NEW fill-empty-locale exception (design D4, framework-catalog-it-translations
-                // Phase 4) — any NON-en locale, on `name` and `responsibilities` alike, may fill
-                // an EMPTY slot. `en` is never touched by this path (see
-                // fillEmptyLocalesUnderLock's own doc) and a non-empty existing non-en value is
-                // never overwritten.
-                $nameChanged = $this->fillEmptyLocalesUnderLock($role, 'name', $roleNameLocales);
-                $responsibilitiesChanged = $this->fillEmptyLocalesUnderLock($role, 'responsibilities', $roleResponsibilitiesLocales);
-
-                if ($nameChanged || $responsibilitiesChanged) {
-                    $role->save();
-                    $this->recordLockedFillEmptyLocaleGap($roleCode, null, "Role {$roleCode}");
-
-                    if ($role->wasChanged()) {
-                        $structuralChange = true;
-                    }
-                }
-            } else {
+            if (! $writesBlocked) {
+                $role ??= new Role(['revision_id' => $baselineId, 'code' => $roleCode]);
                 $this->setAllLocales($role, 'name', $roleNameLocales);
                 $this->setAllLocales($role, 'responsibilities', $roleResponsibilitiesLocales);
                 $role->save();
@@ -363,23 +340,28 @@ class FrameworkCatalogSeeder extends Seeder
                 }
             }
 
-            // Flag empty responsibilities (always — operational gap, not catalog mutation)
+            // From here, $role is guaranteed non-null: either found above, or
+            // just created in the branch immediately preceding.
+
+            // Flag empty responsibilities (always — operational gap, not
+            // catalog mutation; framework_gaps is exempt from the gate).
             if (($roleResponsibilitiesLocales['en'] ?? '') === '') {
                 FrameworkGap::updateOrCreate(
                     ['kind' => 'missing_role_meta', 'role_code' => $roleCode, 'competency_code' => null],
                     ['note' => "Role {$roleCode} responsibilities is empty string — pending authoring", 'status' => 'pending_authoring'],
                 );
             } else {
-                // Gap resolution (fix 5a): responsibilities is now authored in the JSON —
-                // resolve any pending gap. Computed from the JSON, not DB state, so this
-                // proceeds even while a FrameworkVersion is locked.
+                // Gap resolution: responsibilities is now authored in the JSON —
+                // resolve any pending gap. Computed from the JSON, not DB state, so
+                // this proceeds even while catalogue-content writes are blocked.
                 FrameworkGap::where('kind', 'missing_role_meta')
                     ->where('role_code', $roleCode)
                     ->where('status', 'pending_authoring')
                     ->update(['status' => 'resolved']);
             }
 
-            // 3b. Sync pivot
+            // 3b. Compute the JSON-derived assigned competency ids (read-only —
+            // used below to scope the BARS walk regardless of the gate).
             $assignedCodes = $roleData['competencies'];
             $assignedIds = [];
             foreach ($assignedCodes as $position => $competencyCode) {
@@ -388,29 +370,29 @@ class FrameworkCatalogSeeder extends Seeder
                 }
             }
 
-            if ($locked) {
-                // Additive mode: only attach new pivots — NEVER detach existing ones.
-                // syncWithoutDetaching preserves DB-pivot rows for competencies removed from JSON.
-                $role->competencies()->syncWithoutDetaching($assignedIds);
-                // Stale-pivot-removal block (L126-132 in the original) is SKIPPED entirely when locked.
-            } else {
-                // Normal mode: before sync, capture current pivot IDs to detect removals
+            if (! $writesBlocked) {
+                // Capture current pivot ids before sync() to detect removals.
                 $previousPivotIds = DB::table('framework_role_competency')
                     ->where('role_id', $role->id)
+                    ->where('revision_id', $baselineId)
                     ->pluck('competency_id')
                     ->toArray();
 
                 $role->competencies()->sync($assignedIds);
 
-                // Delete bars_indicators for any competencies removed from this role
+                // Delete bars_indicators for any competencies removed from this role.
                 $newPivotIds = array_keys($assignedIds);
                 $removedIds = array_diff($previousPivotIds, $newPivotIds);
                 if (! empty($removedIds)) {
-                    BarsIndicator::where('role_id', $role->id)
+                    BarsIndicator::where('revision_id', $baselineId)
+                        ->where('role_id', $role->id)
                         ->whereIn('competency_id', $removedIds)
                         ->delete();
                 }
             }
+            // While writes are blocked: no pivot writes at all — not even the
+            // additive syncWithoutDetaching() the old lock-guard used. $assignedIds
+            // above is still computed, purely to scope the BARS/gap walk below.
 
             // 3c. Seed BARS indicators for this role
             $barsFile = "{$this->barsDir}/{$roleCode}.json";
@@ -428,9 +410,9 @@ class FrameworkCatalogSeeder extends Seeder
                 continue;
             }
 
-            // Gap resolution (fix 5a): bars file now exists — resolve any pending
+            // Gap resolution: bars file now exists — resolve any pending
             // role_no_bars gap. Computed from the filesystem, not DB state, so this
-            // proceeds even while a FrameworkVersion is locked.
+            // proceeds even while catalogue-content writes are blocked.
             FrameworkGap::where('kind', 'role_no_bars')
                 ->where('role_code', $roleCode)
                 ->where('status', 'pending_authoring')
@@ -441,9 +423,8 @@ class FrameworkCatalogSeeder extends Seeder
 
             $coveredCompetencyCodes = array_keys($barsJson);
 
-            // The current assigned competency IDs (from the CURRENT JSON, NOT DB pivot state).
-            // In locked mode, syncWithoutDetaching preserves DB-pivot rows for JSON-removed competencies;
-            // those competencies are absent from $currentAssignedIds (JSON-derived) but their DB pivot exists.
+            // The current assigned competency IDs (from the CURRENT JSON, NOT
+            // DB pivot state).
             $currentAssignedIds = array_keys($assignedIds);
 
             foreach ($barsJson as $competencyCode => $indicatorArray) {
@@ -455,17 +436,14 @@ class FrameworkCatalogSeeder extends Seeder
 
                 // Only seed bars for competencies currently in the JSON-derived assigned set
                 if (! in_array($competencyId, $currentAssignedIds, true)) {
-                    // Competency is in bars file but absent from the current JSON assignment list.
-                    if ($locked) {
-                        // Locked mode: suppress BarsIndicator::delete() for JSON-removed-but-DB-preserved competency.
-                        // Keep the continue to skip bars processing for this competency.
-                        continue;
+                    if (! $writesBlocked) {
+                        // Competency is in the bars file but absent from the
+                        // current JSON assignment list — delete stale indicators.
+                        BarsIndicator::where('revision_id', $baselineId)
+                            ->where('role_id', $role->id)
+                            ->where('competency_id', $competencyId)
+                            ->delete();
                     }
-
-                    // Unlocked mode: delete stale indicators, then skip.
-                    BarsIndicator::where('role_id', $role->id)
-                        ->where('competency_id', $competencyId)
-                        ->delete();
 
                     continue;
                 }
@@ -483,71 +461,55 @@ class FrameworkCatalogSeeder extends Seeder
                 $presentPositions = [];
 
                 foreach ($dto->indicators as $indicatorDto) {
-                    // Upsert by (role_id, competency_id, position)
-                    $indicator = BarsIndicator::firstOrNew([
-                        'role_id' => $role->id,
-                        'competency_id' => $competencyId,
-                        'position' => $indicatorDto->position,
-                    ]);
+                    $presentPositions[] = $indicatorDto->position;
 
-                    if ($locked && $indicator->exists) {
-                        // Pre-existing indicator in locked mode: `en` is NEVER touched.
-                        $presentPositions[] = $indicatorDto->position;
+                    if ($writesBlocked) {
+                        // No content write — not even for a brand-new position
+                        // on an already-anchored pair.
+                        continue;
+                    }
 
-                        // Fill-empty-locale exception (design D4) — non-en locales only. This
-                        // is the PRIMARY path this exception exists for: an `it` project pinned
-                        // to a locked FrameworkVersion cannot be interviewed at all today (422
-                        // on the first indicator), so filling the empty `it` slot is strictly
-                        // monotone — no assessment previously producible changes; it goes from
-                        // "cannot be scored" to "can be scored", never the reverse.
-                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'text', $indicatorDto->text);
-                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'anchor_5', $indicatorDto->anchor5) || $changed;
-                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'anchor_3', $indicatorDto->anchor3) || $changed;
-                        $changed = $this->fillEmptyLocalesUnderLock($indicator, 'anchor_1', $indicatorDto->anchor1) || $changed;
+                    // Upsert by (revision, role, competency, position). Every
+                    // locale present in the source map is written — not `en`
+                    // only (design D4).
+                    $indicator = BarsIndicator::where('revision_id', $baselineId)
+                        ->where('role_id', $role->id)
+                        ->where('competency_id', $competencyId)
+                        ->where('position', $indicatorDto->position)
+                        ->first()
+                        ?? new BarsIndicator([
+                            'revision_id' => $baselineId,
+                            'role_id' => $role->id,
+                            'competency_id' => $competencyId,
+                            'position' => $indicatorDto->position,
+                        ]);
+                    $this->setAllLocales($indicator, 'text', $indicatorDto->text);
+                    $this->setAllLocales($indicator, 'anchor_5', $indicatorDto->anchor5);
+                    $this->setAllLocales($indicator, 'anchor_3', $indicatorDto->anchor3);
+                    $this->setAllLocales($indicator, 'anchor_1', $indicatorDto->anchor1);
+                    $indicator->save();
 
-                        if ($changed) {
-                            $indicator->save();
-                            $this->recordLockedFillEmptyLocaleGap(
-                                $roleCode,
-                                $competencyCode,
-                                "BarsIndicator ({$roleCode}, {$competencyCode}, position {$indicatorDto->position})",
-                            );
-
-                            if ($indicator->wasChanged()) {
-                                $structuralChange = true;
-                            }
-                        }
-                    } else {
-                        // New row (or unlocked mode): insert / upsert. Every locale present in
-                        // the source map is written — not `en` only (design D4).
-                        $this->setAllLocales($indicator, 'text', $indicatorDto->text);
-                        $this->setAllLocales($indicator, 'anchor_5', $indicatorDto->anchor5);
-                        $this->setAllLocales($indicator, 'anchor_3', $indicatorDto->anchor3);
-                        $this->setAllLocales($indicator, 'anchor_1', $indicatorDto->anchor1);
-                        $indicator->save();
-                        $presentPositions[] = $indicatorDto->position;
-
-                        if ($indicator->wasRecentlyCreated || $indicator->wasChanged()) {
-                            $structuralChange = true;
-                        }
+                    if ($indicator->wasRecentlyCreated || $indicator->wasChanged()) {
+                        $structuralChange = true;
                     }
                 }
 
-                if (! $locked) {
-                    // Delete stale indicators (positions no longer in JSON) — only in unlocked mode.
-                    BarsIndicator::where('role_id', $role->id)
+                if (! $writesBlocked) {
+                    // Delete stale indicators (positions no longer in JSON).
+                    BarsIndicator::where('revision_id', $baselineId)
+                        ->where('role_id', $role->id)
                         ->where('competency_id', $competencyId)
                         ->whereNotIn('position', $presentPositions)
                         ->delete();
                 }
-                // In locked mode: delete-stale-positions block is SKIPPED entirely.
 
                 // Per-pair `missing_translation` gap resolution (design D5), evaluated at PAIR
                 // granularity from the SOURCE JSON (via $dto, already validated) — ALL 12
                 // strings (3 indicators × {text, anchor_5, anchor_3, anchor_1}) must carry a
                 // non-empty `it` value before this pair counts as translated. 11 of 12 is
                 // treated as 0 (mirrors the scoring-engine per-competency hard-fail unit).
-                // Computed from JSON, not DB state, so this proceeds even under lock.
+                // Computed from JSON, not DB state, so this proceeds even while catalogue-
+                // content writes are blocked — framework_gaps is exempt from the gate (D2).
                 //
                 // This is ALSO where the global-row denominator (step 5) is accumulated:
                 // every pair that reaches this line is a currently-assigned, anchored pair
@@ -563,7 +525,7 @@ class FrameworkCatalogSeeder extends Seeder
             }
 
             // 3d. Record competency_no_bars gaps for assigned competencies absent from BARS file;
-            // resolve any pending gap for a pair that is now covered (fix 5a).
+            // resolve any pending gap for a pair that is now covered.
             foreach ($assignedCodes as $competencyCode) {
                 if (! in_array($competencyCode, $coveredCompetencyCodes, true)) {
                     FrameworkGap::updateOrCreate(
@@ -579,7 +541,7 @@ class FrameworkCatalogSeeder extends Seeder
                 }
             }
 
-            // Gap resolution (fix 5a), orphan case: a competency_no_bars gap whose pair
+            // Gap resolution, orphan case: a competency_no_bars gap whose pair
             // roles.json no longer assigns to this role at all is moot — resolve it too.
             // Mirrors CI Direction 2 of catalog_stale_competency_gap_exemptions.
             FrameworkGap::where('kind', 'competency_no_bars')
@@ -605,11 +567,12 @@ class FrameworkCatalogSeeder extends Seeder
         // competency it was reporting missing had since been authored. The gap
         // was therefore permanent by construction, and `potential` projects
         // stayed unusable even after the catalogue gained the definitions.
-        $this->seedPotentialIndicators($competencyIdsByCode);
+        $this->seedPotentialIndicators($competencyIdsByCode, $baselineId, $writesBlocked);
 
         foreach (self::POTENTIAL_CODES as $potentialCode) {
             $authored = isset($competencyIdsByCode[$potentialCode])
-                && BarsIndicator::whereNull('role_id')
+                && BarsIndicator::where('revision_id', $baselineId)
+                    ->whereNull('role_id')
                     ->where('competency_id', $competencyIdsByCode[$potentialCode])
                     ->exists();
 
@@ -653,11 +616,11 @@ class FrameworkCatalogSeeder extends Seeder
         //     competency appears in that file, and (c) the competency is in
         //     the CURRENT JSON-derived assignment list — see the two
         //     `continue`s in the bars-indicator loop above. This is unaffected
-        //     by the C4 lock-guard: resolveOrRecordTranslationGap() runs
-        //     unconditionally (not inside `if (! $locked)`), so a locked
-        //     FrameworkVersion never drops a pair from this count either —
-        //     both counters and the per-pair write are always computed from
-        //     the source JSON, never from what was or wasn't allowed to be
+        //     by the write gate: resolveOrRecordTranslationGap() runs
+        //     unconditionally (not inside `if (! $writesBlocked)`), so a
+        //     blocked run never drops a pair from this count either — both
+        //     counters and the per-pair write are always computed from the
+        //     source JSON, never from what was or wasn't allowed to be
         //     persisted this run.
         //   - Excluded: a role with no BARS file at all (tracked separately as
         //     `role_no_bars`) and an assigned competency absent from a role's
@@ -688,26 +651,58 @@ class FrameworkCatalogSeeder extends Seeder
         );
 
         // ─── 6. Bump catalog_meta revision if structural changes occurred ─────
-        // CatalogMeta::bump() is EXEMPT from lock-guard suppression (operational table).
-        // It fires for a genuinely new row OR an actual mutation of an existing one
-        // (design D4 — see the widened predicate applied at every save() call site above).
+        // CatalogMeta::bump() needs no gate-specific handling: it fires for a
+        // genuinely new row OR an actual mutation of an existing one, and
+        // nothing sets $structuralChange while writes are blocked.
         if ($structuralChange) {
             CatalogMeta::bump();
         }
     }
 
     /**
-     * Check whether any locked FrameworkVersion exists across all tenants.
-     *
-     * MUST use withoutGlobalScopes() — the seeder runs in a CLI context with no
-     * HTTP request and no TenantContext middleware, so the TenantScoped global scope
-     * would resolve to null organization_id and return zero rows, silently missing
-     * locked FVs. This is intentional: the check is a cross-tenant aggregate,
-     * not a per-tenant data-access query.
+     * Resolve the ONE `framework_catalog_revisions` row this seeder owns
+     * (`is_baseline = true`). Throws rather than silently seeding nowhere if
+     * migrations have not run yet — the same fail-closed posture as the
+     * missing-JSON-file check above.
      */
-    private function hasLockedVersions(): bool
+    private function resolveBaselineRevision(): FrameworkCatalogRevision
     {
-        return FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->exists();
+        $baseline = FrameworkCatalogRevision::where('is_baseline', true)->first();
+
+        if ($baseline === null) {
+            throw new RuntimeException(
+                'FrameworkCatalogSeeder: no baseline FrameworkCatalogRevision exists. Run migrations first — '
+                .'the framework-catalogue-authoring PR1 backfill migration creates the baseline row this seeder owns.'
+            );
+        }
+
+        return $baseline;
+    }
+
+    /**
+     * Whether this run must perform zero catalogue-content writes
+     * (framework-catalogue-authoring PR2, D2). See the class docblock's
+     * "Baseline-revision write gate" section for the full reasoning — in
+     * short: `published` alone is not the gate, because the baseline is
+     * ALWAYS published by construction and a bare state check would refuse
+     * the very first seed on a fresh install. A published baseline that has
+     * not yet been populated is not yet the "already-shipped content" D2
+     * protects; a published baseline that already carries content is.
+     */
+    private function writesAreBlocked(FrameworkCatalogRevision $baseline): bool
+    {
+        return $baseline->state === 'published' && $this->baselineHasContent($baseline->id);
+    }
+
+    /**
+     * Competencies are this seeder's own first catalogue write (step 2,
+     * below) on every mutating run, so their presence is sufficient to
+     * answer "has this baseline already been populated" without querying
+     * all four catalogue-content tables.
+     */
+    private function baselineHasContent(int $baselineId): bool
+    {
+        return Competency::where('revision_id', $baselineId)->exists();
     }
 
     /**
@@ -786,9 +781,9 @@ class FrameworkCatalogSeeder extends Seeder
     }
 
     /**
-     * Unlocked-mode (or new-row) write: set EVERY locale present in the
-     * source map — not `en` only. This is the single code path an authored
-     * `it` value and the existing `en` value both flow through.
+     * Write EVERY locale present in the source map — not `en` only. This is
+     * the single code path an authored `it` value and the existing `en`
+     * value both flow through.
      *
      * @param  array<string, string>  $localeMap
      */
@@ -800,63 +795,13 @@ class FrameworkCatalogSeeder extends Seeder
     }
 
     /**
-     * Locked-mode fill-empty-locale exception (design D4). For a PRE-EXISTING
-     * row under a locked FrameworkVersion, a NON-`en` locale MAY be written
-     * iff the model does not already carry a translation for it. `en` is
-     * NEVER touched via this method — the caller never even passes `en`
-     * through here for the byte-for-byte-preservation guarantee the lock
-     * exists to protect. A pre-existing non-empty non-`en` value is NEVER
-     * overwritten.
-     *
-     * @param  array<string, string>  $localeMap
-     * @return bool Whether the model was actually modified in memory (the caller must still save()).
-     */
-    private function fillEmptyLocalesUnderLock(Role|Competency|BarsIndicator $model, string $field, array $localeMap): bool
-    {
-        $changed = false;
-
-        foreach ($localeMap as $locale => $value) {
-            if ($locale === 'en') {
-                continue;
-            }
-
-            if (! $model->hasTranslation($field, $locale)) {
-                $model->setTranslation($field, $locale, $value);
-                $changed = true;
-            }
-        }
-
-        return $changed;
-    }
-
-    /**
-     * Emit the `locked_fill_empty_locale` signal (design D4) — a
-     * `FrameworkGap` record AND a `Log::warning`, exactly like the existing
-     * `locked_fill_empty_role_meta` precedent. This suppression MUST NOT be
-     * silent: an operator re-running the seeder against a locked FV must be
-     * able to tell, without reading source, that a locale was (or was not)
-     * filled.
-     */
-    private function recordLockedFillEmptyLocaleGap(?string $roleCode, ?string $competencyCode, string $context): void
-    {
-        FrameworkGap::updateOrCreate(
-            ['kind' => 'locked_fill_empty_locale', 'role_code' => $roleCode, 'competency_code' => $competencyCode],
-            ['note' => "{$context}: a non-EN locale was filled under a locked FrameworkVersion (fill-empty-locale exception)", 'status' => 'info'],
-        );
-        Log::warning('FrameworkCatalogSeeder: filled an empty non-EN locale under a locked FrameworkVersion (fill-empty-locale exception).', [
-            'role' => $roleCode,
-            'competency' => $competencyCode,
-            'context' => $context,
-        ]);
-    }
-
-    /**
      * Per-pair `missing_translation` gap resolution (design D5), evaluated at
      * role×competency PAIR granularity: ALL 12 strings across the pair's 3
      * indicators must carry a non-empty `it` value before the pair counts as
      * translated. Computed from the (already-normalized, already-validated)
      * DTO — i.e. from the SOURCE JSON, never DB state — so this proceeds
-     * identically whether or not a FrameworkVersion is locked.
+     * identically whether or not catalogue-content writes are blocked (D2:
+     * `framework_gaps` is exempt from the gate).
      *
      * @param  list<IndicatorDTO>  $indicators
      * @return bool Whether this pair's `it` locale is fully translated (12 of 12 strings).
@@ -909,10 +854,19 @@ class FrameworkCatalogSeeder extends Seeder
      * `pending_authoring` gap the caller records, which is exactly the state
      * this catalogue was in before the definitions were written.
      *
+     * Content writes are gated identically to the per-role loop (D2) — this
+     * previously bypassed the old lock-guard entirely (no `$locked` check
+     * existed here at all), which was itself a gap the published-baseline
+     * gate closes as a side effect of being unconditional.
+     *
      * @param  array<string, int>  $competencyIdsByCode
      */
-    private function seedPotentialIndicators(array $competencyIdsByCode): void
+    private function seedPotentialIndicators(array $competencyIdsByCode, int $baselineId, bool $writesBlocked): void
     {
+        if ($writesBlocked) {
+            return;
+        }
+
         $file = "{$this->barsDir}/POTENTIAL.json";
 
         if (! is_file($file)) {
@@ -933,11 +887,17 @@ class FrameworkCatalogSeeder extends Seeder
             $competencyId = $competencyIdsByCode[$code];
 
             foreach (array_values($indicators) as $position => $raw) {
-                $indicator = BarsIndicator::firstOrNew([
-                    'role_id' => null,
-                    'competency_id' => $competencyId,
-                    'position' => $position,
-                ]);
+                $indicator = BarsIndicator::where('revision_id', $baselineId)
+                    ->where('role_id', null)
+                    ->where('competency_id', $competencyId)
+                    ->where('position', $position)
+                    ->first()
+                    ?? new BarsIndicator([
+                        'revision_id' => $baselineId,
+                        'role_id' => null,
+                        'competency_id' => $competencyId,
+                        'position' => $position,
+                    ]);
 
                 $indicator->role_id = null;
                 $this->setAllLocales($indicator, 'text', $this->readLocaleMap(

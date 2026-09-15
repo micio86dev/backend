@@ -28,6 +28,7 @@ use App\Models\CatalogMeta;
 use App\Models\Competency;
 use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @return array{string, string, string} [rolesFile, competenciesFile, barsDir]
@@ -75,6 +76,13 @@ test('re-seeding a change to ONLY an existing English anchor bumps the catalog r
     $icoBars['PRS'][0]['scale']['5']['en'] = 'EDITED anchor text — English mutation only, no new row.';
     file_put_contents("{$barsDir}/ICO.json", json_encode($icoBars, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
+    // framework-catalogue-authoring PR2 (D2): a re-seed against an
+    // already-populated PUBLISHED baseline is now a hard no-op (the write
+    // gate). This test is about the structural-change PREDICATE, not the
+    // gate, so the baseline is forced to draft — the only way this schema
+    // permits a second content-mutating run — to exercise it.
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
+
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 
     expect($indicator->fresh()->getTranslation('anchor_5', 'en'))
@@ -99,6 +107,12 @@ test('a true no-op re-seed (no source change at all) does NOT bump the catalog r
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
     $baselineRevision = CatalogMeta::first()->revision;
     expect($baselineRevision)->toBeGreaterThan(0);
+
+    // Forced to draft so this re-seed exercises the structural-change
+    // PREDICATE (byte-identical JSON → wasChanged() false → no bump), not
+    // merely the write gate (which would also produce "no bump", but for an
+    // unrelated reason — see the previous test's comment).
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
 
     // Re-seed with byte-identical source JSON — nothing changed anywhere.
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
