@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Translatable\HasTranslations;
 
 /**
@@ -17,10 +18,12 @@ use Spatie\Translatable\HasTranslations;
  * GLOBAL — NOT tenant-scoped. Roles are shared across all organizations.
  * Extends plain Model (NOT TenantModel).
  *
- * `revision_id` (framework-catalogue-authoring PR1, D1): NOT NULL, defaults
- * to the baseline revision at the DB level (see the backfill migration) so
- * every existing factory/direct-create call site across the suite keeps
- * working without having to name a revision explicitly.
+ * `revision_id` (framework-catalogue-authoring PR1, D1): NOT NULL. Defaulted
+ * to the baseline revision at the DB level ONLY until PR3
+ * (`2026_09_15_201435_drop_catalogue_revision_defaults`), which drops that
+ * DEFAULT (review advisory R3-001). `booted()` below now provides the SAME
+ * "lands in the baseline unless told otherwise" behaviour at the model
+ * layer — see the identical note on `Competency`.
  *
  * @property string $code
  * @property int $revision_id
@@ -48,6 +51,23 @@ class Role extends Model
      * @var list<string>
      */
     protected $fillable = ['code', 'name', 'responsibilities', 'revision_id'];
+
+    /**
+     * `revision_id` no longer carries a DB-level DEFAULT (framework-
+     * catalogue-authoring PR3, `2026_09_15_201435_drop_catalogue_revision_
+     * defaults`) — see the identical note and rationale on
+     * `Competency::booted()`.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $role): void {
+            // `getAttribute()`, not magic property access — see the
+            // identical note on `Competency::booted()`.
+            if ($role->getAttribute('revision_id') === null && Schema::hasColumn('framework_roles', 'revision_id')) {
+                $role->revision_id = FrameworkCatalogRevision::where('is_baseline', true)->value('id');
+            }
+        });
+    }
 
     /**
      * The catalogue revision this row belongs to (framework-catalogue-authoring PR1, D1).

@@ -14,14 +14,21 @@ declare(strict_types=1);
  * them; Phase 3 turns this GREEN.
  *
  * Technique, mirroring `tests/Feature/C2/Schema/UsersOrganizationMigrationTest.php`'s
- * "migrate:rollback then migrate" pattern: roll back exactly the 5 new PR1
- * migrations, seed data against that pre-revision schema, snapshot the four
- * translatable BARS fields, re-apply the 5 migrations, and assert the SAME
- * physical `BarsIndicator` row (same id — no row is ever copied) resolves to
- * byte-identical text via `Evaluation -> FrameworkVersion -> revision`.
+ * "migrate:rollback then migrate" pattern: roll back to the pre-revision
+ * schema, seed data against it, snapshot the four translatable BARS fields,
+ * re-apply every migration, and assert the SAME physical `BarsIndicator` row
+ * (same id — no row is ever copied) resolves to byte-identical text via
+ * `Evaluation -> FrameworkVersion -> revision`.
  *
- * PR1_NEW_MIGRATION_COUNT MUST equal the number of migration files this PR
- * adds — if that count changes, this constant changes with it.
+ * ROLLBACK COUNT IS COMPUTED, NOT HARD-CODED (post-PR1-review correction,
+ * R3-003): the original version rolled back a literal `--step 5`, matching
+ * PR1's own 5 migration files at the time this test was written. PR3 added
+ * 3 more migrations AFTER those 5 (nonblank-locale checks, published-content
+ * immutability, DEFAULT removal) — rolling back a stale literal 5 would roll
+ * back the 3 newest migrations plus only 2 of PR1's, never reaching the
+ * pre-revision schema this test exists to prove. Counting migration rows at
+ * or after the named boundary keeps this correct as this change (or any
+ * later one) adds more migrations to the catalogue-revision area.
  */
 
 use App\Models\BarsIndicator;
@@ -35,14 +42,28 @@ use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
-const PR1_NEW_MIGRATION_COUNT = 5;
+const REVISION_MIGRATIONS_BOUNDARY = '2026_09_15_090000_create_framework_catalog_revisions_table';
 
 test('an evaluation scored before the revision migration resolves byte-identical anchor text after it', function (): void {
-    // Roll back to the pre-revision schema — exactly the 5 migrations this PR adds.
-    Artisan::call('migrate:rollback', ['--step' => PR1_NEW_MIGRATION_COUNT, '--force' => true]);
+    // Roll back to the pre-revision schema — every migration at or after the
+    // boundary, whatever that count happens to be today.
+    $stepsToRollBack = DB::table('migrations')
+        ->where('migration', '>=', REVISION_MIGRATIONS_BOUNDARY)
+        ->count();
+
+    expect($stepsToRollBack)->toBeGreaterThan(0, 'precondition: the boundary migration must actually be applied');
+
+    Artisan::call('migrate:rollback', ['--step' => $stepsToRollBack, '--force' => true]);
+
+    // R3-003's other half: assert the rollback actually happened, not only
+    // that the forward-migrated state later looks right.
+    expect(Schema::hasColumn('framework_bars_indicators', 'revision_id'))->toBeFalse();
+    expect(Schema::hasTable('framework_catalog_revisions'))->toBeFalse();
 
     $org = Organization::factory()->create();
     $resolver = app(TenantResolver::class);

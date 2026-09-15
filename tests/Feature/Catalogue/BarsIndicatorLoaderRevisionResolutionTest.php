@@ -18,9 +18,17 @@ use App\Services\Conversation\BarsIndicatorLoader;
 use Illuminate\Support\Facades\DB;
 
 test('the loader resolves the exact revision it is asked for, never a different one', function (): void {
-    $revision1Id = DB::table('framework_catalog_revisions')->first()->id; // the baseline
+    // Scoped by is_baseline, not an unordered first() (review advisory R3-5).
+    $revision1Id = DB::table('framework_catalog_revisions')->where('is_baseline', true)->value('id');
+    // Created DRAFT, not published: the content-immutability trigger
+    // (framework-catalogue-authoring PR3) refuses an INSERT into a
+    // published, non-baseline revision's content tables. This test's own
+    // point is unaffected by which state revision 2 is in WHILE its content
+    // is being written — it is flipped to `published` (via a raw update,
+    // bypassing the Eloquent guard, exactly as PublishRevision itself would
+    // leave it) only once the divergent content below actually exists.
     $revision2Id = DB::table('framework_catalog_revisions')->insertGetId([
-        'state' => 'published',
+        'state' => 'draft',
         'is_baseline' => false,
         'created_at' => now(),
         'updated_at' => now(),
@@ -54,6 +62,13 @@ test('the loader resolves the exact revision it is asked for, never a different 
         'anchor_1' => ['en' => 'Revision 2 EDITED anchor 1.'],
         'position' => 0,
     ]);
+
+    // Publish revision 2 now that its content exists — mirrors what
+    // PublishRevision itself does (flip state after content is in place),
+    // and restores this test's literal "revision 2's later publish" framing.
+    DB::table('framework_catalog_revisions')
+        ->where('id', $revision2Id)
+        ->update(['state' => 'published', 'published_at' => now()]);
 
     $loader = new BarsIndicatorLoader;
 

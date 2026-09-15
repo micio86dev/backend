@@ -24,7 +24,19 @@ uses(RefreshDatabase::class);
 // Duplicated locally rather than reused from BaselineRevisionMigrationTest.php
 // — Pest test files are not guaranteed a load order, and a PHP top-level
 // `const` from another file is not safe to depend on here.
-const PR1_ROLLBACK_TEST_MIGRATION_COUNT = 5;
+const ROLLBACK_TEST_REVISION_MIGRATIONS_BOUNDARY = '2026_09_15_090000_create_framework_catalog_revisions_table';
+
+/**
+ * Computed, not hard-coded (R3-003 — see the identical fix and rationale in
+ * `BaselineRevisionMigrationTest.php`): the number of migrations at or after
+ * the boundary, whatever that happens to be today.
+ */
+function rollbackTestStepsToRollBack(): int
+{
+    return DB::table('migrations')
+        ->where('migration', '>=', ROLLBACK_TEST_REVISION_MIGRATIONS_BOUNDARY)
+        ->count();
+}
 
 test('rolling back the 5 PR1 migrations restores the pre-revision shape with baseline rows intact', function (): void {
     // Capture a baseline row's content BEFORE rollback, to prove `down()`
@@ -41,7 +53,7 @@ test('rolling back the 5 PR1 migrations restores the pre-revision shape with bas
     expect(Schema::hasTable('framework_catalog_revisions'))->toBeTrue();
     expect(Schema::hasTable('framework_default_questions'))->toBeTrue();
 
-    Artisan::call('migrate:rollback', ['--step' => PR1_ROLLBACK_TEST_MIGRATION_COUNT, '--force' => true]);
+    Artisan::call('migrate:rollback', ['--step' => rollbackTestStepsToRollBack(), '--force' => true]);
 
     expect(Schema::hasColumn('framework_roles', 'revision_id'))->toBeFalse();
     expect(Schema::hasColumn('framework_competencies', 'revision_id'))->toBeFalse();
@@ -83,8 +95,10 @@ test('reverting after a second revision exists is a reseed, not a rollback — d
     // — throws rather than silently corrupting data: restoring the GLOBAL
     // UNIQUE(code) on framework_roles (migration 2026_09_15_090001's own
     // down()) cannot hold two "DUPLICATE_CODE" rows at once.
+    $stepsToRollBack = rollbackTestStepsToRollBack();
+
     assertPostgresConstraintViolation(
-        fn () => Artisan::call('migrate:rollback', ['--step' => PR1_ROLLBACK_TEST_MIGRATION_COUNT, '--force' => true]),
+        fn () => Artisan::call('migrate:rollback', ['--step' => $stepsToRollBack, '--force' => true]),
         sqlstate: '23505', // unique_violation
         constraintName: 'framework_roles_code_unique',
     );

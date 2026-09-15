@@ -16,8 +16,12 @@ use App\Models\Role;
 use Illuminate\Support\Facades\DB;
 
 test('a BARS indicator whose role_id belongs to one revision and whose revision_id names another is refused by the database', function (): void {
+    // Created DRAFT: the content-immutability trigger (framework-catalogue-
+    // authoring PR3) refuses an INSERT into a published, non-baseline
+    // revision's content — this test's subject is the composite FK, which
+    // is orthogonal to revision state.
     $revision2Id = DB::table('framework_catalog_revisions')->insertGetId([
-        'state' => 'published',
+        'state' => 'draft',
         'is_baseline' => false,
         'created_at' => now(),
         'updated_at' => now(),
@@ -48,8 +52,9 @@ test('a BARS indicator whose role_id belongs to one revision and whose revision_
 });
 
 test('a role_competency pivot row mixing revisions across role_id and competency_id is refused by the database', function (): void {
+    // Draft — see the identical note on the sibling test above.
     $revision2Id = DB::table('framework_catalog_revisions')->insertGetId([
-        'state' => 'published',
+        'state' => 'draft',
         'is_baseline' => false,
         'created_at' => now(),
         'updated_at' => now(),

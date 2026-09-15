@@ -1,0 +1,74 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests\Catalogue\Concerns;
+
+/**
+ * The FormRequest half of the runtime twin's "non-blank locale maps, no
+ * edge whitespace" rule (framework-catalogue-authoring PR3, D3 — mirrors
+ * `scripts/ci-guards.sh:2330` and the DB CHECK constraints in
+ * `2026_09_15_201045_add_catalogue_nonblank_locale_checks`).
+ *
+ * A superadmin catalogue FormRequest names its locale-map fields once; this
+ * trait expands each into `{field}` (required array) plus a rule per
+ * `{field}.{locale}` that refuses a present-but-blank or whitespace-only
+ * value. `en` is mandatory; every other declared locale (`it`) is optional
+ * but non-blank WHEN PRESENT — an operator who has not authored the Italian
+ * text yet simply omits the key, exactly like the seeder's own JSON
+ * convention.
+ */
+trait ValidatesLocaleMaps
+{
+    /**
+     * @param  list<string>  $locales
+     * @return array<string, list<mixed>>
+     */
+    protected function localeMapRules(string $field, array $locales = ['en', 'it'], bool $required = true): array
+    {
+        $rules = [
+            $field => [$required ? 'required' : 'sometimes', 'array'],
+            "{$field}.en" => [$required ? 'required' : 'sometimes', 'string', self::nonBlank()],
+        ];
+
+        foreach ($locales as $locale) {
+            if ($locale === 'en') {
+                continue;
+            }
+
+            $rules["{$field}.{$locale}"] = ['sometimes', 'string', self::nonBlank()];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Refuses both an all-blank value AND a value carrying leading/trailing
+     * whitespace (gga review finding, non-blocking — the docblock above
+     * promised "no edge whitespace" and this method previously only
+     * checked for all-blank, so `" text "` passed). Deliberately STRICTER
+     * than the DB CHECK constraint (`length(btrim(value)) > 0`, which
+     * accepts `" text "` — trimming only decides blank-or-not there, not
+     * edge whitespace itself): a FormRequest may reject more than its DB
+     * backstop refuses; the twin only requires the DB layer never accept
+     * something already rejected here.
+     */
+    private static function nonBlank(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if (! is_string($value)) {
+                return;
+            }
+
+            if (trim($value) === '') {
+                $fail("{$attribute}_blank");
+
+                return;
+            }
+
+            if (trim($value) !== $value) {
+                $fail("{$attribute}_edge_whitespace");
+            }
+        };
+    }
+}

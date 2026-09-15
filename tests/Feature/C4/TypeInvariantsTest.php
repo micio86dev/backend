@@ -20,6 +20,7 @@ declare(strict_types=1);
  */
 
 use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
@@ -295,6 +296,10 @@ test('potential + only MTG seeded → 422 POTENTIAL_CATALOG_INCOMPLETE', functio
         'type' => 'potential',
         'name' => json_encode(['en' => 'MTG']),
         'definition' => json_encode(['en' => 'Test']),
+        // `revision_id` no longer defaults at the DB level (framework-
+        // catalogue-authoring PR3, DEFAULT removal) — named explicitly, same
+        // as every other direct create site.
+        'revision_id' => FrameworkCatalogRevision::where('is_baseline', true)->value('id'),
     ]);
 
     $response = $this->withToken($token)->postJson('/api/projects', [

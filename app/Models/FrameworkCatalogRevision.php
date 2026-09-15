@@ -47,7 +47,7 @@ class FrameworkCatalogRevision extends Model
     /**
      * @var list<string>
      */
-    protected $fillable = ['state', 'is_baseline', 'label', 'published_at', 'published_by_user_id'];
+    protected $fillable = ['state', 'is_baseline', 'label', 'published_at', 'published_by_user_id', 'parent_revision_id'];
 
     /**
      * @return array<string, string>
@@ -103,6 +103,19 @@ class FrameworkCatalogRevision extends Model
     public function publishedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'published_by_user_id');
+    }
+
+    /**
+     * The published revision this one was cloned from (framework-catalogue-
+     * authoring PR3) — `null` for the baseline (the root) and for any
+     * revision that predates this column. `PublishRevision`'s cross-role
+     * duplicate DELTA check diffs against this.
+     *
+     * @return BelongsTo<FrameworkCatalogRevision, $this>
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_revision_id');
     }
 
     /**

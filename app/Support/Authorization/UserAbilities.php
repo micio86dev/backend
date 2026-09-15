@@ -100,6 +100,7 @@ final class UserAbilities
      *     participants: array{viewAny: bool, create: bool, recover: bool},
      *     clients: array{viewAny: bool},
      *     platformSettings: array{viewAny: bool},
+     *     catalogue: array{manage: bool},
      * }
      */
     public function for(User $user): array
@@ -224,6 +225,12 @@ final class UserAbilities
             // who may edit them.
             'platformSettings' => [
                 'viewAny' => $gate->allows('viewPlatformSettings'),
+            ],
+            // framework-catalogue-authoring PR3, D12 — same shape as
+            // `clients`/`platformSettings` above: no subject, platform
+            // content rather than a tenant's.
+            'catalogue' => [
+                'manage' => $gate->allows('manageCatalogue'),
             ],
         ];
     }
