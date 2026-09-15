@@ -10,6 +10,7 @@ use Database\Factories\FrameworkVersionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Tenant-scoped FrameworkVersion model (C3 Framework Catalog).
@@ -86,8 +87,61 @@ class FrameworkVersion extends TenantModel
         });
 
         static::creating(function (self $fv): void {
+            self::assignLatestPublishedRevisionIfUnset($fv);
             self::refuseDraftRevisionTarget($fv);
         });
+    }
+
+    /**
+     * The pin gap, closed (framework-catalogue-authoring, "GAP FOUND DURING
+     * PR 1" / G1-G2): PR1's backfill stamps every row that existed at
+     * migration time, but nothing assigned `revision_id` for a NEW
+     * `FrameworkVersion` created afterward — it stayed null, and
+     * `Evaluation -> FrameworkVersion -> revision -> rows` had nothing to
+     * resolve, which is the entire correctness argument this change exists
+     * for.
+     *
+     * A brand-new `FrameworkVersion` that does not already name a revision
+     * resolves the LATEST published revision — never a draft (published
+     * content is the only kind safe to pin against; a draft can still
+     * change under it) and never null, as long as at least one published
+     * revision exists (the baseline always does, from the moment
+     * migrations run). Only fires when `revision_id` was never set at all
+     * — an explicit caller (a test constructing a specific scenario, or a
+     * future cross-revision affordance) is never overridden.
+     *
+     * DECIDED, NOT ASSUMED (G2's own instruction): the column STAYS
+     * NULLABLE at the DB level rather than becoming `NOT NULL`. A blanket
+     * `NOT NULL` would require a default for every existing/future creation
+     * path — including this suite's own pre-revision-schema tests
+     * (`BaselineRevisionMigrationTest` explicitly creates a `FrameworkVersion`
+     * against the ROLLED-BACK schema, before this column exists at all) and
+     * any environment where migrations have run but the seeder has not yet
+     * populated a single published revision (`resolveBaselineRevision()`'s
+     * own fail-closed posture already documents that this seeder ordering
+     * assumption is not universal). This guard is what actually closes the
+     * gap in the ordinary path; `NOT NULL` would only forbid the narrow set
+     * of legitimate no-revision-yet states this application-level guard
+     * does not need to forbid to be correct.
+     */
+    private static function assignLatestPublishedRevisionIfUnset(self $fv): void
+    {
+        // Guarded, not a bare query: `BaselineRevisionMigrationTest` creates
+        // a FrameworkVersion against the deliberately-rolled-back PRE-
+        // revision schema, where `framework_catalog_revisions` does not
+        // exist yet.
+        if ($fv->revision_id !== null || ! Schema::hasTable('framework_catalog_revisions')) {
+            return;
+        }
+
+        $latestPublishedId = FrameworkCatalogRevision::where('state', 'published')
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
+            ->value('id');
+
+        if ($latestPublishedId !== null) {
+            $fv->revision_id = $latestPublishedId;
+        }
     }
 
     /**

@@ -63,11 +63,22 @@ test('creating a FrameworkVersion pinned to a published revision succeeds', func
     expect($fv->revision->state)->toBe('published');
 });
 
-test('a FrameworkVersion created without naming a revision at all is unaffected by the guard', function (): void {
+test('a FrameworkVersion created without naming a revision at all still resolves one — the pin gap, closed', function (): void {
+    // SUPERSEDES the original assertion here (`toBeNull()`): that was
+    // exactly the gap the "GAP FOUND DURING PR 1" tasks.md note (G1/G2)
+    // describes — a new FrameworkVersion with no explicit revision stayed
+    // permanently unresolvable. `FrameworkVersion::booted()` now assigns
+    // the latest published revision automatically when none is named; the
+    // draft-target guard is genuinely unaffected by THAT assignment (it
+    // never sees a draft here, because the auto-assignment only ever picks
+    // a published one) — which is the guard property this test's title
+    // still accurately describes.
+    $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
+
     $fv = FrameworkVersion::create([
         'organization_id' => $this->org->id,
         'version' => 'v-no-revision',
     ]);
 
-    expect($fv->revision_id)->toBeNull();
+    expect($fv->revision_id)->toBe($baseline->id);
 });
