@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 /**
- * RED/GREEN — review-gate fixes on `framework_catalog_revisions` (framework-
- * catalogue-authoring PR 1):
+ * Invariants of `framework_catalog_revisions` (framework-catalogue-authoring
+ * PR 1):
  *
  *  1. The baseline is `published`, never `draft` — proven directly, so the
  *     "it is born draft and nothing ever publishes it" defect cannot regress
  *     silently.
  *  2. `state` has a real CHECK constraint, not just a PHP-side comment.
  *  3. `framework_catalog_revisions_one_draft` actually refuses a second
- *     draft — the partial unique index had zero test coverage before this.
+ *     draft on the whole platform.
  *  4. A `published` revision is immutable at the model layer: `state`,
  *     `is_baseline` and `published_at` all refuse to change once `state`
  *     was `published`, mirroring `FrameworkVersion`'s own `is_locked` guard.

@@ -23,8 +23,8 @@ beforeEach(function (): void {
 });
 
 test('creating a FrameworkVersion pinned to a draft revision is rejected', function (): void {
-    // The baseline is `published` (review-gate fix) — a draft must be
-    // created explicitly to exercise this path at all.
+    // The baseline is `published` — a draft must be created explicitly to
+    // exercise this path at all.
     $draftRevisionId = FrameworkCatalogRevision::factory()->draft()->create()->id;
 
     expect(fn () => FrameworkVersion::create([
@@ -49,8 +49,8 @@ test('updating an existing FrameworkVersion to pin a draft revision is rejected'
 });
 
 test('creating a FrameworkVersion pinned to a published revision succeeds', function (): void {
-    // The baseline is published by construction (review-gate fix) — no need
-    // to hand-roll a second published revision just to exercise this path.
+    // The baseline is published by construction — no need to hand-roll a
+    // second published revision just to exercise this path.
     $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
 
     $fv = FrameworkVersion::create([

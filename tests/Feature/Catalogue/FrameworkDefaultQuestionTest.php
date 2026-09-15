@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 /**
  * `FrameworkDefaultQuestion` — the catalogue template a superadmin authors per
- * competency, and the one table in this change whose constraints had never
- * been watched to refuse anything.
- *
- * The review gate caught it: the model shipped with no factory and no
- * behavioural test, so `framework_default_questions_rev_competency_position_unique`
- * and `framework_default_questions_competency_revision_fk` were authored,
- * migrated, and never exercised. Every sibling table in this PR has a test
- * that sees its constraints fire. This is that test.
+ * competency. This suite exercises
+ * `framework_default_questions_rev_competency_position_unique` and
+ * `framework_default_questions_competency_revision_fk`, the two constraints
+ * that keep it consistent.
  *
  * Nothing reads this table at interview time — `ApplyCompetencySelection`
  * (PR 5) copies from it into `project_questions`, and only the copy is ever

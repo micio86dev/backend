@@ -70,9 +70,8 @@ test('reverting after a second revision exists is a reseed, not a rollback — d
     // explicitly recorded by design.md D1 — proven here rather than merely
     // asserted in a comment.
     //
-    // `draft` — the baseline is `published` (review-gate fix), so this is
-    // now the realistic PR 3 shape too: a draft cloned from the published
-    // baseline, still open.
+    // `draft` — the baseline is `published`, so this is the realistic PR 3
+    // shape: a draft cloned from the published baseline, still open.
     $secondRevisionId = FrameworkCatalogRevision::factory()->draft()->create()->id;
 
     $role = Role::factory()->create(['code' => 'DUPLICATE_CODE']);

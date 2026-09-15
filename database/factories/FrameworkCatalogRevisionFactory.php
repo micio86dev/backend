@@ -10,14 +10,6 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /**
  * Factory for FrameworkCatalogRevision (framework-catalogue-authoring PR1, D1).
  *
- * Defaults to a `published` revision, and the reason is NOT the one this
- * docblock used to give. It claimed the baseline holds the one-draft slot
- * from the moment the backfill runs — which was true of an earlier, defective
- * version of that migration and is the exact premise the review gate rejected.
- * The baseline is now inserted PUBLISHED, so the draft slot is free, and
- * `draft()` below is a state that actually works rather than one that could
- * never fire.
- *
  * The default is `published` because that is what a factory-made revision is
  * almost always standing in for: settled catalogue content something else
  * points at. `draft()` exists for the tests that need the mutable one — and

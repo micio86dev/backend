@@ -5,20 +5,15 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\Competency;
-use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
  * Factory for FrameworkDefaultQuestion (framework-catalogue-authoring PR1).
  *
- * Written because the review gate pointed out that the model shipped with
- * neither a factory nor a behavioural test, so the two constraints its
- * migration went out of its way to author —
+ * Exercises the two constraints the model's migration authors:
  * `framework_default_questions_rev_competency_position_unique` and
- * `framework_default_questions_competency_revision_fk` — had never been seen
- * to refuse anything. Every other table in this change has a test that watches
- * its constraints fire.
+ * `framework_default_questions_competency_revision_fk`.
  *
  * `text` is a locale map because the model is `HasTranslations`: the catalogue
  * is authored in `{en, it}` per CLAUDE.md's i18n mandate, and a factory that
@@ -37,14 +32,18 @@ class FrameworkDefaultQuestionFactory extends Factory
     public function definition(): array
     {
         return [
-            // Resolved rather than defaulted to the baseline: a default
+            'competency_id' => Competency::factory(),
+            // Resolved from the competency actually assigned above, rather
+            // than defaulted independently to the baseline: a default
             // question belongs to the SAME revision as its competency, and
             // letting the two drift is precisely what the composite foreign
-            // key exists to refuse.
-            'revision_id' => FrameworkCatalogRevision::query()
-                ->where('is_baseline', true)
-                ->value('id'),
-            'competency_id' => Competency::factory(),
+            // key exists to refuse. Reads `$attributes['competency_id']`
+            // AFTER Eloquent resolves the sibling `Competency::factory()`
+            // definition, so this also works when the caller overrides
+            // `competency_id` with an existing model's id.
+            'revision_id' => fn (array $attributes) => Competency::query()
+                ->whereKey($attributes['competency_id'])
+                ->value('revision_id'),
             'text' => [
                 'en' => $this->faker->sentence().'?',
                 'it' => $this->faker->sentence().'?',

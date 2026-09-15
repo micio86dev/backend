@@ -9,7 +9,6 @@ use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use PHPUnit\Framework\Assert;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -628,5 +627,3 @@ function templateIdForCurrentOrg(): int
             'config' => [],
         ])->id;
 }
-
-// ─── framework-catalogue-authoring — Postgres constraint assertion helper ─────

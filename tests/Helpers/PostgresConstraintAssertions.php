@@ -5,14 +5,10 @@ declare(strict_types=1);
 /**
  * Postgres constraint assertions, shared by the catalogue-revision suites.
  *
- * LIVES HERE, NOT IN `tests/Pest.php`, and the move was a review-gate finding.
- * The original placement reasoned that `Pest.php` is the bootstrap so every
- * ParaTest worker loads it, which is true — and beside the point. The
- * convention says a helper used by more than one test file goes in
- * `tests/Helpers/` and is registered in `composer.json`'s
- * `autoload-dev.files`, the directory already held five such files, and "it
- * happens to work from somewhere else" is exactly how a convention stops
- * being one.
+ * Lives in `tests/Helpers/` and is registered in `composer.json`'s
+ * `autoload-dev.files`, matching this repository's convention: a helper used
+ * by more than one test file belongs here rather than in `tests/Pest.php` or
+ * copied into each caller.
  */
 
 use Illuminate\Database\QueryException;
@@ -23,9 +19,8 @@ use PHPUnit\Framework\Assert;
  * to prove — never a bare `->toThrow(QueryException::class)` /
  * `->toThrow(Exception::class)`, which passes just as happily against a
  * missing table, a typo'd column, or any OTHER constraint as against the
- * specific one under test (framework-catalogue-authoring PR1 review-gate
- * fix — `rules.design`: "Assert specific failure modes, not bare exception
- * classes").
+ * specific one under test (`rules.design`: "Assert specific failure modes,
+ * not bare exception classes").
  *
  * `$sqlstate` is the Postgres error class: '23505' unique violation, '23503'
  * foreign-key violation, '23514' CHECK violation. `Illuminate\Database\
@@ -33,11 +28,6 @@ use PHPUnit\Framework\Assert;
  * PDOException in `QueryException::__construct()`). `$constraintName` is
  * asserted against the driver message, where Postgres always names the
  * exact constraint it refused.
- *
- * Shared here (not duplicated per test file, unlike the migration-count
- * constants elsewhere in this suite) because `tests/Pest.php` is guaranteed
- * to load before every test file — a genuine bootstrap concern, not a
- * load-order risk.
  */
 function assertPostgresConstraintViolation(callable $operation, string $sqlstate, string $constraintName): void
 {
@@ -64,7 +54,7 @@ function assertPostgresConstraintViolation(callable $operation, string $sqlstate
         return;
     }
 
-    throw new Exception(
+    Assert::fail(
         "Expected a QueryException with SQLSTATE {$sqlstate} naming constraint \"{$constraintName}\" — none was thrown."
     );
 }

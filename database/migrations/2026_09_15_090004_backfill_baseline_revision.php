@@ -24,14 +24,13 @@ use Illuminate\Support\Facades\Schema;
  *
  * PUBLISHED, NOT DRAFT — this is load-bearing, not cosmetic. The baseline is
  * already-shipped, already-scored content: by definition not mutable, so it
- * belongs in the state that means that. Inserting it as `draft` was an
- * earlier defect in this same migration: `framework_catalog_revisions_one_draft`
- * permits at most ONE draft on the whole platform, so a draft baseline would
- * occupy that slot PERMANENTLY — PR 3's `OpenDraftRevision` could never open
- * a real draft, and `FrameworkVersion`'s own "refuse a draft target" guard
- * (2.8) would reject every future pin, including the installed base this
- * migration just stamped. Publishing it here is also simply true: every row
- * it points at is content that shipped and has already been scored against.
+ * belongs in the state that means that. It is also the only choice that keeps
+ * the platform usable: `framework_catalog_revisions_one_draft` permits at
+ * most ONE draft on the whole platform, so a draft baseline would occupy that
+ * slot PERMANENTLY — PR 3's `OpenDraftRevision` could never open a real
+ * draft, and `FrameworkVersion`'s own "refuse a draft target" guard (2.8)
+ * would reject every future pin, including the installed base this migration
+ * just stamped.
  *
  * WHY THE TIGHTENING LIVES HERE, NOT IN THE MIGRATION THAT ADDS THE COLUMN.
  * `ALTER COLUMN ... SET NOT NULL` fails if any row is still NULL, and

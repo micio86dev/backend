@@ -30,11 +30,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $state draft|published
  * @property bool $is_baseline
  * @property string|null $label
- * @property CarbonImmutable|null $published_at `immutable_datetime`, so the
- *                                              hydrated class is `CarbonImmutable` — NOT the mutable `Carbon`
- *                                              this annotation used to name. Different class, not a subtype, and
- *                                              precisely the Larastan inference mismatch PHPStan at max level is
- *                                              kept at a zero-error baseline to catch.
+ * @property CarbonImmutable|null $published_at `immutable_datetime` cast, so
+ *                                              the hydrated class is `CarbonImmutable` — NOT the mutable `Carbon`.
+ *                                              Larastan infers the cast's return type at max level, so an
+ *                                              annotation naming the wrong class is a real PHPStan error, not a
+ *                                              cosmetic one.
  * @property int|null $published_by_user_id
  */
 class FrameworkCatalogRevision extends Model
