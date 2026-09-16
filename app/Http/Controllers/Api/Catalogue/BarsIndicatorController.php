@@ -12,6 +12,7 @@ use App\Http\Resources\Catalogue\CatalogueBarsIndicatorResource;
 use App\Models\BarsIndicator;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\User;
+use App\Support\Superadmin\PlatformAuditWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -25,6 +26,10 @@ use Illuminate\Http\Response;
  */
 class BarsIndicatorController extends Controller
 {
+    public function __construct(
+        private readonly PlatformAuditWriter $auditWriter,
+    ) {}
+
     private function isSuperadmin(Request $request): bool
     {
         $user = $request->user();
@@ -48,6 +53,9 @@ class BarsIndicatorController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
         // H5 (framework-catalogue-authoring PR3b): reuse the draft id this
         // SAME request's `rules()` already resolved and validated against —
         // never call `OpenDraftRevision::open()` again here. See
@@ -59,10 +67,26 @@ class BarsIndicatorController extends Controller
         // withRevisionLockedForWrite()`'s own docblock. Caught explicitly so
         // Scramble documents the 409, matching `PlatformUserController::
         // deactivate()`'s own `UserGuardException` catch.
+        // The audit write runs INSIDE this same locked transaction
+        // (framework-catalogue-authoring PR8) — see `CompetencyController::
+        // store()`'s identical comment for why.
         try {
             $indicator = BarsIndicator::withRevisionLockedForWrite(
                 $draftId,
-                fn (): BarsIndicator => BarsIndicator::create([...$request->validated(), 'revision_id' => $draftId]),
+                function () use ($request, $draftId, $actor): BarsIndicator {
+                    $indicator = BarsIndicator::create([...$request->validated(), 'revision_id' => $draftId]);
+
+                    $this->auditWriter->record(
+                        actorId: $actor->id,
+                        action: 'catalogue.indicator.created',
+                        subjectType: 'BarsIndicator',
+                        subjectId: $indicator->id,
+                        before: null,
+                        after: [...$request->validated(), 'revision_id' => $draftId],
+                    );
+
+                    return $indicator;
+                },
             );
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
@@ -75,13 +99,34 @@ class BarsIndicatorController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
             : BarsIndicator::where('revision_id', $draft->id)->findOrFail($indicator);
 
         try {
-            BarsIndicator::withRevisionLockedForWrite($draft->id, fn (): bool => $target->update($request->validated()));
+            BarsIndicator::withRevisionLockedForWrite($draft->id, function () use ($request, $target, $draft, $actor): bool {
+                $saved = $target->update($request->validated());
+
+                // `getPrevious()`/`getChanges()` — see `CompetencyController::
+                // update()`'s identical comment for why `getOriginal()` is
+                // wrong here, and for why a genuinely no-op save is skipped.
+                if ($target->getChanges() !== []) {
+                    $this->auditWriter->record(
+                        actorId: $actor->id,
+                        action: 'catalogue.indicator.updated',
+                        subjectType: 'BarsIndicator',
+                        subjectId: $target->id,
+                        before: [...$target->getPrevious(), 'revision_id' => $draft->id],
+                        after: [...$target->getChanges(), 'revision_id' => $draft->id],
+                    );
+                }
+
+                return $saved;
+            });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
         }
@@ -93,13 +138,30 @@ class BarsIndicatorController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
             : BarsIndicator::where('revision_id', $draft->id)->findOrFail($indicator);
 
         try {
-            BarsIndicator::withRevisionLockedForWrite($draft->id, fn (): ?bool => $target->delete());
+            BarsIndicator::withRevisionLockedForWrite($draft->id, function () use ($target, $draft, $actor): ?bool {
+                $before = [...$target->getAttributes(), 'revision_id' => $draft->id];
+                $deleted = $target->delete();
+
+                $this->auditWriter->record(
+                    actorId: $actor->id,
+                    action: 'catalogue.indicator.deleted',
+                    subjectType: 'BarsIndicator',
+                    subjectId: $target->id,
+                    before: $before,
+                    after: null,
+                );
+
+                return $deleted;
+            });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
         }

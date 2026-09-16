@@ -7,6 +7,7 @@ namespace App\Actions\Catalogue;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\User;
 use App\Support\Catalogue\CatalogueRules;
+use App\Support\Superadmin\PlatformAuditWriter;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +31,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class PublishRevision
 {
+    public function __construct(
+        private readonly PlatformAuditWriter $auditWriter,
+    ) {}
+
     /**
      * @return list<array{rule: string, subject: string, detail: string}>
      */
@@ -92,6 +97,23 @@ final class PublishRevision
             $locked->published_at = now()->toImmutable();
             $locked->published_by_user_id = $actor->id;
             $locked->save();
+
+            // Inside the SAME transaction as the flip (design D13): the
+            // audit row and the publish commit or roll back together — a
+            // publish that failed to record is not "half published", and an
+            // audit row for a publish that never committed cannot exist.
+            $this->auditWriter->record(
+                actorId: $actor->id,
+                action: 'revision.published',
+                subjectType: 'FrameworkCatalogRevision',
+                subjectId: $locked->id,
+                before: null,
+                after: [
+                    'revision_id' => $locked->id,
+                    'label' => $locked->label,
+                    'published_at' => $locked->published_at->toIso8601String(),
+                ],
+            );
 
             return [];
         });

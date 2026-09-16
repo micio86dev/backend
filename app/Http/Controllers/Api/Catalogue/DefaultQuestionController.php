@@ -12,6 +12,7 @@ use App\Http\Resources\Catalogue\CatalogueDefaultQuestionResource;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
 use App\Models\User;
+use App\Support\Superadmin\PlatformAuditWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -26,6 +27,10 @@ use Illuminate\Http\Response;
  */
 class DefaultQuestionController extends Controller
 {
+    public function __construct(
+        private readonly PlatformAuditWriter $auditWriter,
+    ) {}
+
     private function isSuperadmin(Request $request): bool
     {
         $user = $request->user();
@@ -50,6 +55,9 @@ class DefaultQuestionController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
         // H5 (framework-catalogue-authoring PR3b): reuse the draft id this
         // SAME request's `rules()` already resolved and validated against —
         // never call `OpenDraftRevision::open()` again here. See
@@ -61,10 +69,26 @@ class DefaultQuestionController extends Controller
         // withRevisionLockedForWrite()`'s own docblock. Caught explicitly so
         // Scramble documents the 409, matching `PlatformUserController::
         // deactivate()`'s own `UserGuardException` catch.
+        // The audit write runs INSIDE this same locked transaction
+        // (framework-catalogue-authoring PR8) — see `CompetencyController::
+        // store()`'s identical comment for why.
         try {
             $question = FrameworkDefaultQuestion::withRevisionLockedForWrite(
                 $draftId,
-                fn (): FrameworkDefaultQuestion => FrameworkDefaultQuestion::create([...$request->validated(), 'revision_id' => $draftId]),
+                function () use ($request, $draftId, $actor): FrameworkDefaultQuestion {
+                    $question = FrameworkDefaultQuestion::create([...$request->validated(), 'revision_id' => $draftId]);
+
+                    $this->auditWriter->record(
+                        actorId: $actor->id,
+                        action: 'catalogue.default_question.created',
+                        subjectType: 'FrameworkDefaultQuestion',
+                        subjectId: $question->id,
+                        before: null,
+                        after: [...$request->validated(), 'revision_id' => $draftId],
+                    );
+
+                    return $question;
+                },
             );
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
@@ -83,13 +107,34 @@ class DefaultQuestionController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
             : FrameworkDefaultQuestion::where('revision_id', $draft->id)->findOrFail($defaultQuestion);
 
         try {
-            FrameworkDefaultQuestion::withRevisionLockedForWrite($draft->id, fn (): bool => $target->update($request->validated()));
+            FrameworkDefaultQuestion::withRevisionLockedForWrite($draft->id, function () use ($request, $target, $draft, $actor): bool {
+                $saved = $target->update($request->validated());
+
+                // `getPrevious()`/`getChanges()` — see `CompetencyController::
+                // update()`'s identical comment for why `getOriginal()` is
+                // wrong here, and for why a genuinely no-op save is skipped.
+                if ($target->getChanges() !== []) {
+                    $this->auditWriter->record(
+                        actorId: $actor->id,
+                        action: 'catalogue.default_question.updated',
+                        subjectType: 'FrameworkDefaultQuestion',
+                        subjectId: $target->id,
+                        before: [...$target->getPrevious(), 'revision_id' => $draft->id],
+                        after: [...$target->getChanges(), 'revision_id' => $draft->id],
+                    );
+                }
+
+                return $saved;
+            });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
         }
@@ -106,13 +151,30 @@ class DefaultQuestionController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
+        /** @var User $actor */
+        $actor = $request->user();
+
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
             : FrameworkDefaultQuestion::where('revision_id', $draft->id)->findOrFail($defaultQuestion);
 
         try {
-            FrameworkDefaultQuestion::withRevisionLockedForWrite($draft->id, fn (): ?bool => $target->delete());
+            FrameworkDefaultQuestion::withRevisionLockedForWrite($draft->id, function () use ($target, $draft, $actor): ?bool {
+                $before = [...$target->getAttributes(), 'revision_id' => $draft->id];
+                $deleted = $target->delete();
+
+                $this->auditWriter->record(
+                    actorId: $actor->id,
+                    action: 'catalogue.default_question.deleted',
+                    subjectType: 'FrameworkDefaultQuestion',
+                    subjectId: $target->id,
+                    before: $before,
+                    after: null,
+                );
+
+                return $deleted;
+            });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
         }

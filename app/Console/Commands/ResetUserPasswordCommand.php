@@ -202,24 +202,25 @@ class ResetUserPasswordCommand extends Command
      *
      * Reuses the existing sanctioned mechanism (AuditRecorder + audit_logs,
      * `App\Support\Audit\AuditRecorder`) rather than inventing a second one.
-     * `audit_logs.organization_id` is a NOT NULL foreign key
-     * (`2026_07_31_000003_create_audit_logs_table.php`) because the table is
-     * tenant-scoped by design (TenantModel/TenantScoped) — every OTHER row
-     * in it belongs to exactly one organization, and a dashboard reading
-     * "what happened in this org" depends on that being true unconditionally.
      *
-     * A platform superadmin (organization_id IS NULL) breaks that
-     * assumption: there is no tenant for the row to belong to.
+     * `audit_logs.organization_id` is NULLABLE since
+     * framework-catalogue-authoring PR8
+     * (`2026_09_16_120000_make_audit_logs_organization_nullable.php`) — NULL
+     * now means platform scope, invisible to every tenant-scoped read by
+     * construction. `App\Support\Superadmin\PlatformAuditWriter` is the
+     * writer built for exactly that case, but it is scoped to catalogue
+     * mutations and revision publishes (design D13); wiring it here as well
+     * is a real behaviour change to a DIFFERENT capability (password
+     * recovery) and is deliberately left out of that PR's scope. The
+     * platform-superadmin case below therefore still falls back to the
+     * application log rather than `audit_logs` — a deliberate, visible
+     * fallback, not a silent gap, and not (any longer) a schema limitation.
+     *
      * `TenantContextScope::runFor()` (the sanctioned way to establish tenant
      * context outside an HTTP request — jobs, listeners, console commands)
      * refuses orgId < 1 outright, and faking a real org's id here would
      * misattribute a superadmin's password reset into that org's audit
-     * trail — worse than not recording it in this table at all. Widening
-     * the column to nullable would fix this ONE caller by weakening the
-     * invariant every other row in the table depends on. Neither is
-     * acceptable, so the platform-superadmin case falls back to the
-     * application log instead — a deliberate, visible fallback, not a
-     * silent gap.
+     * trail — worse than not recording it in `audit_logs` at all.
      */
     private function recordAudit(User $user, ?string $operator): void
     {
