@@ -298,6 +298,118 @@ test('restore never re-copies over an operator-modified row', function (): void 
     expect($restored->text['en'])->toBe('operator rewrote this');
 });
 
+/**
+ * Z8 (R3-restore-resurrects-individually-deleted-question, REQUIRED BEFORE
+ * ARCHIVE): deleting is operator work exactly like writing. A question the
+ * operator deleted INDIVIDUALLY (via `DELETE /questions/{id}`, competency
+ * left selected) must stay deleted through a later deselect + reselect
+ * cycle — only the row the DESELECTION itself trashed comes back.
+ */
+test('an individually deleted question stays deleted on reselection — only the deselection-trashed row restores', function (): void {
+    ['org' => $org, 'token' => $token, 'fv' => $fv] = acsSetUp();
+    $col = acsCompetency('COL');
+    $prs = acsCompetency('PRS');
+    app(PlatformSettings::class)->setMaxQuestionsPerCompetency(['standard' => 2]);
+    acsSeedDefaults($col, ['keep this one', 'delete this one individually']);
+
+    $create = $this->withToken($token)->postJson('/api/projects', acsPayload($fv->id, [$col->id, $prs->id]));
+    $create->assertCreated();
+    $projectId = $create->json('data.id');
+
+    $rows = TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::where('project_id', $projectId)->where('competency_id', $col->id)->orderBy('position')->get(),
+    );
+    expect($rows)->toHaveCount(2);
+    $keptRowId = $rows->firstWhere('text.en', 'keep this one')->id;
+    $individuallyDeletedRowId = $rows->firstWhere('text.en', 'delete this one individually')->id;
+
+    // The operator deletes ONE question directly — the competency stays
+    // selected, this is not a deselection.
+    $this->withToken($token)
+        ->deleteJson("/api/projects/{$projectId}/questions/{$individuallyDeletedRowId}")
+        ->assertNoContent();
+
+    // Now deselect the whole competency (soft-deletes the ONE remaining
+    // live row, `deleted_by_deselection = true`) and reselect it.
+    $this->withToken($token)->patchJson("/api/projects/{$projectId}", ['competency_ids' => [$prs->id]])->assertOk();
+    $this->withToken($token)->patchJson("/api/projects/{$projectId}", ['competency_ids' => [$col->id, $prs->id]])->assertOk();
+
+    $live = TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::where('project_id', $projectId)->where('competency_id', $col->id)->get(),
+    );
+
+    // Only the deselection-trashed row came back.
+    expect($live)->toHaveCount(1);
+    expect($live->first()->id)->toBe($keptRowId);
+    expect($live->first()->text['en'])->toBe('keep this one');
+
+    // The individually deleted row is STILL trashed — never restored.
+    $individuallyDeleted = TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::onlyTrashed()->find($individuallyDeletedRowId),
+    );
+    expect($individuallyDeleted)->not->toBeNull();
+    expect($individuallyDeleted->deleted_by_deselection)->toBeFalse();
+});
+
+/**
+ * Z8, second-cycle correctness (gga review finding, blocking): `restore()`
+ * must CLEAR `deleted_by_deselection` on the row it brings back — leaving
+ * it `true` would let a LATER individual delete of that same, now-live row
+ * be misread as deselection-caused on the NEXT deselect/reselect cycle,
+ * reopening the exact bug this column exists to close. This test fails on
+ * a version of the fix that never clears the flag: the row restored by
+ * cycle 1 would still read `deleted_by_deselection = true` after the
+ * operator deletes it individually, and cycle 2 would resurrect it.
+ */
+test('a row restored once, then individually deleted, stays deleted on a second reselection', function (): void {
+    ['org' => $org, 'token' => $token, 'fv' => $fv] = acsSetUp();
+    $col = acsCompetency('COL');
+    $prs = acsCompetency('PRS');
+    acsSeedDefaults($col, ['the only question']);
+
+    $create = $this->withToken($token)->postJson('/api/projects', acsPayload($fv->id, [$col->id, $prs->id]));
+    $create->assertCreated();
+    $projectId = $create->json('data.id');
+
+    $rowId = TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::where('project_id', $projectId)->where('competency_id', $col->id)->value('id'),
+    );
+
+    // Cycle 1: deselect (soft-deletes with deleted_by_deselection = true),
+    // reselect (restores the SAME row — the flag must clear here).
+    $this->withToken($token)->patchJson("/api/projects/{$projectId}", ['competency_ids' => [$prs->id]])->assertOk();
+    $this->withToken($token)->patchJson("/api/projects/{$projectId}", ['competency_ids' => [$col->id, $prs->id]])->assertOk();
+
+    $afterCycle1 = TenantContextScope::runFor($org->id, fn () => ProjectQuestion::findOrFail($rowId));
+    expect($afterCycle1->id)->toBe($rowId);
+    expect($afterCycle1->trashed())->toBeFalse();
+    expect($afterCycle1->deleted_by_deselection)->toBeFalse();
+
+    // The operator now deletes the SAME row individually — not a
+    // deselection.
+    $this->withToken($token)->deleteJson("/api/projects/{$projectId}/questions/{$rowId}")->assertNoContent();
+
+    // Cycle 2: deselect the (now empty) competency, then reselect it.
+    $this->withToken($token)->patchJson("/api/projects/{$projectId}", ['competency_ids' => [$prs->id]])->assertOk();
+    $this->withToken($token)->patchJson("/api/projects/{$projectId}", ['competency_ids' => [$col->id, $prs->id]])->assertOk();
+
+    // The individually deleted row must still be trashed — a fresh
+    // catalogue-default copy is acceptable (branch 3), the ORIGINAL row is
+    // not resurrected.
+    $stillTrashed = TenantContextScope::runFor($org->id, fn () => ProjectQuestion::onlyTrashed()->find($rowId));
+    expect($stillTrashed)->not->toBeNull();
+
+    $live = TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::where('project_id', $projectId)->where('competency_id', $col->id)->pluck('id'),
+    );
+    expect($live)->not->toContain($rowId);
+});
+
 test('two trashed rows sharing the SAME stored position both restore cleanly, capped, no 500', function (): void {
     // Regression for a gga-caught bug: two trashed rows can legitimately
     // share a stored position (the partial unique index only ever governed
@@ -390,6 +502,12 @@ test(
             // position can be rewritten back to 0 directly: a trashed row
             // whose ORIGINAL position collides with a live row, exactly the
             // fixture this test needs.
+            // `deleted_by_deselection` stamped explicitly (Z8) — this
+            // fixture simulates rows a DESELECTION trashed, which is
+            // `restore()`'s own precondition for touching them at all;
+            // `->delete()` alone would leave the column at its `false`
+            // default (the "individually deleted" shape) and this test's
+            // own restore assertions would fail closed for the wrong reason.
             $trashedA = ProjectQuestion::create([
                 'project_id' => $project->id,
                 'competency_id' => $col->id,
@@ -397,7 +515,7 @@ test(
                 'position' => 5,
             ]);
             $trashedA->delete();
-            DB::table('project_questions')->where('id', $trashedA->id)->update(['position' => 0]);
+            DB::table('project_questions')->where('id', $trashedA->id)->update(['position' => 0, 'deleted_by_deselection' => true]);
 
             $trashedB = ProjectQuestion::create([
                 'project_id' => $project->id,
@@ -406,6 +524,7 @@ test(
                 'position' => 1,
             ]);
             $trashedB->delete();
+            DB::table('project_questions')->where('id', $trashedB->id)->update(['deleted_by_deselection' => true]);
         });
 
         TenantContextScope::runFor(

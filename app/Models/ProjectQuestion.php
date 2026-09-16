@@ -49,6 +49,17 @@ use Illuminate\Support\Carbon;
  *                                   default text: a flag records what happened, a
  *                                   comparison would guess, and guess differently as
  *                                   the default changes later.
+ * @property bool $deleted_by_deselection Z8 (framework-catalogue-authoring,
+ *                                        REQUIRED BEFORE ARCHIVE) — TRUE when this row's
+ *                                        soft-delete was `ApplyCompetencySelection::softDeleteLive()`
+ *                                        deselecting the competency; FALSE for a row an operator
+ *                                        deleted individually. `restore()` reads this to resurrect
+ *                                        only rows a deselection removed — an individually deleted
+ *                                        question stays deleted on reselection. UNLIKE `operator_modified`,
+ *                                        a restore DOES reset this back to false: once the row is live
+ *                                        again, it is no longer "trashed by a deselection", and leaving
+ *                                        it true would let a later individual delete of the SAME row be
+ *                                        misread as deselection-caused on the next cycle.
  * @property Carbon|null $deleted_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -67,6 +78,8 @@ class ProjectQuestion extends TenantModel
      * `operator_modified` is absent on purpose too: it is never accepted
      * from a request payload, only set by the controller/action that already
      * knows which write path produced the row (see the property docblock).
+     * `deleted_by_deselection` (Z8) is the same shape — only
+     * `ApplyCompetencySelection::softDeleteLive()` ever writes it.
      *
      * @var list<string>
      */
@@ -86,6 +99,7 @@ class ProjectQuestion extends TenantModel
             'text' => 'array',
             'position' => 'integer',
             'operator_modified' => 'boolean',
+            'deleted_by_deselection' => 'boolean',
         ];
     }
 

@@ -55,29 +55,45 @@ final class ApplyCompetencySelection
      * Deselecting soft-deletes every LIVE row for the competency. Only the
      * live ones — a row already soft-deleted (e.g. individually removed by
      * the operator before deselection) stays exactly as it was.
+     *
+     * Z8 (R3-restore-resurrects-individually-deleted-question, REQUIRED
+     * BEFORE ARCHIVE): stamps `deleted_by_deselection = true` in the SAME
+     * `UPDATE` as the soft-delete itself (replicating what the SoftDeletes
+     * builder's own `delete()` does internally, plus this one extra column,
+     * rather than a second round trip) — `restore()` reads it to resurrect
+     * only rows THIS write removed, never one an operator deleted on
+     * purpose.
      */
     private function softDeleteLive(Project $project, int $competencyId): void
     {
         ProjectQuestion::where('project_id', $project->id)
             ->where('competency_id', $competencyId)
-            ->delete();
+            ->update(['deleted_by_deselection' => true, 'deleted_at' => now()]);
     }
 
     /**
      * Three branches, checked IN ORDER and mutually exclusive by the first
      * one that matches — never combined, per D10:
      *
-     *   1. Trashed rows exist → restore them, stop. The operator's own text
-     *      and provenance come back untouched; no default is copied.
+     *   1. A DESELECTION-trashed row exists (Z8: `deleted_by_deselection =
+     *      true`) → restore it, stop. The operator's own text and
+     *      provenance come back untouched; no default is copied. A row the
+     *      operator deleted INDIVIDUALLY is invisible to this branch and
+     *      stays trashed — see `restore()`'s own docblock.
      *   2. Live rows already exist → no-op (the idempotence scenario: a
      *      re-save with the same competency set must not duplicate rows).
      *   3. Neither → copy the catalogue defaults as a fresh snapshot.
      */
     private function applyOneAttachedCompetency(Project $project, int $competencyId): void
     {
+        // Z8: scoped to `deleted_by_deselection = true` — a row an operator
+        // deleted individually (the column's `false` default) is excluded
+        // from `$trashed` entirely, so it is never touched by `restore()`
+        // below and stays soft-deleted.
         $trashed = ProjectQuestion::onlyTrashed()
             ->where('project_id', $project->id)
             ->where('competency_id', $competencyId)
+            ->where('deleted_by_deselection', true)
             ->orderBy('position')
             ->get();
 
@@ -110,13 +126,15 @@ final class ApplyCompetencySelection
      * deselection. Restored in POSITION order, lowest first, up to the cap;
      * anything beyond it stays trashed.
      *
-     * DISCLOSED RESIDUAL: nothing on a trashed row records WHY it was
-     * trashed — a row the operator individually deleted before deselecting
-     * the competency is indistinguishable, at this layer, from a row the
-     * deselection itself soft-deleted. When more trashed rows exist than
-     * the cap allows, which ones come back is decided by position alone,
-     * not by that distinction. Recorded here rather than hidden behind
-     * code that looks like it discriminates but does not.
+     * CLOSED (Z8, framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+     * `$trashed` (the caller's own query) is ALREADY scoped to
+     * `deleted_by_deselection = true` — a row the operator deleted
+     * individually before deselecting the competency never reaches this
+     * method at all, and stays trashed regardless of the cap. When MORE
+     * deselection-trashed rows exist than the cap allows, which of THOSE
+     * come back is still decided by position alone — that residual is
+     * about ordering among equals, not about resurrecting operator work
+     * that was deleted on purpose.
      *
      * DEFENSIVE RENUMBER. `StoreProjectQuestionRequest` (18.2) already
      * closes the one known path to a collision with a LIVE row — authoring
@@ -167,8 +185,18 @@ final class ApplyCompetencySelection
             // for, and the next bump collided with it.
             $next = max(array_keys($occupied)) + 1;
 
+            // Z8 (gga review finding, blocking): cleared, not left as-is —
+            // a row now LIVE is no longer "trashed by a deselection", and
+            // leaving `true` here reopened the exact bug this column exists
+            // to close: restore → operator individually deletes the SAME
+            // row → the flag is still `true` from before → the NEXT
+            // deselect/reselect cycle resurrects it again, because
+            // `softDeleteLive()` only ever touches LIVE rows and never
+            // reaches an already-trashed one to correct its cause.
+            $row->deleted_by_deselection = false;
+
             // `restore()` saves every dirty attribute in the SAME UPDATE,
-            // including the position reassignment above when one happened.
+            // including the position reassignment and the flag clear above.
             $row->restore();
             $restored++;
         }
