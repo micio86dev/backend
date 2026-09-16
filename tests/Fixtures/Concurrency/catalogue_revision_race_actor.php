@@ -50,6 +50,30 @@ declare(strict_types=1);
  *                            — this is the "leftover lock from a crashed
  *                            prior run" scenario named throughout this file,
  *                            reproduced on purpose rather than assumed fixed.
+ *
+ *   hold-indicator-insert <host> <port> <dbname> <user> <revisionId,roleId,competencyId,position>
+ *     READY                — the indicator is inserted, uncommitted (the
+ *                            trigger's own advisory lock for this exact
+ *                            (revision, role, competency) group is held)
+ *     DONE:<0|1>           — committed; 1 iff a waiting competing writer
+ *                            for the SAME group was observed
+ *
+ *   create-indicator-pair-fixture <host> <port> <dbname> <user> 0
+ *     CREATED:<revisionId>,<roleId>,<competencyId>
+ *                          — a NON-baseline draft revision with one role,
+ *                            one competency and 2 seed indicators, ALL
+ *                            committed by THIS connection — fixture setup
+ *                            OUTSIDE the test's own wrapped transaction, so
+ *                            the race-mode actor above (a genuinely
+ *                            different Postgres backend) can see it.
+ *
+ *   delete-indicator-pair-fixture <host> <port> <dbname> <user> <revisionId>
+ *     DELETED              — deletes `framework_roles`/`framework_competencies`
+ *                            for the revision FIRST (cascading indicators —
+ *                            their own FK to the revision is
+ *                            `restrictOnDelete`, not cascade), THEN the
+ *                            revision row itself — `delete-committed-row`
+ *                            alone is not enough once real content exists.
  */
 
 /**
@@ -179,6 +203,90 @@ if ($mode === 'delete-committed-row') {
         ->execute([':id' => (int) $subjectId]);
 
     fwrite(STDOUT, "DELETED\n");
+    fflush(STDOUT);
+
+    exit(0);
+}
+
+if ($mode === 'delete-indicator-pair-fixture') {
+    $revisionId = (int) $subjectId;
+
+    $pdo->prepare('DELETE FROM framework_competencies WHERE revision_id = :id')->execute([':id' => $revisionId]);
+    $pdo->prepare('DELETE FROM framework_roles WHERE revision_id = :id')->execute([':id' => $revisionId]);
+    $pdo->prepare('DELETE FROM framework_catalog_revisions WHERE id = :id')->execute([':id' => $revisionId]);
+
+    fwrite(STDOUT, "DELETED\n");
+    fflush(STDOUT);
+
+    exit(0);
+}
+
+if ($mode === 'hold-indicator-insert') {
+    [$revisionId, $roleId, $competencyId, $position] = array_map('intval', explode(',', $subjectId));
+
+    $pdo->beginTransaction();
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO framework_bars_indicators (revision_id, role_id, competency_id, text, anchor_5, anchor_3, anchor_1, position, created_at, updated_at)
+         VALUES (:revision_id, :role_id, :competency_id, :text, :anchor_5, :anchor_3, :anchor_1, :position, now(), now())'
+    );
+    $stmt->execute([
+        ':revision_id' => $revisionId, ':role_id' => $roleId, ':competency_id' => $competencyId,
+        ':text' => json_encode(['en' => 'actor']), ':anchor_5' => json_encode(['en' => 'actor']),
+        ':anchor_3' => json_encode(['en' => 'actor']), ':anchor_1' => json_encode(['en' => 'actor']),
+        ':position' => $position,
+    ]);
+
+    fwrite(STDOUT, "READY\n");
+    fflush(STDOUT);
+
+    // The main process's competing INSERT for the SAME (revision, role,
+    // competency) group blocks on the trigger's own `pg_advisory_xact_lock()`
+    // until we resolve.
+    $contended = catalogueRaceActorObserveContention($pdo, new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]));
+
+    $pdo->commit();
+
+    fwrite(STDOUT, 'DONE:'.($contended ? '1' : '0')."\n");
+    fflush(STDOUT);
+
+    exit(0);
+}
+
+if ($mode === 'create-indicator-pair-fixture') {
+    $stmt = $pdo->prepare(
+        "INSERT INTO framework_catalog_revisions (state, created_at, updated_at) VALUES ('draft', now(), now()) RETURNING id"
+    );
+    $stmt->execute();
+    $revisionId = (int) $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO framework_roles (revision_id, code, name, responsibilities, created_at, updated_at)
+         VALUES (:revision_id, 'CAPCONCROLE', :name, :responsibilities, now(), now()) RETURNING id"
+    );
+    $stmt->execute([':revision_id' => $revisionId, ':name' => json_encode(['en' => 'x']), ':responsibilities' => json_encode(['en' => 'x'])]);
+    $roleId = (int) $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO framework_competencies (revision_id, code, type, name, definition, created_at, updated_at)
+         VALUES (:revision_id, 'CAPCONCCOMP', 'standard', :name, :definition, now(), now()) RETURNING id"
+    );
+    $stmt->execute([':revision_id' => $revisionId, ':name' => json_encode(['en' => 'x']), ':definition' => json_encode(['en' => 'x'])]);
+    $competencyId = (int) $stmt->fetchColumn();
+
+    foreach ([0, 1] as $position) {
+        $pdo->prepare(
+            'INSERT INTO framework_bars_indicators (revision_id, role_id, competency_id, text, anchor_5, anchor_3, anchor_1, position, created_at, updated_at)
+             VALUES (:revision_id, :role_id, :competency_id, :text, :anchor_5, :anchor_3, :anchor_1, :position, now(), now())'
+        )->execute([
+            ':revision_id' => $revisionId, ':role_id' => $roleId, ':competency_id' => $competencyId,
+            ':text' => json_encode(['en' => "seed {$position}"]), ':anchor_5' => json_encode(['en' => 'a5']),
+            ':anchor_3' => json_encode(['en' => 'a3']), ':anchor_1' => json_encode(['en' => 'a1']),
+            ':position' => $position,
+        ]);
+    }
+
+    fwrite(STDOUT, "CREATED:{$revisionId},{$roleId},{$competencyId}\n");
     fflush(STDOUT);
 
     exit(0);

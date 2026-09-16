@@ -6,6 +6,7 @@ namespace App\Actions\Catalogue;
 
 use App\Models\FrameworkCatalogRevision;
 use App\Models\User;
+use App\Support\Catalogue\CatalogueRules;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
 
@@ -36,11 +37,14 @@ final class PublishRevision
     {
         $violations = [];
 
+        $violations = [...$violations, ...$this->roleCountViolations($revision->id)];
         $violations = [...$violations, ...$this->indicatorCountViolations($revision->id)];
         $violations = [...$violations, ...$this->emptyPairViolations($revision->id)];
         $violations = [...$violations, ...$this->potentialInPivotViolations($revision->id)];
         $violations = [...$violations, ...$this->roleScopedPotentialIndicatorViolations($revision->id)];
         $violations = [...$violations, ...$this->potentialIndicatorCountViolations($revision->id)];
+        $violations = [...$violations, ...$this->undeclaredPairIndicatorViolations($revision->id)];
+        $violations = [...$violations, ...$this->roleLessStandardIndicatorViolations($revision->id)];
         $violations = [...$violations, ...$this->crossRoleDuplicateDeltaViolations($revision)];
 
         return $violations;
@@ -56,6 +60,27 @@ final class PublishRevision
             // concurrent publish attempts on the same draft must not both
             // observe zero violations and both write.
             $locked = FrameworkCatalogRevision::whereKey($revision->getKey())->lockForUpdate()->firstOrFail();
+
+            // H3 (framework-catalogue-authoring PR3b): re-check the STATE the
+            // lock actually observes, not the state the caller's `$revision`
+            // argument was constructed with. A second publish call queued
+            // behind this same `FOR UPDATE` unblocks only after the first
+            // one committed the flip to `published` — its own `$revision`
+            // object still says `draft` (read before either call took the
+            // lock), but `$locked` now correctly reads `published`. Without
+            // this check, the queued call would run the sweep again (finding
+            // zero violations, since the content did not change) and then
+            // attempt `$locked->save()`, which `FrameworkCatalogRevision::
+            // booted()`'s own immutability guard refuses — an uncaught
+            // exception, a 500, for what should be a clean, expected outcome
+            // of losing a race that already succeeded for someone else.
+            if ($locked->state !== 'draft') {
+                return [[
+                    'rule' => 'revision_already_published',
+                    'subject' => "revision:{$locked->id}",
+                    'detail' => 'a concurrent publish already completed; this revision is no longer a draft',
+                ]];
+            }
 
             $violations = $this->violations($locked);
 
@@ -73,6 +98,34 @@ final class PublishRevision
     }
 
     /**
+     * At most `CatalogueRules::MAX_ROLES` roles (gga review finding,
+     * blocking): `CatalogueRules::MAX_ROLES`'s own docblock claims the
+     * closed-set rule lives at "the FormRequest and publish-sweep layers" —
+     * `StoreRoleRequest` was the only one actually enforcing it. A 6th role
+     * inserted by any writer that bypasses the FormRequest (a raw
+     * `DB::table()` insert, a future non-HTTP entry point) published
+     * cleanly with no violation raised. `<=`, not `!=`: a revision that
+     * somehow already carries FEWER than the max is not a violation —
+     * only exceeding the closed set is.
+     *
+     * @return list<array{rule: string, subject: string, detail: string}>
+     */
+    private function roleCountViolations(int $revisionId): array
+    {
+        $count = DB::table('framework_roles')->where('revision_id', $revisionId)->count();
+
+        if ($count <= CatalogueRules::MAX_ROLES) {
+            return [];
+        }
+
+        return [[
+            'rule' => 'roles_closed_set',
+            'subject' => "revision:{$revisionId}",
+            'detail' => 'expected at most '.CatalogueRules::MAX_ROLES." roles, found {$count}",
+        ]];
+    }
+
+    /**
      * Exactly 3 indicators per DECLARED pair (a row in the pivot). Mirrors
      * `scripts/ci-guards.sh:2352`.
      *
@@ -85,13 +138,13 @@ final class PublishRevision
             ->where('revision_id', $revisionId)
             ->whereNotNull('role_id')
             ->groupBy('role_id', 'competency_id')
-            ->having(DB::raw('count(*)'), '!=', 3)
+            ->having(DB::raw('count(*)'), '!=', CatalogueRules::INDICATORS_PER_PAIR)
             ->get();
 
         return array_values($rows->map(fn (object $row): array => [
             'rule' => 'exactly_three_indicators',
             'subject' => "role:{$row->role_id} competency:{$row->competency_id}",
-            'detail' => "expected exactly 3 indicators, found {$row->total}",
+            'detail' => 'expected exactly '.CatalogueRules::INDICATORS_PER_PAIR." indicators, found {$row->total}",
         ])->all());
     }
 
@@ -194,13 +247,75 @@ final class PublishRevision
             ->where('c.type', 'potential')
             ->select('c.id as competency_id', 'c.code', DB::raw('count(bi.id) as total'))
             ->groupBy('c.id', 'c.code')
-            ->having(DB::raw('count(bi.id)'), '!=', 3)
+            ->having(DB::raw('count(bi.id)'), '!=', CatalogueRules::INDICATORS_PER_PAIR)
             ->get();
 
         return array_values($rows->map(fn (object $row): array => [
             'rule' => 'exactly_three_indicators',
             'subject' => "competency:{$row->competency_id}",
-            'detail' => "potential competency {$row->code} expected exactly 3 role-less indicators, found {$row->total}",
+            'detail' => "potential competency {$row->code} expected exactly ".CatalogueRules::INDICATORS_PER_PAIR." role-less indicators, found {$row->total}",
+        ])->all());
+    }
+
+    /**
+     * H9 (framework-catalogue-authoring PR3b, R3-010): a role-scoped BARS
+     * indicator whose `(role_id, competency_id)` is NOT a declared pair in
+     * `framework_role_competency` refuses publish. `indicatorCountViolations()`
+     * only groups indicators that already exist and checks their COUNT — an
+     * undeclared pair that happens to carry exactly 3 indicators (an
+     * indicator set authored for a pair the pivot never declared, e.g. a
+     * stray `BarsIndicatorController::store()` call with a `role_id`/
+     * `competency_id` combination absent from the pivot) produced zero
+     * violations before this check existed.
+     *
+     * @return list<array{rule: string, subject: string, detail: string}>
+     */
+    private function undeclaredPairIndicatorViolations(int $revisionId): array
+    {
+        $rows = DB::table('framework_bars_indicators as bi')
+            ->leftJoin('framework_role_competency as prc', function (JoinClause $join) use ($revisionId): void {
+                $join->on('prc.role_id', '=', 'bi.role_id')
+                    ->on('prc.competency_id', '=', 'bi.competency_id')
+                    ->where('prc.revision_id', $revisionId);
+            })
+            ->where('bi.revision_id', $revisionId)
+            ->whereNotNull('bi.role_id')
+            ->whereNull('prc.role_id')
+            ->select('bi.role_id', 'bi.competency_id')
+            ->distinct()
+            ->get();
+
+        return array_values($rows->map(fn (object $row): array => [
+            'rule' => 'indicator_pair_not_declared',
+            'subject' => "role:{$row->role_id} competency:{$row->competency_id}",
+            'detail' => 'indicators exist for a role/competency pair absent from the pivot',
+        ])->all());
+    }
+
+    /**
+     * H9 (framework-catalogue-authoring PR3b, R3-010): a role-LESS BARS
+     * indicator (`role_id IS NULL`) belonging to a `standard` competency
+     * refuses publish. Role-less indicators are legal ONLY for `potential`
+     * competencies (MTG/LAT, `roleScopedPotentialIndicatorViolations()`'s
+     * mirror image) — a `standard` competency is always anchored through a
+     * declared role pivot pair, never role-less.
+     *
+     * @return list<array{rule: string, subject: string, detail: string}>
+     */
+    private function roleLessStandardIndicatorViolations(int $revisionId): array
+    {
+        $rows = DB::table('framework_bars_indicators as bi')
+            ->join('framework_competencies as c', 'c.id', '=', 'bi.competency_id')
+            ->where('bi.revision_id', $revisionId)
+            ->whereNull('bi.role_id')
+            ->where('c.type', 'standard')
+            ->select('bi.id', 'c.code')
+            ->get();
+
+        return array_values($rows->map(fn (object $row): array => [
+            'rule' => 'standard_indicator_must_have_role',
+            'subject' => "indicator:{$row->id}",
+            'detail' => "indicator for standard competency {$row->code} must not have role_id = null",
         ])->all());
     }
 
@@ -217,11 +332,17 @@ final class PublishRevision
      * `anchor_3`/`anchor_1`) and the SAME locale. A duplicate pair is
      * refused only when it is NOT already present, identically, in the
      * revision's PARENT (`parent_revision_id` — see that column's own
-     * migration). A revision with no parent (the baseline itself, or any
-     * revision that predates this column) has nothing to diff against, so
-     * every duplicate it carries is — by definition — not new; the check is
-     * a no-op for it, matching the baseline's own already-known,
-     * already-excused duplicates.
+     * migration). `parent_revision_id === null` is reachable for THREE
+     * cases, not two (gga review finding, lower severity — documented, not
+     * silently assumed): the baseline itself, any revision that predates
+     * the column, and — since the column is `nullOnDelete()` — a normal
+     * child whose parent row was later deleted. All three are treated
+     * identically: nothing to diff against means the check is a no-op,
+     * never a hard failure. For the baseline and pre-column cases that is
+     * correct by construction; for the third, this is a deliberate
+     * degrade-to-permissive choice (silently disabling the delta check
+     * rather than refusing to publish over a housekeeping deletion
+     * elsewhere), not an oversight.
      *
      * @return list<array{rule: string, subject: string, detail: string}>
      */
@@ -284,7 +405,20 @@ final class PublishRevision
 
         foreach ($indicators as $indicator) {
             foreach (['text', 'anchor_5', 'anchor_3', 'anchor_1'] as $field) {
-                $localeMap = json_decode((string) $indicator->{$field}, true) ?? [];
+                $decoded = json_decode((string) $indicator->{$field}, true);
+                // `?? []` alone (gga review finding, blocking) only catches
+                // SQL NULL and malformed JSON — both decode to `null`. A
+                // VALID JSON scalar (a raw-inserted row bypassing the
+                // Eloquent cast could hold `"abc"` or `3`) decodes to a
+                // non-array value that `?? []` lets straight through; the
+                // `foreach` below then raises E_WARNING, which Laravel
+                // promotes to an uncaught ErrorException — a 500 on
+                // `POST /publish` instead of the violation list this sweep
+                // exists to return. This read deliberately bypasses the
+                // Eloquent cast (`DB::table()`, not the model) BECAUSE its
+                // whole job is catching a row a raw writer produced, so it
+                // must not assume that writer's JSON shape was any good.
+                $localeMap = is_array($decoded) ? $decoded : [];
 
                 foreach ($localeMap as $locale => $value) {
                     if (! is_string($value) || trim($value) === '') {

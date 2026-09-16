@@ -4,10 +4,19 @@ declare(strict_types=1);
 
 /**
  * RED/GREEN — 10.1/11.3 (framework-catalogue-authoring PR3, D3): the
- * blocking publish sweep. A pair with 2 or 4 indicators, an unanchored
+ * blocking publish sweep. A pair with 2 indicators, an unanchored
  * competency, a `potential` competency present in the pivot, and a
  * role-scoped MTG/LAT indicator — each refuses publish (422 naming every
  * violation) and leaves `state = 'draft'`.
+ *
+ * The original ">3" half of this fixture (a pair deliberately given 4
+ * indicators) is REMOVED (framework-catalogue-authoring PR3b, H6): a DB-level
+ * trigger (`2026_09_16_090000_add_bars_indicator_pair_cap_trigger`) now
+ * refuses a 4th indicator for any `(revision, role, competency)` pair
+ * outright, so that state can no longer be constructed at all, by this test
+ * or by any other writer — `indicatorCountViolations()`'s own `!= 3` check
+ * stays correct and still catches the "< 3" direction below; the "> 3"
+ * direction is unreachable rather than untested.
  */
 
 use App\Actions\Catalogue\PublishRevision;
@@ -35,7 +44,7 @@ function publishSweepIndicator(int $revisionId, ?int $roleId, int $competencyId,
  * A minimal, fully-manufactured draft — deliberately NOT cloned from the
  * real baseline — with one violation of each kind the sweep must catch.
  *
- * @return array{revision: FrameworkCatalogRevision, roleId: int, twoIndicatorCompetencyId: int, fourIndicatorCompetencyId: int, emptyCompetencyId: int, okCompetencyId: int, potentialCompetencyId: int}
+ * @return array{revision: FrameworkCatalogRevision, roleId: int, twoIndicatorCompetencyId: int, emptyCompetencyId: int, okCompetencyId: int, potentialCompetencyId: int}
  */
 function publishSweepFixture(): array
 {
@@ -56,11 +65,10 @@ function publishSweepFixture(): array
 
     $okId = $mk('SWOK');
     $twoId = $mk('SWTWO');
-    $fourId = $mk('SWFOUR');
     $emptyId = $mk('SWEMPTY');
     $potentialId = $mk('MTG_SW', 'potential');
 
-    foreach ([$okId, $twoId, $fourId, $emptyId] as $position => $competencyId) {
+    foreach ([$okId, $twoId, $emptyId] as $position => $competencyId) {
         DB::table('framework_role_competency')->insert([
             'revision_id' => $revision->id, 'role_id' => $roleId, 'competency_id' => $competencyId, 'position' => $position,
         ]);
@@ -70,13 +78,10 @@ function publishSweepFixture(): array
     for ($i = 0; $i < 3; $i++) {
         publishSweepIndicator($revision->id, $roleId, $okId, $i);
     }
-    // Violation: only 2.
+    // Violation: only 2 — the DB-level cap (H6) only refuses a 4th; fewer
+    // than 3 is a publish-sweep violation, not a write-time refusal.
     for ($i = 0; $i < 2; $i++) {
         publishSweepIndicator($revision->id, $roleId, $twoId, $i);
-    }
-    // Violation: 4.
-    for ($i = 0; $i < 4; $i++) {
-        publishSweepIndicator($revision->id, $roleId, $fourId, $i);
     }
     // Violation: $emptyId has zero indicators (declared pair, unanchored).
 
@@ -92,7 +97,6 @@ function publishSweepFixture(): array
         'revision' => $revision,
         'roleId' => $roleId,
         'twoIndicatorCompetencyId' => $twoId,
-        'fourIndicatorCompetencyId' => $fourId,
         'emptyCompetencyId' => $emptyId,
         'okCompetencyId' => $okId,
         'potentialCompetencyId' => $potentialId,
@@ -107,15 +111,13 @@ test('a publish sweep names every violation at once and leaves the revision draf
 
     $rules = array_column($violations, 'rule');
 
-    expect($rules)->toContain('exactly_three_indicators'); // 2 AND 4 both hit this rule
+    expect($rules)->toContain('exactly_three_indicators');
     expect($rules)->toContain('pair_must_be_anchored');
     expect($rules)->toContain('potential_competency_not_in_pivot');
     expect($rules)->toContain('potential_indicator_must_be_role_less');
 
-    // Both the 2-indicator and 4-indicator pairs are named.
     $subjects = array_column($violations, 'subject');
     expect($subjects)->toContain("role:{$fixture['roleId']} competency:{$fixture['twoIndicatorCompetencyId']}");
-    expect($subjects)->toContain("role:{$fixture['roleId']} competency:{$fixture['fourIndicatorCompetencyId']}");
 
     expect($fixture['revision']->fresh()->state)->toBe('draft');
 });
