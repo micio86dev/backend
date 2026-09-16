@@ -21,6 +21,7 @@ use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\Role;
+use App\Services\FrameworkCatalog\CompetencyNormalizer;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
@@ -92,4 +93,98 @@ test('an exported published revision matches its stored rows byte-for-byte', fun
     $potentialCompetency = Competency::find($potentialIndicator->competency_id);
     expect($export['bars']['POTENTIAL'][$potentialCompetency->code][$potentialIndicator->position]['indicator'])
         ->toBe($potentialIndicator->getTranslations('text'));
+});
+
+/**
+ * Z1 (R3-export-position-loss, REQUIRED BEFORE ARCHIVE): a CRUD-authored,
+ * non-sequential position set (5, 10 — legal: `position` only requires
+ * `min:0`, never contiguity) must not be silently reindexed to 0, 1 by
+ * `array_values()`. Uses a scratch DRAFT revision (G3.2's `BarsIndicator`
+ * factory), not the baseline — writing arbitrary extra content directly onto
+ * the published baseline is exactly what this change's immutability work
+ * exists to prevent.
+ */
+test('Z1: exported indicators carry their stored, possibly non-sequential position', function (): void {
+    $scratch = FrameworkCatalogRevision::factory()->draft()->create();
+    $role = Role::factory()->create(['revision_id' => $scratch->id]);
+    $competency = Competency::factory()->create(['revision_id' => $scratch->id]);
+
+    $first = BarsIndicator::factory()->create([
+        'revision_id' => $scratch->id,
+        'role_id' => $role->id,
+        'competency_id' => $competency->id,
+        'position' => 5,
+    ]);
+    $second = BarsIndicator::factory()->create([
+        'revision_id' => $scratch->id,
+        'role_id' => $role->id,
+        'competency_id' => $competency->id,
+        'position' => 10,
+    ]);
+
+    $export = catalogueExportOutput($scratch->id);
+
+    $exportedList = $export['bars'][$role->code][$competency->code];
+    expect($exportedList)->toHaveCount(2);
+
+    // Order is preserved (ascending position), and each entry carries its
+    // OWN stored position rather than the array index it happens to sit at.
+    expect($exportedList[0]['position'])->toBe($first->position);
+    expect($exportedList[1]['position'])->toBe($second->position);
+    expect($exportedList[0]['position'])->not->toBe(0);
+    expect($exportedList[1]['position'])->not->toBe(1);
+});
+
+/**
+ * Z1, import side: `CompetencyNormalizer` reads the explicit `position` key
+ * `catalogue:export` now emits, instead of only the array's own order —
+ * proving the two commands are genuinely symmetric for a non-sequential set.
+ */
+test('Z1: CompetencyNormalizer honors an explicit position key over array order', function (): void {
+    $barsArray = [
+        [
+            'indicator' => ['en' => 'first, stored at position 10'],
+            'scale' => ['5' => ['en' => 'a5'], '3' => ['en' => 'a3'], '1' => ['en' => 'a1']],
+            'position' => 10,
+        ],
+        [
+            'indicator' => ['en' => 'second, stored at position 5'],
+            'scale' => ['5' => ['en' => 'a5'], '3' => ['en' => 'a3'], '1' => ['en' => 'a1']],
+            'position' => 5,
+        ],
+    ];
+
+    $dto = (new CompetencyNormalizer)->normalize(
+        ['code' => 'PRS', 'name' => ['en' => 'x'], 'definition' => ['en' => 'y']],
+        $barsArray,
+    );
+
+    expect($dto->indicators[0]->position)->toBe(10);
+    expect($dto->indicators[1]->position)->toBe(5);
+});
+
+/**
+ * Backward compatibility: a vendored entry with no `position` key at all
+ * (every file under `docs/app_description/.../bars/*.json` today) still
+ * falls back to array order — the fallback this fix must not remove.
+ */
+test('Z1: CompetencyNormalizer falls back to array order when position is absent', function (): void {
+    $barsArray = [
+        [
+            'indicator' => ['en' => 'first'],
+            'scale' => ['5' => ['en' => 'a5'], '3' => ['en' => 'a3'], '1' => ['en' => 'a1']],
+        ],
+        [
+            'indicator' => ['en' => 'second'],
+            'scale' => ['5' => ['en' => 'a5'], '3' => ['en' => 'a3'], '1' => ['en' => 'a1']],
+        ],
+    ];
+
+    $dto = (new CompetencyNormalizer)->normalize(
+        ['code' => 'PRS', 'name' => ['en' => 'x'], 'definition' => ['en' => 'y']],
+        $barsArray,
+    );
+
+    expect($dto->indicators[0]->position)->toBe(0);
+    expect($dto->indicators[1]->position)->toBe(1);
 });

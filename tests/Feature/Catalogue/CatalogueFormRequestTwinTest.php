@@ -72,3 +72,50 @@ test('a blank it locale value is refused with HTTP 422', function (): void {
         'name' => ['en' => 'Blank IT', 'it' => '   '],
     ])->assertStatus(422);
 });
+
+/**
+ * Z2 (R3-responsibilities-missing-en, REQUIRED BEFORE ARCHIVE): `responsibilities`
+ * is an optional map on `StoreRoleRequest` (`localeMapRules('responsibilities',
+ * required: false)`), but WHEN present it must still carry `en` — the same
+ * "en mandatory whenever the map is present" invariant every other locale map
+ * in this change enforces (`CompetencyNormalizer::normalizeLocaleMap()`,
+ * `StoreDefaultQuestionRequest`'s own `text.it` override).
+ */
+test('Z2: responsibilities with an it value and no en key is refused with HTTP 422', function (): void {
+    $token = catalogueTwinSuperadminToken();
+
+    $response = $this->withToken($token)->postJson('/api/catalogue/roles', [
+        'code' => 'NOEN',
+        'name' => ['en' => 'No English Responsibilities'],
+        'responsibilities' => ['it' => 'Solo italiano'],
+    ]);
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors(['responsibilities.en']);
+});
+
+test('Z2: responsibilities omitted entirely is still accepted — the field stays optional', function (): void {
+    $token = catalogueTwinSuperadminToken();
+
+    $this->withToken($token)->postJson('/api/catalogue/roles', [
+        'code' => 'NORESP',
+        'name' => ['en' => 'No Responsibilities At All'],
+    ])->assertCreated();
+});
+
+/**
+ * Z3 (R1-001, REQUIRED BEFORE ARCHIVE): `ValidatesLocaleMaps` validated the
+ * parent locale map only as `array` — a key beyond the known locale set
+ * (`en`/`it`) was never refused and stored straight into the JSON column.
+ */
+test('Z3: a locale map key outside the known-locale set is refused with HTTP 422', function (): void {
+    $token = catalogueTwinSuperadminToken();
+
+    $response = $this->withToken($token)->postJson('/api/catalogue/roles', [
+        'code' => 'UNKLOC',
+        'name' => ['en' => 'Unknown Locale', 'fr' => 'Locale francaise non supportee'],
+    ]);
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors(['name']);
+});

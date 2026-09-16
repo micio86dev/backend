@@ -27,8 +27,40 @@ trait ValidatesLocaleMaps
     protected function localeMapRules(string $field, array $locales = ['en', 'it'], bool $required = true): array
     {
         $rules = [
-            $field => [$required ? 'required' : 'sometimes', 'array'],
-            "{$field}.en" => [$required ? 'required' : 'sometimes', 'string', self::nonBlank()],
+            // Z3 (R1-001, REQUIRED BEFORE ARCHIVE): the parent map was
+            // validated only as `array` — nothing refused a key beyond the
+            // known locale set (`fr`, a typo, an invented code), and it
+            // stored unvalidated straight into the JSON column. Restricted
+            // to `$locales` here, the SAME allowlist
+            // `CompetencyNormalizer::knownLocales()` enforces on the seed/
+            // import side — a locale map is either a subset of known
+            // locales or refused outright, never partially trusted.
+            $field => [
+                $required ? 'required' : 'sometimes', 'array',
+                function (string $attribute, mixed $value, \Closure $fail) use ($locales): void {
+                    if (! is_array($value)) {
+                        return;
+                    }
+
+                    $unknown = array_diff(array_keys($value), $locales);
+
+                    if ($unknown !== []) {
+                        $fail("{$attribute}_unknown_locale");
+                    }
+                },
+            ],
+            // Z2 (R3-responsibilities-missing-en, REQUIRED BEFORE ARCHIVE):
+            // when the map itself is optional (`$required = false`), a bare
+            // `'sometimes'` on `{field}.en` only runs when that EXACT KEY is
+            // present — so `{"responsibilities": {"it": "..."}}` (the map
+            // present, `en` simply omitted) passed validation entirely,
+            // violating the same "en mandatory whenever the map is present"
+            // invariant `CompetencyNormalizer::normalizeLocaleMap()` already
+            // enforces on the seed/import side. `required_with:{field}` is
+            // evaluated whenever the SIBLING key `{field}` is present, which
+            // is the actual invariant — the same fix
+            // `UpdateDefaultQuestionRequest` already applies to `text.it`.
+            "{$field}.en" => [$required ? 'required' : "required_with:{$field}", 'string', self::nonBlank()],
         ];
 
         foreach ($locales as $locale) {

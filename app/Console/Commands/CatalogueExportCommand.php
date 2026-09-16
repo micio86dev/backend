@@ -129,7 +129,7 @@ final class CatalogueExportCommand extends Command
     /**
      * @param  Collection<int|string, EloquentCollection<int, BarsIndicator>>  $indicatorsByCompetencyId
      * @param  EloquentCollection<int, Competency>  $competencies
-     * @return array<string, list<array{indicator: array<string, string>, scale: array{5: array<string, string>, 3: array<string, string>, 1: array<string, string>}}>>
+     * @return array<string, list<array{indicator: array<string, string>, scale: array{5: array<string, string>, 3: array<string, string>, 1: array<string, string>}, position: int}>>
      */
     private function indicatorsByCompetencyCode(Collection $indicatorsByCompetencyId, EloquentCollection $competencies): array
     {
@@ -147,6 +147,15 @@ final class CatalogueExportCommand extends Command
             // possibly-non-sequential array by PHPStan/Larastan; this is
             // what actually pins it down to a `list<...>`, matching this
             // method's own declared return shape.
+            //
+            // Z1 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+            // the list is still ORDERED by position (`sortBy('position')`),
+            // but each entry now also carries its own STORED `position`
+            // explicitly — a CRUD-authored, non-sequential position set
+            // (e.g. 5, 10) previously exported as list index 0, 1 with no
+            // way to recover the original values; `CompetencyNormalizer`
+            // reads this field back on import (falls back to array index
+            // only for the vendored trees, which never carry it).
             $result[$code] = array_values($indicators->sortBy('position')->values()->map(
                 fn (BarsIndicator $indicator): array => [
                     'indicator' => $indicator->getTranslations('text'),
@@ -155,6 +164,7 @@ final class CatalogueExportCommand extends Command
                         '3' => $indicator->getTranslations('anchor_3'),
                         '1' => $indicator->getTranslations('anchor_1'),
                     ],
+                    'position' => $indicator->position,
                 ],
             )->all());
         }

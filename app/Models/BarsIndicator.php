@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\BumpsRevisionContentVersion;
+use Database\Factories\BarsIndicatorFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Spatie\Translatable\HasTranslations;
@@ -46,6 +48,10 @@ use Spatie\Translatable\HasTranslations;
 class BarsIndicator extends Model
 {
     use BumpsRevisionContentVersion;
+
+    /** @use HasFactory<BarsIndicatorFactory> */
+    use HasFactory;
+
     use HasTranslations;
 
     /**
