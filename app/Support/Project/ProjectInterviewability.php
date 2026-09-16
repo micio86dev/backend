@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Project;
 
+use App\Models\InterviewSession;
+use App\Models\Participant;
 use App\Models\Project;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
@@ -124,5 +126,52 @@ final class ProjectInterviewability
             ->exists();
 
         return ['interviewable' => $interviewable, 'unsatisfied_competency_codes' => $unsatisfied];
+    }
+
+    /**
+     * Z10 (R3-mint-refuses-midinterview-candidate, REQUIRED BEFORE ARCHIVE):
+     * the SAME "already has a session" exemption `InterviewController::start()`
+     * and `SsoExchangeController::exchange()` (Z9) already apply at USE time,
+     * now also at MINT time — a mid-interview candidate whose token expired
+     * could not be issued a NEW one, because every mint ingress
+     * (`EntryLinkController`, `M2m\SsoLinkController`, `M2m\ParticipantController`)
+     * refused a non-interviewable project unconditionally, with no exemption
+     * for a candidate who is already partway through.
+     *
+     * PLAIN ELOQUENT (`Participant::where()`/`InterviewSession::where()`),
+     * UNLIKE the SSO exchange's own inline check — deliberately: every
+     * caller of THIS method is an AUTHENTICATED, tenant-resolved route
+     * (`auth:api` + `TenantContext`, or `auth:api-m2m` + `TenantContextM2m`),
+     * never the public, unauthenticated exchange path that method's own
+     * `withoutGlobalScope('tenant')` exists for. Do not reuse this method
+     * from an unauthenticated context — see this class's own docblock for
+     * why that would silently match zero rows forever.
+     *
+     * @return array{interviewable: bool, unsatisfied_competency_codes: list<string>}
+     */
+    public function evaluateForCandidate(Project $project, string $candidateRef): array
+    {
+        // `organization_id` stated EXPLICITLY (gga review finding, blocking)
+        // — `Participant` extends plain `Model`, not `TenantModel`, so no
+        // global scope protects this query. `project_id` alone happens to
+        // already narrow every CURRENT caller to one tenant (each resolves
+        // `$project` inside its own org first), but this class's own
+        // docblock rule is "never read from ambient context" — a future
+        // caller passing a `Project` resolved some other way must not be
+        // able to match a participant in a DIFFERENT organization sharing
+        // the same `candidate_ref`.
+        $participant = Participant::where('organization_id', $project->organization_id)
+            ->where('project_id', $project->id)
+            ->where('candidate_ref', $candidateRef)
+            ->first();
+
+        $hasAnySession = $participant !== null
+            && InterviewSession::where('participant_id', $participant->id)->exists();
+
+        if ($hasAnySession) {
+            return ['interviewable' => true, 'unsatisfied_competency_codes' => []];
+        }
+
+        return $this->evaluate($project);
     }
 }

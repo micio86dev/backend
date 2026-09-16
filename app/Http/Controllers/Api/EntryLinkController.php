@@ -34,9 +34,10 @@ use Illuminate\Http\Request;
  *   2. Validate the request body (mirrors the M2M mint's body verbatim).
  *   3. Resolve Project::findOrFail, scoped by TenantContext's TenantScoped
  *      global scope (cross-org → 404).
- *   4. `ProjectInterviewability::evaluate()` (framework-catalogue-authoring
- *      PR6, D5/D6) — 422 `PROJECT_NOT_INTERVIEWABLE` + `competency_codes`
- *      before the minter is ever reached.
+ *   4. `ProjectInterviewability::evaluateForCandidate()` (framework-catalogue-
+ *      authoring PR6, D5/D6; Z10) — 422 `PROJECT_NOT_INTERVIEWABLE` +
+ *      `competency_codes` before the minter is ever reached, unless this
+ *      candidate already has a session.
  *   5. Delegate the mint decision to EntryLinkMinter::mint() — the SAME
  *      shared logic the M2M mint uses (design D1).
  *   6. Compose the absolute entry_url via EntryLinkUrlComposer — fails loud
@@ -93,7 +94,15 @@ final class EntryLinkController extends Controller
         // operator gets the actionable detail a candidate never would: which
         // competencies are the problem (empty when the project simply has
         // none selected at all).
-        $interviewability = $this->projectInterviewability->evaluate($project);
+        //
+        // Z10 (REQUIRED BEFORE ARCHIVE): `evaluateForCandidate()`, not a bare
+        // `evaluate()` — exempts a candidate who already has an
+        // `InterviewSession` on this project, the SAME exemption the SSO
+        // exchange and `/start` already apply (Z9). Without it, a
+        // mid-interview candidate whose token expired could never be issued
+        // a replacement link once an UNRELATED, not-yet-reached competency
+        // lost its questions.
+        $interviewability = $this->projectInterviewability->evaluateForCandidate($project, $validated['candidate_ref']);
         if (! $interviewability['interviewable']) {
             return response()->json([
                 'error' => 'PROJECT_NOT_INTERVIEWABLE',

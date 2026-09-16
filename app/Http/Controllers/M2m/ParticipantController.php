@@ -76,7 +76,19 @@ final class ParticipantController extends Controller
         // never normalised, trimmed or re-cased — because it is the calling
         // system's only correlation handle for a request that produced no
         // participant row at all.
-        $interviewability = $this->projectInterviewability->evaluate($project);
+        //
+        // Z10 (REQUIRED BEFORE ARCHIVE) — `evaluateForCandidate()`, for
+        // symmetry with the other two mint ingresses (`EntryLinkController`,
+        // `SsoLinkController`): exempts a candidate who already has an
+        // `InterviewSession`. In practice this endpoint always CREATES a new
+        // `Participant` row, so a `candidate_ref` that already has a session
+        // also already has a participant row and would fail the
+        // `(project_id, candidate_ref)` unique constraint below regardless
+        // of interviewability — this exemption does not change that
+        // pre-existing, separate behavior, it only stops interviewability
+        // from being the FIRST thing to (incorrectly) refuse a request this
+        // endpoint was never going to satisfy anyway for an unrelated reason.
+        $interviewability = $this->projectInterviewability->evaluateForCandidate($project, $validated['candidate_ref']);
         if (! $interviewability['interviewable']) {
             return response()->json([
                 'error' => 'PROJECT_NOT_INTERVIEWABLE',

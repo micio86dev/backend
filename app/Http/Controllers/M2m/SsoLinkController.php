@@ -24,9 +24,10 @@ use Illuminate\Http\Request;
  *
  * Flow:
  *   1. Resolve project SCOPED to the caller's organization (cross-org → 404).
- *   2. `ProjectInterviewability::isInterviewable()` (framework-catalogue-
- *      authoring PR6, D5/D6) — 422 `PROJECT_NOT_INTERVIEWABLE` before the
- *      minter is ever reached. **Response shape change from before PR6**:
+ *   2. `ProjectInterviewability::evaluateForCandidate()` (framework-catalogue-
+ *      authoring PR6, D5/D6; Z10) — 422 `PROJECT_NOT_INTERVIEWABLE` before the
+ *      minter is ever reached, unless this candidate already has a session.
+ *      **Response shape change from before PR6**:
  *      a project that is BOTH closed (entry gate) AND non-interviewable now
  *      answers `422 PROJECT_NOT_INTERVIEWABLE` here, where it previously
  *      reached `EntryLinkMinter::mint()` and answered `403 Access denied`
@@ -100,7 +101,14 @@ final class SsoLinkController extends Controller
         // avoids running the same query twice for one refusal.
         // `candidate_ref` echoed byte-for-byte, same reasoning as the M2M
         // participant refusal.
-        $interviewability = $this->projectInterviewability->evaluate($project);
+        //
+        // Z10 (REQUIRED BEFORE ARCHIVE) — `evaluateForCandidate()`: exempts a
+        // candidate who already has an `InterviewSession` on this project,
+        // same exemption the SSO exchange and `/start` already apply (Z9).
+        // Without it, re-minting a replacement sso-link for a mid-interview
+        // candidate whose token expired was refused by an UNRELATED,
+        // not-yet-reached competency's later misconfiguration.
+        $interviewability = $this->projectInterviewability->evaluateForCandidate($project, $validated['candidate_ref']);
         if (! $interviewability['interviewable']) {
             return response()->json([
                 'error' => 'PROJECT_NOT_INTERVIEWABLE',
