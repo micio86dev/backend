@@ -83,6 +83,8 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property string|null $ended_reason
  * @property int $error_count
+ * @property list<string>|null $primary_questions
+ * @property int|null $follow_up_budget
  * @property CarbonImmutable|null $transcript_harvested_at
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $ended_at
@@ -128,6 +130,14 @@ class InterviewSession extends TenantModel
         'ended_reason',
         'started_at',
         'ended_at',
+        // The primary-question snapshot and follow-up budget the prompt was
+        // composed from (framework-catalogue-authoring PR7, D7/D8) — set at
+        // `InterviewSession::create()`, and may be reassigned by a LATER
+        // `/start` on this same row (a resume, or a retry re-offer) only
+        // while `utterances()` is still empty. See `InterviewController::
+        // start()` for the guard `TurnClassifier` depends on.
+        'primary_questions',
+        'follow_up_budget',
     ];
 
     /**
@@ -144,6 +154,8 @@ class InterviewSession extends TenantModel
             'started_at' => 'immutable_datetime',
             'ended_at' => 'immutable_datetime',
             'system_prompt_chars' => 'integer',
+            'primary_questions' => 'array',
+            'follow_up_budget' => 'integer',
             // An uncast column comes back from pdo_pgsql as a STRING, which
             // makes the `@property CarbonImmutable|null` annotation above false at
             // runtime while PHPStan keeps trusting it. This column has been

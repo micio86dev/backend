@@ -22,6 +22,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
 use App\Models\Role;
+use App\Models\Utterance;
 use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
@@ -33,6 +34,7 @@ use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\CompetencyTally;
 use App\Support\Interview\SessionLiveClock;
+use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
 use App\Support\Project\ProjectInterviewability;
 use Illuminate\Database\QueryException;
@@ -71,6 +73,7 @@ class InterviewController extends Controller
         private readonly RecordConversationLlmUsage $recordLlmUsage,
         private readonly CatalogueRevisionResolver $revisionResolver,
         private readonly ProjectInterviewability $projectInterviewability,
+        private readonly TurnClassifier $turnClassifier,
     ) {}
 
     // =========================================================================
@@ -227,7 +230,18 @@ class InterviewController extends Controller
             ->first();
         $primaryQuestions = $nextCompetencyRow === null
             ? []
-            : $this->authoredQuestionsFor($project, $nextCompetencyRow->id);
+            : $this->primaryQuestionsFor($project, $nextCompetencyRow->id);
+
+        // Read ONCE here (framework-catalogue-authoring PR7, D7) and reused
+        // both by the composer call below and by session creation further
+        // down — the same number must feed the prompt's budget instruction
+        // and the `interview_sessions.follow_up_budget` snapshot D8 audits
+        // against, rather than two independent config reads that could
+        // theoretically diverge mid-request. The fallback (4) matches
+        // `config('conversation.followup_budget')`'s own ratified default —
+        // this literal is reached only if the config key itself is absent,
+        // never as a silently smaller budget than what the key declares.
+        $followUpBudget = (int) config('conversation.followup_budget', 4);
 
         // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
         //
@@ -257,6 +271,28 @@ class InterviewController extends Controller
         // silently overwrite started_at to now() below, destroying the true start time.
         $isFirst = $participant->started_at === null;
 
+        // Hoisted here, ahead of its only previous use site further down
+        // (framework-catalogue-authoring PR7, D7): `$openingVariant` — and
+        // therefore `$openingSpokeFirstPrimary` below — must be known BEFORE
+        // composePromptForCompetency() runs, so the composed prompt and the
+        // spoken opening agree on whether primary 1 was already handed to the
+        // candidate. `$nextCompetency['reoffer']` has been available since
+        // the resolveNextCompetency() call above; only its consumption moves.
+        $isReoffer = ($nextCompetency['reoffer'] ?? false) === true;
+        $openingVariant = match (true) {
+            $isResumeInCorso => 'resume',
+            $isReoffer => 'retry',
+            $isFirst => 'first',
+            default => 'next',
+        };
+
+        // True whenever OpeningTextComposer is about to speak primary 1 as
+        // this request's opening greeting (every variant except `resume`,
+        // and only when a primary actually exists) — D7. The composed system
+        // prompt then tells the model primary 1 was already asked rather than
+        // leaving it to infer that from the conversation so far.
+        $openingSpokeFirstPrimary = $openingVariant !== 'resume' && $primaryQuestions !== [];
+
         // Which sentence ends THIS turn: the last competency gets the final
         // phrase, every other one the intermediate. Resolved from the same
         // source the /start response advertises to the client, so the sentence
@@ -273,6 +309,8 @@ class InterviewController extends Controller
             $revisionId,
             $nextCompetencyRow,
             $primaryQuestions,
+            $followUpBudget,
+            $openingSpokeFirstPrimary,
             $advancePhrase,
         );
         if ($compositionResult instanceof JsonResponse) {
@@ -320,7 +358,7 @@ class InterviewController extends Controller
         // attempt's transcript discarded BEFORE the session is resumed, so the
         // competency is never scored on a conversation that mixes two attempts.
         // `error_count` survives the reset — it is the bound.
-        if (($nextCompetency['reoffer'] ?? false) === true) {
+        if ($isReoffer) {
             $errored = InterviewSession::where('participant_id', $pid)
                 ->where('project_id', $project->id)
                 ->where('competency_code', $nextCompetency['competency_code'])
@@ -331,7 +369,49 @@ class InterviewController extends Controller
             }
         }
 
-        $session = $this->createOrResumeSession($participant, $project, $nextCompetency, $providerName);
+        $session = $this->createOrResumeSession(
+            $participant,
+            $project,
+            $nextCompetency,
+            $providerName,
+            $primaryQuestions,
+            $followUpBudget,
+        );
+
+        // The snapshot TurnClassifier audits against is refreshed for a
+        // fresh prompt composition, but ONLY while the session has NO
+        // recorded transcript yet (framework-catalogue-authoring PR7,
+        // D7/D8). `createOrResumeSession()` seeds it on a genuine first
+        // INSERT; a retry re-offer reaches here with the transcript already
+        // discarded by `ResetSessionForRetry` (below), so its freshly
+        // composed prompt (re-running `primaryQuestionsFor()` against the
+        // CURRENT `project_questions` state) is what the snapshot must
+        // agree with.
+        //
+        // NEVER once a real turn exists. `TurnClassifier` indexes into
+        // `primary_questions` by COUNTING already-persisted `primary`-marked
+        // avatar turns from EARLIER stretches of this same competency — a
+        // RESUME keeps that transcript. Overwriting the list here on a
+        // resume would leave that count pointing at a DIFFERENT entry of a
+        // list the operator edited in between (deleted, reordered, or added
+        // a primary) than the one the earlier turns were actually matched
+        // against, corrupting the audit rather than keeping it honest. A
+        // resume's freshly composed prompt is sent to the model regardless
+        // — only the STORED reference the audit compares against must stay
+        // fixed once turns exist to compare.
+        //
+        // Skipped on the DEGRADED resume path (`$compositionResult` is a
+        // `JsonResponse`) for the same reason stated differently: that path
+        // sends NO fresh system prompt at all, so there is nothing new to
+        // agree with.
+        if (! ($compositionResult instanceof JsonResponse)
+            && ($session->primary_questions !== $primaryQuestions || $session->follow_up_budget !== $followUpBudget)
+            && ! $session->utterances()->exists()
+        ) {
+            $session->primary_questions = $primaryQuestions;
+            $session->follow_up_budget = $followUpBudget;
+            $session->save();
+        }
 
         // Re-resolve the provider after we know the project override.
         $providerService = $this->resolveProvider($providerName);
@@ -348,22 +428,11 @@ class InterviewController extends Controller
         // (PR3, design D9) Compose the opening greeting — INDEPENDENT of the composed
         // system prompt's success/failure. The avatar must never go silent, even on the
         // degraded RESUME path (only the system prompt degrades there, never the greeting).
-        // Variant: 'resume' on RESUME in_corso, else 'first' on the participant's very
-        // first competency, else 'next'. Locale = $project->language (matches the system
-        // prompt, per D9).
-        // 'retry' takes precedence over 'first'/'next' (D10): a re-offered competency
-        // is being asked AGAIN, and the candidate must be told so. Without it the
-        // avatar repeats the same question with no explanation, which reads as not
-        // having listened. It cannot collide with 'resume': that variant means an
-        // in-progress conversation is continuing, while a re-offer starts over after
-        // a failure on our side.
-        $isReoffer = ($nextCompetency['reoffer'] ?? false) === true;
-        $openingVariant = match (true) {
-            $isResumeInCorso => 'resume',
-            $isReoffer => 'retry',
-            $isFirst => 'first',
-            default => 'next',
-        };
+        // `$openingVariant` was hoisted above, before composePromptForCompetency() ran
+        // (framework-catalogue-authoring PR7, D7) — reused here unchanged: 'resume' on
+        // RESUME in_corso, else 'retry' on a re-offer, else 'first'/'next'. Locale =
+        // $project->language (matches the system prompt, per D9).
+        //
         // Reused from the hoisted lookup above (framework-catalogue-
         // authoring PR3b, H11) — the SAME row `composePromptForCompetency()`
         // resolves via the identical `(code, revisionId)` pair.
@@ -371,23 +440,24 @@ class InterviewController extends Controller
         $competencyName = $openingCompetency?->getTranslation('name', $project->language)
             ?? $nextCompetency['competency_code'];
 
-        // The operator's OWN first question for this competency, when there is
-        // one (ratified 2026-09-08). Reported from production: an operator
-        // authored their questions and the avatar still opened with the
-        // template's generic "raccontami un episodio", so the first thing any
-        // candidate ever heard was never the operator's. The questions were
-        // already reaching the system prompt as mandatory — the trouble was
-        // ORDER, not plumbing.
+        // Primary 1 — the operator's own first question for this competency,
+        // when there is one (ratified 2026-09-08). Reported from production:
+        // an operator authored their questions and the avatar still opened
+        // with the template's generic "raccontami un episodio", so the first
+        // thing any candidate ever heard was never the operator's.
         //
-        // Only the FIRST is handed over. The rest stay in the prompt's
-        // must-ask section, so opening on question one does not consume the
-        // others. The composer decides what to do per variant: `resume`
-        // ignores it entirely, since that variant continues an episode already
-        // under way.
-        $authoredOpening = $primaryQuestions[0] ?? null;
+        // It is the SAME array element the system prompt's primary-questions
+        // section lists as primary 1 — not a separate, additional question
+        // (D7, this PR's own fix: the two composers used to disagree about
+        // whether primary 1 had already been asked, so a candidate could be
+        // asked it twice). `$openingSpokeFirstPrimary`, hoisted above, is what
+        // tells the system prompt primary 1 was already spoken here. The
+        // composer decides what to do per variant: `resume` ignores it
+        // entirely, since that variant continues an episode already under way.
+        $firstPrimary = $primaryQuestions[0] ?? null;
 
         $openingText = $this->openingComposer
-            ->compose($openingVariant, $competencyName, $project->language, $authoredOpening)
+            ->compose($openingVariant, $competencyName, $project->language, $firstPrimary)
             ->text;
 
         $ctx = new QuestionContext(
@@ -775,17 +845,26 @@ class InterviewController extends Controller
      * `$competency` is resolved ONCE by the caller and passed in (gga review
      * finding on the H11 hoist, second pass): `start()` already resolves
      * this SAME `(code, revisionId)` pair as `$nextCompetencyRow` to compute
-     * `$authoredQuestions` — this method used to re-resolve the identical
+     * `$primaryQuestions` — this method used to re-resolve the identical
      * row a second time for the same request.
      *
-     * @param  list<string>  $authoredQuestions
+     * `$followUpBudget` and `$openingSpokeFirstPrimary` are also hoisted to
+     * `start()` (framework-catalogue-authoring PR7, D7): the budget is
+     * reused when the session's `follow_up_budget` snapshot is written, and
+     * `$openingSpokeFirstPrimary` depends on `$openingVariant`, which
+     * `start()` must resolve before this call so the composed prompt and the
+     * spoken opening agree on whether primary 1 was already asked.
+     *
+     * @param  list<string>  $primaryQuestions
      */
     private function composePromptForCompetency(
         Project $project,
         string $competencyCode,
         ?int $revisionId,
         ?Competency $competency,
-        array $authoredQuestions,
+        array $primaryQuestions,
+        int $followUpBudget,
+        bool $openingSpokeFirstPrimary,
         ?string $advancePhrase = null,
     ): ComposedPrompt|JsonResponse {
         if ($revisionId === null) {
@@ -820,27 +899,27 @@ class InterviewController extends Controller
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $budget = (int) config('conversation.followup_budget', 2);
-
         try {
             return $this->composer->compose(
                 competencyCode: $competencyCode,
                 roleId: $role->id,
                 competencyId: $competency->id,
                 projectLocale: $project->language,
-                budget: $budget,
+                followUpBudget: $followUpBudget,
                 nudgeMinChars: $project->nudge_min_chars,
                 // The sentence the avatar must SPEAK to end its turn. Without it
                 // the prompt told it to utter a placeholder it had never been
                 // given, so no question ever ended by itself.
                 advancePhrase: $advancePhrase,
                 // What the OPERATOR wrote for this competency — the CALLER's
-                // own `$authoredQuestions` (framework-catalogue-authoring
-                // PR3b, H11): hoisted to `start()`, computed once against
-                // the SAME (project, competency) pair this method resolves
-                // via `$competencyCode`/`$revisionId`, rather than queried a
-                // second time here.
-                authoredQuestions: $authoredQuestions,
+                // own `$primaryQuestions` (framework-catalogue-authoring
+                // PR3b, H11 / PR7, D7): hoisted to `start()`, computed once
+                // against the SAME (project, competency) pair this method
+                // resolves via `$competencyCode`/`$revisionId`, rather than
+                // queried a second time here. These ARE the primaries, never
+                // additive to `$followUpBudget` — see SystemPromptComposer.
+                primaryQuestions: $primaryQuestions,
+                openingSpokeFirstPrimary: $openingSpokeFirstPrimary,
                 revisionId: $revisionId,
             );
         } catch (AnchorTranslationMissingException) {
@@ -981,16 +1060,33 @@ class InterviewController extends Controller
      * in a DB::transaction() (which uses a SAVEPOINT internally when nested) so that
      * the savepoint is rolled back on violation while the outer connection remains clean.
      *
+     * `$primaryQuestions`/`$followUpBudget` seed HERE, on the INSERT branch
+     * only (framework-catalogue-authoring PR7, D7/D8) — the snapshot
+     * `TurnClassifier` audits against. The UNIQUE constraint routes a
+     * RESUME (the row already exists, in_corso or still pending from an
+     * earlier attempt) to the UniqueConstraintViolationException branch
+     * below, which re-queries the EXISTING row untouched BY THIS METHOD.
+     * Keeping the row in agreement with a LATER request's freshly composed
+     * prompt (a resume, or a retry re-offer, both of which re-run
+     * `primaryQuestionsFor()` against the current `project_questions`
+     * state) is the caller's job (`start()`, right after this call
+     * returns) — this method only ever seeds the value a brand-new row is
+     * born with.
+     *
+
      * @param  array{competency_code: string, question_index: int}  $competency
+     * @param  list<string>  $primaryQuestions
      */
     private function createOrResumeSession(
         Participant $participant,
         Project $project,
         array $competency,
         string $providerName,
+        array $primaryQuestions,
+        int $followUpBudget,
     ): InterviewSession {
         try {
-            return DB::transaction(function () use ($participant, $project, $competency, $providerName): InterviewSession {
+            return DB::transaction(function () use ($participant, $project, $competency, $providerName, $primaryQuestions, $followUpBudget): InterviewSession {
                 return InterviewSession::create([
                     'participant_id' => $participant->id,
                     'project_id' => $project->id,
@@ -999,6 +1095,8 @@ class InterviewController extends Controller
                     'framework_version_id' => $project->framework_version_id,
                     'provider' => $providerName,
                     'status' => 'pending',
+                    'primary_questions' => $primaryQuestions,
+                    'follow_up_budget' => $followUpBudget,
                 ]);
             });
         } catch (UniqueConstraintViolationException) {
@@ -1311,12 +1409,44 @@ class InterviewController extends Controller
      * builds its rows with `array_map()` over provider turns whose keys it does
      * not control.
      *
+     * ONE ROW AT A TIME, not a bulk insert (framework-catalogue-authoring
+     * PR7, D8) — insertion order must match classification order, since
+     * `$matchedCount` below advances as primaries are found. `turn_kind` is
+     * set only on `speaker = 'avatar'` rows — never on `candidate` rows,
+     * which are not part of what "no hidden questions" audits.
+     *
+     * `$matchedCount` is read ONCE, before the loop, then tracked in memory
+     * and incremented after each `primary` classification — rather than
+     * asking `TurnClassifier` to re-COUNT the `utterances` table before
+     * every avatar row, which this runs inside `/end`'s locked transaction
+     * (`replaceUtteranceStretch()`'s caller) for. This is an optimisation
+     * only: passing the count explicitly changes nothing about WHICH rows
+     * classify as `primary` — it is the exact count a fresh query would
+     * return at that point in the batch, since every earlier row in this
+     * same call has already been accounted for in memory before its
+     * successor is classified.
+     *
      * @param  array<array-key, array<string, mixed>>  $rows
      */
-    private function insertUtterances(array $rows): void
+    private function insertUtterances(InterviewSession $session, array $rows): void
     {
+        $matchedCount = Utterance::where('interview_session_id', $session->id)
+            ->where('speaker', 'avatar')
+            ->where('turn_kind', 'primary')
+            ->count();
+
         try {
-            DB::table('utterances')->insert($rows);
+            foreach ($rows as $row) {
+                if (($row['speaker'] ?? null) === 'avatar') {
+                    $row['turn_kind'] = $this->turnClassifier->classify($session, (string) $row['text'], $matchedCount);
+
+                    if ($row['turn_kind'] === 'primary') {
+                        $matchedCount++;
+                    }
+                }
+
+                DB::table('utterances')->insert($row);
+            }
         } catch (QueryException $e) {
             Log::error('C9: utterance insert failed', SafeDbContext::for($e));
 
@@ -1485,7 +1615,11 @@ class InterviewController extends Controller
     }
 
     /**
-     * The operator's own questions for this project × competency, localized.
+     * The competency's complete primary-question set — the operator's own
+     * `project_questions` rows for this project × competency, localized
+     * (framework-catalogue-authoring PR7, D7 — renamed from
+     * `authoredQuestionsFor()`: these rows ARE the primaries, not questions
+     * additional to a separately-sized budget).
      *
      * `project_questions` has been writable from the backoffice since C4 and
      * was read by NOTHING: the model, its controller, its request and its
@@ -1505,7 +1639,7 @@ class InterviewController extends Controller
      *
      * @return list<string>
      */
-    private function authoredQuestionsFor(Project $project, int $competencyId): array
+    private function primaryQuestionsFor(Project $project, int $competencyId): array
     {
         $fallback = (string) config('app.fallback_locale', 'en');
         $locale = $project->language ?? $fallback;
@@ -1757,10 +1891,26 @@ class InterviewController extends Controller
      * column carry no ref, and a fetch that cannot name its own stretch has no
      * claim to replace anyone else's.
      *
+     * LOCKS the session row before classifying/writing (framework-catalogue-
+     * authoring PR7, D8) — the same guard `UtteranceController::store()`
+     * takes for the live path, so a live avatar turn can never classify
+     * against the same pre-write `primary`-count this batch is about to
+     * advance. MUST run inside an existing transaction (both callers already
+     * guarantee this — see their own docblocks): `/end`'s caller already
+     * holds this exact lock from its own `lockForUpdate()->find()`, so this
+     * is a cheap, harmless re-acquire within the SAME transaction there;
+     * `harvestOutgoingTranscript()`'s caller does not, which is the gap this
+     * closes.
+     *
      * @param  array<array-key, array<string, mixed>>  $rows
      */
     private function replaceUtteranceStretch(InterviewSession $session, array $rows, ?string $ref): void
     {
+        InterviewSession::where('id', $session->id)
+            ->where('organization_id', $session->organization_id)
+            ->lockForUpdate()
+            ->value('id');
+
         if ($ref !== null) {
             DB::table('utterances')
                 ->where('interview_session_id', $session->id)
@@ -1769,7 +1919,7 @@ class InterviewController extends Controller
                 ->delete();
         }
 
-        $this->insertUtterances($rows);
+        $this->insertUtterances($session, $rows);
 
         // Still stamped, because /end's own reconciliation reads it to decide
         // whether anything has been harvested at all. It no longer bounds the

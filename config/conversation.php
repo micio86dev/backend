@@ -9,14 +9,17 @@ declare(strict_types=1);
  *   prompt_version    — conversation prompt template version, stamped by SystemPromptComposer
  *                       on every composed prompt. Distinct lifecycle from scoring.prompt_version —
  *                       do NOT reuse config/scoring.php. Bump on ANY template change.
- *   followup_budget   — default follow-up budget per competency (max N per competency).
- *                       N=4 RATIFIED 2026-08-25, closing the C8 OQ-1 that had been open
- *                       since the conversation engine shipped. A per-project override
- *                       arrives with the `project-followup-budget` change.
- *   min_questions     — minimum questions (opening included) before the avatar may speak
- *                       the closing phrase. CLAMPED by SystemPromptComposer to what the
- *                       budget permits — a minimum above `budget + 1` would be
- *                       unsatisfiable and would strand the competency at its session cap.
+ *   followup_budget   — default follow-up budget per competency (max N per competency),
+ *                       ON TOP OF the primary questions — never merged with their count
+ *                       (framework-catalogue-authoring PR7, D7). N=4 RATIFIED 2026-08-25,
+ *                       closing the C8 OQ-1 that had been open since the conversation
+ *                       engine shipped. A per-project override arrives with the
+ *                       `project-followup-budget` change.
+ *   min_questions     — minimum questions (the opening/first primary included) before the
+ *                       avatar may speak the closing phrase. CLAMPED by SystemPromptComposer
+ *                       to what the primaries plus the budget permit — a minimum above
+ *                       `count(primary_questions) + followup_budget` would be unsatisfiable
+ *                       and would strand the competency at its session cap.
  * There is deliberately NO nudge_min_chars key here. This block used to document
  * one, describing a "platform level" default that does not exist: the array
  * below never returned it, .env.example never named it, and nothing in the repo
@@ -52,7 +55,9 @@ return [
     |
     | Default maximum follow-up questions the avatar may ask per competency.
     | RATIFIED 2026-08-25 at 4 (was 2, provisional since C8). Total questions per
-    | competency is this value PLUS the opening question, which is not a follow-up.
+    | competency is this value PLUS the competency's primary-question count —
+    | never a value the primaries are merged into (framework-catalogue-
+    | authoring PR7, D7).
     |
     | A nullable per-project override follows as `project-followup-budget`;
     | SystemPromptComposer already reads whatever budget it is handed, so nothing
@@ -67,13 +72,15 @@ return [
     |--------------------------------------------------------------------------
     |
     | The avatar must not speak the closing phrase before asking at least this
-    | many questions in a competency, counting the opening question.
+    | many questions in a competency, counting the opening question (which is
+    | the competency's first primary — D7).
     |
-    | SystemPromptComposer CLAMPS this to `min(value, budget + 1)`. Do not rely on
-    | configuration discipline to keep the two in agreement: a minimum the budget
-    | cannot satisfy is an instruction the avatar can never obey, and the observed
-    | consequence is the competency running to its session cap and HeyGen killing
-    | it with MAX_DURATION_REACHED.
+    | SystemPromptComposer CLAMPS this to
+    | `min(value, count(primary_questions) + followup_budget)`. Do not rely on
+    | configuration discipline to keep the two in agreement: a minimum the
+    | primaries plus the budget cannot satisfy is an instruction the avatar
+    | can never obey, and the observed consequence is the competency running
+    | to its session cap and HeyGen killing it with MAX_DURATION_REACHED.
     |
     */
     'min_questions' => (int) env('CONVERSATION_MIN_QUESTIONS', 4),

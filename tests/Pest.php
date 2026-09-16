@@ -132,6 +132,20 @@ pest()->extend(TestCase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C8');
 
+// Unit/Conversation (framework-catalogue-authoring PR7, D7) — needs TestCase +
+// RefreshDatabase: SystemPromptComposerBudgetTest hits the DB via Role/
+// Competency/BarsIndicator factories, same reason as Unit/C8 above.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Conversation');
+
+// Unit/Interview (framework-catalogue-authoring PR7, D8) — needs TestCase +
+// RefreshDatabase: TurnClassifierTest builds InterviewSession/Utterance
+// fixtures via the shared `cas*()` helpers and factories.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Interview');
+
 // ─── C9 Scoring Engine ────────────────────────────────────────────────────────
 
 // Unit/Models (C9 schema assertions) — already covered by the Unit/Models block above.
