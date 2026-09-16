@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Actions\Catalogue\DiscardUnusedDraftRevision;
 use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreBarsIndicatorRequest;
@@ -107,6 +108,11 @@ class BarsIndicatorController extends Controller
             }
 
             return response()->json(['error' => $errorCode], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } finally {
+            // Z12 — see `RoleController::store()`'s identical comment.
+            if ($request->openedNewDraftThisRequest()) {
+                app(DiscardUnusedDraftRevision::class)->discard($draftId);
+            }
         }
 
         return (new CatalogueBarsIndicatorResource($indicator))->response()->setStatusCode(Response::HTTP_CREATED);

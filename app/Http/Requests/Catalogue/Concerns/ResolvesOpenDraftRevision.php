@@ -62,6 +62,20 @@ trait ResolvesOpenDraftRevision
     }
 
     /**
+     * PUBLIC (Z12, framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+     * `failedValidation()` below is not the only way a request that opened a
+     * FRESH draft can end without ever writing to it — the controller's own
+     * write can still fail AFTER validation passed (a 409
+     * `RevisionPublishedDuringWriteException`, or a mapped 422 constraint
+     * violation, Z4). Exposed so the CONTROLLER can discard the same draft
+     * in those catch blocks too — see e.g. `RoleController::store()`.
+     */
+    public function openedNewDraftThisRequest(): bool
+    {
+        return $this->openedNewDraftThisRequest;
+    }
+
+    /**
      * Discard the draft THIS request created, and only that one (gga review
      * finding, blocking): `openDraftRevisionId()` runs inside `rules()`,
      * before a single rule is evaluated, so a 422 for a genuinely malformed

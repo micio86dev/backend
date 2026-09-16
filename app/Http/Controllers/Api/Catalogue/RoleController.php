@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Actions\Catalogue\DiscardUnusedDraftRevision;
 use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreRoleRequest;
@@ -127,6 +128,19 @@ class RoleController extends Controller
             }
 
             return response()->json(['error' => $errorCode], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } finally {
+            // Z12 (R3-draft-orphan-on-post-validation-failure, REQUIRED
+            // BEFORE ARCHIVE): `failedValidation()` (`ResolvesOpenDraftRevision`)
+            // only discards a freshly-cloned draft when VALIDATION itself
+            // failed — a write that fails AFTER validation passed (the two
+            // catches above) left that same clone sitting in the one-draft
+            // slot forever, holding nothing. `discard()` is self-guarding
+            // (a no-op once `content_version !== 0`), so calling it here
+            // unconditionally — including on the SUCCESS path, where it
+            // correctly does nothing — is safe.
+            if ($request->openedNewDraftThisRequest()) {
+                app(DiscardUnusedDraftRevision::class)->discard($draftId);
+            }
         }
 
         return (new CatalogueRoleResource($role))->response()->setStatusCode(Response::HTTP_CREATED);
