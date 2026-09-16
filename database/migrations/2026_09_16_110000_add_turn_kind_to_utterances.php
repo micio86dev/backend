@@ -21,9 +21,38 @@ use Illuminate\Support\Facades\Schema;
  * classifier would silently undercount without one. NULL always satisfies a
  * CHECK, so a `candidate`-speaker row (never classified) needs no
  * exemption clause.
+ *
+ * Z15 (R4-turn-kind-check-lock, framework-catalogue-authoring, REQUIRED
+ * BEFORE ARCHIVE): a bare `ADD CONSTRAINT ... CHECK (...)` takes an ACCESS
+ * EXCLUSIVE lock on `utterances` for the DURATION of validating every
+ * existing row against it — blocking every concurrent read AND write on
+ * the highest-volume table in the interview path for however long that
+ * scan takes. Split into `NOT VALID` (adds the constraint definition under
+ * a brief lock, skipping the scan) followed by a separate
+ * `VALIDATE CONSTRAINT` (does the scan under a SHARE UPDATE EXCLUSIVE lock,
+ * which still permits concurrent reads and writes) — the standard Postgres
+ * zero-downtime pattern for adding a CHECK to an existing table.
+ *
+ * `public $withinTransaction = false` IS THE FIX, not the split alone (gga
+ * review finding, blocking): Laravel wraps every migration in ONE
+ * transaction by default, and Postgres DDL is transactional — inside a
+ * single transaction, `ADD COLUMN` already takes the ACCESS EXCLUSIVE lock,
+ * and it stays held for the `VALIDATE CONSTRAINT` scan too, since nothing
+ * commits until the whole migration does. The split only has its intended
+ * effect when each statement is allowed to commit on its own. This repo
+ * already names this exact trap:
+ * `2026_09_04_010000_add_provider_session_ref_to_utterances.php`'s own
+ * docblock. Running outside a transaction risks a partial migration on
+ * failure, accepted here knowingly: every existing row is NULL, so
+ * `VALIDATE CONSTRAINT` cannot fail.
  */
 return new class extends Migration
 {
+    /**
+     * @var bool
+     */
+    public $withinTransaction = false;
+
     public function up(): void
     {
         Schema::table('utterances', function (Blueprint $table): void {
@@ -32,8 +61,10 @@ return new class extends Migration
 
         DB::statement(
             "ALTER TABLE utterances
-             ADD CONSTRAINT utterances_turn_kind_check CHECK (turn_kind IN ('primary', 'follow_up'))"
+             ADD CONSTRAINT utterances_turn_kind_check CHECK (turn_kind IN ('primary', 'follow_up')) NOT VALID"
         );
+
+        DB::statement('ALTER TABLE utterances VALIDATE CONSTRAINT utterances_turn_kind_check');
     }
 
     public function down(): void
