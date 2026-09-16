@@ -37,6 +37,8 @@ final class PublishRevision
 
     /**
      * @return list<array{rule: string, subject: string, detail: string}>
+     *
+     * @scramble-return list<array{rule: string, subject: string, detail: string}>
      */
     public function violations(FrameworkCatalogRevision $revision): array
     {
@@ -57,6 +59,23 @@ final class PublishRevision
 
     /**
      * @return list<array{rule: string, subject: string, detail: string}>
+     *
+     * PR8b, 32b.5: `@scramble-return` here, not only on `violations()` above
+     * — this is the method `RevisionController::publish()` actually calls,
+     * and Scramble's static analysis was tracing straight into this
+     * method's OWN body: `$violations = [...$violations, ...
+     * $this->indicatorCountViolations(...)]` (repeated nine times inside
+     * `violations()`) was modelled as a nine-slot POSITIONAL TUPLE, one
+     * literal shape per concatenation, rather than the flat homogeneous
+     * list it actually is — the exported `openapi.json` 422 response for
+     * `POST /catalogue/revisions/publish` carried that nine-`prefixItems`
+     * shape verbatim, and the backoffice's `publish-violations.ts` hand-typed
+     * around it rather than consume the generated client. Declaring the
+     * return type explicitly, on both the method whose body does the
+     * concatenating and the method whose call site is what the controller
+     * actually returns, is what stops Scramble from re-deriving either.
+     *
+     * @scramble-return list<array{rule: string, subject: string, detail: string}>
      */
     public function publish(FrameworkCatalogRevision $revision, User $actor): array
     {

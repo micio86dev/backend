@@ -69,6 +69,25 @@ trait BumpsRevisionContentVersion
             return;
         }
 
+        self::bumpRevisionContentVersionForRevision($revisionId);
+    }
+
+    /**
+     * PUBLIC (framework-catalogue-authoring PR8b): a pivot-only write —
+     * `Role::competencies()->sync()`, which attaches/detaches/reorders
+     * `framework_role_competency` rows directly — writes through the pivot
+     * table, never through `Role::save()`/`Role::delete()`, so it fires
+     * neither the `saved` nor the `deleted` listener registered above and
+     * the bump never happens on its own. A caller that mutates the pivot
+     * without also saving/deleting the owning model calls this directly,
+     * inside the SAME `withRevisionLockedForWrite()` transaction as the
+     * sync, to preserve the exact "only a genuine write through the
+     * catalogue's own CRUD surface bumps this counter" invariant
+     * `DiscardUnusedDraftRevision` depends on — see this trait's own class
+     * docblock.
+     */
+    public static function bumpRevisionContentVersionForRevision(int $revisionId): void
+    {
         DB::table('framework_catalog_revisions')
             ->where('id', $revisionId)
             ->where('state', 'draft')

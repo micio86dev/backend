@@ -231,6 +231,10 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('catalogue')->grou
     Route::post('roles', [CatalogueRoleController::class, 'store']);
     Route::patch('roles/{role}', [CatalogueRoleController::class, 'update'])->whereNumber('role');
     Route::delete('roles/{role}', [CatalogueRoleController::class, 'destroy'])->whereNumber('role');
+    // framework-catalogue-authoring PR8b: attach/detach/reorder a role's
+    // competency set in one idempotent write — see `RoleController::
+    // updateCompetencies()`'s own docblock.
+    Route::put('roles/{role}/competencies', [CatalogueRoleController::class, 'updateCompetencies'])->whereNumber('role');
 
     Route::get('competencies', [CatalogueCompetencyController::class, 'index']);
     Route::post('competencies', [CatalogueCompetencyController::class, 'store']);

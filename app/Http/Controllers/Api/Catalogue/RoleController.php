@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\Catalogue;
 use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreRoleRequest;
+use App\Http\Requests\Catalogue\UpdateRoleCompetenciesRequest;
 use App\Http\Requests\Catalogue\UpdateRoleRequest;
 use App\Http\Resources\Catalogue\CatalogueRoleResource;
 use App\Models\FrameworkCatalogRevision;
@@ -46,7 +47,11 @@ class RoleController extends Controller
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
         $draft = FrameworkCatalogRevision::openDraft();
-        $roles = $draft === null ? collect() : Role::where('revision_id', $draft->id)->orderBy('code')->get();
+        // Eager-loaded (framework-catalogue-authoring PR8b, gga review
+        // finding): `CatalogueRoleResource::competency_ids` reads this
+        // relation for every role it serializes — unloaded, that is one
+        // query per role.
+        $roles = $draft === null ? collect() : Role::with('competencies')->where('revision_id', $draft->id)->orderBy('code')->get();
 
         return CatalogueRoleResource::collection($roles);
     }
@@ -148,6 +153,75 @@ class RoleController extends Controller
                 }
 
                 return $saved;
+            });
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
+
+        return (new CatalogueRoleResource($target->fresh()))->response();
+    }
+
+    /**
+     * `PUT /catalogue/roles/{role}/competencies` (framework-catalogue-authoring
+     * PR8b). Replaces the role's ENTIRE competency set in one locked write —
+     * attach, detach and reorder are the same `sync()` call against a pivot
+     * that already carries a `position` column, never three endpoints. Never
+     * auto-opens a draft — see `UpdateRoleCompetenciesRequest`'s own
+     * no-auto-open rationale, identical to `update()` above.
+     */
+    public function updateCompetencies(UpdateRoleCompetenciesRequest $request, int $role): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $draft = FrameworkCatalogRevision::openDraft();
+        $target = $draft === null
+            ? abort(Response::HTTP_NOT_FOUND)
+            : Role::where('revision_id', $draft->id)->findOrFail($role);
+
+        /** @var list<int> $rawIds */
+        $rawIds = $request->validated('competency_ids');
+        $competencyIds = array_map('intval', $rawIds);
+
+        try {
+            Role::withRevisionLockedForWrite($draft->id, function () use ($target, $draft, $actor, $competencyIds): void {
+                $before = array_map('intval', array_values($target->competencies()->pluck('framework_competencies.id')->all()));
+
+                $positioned = [];
+                foreach ($competencyIds as $position => $competencyId) {
+                    $positioned[$competencyId] = ['position' => $position];
+                }
+
+                // `withPivotValue('revision_id', ...)` on `Role::competencies()`
+                // (design D1, PR4b K1) already names THIS role's own revision
+                // on every write through this relation — never passed
+                // explicitly here.
+                $target->competencies()->sync($positioned);
+
+                // Guarded by the SAME "did anything actually change" check
+                // as the audit write below (gga review finding): an
+                // unchanged PUT re-submitting the current set is not a
+                // mutation, and bumping the counter regardless would make
+                // `DiscardUnusedDraftRevision` treat a genuinely untouched
+                // draft as written into. `sync()` writes through the pivot
+                // directly and fires no `saved`/`deleted` event on `Role`
+                // itself, so the bump is explicit whenever it does apply —
+                // see `BumpsRevisionContentVersion::
+                // bumpRevisionContentVersionForRevision()`'s own docblock.
+                if ($before !== $competencyIds) {
+                    Role::bumpRevisionContentVersionForRevision($draft->id);
+
+                    $this->auditWriter->record(
+                        actorId: $actor->id,
+                        action: 'catalogue.role.competencies.updated',
+                        subjectType: 'Role',
+                        subjectId: $target->id,
+                        before: ['competency_ids' => $before, 'revision_id' => $draft->id],
+                        after: ['competency_ids' => $competencyIds, 'revision_id' => $draft->id],
+                    );
+                }
             });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);

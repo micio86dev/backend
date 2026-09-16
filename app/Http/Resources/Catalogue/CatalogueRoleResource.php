@@ -23,9 +23,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 class CatalogueRoleResource extends JsonResource
 {
     /**
-     * @return array{id: int, code: string, revision_id: int, name: array<string, string>, responsibilities: array<string, string>}
+     * @return array{id: int, code: string, revision_id: int, name: array<string, string>, responsibilities: array<string, string>, competency_ids: list<int>}
      *
-     * @scramble-return array{id: int, code: string, revision_id: int, name: array<string, string>, responsibilities: array<string, string>}
+     * @scramble-return array{id: int, code: string, revision_id: int, name: array<string, string>, responsibilities: array<string, string>, competency_ids: list<int>}
      */
     public function toArray(Request $request): array
     {
@@ -38,6 +38,15 @@ class CatalogueRoleResource extends JsonResource
             'revision_id' => (int) $role->revision_id,
             'name' => $role->getTranslations('name'),
             'responsibilities' => $role->getTranslations('responsibilities'),
+            // Ordered by pivot `position` (`Role::competencies()`'s own
+            // relation definition) — framework-catalogue-authoring PR8b, so
+            // the backoffice can render and re-PUT a role's competency set.
+            // The RELATION property, not `competencies()->pluck(...)` (gga
+            // review finding): the property reuses an eager-loaded
+            // collection with zero extra queries when the caller preloaded
+            // it (`RoleController::index()`), while a fresh query-builder
+            // call issues one query per role regardless.
+            'competency_ids' => array_map('intval', array_values($role->competencies->pluck('id')->all())),
         ];
     }
 }
