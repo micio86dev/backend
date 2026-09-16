@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Concerns;
 
+use App\Enums\RevisionWriteConflictCause;
 use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Models\FrameworkCatalogRevision;
 use Closure;
@@ -135,9 +136,23 @@ trait BumpsRevisionContentVersion
         return DB::transaction(function () use ($revisionId, $write): mixed {
             $revision = FrameworkCatalogRevision::whereKey($revisionId)->lockForUpdate()->first();
 
-            if ($revision === null || $revision->state !== 'draft') {
+            // Z13 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+            // these are two DISTINCT causes — the row deleted entirely
+            // (discarded) versus the row still existing but no longer
+            // `draft` (published) — see `RevisionWriteConflictCause`'s own
+            // docblock. Named at the throw site, where the distinction is
+            // actually observed, rather than guessed downstream.
+            if ($revision === null) {
                 throw new RevisionPublishedDuringWriteException(
-                    "catalogue revision [{$revisionId}] is no longer an open draft — a concurrent publish or discard already completed."
+                    "catalogue revision [{$revisionId}] no longer exists — a concurrent discard already completed.",
+                    RevisionWriteConflictCause::Discarded,
+                );
+            }
+
+            if ($revision->state !== 'draft') {
+                throw new RevisionPublishedDuringWriteException(
+                    "catalogue revision [{$revisionId}] is no longer an open draft — a concurrent publish already completed.",
+                    RevisionWriteConflictCause::Published,
                 );
             }
 

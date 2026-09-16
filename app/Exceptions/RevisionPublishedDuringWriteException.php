@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exceptions;
 
+use App\Enums\RevisionWriteConflictCause;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,12 +36,38 @@ use Illuminate\Http\Request;
  * reached only through an uncaught throw deep inside
  * `BumpsRevisionContentVersion::withRevisionLockedForWrite()` is invisible
  * to that static analysis.
+ *
+ * Z13 (R2-misleading-exception-name, REQUIRED BEFORE ARCHIVE): the class
+ * NAME and its default `errorCode()` name only ONE of the two causes this
+ * exception's own docblock (above) already discloses — a concurrent
+ * DISCARD deleting the draft entirely throws the SAME
+ * `revision_published_during_write` code as a concurrent PUBLISH, even
+ * though nothing was "published". `Cause` distinguishes them; the CLASS
+ * name is kept (renaming it would touch every catalogue controller's catch
+ * block and the exported OpenAPI 409 shape for no behavioral gain), but the
+ * machine-facing `errorCode()` and message now say which actually
+ * happened.
  */
 class RevisionPublishedDuringWriteException extends Exception
 {
+    public function __construct(
+        string $message = '',
+        private readonly RevisionWriteConflictCause $cause = RevisionWriteConflictCause::Published,
+    ) {
+        parent::__construct($message);
+    }
+
+    public function cause(): RevisionWriteConflictCause
+    {
+        return $this->cause;
+    }
+
     public function errorCode(): string
     {
-        return 'revision_published_during_write';
+        return match ($this->cause) {
+            RevisionWriteConflictCause::Published => 'revision_published_during_write',
+            RevisionWriteConflictCause::Discarded => 'revision_discarded_during_write',
+        };
     }
 
     /**
@@ -48,9 +75,14 @@ class RevisionPublishedDuringWriteException extends Exception
      */
     public function render(Request $request): JsonResponse
     {
+        $defaultMessage = match ($this->cause) {
+            RevisionWriteConflictCause::Published => 'The catalogue revision was published while this write was in progress. Reload the draft and retry.',
+            RevisionWriteConflictCause::Discarded => 'The catalogue revision was discarded while this write was in progress. Reload the draft and retry.',
+        };
+
         return response()->json([
             'error' => $this->errorCode(),
-            'message' => $this->getMessage() ?: 'The catalogue revision changed state while this write was in progress. Reload the draft and retry.',
+            'message' => $this->getMessage() ?: $defaultMessage,
         ], 409);
     }
 }
