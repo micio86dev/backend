@@ -8,6 +8,7 @@ use App\Http\Requests\Catalogue\Concerns\ResolvesOpenDraftRevision;
 use App\Http\Requests\Catalogue\Concerns\ValidatesLocaleMaps;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Catalogue\CatalogueRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -54,7 +55,7 @@ class StoreRoleRequest extends FormRequest
                 // never reaches this bare count check meaningfully, but a
                 // wholly new sixth code does.
                 function (string $attribute, mixed $value, \Closure $fail) use ($existingRoleCount): void {
-                    if ($existingRoleCount >= 5) {
+                    if ($existingRoleCount >= CatalogueRules::MAX_ROLES) {
                         $fail('framework_roles_closed_set');
                     }
                 },

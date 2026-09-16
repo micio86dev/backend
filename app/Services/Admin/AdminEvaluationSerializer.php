@@ -232,13 +232,13 @@ final class AdminEvaluationSerializer
     {
         $project = $participant->project;
 
-        $roleCode = $project === null ? $participant->role_code : ($project->role_code ?? $participant->role_code);
-
-        if ($roleCode === null) {
+        if ($project === null) {
             return [];
         }
 
-        if ($project === null) {
+        $roleCode = $project->role_code ?? $participant->role_code;
+
+        if ($roleCode === null) {
             return [];
         }
 

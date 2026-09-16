@@ -4,23 +4,23 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Models\FrameworkCatalogRevision;
 use App\Models\Role;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Factory for Role (C3 Framework Catalog global model).
  *
  * Used in scoring tests (PR2) to create BARS indicator relationships.
  *
- * `revision_id` defaults to the baseline (framework-catalogue-authoring
- * PR3): `revision_id` no longer carries a DB-level DEFAULT
- * (2026_09_15_201435_drop_catalogue_revision_defaults) now that every
- * writer must name a revision explicitly — this factory is that explicit
- * name for the dozens of pre-existing call sites across the suite that
- * create a `Role` with no opinion on which revision it belongs to. A caller
- * that DOES care overrides it exactly as before
+ * `revision_id` is deliberately NOT defaulted here (framework-catalogue-
+ * authoring PR3b, H10): `Role::booted()`'s own `creating` listener already
+ * defaults it to the baseline whenever it is still null, for EVERY creation
+ * path — factory or a bare `Role::create([...])` alike — because it fires on
+ * the model, not on this factory. A second, independent default here was a
+ * duplicate of that same fallback, doing nothing this factory's callers
+ * could observe (the model listener runs regardless, and only when the
+ * attribute is still unset). A caller that DOES care about the revision
+ * still overrides it exactly as before
  * (`Role::factory()->create(['revision_id' => $x])`).
  *
  * @extends Factory<Role>
@@ -36,21 +36,10 @@ class RoleFactory extends Factory
     {
         $code = strtoupper($this->faker->unique()->lexify('???'));
 
-        $attributes = [
+        return [
             'code' => $code,
             'name' => ['en' => $this->faker->words(3, true)],
             'responsibilities' => ['en' => $this->faker->sentence()],
         ];
-
-        // Guarded, not a bare closure: `BaselineRevisionMigrationTest` calls
-        // this factory against the deliberately-rolled-back PRE-revision
-        // schema, where neither the column nor `framework_catalog_revisions`
-        // exists yet — querying for a value to put in a column that is not
-        // there is itself the failure, not merely a wrong value.
-        if (Schema::hasColumn('framework_roles', 'revision_id')) {
-            $attributes['revision_id'] = fn () => FrameworkCatalogRevision::where('is_baseline', true)->value('id');
-        }
-
-        return $attributes;
     }
 }

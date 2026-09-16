@@ -5,17 +5,17 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\Competency;
-use App\Models\FrameworkCatalogRevision;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Factory for Competency (global model — no organization_id).
  *
  * Used in C4 tests for FK safeguard and competency-subset validation.
  *
- * `revision_id` defaults to the baseline — see `RoleFactory`'s identical
- * note (framework-catalogue-authoring PR3, DEFAULT removal).
+ * `revision_id` is deliberately NOT defaulted here — see `RoleFactory`'s
+ * identical note (framework-catalogue-authoring PR3b, H10):
+ * `Competency::booted()`'s own `creating` listener is the single mechanism
+ * that defaults it to the baseline, for every creation path.
  *
  * @extends Factory<Competency>
  */
@@ -28,20 +28,18 @@ class CompetencyFactory extends Factory
      */
     public function definition(): array
     {
-        $attributes = [
+        return [
             'code' => strtoupper($this->faker->unique()->lexify('???')),
             'type' => 'standard',
-            // spatie/laravel-translatable — set JSON directly
-            'name' => json_encode(['en' => $this->faker->word()]),
-            'definition' => json_encode(['en' => $this->faker->sentence()]),
+            // Bare arrays, not json_encode() (gga review finding: this and
+            // `RoleFactory` modelled the SAME `HasTranslations` attribute
+            // shape two different ways) — `HasTranslations::setAttribute()`
+            // detects an array and encodes it itself; a caller pre-encoding
+            // does not fail, it just bypasses that trait's own path for no
+            // benefit.
+            'name' => ['en' => $this->faker->word()],
+            'definition' => ['en' => $this->faker->sentence()],
         ];
-
-        // Guarded — see the identical note in `RoleFactory::definition()`.
-        if (Schema::hasColumn('framework_competencies', 'revision_id')) {
-            $attributes['revision_id'] = fn () => FrameworkCatalogRevision::where('is_baseline', true)->value('id');
-        }
-
-        return $attributes;
     }
 
     /**

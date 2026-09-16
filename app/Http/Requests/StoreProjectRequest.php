@@ -7,7 +7,6 @@ namespace App\Http\Requests;
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\FrameworkVersion;
 use App\Models\Project;
-use App\Models\Role;
 use App\Models\User;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use Illuminate\Foundation\Http\FormRequest;

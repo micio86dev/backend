@@ -215,7 +215,7 @@ class FrameworkCatalogSeeder extends Seeder
         // This is a vendored copy so the API can carry its own seed data, and
         // the wrapper's Cross-Stack Consistency job fails if the two diverge —
         // the same treatment openapi.json already gets, for the same reason.
-        $frameworkBase = env('FRAMEWORK_CATALOG_PATH') ?: database_path('framework');
+        $frameworkBase = config('framework_catalog.catalog_path') ?: database_path('framework');
         $this->rolesFile = $rolesFile ?? "{$frameworkBase}/roles.json";
         $this->competenciesFile = $competenciesFile ?? "{$frameworkBase}/competencies.json";
         $this->barsDir = $barsDir ?? "{$frameworkBase}/bars";
@@ -641,13 +641,17 @@ class FrameworkCatalogSeeder extends Seeder
         //     call site. That requires (a) the role has a BARS file, (b) the
         //     competency appears in that file, and (c) the competency is in
         //     the CURRENT JSON-derived assignment list — see the two
-        //     `continue`s in the bars-indicator loop above. This is unaffected
-        //     by the write gate: resolveOrRecordTranslationGap() runs
-        //     unconditionally (not inside `if (! $writesBlocked)`), so a
-        //     blocked run never drops a pair from this count either — both
-        //     counters and the per-pair write are always computed from the
-        //     source JSON, never from what was or wasn't allowed to be
-        //     persisted this run.
+        //     `continue`s in the bars-indicator loop above. The COUNT is
+        //     unaffected by the write gate: `resolveOrRecordTranslationGap()`
+        //     is CALLED unconditionally (not inside `if (! $writesBlocked)`),
+        //     so a blocked run never drops a pair from this count either —
+        //     both counters are always computed from the source JSON. Its
+        //     OWN internal writes are NOT uniformly unconditional, though
+        //     (corrected post-PR2-review, see the method's own docblock):
+        //     recording a still-pending gap describes the JSON regardless of
+        //     `$writesBlocked`, but RESOLVING one (`pending_authoring` ->
+        //     `resolved`) is a claim the DATABASE now satisfies the rule,
+        //     which a blocked run has not made true — that half is gated.
         //   - Excluded: a role with no BARS file at all (tracked separately as
         //     `role_no_bars`) and an assigned competency absent from a role's
         //     BARS file (tracked separately as `competency_no_bars`). Neither
@@ -831,17 +835,22 @@ class FrameworkCatalogSeeder extends Seeder
      * Per-pair `missing_translation` gap resolution (design D5), evaluated at
      * role×competency PAIR granularity: ALL 12 strings across the pair's 3
      * indicators must carry a non-empty `it` value before the pair counts as
-     * translated. Computed from the (already-normalized, already-validated)
-     * DTO — i.e. from the SOURCE JSON, never DB state — so this proceeds
+     * translated. `$itComplete` is computed from the (already-normalized,
+     * already-validated) DTO — i.e. from the SOURCE JSON, never DB state —
      * identically whether or not catalogue-content writes are blocked (D2:
-     * `framework_gaps` is exempt from the gate).
+     * `framework_gaps` is exempt from the gate). The two WRITES below are
+     * NOT both unconditional, though (post-PR2-review correction — see the
+     * class docblock, "Gap resolution reflects DATABASE state, not the
+     * JSON"): recording a still-pending gap describes the JSON, so it always
+     * runs; resolving one is a claim the DATABASE now satisfies the rule, so
+     * it runs only when `$writesBlocked` is false.
      *
      * @param  list<IndicatorDTO>  $indicators
      * @return bool Whether this pair's `it` locale is fully translated (12 of 12 strings).
      *              The caller uses this to accumulate the global-row denominator (step 5)
      *              instead of re-deriving it from framework_gaps rows afterwards. Returned
-     *              regardless of `$writesBlocked` — the counter itself is harmless; only the
-     *              WRITE that claims the pair is resolved is gated (see below).
+     *              regardless of `$writesBlocked` — the boolean itself is harmless; only the
+     *              RESOLUTION write below is gated.
      */
     private function resolveOrRecordTranslationGap(string $roleCode, string $competencyCode, array $indicators, bool $writesBlocked): bool
     {

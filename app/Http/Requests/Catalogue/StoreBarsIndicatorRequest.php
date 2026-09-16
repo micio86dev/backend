@@ -8,6 +8,7 @@ use App\Http\Requests\Catalogue\Concerns\ResolvesOpenDraftRevision;
 use App\Http\Requests\Catalogue\Concerns\ValidatesLocaleMaps;
 use App\Models\BarsIndicator;
 use App\Models\User;
+use App\Support\Catalogue\CatalogueRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -57,9 +58,13 @@ class StoreBarsIndicatorRequest extends FormRequest
                     $query = BarsIndicator::where('revision_id', $draftId)
                         ->where('competency_id', (int) $value);
 
-                    $roleId === null ? $query->whereNull('role_id') : $query->where('role_id', (int) $roleId);
+                    if ($roleId === null) {
+                        $query->whereNull('role_id');
+                    } else {
+                        $query->where('role_id', (int) $roleId);
+                    }
 
-                    if ($query->count() >= 3) {
+                    if ($query->count() >= CatalogueRules::INDICATORS_PER_PAIR) {
                         $fail('bars_indicator_pair_full');
                     }
                 },

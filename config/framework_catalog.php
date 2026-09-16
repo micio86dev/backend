@@ -81,4 +81,21 @@ return [
 
     'specialist_signed_off_at' => env('FRAMEWORK_CATALOG_SPECIALIST_SIGNED_OFF_AT'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Catalog source path override
+    |--------------------------------------------------------------------------
+    |
+    | `FrameworkCatalogSeeder` reads its vendored `roles.json`/
+    | `competencies.json`/`bars/` tree from `database/framework` by default.
+    | This override exists for a deployment layout where that tree lives
+    | somewhere else. Read here, never via a bare `env()` call in the
+    | seeder itself (gga review finding): with a cached config, Laravel
+    | skips loading `.env` entirely, so a direct `env()` call outside
+    | `config/` silently returns `null` — exactly the failure mode this
+    | key exists to avoid.
+    |
+    */
+    'catalog_path' => env('FRAMEWORK_CATALOG_PATH'),
+
 ];

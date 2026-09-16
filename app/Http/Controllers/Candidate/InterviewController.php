@@ -15,7 +15,6 @@ use App\Exceptions\ProviderException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
-use App\Jobs\FinalizeInterview;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\InterviewSession;
@@ -159,6 +158,21 @@ class InterviewController extends Controller
         // an uncaught 500 on a live candidate request.
         $revisionId = $this->revisionResolver->tryForProject($project);
 
+        // Resolved ONCE, here, and reused below (framework-catalogue-
+        // authoring PR3b, H11 dead-code finding, two rounds): the opening
+        // greeting, `composePromptForCompetency()`'s own competency
+        // resolution, AND the authored-questions lookup all need this SAME
+        // `(code, revisionId)` row — three independent lookups with
+        // identical inputs collapsed into one. `$nextCompetencyRow` is
+        // reused as `$openingCompetency` below and passed directly into
+        // `composePromptForCompetency()` rather than re-queried by either.
+        $nextCompetencyRow = Competency::where('code', $nextCompetency['competency_code'])
+            ->where('revision_id', $revisionId)
+            ->first();
+        $primaryQuestions = $nextCompetencyRow === null
+            ? []
+            : $this->authoredQuestionsFor($project, $nextCompetencyRow->id);
+
         // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
         //
         // Failure semantics depend on whether this is a RESUME or a NEW session:
@@ -201,6 +215,8 @@ class InterviewController extends Controller
             $project,
             $nextCompetency['competency_code'],
             $revisionId,
+            $nextCompetencyRow,
+            $primaryQuestions,
             $advancePhrase,
         );
         if ($compositionResult instanceof JsonResponse) {
@@ -292,9 +308,10 @@ class InterviewController extends Controller
             $isFirst => 'first',
             default => 'next',
         };
-        $openingCompetency = Competency::where('code', $nextCompetency['competency_code'])
-            ->where('revision_id', $revisionId)
-            ->first();
+        // Reused from the hoisted lookup above (framework-catalogue-
+        // authoring PR3b, H11) — the SAME row `composePromptForCompetency()`
+        // resolves via the identical `(code, revisionId)` pair.
+        $openingCompetency = $nextCompetencyRow;
         $competencyName = $openingCompetency?->getTranslation('name', $project->language)
             ?? $nextCompetency['competency_code'];
 
@@ -311,9 +328,7 @@ class InterviewController extends Controller
         // others. The composer decides what to do per variant: `resume`
         // ignores it entirely, since that variant continues an episode already
         // under way.
-        $authoredOpening = $openingCompetency === null
-            ? null
-            : ($this->authoredQuestionsFor($project, $openingCompetency->id)[0] ?? null);
+        $authoredOpening = $primaryQuestions[0] ?? null;
 
         $openingText = $this->openingComposer
             ->compose($openingVariant, $competencyName, $project->language, $authoredOpening)
@@ -693,18 +708,30 @@ class InterviewController extends Controller
      *
      * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
      * RV-3: provider field client confirmation required before live deploy.
+     *
+     * `Project $project` is non-nullable (framework-catalogue-authoring
+     * PR3b, H11 dead-code finding): its only call site (`start()`) already
+     * narrowed `$project` to non-null before calling this method, so the
+     * former `?Project` parameter and its `=== null` branch were
+     * unreachable — never exercised by any test, and never reachable by any
+     * real request.
+     *
+     * `$competency` is resolved ONCE by the caller and passed in (gga review
+     * finding on the H11 hoist, second pass): `start()` already resolves
+     * this SAME `(code, revisionId)` pair as `$nextCompetencyRow` to compute
+     * `$authoredQuestions` — this method used to re-resolve the identical
+     * row a second time for the same request.
+     *
+     * @param  list<string>  $authoredQuestions
      */
     private function composePromptForCompetency(
-        ?Project $project,
+        Project $project,
         string $competencyCode,
         ?int $revisionId,
+        ?Competency $competency,
+        array $authoredQuestions,
         ?string $advancePhrase = null,
     ): ComposedPrompt|JsonResponse {
-        if ($project === null) {
-            // Participant has no associated project — treat as composition failure.
-            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
         if ($revisionId === null) {
             // The project's own pin did not resolve (`CatalogueRevisionResolver::
             // tryForProject()` — framework-catalogue-authoring PR3b, H1). Treated
@@ -731,12 +758,9 @@ class InterviewController extends Controller
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Resolve competency_id from competency_code, same revision scoping.
-        $competency = Competency::where('code', $competencyCode)
-            ->where('revision_id', $revisionId)
-            ->first();
-
         if ($competency === null) {
+            // Resolved by the caller from the SAME (code, revisionId) pair;
+            // null means "not found in catalog" there too.
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -754,11 +778,13 @@ class InterviewController extends Controller
                 // the prompt told it to utter a placeholder it had never been
                 // given, so no question ever ended by itself.
                 advancePhrase: $advancePhrase,
-                // What the OPERATOR wrote for this competency. Loaded here
-                // because this is the one place that already knows both the
-                // project and the competency; the composer stays a pure
-                // function of what it is handed.
-                authoredQuestions: $this->authoredQuestionsFor($project, $competency->id),
+                // What the OPERATOR wrote for this competency — the CALLER's
+                // own `$authoredQuestions` (framework-catalogue-authoring
+                // PR3b, H11): hoisted to `start()`, computed once against
+                // the SAME (project, competency) pair this method resolves
+                // via `$competencyCode`/`$revisionId`, rather than queried a
+                // second time here.
+                authoredQuestions: $authoredQuestions,
                 revisionId: $revisionId,
             );
         } catch (AnchorTranslationMissingException) {

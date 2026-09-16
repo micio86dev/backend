@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  *      already governs it correctly: populate once while empty, zero
  *      writes once it carries content. A blanket trigger duplicating that
  *      exact rule at the DB layer was tried and rejected during this PR —
- *      see the CI note below.
+ *      see fact 2 below for the measured reason.
  *   2. Across this suite, the baseline revision (`revision_id = 1` in every
  *      test database) is also the DEFAULT landing spot for every
  *      `Role::factory()`/`Competency::factory()` call that does not care

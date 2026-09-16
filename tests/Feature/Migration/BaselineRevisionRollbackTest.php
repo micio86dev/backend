@@ -38,7 +38,7 @@ function rollbackTestStepsToRollBack(): int
         ->count();
 }
 
-test('rolling back the 5 PR1 migrations restores the pre-revision shape with baseline rows intact', function (): void {
+test('rolling back every migration at or after the revision boundary restores the pre-revision shape with baseline rows intact', function (): void {
     // Capture a baseline row's content BEFORE rollback, to prove `down()`
     // never touches catalogue content — only the revision_id column and the
     // revisions infrastructure.

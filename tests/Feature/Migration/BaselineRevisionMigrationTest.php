@@ -117,9 +117,11 @@ test('an evaluation scored before the revision migration resolves byte-identical
     $indicatorId = $indicator->id;
     $evaluationId = $evaluation->id;
 
-    // Migrate forward: this PR's 5 migrations run, including the baseline
-    // backfill. NO row is copied — the SAME physical BarsIndicator row gains
-    // a revision_id.
+    // Migrate forward: every migration at or after the boundary re-applies,
+    // including the baseline backfill (PR1's original 5, plus whatever
+    // later PRs added on top — see the class docblock's R3-003 correction).
+    // NO row is copied — the SAME physical BarsIndicator row gains a
+    // revision_id.
     Artisan::call('migrate', ['--force' => true]);
 
     // The migrator's own PDO connection is separate from the test's; force a
