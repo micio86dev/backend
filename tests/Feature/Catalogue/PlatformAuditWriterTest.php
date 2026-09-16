@@ -14,12 +14,16 @@ declare(strict_types=1);
 
 use App\Models\AuditLog;
 use App\Models\FrameworkCatalogRevision;
+use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 function pawSuperadminUser(): User
 {
@@ -189,6 +193,19 @@ test('every catalogue-write resource is audited: role, indicator, default questi
     )->toBeFalse();
 });
 
+/**
+ * Z17 (R3-publish-audit-vacuous, REQUIRED BEFORE ARCHIVE): the original
+ * test wrapped its only assertions in `if ($response->status() === 200)`,
+ * so a publish sweep refusal (or a later change that makes one more
+ * likely) would make this test pass VACUOUSLY — green in CI, having
+ * proven nothing. `PAWPUB1` is a harmless UNASSIGNED standard competency —
+ * no pivot row, no indicators — which none of `PublishRevision::
+ * violations()`'s checks (indicator counts, empty pairs, potential-in-
+ * pivot, role-scoped/role-less indicators, cross-role duplicates) ever
+ * examine, so the cloned baseline plus this one addition is ALWAYS
+ * publishable; `assertStatus(200)` makes that a hard requirement of the
+ * test itself, not an assumption its own assertions silently depended on.
+ */
 test('publishing a revision produces exactly one audit_logs row naming the actor and the revision', function (): void {
     $user = pawSuperadminUser();
     $token = pawSuperadminToken($user);
@@ -197,23 +214,32 @@ test('publishing a revision produces exactly one audit_logs row naming the actor
     $draft = FrameworkCatalogRevision::openDraft();
     expect($draft)->not->toBeNull();
 
-    // The sweep may still refuse (an incomplete draft) — this test only
-    // proves the audit row when publish actually succeeds, so build a
-    // publishable draft is out of scope; assert on whichever outcome the
-    // real endpoint returns and only check the audit row when it published.
     $response = test()->withToken($token)->postJson('/api/catalogue/revisions/publish');
+    $response->assertStatus(200);
 
-    if ($response->status() === 200) {
-        $row = DB::table('audit_logs')
-            ->where('subject_type', 'FrameworkCatalogRevision')
-            ->where('subject_id', $draft->id)
-            ->where('action', 'revision.published')
-            ->get();
+    $row = DB::table('audit_logs')
+        ->where('subject_type', 'FrameworkCatalogRevision')
+        ->where('subject_id', $draft->id)
+        ->where('action', 'revision.published')
+        ->get();
 
-        expect($row)->toHaveCount(1);
-        expect($row->first()->organization_id)->toBeNull();
-        expect($row->first()->actor_id)->toBe($user->id);
-    }
+    expect($row)->toHaveCount(1);
+
+    $entry = $row->first();
+    expect($entry->organization_id)->toBeNull();
+    expect($entry->actor_id)->toBe($user->id);
+    expect($entry->before)->toBeNull();
+
+    // The exact payload PublishRevision::publish() records (design D13) —
+    // never merely "an audit row exists", the fields that make it useful.
+    $after = json_decode((string) $entry->after, true, 512, JSON_THROW_ON_ERROR);
+    expect($after['revision_id'])->toBe($draft->id);
+    expect($after)->toHaveKey('label');
+    expect($after)->toHaveKey('published_at');
+
+    // The revision itself genuinely transitioned — the audit row is not
+    // merely a side effect of a request that changed nothing.
+    expect($draft->fresh()->state)->toBe('published');
 });
 
 test('a tenant-scoped AuditLog read never returns a platform (NULL-org) row', function (): void {
@@ -240,22 +266,66 @@ test('a tenant-scoped AuditLog read never returns a platform (NULL-org) row', fu
     expect($tenantScoped)->toBeEmpty();
 });
 
+/**
+ * Z17 (R3-dashboard-feed-weak, REQUIRED BEFORE ARCHIVE): a bare
+ * `assertStatus(200)` also passes if the feed silently returned the wrong
+ * content, or nothing at all — it proves the endpoint did not 500, not
+ * that it is genuinely unaffected. Asserts the feed's actual CONTENT: the
+ * tenant's own participant is present, byte-for-byte identifiable, and the
+ * platform catalogue write (a DIFFERENT table, `audit_logs`, that
+ * `DashboardActivityResource`'s own `Participant`-only feed never reads)
+ * contributes no row and no leak — exactly one item, this tenant's own.
+ */
 test('the dashboard activity feed is unaffected by a platform catalogue audit write', function (): void {
     $org = Organization::factory()->create();
-    app(TenantResolver::class)->setOrgId($org->id);
-    app(TenantResolver::class)->setBypass(false);
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
 
+    app(PermissionRegistrar::class)->setPermissionsTeamId($org->id);
     $adminUser = User::factory()->create(['organization_id' => $org->id]);
-    $adminToken = auth('api')->login($adminUser);
+    $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'api', 'team_id' => $org->id]);
+    $adminUser->assignRole($adminRole);
+    // `JWTAuth::fromUser()`, NOT `auth('api')->login()`: this test
+    // authenticates TWO different identities (the admin and the
+    // superadmin) — `login()` sets the STATEFUL cached user on the shared
+    // 'api' guard instance, which a later `login()` call for the OTHER
+    // identity then overrides for every subsequent request in this SAME
+    // test, regardless of which Bearer token that request's own header
+    // carries. `fromUser()` mints an equivalent signed token WITHOUT
+    // touching guard state, so each HTTP call resolves its OWN token
+    // fresh, exactly as a real client would.
+    $adminToken = JWTAuth::fromUser($adminUser);
 
-    $project = Project::factory()->create();
-    Participant::factory()->create(['project_id' => $project->id, 'organization_id' => $org->id]);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create(['organization_id' => $org->id, 'framework_version_id' => $fv->id]);
+    $participant = Participant::factory()->create(['project_id' => $project->id, 'organization_id' => $org->id]);
 
     $superadmin = pawSuperadminUser();
-    $superadminToken = pawSuperadminToken($superadmin);
+    $superadminToken = JWTAuth::fromUser($superadmin);
     pawOpenDraftCompetency($superadminToken, 'PAWDASH1');
 
-    test()->withToken($adminToken)
-        ->getJson('/api/dashboard/activity')
-        ->assertStatus(200);
+    // BOTH calls are required (verified empirically, not assumed — neither
+    // one alone fixes it): `Tymon\JWTAuth\JWT` (`tymon.jwt`) is a SINGLETON
+    // that caches its OWN parsed `$this->token` the FIRST time any request
+    // resolves a user, and never re-parses it on a later request's
+    // `setRequest()` call — `unsetToken()` clears that cache.
+    // `JWTGuard::user()` SEPARATELY caches `$this->user` on the guard
+    // instance itself once resolved; `forgetGuards()` drops that cached
+    // guard so the next `auth('api')` resolution constructs a fresh one.
+    // Without BOTH, a test that authenticates a SECOND identity (here: the
+    // superadmin, for the catalogue write) keeps resolving the FIRST one
+    // (the admin) for every later request, regardless of which Bearer
+    // token that request's own header carries — this test genuinely
+    // authenticates two different actors, so it needs both resets between
+    // them.
+    app('tymon.jwt')->unsetToken();
+    app('auth')->forgetGuards();
+
+    $response = test()->withToken($adminToken)->getJson('/api/dashboard/activity');
+    $response->assertStatus(200);
+
+    $data = $response->json('data');
+    expect($data)->toHaveCount(1);
+    expect($data[0]['id'])->toBe($participant->id);
 });
