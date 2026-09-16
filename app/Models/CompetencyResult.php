@@ -111,6 +111,18 @@ class CompetencyResult extends TenantModel
      * the same `position` (should not happen, but ties order deterministic
      * regardless).
      *
+     * Z11 (R3-indicator-scores-default-order-aggregate, REQUIRED BEFORE
+     * ARCHIVE): a HAND-WRITTEN `groupBy()` aggregate query built directly on
+     * this relation (e.g. `indicatorScores()->groupBy(...)->selectRaw('avg(score)...')`)
+     * fails on Postgres — "column must appear in the GROUP BY clause" —
+     * because this method's own `orderBy` survives into it. Eloquent's OWN
+     * aggregate helpers (`->avg()`/`->sum()`/`->count()` called directly on
+     * the relation, and `withAvg()`/`withCount()`) already strip `orders`
+     * themselves before running and are NOT affected. Call `->reorder()`
+     * first in any HAND-WRITTEN grouped-aggregate path against this
+     * relation — see `CompetencyResultIndicatorScoresAggregateTest.php` for
+     * both the reproduced failure and the fix.
+     *
      * @return HasMany<IndicatorScore, $this>
      */
     public function indicatorScores(): HasMany
