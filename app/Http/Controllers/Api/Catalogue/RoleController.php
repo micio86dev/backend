@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
-use App\Actions\Catalogue\OpenDraftRevision;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreRoleRequest;
 use App\Http\Requests\Catalogue\UpdateRoleRequest;
@@ -40,7 +39,7 @@ class RoleController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::where('state', 'draft')->first();
+        $draft = FrameworkCatalogRevision::openDraft();
         $roles = $draft === null ? collect() : Role::where('revision_id', $draft->id)->orderBy('code')->get();
 
         return CatalogueRoleResource::collection($roles);
@@ -58,7 +57,11 @@ class RoleController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draftId = app(OpenDraftRevision::class)->open()->id;
+        // H5 (framework-catalogue-authoring PR3b): reuse the draft id this
+        // SAME request's `rules()` already resolved and validated against —
+        // never call `OpenDraftRevision::open()` again here. See
+        // `ResolvesOpenDraftRevision::openDraftRevisionId()`'s own docblock.
+        $draftId = $request->openDraftRevisionId();
 
         $validated = $request->validated();
         $validated['responsibilities'] ??= ['en' => ''];
@@ -79,7 +82,7 @@ class RoleController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::where('state', 'draft')->first();
+        $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
             : Role::where('revision_id', $draft->id)->findOrFail($role);
@@ -98,7 +101,7 @@ class RoleController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::where('state', 'draft')->first();
+        $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
             : Role::where('revision_id', $draft->id)->findOrFail($role);

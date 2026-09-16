@@ -36,6 +36,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *                                              annotation naming the wrong class is a real PHPStan error, not a
  *                                              cosmetic one.
  * @property int|null $published_by_user_id
+ * @property int|null $parent_revision_id the published revision this one was
+ *                                        cloned from (`OpenDraftRevision`) — `null` for the baseline and
+ *                                        for any revision that predates this column (gga review finding:
+ *                                        every other fillable column was annotated here except this one).
+ * @property int $content_version bumped by `BumpsRevisionContentVersion` on
+ *                                every Eloquent write to a catalogue-content model — read by
+ *                                `DiscardUnusedDraftRevision` to tell a genuinely untouched clone
+ *                                apart from one a concurrent request already wrote into. NOT
+ *                                `$fillable`: only ever changed via `increment()`.
  */
 class FrameworkCatalogRevision extends Model
 {
@@ -57,6 +66,13 @@ class FrameworkCatalogRevision extends Model
         return [
             'is_baseline' => 'boolean',
             'published_at' => 'immutable_datetime',
+            // gga review finding (low): DiscardUnusedDraftRevision compares
+            // this with a STRICT `!== 0` — correct today on PHP 8.5 +
+            // pdo_pgsql, which already hydrates an integer column as
+            // native `int`, but an uncast attribute is the failure mode
+            // where that guard silently degrades into a permanent no-op
+            // with no error anywhere the moment that stops being true.
+            'content_version' => 'integer',
         ];
     }
 
@@ -116,6 +132,22 @@ class FrameworkCatalogRevision extends Model
     public function parent(): BelongsTo
     {
         return $this->belongsTo(self::class, 'parent_revision_id');
+    }
+
+    /**
+     * THE open draft, if any (framework-catalogue-authoring PR3b, H10) —
+     * `null` when none is open. `framework_catalog_revisions_one_draft`
+     * guarantees at most one exists, which is exactly what makes a single
+     * static lookup meaningful rather than arbitrary. Replaces the identical
+     * `FrameworkCatalogRevision::where('state', 'draft')->first()` that was
+     * repeated verbatim across `Role`/`Competency`/`BarsIndicator`/
+     * `RevisionController` (`index`/`update`/`destroy`/`current`/`publish`)
+     * and `ResolvesOpenDraftRevision::existingOpenDraftRevisionId()` — one
+     * query, named once, never re-derived per call site.
+     */
+    public static function openDraft(): ?self
+    {
+        return static::where('state', 'draft')->first();
     }
 
     /**

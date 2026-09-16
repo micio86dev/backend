@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Catalogue\Concerns;
 
+use App\Actions\Catalogue\DiscardUnusedDraftRevision;
 use App\Actions\Catalogue\OpenDraftRevision;
 use App\Models\FrameworkCatalogRevision;
+use Illuminate\Contracts\Validation\Validator;
 
 /**
  * Every catalogue-write FormRequest scopes its rules (uniqueness, per-pair
@@ -26,18 +28,55 @@ trait ResolvesOpenDraftRevision
 {
     private ?int $resolvedDraftRevisionId = null;
 
-    protected function openDraftRevisionId(): int
+    /**
+     * Whether THIS request's own `openDraftRevisionId()` call is what
+     * created the draft (`Model::wasRecentlyCreated`) rather than reusing
+     * one that was already open. Read by `failedValidation()` below — never
+     * set from a before-the-fact "did a draft already exist" check, which a
+     * concurrent H4-style race could make lie: `wasRecentlyCreated` is
+     * decided by the ACTUAL row `open()` handed back to THIS caller,
+     * regardless of how the race was decided.
+     */
+    private bool $openedNewDraftThisRequest = false;
+
+    /**
+     * PUBLIC (framework-catalogue-authoring PR3b, H5): the controller's
+     * `store()` action must reuse the SAME draft id this FormRequest already
+     * validated against, never call `OpenDraftRevision::open()` a second
+     * time. A second, independent call is not merely wasteful — a publish
+     * landing in the gap between `rules()` running and the controller body
+     * executing would make that second `open()` call see no open draft and
+     * clone a BRAND NEW one, so the `exists`/uniqueness checks `rules()`
+     * already validated (scoped to the FIRST draft) would refer to a
+     * revision the INSERT no longer targets.
+     */
+    public function openDraftRevisionId(): int
     {
         if ($this->resolvedDraftRevisionId === null) {
-            $this->resolvedDraftRevisionId = app(OpenDraftRevision::class)->open()->id;
+            $draft = app(OpenDraftRevision::class)->open();
+            $this->resolvedDraftRevisionId = $draft->id;
+            $this->openedNewDraftThisRequest = $draft->wasRecentlyCreated;
         }
 
         return $this->resolvedDraftRevisionId;
     }
 
-    protected function openDraftRevision(): FrameworkCatalogRevision
+    /**
+     * Discard the draft THIS request created, and only that one (gga review
+     * finding, blocking): `openDraftRevisionId()` runs inside `rules()`,
+     * before a single rule is evaluated, so a 422 for a genuinely malformed
+     * payload still cloned ~450 rows and committed them first. A request
+     * that only CONTINUED an already-open draft (`$openedNewDraftThisRequest
+     * === false`) never reaches the delete — that draft is someone else's
+     * (or this same superadmin's OWN prior) real, in-progress work.
+     */
+    protected function failedValidation(Validator $validator): void
     {
-        return FrameworkCatalogRevision::findOrFail($this->openDraftRevisionId());
+        if ($this->openedNewDraftThisRequest && $this->resolvedDraftRevisionId !== null) {
+            app(DiscardUnusedDraftRevision::class)->discard($this->resolvedDraftRevisionId);
+        }
+
+        parent::failedValidation($validator);
     }
 
     /**
@@ -55,6 +94,6 @@ trait ResolvesOpenDraftRevision
      */
     protected function existingOpenDraftRevisionId(): ?int
     {
-        return FrameworkCatalogRevision::where('state', 'draft')->value('id');
+        return FrameworkCatalogRevision::openDraft()?->id;
     }
 }

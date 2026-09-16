@@ -33,15 +33,17 @@ class RevisionController extends Controller
      * retry, or monitoring probe from a superadmin session would clone
      * ~450 rows for a request nobody asked to be a write. Auto-open on
      * "first edit" still happens, correctly, where an edit actually
-     * occurs: every `store()` action across the catalogue controllers
-     * calls `OpenDraftRevision::open()` itself. This endpoint only reports
-     * whatever is currently true — `null` when nothing is open yet.
+     * occurs — via each catalogue-write FormRequest's own
+     * `ResolvesOpenDraftRevision::openDraftRevisionId()` (framework-
+     * catalogue-authoring PR3b, H5; not the controller body directly, and
+     * not called a second time there). This endpoint only reports whatever
+     * is currently true — `null` when nothing is open yet.
      */
     public function current(Request $request): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $revision = FrameworkCatalogRevision::where('state', 'draft')->first();
+        $revision = FrameworkCatalogRevision::openDraft();
 
         return response()->json(['data' => $revision === null ? null : new CatalogueRevisionResource($revision)]);
     }
@@ -57,7 +59,7 @@ class RevisionController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
-        $draft = FrameworkCatalogRevision::where('state', 'draft')->first();
+        $draft = FrameworkCatalogRevision::openDraft();
 
         if ($draft === null) {
             abort(Response::HTTP_NOT_FOUND, 'no open draft revision to publish');

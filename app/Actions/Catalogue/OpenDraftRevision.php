@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Catalogue;
 
 use App\Models\FrameworkCatalogRevision;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -36,28 +38,58 @@ final class OpenDraftRevision
 {
     public function open(): FrameworkCatalogRevision
     {
-        return DB::transaction(function (): FrameworkCatalogRevision {
-            $existingDraft = FrameworkCatalogRevision::where('state', 'draft')->first();
+        $existingDraft = FrameworkCatalogRevision::openDraft();
 
-            if ($existingDraft !== null) {
-                return $existingDraft;
+        if ($existingDraft !== null) {
+            return $existingDraft;
+        }
+
+        try {
+            return DB::transaction(function (): FrameworkCatalogRevision {
+                $parent = FrameworkCatalogRevision::where('state', 'published')
+                    ->orderByDesc('published_at')
+                    ->orderByDesc('id')
+                    ->firstOrFail();
+
+                $draft = FrameworkCatalogRevision::create(['state' => 'draft', 'parent_revision_id' => $parent->id]);
+
+                $roleIdMap = $this->cloneRoles($parent->id, $draft->id);
+                $competencyIdMap = $this->cloneCompetencies($parent->id, $draft->id);
+                $this->clonePivot($parent->id, $draft->id, $roleIdMap, $competencyIdMap);
+                $this->cloneBarsIndicators($parent->id, $draft->id, $roleIdMap, $competencyIdMap);
+                $this->cloneDefaultQuestions($parent->id, $draft->id, $competencyIdMap);
+
+                return $draft;
+            });
+        } catch (QueryException $e) {
+            if (! $this->isOneDraftUniqueViolation($e)) {
+                throw $e;
             }
 
-            $parent = FrameworkCatalogRevision::where('state', 'published')
-                ->orderByDesc('published_at')
-                ->orderByDesc('id')
-                ->firstOrFail();
+            // H4 (framework-catalogue-authoring PR3b): a concurrent caller
+            // won the race for `framework_catalog_revisions_one_draft`
+            // between our own `openDraft()` call above and this
+            // transaction's `INSERT` — the whole transaction (including
+            // whatever this attempt had already cloned) rolled back
+            // automatically. The LOSER continues the WINNER's draft rather
+            // than surfacing the constraint violation as a 500: `open()`'s
+            // whole contract is "return THE open draft, however it got
+            // there", and the winner's draft is exactly that.
+            return FrameworkCatalogRevision::openDraft()
+                ?? throw new ModelNotFoundException('framework_catalog_revisions: expected the winning draft to exist after losing the one-draft race.');
+        }
+    }
 
-            $draft = FrameworkCatalogRevision::create(['state' => 'draft', 'parent_revision_id' => $parent->id]);
-
-            $roleIdMap = $this->cloneRoles($parent->id, $draft->id);
-            $competencyIdMap = $this->cloneCompetencies($parent->id, $draft->id);
-            $this->clonePivot($parent->id, $draft->id, $roleIdMap, $competencyIdMap);
-            $this->cloneBarsIndicators($parent->id, $draft->id, $roleIdMap, $competencyIdMap);
-            $this->cloneDefaultQuestions($parent->id, $draft->id, $competencyIdMap);
-
-            return $draft;
-        });
+    /**
+     * Postgres names the exact constraint it refused (SQLSTATE 23505); the
+     * driver message contains it verbatim. Scoped to this ONE index
+     * deliberately — any other unique violation inside the transaction (a
+     * genuine data problem, not a benign race) must still surface.
+     */
+    private function isOneDraftUniqueViolation(QueryException $e): bool
+    {
+        return $e->getCode() === '23505'
+            && str_contains($e->getMessage(), 'framework_catalog_revisions_one_draft');
     }
 
     /**

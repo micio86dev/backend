@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsRevisionContentVersion;
 use Database\Factories\RoleFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -32,6 +33,8 @@ use Spatie\Translatable\HasTranslations;
  */
 class Role extends Model
 {
+    use BumpsRevisionContentVersion;
+
     /** @use HasFactory<RoleFactory> */
     use HasFactory;
 
@@ -67,6 +70,8 @@ class Role extends Model
                 $role->revision_id = FrameworkCatalogRevision::where('is_baseline', true)->value('id');
             }
         });
+
+        static::bumpRevisionContentVersionListeners();
     }
 
     /**

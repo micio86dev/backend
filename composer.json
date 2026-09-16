@@ -55,7 +55,8 @@
             "tests/Helpers/ScoringFixtures.php",
             "tests/Helpers/QueueWorkCommandFixtures.php",
             "tests/Helpers/SuperadminFixtures.php",
-            "tests/Helpers/PostgresConstraintAssertions.php"
+            "tests/Helpers/PostgresConstraintAssertions.php",
+            "tests/Helpers/CatalogueRevisionRaceActor.php"
         ]
     },
     "scripts": {

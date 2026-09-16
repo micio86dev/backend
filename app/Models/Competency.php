@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsRevisionContentVersion;
 use Database\Factories\CompetencyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -39,6 +40,8 @@ use Spatie\Translatable\HasTranslations;
  */
 class Competency extends Model
 {
+    use BumpsRevisionContentVersion;
+
     /** @use HasFactory<CompetencyFactory> */
     use HasFactory;
 
@@ -95,6 +98,8 @@ class Competency extends Model
                 $competency->revision_id = FrameworkCatalogRevision::where('is_baseline', true)->value('id');
             }
         });
+
+        static::bumpRevisionContentVersionListeners();
     }
 
     /**

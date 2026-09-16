@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsRevisionContentVersion;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Spatie\Translatable\HasTranslations;
@@ -44,12 +45,23 @@ use Spatie\Translatable\HasTranslations;
  */
 class BarsIndicator extends Model
 {
+    use BumpsRevisionContentVersion;
     use HasTranslations;
 
     /**
      * Custom table name — prefixed for consistency with the framework catalog domain.
      */
     protected $table = 'framework_bars_indicators';
+
+    /**
+     * `BumpsRevisionContentVersion` (framework-catalogue-authoring PR3b) —
+     * `DiscardUnusedDraftRevision` reads the counter this bumps to decide
+     * whether a draft is genuinely untouched.
+     */
+    protected static function booted(): void
+    {
+        static::bumpRevisionContentVersionListeners();
+    }
 
     /**
      * @var list<string>
