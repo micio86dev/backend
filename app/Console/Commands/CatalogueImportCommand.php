@@ -98,13 +98,30 @@ final class CatalogueImportCommand extends Command
         /** @var array<string, array{name: array<string,string>, responsibilities: array<string,string>, competencies: list<string>}> $rolesJson */
         $rolesJson = json_decode((string) file_get_contents($rolesFile), true, 512, JSON_THROW_ON_ERROR);
 
-        $draft = $openDraftRevision->open();
         $normalizer = new CompetencyNormalizer;
 
-        DB::transaction(function () use ($draft, $competenciesJson, $rolesJson, $barsDir, $normalizer): void {
+        // K4 (framework-catalogue-authoring PR4b, R3-import-orphan-draft,
+        // R4-import-orphan-clone): `open()` used to be called BEFORE this
+        // transaction, committing its clone in its OWN, separate
+        // transaction. A malformed `bars/{ROLE}.json` — read and JSON-
+        // decoded only once content-import actually runs, below — then
+        // rolled back nothing but the partial content writes, leaving the
+        // already-committed clone occupying the platform's single draft
+        // slot with content that reflects none of the source files. Calling
+        // `open()` INSIDE this transaction makes the clone (when one is
+        // genuinely needed) a NESTED transaction of the same outer unit: a
+        // throw anywhere below — including inside `open()`'s own H4 race
+        // recovery, which still works correctly nested (Laravel uses a
+        // SAVEPOINT for a nested `DB::transaction()` call) — rolls back the
+        // clone together with whatever content import had already written.
+        $draft = DB::transaction(function () use ($openDraftRevision, $competenciesJson, $rolesJson, $barsDir, $normalizer): FrameworkCatalogRevision {
+            $draft = $openDraftRevision->open();
+
             $competencyIdsByCode = $this->importCompetencies($draft->id, $competenciesJson);
             $this->importRolesAndBars($draft->id, $rolesJson, $barsDir, $competencyIdsByCode, $normalizer);
             $this->importPotentialBars($draft->id, $barsDir, $competencyIdsByCode, $normalizer);
+
+            return $draft;
         });
 
         $this->info("Imported catalogue content into draft revision {$draft->id}.");

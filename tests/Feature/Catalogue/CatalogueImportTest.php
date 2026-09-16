@@ -181,6 +181,43 @@ test('K1: a new pivot attachment written by import lands in the draft, never the
         ->toBe($baselinePivotCountBefore);
 });
 
+test('K4: a malformed bars file leaves no orphan draft behind', function (): void {
+    // RED/GREEN — K4 (framework-catalogue-authoring PR4b, R3-import-orphan-
+    // draft, R4-import-orphan-clone): `OpenDraftRevision::open()` used to
+    // commit the clone in its OWN transaction, BEFORE the import's own
+    // `DB::transaction()` even starts — a malformed `bars/{ROLE}.json` file
+    // (read and JSON-decoded INSIDE that later transaction) then rolled
+    // back only the partial content writes, leaving the already-committed
+    // clone occupying the platform's single draft slot with nothing in it
+    // that reflects the source files at all.
+    (new FrameworkCatalogSeeder)->run();
+    $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
+    $dir = catalogueImportSourceTreeFor($baseline->id);
+
+    $barsFiles = glob("{$dir}/bars/*.json");
+    expect($barsFiles)->not->toBeEmpty();
+    // POTENTIAL.json is optional and role-less; corrupt a genuine ROLE file
+    // so `importRolesAndBars()` — not the optional
+    // `importPotentialBars()` — is what throws.
+    $roleBarsFile = collect($barsFiles)->first(fn (string $path) => ! str_ends_with($path, 'POTENTIAL.json'));
+    expect($roleBarsFile)->not->toBeNull();
+    file_put_contents($roleBarsFile, '{not valid json');
+
+    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
+    $revisionCountBefore = FrameworkCatalogRevision::count();
+
+    // A malformed source file throws (JSON_THROW_ON_ERROR), same as a
+    // malformed roles.json/competencies.json already does at the top of
+    // handle() — this command has never caught a parse failure into a clean
+    // exit code, and K4 does not change that. What K4 closes is what
+    // survives the throw: no orphan draft.
+    expect(fn () => Artisan::call('catalogue:import', ['--into-draft' => true, '--path' => $dir]))
+        ->toThrow(JsonException::class);
+
+    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
+    expect(FrameworkCatalogRevision::count())->toBe($revisionCountBefore);
+});
+
 test('import refuses a draft that already carries unrelated edits, unless told to continue', function (): void {
     (new FrameworkCatalogSeeder)->run();
     $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
