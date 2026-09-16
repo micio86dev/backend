@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * RED/GREEN — 12.3 (framework-catalogue-authoring PR3): a published
- * revision refuses update, delete, AND insert — three assertions, stricter
+ * revision refuses update, delete, AND insert — three write kinds, stricter
  * than the old seeder guard.
  *
  * Two layers, each proven independently:
@@ -16,9 +16,17 @@ declare(strict_types=1);
  *      content_immutability`) refuses even a raw, Eloquent-bypassing write
  *      naming a published, non-baseline revision directly — the backstop
  *      for a bug that skips the CRUD surface entirely.
+ *
+ * H8 correction (framework-catalogue-authoring PR3b, R3-009): the first
+ * test below did NOT open a draft, so its 404 came from `RoleController`'s
+ * "no draft open at all" branch — a DIFFERENT code path that would 404 for
+ * any id regardless of which revision it belonged to, proving nothing about
+ * layer 1's draft-scoping. It now opens a real draft first, so the 404 is
+ * genuinely produced by the draft-scoped `findOrFail`.
  */
 
 use App\Models\FrameworkCatalogRevision;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -36,11 +44,25 @@ test('the CRUD surface 404s rather than writing to a published, non-baseline rev
     $user = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
     $token = auth('api')->login($user);
 
-    // No open draft exists yet — the CRUD surface auto-opens ITS OWN new
-    // draft (cloned from the latest published revision) rather than ever
-    // touching $published directly, so the id it just tried to reach
-    // belongs to a DIFFERENT revision than whatever the request resolves —
-    // 404, never a write.
+    // H8 (framework-catalogue-authoring PR3b, R3-009): a draft MUST already
+    // be open before this assertion means anything. Without one, the 404
+    // comes from `RoleController`'s own "no draft is open at all" branch
+    // (`$draft === null ? abort(404) : ...`) — a DIFFERENT code path that
+    // would 404 for $roleId REGARDLESS of which revision it belonged to,
+    // proving nothing about draft-scoping. Opening a real draft first (which
+    // clones the CURRENT published baseline, never $published) makes the
+    // 404 come from the draft-SCOPED `findOrFail` instead — `$roleId`
+    // genuinely exists in the database, just not in the open draft.
+    $this->withToken($token)
+        ->postJson('/api/catalogue/roles', [
+            'code' => 'DRAFTOPEN',
+            'name' => ['en' => 'x', 'it' => 'x'],
+        ])
+        ->assertStatus(201);
+
+    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeTrue();
+    expect(Role::where('id', $roleId)->where('revision_id', $published->id)->exists())->toBeTrue();
+
     $this->withToken($token)
         ->patchJson("/api/catalogue/roles/{$roleId}", ['name' => ['en' => 'renamed']])
         ->assertStatus(404);
