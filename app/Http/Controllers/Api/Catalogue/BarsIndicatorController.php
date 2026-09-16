@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreBarsIndicatorRequest;
 use App\Http\Requests\Catalogue\UpdateBarsIndicatorRequest;
@@ -53,7 +54,19 @@ class BarsIndicatorController extends Controller
         // `ResolvesOpenDraftRevision::openDraftRevisionId()`'s own docblock.
         $draftId = $request->openDraftRevisionId();
 
-        $indicator = BarsIndicator::create([...$request->validated(), 'revision_id' => $draftId]);
+        // K3/K8 (framework-catalogue-authoring PR4b): locks the draft
+        // revision row before writing — see `BumpsRevisionContentVersion::
+        // withRevisionLockedForWrite()`'s own docblock. Caught explicitly so
+        // Scramble documents the 409, matching `PlatformUserController::
+        // deactivate()`'s own `UserGuardException` catch.
+        try {
+            $indicator = BarsIndicator::withRevisionLockedForWrite(
+                $draftId,
+                fn (): BarsIndicator => BarsIndicator::create([...$request->validated(), 'revision_id' => $draftId]),
+            );
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueBarsIndicatorResource($indicator))->response()->setStatusCode(Response::HTTP_CREATED);
     }
@@ -67,12 +80,16 @@ class BarsIndicatorController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : BarsIndicator::where('revision_id', $draft->id)->findOrFail($indicator);
 
-        $target->update($request->validated());
+        try {
+            BarsIndicator::withRevisionLockedForWrite($draft->id, fn (): bool => $target->update($request->validated()));
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueBarsIndicatorResource($target->fresh()))->response();
     }
 
-    public function destroy(Request $request, int $indicator): Response
+    public function destroy(Request $request, int $indicator): Response|JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
@@ -81,7 +98,11 @@ class BarsIndicatorController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : BarsIndicator::where('revision_id', $draft->id)->findOrFail($indicator);
 
-        $target->delete();
+        try {
+            BarsIndicator::withRevisionLockedForWrite($draft->id, fn (): ?bool => $target->delete());
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return response()->noContent();
     }

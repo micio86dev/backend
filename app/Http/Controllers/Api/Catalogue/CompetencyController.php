@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreCompetencyRequest;
 use App\Http\Requests\Catalogue\UpdateCompetencyRequest;
@@ -51,7 +52,19 @@ class CompetencyController extends Controller
         // `ResolvesOpenDraftRevision::openDraftRevisionId()`'s own docblock.
         $draftId = $request->openDraftRevisionId();
 
-        $competency = Competency::create([...$request->validated(), 'revision_id' => $draftId]);
+        // K3/K8 (framework-catalogue-authoring PR4b): locks the draft
+        // revision row before writing — see `BumpsRevisionContentVersion::
+        // withRevisionLockedForWrite()`'s own docblock. Caught explicitly so
+        // Scramble documents the 409, matching `PlatformUserController::
+        // deactivate()`'s own `UserGuardException` catch.
+        try {
+            $competency = Competency::withRevisionLockedForWrite(
+                $draftId,
+                fn (): Competency => Competency::create([...$request->validated(), 'revision_id' => $draftId]),
+            );
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueCompetencyResource($competency))->response()->setStatusCode(Response::HTTP_CREATED);
     }
@@ -65,12 +78,16 @@ class CompetencyController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : Competency::where('revision_id', $draft->id)->findOrFail($competency);
 
-        $target->update($request->validated());
+        try {
+            Competency::withRevisionLockedForWrite($draft->id, fn (): bool => $target->update($request->validated()));
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueCompetencyResource($target->fresh()))->response();
     }
 
-    public function destroy(Request $request, int $competency): Response
+    public function destroy(Request $request, int $competency): Response|JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
@@ -79,7 +96,11 @@ class CompetencyController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : Competency::where('revision_id', $draft->id)->findOrFail($competency);
 
-        $target->delete();
+        try {
+            Competency::withRevisionLockedForWrite($draft->id, fn (): ?bool => $target->delete());
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return response()->noContent();
     }

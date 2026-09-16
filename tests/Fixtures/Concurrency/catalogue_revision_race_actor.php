@@ -58,6 +58,16 @@ declare(strict_types=1);
  *     DONE:<0|1>           — committed; 1 iff a waiting competing writer
  *                            for the SAME group was observed
  *
+ *   hold-locked-content-write <host> <port> <dbname> <user> <revisionId>
+ *     READY:<newCompetencyId> — the draft revision row is locked `FOR
+ *                            UPDATE` (the SAME lock `BumpsRevisionContentVersion::
+ *                            withRevisionLockedForWrite()` takes), a new
+ *                            competency is inserted under it, uncommitted
+ *     DONE:<0|1>           — the `content_version` bump is applied and the
+ *                            whole transaction committed; 1 iff a waiting
+ *                            locker (our own `DiscardUnusedDraftRevision::
+ *                            discard()` call) was observed — K3/H12
+ *
  *   create-indicator-pair-fixture <host> <port> <dbname> <user> 0
  *     CREATED:<revisionId>,<roleId>,<competencyId>
  *                          — a NON-baseline draft revision with one role,
@@ -173,6 +183,43 @@ if ($mode === 'lock-revision-row') {
     $contended = catalogueRaceActorObserveContention($pdo, new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]));
 
     $pdo->prepare("UPDATE framework_catalog_revisions SET state = 'published', published_at = now() WHERE id = :id")
+        ->execute([':id' => $revisionId]);
+    $pdo->commit();
+
+    fwrite(STDOUT, 'DONE:'.($contended ? '1' : '0')."\n");
+    fflush(STDOUT);
+
+    exit(0);
+}
+
+if ($mode === 'hold-locked-content-write') {
+    $revisionId = (int) $subjectId;
+
+    $pdo->beginTransaction();
+
+    // Mirrors `BumpsRevisionContentVersion::withRevisionLockedForWrite()`
+    // exactly: lock the revision row FIRST, in the SAME transaction as the
+    // content write and its `content_version` bump below.
+    $pdo->prepare('SELECT id FROM framework_catalog_revisions WHERE id = :id FOR UPDATE')
+        ->execute([':id' => $revisionId]);
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO framework_competencies (revision_id, code, type, name, definition, created_at, updated_at)
+         VALUES (:revision_id, 'K3RACEWRITE', 'standard', :name, :definition, now(), now()) RETURNING id"
+    );
+    $stmt->execute([':revision_id' => $revisionId, ':name' => json_encode(['en' => 'x']), ':definition' => json_encode(['en' => 'x'])]);
+    $newId = (int) $stmt->fetchColumn();
+
+    fwrite(STDOUT, "READY:{$newId}\n");
+    fflush(STDOUT);
+
+    // The main process's competing `DiscardUnusedDraftRevision::discard()`
+    // call takes the SAME `lockForUpdate()` on this row and blocks here —
+    // the content INSERT above and the content_version bump below are now
+    // ONE atomic unit from discard()'s own point of view.
+    $contended = catalogueRaceActorObserveContention($pdo, new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]));
+
+    $pdo->prepare("UPDATE framework_catalog_revisions SET content_version = content_version + 1 WHERE id = :id AND state = 'draft'")
         ->execute([':id' => $revisionId]);
     $pdo->commit();
 

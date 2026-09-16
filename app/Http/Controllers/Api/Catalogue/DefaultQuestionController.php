@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreDefaultQuestionRequest;
 use App\Http\Requests\Catalogue\UpdateDefaultQuestionRequest;
@@ -55,7 +56,19 @@ class DefaultQuestionController extends Controller
         // `ResolvesOpenDraftRevision::openDraftRevisionId()`'s own docblock.
         $draftId = $request->openDraftRevisionId();
 
-        $question = FrameworkDefaultQuestion::create([...$request->validated(), 'revision_id' => $draftId]);
+        // K3/K8 (framework-catalogue-authoring PR4b): locks the draft
+        // revision row before writing — see `BumpsRevisionContentVersion::
+        // withRevisionLockedForWrite()`'s own docblock. Caught explicitly so
+        // Scramble documents the 409, matching `PlatformUserController::
+        // deactivate()`'s own `UserGuardException` catch.
+        try {
+            $question = FrameworkDefaultQuestion::withRevisionLockedForWrite(
+                $draftId,
+                fn (): FrameworkDefaultQuestion => FrameworkDefaultQuestion::create([...$request->validated(), 'revision_id' => $draftId]),
+            );
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueDefaultQuestionResource($question))->response()->setStatusCode(Response::HTTP_CREATED);
     }
@@ -75,7 +88,11 @@ class DefaultQuestionController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : FrameworkDefaultQuestion::where('revision_id', $draft->id)->findOrFail($defaultQuestion);
 
-        $target->update($request->validated());
+        try {
+            FrameworkDefaultQuestion::withRevisionLockedForWrite($draft->id, fn (): bool => $target->update($request->validated()));
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueDefaultQuestionResource($target->fresh()))->response();
     }
@@ -85,7 +102,7 @@ class DefaultQuestionController extends Controller
      * always an open draft here (a published revision's content never
      * reaches this far: `findOrFail` scoped to the open draft 404s first).
      */
-    public function destroy(Request $request, int $defaultQuestion): Response
+    public function destroy(Request $request, int $defaultQuestion): Response|JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
@@ -94,7 +111,11 @@ class DefaultQuestionController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : FrameworkDefaultQuestion::where('revision_id', $draft->id)->findOrFail($defaultQuestion);
 
-        $target->delete();
+        try {
+            FrameworkDefaultQuestion::withRevisionLockedForWrite($draft->id, fn (): ?bool => $target->delete());
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return response()->noContent();
     }

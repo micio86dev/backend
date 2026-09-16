@@ -40,23 +40,28 @@ use Throwable;
  *
  * `content_version` (see that column's own migration and
  * `BumpsRevisionContentVersion`) is the real fix: every Eloquent
- * create/update/delete to `Role`/`Competency`/`BarsIndicator` bumps it,
- * while `OpenDraftRevision`'s own clone step writes via raw
- * `DB::table()->insert()` and fires no such event — so a freshly-cloned
- * draft starts, and stays, at `0` until a REAL write reaches it through the
- * catalogue's actual CRUD surface, by ANY caller.
+ * create/update/delete to `Role`/`Competency`/`BarsIndicator`/
+ * `FrameworkDefaultQuestion` bumps it, while `OpenDraftRevision`'s own clone
+ * step writes via raw `DB::table()->insert()` and fires no such event — so
+ * a freshly-cloned draft starts, and stays, at `0` until a REAL write
+ * reaches it through the catalogue's actual CRUD surface, by ANY caller.
  *
- * A narrow, disclosed residual window (gga review, non-blocking): a
- * concurrent request's own `Role::create()`/`update()`/`delete()` commits
- * its actual row change FIRST, then fires the `saved`/`deleted` event that
- * bumps `content_version` — two separate statements, not one atomic unit.
- * A discard landing in the microseconds between them still reads `0` and
- * proceeds, deleting a row that request just committed. This class is
- * explicitly best-effort cleanup for an ordinary validation-failure path,
- * not a strict concurrency primitive on par with H3/H4's proven,
- * lock-based invariants — closing this fully would need the write paths
- * themselves to hold the SAME revision lock `discard()` takes, which is a
- * larger, separate change than a 422-cleanup guard justifies today.
+ * CLOSED (framework-catalogue-authoring PR4b, K3 — widens and closes H12,
+ * which this class's own gga-review history left as a disclosed residual
+ * window): every catalogue-content write now goes through
+ * `BumpsRevisionContentVersion::withRevisionLockedForWrite()`, which locks
+ * THIS SAME revision row (`SELECT ... FOR UPDATE`) BEFORE performing the
+ * write, and keeps the write's own INSERT/UPDATE/DELETE and its
+ * `content_version` bump inside ONE transaction. `discard()`'s own
+ * `lockForUpdate()` below therefore either blocks until a concurrent
+ * write's WHOLE transaction (row change + bump) commits — after which
+ * `content_version` is already non-zero — or already holds the lock and
+ * completes its own decision before that write is even attempted, in which
+ * case the write fails closed with a clean `RevisionPublishedDuringWriteException`
+ * rather than silently landing against a since-deleted revision. Proven
+ * under genuine concurrency in
+ * `tests/Feature/Catalogue/DiscardRaceWithConcurrentWriteTest.php`, the
+ * same separate-OS-process shape H3/H4/H6 use.
  */
 final class DiscardUnusedDraftRevision
 {

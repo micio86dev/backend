@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalogue\StoreRoleRequest;
 use App\Http\Requests\Catalogue\UpdateRoleRequest;
@@ -66,7 +67,21 @@ class RoleController extends Controller
         $validated = $request->validated();
         $validated['responsibilities'] ??= ['en' => ''];
 
-        $role = Role::create([...$validated, 'revision_id' => $draftId]);
+        // K3/K8 (framework-catalogue-authoring PR4b): locks the draft
+        // revision row before writing, closing the race with a concurrent
+        // discard/publish — see `BumpsRevisionContentVersion::
+        // withRevisionLockedForWrite()`'s own docblock. Caught explicitly
+        // (not left to the exception's own `render()`) so Scramble documents
+        // the 409, matching `PlatformUserController::deactivate()`'s own
+        // `UserGuardException` catch.
+        try {
+            $role = Role::withRevisionLockedForWrite(
+                $draftId,
+                fn (): Role => Role::create([...$validated, 'revision_id' => $draftId]),
+            );
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueRoleResource($role))->response()->setStatusCode(Response::HTTP_CREATED);
     }
@@ -87,7 +102,11 @@ class RoleController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : Role::where('revision_id', $draft->id)->findOrFail($role);
 
-        $target->update($request->validated());
+        try {
+            Role::withRevisionLockedForWrite($draft->id, fn (): bool => $target->update($request->validated()));
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return (new CatalogueRoleResource($target->fresh()))->response();
     }
@@ -97,7 +116,7 @@ class RoleController extends Controller
      * open draft here (a published revision's content never reaches this
      * far: `findOrFail` scoped to the open draft 404s first).
      */
-    public function destroy(Request $request, int $role): Response
+    public function destroy(Request $request, int $role): Response|JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
@@ -106,7 +125,11 @@ class RoleController extends Controller
             ? abort(Response::HTTP_NOT_FOUND)
             : Role::where('revision_id', $draft->id)->findOrFail($role);
 
-        $target->delete();
+        try {
+            Role::withRevisionLockedForWrite($draft->id, fn (): ?bool => $target->delete());
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
 
         return response()->noContent();
     }
