@@ -55,6 +55,16 @@ class UtteranceController extends Controller
 {
     use ResolvesOwnedSession;
 
+    /**
+     * Z16 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE): the cap
+     * on how long a request waits for another request's `SELECT ... FOR
+     * UPDATE` on the SAME session row before giving up — bounded below the
+     * product's own voice-latency NFR (CLAUDE.md: "< 2-3 s") so a candidate
+     * never perceives a stall longer than a single turn is already allowed
+     * to take.
+     */
+    private const LOCK_TIMEOUT_MS = 2000;
+
     public function __construct(
         private readonly TurnClassifier $turnClassifier,
     ) {}
@@ -110,8 +120,30 @@ class UtteranceController extends Controller
         // longer `in_corso` still 409s exactly as before, now simply after
         // waiting for the lock rather than racing for it. Requests for
         // DIFFERENT sessions never contend: the lock is row-scoped.
+        //
+        // Z16 (R4-utterance-lock-latency, framework-catalogue-authoring,
+        // REQUIRED BEFORE ARCHIVE): the critical section between acquiring
+        // the lock and releasing it (COMMIT) is kept to exactly the three
+        // statements it needs — the lock, `classify()`'s own single COUNT
+        // query, and the INSERT — never widened by anything else. BOUNDED,
+        // not merely minimal: `SET LOCAL lock_timeout` caps how long a
+        // request will wait for another request's (or a stuck connection's)
+        // lock on this SAME session row, so a slow or wedged writer can
+        // never stall the live turn loop indefinitely — every OTHER session
+        // is already unaffected (the lock is row-scoped), this bounds the
+        // SAME-session queuing case specifically. `55P03` (`lock_not_available`,
+        // Postgres's own code for a `lock_timeout` expiry) is mapped to a
+        // distinct, RETRIABLE 503 — never the generic `utterance_insert_failed`
+        // 500, which would tell a client to give up on a turn that a
+        // heartbeat later would likely have accepted.
         try {
             $rowsInserted = DB::transaction(function () use ($session, $orgId, $validated): int {
+                // `SET LOCAL` does not accept a bound parameter in Postgres
+                // (it is not a value position the extended query protocol
+                // supports) — safe to inline directly, since the value is
+                // this class's own internal constant, never request input.
+                DB::statement('SET LOCAL lock_timeout = '.self::LOCK_TIMEOUT_MS);
+
                 InterviewSession::where('id', $session->id)
                     ->where('organization_id', $orgId)
                     ->lockForUpdate()
@@ -124,6 +156,12 @@ class UtteranceController extends Controller
                 return $this->insertUtteranceAtomically($session, $orgId, $validated, $turnKind);
             });
         } catch (QueryException $e) {
+            if ($e->getCode() === '55P03') {
+                Log::warning('C7a: live utterance insert timed out waiting for the session lock', SafeDbContext::for($e));
+
+                return response()->json(['error' => 'utterance_lock_timeout'], Response::HTTP_SERVICE_UNAVAILABLE);
+            }
+
             Log::error('C7a: live utterance insert failed', SafeDbContext::for($e));
 
             throw new \RuntimeException('utterance_insert_failed');
