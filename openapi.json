@@ -2022,6 +2022,255 @@
                 }
             }
         },
+        "/catalogue/default-questions": {
+            "get": {
+                "operationId": "defaultQuestion.index",
+                "tags": [
+                    "DefaultQuestion"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `CatalogueDefaultQuestionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/CatalogueDefaultQuestionResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "defaultQuestion.store",
+                "tags": [
+                    "DefaultQuestion"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreDefaultQuestionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`CatalogueDefaultQuestionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueDefaultQuestionResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/default-questions/{defaultQuestion}": {
+            "patch": {
+                "operationId": "defaultQuestion.update",
+                "summary": "Never opens a draft (gga review finding on the sibling controllers,\napplied here from the start) \u2014 the target `$defaultQuestion` either\nalready belongs to an existing open draft or it does not exist to\nupdate at all",
+                "tags": [
+                    "DefaultQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "defaultQuestion",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateDefaultQuestionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`CatalogueDefaultQuestionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueDefaultQuestionResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "defaultQuestion.destroy",
+                "summary": "Pre-publish only \u2014 a default question's revision is, by definition,\nalways an open draft here (a published revision's content never\nreaches this far: `findOrFail` scoped to the open draft 404s first)",
+                "tags": [
+                    "DefaultQuestion"
+                ],
+                "parameters": [
+                    {
+                        "name": "defaultQuestion",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/entry-links": {
             "post": {
                 "operationId": "entryLink.store",
@@ -7840,6 +8089,37 @@
                 ],
                 "title": "CatalogueCompetencyResource"
             },
+            "CatalogueDefaultQuestionResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "competency_id": {
+                        "type": "integer"
+                    },
+                    "revision_id": {
+                        "type": "integer"
+                    },
+                    "position": {
+                        "type": "integer"
+                    },
+                    "text": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "competency_id",
+                    "revision_id",
+                    "position",
+                    "text"
+                ],
+                "title": "CatalogueDefaultQuestionResource"
+            },
             "CatalogueRevisionResource": {
                 "type": "object",
                 "properties": {
@@ -9721,6 +10001,40 @@
                 ],
                 "title": "StoreCompetencyRequest"
             },
+            "StoreDefaultQuestionRequest": {
+                "type": "object",
+                "description": "`POST /api/catalogue/default-questions` (framework-catalogue-authoring\nPR4, catalogue-authoring spec \u2014 \"Catalogue-Level Default Questions Per\n * Competency\").\n\nBoth `en` AND `it` are mandatory here \u2014 deliberately stricter than every\nother catalogue FormRequest's `localeMapRules()` default (`en` mandatory,\n`it` optional-but-non-blank-when-present, `StoreRoleRequest`/\n`StoreCompetencyRequest`/`StoreBarsIndicatorRequest`'s own shape). A\ndefault question is a TEMPLATE `ApplyCompetencySelection` (PR5) copies\nverbatim into `project_questions` the moment a project first selects the\ncompetency, in whatever language that project runs in \u2014 an operator\nauthoring one in `en` only would silently ship an Italian project a blank\nquestion the day it is first selected, with no later gate to catch it.",
+                "properties": {
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "en",
+                            "it"
+                        ]
+                    },
+                    "competency_id": {
+                        "type": "integer"
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                    "text",
+                    "competency_id",
+                    "position"
+                ],
+                "title": "StoreDefaultQuestionRequest"
+            },
             "StorePlatformUserRequest": {
                 "type": "object",
                 "description": "Validates POST /api/admin/platform-users (platform-user-management D2).\n\nThere is no `role` rule and no `organization_id` rule, and their absence is\nthe point rather than an omission: both are DECIDED by the surface, exactly\nas `/api/users` decides them for an organization's people. A field that is\nnever read cannot be crafted.",
@@ -10145,6 +10459,28 @@
                     }
                 },
                 "title": "UpdateCompetencyRequest"
+            },
+            "UpdateDefaultQuestionRequest": {
+                "type": "object",
+                "description": "`PATCH /api/catalogue/default-questions/{defaultQuestion}` (framework-\ncatalogue-authoring PR4). No `competency_id` re-scoping on PATCH \u2014 moving\nan existing default to another competency is out of scope for this PR,\nsame doctrine as `UpdateBarsIndicatorRequest`'s own note about\nreassigning `role_id`/`competency_id`.",
+                "properties": {
+                    "text": {
+                        "type": "object",
+                        "properties": {
+                            "en": {
+                                "type": "string"
+                            },
+                            "it": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "title": "UpdateDefaultQuestionRequest"
             },
             "UpdateOrganizationRequest": {
                 "type": "object",

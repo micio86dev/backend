@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\Catalogue\BarsIndicatorController;
 use App\Http\Controllers\Api\Catalogue\CompetencyController as CatalogueCompetencyController;
+use App\Http\Controllers\Api\Catalogue\DefaultQuestionController;
 use App\Http\Controllers\Api\Catalogue\RevisionController;
 use App\Http\Controllers\Api\Catalogue\RoleController as CatalogueRoleController;
 use App\Http\Controllers\Api\DashboardController;
@@ -240,6 +241,13 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('catalogue')->grou
     Route::post('bars-indicators', [BarsIndicatorController::class, 'store']);
     Route::patch('bars-indicators/{indicator}', [BarsIndicatorController::class, 'update'])->whereNumber('indicator');
     Route::delete('bars-indicators/{indicator}', [BarsIndicatorController::class, 'destroy'])->whereNumber('indicator');
+
+    // framework-catalogue-authoring PR4: catalogue-level default questions,
+    // scoped to the open draft revision exactly like the three above.
+    Route::get('default-questions', [DefaultQuestionController::class, 'index']);
+    Route::post('default-questions', [DefaultQuestionController::class, 'store']);
+    Route::patch('default-questions/{defaultQuestion}', [DefaultQuestionController::class, 'update'])->whereNumber('defaultQuestion');
+    Route::delete('default-questions/{defaultQuestion}', [DefaultQuestionController::class, 'destroy'])->whereNumber('defaultQuestion');
 });
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
