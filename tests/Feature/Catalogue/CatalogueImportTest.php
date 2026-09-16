@@ -128,6 +128,59 @@ test('import without --into-draft refuses cleanly, naming the only supported tar
     expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
 });
 
+test('K1: a new pivot attachment written by import lands in the draft, never the baseline', function (): void {
+    // RED/GREEN — K1 (framework-catalogue-authoring PR4b, R3-import-pivot-
+    // revision): `Role::competencies()->sync()` writes pivot rows with no
+    // `revision_id` pivot attribute, so a NEWLY-ATTACHED pair (one the
+    // freshly-cloned draft did not already carry) took the column DEFAULT —
+    // a fixed baseline id baked in at migration time — instead of the
+    // draft's own id. Modifying `roles.json` to assign an EXTRA competency
+    // to an existing role is what forces `sync()` to actually INSERT a new
+    // pivot row rather than merely UPDATE an already-cloned one's position.
+    (new FrameworkCatalogSeeder)->run();
+    $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
+    $dir = catalogueImportSourceTreeFor($baseline->id);
+
+    /** @var array<string, array{competencies?: list<string>}> $rolesJson */
+    $rolesJson = json_decode((string) file_get_contents("{$dir}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
+    /** @var array<string, mixed> $competenciesJson */
+    $competenciesJson = json_decode((string) file_get_contents("{$dir}/competencies.json"), true, 512, JSON_THROW_ON_ERROR);
+
+    $firstRoleCode = array_key_first($rolesJson);
+    $alreadyAssigned = $rolesJson[$firstRoleCode]['competencies'] ?? [];
+    $unassignedCompetencyCode = null;
+
+    foreach (array_keys($competenciesJson) as $code) {
+        if (! in_array($code, $alreadyAssigned, true)) {
+            $unassignedCompetencyCode = $code;
+            break;
+        }
+    }
+
+    expect($unassignedCompetencyCode)->not->toBeNull();
+
+    $rolesJson[$firstRoleCode]['competencies'][] = $unassignedCompetencyCode;
+    file_put_contents("{$dir}/roles.json", json_encode($rolesJson, JSON_THROW_ON_ERROR));
+
+    $baselinePivotCountBefore = DB::table('framework_role_competency')->where('revision_id', $baseline->id)->count();
+
+    $exitCode = Artisan::call('catalogue:import', ['--into-draft' => true, '--path' => $dir]);
+    expect($exitCode)->toBe(0);
+
+    $draft = FrameworkCatalogRevision::where('state', 'draft')->firstOrFail();
+    $draftRoleId = Role::where('revision_id', $draft->id)->where('code', $firstRoleCode)->value('id');
+    $draftCompetencyId = Competency::where('revision_id', $draft->id)->where('code', $unassignedCompetencyCode)->value('id');
+
+    $newPivotRevisionId = DB::table('framework_role_competency')
+        ->where('role_id', $draftRoleId)
+        ->where('competency_id', $draftCompetencyId)
+        ->value('revision_id');
+
+    expect($newPivotRevisionId)->toBe($draft->id);
+    expect(DB::table('framework_role_competency')->where('revision_id', $baseline->id)->count())
+        ->toBe($baselinePivotCountBefore);
+});
+
 test('import refuses a draft that already carries unrelated edits, unless told to continue', function (): void {
     (new FrameworkCatalogSeeder)->run();
     $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();

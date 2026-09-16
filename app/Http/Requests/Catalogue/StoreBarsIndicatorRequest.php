@@ -69,7 +69,51 @@ class StoreBarsIndicatorRequest extends FormRequest
                     }
                 },
             ],
-            'position' => ['required', 'integer', 'min:0'],
+            'position' => [
+                'required', 'integer', 'min:0',
+                // K2 (framework-catalogue-authoring PR4b, R3-bars-store-
+                // position-500): a `position` already taken in the same
+                // (revision, role, competency) group hits the partial
+                // unique index (`framework_bars_indicators_rev_role_comp_
+                // position_unique`) and 500s with no FormRequest check in
+                // the way — same defect class `gga` already caught on
+                // `StoreDefaultQuestionRequest` in PR4, fixed the same way:
+                // a closure, not `Rule::unique()`, because `competency_id`
+                // can fail its OWN `integer`/`exists` rule independently
+                // (Laravel still runs every other attribute's rules
+                // regardless) and a non-numeric value fed straight into a
+                // query reaches Postgres as a malformed `bigint` literal,
+                // raising an uncaught `QueryException` instead of this
+                // 422. `role_id` is guarded the same way — nullable, so a
+                // non-numeric-but-present value must not crash the check
+                // either; its own `integer`/`exists` rule still fails the
+                // request regardless.
+                function (string $attribute, mixed $value, \Closure $fail) use ($draftId): void {
+                    if (! is_numeric($this->input('competency_id'))) {
+                        return;
+                    }
+
+                    $roleId = $this->input('role_id');
+
+                    if ($roleId !== null && ! is_numeric($roleId)) {
+                        return;
+                    }
+
+                    $query = BarsIndicator::where('revision_id', $draftId)
+                        ->where('competency_id', (int) $this->input('competency_id'))
+                        ->where('position', (int) $value);
+
+                    if ($roleId === null) {
+                        $query->whereNull('role_id');
+                    } else {
+                        $query->where('role_id', (int) $roleId);
+                    }
+
+                    if ($query->exists()) {
+                        $fail('position_taken_for_pair');
+                    }
+                },
+            ],
             // Nullable: a `potential` competency's indicators MUST carry
             // `role_id = null` (PublishRevision's own sweep, D3) — the
             // FormRequest does not refuse null here, only validates the
