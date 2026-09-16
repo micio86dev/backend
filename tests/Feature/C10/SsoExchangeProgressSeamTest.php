@@ -56,7 +56,7 @@ function c10SsoWebhookProject(Organization $org, array $attrs = []): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'status' => 'active',
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
@@ -67,6 +67,12 @@ function c10SsoWebhookProject(Organization $org, array $attrs = []): Project
         'webhook_secret' => 'whsec_sso_seam_test_secret',
         'webhook_events' => ['progress', 'evaluation'],
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful exchange, not the thing under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 function c10SsoLink(Project $project, Organization $org, string $ref, string $display = 'Test Candidate'): string

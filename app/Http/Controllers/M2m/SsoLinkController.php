@@ -9,6 +9,7 @@ use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
 use App\Models\ApiClient;
 use App\Models\Project;
+use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,16 +24,26 @@ use Illuminate\Http\Request;
  *
  * Flow:
  *   1. Resolve project SCOPED to the caller's organization (cross-org → 404).
- *   2. Delegate the mint decision to `EntryLinkMinter::mint()` (entry gates,
+ *   2. `ProjectInterviewability::isInterviewable()` (framework-catalogue-
+ *      authoring PR6, D5/D6) — 422 `PROJECT_NOT_INTERVIEWABLE` before the
+ *      minter is ever reached. **Response shape change from before PR6**:
+ *      a project that is BOTH closed (entry gate) AND non-interviewable now
+ *      answers `422 PROJECT_NOT_INTERVIEWABLE` here, where it previously
+ *      reached `EntryLinkMinter::mint()` and answered `403 Access denied`
+ *      instead — interviewability is checked strictly before the minter's
+ *      own gates.
+ *   3. Delegate the mint decision to `EntryLinkMinter::mint()` (entry gates,
  *      role_code inheritance/validation, terminal-status refusal, the raw
  *      sso-link mint — operator-interview-link, design D1).
- *   3. Map an `EntryLinkRefused` refusal onto this endpoint's OWN literal
- *      response — request validation and every response body below are
- *      UNCHANGED from before the extraction, byte-identical
+ *   4. Map an `EntryLinkRefused` refusal onto this endpoint's OWN literal
+ *      response — request validation and every OTHER response body below
+ *      are UNCHANGED from before the extraction, byte-identical
  *      (`SsoLinkMintTest.php`, `SsoLinkResponseGoldenTest.php`).
  *
  * Security invariants:
  * - Project is resolved SCOPED to the caller's org: cross-org → 404.
+ * - Non-interviewable project → 422 `PROJECT_NOT_INTERVIEWABLE`, `candidate_ref`
+ *   echoed byte-for-byte, before any mint decision is made (PR6).
  * - display_name absent/empty → 422 (NOT NULL in DB; prevents 500 at exchange).
  * - role_code for potential → 422 (surfaces integration bugs; do NOT silently null).
  * - Finished candidates (completato/errore) are rejected with 409.
@@ -46,6 +57,7 @@ final class SsoLinkController extends Controller
 {
     public function __construct(
         private readonly EntryLinkMinter $minter,
+        private readonly ProjectInterviewability $projectInterviewability,
     ) {}
 
     /**
@@ -81,6 +93,21 @@ final class SsoLinkController extends Controller
         // mint, so it stays here rather than inside the shared minter.
         $project = Project::where('organization_id', $clientOrgId)
             ->findOrFail((int) $validated['project_id']);
+
+        // D5/D6 (framework-catalogue-authoring PR6) — before `mint`, same as
+        // `EntryLinkController`/`ParticipantController`: the calling system
+        // learns this before any candidate is ever invited. `evaluate()`
+        // avoids running the same query twice for one refusal.
+        // `candidate_ref` echoed byte-for-byte, same reasoning as the M2M
+        // participant refusal.
+        $interviewability = $this->projectInterviewability->evaluate($project);
+        if (! $interviewability['interviewable']) {
+            return response()->json([
+                'error' => 'PROJECT_NOT_INTERVIEWABLE',
+                'competency_codes' => $interviewability['unsatisfied_competency_codes'],
+                'candidate_ref' => $validated['candidate_ref'],
+            ], 422);
+        }
 
         try {
             $minted = $this->minter->mint(

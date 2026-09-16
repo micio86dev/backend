@@ -77,6 +77,15 @@ function c8SeedStandardScenario(string $locale = 'en'): array
         'position' => 1,
     ]);
 
+    // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+    // project where a selected competency has zero live `project_questions`
+    // rows. NOT added here: several callers of this shared scenario add
+    // their OWN `project_questions` rows afterward, at explicit positions,
+    // to assert opening/ordering behaviour — a row auto-added here at
+    // position 0 would silently become "the first authored question" and
+    // break those assertions. Each caller that does NOT author its own is
+    // responsible for calling `c8MakeInterviewable()` itself.
+    //
     // Seed BARS indicators for this role + competency (EN translations)
     c8SeedIndicators($role->id, $competency->id, 'en', 2);
 
@@ -89,6 +98,24 @@ function c8SeedStandardScenario(string $locale = 'en'): array
     $participant = c8MakeParticipant($org, $project);
 
     return compact('org', 'project', 'participant', 'competency', 'role');
+}
+
+/**
+ * Gives the scenario's competency ONE live `project_questions` row, so it
+ * satisfies `ProjectInterviewability` (framework-catalogue-authoring PR6,
+ * D5). Only for callers that do NOT author their own questions — see
+ * `c8SeedStandardScenario()`'s own docblock note.
+ *
+ * @param  array{project: Project, competency: Competency}  $scenario
+ */
+function c8MakeInterviewable(array $scenario): void
+{
+    ProjectQuestion::create([
+        'project_id' => $scenario['project']->id,
+        'competency_id' => $scenario['competency']->id,
+        'text' => ['en' => 'C8 fixture question', 'it' => 'Domanda fixture C8'],
+        'position' => 0,
+    ]);
 }
 
 /**
@@ -166,6 +193,7 @@ test('5.1 /start with standard EN competency → 201 + question_context.prompt_v
     Queue::fake();
 
     $scenario = c8SeedStandardScenario('en');
+    c8MakeInterviewable($scenario);
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
@@ -197,6 +225,7 @@ test('5.5 /start response never leaks composed system_prompt; provider body carr
     });
 
     $scenario = c8SeedStandardScenario('en');
+    c8MakeInterviewable($scenario);
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
@@ -249,6 +278,16 @@ test('5.2 /start missing IT anchor translation → 422 anchor_translation_missin
         'position' => 1,
     ]);
 
+    // framework-catalogue-authoring PR6 (D5) — interviewability is a
+    // precondition here; this scenario's own subject is the anchor
+    // translation gap.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'C8 fixture question', 'it' => 'Domanda fixture C8'],
+        'position' => 0,
+    ]);
+
     // Only EN indicators — NO Italian translation → AnchorTranslationMissingException
     c8SeedIndicators($role->id, $competency->id, 'en', 2);
 
@@ -296,6 +335,16 @@ test('5.3 /start empty indicator set → 422 composition_error; no provider call
         'position' => 1,
     ]);
 
+    // framework-catalogue-authoring PR6 (D5) — interviewability is a
+    // precondition here; this scenario's own subject is the missing
+    // indicator set.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'C8 fixture question', 'it' => 'Domanda fixture C8'],
+        'position' => 0,
+    ]);
+
     // NO BarsIndicators for this role+competency → CompositionException
     // (role exists but has zero indicators for this competency)
 
@@ -326,6 +375,7 @@ test('5.4 provider 5xx failure matrix unchanged after QuestionContext widening �
     Queue::fake();
 
     $scenario = c8SeedStandardScenario('en');
+    c8MakeInterviewable($scenario);
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
@@ -860,33 +910,31 @@ test('the SPOKEN opening is the operator\'s first authored question, not a templ
     expect($capturedContextBody['prompt'])->toContain('Second authored question.');
 });
 
-test('a competency with NO authored question keeps the welcome template', function (): void {
-    // The template is not dead code: it is what an operator who authored
-    // nothing still gets, and it must keep ending in a question or the LLM has
-    // no user turn to answer and waits.
+test('a competency with NO authored question never reaches /start at all (framework-catalogue-authoring PR6)', function (): void {
+    // SUPERSEDED by the interviewability predicate (project-config spec,
+    // "A Zero-Primary Competency Never Reaches Interview"): a selected
+    // competency with zero LIVE `project_questions` rows now makes the
+    // WHOLE project non-interviewable, refused before composition is ever
+    // attempted — this is the exact scenario the old assertion below
+    // exercised, and it can no longer be reached through this endpoint.
+    //
+    // The welcome-template fallback this test used to protect is not dead:
+    // `OpeningTextComposer` still produces it, and its own behaviour for a
+    // zero-question competency is proven directly and independently of HTTP
+    // reachability by `tests/Unit/Services/Conversation/OpeningTextComposerTest.php`
+    // ("the version is stamped identically whether or not a question was
+    // authored").
     Queue::fake();
-
-    $capturedContextBody = [];
-    Http::fake(function ($request) use (&$capturedContextBody) {
-        if (str_contains($request->url(), '/contexts')) {
-            $capturedContextBody = $request->data();
-
-            return Http::response(['data' => ['id' => 'ctx-template']], 200);
-        }
-        if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'heygen-template', 'session_token' => 'tok-template']], 200);
-        }
-
-        return Http::response([], 200);
-    });
+    Http::fake();
 
     $scenario = c8SeedStandardScenario('en');
+    // Deliberately NO `project_questions` row for the competency.
     $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
-    $this->withHeaders(['Authorization' => 'Bearer '.$bearer])
-        ->postJson('/api/candidate/interview/start')
-        ->assertStatus(201);
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start');
 
-    expect($capturedContextBody['opening_text'])
-        ->toBe(trans('interview.opening.first', ['competency' => $scenario['competency']->getTranslation('name', 'en')], 'en'));
+    $response->assertStatus(422);
+    $response->assertJsonPath('error', 'project_not_interviewable');
+    Http::assertNothingSent();
 });

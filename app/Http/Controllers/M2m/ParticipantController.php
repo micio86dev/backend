@@ -9,6 +9,7 @@ use App\Http\Resources\ParticipantResource;
 use App\Models\ApiClient;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Support\Project\ProjectInterviewability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -33,6 +34,10 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  */
 final class ParticipantController extends Controller
 {
+    public function __construct(
+        private readonly ProjectInterviewability $projectInterviewability,
+    ) {}
+
     /**
      * Create a new participant for a project in the caller's org.
      *
@@ -62,6 +67,23 @@ final class ParticipantController extends Controller
         // Resolve project SCOPED to caller org (cross-org → 404).
         $project = Project::where('organization_id', $clientOrgId)
             ->findOrFail((int) $validated['project_id']);
+
+        // D5/D6 (framework-catalogue-authoring PR6) — before ANY participant
+        // row is written: the earliest point the calling system can be told,
+        // strictly kinder than failing at the candidate's door. `evaluate()`
+        // computes both the refusal decision and the competency list from
+        // ONE query, not two. `candidate_ref` is echoed BYTE-FOR-BYTE —
+        // never normalised, trimmed or re-cased — because it is the calling
+        // system's only correlation handle for a request that produced no
+        // participant row at all.
+        $interviewability = $this->projectInterviewability->evaluate($project);
+        if (! $interviewability['interviewable']) {
+            return response()->json([
+                'error' => 'PROJECT_NOT_INTERVIEWABLE',
+                'competency_codes' => $interviewability['unsatisfied_competency_codes'],
+                'candidate_ref' => $validated['candidate_ref'],
+            ], 422);
+        }
 
         // Create or find existing participant — organization_id from project (NOT from request).
         $participant = new Participant;

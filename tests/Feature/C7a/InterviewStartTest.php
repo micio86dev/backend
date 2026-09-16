@@ -31,6 +31,7 @@ use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -113,6 +114,16 @@ function startProjectWithCompetencies(Organization $org, int $count = 2, ?string
             'position' => 0,
         ]);
         $ind->save();
+
+        // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+        // project where a selected competency has zero live
+        // `project_questions` rows.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "C7a fixture question {$i}"],
+            'position' => 0,
+        ]);
 
         $competencies[] = $comp;
     }
@@ -724,8 +735,13 @@ test('POST /start on a recovered participant (status=in_attesa, started_at alrea
     $participant->refresh();
     expect($participant->started_at->getTimestamp())->toBe($originalStartedAt->getTimestamp());
 
-    // The avatar context was composed with the "next" opening greeting
-    // ("Great, let's move on...") — NOT the "first" one ("Hi, and welcome!").
+    // The avatar context was composed with the "next" opening greeting —
+    // NOT the "first" one ("Hi, and welcome!"). Asserted via the AUTHORED
+    // question text now (framework-catalogue-authoring PR6, D5 — every
+    // fixture competency carries one live `project_questions` row, which
+    // `OpeningTextComposer` returns verbatim for `first`/`next` rather than
+    // the generic "Great, let's move on..." template): the "next" variant
+    // still shows through by the ABSENCE of the "first" variant's own text.
     Http::assertSent(function ($req) {
         if (! str_contains($req->url(), '/contexts')) {
             return false;
@@ -733,7 +749,7 @@ test('POST /start on a recovered participant (status=in_attesa, started_at alrea
 
         $body = $req->data();
 
-        return str_contains($body['opening_text'] ?? '', "Great, let's move on")
+        return str_contains($body['opening_text'] ?? '', 'C7a fixture question 0')
             && ! str_contains($body['opening_text'] ?? '', 'Hi, and welcome');
     });
 });

@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\AvatarTemplate;
+use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\User;
 use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantContextScope;
@@ -633,4 +635,53 @@ function templateIdForCurrentOrg(): int
             'provider' => 'heygen',
             'config' => [],
         ])->id;
+}
+
+// ─── A project is interviewable only with ≥1 live question per selected competency ──
+
+/**
+ * Selects ONE competency and gives it ONE live `project_questions` row, so
+ * the project satisfies `App\Support\Project\ProjectInterviewability`
+ * (framework-catalogue-authoring PR6, D5). MUST be called inside the SAME
+ * tenant context the project was created under (`TenantContextScope::runFor()`
+ * or an already-established `TenantResolver`) — `ProjectQuestion` is a
+ * `TenantModel`.
+ *
+ * Every mint/exchange/`/start` SUCCESS-path fixture across the suite needs
+ * this now: entry-link mint, M2M participant/sso-link mint, SSO exchange,
+ * and `/start` all refuse a project with zero selected competencies, or a
+ * selected competency with zero live questions — this is the ratified
+ * product rule (project-config spec, "A Single Interviewability Predicate
+ * Gates Every Interview Entry Point": a project is interviewable only
+ * while every currently selected competency has at least one live
+ * question), not a defect these fixtures need routing around. Shared here
+ * rather than copied into each suite's own project-creation helper, the
+ * same reasoning as `templateIdForCurrentOrg()` above.
+ */
+function makeProjectInterviewable(Project $project, ?string $competencyCode = null): Competency
+{
+    $type = $project->assessment_type === 'potential' ? 'potential' : 'standard';
+    $code = $competencyCode ?? ($type === 'potential' ? 'MTG' : 'PRS');
+
+    // Scoped to the PROJECT'S OWN pinned revision (gga review finding,
+    // mirrors framework-catalogue-authoring PR3b's H1 fix): an unscoped
+    // `firstOrCreate(['code' => $code], ...)` can bind to whichever of a
+    // baseline/draft pair sharing this code Postgres happens to return
+    // first, once a test suite run has opened a draft anywhere — the exact
+    // ambiguity `CatalogueRevisionResolver` exists to close in production.
+    $competency = Competency::firstOrCreate(
+        ['code' => $code, 'revision_id' => $project->frameworkVersion?->revision_id],
+        ['name' => ['en' => 'x'], 'definition' => ['en' => 'x'], 'type' => $type],
+    );
+
+    $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
+
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'x'],
+        'position' => 0,
+    ]);
+
+    return $competency;
 }

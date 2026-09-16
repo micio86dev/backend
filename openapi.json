@@ -7033,10 +7033,17 @@
                                         "message": {
                                             "type": "string",
                                             "const": "Access denied."
+                                        },
+                                        "redirect_url": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         }
                                     },
                                     "required": [
-                                        "message"
+                                        "message",
+                                        "redirect_url"
                                     ]
                                 }
                             }

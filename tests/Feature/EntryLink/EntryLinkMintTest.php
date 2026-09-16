@@ -45,7 +45,7 @@ function mintTestProject(Organization $org, array $attrs = []): Project
 
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'framework_version_id' => $fv->id,
         'status' => 'active',
         'assessment_type' => 'standard',
@@ -53,6 +53,13 @@ function mintTestProject(Organization $org, array $attrs = []): Project
         'goes_live_at' => null,
         'deadline_at' => null,
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — this suite mints against a
+    // SUCCESS path by default; interviewability is a precondition of that,
+    // not the thing under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 test('a successful mint returns entry_url and expires_at, no bare token', function (): void {

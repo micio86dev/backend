@@ -45,9 +45,16 @@ function makeSsoProject(Organization $org, array $attrs = []): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'status' => 'active',
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful M2M participant create, not the thing
+    // under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 function makeSsoParticipant(Project $project, Organization $org, ?string $ref = null): Participant

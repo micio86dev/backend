@@ -40,7 +40,7 @@ function makeEx403Project(Organization $org, array $attrs = []): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'status' => 'active',
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
@@ -48,6 +48,14 @@ function makeEx403Project(Organization $org, array $attrs = []): Project
         'goes_live_at' => null,
         'deadline_at' => null,
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of the two "passes" scenarios below (goes_live_at/
+    // deadline_at NULL); the intentional-403 scenarios stay 403 either way
+    // (same GENERIC_403 shape, whichever gate fires first).
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 function mintEx403Token(Project $project, Organization $org, array $overrides = []): string

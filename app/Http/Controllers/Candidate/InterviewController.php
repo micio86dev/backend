@@ -34,6 +34,7 @@ use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\CompetencyTally;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Logging\SafeDbContext;
+use App\Support\Project\ProjectInterviewability;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -69,6 +70,7 @@ class InterviewController extends Controller
         private readonly InterviewSessionLlmSnapshot $llmSnapshot,
         private readonly RecordConversationLlmUsage $recordLlmUsage,
         private readonly CatalogueRevisionResolver $revisionResolver,
+        private readonly ProjectInterviewability $projectInterviewability,
     ) {}
 
     // =========================================================================
@@ -80,6 +82,10 @@ class InterviewController extends Controller
      *
      * Sequence (from design data flow — CRITICAL: provider call is OUTSIDE any DB txn):
      * (1) Resolve next competency by project_competencies.position ASC.
+     * (1b) `ProjectInterviewability` gate (framework-catalogue-authoring PR6,
+     *      D5/D6) — 422 `project_not_interviewable`, skipped when a session
+     *      already exists for THIS competency; see the gate's own inline
+     *      comment for the whole-project vs. per-competency distinction.
      * (2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException → re-query.
      * (3) ProviderSessionService.issue() — OUTSIDE any DB transaction.
      * (4a) Provider success → short DB txn: UPDATE session + participant (FIX-8).
@@ -142,6 +148,54 @@ class InterviewController extends Controller
         // narrows it, and project_id is a non-nullable FK.)
         if ($project->assessment_type !== 'standard') {
             return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // D5/D6 (framework-catalogue-authoring PR6) — the predicate gates
+        // only a FRESH start. A session row already existing for THIS exact
+        // (participant, competency) pair is a continuation — a pending
+        // retry, an in-progress conversation, or a re-offer — and is never
+        // re-evaluated. Placed AFTER the assessment_type guard: a `potential`
+        // project (unsupported by composition at all) must still answer
+        // `assessment_type_not_supported` first.
+        $hasExistingSession = InterviewSession::where('participant_id', $pid)
+            ->where('competency_code', $nextCompetency['competency_code'])
+            ->exists();
+
+        if (! $hasExistingSession) {
+            // TWO different gates, deliberately — a single whole-project
+            // check here re-evaluated on EVERY competency transition would
+            // strand a candidate mid-interview: finishing competency 1 and
+            // moving to competency 2 would be blocked solely because
+            // competency 5 — not yet reached — lost its only question
+            // later (gga review finding on the first cut of this gate).
+            //
+            // TRUE fresh start (no session exists ANYWHERE on this project
+            // for this participant yet) → the FULL project gate applies,
+            // exactly as the spec's "a competency emptied of its questions
+            // blocks the whole project, not just itself" scenario states.
+            //
+            // Already mid-interview (at least one session exists elsewhere
+            // on this project) → only THIS competency's OWN live-question
+            // state gates ITS OWN fresh start. An unrelated, not-yet-reached
+            // competency's later misconfiguration does not retroactively
+            // block progress that has nothing to do with it — it will
+            // correctly refuse in its own turn, when the candidate actually
+            // reaches it.
+            $hasAnySessionOnProject = InterviewSession::where('participant_id', $pid)
+                ->where('project_id', $project->id)
+                ->exists();
+
+            $blocked = $hasAnySessionOnProject
+                ? in_array(
+                    $nextCompetency['competency_code'],
+                    $this->projectInterviewability->unsatisfiedCompetencyCodes($project),
+                    true,
+                )
+                : ! $this->projectInterviewability->isInterviewable($project);
+
+            if ($blocked) {
+                return response()->json(['error' => 'project_not_interviewable'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
         }
 
         // The ONE catalogue revision this whole request resolves role/competency

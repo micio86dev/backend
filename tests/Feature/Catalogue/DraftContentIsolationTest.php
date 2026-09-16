@@ -32,6 +32,7 @@ use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\User;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -191,11 +192,25 @@ test('a live interview never composes against a role/competency that exists only
     // row to resolve `competency_code` in resolveNextCompetency() — the
     // DRAFT's row is what a superadmin's clone would have produced, and is
     // exactly what must never reach composition.
+    $draftCompetencyId = DB::table('framework_competencies')
+        ->where('revision_id', $draft->id)->where('code', 'DIICOMP')->value('id');
+
     DB::table('project_competencies')->insert([
         'project_id' => $project->id,
-        'competency_id' => DB::table('framework_competencies')
-            ->where('revision_id', $draft->id)->where('code', 'DIICOMP')->value('id'),
+        'competency_id' => $draftCompetencyId,
         'position' => 1,
+    ]);
+
+    // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+    // project where a selected competency has zero live `project_questions`
+    // rows, BEFORE composition ever runs; this scenario's own subject is
+    // draft-content isolation AT composition, so it needs to pass the
+    // interviewability gate first.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $draftCompetencyId,
+        'text' => ['en' => 'Draft isolation fixture question'],
+        'position' => 0,
     ]);
 
     $participant = new Participant;
