@@ -12,6 +12,8 @@ use App\Models\FrameworkGap;
 use App\Models\Role;
 use App\Services\FrameworkCatalog\CompetencyNormalizer;
 use App\Services\FrameworkCatalog\DTO\IndicatorDTO;
+use App\Support\Catalogue\CatalogueRules;
+use App\Support\Catalogue\Concerns\ReadsCatalogueLocaleMaps;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -173,26 +175,13 @@ use RuntimeException;
  */
 class FrameworkCatalogSeeder extends Seeder
 {
+    use ReadsCatalogueLocaleMaps;
+
     private string $rolesFile;
 
     private string $competenciesFile;
 
     private string $barsDir;
-
-    /**
-     * The competencies that belong to `potential` and to no role.
-     *
-     * A constant rather than a field in competencies.json: the domain fixes
-     * this set (docs/app_description/02-domain/01-roles-and-competencies.md —
-     * MTG "Managing", LAT "Leadership Attributes", both "Potential type
-     * only"), and `StoreProjectRequest::validatePotential()` already hardcodes
-     * the same two. Adding a `type` key to all twenty entries so that
-     * eighteen could say "standard" would be ceremony, and a second place for
-     * the pair to disagree with the validator.
-     *
-     * @var list<string>
-     */
-    private const POTENTIAL_CODES = ['MTG', 'LAT'];
 
     public function __construct(
         ?string $rolesFile = null,
@@ -293,8 +282,8 @@ class FrameworkCatalogSeeder extends Seeder
         $competencyIdsByCode = [];
 
         foreach ($competenciesJson as $code => $data) {
-            $nameLocales = $this->readLocaleMap($data['name'] ?? null, "competencies.json:{$code}.name");
-            $definitionLocales = $this->readLocaleMap($data['definition'] ?? null, "competencies.json:{$code}.definition");
+            $nameLocales = $this->readLocaleMap($data['name'] ?? null, "competencies.json:{$code}.name", 'FrameworkCatalogSeeder');
+            $definitionLocales = $this->readLocaleMap($data['definition'] ?? null, "competencies.json:{$code}.definition", 'FrameworkCatalogSeeder');
 
             // Scoped to the baseline — natural-key lookup by code ALONE would
             // bind to whichever revision's row Postgres happens to return
@@ -314,7 +303,7 @@ class FrameworkCatalogSeeder extends Seeder
             }
 
             $competency ??= new Competency(['revision_id' => $baselineId, 'code' => $code]);
-            $competency->type = in_array($code, self::POTENTIAL_CODES, true)
+            $competency->type = in_array($code, CatalogueRules::POTENTIAL_CODES, true)
                 ? 'potential'
                 : 'standard';
             $this->setAllLocales($competency, 'name', $nameLocales);
@@ -333,8 +322,8 @@ class FrameworkCatalogSeeder extends Seeder
 
         // ─── 3. Seed roles + pivot + BARS ────────────────────────────────────
         foreach ($rolesJson as $roleCode => $roleData) {
-            $roleNameLocales = $this->readLocaleMap($roleData['name'] ?? null, "roles.json:{$roleCode}.name");
-            $roleResponsibilitiesLocales = $this->readLocaleMap($roleData['responsibilities'] ?? null, "roles.json:{$roleCode}.responsibilities", allowBlankEn: true);
+            $roleNameLocales = $this->readLocaleMap($roleData['name'] ?? null, "roles.json:{$roleCode}.name", 'FrameworkCatalogSeeder');
+            $roleResponsibilitiesLocales = $this->readLocaleMap($roleData['responsibilities'] ?? null, "roles.json:{$roleCode}.responsibilities", 'FrameworkCatalogSeeder', allowBlankEn: true);
 
             // Same landmine fix as competencies, above: scoped to the baseline.
             $role = Role::where('revision_id', $baselineId)->where('code', $roleCode)->first();
@@ -530,8 +519,14 @@ class FrameworkCatalogSeeder extends Seeder
                 // strings (3 indicators × {text, anchor_5, anchor_3, anchor_1}) must carry a
                 // non-empty `it` value before this pair counts as translated. 11 of 12 is
                 // treated as 0 (mirrors the scoring-engine per-competency hard-fail unit).
-                // Computed from JSON, not DB state, so this proceeds even while catalogue-
-                // content writes are blocked — framework_gaps is exempt from the gate (D2).
+                // The determination itself is computed from JSON, not DB state, so it always
+                // runs — `framework_gaps` is exempt from the gate (D2) — but
+                // `resolveOrRecordTranslationGap()` does NOT unconditionally act on it: recording
+                // a still-pending gap proceeds unconditionally (it describes the JSON), while
+                // marking one RESOLVED is gated behind `$writesBlocked` (it is a claim the
+                // DATABASE now satisfies the rule — see this class's own docblock, "Gap
+                // resolution reflects DATABASE state, not the JSON", and that method's own
+                // docblock for the full split).
                 //
                 // This is ALSO where the global-row denominator (step 5) is accumulated:
                 // every pair that reaches this line is a currently-assigned, anchored pair
@@ -595,7 +590,7 @@ class FrameworkCatalogSeeder extends Seeder
         // stayed unusable even after the catalogue gained the definitions.
         $this->seedPotentialIndicators($competencyIdsByCode, $baselineId, $writesBlocked);
 
-        foreach (self::POTENTIAL_CODES as $potentialCode) {
+        foreach (CatalogueRules::POTENTIAL_CODES as $potentialCode) {
             $authored = isset($competencyIdsByCode[$potentialCode])
                 && BarsIndicator::where('revision_id', $baselineId)
                     ->whereNull('role_id')
@@ -743,95 +738,6 @@ class FrameworkCatalogSeeder extends Seeder
     }
 
     /**
-     * Validate and read one translatable field's raw JSON value as a locale
-     * map (framework-catalog-it-translations design D1). Fails closed
-     * (throws) on any shape that is not an explicit `{"en": "...", ...}`
-     * object with a mandatory `en` string and no keys outside the
-     * known-locale set — mirrors `CompetencyNormalizer::normalizeLocaleMap()`,
-     * duplicated here (not shared) because this reads `roles.json` /
-     * `competencies.json` fields the normalizer's own contract never covered
-     * (it has always been BARS-entry-scoped; see its class docblock).
-     *
-     * `$allowBlankEn` exists ONLY for `roles.json`'s `responsibilities`
-     * field: an empty EN string is a legitimate, pre-existing sentinel for
-     * "not yet authored" (see the `missing_role_meta` gap immediately below
-     * this method's call sites) — every other translatable field in the
-     * catalogue treats a blank `en` as malformed content
-     * (`catalog_malformed_bars_entries`'s own `isBlank` rule).
-     *
-     * @return array<string, string>
-     */
-    private function readLocaleMap(mixed $value, string $context, bool $allowBlankEn = false): array
-    {
-        if (! is_array($value) || array_is_list($value)) {
-            $got = is_array($value) ? 'a list/array' : get_debug_type($value);
-
-            throw new RuntimeException(
-                "FrameworkCatalogSeeder: {$context} must be a locale-map object (e.g. {\"en\": \"...\"}), got {$got}."
-            );
-        }
-
-        if (! array_key_exists('en', $value) || ! is_string($value['en'])) {
-            throw new RuntimeException(
-                "FrameworkCatalogSeeder: {$context} is missing a mandatory 'en' locale value."
-            );
-        }
-
-        if (! $allowBlankEn && $value['en'] === '') {
-            throw new RuntimeException(
-                "FrameworkCatalogSeeder: {$context} has a blank 'en' locale value."
-            );
-        }
-
-        $knownLocales = $this->knownLocales();
-
-        foreach ($value as $locale => $text) {
-            if (! is_string($locale) || ! in_array($locale, $knownLocales, true)) {
-                throw new RuntimeException(
-                    "FrameworkCatalogSeeder: {$context} has an unknown locale key [{$locale}]. Known locales: ".implode(', ', $knownLocales).'.'
-                );
-            }
-
-            if (! is_string($text)) {
-                throw new RuntimeException(
-                    "FrameworkCatalogSeeder: {$context} locale [{$locale}] must be a string, got ".get_debug_type($text).'.'
-                );
-            }
-        }
-
-        /** @var array<string, string> $value */
-        return $value;
-    }
-
-    /**
-     * The known-locale allowlist — sourced from `config('app.supported_locales')`,
-     * the SAME single source of truth `CompetencyNormalizer::knownLocales()` reads.
-     *
-     * @return list<string>
-     */
-    private function knownLocales(): array
-    {
-        /** @var list<string> $configured */
-        $configured = config('app.supported_locales', ['en']);
-
-        return in_array('en', $configured, true) ? $configured : [...$configured, 'en'];
-    }
-
-    /**
-     * Write EVERY locale present in the source map — not `en` only. This is
-     * the single code path an authored `it` value and the existing `en`
-     * value both flow through.
-     *
-     * @param  array<string, string>  $localeMap
-     */
-    private function setAllLocales(Role|Competency|BarsIndicator $model, string $field, array $localeMap): void
-    {
-        foreach ($localeMap as $locale => $value) {
-            $model->setTranslation($field, $locale, $value);
-        }
-    }
-
-    /**
      * Per-pair `missing_translation` gap resolution (design D5), evaluated at
      * role×competency PAIR granularity: ALL 12 strings across the pair's 3
      * indicators must carry a non-empty `it` value before the pair counts as
@@ -953,12 +859,14 @@ class FrameworkCatalogSeeder extends Seeder
                 $this->setAllLocales($indicator, 'text', $this->readLocaleMap(
                     $raw['indicator'] ?? null,
                     "bars/POTENTIAL.json:{$code}[{$position}].indicator",
+                    'FrameworkCatalogSeeder',
                 ));
 
                 foreach (['5' => 'anchor_5', '3' => 'anchor_3', '1' => 'anchor_1'] as $level => $column) {
                     $this->setAllLocales($indicator, $column, $this->readLocaleMap(
                         $raw['scale'][$level] ?? null,
                         "bars/POTENTIAL.json:{$code}[{$position}].scale.{$level}",
+                        'FrameworkCatalogSeeder',
                     ));
                 }
 

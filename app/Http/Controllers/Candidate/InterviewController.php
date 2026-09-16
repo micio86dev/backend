@@ -160,8 +160,10 @@ class InterviewController extends Controller
 
         // Resolved ONCE, here, and reused below (framework-catalogue-
         // authoring PR3b, H11 dead-code finding, two rounds): the opening
-        // greeting, `composePromptForCompetency()`'s own competency
-        // resolution, AND the authored-questions lookup all need this SAME
+        // greeting, the authored-questions lookup, AND
+        // `composePromptForCompetency()` (which no longer resolves its own
+        // competency at all — the H11 hoist below passes this SAME row in
+        // as its `$competency` parameter) all need this SAME
         // `(code, revisionId)` row — three independent lookups with
         // identical inputs collapsed into one. `$nextCompetencyRow` is
         // reused as `$openingCompetency` below and passed directly into

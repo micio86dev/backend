@@ -134,13 +134,13 @@ class FrameworkVersion extends TenantModel
             return;
         }
 
-        $latestPublishedId = FrameworkCatalogRevision::where('state', 'published')
-            ->orderByDesc('published_at')
-            ->orderByDesc('id')
-            ->value('id');
+        // K7 (framework-catalogue-authoring PR4b): the ONE `latestPublished()`
+        // implementation every "latest published revision" reader now shares
+        // — see that method's own docblock on `FrameworkCatalogRevision`.
+        $latestPublished = FrameworkCatalogRevision::latestPublished();
 
-        if ($latestPublishedId !== null) {
-            $fv->revision_id = $latestPublishedId;
+        if ($latestPublished !== null) {
+            $fv->revision_id = $latestPublished->id;
         }
     }
 

@@ -35,4 +35,23 @@ final class CatalogueRules
      * the FormRequest and publish-sweep layers.
      */
     public const MAX_ROLES = 5;
+
+    /**
+     * The competencies that belong to `potential` and to no role
+     * (framework-catalogue-authoring PR4b, K7 — a single implementation,
+     * previously re-declared identically in `FrameworkCatalogSeeder` and
+     * `CatalogueImportCommand`).
+     *
+     * A constant rather than a field in the vendored `competencies.json`:
+     * the domain fixes this set
+     * (docs/app_description/02-domain/01-roles-and-competencies.md — MTG
+     * "Managing", LAT "Leadership Attributes", both "Potential type only"),
+     * and `StoreProjectRequest::validatePotential()` already hardcodes the
+     * same two. Adding a `type` key to all twenty entries so that eighteen
+     * could say "standard" would be ceremony, and a second place for the
+     * pair to disagree with the validator.
+     *
+     * @var list<string>
+     */
+    public const POTENTIAL_CODES = ['MTG', 'LAT'];
 }

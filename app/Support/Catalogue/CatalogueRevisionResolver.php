@@ -135,10 +135,14 @@ final class CatalogueRevisionResolver
     }
 
     /**
-     * The newest PUBLISHED revision — never a draft. Ordered identically to
-     * `OpenDraftRevision`/`FrameworkVersion::assignLatestPublishedRevisionIfUnset()`,
-     * so every resolution path in the codebase agrees on "latest". Throws
-     * when none exists — use `tryLatestPublished()` for a caller that must
+     * The newest PUBLISHED revision — never a draft. Resolved through
+     * `FrameworkCatalogRevision::latestPublished()` (framework-catalogue-
+     * authoring PR4b, K7) — the ONE implementation `OpenDraftRevision`,
+     * `CatalogueExportCommand`, and `FrameworkVersion::
+     * assignLatestPublishedRevisionIfUnset()` all resolve through too, so
+     * every path in the codebase agrees on "latest" by construction, not by
+     * four independently-maintained copies of the same query. Throws when
+     * none exists — use `tryLatestPublished()` for a caller that must
      * degrade gracefully instead.
      */
     public function latestPublished(): int
@@ -155,9 +159,6 @@ final class CatalogueRevisionResolver
      */
     public function tryLatestPublished(): ?int
     {
-        return FrameworkCatalogRevision::where('state', 'published')
-            ->orderByDesc('published_at')
-            ->orderByDesc('id')
-            ->value('id');
+        return FrameworkCatalogRevision::latestPublished()?->id;
     }
 }

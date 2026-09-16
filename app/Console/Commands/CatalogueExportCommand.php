@@ -65,10 +65,9 @@ final class CatalogueExportCommand extends Command
             return FrameworkCatalogRevision::find((int) $revisionId);
         }
 
-        return FrameworkCatalogRevision::where('state', 'published')
-            ->orderByDesc('published_at')
-            ->orderByDesc('id')
-            ->first();
+        // K7 (framework-catalogue-authoring PR4b): the ONE `latestPublished()`
+        // implementation every "latest published revision" reader now shares.
+        return FrameworkCatalogRevision::latestPublished();
     }
 
     /**

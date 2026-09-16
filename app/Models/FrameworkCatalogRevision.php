@@ -151,6 +151,26 @@ class FrameworkCatalogRevision extends Model
     }
 
     /**
+     * The newest PUBLISHED revision, or `null` when none exists yet
+     * (framework-catalogue-authoring PR4b, K7) — never a draft. Mirrors
+     * `openDraft()`'s own rationale: replaces the identical
+     * `FrameworkCatalogRevision::where('state', 'published')
+     * ->orderByDesc('published_at')->orderByDesc('id')->first()` (or its
+     * `->value('id')` shape) that was independently re-derived across
+     * `OpenDraftRevision::open()`, `CatalogueExportCommand::resolveRevision()`,
+     * `FrameworkVersion::assignLatestPublishedRevisionIfUnset()`, and
+     * `CatalogueRevisionResolver::tryLatestPublished()` — one query, named
+     * once, so "latest" means the SAME thing everywhere it is asked.
+     */
+    public static function latestPublished(): ?self
+    {
+        return static::where('state', 'published')
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
      * @return HasMany<Role, $this>
      */
     public function roles(): HasMany

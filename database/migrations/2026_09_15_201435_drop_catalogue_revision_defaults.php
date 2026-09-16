@@ -12,10 +12,13 @@ use Illuminate\Support\Facades\DB;
  *
  * SCOPED TO TWO OF THE FOUR CATALOG-CONTENT TABLES — `framework_roles` and
  * `framework_competencies` ONLY. Both were verified safe: every writer
- * either goes through `RoleFactory`/`CompetencyFactory` (both updated in
- * this same change to default `revision_id` to the baseline explicitly, so
- * every existing call site keeps working unmodified) or already names
- * `revision_id` explicitly, audited across the whole suite for this PR.
+ * either already names `revision_id` explicitly, or goes through
+ * `Role`/`Competency::booted()`'s own `creating` listener — NOT the
+ * factory, deliberately (framework-catalogue-authoring PR3b, H10; see
+ * `RoleFactory`/`CompetencyFactory`'s own docblocks) — which defaults
+ * `revision_id` to the baseline the SAME way for every Eloquent creation
+ * path, factory or otherwise, so every existing call site keeps working
+ * unmodified. Audited across the whole suite for this PR.
  *
  * `framework_bars_indicators` IS NOT INCLUDED — attempted, and reverted
  * after measurement, not skipped for lack of trying. `BarsIndicator` has no

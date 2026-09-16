@@ -10,9 +10,10 @@ use App\Models\Competency;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\Role;
 use App\Services\FrameworkCatalog\CompetencyNormalizer;
+use App\Support\Catalogue\CatalogueRules;
+use App\Support\Catalogue\Concerns\ReadsCatalogueLocaleMaps;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 /**
  * `php artisan catalogue:import --into-draft` (framework-catalogue-authoring
@@ -47,14 +48,7 @@ use RuntimeException;
  */
 final class CatalogueImportCommand extends Command
 {
-    /**
-     * The competencies that belong to `potential` and to no role — see
-     * `FrameworkCatalogSeeder::POTENTIAL_CODES`'s own docblock for why this
-     * is a constant here too, rather than a JSON-authored `type` key.
-     *
-     * @var list<string>
-     */
-    private const POTENTIAL_CODES = ['MTG', 'LAT'];
+    use ReadsCatalogueLocaleMaps;
 
     protected $signature = 'catalogue:import
         {--into-draft : Import into the open draft revision — the only supported target}
@@ -148,9 +142,9 @@ final class CatalogueImportCommand extends Command
             $competency = Competency::where('revision_id', $draftId)->where('code', $code)->first()
                 ?? new Competency(['revision_id' => $draftId, 'code' => $code]);
 
-            $competency->type = in_array($code, self::POTENTIAL_CODES, true) ? 'potential' : 'standard';
-            $this->setAllLocales($competency, 'name', $this->readLocaleMap($data['name'] ?? null, "competencies.json:{$code}.name"));
-            $this->setAllLocales($competency, 'definition', $this->readLocaleMap($data['definition'] ?? null, "competencies.json:{$code}.definition"));
+            $competency->type = in_array($code, CatalogueRules::POTENTIAL_CODES, true) ? 'potential' : 'standard';
+            $this->setAllLocales($competency, 'name', $this->readLocaleMap($data['name'] ?? null, "competencies.json:{$code}.name", 'catalogue:import'));
+            $this->setAllLocales($competency, 'definition', $this->readLocaleMap($data['definition'] ?? null, "competencies.json:{$code}.definition", 'catalogue:import'));
             $competency->save();
 
             $competencyIdsByCode[$code] = $competency->id;
@@ -172,8 +166,8 @@ final class CatalogueImportCommand extends Command
             $role = Role::where('revision_id', $draftId)->where('code', $roleCode)->first()
                 ?? new Role(['revision_id' => $draftId, 'code' => $roleCode]);
 
-            $this->setAllLocales($role, 'name', $this->readLocaleMap($roleData['name'] ?? null, "roles.json:{$roleCode}.name"));
-            $this->setAllLocales($role, 'responsibilities', $this->readLocaleMap($roleData['responsibilities'] ?? null, "roles.json:{$roleCode}.responsibilities", allowBlankEn: true));
+            $this->setAllLocales($role, 'name', $this->readLocaleMap($roleData['name'] ?? null, "roles.json:{$roleCode}.name", 'catalogue:import'));
+            $this->setAllLocales($role, 'responsibilities', $this->readLocaleMap($roleData['responsibilities'] ?? null, "roles.json:{$roleCode}.responsibilities", 'catalogue:import', allowBlankEn: true));
             $role->save();
 
             $assignedIds = [];
@@ -281,63 +275,5 @@ final class CatalogueImportCommand extends Command
                 $indicator->save();
             }
         }
-    }
-
-    /**
-     * Write EVERY locale present in the source map — mirrors
-     * `FrameworkCatalogSeeder::setAllLocales()` exactly, for the same reason:
-     * an authored `it` value and the existing `en` value both flow through
-     * this one code path.
-     *
-     * @param  array<string, string>  $localeMap
-     */
-    private function setAllLocales(Role|Competency|BarsIndicator $model, string $field, array $localeMap): void
-    {
-        foreach ($localeMap as $locale => $value) {
-            $model->setTranslation($field, $locale, $value);
-        }
-    }
-
-    /**
-     * Mirrors `FrameworkCatalogSeeder::readLocaleMap()` exactly — the source
-     * files are the SAME vendored trees, so the same validation applies:
-     * `en` mandatory (blank permitted only for `allowBlankEn`, the role-
-     * responsibilities "not yet authored" sentinel), every other key a known
-     * locale.
-     *
-     * @return array<string, string>
-     */
-    private function readLocaleMap(mixed $value, string $context, bool $allowBlankEn = false): array
-    {
-        if (! is_array($value) || array_is_list($value)) {
-            $got = is_array($value) ? 'a list/array' : get_debug_type($value);
-
-            throw new RuntimeException("catalogue:import: {$context} must be a locale-map object (e.g. {\"en\": \"...\"}), got {$got}.");
-        }
-
-        if (! array_key_exists('en', $value) || ! is_string($value['en'])) {
-            throw new RuntimeException("catalogue:import: {$context} is missing a mandatory 'en' locale value.");
-        }
-
-        if (! $allowBlankEn && $value['en'] === '') {
-            throw new RuntimeException("catalogue:import: {$context} has a blank 'en' locale value.");
-        }
-
-        /** @var list<string> $knownLocales */
-        $knownLocales = config('app.supported_locales', ['en']);
-        $knownLocales = in_array('en', $knownLocales, true) ? $knownLocales : [...$knownLocales, 'en'];
-
-        foreach ($value as $locale => $text) {
-            if (! is_string($locale) || ! in_array($locale, $knownLocales, true)) {
-                throw new RuntimeException("catalogue:import: {$context} has an unknown locale key [{$locale}].");
-            }
-
-            if (! is_string($text)) {
-                throw new RuntimeException("catalogue:import: {$context} locale [{$locale}] must be a string, got ".get_debug_type($text).'.');
-            }
-        }
-
-        /** @var array<string, string> $value */
-        return $value;
     }
 }

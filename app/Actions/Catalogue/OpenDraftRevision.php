@@ -46,10 +46,12 @@ final class OpenDraftRevision
 
         try {
             return DB::transaction(function (): FrameworkCatalogRevision {
-                $parent = FrameworkCatalogRevision::where('state', 'published')
-                    ->orderByDesc('published_at')
-                    ->orderByDesc('id')
-                    ->firstOrFail();
+                // K7 (framework-catalogue-authoring PR4b): resolved through
+                // the ONE `latestPublished()` implementation every other
+                // "latest published revision" reader now shares — see that
+                // method's own docblock.
+                $parent = FrameworkCatalogRevision::latestPublished()
+                    ?? throw new ModelNotFoundException('framework_catalog_revisions: no published revision exists to clone a draft from.');
 
                 $draft = FrameworkCatalogRevision::create(['state' => 'draft', 'parent_revision_id' => $parent->id]);
 
