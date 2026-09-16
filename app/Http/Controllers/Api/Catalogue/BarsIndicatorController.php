@@ -12,7 +12,9 @@ use App\Http\Resources\Catalogue\CatalogueBarsIndicatorResource;
 use App\Models\BarsIndicator;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\User;
+use App\Support\Catalogue\CatalogueConstraintViolation;
 use App\Support\Superadmin\PlatformAuditWriter;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -90,6 +92,21 @@ class BarsIndicatorController extends Controller
             );
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        } catch (QueryException $e) {
+            // Z4 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+            // see `CatalogueConstraintViolation`'s own docblock — a
+            // concurrent request can pass this SAME request's FormRequest
+            // pre-check and still lose to the DB layer's own backstop
+            // (the pair-cap trigger, the position partial unique index).
+            // An unrecognized violation is rethrown — still a 500, on
+            // purpose.
+            $errorCode = CatalogueConstraintViolation::toErrorCode($e);
+
+            if ($errorCode === null) {
+                throw $e;
+            }
+
+            return response()->json(['error' => $errorCode], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         return (new CatalogueBarsIndicatorResource($indicator))->response()->setStatusCode(Response::HTTP_CREATED);
@@ -129,6 +146,15 @@ class BarsIndicatorController extends Controller
             });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        } catch (QueryException $e) {
+            // Z4 — see `store()`'s identical comment.
+            $errorCode = CatalogueConstraintViolation::toErrorCode($e);
+
+            if ($errorCode === null) {
+                throw $e;
+            }
+
+            return response()->json(['error' => $errorCode], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         return (new CatalogueBarsIndicatorResource($target->fresh()))->response();

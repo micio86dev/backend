@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Catalogue\OpenDraftRevision;
+use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\FrameworkCatalogRevision;
@@ -45,6 +46,15 @@ use Illuminate\Support\Facades\DB;
  * `DiscardUnusedDraftRevision` uses), unless `--continue` says otherwise: an
  * import silently overwriting a superadmin's in-progress backoffice edits
  * would be a worse outcome than refusing and asking.
+ *
+ * Z5 (R4-import-bypasses-revision-lock, REQUIRED BEFORE ARCHIVE): every OTHER
+ * catalogue-content writer (the CRUD controllers) takes
+ * `BumpsRevisionContentVersion::withRevisionLockedForWrite()`'s `SELECT ...
+ * FOR UPDATE` on the draft revision row before writing — this command used to
+ * be the one exception, writing through plain `save()`/`sync()` calls with no
+ * lock at all, so a concurrent `DiscardUnusedDraftRevision`/`PublishRevision`
+ * could race it. The entire content-writing phase now runs INSIDE that same
+ * lock, taken once immediately after `open()` resolves the draft.
  */
 final class CatalogueImportCommand extends Command
 {
@@ -108,15 +118,29 @@ final class CatalogueImportCommand extends Command
         // recovery, which still works correctly nested (Laravel uses a
         // SAVEPOINT for a nested `DB::transaction()` call) — rolls back the
         // clone together with whatever content import had already written.
-        $draft = DB::transaction(function () use ($openDraftRevision, $competenciesJson, $rolesJson, $barsDir, $normalizer): FrameworkCatalogRevision {
-            $draft = $openDraftRevision->open();
+        try {
+            $draft = DB::transaction(function () use ($openDraftRevision, $competenciesJson, $rolesJson, $barsDir, $normalizer): FrameworkCatalogRevision {
+                $draft = $openDraftRevision->open();
 
-            $competencyIdsByCode = $this->importCompetencies($draft->id, $competenciesJson);
-            $this->importRolesAndBars($draft->id, $rolesJson, $barsDir, $competencyIdsByCode, $normalizer);
-            $this->importPotentialBars($draft->id, $barsDir, $competencyIdsByCode, $normalizer);
+                // Z5: the SAME `SELECT ... FOR UPDATE` lock every CRUD
+                // controller write already takes, wrapping the whole
+                // content-writing phase — a nested transaction (Laravel uses
+                // a SAVEPOINT), not a second top-level one, so a throw
+                // anywhere below still rolls back together with `open()`'s
+                // own clone (K4).
+                Competency::withRevisionLockedForWrite($draft->id, function () use ($draft, $competenciesJson, $rolesJson, $barsDir, $normalizer): void {
+                    $competencyIdsByCode = $this->importCompetencies($draft->id, $competenciesJson);
+                    $this->importRolesAndBars($draft->id, $rolesJson, $barsDir, $competencyIdsByCode, $normalizer);
+                    $this->importPotentialBars($draft->id, $barsDir, $competencyIdsByCode, $normalizer);
+                });
 
-            return $draft;
-        });
+                return $draft;
+            });
+        } catch (RevisionPublishedDuringWriteException $e) {
+            $this->error("catalogue_import_revision_no_longer_open: {$e->getMessage()}");
+
+            return self::FAILURE;
+        }
 
         $this->info("Imported catalogue content into draft revision {$draft->id}.");
 

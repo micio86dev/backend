@@ -13,7 +13,9 @@ use App\Http\Resources\Catalogue\CatalogueRoleResource;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Catalogue\CatalogueConstraintViolation;
 use App\Support\Superadmin\PlatformAuditWriter;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -110,6 +112,21 @@ class RoleController extends Controller
             );
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        } catch (QueryException $e) {
+            // Z4 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+            // see `CatalogueConstraintViolation`'s own docblock — a
+            // concurrent request naming the same `code` can pass THIS
+            // request's own FormRequest uniqueness pre-check and still lose
+            // to the DB's `framework_roles_revision_code_unique` constraint.
+            // An unrecognized violation is rethrown — still a 500, on
+            // purpose.
+            $errorCode = CatalogueConstraintViolation::toErrorCode($e);
+
+            if ($errorCode === null) {
+                throw $e;
+            }
+
+            return response()->json(['error' => $errorCode], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         return (new CatalogueRoleResource($role))->response()->setStatusCode(Response::HTTP_CREATED);
@@ -156,6 +173,15 @@ class RoleController extends Controller
             });
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        } catch (QueryException $e) {
+            // Z4 — see `store()`'s identical comment.
+            $errorCode = CatalogueConstraintViolation::toErrorCode($e);
+
+            if ($errorCode === null) {
+                throw $e;
+            }
+
+            return response()->json(['error' => $errorCode], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         return (new CatalogueRoleResource($target->fresh()))->response();
