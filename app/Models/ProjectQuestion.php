@@ -33,6 +33,22 @@ use Illuminate\Support\Carbon;
  *                                       same shape the catalogue uses, because i18n is mandatory it/en and
  *                                       the question must reach the candidate in the project's language.
  * @property int $position
+ * @property bool $operator_modified Provenance flag (framework-catalogue-authoring
+ *                                   PR5, D9) — TRUE once an operator has authored or
+ *                                   edited this row's text; FALSE for a row still
+ *                                   carrying its catalogue-default copy verbatim. Set
+ *                                   TRUE by `ProjectQuestionController::store()`/`update()`
+ *                                   unconditionally, via direct attribute assignment.
+ *                                   `ApplyCompetencySelection`'s auto-fill does NOT
+ *                                   write it at all — the column's own `DEFAULT false`
+ *                                   supplies the value, since that write path must
+ *                                   never claim a copied row as operator-authored. A
+ *                                   restore never writes it either — the restored row
+ *                                   keeps whatever it already had. Never compared against
+ *                                   the current catalogue
+ *                                   default text: a flag records what happened, a
+ *                                   comparison would guess, and guess differently as
+ *                                   the default changes later.
  * @property Carbon|null $deleted_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -47,6 +63,10 @@ class ProjectQuestion extends TenantModel
      * `organization_id` is absent on purpose — TenantScoped stamps it
      * unconditionally on create, and accepting it here would let a request
      * payload propose a different tenant.
+     *
+     * `operator_modified` is absent on purpose too: it is never accepted
+     * from a request payload, only set by the controller/action that already
+     * knows which write path produced the row (see the property docblock).
      *
      * @var list<string>
      */
@@ -65,6 +85,7 @@ class ProjectQuestion extends TenantModel
         return [
             'text' => 'array',
             'position' => 'integer',
+            'operator_modified' => 'boolean',
         ];
     }
 

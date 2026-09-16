@@ -98,6 +98,17 @@ class StoreProjectQuestionRequest extends FormRequest
                 'integer',
                 Rule::exists('framework_competencies', 'id')
                     ->where('revision_id', app(CatalogueRevisionResolver::class)->tryForProject($this->project())),
+                // Closes the hole `ApplyCompetencySelection`'s restore path
+                // (D10) would otherwise walk into: without this, an operator
+                // could deselect COL, author a fresh COL question at
+                // position 0, then reselect COL — the restore collides with
+                // that fresh row on `(project, COL, 0)`, a
+                // UniqueConstraintViolationException where a 422 belongs.
+                // Scoped to the LIVE pivot only — a competency the project
+                // never selected, or has since deselected, cannot receive a
+                // new authored question either way.
+                Rule::exists('project_competencies', 'competency_id')
+                    ->where('project_id', $this->project()->id),
             ],
             'text' => ['required', 'array'],
             // `en` is required and `it` is not, matching the catalogue: an

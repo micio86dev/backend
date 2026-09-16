@@ -563,6 +563,13 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Catalogue');
 
+// Feature/Project — RefreshDatabase: `operator_modified` provenance and
+// `ApplyCompetencySelection` (PR5) are asserted against real
+// `project_questions` rows, the real partial unique index, and real
+// restore/soft-delete state.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Project');
+
 // Feature/Deploy — RefreshDatabase is LOAD-BEARING, not decoration. The happy
 // path runs the REAL `migrate --force` and the REAL `beai:sync-llm-registry`
 // (stubbing them would prove nothing about the wiring this command exists to

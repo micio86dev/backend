@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Project\ApplyCompetencySelection;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
@@ -46,6 +47,7 @@ class ProjectController extends Controller
 {
     public function __construct(
         private readonly ProjectWebhookDefaults $webhookDefaults,
+        private readonly ApplyCompetencySelection $applyCompetencySelection,
     ) {}
 
     /**
@@ -105,6 +107,10 @@ class ProjectController extends Controller
             }
             if (! empty($attach)) {
                 $project->competencies()->attach($attach);
+
+                // D10: on creation, EVERY attached competency is newly
+                // selected — there is no prior pivot state to diff against.
+                $this->applyCompetencySelection->apply($project, array_keys($attach), []);
             }
 
             // Pin: lock-for-update the FV and conditionally flip is_locked
@@ -181,7 +187,18 @@ class ProjectController extends Controller
                 $attach[$competencyId] = ['position' => $position];
             }
 
-            $resolved->competencies()->sync($attach);
+            // D10: `sync()`'s return value IS the observation — `attached`/
+            // `detached` are the ground truth of what this request actually
+            // changed, never re-derived from a pre-read diff (wrong under a
+            // concurrent write). `updated` (a pure position change) is
+            // deliberately ignored — it is not a selection change.
+            $changes = $resolved->competencies()->sync($attach);
+
+            $this->applyCompetencySelection->apply(
+                $resolved,
+                array_values(array_map('intval', $changes['attached'])),
+                array_values(array_map('intval', $changes['detached'])),
+            );
         });
 
         $resolved->load(['frameworkVersion', 'competencies', 'avatarTemplate.llmModel']);

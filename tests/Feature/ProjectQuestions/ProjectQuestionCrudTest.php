@@ -62,11 +62,25 @@ function pqCompetency(string $type = 'standard'): Competency
     );
 }
 
+/**
+ * Attaches a competency to a project's pivot (framework-catalogue-authoring
+ * PR5, D10/18.2): `StoreProjectQuestionRequest` now refuses authoring a
+ * question for a competency the project has not currently selected, so
+ * every test below that POSTs a real question through the API needs the
+ * pivot row present — a plain `attach()`, no position semantics under test
+ * here.
+ */
+function pqAttach(Organization $org, Project $project, Competency $competency): void
+{
+    TenantContextScope::runFor($org->id, fn () => $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]));
+}
+
 test('an admin can author a question for a project competency', function (): void {
     $org = Organization::factory()->create();
     ['token' => $token] = pqAdmin($org);
     $project = pqProject($org);
     $competency = pqCompetency();
+    pqAttach($org, $project, $competency);
 
     $response = $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
         'competency_id' => $competency->id,
@@ -192,6 +206,7 @@ test('the per-competency cap message is returned in the requested language', fun
     ['token' => $token] = pqAdmin($org);
     $project = pqProject($org);
     $competency = pqCompetency();
+    pqAttach($org, $project, $competency);
 
     // First one fills the `standard` cap of 1.
     $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
@@ -219,6 +234,7 @@ test('the same cap message is English for an English operator', function (): voi
     ['token' => $token] = pqAdmin($org);
     $project = pqProject($org);
     $competency = pqCompetency();
+    pqAttach($org, $project, $competency);
 
     $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
         'competency_id' => $competency->id,
@@ -244,6 +260,7 @@ test('raising the platform cap lets an operator author a second question', funct
     ['token' => $token] = pqAdmin($org);
     $project = pqProject($org);
     $competency = pqCompetency();
+    pqAttach($org, $project, $competency);
 
     $this->withToken($token)->postJson("/api/projects/{$project->id}/questions", [
         'competency_id' => $competency->id,
@@ -278,6 +295,7 @@ test('the cap message uses the plural form once the cap is above one', function 
     ['token' => $token] = pqAdmin($org);
     $project = pqProject($org);
     $competency = pqCompetency();
+    pqAttach($org, $project, $competency);
 
     app(PlatformSettings::class)->setMaxQuestionsPerCompetency(['standard' => 2]);
 
@@ -323,6 +341,7 @@ test('the competency type mismatch message translates both assessment types', fu
     ['token' => $token] = pqAdmin($org);
     $project = pqProject($org);
     $mismatched = pqCompetency('potential');
+    pqAttach($org, $project, $mismatched);
 
     $response = $this->withToken($token)
         ->withHeaders(['Accept-Language' => 'it'])
