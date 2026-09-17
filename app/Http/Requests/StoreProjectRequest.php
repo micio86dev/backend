@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
+use App\Models\FrameworkVersion;
 use App\Models\Project;
-use App\Models\Role;
 use App\Models\User;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -32,6 +33,29 @@ class StoreProjectRequest extends FormRequest
     public function authorize(): bool
     {
         return $this->user()?->can('create', Project::class) ?? false;
+    }
+
+    /**
+     * The revision the new project is ABOUT to pin (framework-catalogue-
+     * authoring PR3b, H1): resolved from the `framework_version_id` being
+     * submitted, not "latest published" — an org may legitimately submit an
+     * OLDER FrameworkVersion it already holds.
+     *
+     * NEVER throws — `tryForFrameworkVersion()`, never `forFrameworkVersion()`:
+     * this runs inside `rules()`, before `framework_version_id` has been
+     * validated at all, so both "no such version" (an invalid submitted id)
+     * and "the version resolved but carries no revision pin" must degrade to
+     * `null` (see the trait's `compositionRevisionId()` docblock for why
+     * `null` is already the correct "match nothing" value downstream) rather
+     * than throw the resolver's own integrity-violation exception for an
+     * input that ordinary shape validation is about to refuse anyway.
+     */
+    private function compositionRevisionId(): ?int
+    {
+        $versionId = $this->input('framework_version_id');
+        $version = is_numeric($versionId) ? FrameworkVersion::find((int) $versionId) : null;
+
+        return app(CatalogueRevisionResolver::class)->tryForFrameworkVersion($version);
     }
 
     /**
@@ -70,8 +94,15 @@ class StoreProjectRequest extends FormRequest
             'competency_ids' => ['nullable', 'array', 'list'],
             // `exists` is load-bearing: `validateStandard` iterates
             // `whereIn(...)->get()`, so an unknown id is never looped over and
-            // reached the foreign key as a 500.
-            'competency_ids.*' => ['integer', 'distinct', Rule::exists('framework_competencies', 'id')],
+            // reached the foreign key as a 500. Scoped to this project's own
+            // target revision (framework-catalogue-authoring PR3b, H1) — an
+            // unscoped `exists` would accept a competency id from ANY
+            // revision, including an open draft's clone of the same catalog.
+            'competency_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('framework_competencies', 'id')->where('revision_id', $this->compositionRevisionId()),
+            ],
             'pause_every_n_competencies' => ['nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],

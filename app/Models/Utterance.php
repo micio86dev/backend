@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $speaker
  * @property string $text
  * @property CarbonImmutable $ts
+ * @property string|null $turn_kind
  */
 class Utterance extends TenantModel
 {

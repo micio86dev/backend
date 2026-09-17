@@ -26,7 +26,7 @@ function makeLangProject(Organization $org, string $language = 'it'): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create([
+    $project = Project::factory()->create([
         'status' => 'active',
         'role_code' => 'ICO',
         'assessment_type' => 'standard',
@@ -34,6 +34,12 @@ function makeLangProject(Organization $org, string $language = 'it'): Project
         'goes_live_at' => null,
         'deadline_at' => null,
     ]);
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful exchange, not the thing under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 test('lang claim present → participant.language = claim lang', function (): void {

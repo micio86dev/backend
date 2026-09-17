@@ -1,9 +1,11 @@
 <?php
 
 use App\Models\AvatarTemplate;
+use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\User;
 use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantContextScope;
@@ -129,6 +131,20 @@ pest()->extend(TestCase::class)
 // Feature/C8 — RefreshDatabase for controller composition wiring + provider payload tests.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C8');
+
+// Unit/Conversation (framework-catalogue-authoring PR7, D7) — needs TestCase +
+// RefreshDatabase: SystemPromptComposerBudgetTest hits the DB via Role/
+// Competency/BarsIndicator factories, same reason as Unit/C8 above.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Conversation');
+
+// Unit/Interview (framework-catalogue-authoring PR7, D8) — needs TestCase +
+// RefreshDatabase: TurnClassifierTest builds InterviewSession/Utterance
+// fixtures via the shared `cas*()` helpers and factories.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Interview');
 
 // ─── C9 Scoring Engine ────────────────────────────────────────────────────────
 
@@ -548,6 +564,28 @@ pest()->use(RefreshDatabase::class)
 
 // ─── beai:deploy (release steps) ───────────────────────────────────────────────
 
+// ─── framework-catalogue-authoring ─────────────────────────────────────────
+
+// Feature/Migration — RefreshDatabase is LOAD-BEARING: these tests roll the
+// schema back to before this change's migrations and re-apply them inside
+// the same wrapping transaction (mirrors
+// tests/Feature/C2/Schema/UsersOrganizationMigrationTest.php's pattern), so
+// the seeded rows and the schema mutation both need to be undone together.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Migration');
+
+// Feature/Catalogue — RefreshDatabase: revision/composite-FK/CRUD tests
+// assert real Postgres constraints and read real rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Catalogue');
+
+// Feature/Project — RefreshDatabase: `operator_modified` provenance and
+// `ApplyCompetencySelection` (PR5) are asserted against real
+// `project_questions` rows, the real partial unique index, and real
+// restore/soft-delete state.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Project');
+
 // Feature/Deploy — RefreshDatabase is LOAD-BEARING, not decoration. The happy
 // path runs the REAL `migrate --force` and the REAL `beai:sync-llm-registry`
 // (stubbing them would prove nothing about the wiring this command exists to
@@ -611,4 +649,53 @@ function templateIdForCurrentOrg(): int
             'provider' => 'heygen',
             'config' => [],
         ])->id;
+}
+
+// ─── A project is interviewable only with ≥1 live question per selected competency ──
+
+/**
+ * Selects ONE competency and gives it ONE live `project_questions` row, so
+ * the project satisfies `App\Support\Project\ProjectInterviewability`
+ * (framework-catalogue-authoring PR6, D5). MUST be called inside the SAME
+ * tenant context the project was created under (`TenantContextScope::runFor()`
+ * or an already-established `TenantResolver`) — `ProjectQuestion` is a
+ * `TenantModel`.
+ *
+ * Every mint/exchange/`/start` SUCCESS-path fixture across the suite needs
+ * this now: entry-link mint, M2M participant/sso-link mint, SSO exchange,
+ * and `/start` all refuse a project with zero selected competencies, or a
+ * selected competency with zero live questions — this is the ratified
+ * product rule (project-config spec, "A Single Interviewability Predicate
+ * Gates Every Interview Entry Point": a project is interviewable only
+ * while every currently selected competency has at least one live
+ * question), not a defect these fixtures need routing around. Shared here
+ * rather than copied into each suite's own project-creation helper, the
+ * same reasoning as `templateIdForCurrentOrg()` above.
+ */
+function makeProjectInterviewable(Project $project, ?string $competencyCode = null): Competency
+{
+    $type = $project->assessment_type === 'potential' ? 'potential' : 'standard';
+    $code = $competencyCode ?? ($type === 'potential' ? 'MTG' : 'PRS');
+
+    // Scoped to the PROJECT'S OWN pinned revision (gga review finding,
+    // mirrors framework-catalogue-authoring PR3b's H1 fix): an unscoped
+    // `firstOrCreate(['code' => $code], ...)` can bind to whichever of a
+    // baseline/draft pair sharing this code Postgres happens to return
+    // first, once a test suite run has opened a draft anywhere — the exact
+    // ambiguity `CatalogueRevisionResolver` exists to close in production.
+    $competency = Competency::firstOrCreate(
+        ['code' => $code, 'revision_id' => $project->frameworkVersion?->revision_id],
+        ['name' => ['en' => 'x'], 'definition' => ['en' => 'x'], 'type' => $type],
+    );
+
+    $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
+
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'x'],
+        'position' => 0,
+    ]);
+
+    return $competency;
 }

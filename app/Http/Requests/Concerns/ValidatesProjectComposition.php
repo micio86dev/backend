@@ -6,6 +6,7 @@ namespace App\Http\Requests\Concerns;
 
 use App\Models\Competency;
 use App\Models\Role;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -31,6 +32,30 @@ use Illuminate\Validation\Validator;
  */
 trait ValidatesProjectComposition
 {
+    /**
+     * The ONE catalogue revision this request's composition checks resolve
+     * role/competency CODES against (framework-catalogue-authoring PR3b,
+     * H1) — never an unscoped `where('code', ...)`, which would resolve
+     * whichever of a baseline/draft pair sharing that code Postgres returns
+     * first. `StoreProjectRequest` resolves it from the `framework_version_id`
+     * being submitted (the revision the new project is ABOUT to pin);
+     * `UpdateProjectRequest` resolves it from the project's OWN already-
+     * pinned FrameworkVersion (framework_version_id is immutable after
+     * creation). Each class implements this because only it knows which of
+     * the two applies.
+     *
+     * NULLABLE, and deliberately never throws: this runs inside `rules()`,
+     * before any input has been validated, so an unresolvable target (an
+     * invalid submitted id, or an unseeded platform with no published
+     * revision at all) must degrade to "no valid role/competency" — a normal
+     * 422 — never a 500. `Illuminate\Validation\Rules\Exists::where($column,
+     * null)` and `Builder::where($column, null)` both convert to `whereNull`,
+     * which every catalogue-content column refuses (NOT NULL), so passing
+     * `null` through unconditionally is already the correct "match nothing"
+     * behaviour, not a special case each call site has to test for.
+     */
+    abstract private function compositionRevisionId(): ?int;
+
     /**
      * The `avatar_template_id` rule, for both requests.
      *
@@ -105,7 +130,19 @@ trait ValidatesProjectComposition
             return false;
         }
 
-        if (Competency::whereIn('code', ['MTG', 'LAT'])->count() >= 2) {
+        // Scoped to the platform's LATEST PUBLISHED revision, not this
+        // request's own compositionRevisionId(): this is a coarse "has the
+        // platform been seeded with the potential set AT ALL" check, run
+        // before framework_version_id has necessarily passed validation.
+        // `tryLatestPublished()`, never `latestPublished()`: an unseeded
+        // platform (no published revision at all) is EXACTLY the case this
+        // guard exists to answer with a structured 422, not a 500 — a `null`
+        // here degrades to "0 seeded", which correctly fires the guard below.
+        $latestPublished = app(CatalogueRevisionResolver::class)->tryLatestPublished();
+
+        if ($latestPublished !== null
+            && Competency::whereIn('code', ['MTG', 'LAT'])->where('revision_id', $latestPublished)->count() >= 2
+        ) {
             return false;
         }
 
@@ -158,7 +195,13 @@ trait ValidatesProjectComposition
 
         // 3. Competencies must be ⊆ {MTG, LAT} and all type='potential'
         if (! empty($competencyIds)) {
-            $competencies = Competency::whereIn('id', $competencyIds)->get();
+            // Scoped to this request's own target revision — the `exists`
+            // shape rule already refuses an id from any OTHER revision (see
+            // `competency_ids.*` in `StoreProjectRequest`/`UpdateProjectRequest`),
+            // so this is defense in depth, not the primary gate.
+            $competencies = Competency::whereIn('id', $competencyIds)
+                ->where('revision_id', $this->compositionRevisionId())
+                ->get();
 
             foreach ($competencies as $competency) {
                 if ($competency->type !== 'potential') {
@@ -195,7 +238,9 @@ trait ValidatesProjectComposition
 
         if (! empty($competencyIds)) {
             // Validate each competency: must be type=standard and assigned to this role
-            $role = Role::where('code', $roleCode)->first();
+            $role = Role::where('code', $roleCode)
+                ->where('revision_id', $this->compositionRevisionId())
+                ->first();
             if ($role === null) {
                 $v->errors()->add('role_code', "Role '{$roleCode}' not found in catalog.");
 
@@ -207,7 +252,11 @@ trait ValidatesProjectComposition
                 ->pluck('competency_id')
                 ->toArray();
 
-            $competencies = Competency::whereIn('id', $competencyIds)->get();
+            // Scoped to this request's own target revision — same defense-in
+            // -depth note as `validatePotential()` above.
+            $competencies = Competency::whereIn('id', $competencyIds)
+                ->where('revision_id', $this->compositionRevisionId())
+                ->get();
 
             foreach ($competencies as $competency) {
                 if ($competency->type !== 'standard') {

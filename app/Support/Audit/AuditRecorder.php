@@ -11,15 +11,18 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The only sanctioned way to write an audit row (C13).
+ * The only sanctioned way to write a TENANT-scoped audit row (C13).
  *
  * Two properties live here rather than at each call site, and both are the kind
  * that fail silently when left to callers.
  *
  * **Redaction is central.** A call site that forgets to strip a secret is the
  * normal failure mode, and the consequence is a permanent, queryable copy of a
- * credential in a table built to be read. The denylist runs here, recursively,
- * on every payload.
+ * credential in a table built to be read. The denylist itself lives in
+ * `AuditRedactor` (framework-catalogue-authoring PR8) — shared with
+ * `App\Support\Superadmin\PlatformAuditWriter`, the ONE other class permitted
+ * to write `audit_logs`, so both writers redact by the same rule rather than
+ * two independently-maintained copies.
  *
  * **Failure is contained.** A write that throws must never fail or roll back
  * the mutation it was recording. The mutation is the user's intent; the audit
@@ -29,28 +32,9 @@ use Throwable;
  */
 final class AuditRecorder
 {
-    /**
-     * Attribute names whose VALUES never reach the trail.
-     *
-     * Names are kept and values are not, deliberately: "the webhook secret was
-     * rotated" is exactly what an auditor needs to see, and the secret itself
-     * is exactly what they must not.
-     *
-     * @var list<string>
-     */
-    private const DENYLIST = [
-        'password',
-        'password_confirmation',
-        'key_hash',
-        'api_key',
-        'webhook_secret',
-        'secret',
-        'token',
-        'remember_token',
-        'jwt_secret',
-    ];
-
-    private const REDACTED = '[redacted]';
+    public function __construct(
+        private readonly AuditRedactor $redactor = new AuditRedactor,
+    ) {}
 
     /**
      * @param  array<string, mixed>|null  $before
@@ -75,8 +59,8 @@ final class AuditRecorder
                 'action' => $action,
                 'subject_type' => $subjectType,
                 'subject_id' => $subjectId,
-                'before' => $before === null ? null : $this->redact($before),
-                'after' => $after === null ? null : $this->redact($after),
+                'before' => $before === null ? null : $this->redactor->redact($before),
+                'after' => $after === null ? null : $this->redactor->redact($after),
             ]);
         } catch (Throwable $e) {
             // Never propagate. See the class docblock.
@@ -87,46 +71,5 @@ final class AuditRecorder
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    /**
-     * Strip credential values at any depth.
-     *
-     * Recursive because a changed attribute can itself be an array — a project's
-     * webhook config, for instance — and a top-level-only pass would let a
-     * nested secret through while looking like it had done its job.
-     *
-     * @param  array<array-key, mixed>  $payload
-     * @return array<array-key, mixed>
-     */
-    private function redact(array $payload): array
-    {
-        $out = [];
-
-        foreach ($payload as $key => $value) {
-            if (is_string($key) && $this->isSensitive($key)) {
-                $out[$key] = self::REDACTED;
-
-                continue;
-            }
-
-            $out[$key] = is_array($value) ? $this->redact($value) : $value;
-        }
-
-        return $out;
-    }
-
-    private function isSensitive(string $key): bool
-    {
-        $normalised = strtolower($key);
-
-        if (in_array($normalised, self::DENYLIST, true)) {
-            return true;
-        }
-
-        // Catches api_token, access_token, refresh_token and anything else that
-        // follows the convention without needing to enumerate it.
-        return str_ends_with($normalised, '_token')
-            || str_ends_with($normalised, '_secret');
     }
 }

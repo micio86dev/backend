@@ -469,8 +469,12 @@ test('a re-offered competency is announced with the retry greeting, not next', f
     $this->withHeaders(['Authorization' => 'Bearer '.$token])
         ->postJson('/api/candidate/interview/start')->assertStatus(201);
 
-    $competencyName = $comps[0]->getTranslation('name', $project->language) ?? $comps[0]->code;
-    $expected = trans('interview.opening.retry', ['competency' => $competencyName], $project->language);
+    // framework-catalogue-authoring PR6 (D5) — `casProject()`'s fixture now
+    // carries a live `project_questions` row per competency (interviewability
+    // precondition), so the 'retry' variant wraps that AUTHORED question in
+    // its apology (`retry_authored`) rather than the bare `retry` template
+    // that only ever interpolated the competency name.
+    $expected = trans('interview.opening.retry_authored', ['question' => 'CAS fixture question 0'], $project->language);
 
     Http::assertSent(function ($request) use ($expected) {
         return str_contains($request->url(), '/contexts')

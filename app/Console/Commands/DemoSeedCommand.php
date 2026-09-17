@@ -186,8 +186,8 @@ final class DemoSeedCommand extends Command
      * Design D10: `potential` requires competencies ⊆ {MTG, LAT}
      * (`StoreProjectRequest.php:28`), and neither exists in the catalog
      * (`competencies.json` holds 18 `standard` codes only;
-     * `FrameworkCatalogSeeder.php:318-324` records
-     * `missing_potential_competency` for both, "pending expert authoring").
+     * `FrameworkCatalogSeeder.php` records `missing_potential_competency` for
+     * both, "pending expert authoring").
      * A `potential` demo project would trip
      * `ZeroCompetenciesInvariantException` rather than demonstrate anything —
      * named here so the gap is never silent.
@@ -206,7 +206,7 @@ final class DemoSeedCommand extends Command
         // line — an operator reading a warning that argues with itself learns
         // nothing except not to trust the warning.
         $this->line('This command does NOT lock any FrameworkVersion (design D8). Only ProjectController::store sets is_locked, i.e. a project created through the backoffice UI.');
-        $this->warn('Framework-lock consequence, for when you do create one there: locking is CROSS-TENANT and PERMANENT — once any FrameworkVersion is locked, FrameworkCatalogSeeder becomes additive-only for EVERY tenant in this deployment.');
+        $this->warn('is_locked no longer has any bearing on FrameworkCatalogSeeder (framework-catalogue-authoring PR2, D2) — that seeder now gates on the baseline FrameworkCatalogRevision\'s own state and content instead. Locking an FV here is CROSS-TENANT and PERMANENT for what it still does gate: FrameworkVersion mutation/deletion (see LockedFrameworkVersionException).');
         $this->line('Deployment-wide lock state: '.($anyLocked
             ? 'a FrameworkVersion is ALREADY locked somewhere in this deployment.'
             : 'no FrameworkVersion is locked yet.'));

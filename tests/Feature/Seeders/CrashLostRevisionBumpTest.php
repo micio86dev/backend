@@ -34,6 +34,7 @@ use App\Models\CatalogMeta;
 use App\Models\Competency;
 use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
 
 test('a structural change committed before a mid-run crash is not permanently lost from the catalog revision', function (): void {
     $sourceBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
@@ -83,6 +84,13 @@ test('a structural change committed before a mid-run crash is not permanently lo
     // Corrupt SRX.json (processed LAST) so the run crashes AFTER ICO's new
     // row is committed but BEFORE CatalogMeta::bump() is ever reached.
     file_put_contents("{$tempBase}/bars/SRX.json", '{ this is not valid json');
+
+    // framework-catalogue-authoring PR2 (D2): both the crash attempt below
+    // and the clean retry after it are re-seeds against an already-populated
+    // baseline. Forced to draft so they can write at all — this test is
+    // about crash-atomicity + the revision-bump predicate, not the write
+    // gate (a separate, already-covered concern — see SeederLockGuardTest).
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
 
     $crashSeeder = new FrameworkCatalogSeeder(
         rolesFile: "{$tempBase}/roles.json",

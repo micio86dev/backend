@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsRevisionContentVersion;
+use Database\Factories\BarsIndicatorFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Spatie\Translatable\HasTranslations;
@@ -29,9 +32,12 @@ use Spatie\Translatable\HasTranslations;
  *                             are stored, since a `potential` project has `role_code = null` by
  *                             rule and the five roles are a closed set that must not gain a
  *                             sixth. Role-less rows are constrained by a PARTIAL unique index on
- *                             (competency_id, position) — the composite one including role_id
- *                             does not constrain them, because Postgres treats NULLs as
- *                             distinct.
+ *                             (revision_id, competency_id, position) — the composite one
+ *                             including role_id does not constrain them, because Postgres
+ *                             treats NULLs as distinct.
+ * @property int $revision_id NOT NULL, defaults to the baseline revision at the DB level
+ *                            (framework-catalogue-authoring PR1, D1) — see the backfill
+ *                            migration.
  * @property int $competency_id
  * @property string $text (resolved via current locale)
  * @property string $anchor_5 (resolved via current locale)
@@ -41,12 +47,27 @@ use Spatie\Translatable\HasTranslations;
  */
 class BarsIndicator extends Model
 {
+    use BumpsRevisionContentVersion;
+
+    /** @use HasFactory<BarsIndicatorFactory> */
+    use HasFactory;
+
     use HasTranslations;
 
     /**
      * Custom table name — prefixed for consistency with the framework catalog domain.
      */
     protected $table = 'framework_bars_indicators';
+
+    /**
+     * `BumpsRevisionContentVersion` (framework-catalogue-authoring PR3b) —
+     * `DiscardUnusedDraftRevision` reads the counter this bumps to decide
+     * whether a draft is genuinely untouched.
+     */
+    protected static function booted(): void
+    {
+        static::bumpRevisionContentVersionListeners();
+    }
 
     /**
      * @var list<string>
@@ -64,7 +85,18 @@ class BarsIndicator extends Model
         'anchor_3',
         'anchor_1',
         'position',
+        'revision_id',
     ];
+
+    /**
+     * The catalogue revision this row belongs to (framework-catalogue-authoring PR1, D1).
+     *
+     * @return BelongsTo<FrameworkCatalogRevision, $this>
+     */
+    public function revision(): BelongsTo
+    {
+        return $this->belongsTo(FrameworkCatalogRevision::class, 'revision_id');
+    }
 
     /**
      * @return BelongsTo<Role, $this>

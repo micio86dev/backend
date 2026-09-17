@@ -27,13 +27,15 @@ use Illuminate\Database\Eloquent\Collection;
  *      Placed before the follow-up rules: it says what a follow-up is FOR, and a budget
  *      stated before any notion of what to spend it on is a number without a purpose.
  *   4. Follow-up budget: "ask at most N follow-up questions" (ratified N=4, from config;
- *      a per-project override follows as `project-followup-budget`).
+ *      a per-project override follows as `project-followup-budget`). ON TOP of the
+ *      primary questions, never merged with their count (D7).
  *   5. Nudge: if answer < nudge_min_chars, re-prompt once — does NOT consume a follow-up slot.
  *      Omitted when nudge_min_chars is null or 0.
- *   6. Required questions: the operator's own questions for this project ×
- *      competency, when any exist. Injected BEFORE the advance rule and not
- *      after — the advance rule is what tells the model it may close, and a
- *      question it has not been told about yet cannot be one it waits to ask.
+ *   6. Primary questions: the competency's COMPLETE primary set — the operator's
+ *      own questions for this project × competency, when any exist. Injected
+ *      BEFORE the advance rule and not after — the advance rule is what tells
+ *      the model it may close, and a question it has not been told about yet
+ *      cannot be one it waits to ask.
  *   7. Advance rule: speak end_phrase only after (coverage OR budget exhausted) AND the
  *      effective minimum question count is reached.
  *
@@ -59,20 +61,39 @@ final class SystemPromptComposer
      * @param  int  $roleId  Role primary key — MUST match the project's role.
      * @param  int  $competencyId  Competency primary key.
      * @param  string  $projectLocale  Project language code ('en' or 'it').
-     * @param  int  $budget  Maximum follow-up questions (ratified default = 4). The
-     *                       authored-question count is ADDED to it, so the prompt can
-     *                       neither forbid a question it mandates nor spend the whole
-     *                       budget on questions that are not follow-ups.
+     * @param  int  $followUpBudget  Maximum follow-up questions (ratified default = 4).
+     *                               Fed to the budget section RAW — never inflated by the
+     *                               primary-question count (framework-catalogue-authoring
+     *                               PR7, D7). Authored questions ARE the primaries, not an
+     *                               addition on top of this budget.
      * @param  int|null  $nudgeMinChars  Min chars for a "sufficient" answer; null = nudge disabled.
      * @param  string|null  $advancePhrase  The sentence the avatar must SPEAK to end its
      *                                      turn. Its absence is what previously killed
      *                                      HeyGen sessions with MAX_DURATION_REACHED —
      *                                      see buildAdvanceSection().
      * @param  int|null  $minQuestions  Minimum questions before closing; null = platform default.
-     *                                  CLAMPED to what the budget permits — see effectiveMinimum().
-     * @param  list<string>  $authoredQuestions  Operator-written questions for this project ×
-     *                                           competency, in the order they must be asked.
-     *                                           Their COUNT is ADDED to the budget.
+     *                                  CLAMPED to what primaries + budget permit — see effectiveMinimum().
+     * @param  list<string>  $primaryQuestions  The competency's COMPLETE primary-question
+     *                                          set — the project's own `project_questions`
+     *                                          rows, in the order they must be asked. Not
+     *                                          additive to `$followUpBudget`: these questions
+     *                                          ARE the primaries (D7), and the model's only
+     *                                          generative latitude is follow-ups on one of them.
+     * @param  bool  $openingSpokeFirstPrimary  True when `OpeningTextComposer` already spoke
+     *                                          `$primaryQuestions[0]` as the opening greeting
+     *                                          for this request (every variant except `resume`,
+     *                                          and only when at least one primary exists). The
+     *                                          primary-questions section then tells the model
+     *                                          to continue from primary 2 rather than leaving it
+     *                                          to infer that primary 1 was already asked.
+     * @param  int|null  $revisionId  The catalogue revision `$roleId`/`$competencyId` were
+     *                                resolved against — framework-catalogue-authoring PR3b,
+     *                                H1. Threaded straight through to `BarsIndicatorLoader`;
+     *                                appended LAST so every existing positional call site
+     *                                keeps working unmodified. `InterviewController` resolves
+     *                                its project's own pinned revision and always passes it;
+     *                                omitted, the loader defaults to the latest published
+     *                                revision, never "any revision".
      *
      * @throws CompositionException When no indicators exist for the role+competency pair.
      * @throws AnchorTranslationMissingException When any indicator field lacks a $projectLocale translation.
@@ -82,13 +103,15 @@ final class SystemPromptComposer
         int $roleId,
         int $competencyId,
         string $projectLocale,
-        int $budget,
+        int $followUpBudget,
         ?int $nudgeMinChars,
         ?string $advancePhrase = null,
         ?int $minQuestions = null,
-        array $authoredQuestions = [],
+        array $primaryQuestions = [],
+        bool $openingSpokeFirstPrimary = false,
+        ?int $revisionId = null,
     ): ComposedPrompt {
-        $indicators = $this->loader->forRoleCompetency($roleId, $competencyId);
+        $indicators = $this->loader->forRoleCompetency($roleId, $competencyId, $revisionId);
 
         if ($indicators->isEmpty()) {
             throw new CompositionException(
@@ -97,40 +120,28 @@ final class SystemPromptComposer
             );
         }
 
-        // The budget must make ROOM for the authored questions, not be shared with
-        // them. The section below tells the avatar it MUST ask every authored
-        // question before ending the competency; the budget section caps how many
-        // it may ask. A cap below the count mandates and forbids the same
-        // question: the advance condition becomes unsatisfiable, the model never
-        // speaks the closing phrase, matchesEndPhrase() never matches, and the
-        // session runs to MAX_DURATION_REACHED. That is the failure
-        // effectiveMinimum() exists to prevent, reached by a route that knew
-        // nothing about the budget — the count is a superadmin setting clamped
-        // only at the floor.
-        //
-        // ADDITIVE, not max(). An authored question is not a follow-up: it is
-        // scripted content the operator required. Taking the larger of the two
-        // would let the mandatory questions CONSUME the whole budget, leaving
-        // zero slots to probe the answers with — which the same section asks for
-        // two sentences later. At the ratified potential defaults (budget 4, cap
-        // 4) that lands exactly on zero.
-        //
-        // Normalised ONCE, here, so the count that raises the budget and the
-        // list that gets injected are the same list. The declared contract is
-        // `list<string>`, which permits blanks the section would drop — counting
-        // before dropping them would inflate the budget by questions nobody asks.
-        $authoredQuestions = self::normalizeAuthoredQuestions($authoredQuestions);
+        // Normalised ONCE, here, so the count that clamps the minimum and the
+        // list that gets injected into the prompt are the same list. The
+        // declared contract is `list<string>`, which permits blanks the
+        // section would drop — counting before dropping them would inflate
+        // the minimum by questions nobody asks.
+        $primaryQuestions = self::normalizePrimaryQuestions($primaryQuestions);
 
-        $effectiveBudget = $budget + count($authoredQuestions);
-
-        $effectiveMinimum = $this->effectiveMinimum($minQuestions, $effectiveBudget);
+        // NEVER added to $followUpBudget (D7 reversal). Authored questions ARE
+        // the primaries — the complete, ratified question set for this
+        // competency — not a model-driven allotment on top of them. Folding
+        // their count into the budget used to let the total silently double-
+        // count a question that was never a follow-up in the first place; see
+        // buildBudgetSection() and buildPrimaryQuestionsSection() below, which
+        // are now fed independently rather than through one merged number.
+        $effectiveMinimum = $this->effectiveMinimum($minQuestions, count($primaryQuestions), $followUpBudget);
 
         $coverageSection = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
         $starSection = $this->buildStarSection();
-        $budgetSection = $this->buildBudgetSection($effectiveBudget);
+        $budgetSection = $this->buildBudgetSection($followUpBudget);
         $nudgeSection = $this->buildNudgeSection($nudgeMinChars);
         $advanceSection = $this->buildAdvanceSection($advancePhrase, $effectiveMinimum);
-        $authoredSection = $this->buildAuthoredQuestionsSection($authoredQuestions);
+        $primarySection = $this->buildPrimaryQuestionsSection($primaryQuestions, $openingSpokeFirstPrimary);
 
         $text = $this->assemblePrompt(
             $competencyCode,
@@ -139,7 +150,7 @@ final class SystemPromptComposer
             $budgetSection,
             $nudgeSection,
             $advanceSection,
-            $authoredSection,
+            $primarySection,
         );
 
         // No fallback, and a BLANK is refused rather than stamped. The literal
@@ -159,7 +170,9 @@ final class SystemPromptComposer
 
     /**
      * The minimum question count the prompt may state, CLAMPED to what the
-     * budget actually permits (star-interviewer-protocol D-1/D-2).
+     * primaries plus the follow-up budget actually permit
+     * (star-interviewer-protocol D-1/D-2; arithmetic revised by
+     * framework-catalogue-authoring PR7, D7).
      *
      * ⚠️ THIS CLAMP IS THE FEATURE'S SAFETY PROPERTY, NOT DEFENSIVE CODING.
      *
@@ -171,12 +184,17 @@ final class SystemPromptComposer
      * completely. This system has already shipped that defect once.
      *
      * A minimum question count is, by construction, a NEW way to make that
-     * condition unsatisfiable: told to ask at least M questions and at most B
-     * follow-ups with M > B + 1, the avatar can never legally close.
+     * condition unsatisfiable: told to ask at least M questions and at most
+     * `count($primaryQuestions) + $followUpBudget`, the avatar can never
+     * legally close.
      *
-     * `min($configured, $budget + 1)` makes that impossible. The `+ 1` is the
-     * opening question, which is not a follow-up and consumes no budget. Because
-     * the result can never exceed `budget + 1`, BUDGET EXHAUSTION ALWAYS
+     * `min($configured, count($primaryQuestions) + $followUpBudget)` makes
+     * that impossible. There is no separate "+1 for the opening question" term
+     * any more: the opening question IS `$primaryQuestions[0]` (D7 — the two
+     * composers resolve it from the same array), so it is already counted
+     * inside `count($primaryQuestions)` rather than sitting outside both
+     * numbers. Because the result can never exceed
+     * `count($primaryQuestions) + $followUpBudget`, BUDGET EXHAUSTION ALWAYS
      * SATISFIES THE MINIMUM, so the "OR the follow-up budget is exhausted"
      * escape hatch in the advance rule stays reachable under every possible
      * configuration. That is the entire argument.
@@ -190,11 +208,11 @@ final class SystemPromptComposer
      * clamping degrades to the behaviour that shipped before this change, which
      * is the correct direction to fail in.
      */
-    private function effectiveMinimum(?int $minQuestions, int $budget): int
+    private function effectiveMinimum(?int $minQuestions, int $primaryCount, int $followUpBudget): int
     {
         $configured = $minQuestions ?? (int) config('conversation.min_questions', 4);
 
-        return max(1, min($configured, $budget + 1));
+        return max(1, min($configured, $primaryCount + $followUpBudget));
     }
 
     // ─── Private template sections ────────────────────────────────────────────
@@ -349,16 +367,16 @@ STAR;
     }
 
     /**
-     * Trim the authored questions and drop the blanks.
+     * Trim the primary questions and drop the blanks.
      *
      * Called once in compose(), before anything reads the list — the count feeds
-     * the effective budget and the same list feeds the prompt section, and those
+     * effectiveMinimum() and the same list feeds the prompt section, and those
      * two must not be able to disagree.
      *
      * @param  list<string>  $questions
      * @return list<string>
      */
-    private static function normalizeAuthoredQuestions(array $questions): array
+    private static function normalizePrimaryQuestions(array $questions): array
     {
         return array_values(array_filter(
             array_map(static fn (string $question): string => trim($question), $questions),
@@ -367,7 +385,9 @@ STAR;
     }
 
     /**
-     * Section 6: questions an operator wrote for this project and this competency.
+     * Section 6: the competency's complete primary-question set — the
+     * operator's own `project_questions` rows for this project × competency
+     * (framework-catalogue-authoring PR7, D7).
      *
      * WHY THIS EXISTS. The backoffice has offered a per-competency question
      * editor since C4, and nothing ever read what it saved. `ProjectQuestion`
@@ -382,25 +402,46 @@ STAR;
      * supposed to have asked it — it would probe as if the exchange had not
      * happened, and the operator's question would be a line of narration.
      *
-     * MANDATORY, not suggested. "Topics you might explore" yields an interview
-     * that sometimes asks them, which from the operator's side is
-     * indistinguishable from the bug this fixes.
+     * COMPLETE, NOT ADDITIVE, AND NOT A SUGGESTION. This is the FULL primary
+     * set for the competency, not a mandatory add-on layered over a separate
+     * model-driven budget (D7 — the additive arithmetic this replaces is
+     * deleted, not adjusted). The model may not introduce, substitute,
+     * reorder or reword a primary of its own; its only generative latitude is
+     * follow-ups on a primary already asked. "Topics you might explore" would
+     * yield an interview that sometimes asks them, which from the operator's
+     * side is indistinguishable from the write-only bug this section fixes.
+     *
+     * `$openingSpokeFirstPrimary` states a fact rather than removing an item:
+     * the numbered list below always lists every primary, because it is the
+     * transcript-facing "complete set" record; when true, an extra sentence
+     * tells the model primary 1 was already spoken as the opening greeting
+     * and it must continue from primary 2, rather than leaving the model to
+     * infer that from context (D7).
      *
      * @param  list<string>  $questions
      */
-    private function buildAuthoredQuestionsSection(array $questions): string
+    private function buildPrimaryQuestionsSection(array $questions, bool $openingSpokeFirstPrimary): string
     {
         if ($questions === []) {
             return '';
         }
 
         $lines = [
-            'The operator running this assessment wrote the following question(s) for this '
-            .'competency. You MUST ask every one of them, in this order, phrased as written, '
-            .'before you end the competency. Ask them as part of the conversation rather than '
-            .'reading a list, and probe each answer with your ordinary follow-up rules.',
-            '',
+            'The numbered list below is the COMPLETE set of primary questions for this '
+            .'competency, in order. You MUST ask every one of them, phrased exactly as '
+            .'written, before you end the competency. You may NOT introduce, substitute, '
+            .'reorder or reword a primary question of your own — your only generative '
+            .'latitude is follow-up questions on a primary you have already asked. Ask '
+            .'them as part of the conversation rather than reading a list, and probe each '
+            .'answer with your ordinary follow-up rules.',
         ];
+
+        if ($openingSpokeFirstPrimary) {
+            $lines[] = 'Primary question 1 has ALREADY been spoken as your opening greeting '
+                .'— do NOT ask it again. Continue from primary question 2.';
+        }
+
+        $lines[] = '';
 
         foreach ($questions as $index => $question) {
             $lines[] = ($index + 1).'. '.$question;
@@ -429,8 +470,9 @@ STAR;
         // both come from `interview.{end,final}_phrase` in the project's locale.
         // If they ever diverge, completion stops firing silently.
         // The minimum is a CONJUNCT, and it is safe because effectiveMinimum()
-        // clamped it to at most `budget + 1` — so "budget exhausted" can never
-        // be blocked by a minimum the avatar has not yet reached.
+        // clamped it to at most `count(primaryQuestions) + followUpBudget` —
+        // so "budget exhausted" can never be blocked by a minimum the avatar
+        // has not yet reached.
         $floor = $minQuestions === 1
             ? 'you have asked at least 1 question in this competency'
             : "you have asked at least {$minQuestions} questions in this competency";
@@ -459,7 +501,7 @@ STAR;
         string $budgetSection,
         string $nudgeSection,
         string $advanceSection,
-        string $authoredSection = '',
+        string $primarySection = '',
     ): string {
         $parts = [
             'You are an adaptive interviewer conducting a BARS-based competency assessment '
@@ -493,10 +535,10 @@ STAR;
         // BEFORE the advance rule, and that placement is the point: the advance
         // rule tells the model when it may END the competency, and a question it
         // has not been told about yet cannot be one it waits to ask.
-        if ($authoredSection !== '') {
+        if ($primarySection !== '') {
             $parts[] = '';
-            $parts[] = 'REQUIRED QUESTIONS:';
-            $parts[] = $authoredSection;
+            $parts[] = 'PRIMARY QUESTIONS:';
+            $parts[] = $primarySection;
         }
 
         $parts[] = '';

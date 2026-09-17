@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
+use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
 use Illuminate\Http\JsonResponse;
@@ -33,11 +34,15 @@ use Illuminate\Http\Request;
  *   2. Validate the request body (mirrors the M2M mint's body verbatim).
  *   3. Resolve Project::findOrFail, scoped by TenantContext's TenantScoped
  *      global scope (cross-org → 404).
- *   4. Delegate the mint decision to EntryLinkMinter::mint() — the SAME
+ *   4. `ProjectInterviewability::evaluateForCandidate()` (framework-catalogue-
+ *      authoring PR6, D5/D6; Z10) — 422 `PROJECT_NOT_INTERVIEWABLE` +
+ *      `competency_codes` before the minter is ever reached, unless this
+ *      candidate already has a session.
+ *   5. Delegate the mint decision to EntryLinkMinter::mint() — the SAME
  *      shared logic the M2M mint uses (design D1).
- *   5. Compose the absolute entry_url via EntryLinkUrlComposer — fails loud
+ *   6. Compose the absolute entry_url via EntryLinkUrlComposer — fails loud
  *      (500) if CANDIDATE_APP_URL is unconfigured.
- *   6. Respond 201 { entry_url, expires_at } — never the bare token (design
+ *   7. Respond 201 { entry_url, expires_at } — never the bare token (design
  *      D1's "operator-facing payload" rule).
  *
  * REQ: Operator-Facing Entry Link Mint Endpoint,
@@ -49,6 +54,7 @@ final class EntryLinkController extends Controller
     public function __construct(
         private readonly EntryLinkMinter $minter,
         private readonly EntryLinkUrlComposer $composer,
+        private readonly ProjectInterviewability $projectInterviewability,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -76,6 +82,33 @@ final class EntryLinkController extends Controller
         // TenantContext's TenantScoped global scope — cross-org → 404
         // (mirrors ProjectController's documented reason).
         $project = Project::findOrFail((int) $validated['project_id']);
+
+        // D5/D6 (framework-catalogue-authoring PR6) — evaluated at MINT
+        // time, and re-evaluated again at USE time by the SSO exchange and
+        // `/start` (a token minted while interviewable is not a standing
+        // exemption). `evaluate()`, never a bare
+        // `unsatisfiedCompetencyCodes() !== []` check on its own — the
+        // latter is vacuously `[]` for a project with ZERO selected
+        // competencies, which is still not interviewable (D5); `evaluate()`
+        // also avoids running the same query twice for one refusal. The
+        // operator gets the actionable detail a candidate never would: which
+        // competencies are the problem (empty when the project simply has
+        // none selected at all).
+        //
+        // Z10 (REQUIRED BEFORE ARCHIVE): `evaluateForCandidate()`, not a bare
+        // `evaluate()` — exempts a candidate who already has an
+        // `InterviewSession` on this project, the SAME exemption the SSO
+        // exchange and `/start` already apply (Z9). Without it, a
+        // mid-interview candidate whose token expired could never be issued
+        // a replacement link once an UNRELATED, not-yet-reached competency
+        // lost its questions.
+        $interviewability = $this->projectInterviewability->evaluateForCandidate($project, $validated['candidate_ref']);
+        if (! $interviewability['interviewable']) {
+            return response()->json([
+                'error' => 'PROJECT_NOT_INTERVIEWABLE',
+                'competency_codes' => $interviewability['unsatisfied_competency_codes'],
+            ], 422);
+        }
 
         try {
             $minted = $this->minter->mint(

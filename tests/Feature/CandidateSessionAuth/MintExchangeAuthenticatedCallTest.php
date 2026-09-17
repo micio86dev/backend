@@ -39,6 +39,7 @@ use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -103,6 +104,16 @@ function chainCompetency(Organization $org, Project $project): Competency
     ]);
     $indicator->save();
 
+    // framework-catalogue-authoring PR6 (D5) — the SSO exchange and
+    // `/start` both now refuse a project where a selected competency has
+    // zero live `project_questions` rows.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'Genuine-chain fixture question'],
+        'position' => 0,
+    ]);
+
     return $competency;
 }
 
@@ -141,6 +152,9 @@ function chainHeygenSuccessResponse(): array
 test('mint → exchange → GET /candidate/session, authenticated with the EXCHANGED token', function (): void {
     $org = chainOrg();
     $project = chainProject($org);
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful exchange, not the thing under test here.
+    chainCompetency($org, $project);
     $ssoLink = mintChainSsoLink($project, $org, 'cand-chain-session');
 
     // ── Exchange — the real endpoint, nothing mocked ──────────────────────

@@ -25,6 +25,7 @@ declare(strict_types=1);
 use App\Models\Competency;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkVersion;
 use App\Models\IndicatorScore;
 use App\Models\Organization;
@@ -32,6 +33,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Services\Admin\AdminEvaluationSerializer;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Support\Facades\DB;
 
 function evalSerializerOrg(): Organization
 {
@@ -305,4 +307,72 @@ test('competencies are ordered by project_competencies.position, not by creation
     $result = $serializer->serialize($participant);
 
     expect(array_keys($result))->toBe(['STG', 'SLF']);
+});
+
+// ─── Draft isolation (framework-catalogue-authoring PR3b, H1) ───────────────
+
+test('the indicator name catalogue never resolves a role that exists ONLY in a draft', function (): void {
+    // `indicatorCatalogue()` resolves the report's Role BY CODE — the exact
+    // shape H1 exists to fix. A role code that exists ONLY in a draft (never
+    // published) is the deterministic proof: the old unscoped lookup is the
+    // ONLY row matching that code, so it resolves — reading draft content
+    // into a report a candidate's evaluation actually depends on. The FIX
+    // must resolve NOTHING for it (no published counterpart exists), falling
+    // back to the stored `indicator_text`, exactly as the docblock documents
+    // for "the pinned framework version no longer carries that indicator".
+    $org = evalSerializerOrg();
+    $roleCode = 'DRAFTONLY_'.uniqid();
+    $project = evalSerializerProject($org, ['SLF' => 0]);
+    $project->forceFill(['role_code' => $roleCode])->save();
+    $participant = evalSerializerParticipant($project);
+
+    $draft = FrameworkCatalogRevision::factory()->draft()->create();
+    $draftRoleId = DB::table('framework_roles')->insertGetId([
+        'revision_id' => $draft->id,
+        'code' => $roleCode,
+        'name' => json_encode(['en' => 'Draft role name']),
+        'responsibilities' => json_encode(['en' => 'Draft responsibilities']),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $draftCompetencyId = DB::table('framework_competencies')->insertGetId([
+        'revision_id' => $draft->id,
+        'code' => 'SLF',
+        'type' => 'standard',
+        'name' => json_encode(['en' => 'Draft competency name']),
+        'definition' => json_encode(['en' => 'Draft competency definition']),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('framework_bars_indicators')->insert([
+        'revision_id' => $draft->id,
+        'role_id' => $draftRoleId,
+        'competency_id' => $draftCompetencyId,
+        'text' => json_encode(['en' => 'DRAFTMUTATED indicator name']),
+        'anchor_5' => json_encode(['en' => 'DRAFTMUTATED anchor 5']),
+        'anchor_3' => json_encode(['en' => 'DRAFTMUTATED anchor 3']),
+        'anchor_1' => json_encode(['en' => 'DRAFTMUTATED anchor 1']),
+        'position' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    $result = CompetencyResult::factory()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'SLF',
+    ]);
+    IndicatorScore::factory()->create([
+        'competency_result_id' => $result->id,
+        'position' => 0,
+        'indicator_text' => 'stored fallback text — the correct answer once no published counterpart exists',
+    ]);
+
+    $serializer = new AdminEvaluationSerializer;
+    $serialized = $serializer->serialize($participant->fresh());
+
+    expect($serialized['SLF']['behaviors'][0]['indicator'])
+        ->toBe('stored fallback text — the correct answer once no published counterpart exists');
+    expect($serialized['SLF']['behaviors'][0]['indicator'])->not->toBe('DRAFTMUTATED indicator name');
 });

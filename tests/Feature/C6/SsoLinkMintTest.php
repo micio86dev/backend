@@ -56,13 +56,19 @@ function makeActiveProject(Organization $org, array $attrs = []): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'status' => 'active',
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
         'goes_live_at' => null,
         'deadline_at' => null,
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful mint, not the thing under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 // ---------------------------------------------------------------------------

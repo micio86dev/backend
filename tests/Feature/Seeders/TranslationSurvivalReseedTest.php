@@ -28,6 +28,21 @@
 
 use App\Models\Competency;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * framework-catalogue-authoring PR2 (D2): a re-seed against an
+ * already-populated PUBLISHED baseline is now a hard no-op (the write
+ * gate). Both tests in this file are about the seeder's translation-MERGE
+ * mechanic, not the write gate (a separate, already-covered concern — see
+ * SeederLockGuardTest) — forcing the baseline to draft is what lets the
+ * second run actually write, so these tests keep testing the mechanic
+ * instead of passing vacuously because nothing ran.
+ */
+function forceDraftBaselineForTranslationSurvivalReseed(): void
+{
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
+}
 
 test('re-seeding preserves a manually-added translation for a locale absent from the source', function (): void {
     $seeder = new FrameworkCatalogSeeder;
@@ -46,6 +61,7 @@ test('re-seeding preserves a manually-added translation for a locale absent from
     $competency->setTranslation('name', 'fr', 'Résolution de problèmes');
     $competency->save();
 
+    forceDraftBaselineForTranslationSurvivalReseed();
     $seeder->run();
 
     $fresh = Competency::where('code', 'PRS')->firstOrFail();
@@ -69,6 +85,7 @@ test('re-seeding overwrites a manual translation for a locale the source DOES au
     $competency->setTranslation('name', 'it', 'Valore inventato a mano');
     $competency->save();
 
+    forceDraftBaselineForTranslationSurvivalReseed();
     $seeder->run();
 
     expect(Competency::where('code', 'PRS')->firstOrFail()->getTranslation('name', 'it'))

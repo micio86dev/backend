@@ -23,9 +23,11 @@ declare(strict_types=1);
  * REQ: Public SSO Exchange — all 403 + security tradeoff
  */
 
+use App\Models\Competency;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +42,7 @@ function makeEx403Project(Organization $org, array $attrs = []): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'status' => 'active',
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
@@ -48,6 +50,14 @@ function makeEx403Project(Organization $org, array $attrs = []): Project
         'goes_live_at' => null,
         'deadline_at' => null,
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of the two "passes" scenarios below (goes_live_at/
+    // deadline_at NULL); the intentional-403 scenarios stay 403 either way
+    // (same GENERIC_403 shape, whichever gate fires first).
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 function mintEx403Token(Project $project, Organization $org, array $overrides = []): string
@@ -216,6 +226,43 @@ test('jti consumed even when gate fails (inactive project) → replay → 401', 
 
     // Replay of same token → jti consumed → 401 (NOT another 403)
     $this->getJson('/api/sso/exchange?token='.$token)->assertUnauthorized();
+});
+
+/**
+ * Z14 (R4-sso-gate-burns-link, REQUIRED BEFORE ARCHIVE): interviewability
+ * is the ONE deliberate exception to "jti consumed even when gate fails"
+ * above — every OTHER gate (this file's own test just above) still burns
+ * the token on failure; interviewability does not, because it is exactly
+ * the kind of TRANSIENT, operator-correctable state Z9/Z10 exist to
+ * tolerate. Proven end to end: the SAME token is refused once, then
+ * SUCCEEDS after the operator fixes the configuration — impossible if the
+ * jti had already been consumed on the first (failed) attempt.
+ */
+test('Z14: interviewability failure does NOT burn the jti — the same token succeeds once the project is fixed', function (): void {
+    $org = Organization::factory()->create();
+    $project = makeEx403Project($org);
+    $token = mintEx403Token($project, $org);
+
+    // Make the project non-interviewable AFTER minting: the selected
+    // competency's only live question is removed (deselecting nothing —
+    // the competency stays selected, exactly the "later, correctable
+    // misconfiguration" scenario Z14 describes).
+    ProjectQuestion::where('project_id', $project->id)->delete();
+
+    // First exchange: refused, GENERIC_403 — same shape as every other gate.
+    $this->getJson('/api/sso/exchange?token='.$token)->assertStatus(403);
+
+    // The operator fixes it — the competency has a live question again.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => Competency::where('code', 'PRS')->firstOrFail()->id,
+        'text' => ['en' => 'x'],
+        'position' => 1,
+    ]);
+
+    // The SAME token — never re-minted — now succeeds. A burned jti would
+    // answer 401 (replay) here, not 200.
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
 });
 
 test('all 403 bodies are generic — no info disclosure', function (): void {

@@ -169,4 +169,22 @@ final class SessionReviewResource extends JsonResource
         // the wall-clock span. The caller MUST eager-load `livePeriods`.
         return $this->liveSeconds();
     }
+
+    /**
+     * `JSON_PRESERVE_ZERO_FRACTION` (gga review finding, MEDIUM): a BARS
+     * score is a decimal by definition, and `EvaluationResource`/
+     * `DashboardMetricsResource` already carry this same override — without
+     * it here too, the SAME competency renders `3.0` on the evaluation
+     * report and `3` on this session-review surface, which is exactly the
+     * disagreement this file's own docblock says the two surfaces must
+     * never have. MUST be set here, not in `withResponse()` —
+     * `ResourceResponse::toResponse()` encodes before `withResponse()` ever
+     * runs, so by then the float has already collapsed (see
+     * `EvaluationResource::jsonOptions()`'s own docblock for the full
+     * reasoning).
+     */
+    public function jsonOptions(): int
+    {
+        return JSON_PRESERVE_ZERO_FRACTION;
+    }
 }

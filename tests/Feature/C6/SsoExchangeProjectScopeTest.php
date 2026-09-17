@@ -26,7 +26,7 @@ function makeExchangeProjectScope(Organization $org): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create([
+    $project = Project::factory()->create([
         'status' => 'active',
         'assessment_type' => 'standard',
         'role_code' => 'ICO',
@@ -34,6 +34,12 @@ function makeExchangeProjectScope(Organization $org): Project
         'goes_live_at' => null,
         'deadline_at' => null,
     ]);
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful exchange, not the thing under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 test('plain findOrFail on Project at public exchange would fail without TenantResolver set', function (): void {

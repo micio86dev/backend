@@ -3,58 +3,84 @@
 declare(strict_types=1);
 
 /**
- * RED — 4.1: Seeder lock-guard — fully additive when a locked FV exists (C4).
+ * REWRITTEN — framework-catalogue-authoring PR2, tasks.md 6.1 (D2): the
+ * platform-wide `FrameworkVersion.is_locked` lock-guard this file used to
+ * exercise is gone. `FrameworkCatalogSeeder`'s write gate is now keyed on the
+ * baseline `FrameworkCatalogRevision`'s state and content, not on any
+ * `FrameworkVersion` anywhere on the platform — `is_locked` has no bearing on
+ * this seeder any more (see `FrameworkCatalogSeeder`'s own docblock, "Baseline-
+ * revision write gate"). The old `FrameworkVersion::factory()->locked()`
+ * scenarios this file used to build are not a "still relevant, keep as-is"
+ * case for anything the new gate does, so there is nothing cross-tenant left
+ * to assert here — the gate never reads `organization_id` or `is_locked` at
+ * all, unlike the mechanism it replaces.
  *
  * Scenarios:
- * 1. Locked FV + anchor edit → existing anchor row UNCHANGED; competency name UNCHANGED.
- * 2. Locked FV + new competency Z in JSON → Z is inserted; indicators inserted; pivot created via syncWithoutDetaching.
- * 3. Locked FV + JSON-removed competency W → BarsIndicator::delete() suppressed; continue preserved; W's pivot + indicators untouched.
- * 4. Locked FV → framework_gaps upserts still run.
- * 5. Locked FV → seeder_lock_guard_active signal emitted.
- * 6. Soft-deleted project → FV still is_locked=true → guard fires.
- * 7. No locked FV → normal delete-stale + mutations fire.
- * 8. structuralChange + CatalogMeta::bump(): fires only on genuine new-row insert, not on suppressed mutation.
+ * 1. A published baseline with NO content yet (the fresh-install shape —
+ *    PR1's backfill migration always inserts the baseline as published, even
+ *    against an empty catalogue, see PR2's contradiction-resolution
+ *    annotation in tasks.md) is populated on the first run.
+ * 2. A published baseline that already carries content performs ZERO writes
+ *    on re-seed: neither an edited anchor nor a brand-new competency lands.
+ * 3. The `seeder_lock_guard_active` signal (FrameworkGap + Log::warning) is
+ *    emitted exactly when writes are blocked, and not otherwise.
+ * 4. A forced draft baseline (state flipped via a raw `DB::table()` write —
+ *    the ONLY way to construct one, since the Eloquent guard refuses to turn
+ *    a published revision back to draft, and this schema never produces a
+ *    draft baseline naturally) still runs the full delete-stale sync,
+ *    matching the framework-catalog spec delta's "draft baseline still
+ *    syncs" scenario literally.
+ * 5. `framework_gaps` gap RESOLUTION reflects DATABASE state, not the JSON
+ *    (fix, post-PR2-review): a `pending_authoring` gap for a pair whose text
+ *    the JSON now declares complete is NOT marked resolved while writes are
+ *    blocked — nothing reached the database this run, so nothing was
+ *    verified. The same forced-pending gap DOES resolve once writes are not
+ *    blocked (a draft baseline), proving resolution still functions when the
+ *    write it is claiming about actually happened. Recording a gap as still
+ *    `pending_authoring`, by contrast, is unaffected either way — it never
+ *    claims anything about the database.
+ * 6. Idempotence and the per-role seeded counts (ICO 45, FLL 54, MLL 54,
+ *    BUL 42, SRX 54) hold once the baseline is populated.
  *
- * Refs spec: lock-guard — fully additive; spec scenarios in framework-catalog spec delta.
+ * Refs spec: framework-catalog spec delta, "Idempotent Catalog Seeder"
+ * requirement (D2).
  */
 
 use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkGap;
-use App\Models\FrameworkVersion;
-use App\Models\Organization;
-use App\Models\Project;
 use App\Models\Role;
-use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+function seederLockGuardBaseline(): FrameworkCatalogRevision
+{
+    return FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
+}
+
 /**
- * Build a minimal competencies.json file and a bars directory in $tmpDir.
- * Merges $extraCompetencies into the existing competencies.json if provided.
- * Returns [rolesFile, competenciesFile, barsDir] paths.
+ * Build a full fixture tree copied from the real wrapper catalog, so a test
+ * can mutate an anchor or add a competency without touching the real source
+ * files. Merges $extraCompetencies into competencies.json when provided.
  *
- * @param  array<string, array{name: string, definition: string}>  $extraCompetencies  Additional competency codes to add
- * @param  array<string, array{name: string, responsibilities: string, competencies: list<string>}>  $roleOverrides  Role overrides
- * @return array{string, string, string}
+ * @param  array<string, array{name: array<string,string>, definition: array<string,string>}>  $extraCompetencies
+ * @return array{string, string, string} [rolesFile, competenciesFile, barsDir]
  */
-function buildSeederFixtures(string $tmpDir, array $extraCompetencies = [], array $roleOverrides = []): array
+function buildSeederLockGuardFixtureTree(string $tmpDir, array $extraCompetencies = []): array
 {
     $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
-    $originalRoles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
-    $originalCompetencies = json_decode(file_get_contents("{$frameworkBase}/competencies.json"), true, 512, JSON_THROW_ON_ERROR);
-
-    $roles = array_merge($originalRoles, $roleOverrides);
-    $competencies = array_merge($originalCompetencies, $extraCompetencies);
-
     @mkdir("{$tmpDir}/bars", 0755, true);
-    file_put_contents("{$tmpDir}/roles.json", json_encode($roles));
-    file_put_contents("{$tmpDir}/competencies.json", json_encode($competencies));
 
-    // Copy all BARS files into the tmp dir
+    $competencies = json_decode(file_get_contents("{$frameworkBase}/competencies.json"), true, 512, JSON_THROW_ON_ERROR);
+    $competencies = array_merge($competencies, $extraCompetencies);
+    file_put_contents("{$tmpDir}/competencies.json", json_encode($competencies));
+    file_put_contents("{$tmpDir}/roles.json", file_get_contents("{$frameworkBase}/roles.json"));
+
     foreach (glob("{$frameworkBase}/bars/*.json") as $barsFile) {
         copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
     }
@@ -62,262 +88,116 @@ function buildSeederFixtures(string $tmpDir, array $extraCompetencies = [], arra
     return ["{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars"];
 }
 
-// ─── Scenario 1: Locked FV — anchor edit is suppressed, name edit is suppressed ──
+function cleanupSeederLockGuardFixtureTree(string $tmpDir): void
+{
+    array_map('unlink', glob("{$tmpDir}/bars/*") ?: []);
+    @rmdir("{$tmpDir}/bars");
+    array_map('unlink', glob("{$tmpDir}/*.json") ?: []);
+    @rmdir($tmpDir);
+}
 
-test('locked FV: anchor text and competency name edits are suppressed on re-seed', function (): void {
-    // First seed normally — no locked FV
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
+// ─── Scenario 1: fresh install — published-but-empty baseline is seeded ──────
 
-    // Pin a FV (lock it)
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    $fv = FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
+test('a published baseline with no content yet is populated on the first run', function (): void {
+    $baseline = seederLockGuardBaseline();
+    expect($baseline->state)->toBe('published');
+    expect(Competency::where('revision_id', $baseline->id)->exists())->toBeFalse();
 
-    // Capture original anchor text for a known indicator
-    $ico = Role::where('code', 'ICO')->firstOrFail();
-    $firstCompetency = DB::table('framework_role_competency')
-        ->where('role_id', $ico->id)
-        ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
-        ->first();
-    $competencyCode = $firstCompetency->code;
-    $competencyId = $firstCompetency->competency_id;
+    (new FrameworkCatalogSeeder)->run();
 
-    $originalIndicator = BarsIndicator::where('role_id', $ico->id)
-        ->where('competency_id', $competencyId)
-        ->orderBy('position')
-        ->first();
-
-    expect($originalIndicator)->not->toBeNull();
-    $originalAnchor5 = $originalIndicator->getTranslation('anchor_5', 'en');
-    $originalName = Competency::find($competencyId)->getTranslation('name', 'en');
-
-    // Build a modified fixtures with edited anchor + name
-    $tmpDir = sys_get_temp_dir().'/c4_lock_guard_'.uniqid();
-    [$rolesFile, $competenciesFile, $barsDir] = buildSeederFixtures($tmpDir);
-
-    // Modify anchor_5 for the first indicator of this competency in the BARS file
-    $barsFilePath = "{$barsDir}/ICO.json";
-    $barsData = json_decode(file_get_contents($barsFilePath), true, 512, JSON_THROW_ON_ERROR);
-    if (isset($barsData[$competencyCode])) {
-        $barsData[$competencyCode][0]['scale']['5']['en'] = 'MODIFIED ANCHOR TEXT';
-    }
-    file_put_contents($barsFilePath, json_encode($barsData));
-
-    // Edit competency name in competencies.json
-    $compData = json_decode(file_get_contents($competenciesFile), true, 512, JSON_THROW_ON_ERROR);
-    if (isset($compData[$competencyCode])) {
-        $compData[$competencyCode]['name']['en'] = 'MODIFIED NAME';
-    }
-    file_put_contents($competenciesFile, json_encode($compData));
-
-    // Re-seed while locked FV exists
-    $seeder2 = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
-    $seeder2->run();
-
-    // Assert: existing anchor unchanged
-    $freshIndicator = $originalIndicator->fresh();
-    expect($freshIndicator->getTranslation('anchor_5', 'en'))->toBe($originalAnchor5);
-
-    // Assert: existing competency name unchanged
-    $freshCompetency = Competency::find($competencyId)->fresh();
-    expect($freshCompetency->getTranslation('name', 'en'))->toBe($originalName);
-
-    // Cleanup
-    array_map('unlink', glob("{$tmpDir}/bars/*"));
-    rmdir("{$tmpDir}/bars");
-    array_map('unlink', glob("{$tmpDir}/*.json"));
-    rmdir($tmpDir);
+    expect(Competency::where('revision_id', $baseline->id)->exists())->toBeTrue();
+    expect(Role::where('revision_id', $baseline->id)->where('code', 'ICO')->exists())->toBeTrue();
+    expect(BarsIndicator::where('revision_id', $baseline->id)->exists())->toBeTrue();
+    // The baseline itself is untouched by the seeder — still published, not mutated.
+    expect($baseline->fresh()->state)->toBe('published');
 });
 
-// ─── Scenario 2: Locked FV — new competency Z is inserted (additive) ──────────
+// ─── Scenario 2: published + content → zero writes ────────────────────────────
 
-test('locked FV: new competency Z added to JSON is inserted (additive)', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
+test('a published baseline that already carries content performs zero writes on re-seed', function (): void {
+    (new FrameworkCatalogSeeder)->run(); // populates the published-but-empty baseline
 
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
+    $baseline = seederLockGuardBaseline();
+    $ico = Role::where('revision_id', $baseline->id)->where('code', 'ICO')->firstOrFail();
+    $pivotRow = DB::table('framework_role_competency')
+        ->where('framework_role_competency.role_id', $ico->id)
+        ->where('framework_role_competency.revision_id', $baseline->id)
+        ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
+        ->first();
+    $competencyCode = $pivotRow->code;
+    $competencyId = $pivotRow->competency_id;
 
-    // Verify Z does not exist yet
-    expect(Competency::where('code', 'ZZZ')->exists())->toBeFalse();
+    $originalIndicator = BarsIndicator::where('revision_id', $baseline->id)
+        ->where('role_id', $ico->id)
+        ->where('competency_id', $competencyId)
+        ->orderBy('position')
+        ->firstOrFail();
+    $originalAnchor5 = $originalIndicator->getTranslation('anchor_5', 'en');
+    $competencyCountBefore = Competency::where('revision_id', $baseline->id)->count();
+    $indicatorCountBefore = BarsIndicator::where('revision_id', $baseline->id)->count();
 
-    $tmpDir = sys_get_temp_dir().'/c4_lock_guard_z_'.uniqid();
-    [$rolesFile, $competenciesFile, $barsDir] = buildSeederFixtures($tmpDir, [
+    $tmpDir = sys_get_temp_dir().'/pr2_lock_guard_'.uniqid();
+    [$rolesFile, $competenciesFile, $barsDir] = buildSeederLockGuardFixtureTree($tmpDir, [
         'ZZZ' => ['name' => ['en' => 'Test Competency Z'], 'definition' => ['en' => 'Test definition']],
     ]);
 
-    $seeder2 = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
-    $seeder2->run();
+    // Edit an existing anchor — must not land.
+    $barsFilePath = "{$barsDir}/ICO.json";
+    $barsData = json_decode(file_get_contents($barsFilePath), true, 512, JSON_THROW_ON_ERROR);
+    $barsData[$competencyCode][0]['scale']['5']['en'] = 'MODIFIED ANCHOR TEXT — MUST NOT LAND';
+    file_put_contents($barsFilePath, json_encode($barsData));
 
-    // Z must now exist in the DB (new row inserted)
-    expect(Competency::where('code', 'ZZZ')->exists())->toBeTrue();
+    (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 
-    // Cleanup
-    array_map('unlink', glob("{$tmpDir}/bars/*"));
-    rmdir("{$tmpDir}/bars");
-    array_map('unlink', glob("{$tmpDir}/*.json"));
-    rmdir($tmpDir);
+    expect($originalIndicator->fresh()->getTranslation('anchor_5', 'en'))->toBe($originalAnchor5);
+    expect(Competency::where('code', 'ZZZ')->exists())->toBeFalse('a brand-new competency must never be created while writes are blocked');
+    expect(Competency::where('revision_id', $baseline->id)->count())->toBe($competencyCountBefore);
+    expect(BarsIndicator::where('revision_id', $baseline->id)->count())->toBe($indicatorCountBefore);
+
+    cleanupSeederLockGuardFixtureTree($tmpDir);
 });
 
-// ─── Scenario 3: Locked FV — JSON-removed competency W leaves indicators/pivot intact ──
+// ─── Scenario 3: seeder_lock_guard_active signal ───────────────────────────────
 
-test('locked FV: JSON-removed competency W leaves indicators and pivot intact', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
+test('the seeder_lock_guard_active signal is emitted only while writes are blocked', function (): void {
+    (new FrameworkCatalogSeeder)->run(); // first run: published-but-empty — writes NOT blocked
+    expect(FrameworkGap::where('kind', 'seeder_lock_guard_active')->exists())->toBeFalse();
 
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
+    Log::spy();
 
-    // Identify a competency in ICO that has bars indicators
-    $ico = Role::where('code', 'ICO')->firstOrFail();
+    (new FrameworkCatalogSeeder)->run(); // second run: published-with-content — writes blocked
+
+    expect(FrameworkGap::where('kind', 'seeder_lock_guard_active')->exists())->toBeTrue();
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message): bool => str_contains($message, 'baseline revision is published and already carries content'))
+        ->once();
+});
+
+// ─── Scenario 4: a forced draft baseline still runs the full sync ─────────────
+
+test('a draft baseline still runs the full delete-stale sync', function (): void {
+    (new FrameworkCatalogSeeder)->run(); // populate the published baseline first
+
+    $baseline = seederLockGuardBaseline();
+
+    // The ONLY way to construct a draft baseline in this schema: bypass the
+    // Eloquent immutability guard with a raw query-builder write. Model
+    // events never fire for this, which is the point — it proves the SEEDER's
+    // own gate, not the model guard, decides whether this run writes.
+    DB::table('framework_catalog_revisions')
+        ->where('id', $baseline->id)
+        ->update(['state' => 'draft', 'published_at' => null]);
+
+    $ico = Role::where('revision_id', $baseline->id)->where('code', 'ICO')->firstOrFail();
     $pivotRow = DB::table('framework_role_competency')
-        ->where('role_id', $ico->id)
+        ->where('framework_role_competency.role_id', $ico->id)
+        ->where('framework_role_competency.revision_id', $baseline->id)
         ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
         ->first();
     $removedCode = $pivotRow->code;
     $removedId = $pivotRow->competency_id;
 
-    $indicatorCount = BarsIndicator::where('role_id', $ico->id)
-        ->where('competency_id', $removedId)
-        ->count();
-
-    // Build fixtures with W removed from ICO roles
-    $tmpDir = sys_get_temp_dir().'/c4_lock_guard_w_'.uniqid();
-    $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
-    $originalRoles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
-    $originalRoles['ICO']['competencies'] = array_values(
-        array_filter($originalRoles['ICO']['competencies'], fn ($c) => $c !== $removedCode)
-    );
-
-    @mkdir("{$tmpDir}/bars", 0755, true);
-    file_put_contents("{$tmpDir}/roles.json", json_encode($originalRoles));
-    $origComp = file_get_contents("{$frameworkBase}/competencies.json");
-    file_put_contents("{$tmpDir}/competencies.json", $origComp);
-    foreach (glob("{$frameworkBase}/bars/*.json") as $barsFile) {
-        copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
-    }
-
-    $seeder2 = new FrameworkCatalogSeeder("{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars");
-    $seeder2->run();
-
-    // Pivot for (ICO, W) must still exist — delete-stale suppressed
-    $pivotExists = DB::table('framework_role_competency')
-        ->where('role_id', $ico->id)
-        ->where('competency_id', $removedId)
-        ->exists();
-    expect($pivotExists)->toBeTrue('DB pivot for W must be preserved when FV is locked');
-
-    // Indicators for (ICO, W) must still exist
-    $freshIndicatorCount = BarsIndicator::where('role_id', $ico->id)
-        ->where('competency_id', $removedId)
-        ->count();
-    expect($freshIndicatorCount)->toBe($indicatorCount, 'BarsIndicator rows for W must be preserved when FV is locked');
-
-    // Cleanup
-    array_map('unlink', glob("{$tmpDir}/bars/*"));
-    rmdir("{$tmpDir}/bars");
-    array_map('unlink', glob("{$tmpDir}/*.json"));
-    rmdir($tmpDir);
-});
-
-// ─── Scenario 4: Locked FV — framework_gaps upserts still run ─────────────────
-
-test('locked FV: framework_gaps upserts still run', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
-
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
-
-    // Clear all framework gaps to confirm they are re-created
-    FrameworkGap::query()->delete();
-    expect(FrameworkGap::count())->toBe(0);
-
-    $seeder2 = new FrameworkCatalogSeeder;
-    $seeder2->run();
-
-    // Gaps should have been re-upserted
-    expect(FrameworkGap::count())->toBeGreaterThan(0);
-});
-
-// ─── Scenario 5: Locked FV — seeder_lock_guard_active signal emitted ──────────
-
-test('locked FV: seeder_lock_guard_active signal is emitted', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
-
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
-
-    // Remove the signal if it already exists from the first run
-    FrameworkGap::where('kind', 'seeder_lock_guard_active')->delete();
-
-    $seeder2 = new FrameworkCatalogSeeder;
-    $seeder2->run();
-
-    // Signal must be present as a FrameworkGap record
-    expect(FrameworkGap::where('kind', 'seeder_lock_guard_active')->exists())->toBeTrue();
-});
-
-// ─── Scenario 6: Soft-deleted project — FV still locked → guard fires ─────────
-
-test('soft-deleted project keeps FV locked; guard still fires', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
-
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-
-    $fv = FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
-
-    // Create a project that pins this FV, then soft-delete it
-    $project = Project::factory()->create(['framework_version_id' => $fv->id]);
-    $project->delete();
-
-    // Verify is_locked is still true after soft-delete
-    $freshFv = $fv->fresh();
-    expect($freshFv->is_locked)->toBeTrue();
-
-    // Remove the guard signal to confirm it fires again
-    FrameworkGap::where('kind', 'seeder_lock_guard_active')->delete();
-
-    $seeder2 = new FrameworkCatalogSeeder;
-    $seeder2->run();
-
-    // Guard must have fired (signal emitted)
-    expect(FrameworkGap::where('kind', 'seeder_lock_guard_active')->exists())->toBeTrue();
-});
-
-// ─── Scenario 7: No locked FV → normal delete-stale + mutations fire ──────────
-
-test('no locked FV: normal delete-stale and mutations fire', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
-
-    // Ensure no locked FVs exist
-    expect(FrameworkVersion::withoutGlobalScopes()->where('is_locked', true)->exists())->toBeFalse();
-
-    $ico = Role::where('code', 'ICO')->firstOrFail();
-    $pivotRow = DB::table('framework_role_competency')
-        ->where('role_id', $ico->id)
-        ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
-        ->first();
-    $removedCode = $pivotRow->code;
-    $removedId = $pivotRow->competency_id;
-
-    // Build modified fixture with one ICO competency removed
-    $tmpDir = sys_get_temp_dir().'/c4_no_lock_'.uniqid();
+    $tmpDir = sys_get_temp_dir().'/pr2_lock_guard_draft_'.uniqid();
     $frameworkBase = dirname(base_path()).'/docs/app_description/02-domain/framework';
     $originalRoles = json_decode(file_get_contents("{$frameworkBase}/roles.json"), true, 512, JSON_THROW_ON_ERROR);
     $originalRoles['ICO']['competencies'] = array_values(
@@ -331,40 +211,145 @@ test('no locked FV: normal delete-stale and mutations fire', function (): void {
         copy($barsFile, "{$tmpDir}/bars/".basename($barsFile));
     }
 
-    $seeder2 = new FrameworkCatalogSeeder("{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars");
-    $seeder2->run();
+    (new FrameworkCatalogSeeder("{$tmpDir}/roles.json", "{$tmpDir}/competencies.json", "{$tmpDir}/bars"))->run();
 
-    // Stale pivot must be deleted (no lock guard, normal mode)
+    // A draft baseline runs the normal delete-stale sync — the removed pivot
+    // assignment is gone, exactly as it would be for any non-blocked run.
     $pivotExists = DB::table('framework_role_competency')
         ->where('role_id', $ico->id)
         ->where('competency_id', $removedId)
         ->exists();
-    expect($pivotExists)->toBeFalse('Stale pivot must be deleted when no FV is locked');
+    expect($pivotExists)->toBeFalse('a draft baseline must run the full delete-stale sync, unchanged');
 
-    // Cleanup
-    array_map('unlink', glob("{$tmpDir}/bars/*"));
-    rmdir("{$tmpDir}/bars");
-    array_map('unlink', glob("{$tmpDir}/*.json"));
-    rmdir($tmpDir);
+    cleanupSeederLockGuardFixtureTree($tmpDir);
 });
 
-// ─── Scenario 8: CatalogMeta::bump() fires only on new-row insert ──────────────
+// ─── Scenario 5: gap resolution reflects DATABASE state, not the JSON ─────────
 
-test('locked FV: CatalogMeta::bump() fires only on genuine new-row insert', function (): void {
-    $seeder = new FrameworkCatalogSeeder;
-    $seeder->run();
+/**
+ * The deterministic ICO × (its lowest competency_id) pivot pair, ordered
+ * explicitly rather than relying on `first()`'s unspecified row order —
+ * review advisory R3-5 on the sibling BarsIndicatorLoaderRevisionResolutionTest
+ * named the same class of hazard.
+ */
+function seederLockGuardDeterministicPair(FrameworkCatalogRevision $baseline, Role $ico): object
+{
+    return DB::table('framework_role_competency')
+        ->where('framework_role_competency.role_id', $ico->id)
+        ->where('framework_role_competency.revision_id', $baseline->id)
+        ->join('framework_competencies', 'framework_competencies.id', '=', 'framework_role_competency.competency_id')
+        ->orderBy('framework_role_competency.competency_id')
+        ->firstOrFail();
+}
 
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    FrameworkVersion::factory()->locked()->create(['organization_id' => $org->id]);
+test('a pending gap is NOT marked resolved from the JSON alone while writes are blocked', function (): void {
+    (new FrameworkCatalogSeeder)->run(); // populate — writes NOT blocked
 
+    $baseline = seederLockGuardBaseline();
+    $ico = Role::where('revision_id', $baseline->id)->where('code', 'ICO')->firstOrFail();
+    $pivotRow = seederLockGuardDeterministicPair($baseline, $ico);
+
+    // Force a stale pending gap for an already-anchored, already-fully-
+    // translated pair (the real fixture's own ICO × lowest-competency-id
+    // pair). Written directly — the seeder itself would never have created a
+    // pending row for a pair that already satisfies the rule.
+    FrameworkGap::updateOrCreate(
+        ['kind' => 'missing_translation', 'role_code' => 'ICO', 'competency_code' => $pivotRow->code],
+        ['note' => 'forced pending, for this test only', 'status' => 'pending_authoring'],
+    );
+
+    (new FrameworkCatalogSeeder)->run(); // writes ARE blocked now (published + content)
+
+    expect(
+        FrameworkGap::where('kind', 'missing_translation')
+            ->where('role_code', 'ICO')
+            ->where('competency_code', $pivotRow->code)
+            ->where('status', 'pending_authoring')
+            ->exists()
+    )->toBeTrue(
+        'a blocked run wrote nothing to the database this run, so it has no basis to claim the '
+        .'gap is resolved — even though the (unedited) JSON happens to agree with what the '
+        .'database already holds from a prior run. Resolving here would be right by accident, '
+        .'for the wrong reason, and wrong the moment the JSON and the database ever disagree.'
+    );
+});
+
+test('the same forced-pending gap DOES resolve once writes are not blocked', function (): void {
+    (new FrameworkCatalogSeeder)->run(); // populate — writes NOT blocked
+
+    $baseline = seederLockGuardBaseline();
+    $ico = Role::where('revision_id', $baseline->id)->where('code', 'ICO')->firstOrFail();
+    $pivotRow = seederLockGuardDeterministicPair($baseline, $ico);
+
+    FrameworkGap::updateOrCreate(
+        ['kind' => 'missing_translation', 'role_code' => 'ICO', 'competency_code' => $pivotRow->code],
+        ['note' => 'forced pending, for this test only', 'status' => 'pending_authoring'],
+    );
+
+    // The ONLY way to make this run's writes NOT blocked against an
+    // already-populated baseline: force it back to draft (the same
+    // query-builder bypass Scenario 4 uses) — a real draft revision runs the
+    // full sync, which re-verifies every pair against the source JSON.
+    DB::table('framework_catalog_revisions')
+        ->where('id', $baseline->id)
+        ->update(['state' => 'draft', 'published_at' => null]);
+
+    (new FrameworkCatalogSeeder)->run();
+
+    expect(
+        FrameworkGap::where('kind', 'missing_translation')
+            ->where('role_code', 'ICO')
+            ->where('competency_code', $pivotRow->code)
+            ->where('status', 'pending_authoring')
+            ->exists()
+    )->toBeFalse('once the run actually re-verified this pair against the database, the forced '
+        .'pending gap must resolve — the gate does not disable resolution outright, only while '
+        .'nothing was verified.');
+});
+
+// ─── Scenario 6: idempotence + per-role seeded counts ──────────────────────────
+
+test('per-role seeded counts are correct once the baseline is populated', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+
+    $baseline = seederLockGuardBaseline();
+
+    $counts = DB::table('framework_bars_indicators')
+        ->join('framework_roles', 'framework_roles.id', '=', 'framework_bars_indicators.role_id')
+        ->where('framework_bars_indicators.revision_id', $baseline->id)
+        ->selectRaw('framework_roles.code as role_code, count(*) as total')
+        ->groupBy('framework_roles.code')
+        ->pluck('total', 'role_code');
+
+    expect($counts['ICO'])->toBe(45);
+    expect($counts['FLL'])->toBe(54);
+    expect($counts['MLL'])->toBe(54);
+    expect($counts['BUL'])->toBe(42);
+    expect($counts['SRX'])->toBe(54);
+});
+
+test('re-seeding an already-populated published baseline produces no duplicates (idempotence via the write gate)', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+
+    $baseline = seederLockGuardBaseline();
+    $competencyCountBefore = Competency::where('revision_id', $baseline->id)->count();
+    $indicatorCountBefore = BarsIndicator::where('revision_id', $baseline->id)->count();
+    $roleCountBefore = Role::where('revision_id', $baseline->id)->count();
+
+    (new FrameworkCatalogSeeder)->run();
+    (new FrameworkCatalogSeeder)->run();
+
+    expect(Competency::where('revision_id', $baseline->id)->count())->toBe($competencyCountBefore);
+    expect(BarsIndicator::where('revision_id', $baseline->id)->count())->toBe($indicatorCountBefore);
+    expect(Role::where('revision_id', $baseline->id)->count())->toBe($roleCountBefore);
+});
+
+test('CatalogMeta does not bump on a blocked re-seed', function (): void {
+    (new FrameworkCatalogSeeder)->run();
     $bumpBefore = CatalogMeta::first()?->revision ?? 0;
 
-    // Re-seed without any new rows → no new insertions → bump should NOT fire
-    $seeder2 = new FrameworkCatalogSeeder;
-    $seeder2->run();
+    (new FrameworkCatalogSeeder)->run(); // blocked — no structural change
 
     $bumpAfter = CatalogMeta::first()?->revision ?? 0;
-    expect($bumpAfter)->toBe($bumpBefore, 'CatalogMeta should not bump when no new rows are inserted in locked mode');
+    expect($bumpAfter)->toBe($bumpBefore, 'CatalogMeta must not bump when the write gate blocks the whole run');
 });

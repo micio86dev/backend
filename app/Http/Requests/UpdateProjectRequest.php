@@ -78,6 +78,38 @@ class UpdateProjectRequest extends FormRequest
     }
 
     /**
+     * The project's OWN already-pinned revision (framework-catalogue-
+     * authoring PR3b, H1) — `framework_version_id` is immutable after
+     * creation (blanket-prohibited below), so there is no "target" to
+     * resolve from the request body the way `StoreProjectRequest` does.
+     *
+     * NEVER throws, and deliberately does NOT call the resolver's
+     * `forProject()` — this runs inside `rules()`, before validation, so a
+     * project that fails to resolve (`resolvedProject()` returned null —
+     * `withValidator`'s gate answers `project_not_found` for that case
+     * separately) or whose FrameworkVersion/pin does not resolve must
+     * degrade to `null` (the trait's own "match nothing" value), never crash
+     * the whole PATCH with an integrity-violation exception over a field the
+     * request may not even be touching.
+     */
+    private function compositionRevisionId(): ?int
+    {
+        $project = $this->resolvedProject();
+
+        if ($project === null) {
+            return null;
+        }
+
+        $version = $project->frameworkVersion;
+
+        if ($version === null) {
+            return null;
+        }
+
+        return $version->revision_id;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -111,8 +143,14 @@ class UpdateProjectRequest extends FormRequest
             'competency_ids' => ['sometimes', 'nullable', 'array', 'list'],
             // `exists` is load-bearing: `validateStandard` iterates
             // `whereIn(...)->get()`, so an unknown id is never looped over and
-            // reached the foreign key as a 500.
-            'competency_ids.*' => ['integer', 'distinct', Rule::exists('framework_competencies', 'id')],
+            // reached the foreign key as a 500. Scoped to this project's own
+            // pinned revision (framework-catalogue-authoring PR3b, H1) — see
+            // `compositionRevisionId()`.
+            'competency_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('framework_competencies', 'id')->where('revision_id', $this->compositionRevisionId()),
+            ],
             'pause_every_n_competencies' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:255'],
             'nudge_min_chars' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
