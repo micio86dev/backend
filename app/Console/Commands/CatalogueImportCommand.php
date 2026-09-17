@@ -55,6 +55,25 @@ use Illuminate\Support\Facades\DB;
  * lock at all, so a concurrent `DiscardUnusedDraftRevision`/`PublishRevision`
  * could race it. The entire content-writing phase now runs INSIDE that same
  * lock, taken once immediately after `open()` resolves the draft.
+ *
+ * ADDITIVE, NOT A SYNC (R3-import-not-a-sync): a role, competency or
+ * indicator that exists in the draft but is ABSENT from the source file is
+ * never deleted by this command — every write below is a find-by-(revision,
+ * natural key)-or-create, never a "delete what the file didn't mention".
+ * This is deliberate, not an oversight: the one place this command DOES
+ * remove rows is `Role::competencies()->sync()` (`importRolesAndBars()`
+ * below), because a role's competency LIST is a single owned set with one
+ * source of truth per import. Rows and their locale content are not — an
+ * import is how ruling 6's expert-authored translations reach an
+ * IN-PROGRESS draft that a superadmin may already be editing in the
+ * backoffice (see the `--continue` refusal above), and a superadmin's own
+ * unrelated addition surviving a subsequent import of the vendored tree is
+ * the whole point of allowing `--continue` at all — a full sync would
+ * delete it. `CatalogueImportTest`'s own "refuses a draft that already
+ * carries unrelated edits, unless told to continue" test asserts exactly
+ * this: a competency created directly through the API, not present in
+ * either `roles.json` or `competencies.json`, still exists after a
+ * `--continue` import.
  */
 final class CatalogueImportCommand extends Command
 {
@@ -65,7 +84,7 @@ final class CatalogueImportCommand extends Command
         {--continue : Continue a draft that already carries unrelated edits, instead of refusing}
         {--path= : Override the catalogue source directory (testing only)}';
 
-    protected $description = 'Import the vendored split-file catalogue JSON into the open draft revision — never a published one, never publishes';
+    protected $description = 'Additively import the vendored split-file catalogue JSON into the open draft revision — creates and updates rows named in the source, never deletes a draft row the source omits, never targets or publishes a published revision';
 
     public function handle(OpenDraftRevision $openDraftRevision): int
     {
