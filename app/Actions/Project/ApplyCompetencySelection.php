@@ -52,6 +52,27 @@ final class ApplyCompetencySelection
     }
 
     /**
+     * PUBLIC (Z22, R3-interviewability-rollout-existing-projects,
+     * framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE): the SAME
+     * three-branch decision `apply()` runs for a newly-attached competency
+     * (restore a deselection-trashed row, no-op if live rows already exist,
+     * otherwise copy the catalogue defaults), exposed for
+     * `beai:backfill-project-questions` to call directly. That command
+     * exists because `ProjectInterviewability` can find an EXISTING
+     * project's currently-selected competency with zero live questions —
+     * one this class's own `apply()` was never invoked for, since the
+     * competency was selected before this write path existed — and it must
+     * reach the exact same decision `apply()` would make for a fresh
+     * selection, not a second, independently-drifting copy of it. Calling
+     * this for a competency that already has live questions is a safe
+     * no-op (branch 2 below) — the caller does not need to pre-filter.
+     */
+    public function ensureCompetencyHasQuestions(Project $project, int $competencyId): void
+    {
+        $this->applyOneAttachedCompetency($project, $competencyId);
+    }
+
+    /**
      * Deselecting soft-deletes every LIVE row for the competency. Only the
      * live ones — a row already soft-deleted (e.g. individually removed by
      * the operator before deselection) stays exactly as it was.
