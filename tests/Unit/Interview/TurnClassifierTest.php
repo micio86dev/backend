@@ -6,15 +6,16 @@ declare(strict_types=1);
  * RED — Task 28.1 (framework-catalogue-authoring PR7, D8): `TurnClassifier`.
  *
  * An avatar turn is `primary` only when the NEXT unmatched entry of the
- * session's own `primary_questions` snapshot appears, verbatim, as a
- * contiguous substring of the turn under normalisation (casefold +
- * whitespace-collapse + trailing-punctuation-strip) — otherwise `follow_up`.
- * Not a similarity score, not a word list: an exact substring after
- * normalisation, or nothing. Containment rather than equality specifically
- * so a `retry` opening — which wraps the primary in a fixed apology template
+ * session's own `primary_questions` snapshot is the turn's OWN trailing
+ * content, verbatim, under normalisation (casefold + whitespace-collapse +
+ * trailing-punctuation-strip) — otherwise `follow_up`. Not a similarity
+ * score, not a word list: an exact trailing match after normalisation, or
+ * nothing. A trailing match rather than equality specifically so a `retry`
+ * opening — which wraps the primary in a fixed apology template
  * (`OpeningTextComposer`, `interview.opening.retry_authored`) — still
- * matches; a genuinely different rewording, which does not contain the
- * primary's exact wording, still does not.
+ * matches; a genuinely different rewording, or a follow-up that merely
+ * QUOTES the primary's wording without it being the turn's final question
+ * (Z23, R3-turn-classifier-substring-false-primary), still does not.
  *
  * Uses the shared `cas*()` fixtures (`tests/Helpers/C9Fixtures.php`,
  * autoloaded) to satisfy `InterviewSession`'s required foreign keys.
@@ -143,14 +144,22 @@ test('a genuinely reworded turn does not match — not a similarity score', func
     expect($result)->toBe('follow_up');
 });
 
-test('the primary embedded verbatim inside a longer sentence still matches — containment, not equality', function (): void {
-    // A prefix/suffix around the primary's exact wording (as opposed to a
-    // paraphrase) still classifies as primary.
+/**
+ * Z23 (R3-turn-classifier-substring-false-primary, REQUIRED BEFORE ARCHIVE):
+ * this test used to also append " Take your time." AFTER the primary and
+ * still expect `primary` — genuine plain containment, not just a prefix
+ * wrapper. That is exactly the false-positive shape the fix above closes
+ * (the primary must be the turn's own trailing content), so the trailing
+ * filler is gone: this now proves the PREFIX-only wrapper the class's own
+ * docblock actually documents (a leading preamble, primary as the final
+ * question) still classifies as primary.
+ */
+test('the primary embedded verbatim at the end of a longer sentence still matches — a prefix wrapper, not equality', function (): void {
     $session = turnClassifierSession(['Tell me about a time you led a difficult project.']);
 
     $result = (new TurnClassifier)->classify(
         $session,
-        'So, to start: Tell me about a time you led a difficult project. Take your time.',
+        'So, to start: Tell me about a time you led a difficult project.',
     );
 
     expect($result)->toBe('primary');
@@ -168,6 +177,40 @@ test('a retry opening — the primary wrapped in the apology template — still 
         $session,
         "Sorry, we had a technical problem on our side. Let's start over. "
         .'Walk me through a time you handled a hostile client.',
+    );
+
+    expect($result)->toBe('primary');
+});
+
+/**
+ * Z23 (R3-turn-classifier-substring-false-primary, framework-catalogue-
+ * authoring, REQUIRED BEFORE ARCHIVE): plain substring CONTAINMENT matches
+ * the next unmatched primary anywhere inside the turn, including in the
+ * MIDDLE of a follow-up that only QUOTES it in passing — never actually
+ * asking it — and then keeps talking about something else. The class's own
+ * docblock already only ever describes the primary's exact text as embedded
+ * "at the end" of a longer sentence (the retry-apology wrapper); this turn
+ * has substantial NEW content trailing the quoted primary, so it is not the
+ * turn's final question and must not classify as `primary`.
+ */
+test('a follow-up that quotes the next primary but keeps talking afterward does not match', function (): void {
+    $session = turnClassifierSession(['Tell me about a time you led a difficult project.']);
+
+    $result = (new TurnClassifier)->classify(
+        $session,
+        'Before we wrap up, I should mention we may later ask: Tell me about a time you led a difficult project. '
+        .'But first, what was the outcome of the situation you just described?',
+    );
+
+    expect($result)->toBe('follow_up');
+});
+
+test('a retry opening still matches when the primary is the turn\'s final question, tolerating the apology prefix', function (): void {
+    $session = turnClassifierSession(['Tell me about a time you led a difficult project.']);
+
+    $result = (new TurnClassifier)->classify(
+        $session,
+        "Sorry, we had a technical problem on our side. Let's start over. Tell me about a time you led a difficult project.",
     );
 
     expect($result)->toBe('primary');

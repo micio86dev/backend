@@ -19,24 +19,35 @@ use App\Models\Utterance;
  * "did the avatar ask exactly the authored primaries, and only invent
  * follow-ups" is a query over the transcript, not a claim about the prompt.
  *
- * EXACT SUBSTRING, NEVER A SIMILARITY SCORE. An avatar turn is `primary`
- * only when the next UNMATCHED entry of `$session->primary_questions`
- * appears, VERBATIM, as a contiguous substring of the turn under
+ * EXACT SUFFIX, NEVER A SIMILARITY SCORE. An avatar turn is `primary` only
+ * when the next UNMATCHED entry of `$session->primary_questions` is the
+ * turn's OWN FINAL question — VERBATIM, at the very end of the turn under
  * normalisation (casefold + whitespace-collapse + trailing-punctuation
- * strip) — nothing looser. This is deliberately containment, not equality:
- * `OpeningTextComposer`'s `retry` variant (`interview.opening.retry_authored`)
- * wraps the authored primary in a fixed apology template — "Sorry, we had a
- * technical problem on our side. Let's start over. :question" — so the
- * primary's exact text is embedded verbatim at the end of a longer sentence,
- * never the whole turn. Equality would misclassify every re-offered
- * competency's opening as `follow_up` and then stall on that same primary
- * for the rest of the competency, since "next unmatched" never advances.
- * Containment costs nothing on `first`/`next`, where the turn already equals
- * the primary exactly (a string trivially contains itself) — this is a
- * strict widening of equality, not a fuzzy replacement for it. A fuzzy
- * threshold would silently decide, per session, how much rewording still
- * counts as "the same question"; an exact substring after normalisation
- * decides nothing and hides nothing.
+ * strip) — nothing looser. This is deliberately a trailing match, not
+ * equality: `OpeningTextComposer`'s `retry` variant
+ * (`interview.opening.retry_authored`) wraps the authored primary in a fixed
+ * apology template — "Sorry, we had a technical problem on our side. Let's
+ * start over. :question" — so the primary's exact text is embedded verbatim
+ * at the END of a longer sentence, never the whole turn. Equality would
+ * misclassify every re-offered competency's opening as `follow_up` and then
+ * stall on that same primary for the rest of the competency, since "next
+ * unmatched" never advances. A trailing match costs nothing on `first`/
+ * `next`, where the turn already equals the primary exactly (a string
+ * trivially ends with itself) — this is a strict widening of equality, not a
+ * fuzzy replacement for it.
+ *
+ * NOT PLAIN CONTAINMENT (Z23, R3-turn-classifier-substring-false-primary,
+ * REQUIRED BEFORE ARCHIVE — fixed): a bare `str_contains()` also matched a
+ * follow-up that merely QUOTES the next unmatched primary somewhere in the
+ * middle of its own text — "we may later ask: :primary. But first, what
+ * about..." — without actually asking it, because the turn keeps going
+ * afterward with substantive content of its own. Requiring the primary to be
+ * the turn's OWN trailing content, not merely somewhere inside it, rejects
+ * that false positive while still accepting the retry wrapper above (the
+ * primary IS the turn's last clause there) and any other prefix-only
+ * wrapping. A fuzzy threshold would silently decide, per session, how much
+ * rewording still counts as "the same question"; an exact trailing match
+ * after normalisation decides nothing and hides nothing.
  *
  * THE REFERENCE IS FIXED ONCE A TURN EXISTS TO COMPARE AGAINST IT, NOT LIVE
  * `project_questions`. This is not the text comparison `project-config` (D9)
@@ -75,7 +86,7 @@ final class TurnClassifier
      * Classify one avatar turn against `$session->primary_questions`.
      *
      * `follow_up` when the session has no primary-question snapshot, when
-     * every primary is already matched, or when `$text` does not CONTAIN the
+     * every primary is already matched, or when `$text` does not END WITH the
      * next unmatched primary, verbatim, under normalisation.
      *
      * @param  int|null  $matchedCount  The number of primaries already
@@ -113,7 +124,7 @@ final class TurnClassifier
             return 'follow_up';
         }
 
-        return str_contains(self::normalize($text), $next) ? 'primary' : 'follow_up';
+        return str_ends_with(self::normalize($text), $next) ? 'primary' : 'follow_up';
     }
 
     /**
