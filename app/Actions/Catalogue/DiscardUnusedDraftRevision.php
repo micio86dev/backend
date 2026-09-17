@@ -107,6 +107,15 @@ final class DiscardUnusedDraftRevision
                     return;
                 }
 
+                // Only these two tables are deleted explicitly.
+                // `framework_bars_indicators` cascades on BOTH `role_id` and
+                // `competency_id` (its own creation migration), and
+                // `framework_default_questions` cascades on the composite
+                // `(competency_id, revision_id)` FK to `framework_competencies`
+                // — its OWN `revision_id` FK is `restrictOnDelete()`, so it
+                // MUST already be empty for this revision by the time
+                // `$revision->delete()` below runs, which the competency
+                // cascade above guarantees.
                 Competency::where('revision_id', $revisionId)->delete();
                 Role::where('revision_id', $revisionId)->delete();
 

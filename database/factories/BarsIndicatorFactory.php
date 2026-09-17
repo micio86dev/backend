@@ -20,8 +20,12 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  * `revision_id` DEFAULT unsafe to do blindly. This factory is the single,
  * shared construction path callers can migrate onto instead: it creates its
  * own `Role`/`Competency` when neither is supplied, and `position` defaults
- * to a fresh, non-colliding value scoped to the (revision, role, competency)
- * group it targets.
+ * to a fresh value `faker->unique()` has not produced before anywhere in
+ * this run (R2-factory-docblock-position-claim: NOT scoped to the
+ * (revision, role, competency) group it targets — a run-wide guarantee is
+ * strictly stronger than a per-group one, so this still never collides with
+ * the `unique(role_id, competency_id, position)` index, it just does not
+ * reuse a low position the way an explicitly-scoped counter would).
  *
  * `revision_id` is deliberately NOT defaulted here, mirroring `RoleFactory`/
  * `CompetencyFactory`'s own documented choice: this table still carries a
