@@ -48,13 +48,22 @@ use Illuminate\Support\Facades\DB;
  * no-op (branch 2, live rows already exist), and a competency the command
  * already fixed in an earlier run stays untouched on the next one.
  *
+ * SOURCE REVISION: PINNED, THEN LATEST-PUBLISHED FALLBACK
+ * (R4-interviewability-rollout-unrecoverable). Every pre-existing project is
+ * pinned to the BASELINE, whose defaults are always empty, so the pinned
+ * revision alone can never recover it — `ensureCompetencyHasQuestions()`
+ * falls back to the latest PUBLISHED revision (matched by competency CODE)
+ * only when the pin has nothing. Runbook: author the missing defaults in a
+ * draft → publish it → re-run this command.
+ *
  * WHAT "STILL INCOMPLETE" MEANS. A selected competency can have ZERO
- * catalogue defaults for the project's own pinned revision (project-config
- * spec — "A competency with no catalogue defaults yields zero rows" is not
- * an error). This command cannot invent content that was never authored: it
- * reports these cases by name so an operator can author the missing
- * defaults (or deselect the competency) — see the summary this command
- * prints. It never silently leaves a project believed-fixed when it is not.
+ * catalogue defaults in BOTH the project's own pinned revision and the
+ * latest published one (project-config spec — "A competency with no
+ * catalogue defaults yields zero rows" is not an error). This command cannot
+ * invent content that was never authored: it reports these cases by name so
+ * an operator can follow the runbook above (or deselect the competency) —
+ * see the summary this command prints. It never silently leaves a project
+ * believed-fixed when it is not.
  */
 final class BackfillProjectQuestionsCommand extends Command
 {
@@ -131,7 +140,7 @@ final class BackfillProjectQuestionsCommand extends Command
         if ($incompleteLines !== []) {
             $this->newLine();
             $this->warn(sprintf(
-                '%d competency selection(s) stay incomplete — the pinned catalogue revision has no default questions for them (nothing to copy; author defaults or deselect):',
+                '%d competency selection(s) stay incomplete — neither the pinned catalogue revision nor the latest published one has default questions for them (nothing to copy; author defaults, publish, and re-run this command, or deselect):',
                 count($incompleteLines),
             ));
 

@@ -203,3 +203,72 @@ test('--org filters the backfill to a single organization', function (): void {
         'the unrelated organization must be untouched'
     );
 });
+
+/**
+ * Publishes a SECOND revision — never the fixture's pinned baseline — whose
+ * competency matches `$competency`'s own CODE, carrying one default question
+ * (R4-interviewability-rollout-unrecoverable: the shape
+ * `ApplyCompetencySelection::latestPublishedDefaults()` looks for). Authored
+ * while still a DRAFT, then flipped to `published`: the published-content-
+ * immutability trigger exempts only the baseline, so a non-baseline
+ * revision's content can only be written before it publishes.
+ */
+function backfillFixturePublishLaterDefault(Competency $competency, array $text): void
+{
+    $laterRevision = FrameworkCatalogRevision::factory()->draft()->create();
+    $laterCompetency = Competency::factory()->create(['revision_id' => $laterRevision->id, 'code' => $competency->code]);
+    FrameworkDefaultQuestion::factory()->create(['competency_id' => $laterCompetency->id, 'position' => 0, 'text' => $text]);
+    $laterRevision->update(['state' => 'published', 'published_at' => now()]);
+}
+
+test('falls back to the latest published revision defaults when the pinned revision has none', function (): void {
+    $org = Organization::factory()->create();
+    [$project, $competency] = backfillFixtureProjectWithUnsatisfiedCompetency($org);
+    // The pinned (baseline) revision has NO default for this competency.
+    backfillFixturePublishLaterDefault($competency, ['en' => 'Later default EN', 'it' => 'Domanda successiva IT']);
+
+    $this->artisan('beai:backfill-project-questions')->assertExitCode(0);
+
+    $questions = ProjectQuestion::where('project_id', $project->id)->get();
+    expect($questions)->toHaveCount(1);
+    expect($questions->first()->competency_id)->toBe($competency->id, 'copied under the project\'s OWN pinned competency id, never the later revision\'s');
+    expect($questions->first()->text['en'])->toBe('Later default EN');
+    expect(app(ProjectInterviewability::class)->isInterviewable($project))->toBeTrue();
+});
+
+test('the latest-published fallback never overrides an existing live question', function (): void {
+    $org = Organization::factory()->create();
+    [$project, $competency] = backfillFixtureProjectWithUnsatisfiedCompetency($org);
+    $live = ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'Operator-authored EN', 'it' => 'Operatore IT'],
+        'position' => 0,
+    ]);
+    backfillFixturePublishLaterDefault($competency, ['en' => 'Later default EN', 'it' => 'Domanda successiva IT']);
+
+    $this->artisan('beai:backfill-project-questions')->assertExitCode(0);
+
+    $questions = ProjectQuestion::where('project_id', $project->id)->get();
+    expect($questions)->toHaveCount(1);
+    expect($questions->first()->id)->toBe($live->id);
+    expect($questions->first()->text['en'])->toBe('Operator-authored EN');
+});
+
+test('pinned-revision defaults still win over the latest-published fallback when present', function (): void {
+    $org = Organization::factory()->create();
+    [$project, $competency, $revision] = backfillFixtureProjectWithUnsatisfiedCompetency($org);
+    FrameworkDefaultQuestion::factory()->create([
+        'competency_id' => $competency->id,
+        'revision_id' => $revision->id,
+        'position' => 0,
+        'text' => ['en' => 'Pinned default EN', 'it' => 'Predefinita IT'],
+    ]);
+    backfillFixturePublishLaterDefault($competency, ['en' => 'Later default EN', 'it' => 'Domanda successiva IT']);
+
+    $this->artisan('beai:backfill-project-questions')->assertExitCode(0);
+
+    $questions = ProjectQuestion::where('project_id', $project->id)->get();
+    expect($questions)->toHaveCount(1);
+    expect($questions->first()->text['en'])->toBe('Pinned default EN');
+});

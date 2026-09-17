@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Project;
 
+use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
@@ -69,7 +71,7 @@ final class ApplyCompetencySelection
      */
     public function ensureCompetencyHasQuestions(Project $project, int $competencyId): void
     {
-        $this->applyOneAttachedCompetency($project, $competencyId);
+        $this->applyOneAttachedCompetency($project, $competencyId, allowLatestPublishedFallback: true);
     }
 
     /**
@@ -105,7 +107,7 @@ final class ApplyCompetencySelection
      *      re-save with the same competency set must not duplicate rows).
      *   3. Neither → copy the catalogue defaults as a fresh snapshot.
      */
-    private function applyOneAttachedCompetency(Project $project, int $competencyId): void
+    private function applyOneAttachedCompetency(Project $project, int $competencyId, bool $allowLatestPublishedFallback = false): void
     {
         // Z8: scoped to `deleted_by_deselection = true` — a row an operator
         // deleted individually (the column's `false` default) is excluded
@@ -132,7 +134,7 @@ final class ApplyCompetencySelection
             return;
         }
 
-        $this->copyDefaults($project, $competencyId);
+        $this->copyDefaults($project, $competencyId, $allowLatestPublishedFallback);
     }
 
     /**
@@ -230,8 +232,12 @@ final class ApplyCompetencySelection
      * per-assessment-type ceiling, `operator_modified = false` (the DB
      * column default — never written explicitly, since `ApplyCompetencySelection`
      * is the one write path that must not claim these rows as operator-authored).
+     *
+     * $allowLatestPublishedFallback: backfill-command ONLY (always `false` on
+     * the fresh-selection path `apply()` uses) — when the pin has nothing,
+     * try the latest PUBLISHED revision instead; see `latestPublishedDefaults()`.
      */
-    private function copyDefaults(Project $project, int $competencyId): void
+    private function copyDefaults(Project $project, int $competencyId, bool $allowLatestPublishedFallback = false): void
     {
         $revisionId = $project->frameworkVersion?->revision_id;
 
@@ -249,6 +255,10 @@ final class ApplyCompetencySelection
             ->orderBy('position')
             ->get();
 
+        if ($defaults->isEmpty() && $allowLatestPublishedFallback) {
+            $defaults = $this->latestPublishedDefaults($competencyId, $revisionId);
+        }
+
         if ($defaults->isEmpty()) {
             // Zero catalogue defaults is not an error (project-config spec —
             // "A competency with no catalogue defaults yields zero rows").
@@ -265,5 +275,39 @@ final class ApplyCompetencySelection
                 'position' => $position,
             ]);
         }
+    }
+
+    /**
+     * BACKFILL-ONLY FALLBACK (R4-interviewability-rollout-unrecoverable).
+     * Every pre-existing project is pinned to the BASELINE, whose defaults
+     * are always empty (the seeder never writes them; catalogue CRUD only
+     * ever lands in a NEW published revision) — so the pin alone can never
+     * recover. Matched by CODE, not id: competency rows are revision-scoped
+     * (a full clone per draft/publish, D1), so the pinned competency's own
+     * id never appears in a different revision's rows.
+     *
+     * @return Collection<int, FrameworkDefaultQuestion>
+     */
+    private function latestPublishedDefaults(int $competencyId, int $pinnedRevisionId): Collection
+    {
+        $latestRevisionId = FrameworkCatalogRevision::latestPublished()?->id;
+
+        if ($latestRevisionId === null || $latestRevisionId === $pinnedRevisionId) {
+            return new Collection;
+        }
+
+        $code = Competency::where('id', $competencyId)->value('code');
+        $latestCompetencyId = $code === null
+            ? null
+            : Competency::where('revision_id', $latestRevisionId)->where('code', $code)->value('id');
+
+        if ($latestCompetencyId === null) {
+            return new Collection;
+        }
+
+        return FrameworkDefaultQuestion::where('revision_id', $latestRevisionId)
+            ->where('competency_id', $latestCompetencyId)
+            ->orderBy('position')
+            ->get();
     }
 }
