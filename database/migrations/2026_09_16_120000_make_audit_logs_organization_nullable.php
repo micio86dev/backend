@@ -42,10 +42,22 @@ return new class extends Migration
 
     public function down(): void
     {
-        // A platform (NULL-org) row cannot survive a NOT NULL column, and it
-        // has no tenant to attribute it to — deleted rather than left to fail
-        // the ALTER with a constraint violation that reads as corruption.
-        DB::table('audit_logs')->whereNull('organization_id')->delete();
+        // `audit_logs` is append-only (see that table's own creation
+        // migration docblock) — a rollback that deletes rows to make the
+        // restored NOT NULL constraint fit is destroying audit evidence to
+        // satisfy a schema change, which this rollback refuses to do.
+        // Refusing here, before touching anything, also means the ALTER
+        // below never runs against surviving platform rows it would
+        // otherwise reject with a constraint violation that reads as
+        // corruption instead of an explicit refusal.
+        if (DB::table('audit_logs')->whereNull('organization_id')->exists()) {
+            throw new RuntimeException(
+                'audit_logs holds platform (NULL organization_id) rows and this rollback refuses '
+                .'to delete them to restore the NOT NULL constraint — audit logs are append-only. '
+                .'Remove or migrate those rows through an explicit, reviewed operation first, or '
+                .'keep organization_id nullable instead of rolling back this migration.'
+            );
+        }
 
         Schema::table('audit_logs', function (Blueprint $table): void {
             $table->foreignId('organization_id')->nullable(false)->change();
