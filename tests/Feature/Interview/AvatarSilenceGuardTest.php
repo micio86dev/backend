@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 /**
  * `AvatarSilenceDetector::inspect()` is observation-only (its own docblock
- * says so) and both its call sites — `/end` and the resume half of `/start`
- * — run it AFTER the transcript/session write that request exists to make
- * has already committed. A failure inside it (a DB read, or the log sink its
- * Sentry breadcrumbs depend on) must never turn into a 500 for a candidate
- * whose interview state is otherwise fine.
+ * says so) and all three of its call sites — `/end`, `/suspend`, and the
+ * resume half of `/start`, the last two through
+ * `harvestOutgoingTranscript()` — run it AFTER the transcript/session write
+ * that request exists to make has already committed. A failure inside it (a
+ * DB read, or the log sink its Sentry breadcrumbs depend on) must never turn
+ * into a 500 for a candidate whose interview state is otherwise fine.
+ *
+ * One test per call site, and each one drives the endpoint whose name it
+ * carries: the detector fires during THAT request's own harvest, so the
+ * single throwing `Log::warning()` expectation is consumed by the endpoint
+ * under test and nothing else.
  *
  * Simulates that failure at its only real failure surface — `Log::warning()`,
  * the call `AvatarSilenceDetector::inspect()` makes once a silent stretch is
@@ -109,7 +115,7 @@ function silenceGuardSilentTranscript(): array
     ];
 }
 
-test('a resume /start still resumes when the silence detector throws', function (): void {
+test('/suspend still suspends when the silence detector throws', function (): void {
     silenceGuardFake(silenceGuardSilentTranscript());
     $started = silenceGuardStart();
 
@@ -126,6 +132,30 @@ test('a resume /start still resumes when the silence detector throws', function 
         ->postJson('/api/candidate/interview/suspend', ['session_id' => $started['session_id']])
         ->assertOk();
 
+    // The suspend completed its whole tail despite the swallowed exception:
+    // the session stays resumable and points at no provider session.
+    $session = InterviewSession::findOrFail($started['session_id']);
+    expect($session->status)->toBe('in_corso')
+        ->and($session->provider_session_ref)->toBeNull();
+});
+
+test('a resume /start still resumes when the silence detector throws', function (): void {
+    silenceGuardFake(silenceGuardSilentTranscript());
+    $started = silenceGuardStart();
+
+    // NO /suspend first. The session is already `in_corso` WITH a live
+    // provider ref, so the resume's OWN harvest is what reaches the detector
+    // — the single throwing expectation below is consumed by this /start and
+    // by nothing before it.
+    $outgoingRef = InterviewSession::findOrFail($started['session_id'])->provider_session_ref;
+    expect($outgoingRef)->not->toBeNull();
+
+    Log::shouldReceive('warning')
+        ->once()
+        ->withArgs(fn (string $message, array $context = []): bool => $message === 'provider_avatar_silent')
+        ->andThrow(new RuntimeException('log sink unavailable'));
+    Log::shouldReceive('error')->atLeast()->once();
+
     // The resume itself — the request the throwing detector runs inside of —
     // must still succeed and hand back the SAME session, unaffected by the
     // swallowed exception.
@@ -135,7 +165,10 @@ test('a resume /start still resumes when the silence detector throws', function 
         ->assertJsonPath('session_id', $started['session_id']);
 
     $session = InterviewSession::findOrFail($started['session_id']);
-    expect($session->status)->toBe('in_corso');
+    expect($session->status)->toBe('in_corso')
+        // A fresh provider session was issued: the resume ran past the
+        // detector, not around it.
+        ->and($session->provider_session_ref)->not->toBe($outgoingRef);
 });
 
 test('/end still ends the session when the silence detector throws', function (): void {
