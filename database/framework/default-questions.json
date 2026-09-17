@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "questions": {
+    "PRS": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Think of a recent problem at work where the first explanation turned out not to be the real cause. Tell me about that situation: what did you do to understand what was really going on?",
+          "it": "Pensa a un problema recente sul lavoro in cui la prima spiegazione non si è rivelata la causa reale. Raccontami quella situazione: che cosa hai fatto per capire che cosa stava succedendo davvero?"
+        }
+      }
+    ],
+    "STG": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent decision you made where you had to weigh its effects on other teams or on longer-term goals. What did you take into account?",
+          "it": "Raccontami di una decisione recente in cui hai dovuto valutarne gli effetti su altri team o sugli obiettivi di più lungo periodo. Di che cosa hai tenuto conto?"
+        }
+      }
+    ],
+    "INN": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you questioned the usual way of doing something at work and proposed a different approach. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui hai messo in discussione il modo abituale di fare qualcosa sul lavoro e hai proposto un approccio diverso. Che cosa hai fatto?"
+        }
+      }
+    ],
+    "JDG": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Think of a recent decision you had to make without all the information you would have wanted. Tell me about it: how did you choose what to do?",
+          "it": "Pensa a una decisione recente che hai dovuto prendere senza avere tutte le informazioni che avresti voluto. Raccontamela: come hai scelto che cosa fare?"
+        }
+      }
+    ],
+    "DRV": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you aimed for a result more ambitious than what was asked of you. What did you do to get there?",
+          "it": "Raccontami di una volta, di recente, in cui hai puntato a un risultato più ambizioso di quanto ti fosse richiesto. Che cosa hai fatto per arrivarci?"
+        }
+      }
+    ],
+    "CSF": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent situation where a customer, internal or external, needed something that was not straightforward to deliver. What did you do?",
+          "it": "Raccontami di una situazione recente in cui un cliente, interno o esterno, aveva un'esigenza non semplice da soddisfare. Che cosa hai fatto?"
+        }
+      }
+    ],
+    "SLF": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent sale or negotiation where you had to show a customer the value of what you were offering. How did you approach it?",
+          "it": "Raccontami di una vendita o di una trattativa recente in cui hai dovuto far capire a un cliente il valore di ciò che stavi offrendo. Come l'hai affrontata?"
+        }
+      }
+    ],
+    "OPX": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent piece of work you had to plan and coordinate to meet a deadline. How did you organize it and keep it on track?",
+          "it": "Raccontami di un'attività recente che hai dovuto pianificare e coordinare per rispettare una scadenza. Come l'hai organizzata e tenuta sotto controllo?"
+        }
+      }
+    ],
+    "TMG": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you had to get a result through the people you manage, deciding who would do what. How did you go about it?",
+          "it": "Raccontami di una volta, di recente, in cui hai dovuto ottenere un risultato attraverso le persone che gestisci, decidendo chi avrebbe fatto che cosa. Come hai proceduto?"
+        }
+      }
+    ],
+    "INS": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you helped someone you work with to grow or to improve their results. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui hai aiutato una persona con cui lavori a crescere o a migliorare i propri risultati. Che cosa hai fatto?"
+        }
+      }
+    ],
+    "COM": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you had to explain something important or complex so that others would understand it. How did you do it?",
+          "it": "Raccontami di una volta, di recente, in cui hai dovuto spiegare qualcosa di importante o complesso in modo che gli altri lo capissero. Come hai fatto?"
+        }
+      }
+    ],
+    "COL": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you worked with others toward a shared goal and there were different views on how to proceed. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui hai lavorato con altre persone verso un obiettivo comune e c'erano opinioni diverse su come procedere. Che cosa hai fatto?"
+        }
+      }
+    ],
+    "INF": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you needed the support of people who did not initially agree with your idea or proposal. How did you try to win them over?",
+          "it": "Raccontami di una volta, di recente, in cui ti serviva il sostegno di persone che inizialmente non erano d'accordo con una tua idea o proposta. Come hai cercato di convincerle?"
+        }
+      }
+    ],
+    "NET": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when a working relationship with someone outside your own team helped you get something done. How did you build that relationship, and how did it help?",
+          "it": "Raccontami di una volta, di recente, in cui un rapporto di lavoro con qualcuno esterno al tuo team ti ha aiutato a portare a termine qualcosa. Come hai costruito quel rapporto e in che modo ti è stato utile?"
+        }
+      }
+    ],
+    "RES": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent situation at work that was particularly stressful or did not go as planned. How did you respond?",
+          "it": "Raccontami di una situazione recente sul lavoro che è stata particolarmente stressante o non è andata come previsto. Come hai reagito?"
+        }
+      }
+    ],
+    "LRN": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when, after some feedback or an experience that did not go well, you changed the way you work. What did you change?",
+          "it": "Raccontami di una volta, di recente, in cui, dopo un feedback o un'esperienza non andata bene, hai cambiato il tuo modo di lavorare. Che cosa hai cambiato?"
+        }
+      }
+    ],
+    "ITG": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when keeping a commitment or doing the right thing was inconvenient or costly for you. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui mantenere un impegno o fare la cosa giusta era scomodo o ti costava qualcosa. Che cosa hai fatto?"
+        }
+      }
+    ],
+    "INC": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you worked with someone whose background, perspective or needs differed from those of the rest of the group. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui hai lavorato con una persona che, per background, punto di vista o esigenze, era diversa dal resto del gruppo. Che cosa hai fatto?"
+        }
+      }
+    ],
+    "MTG": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you had to organize work and priorities so that other people could deliver a result. How did you set it up?",
+          "it": "Raccontami di una volta, di recente, in cui hai dovuto organizzare lavoro e priorità perché altre persone potessero raggiungere un risultato. Come hai impostato il lavoro?"
+        }
+      },
+      {
+        "position": 1,
+        "text": {
+          "en": "Think of a recent task you handed over to someone else. How did you hand it over, and how did you support the person along the way?",
+          "it": "Pensa a un compito recente che hai affidato a un'altra persona. Come gliel'hai affidato e in che modo l'hai supportata durante il lavoro?"
+        }
+      },
+      {
+        "position": 2,
+        "text": {
+          "en": "Tell me about a recent time when someone did not deliver what they had committed to, with you or with the group. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui qualcuno non ha rispettato un impegno preso con te o con il gruppo. Che cosa hai fatto?"
+        }
+      },
+      {
+        "position": 3,
+        "text": {
+          "en": "Tell me about a recent time when it would have been quicker to take over someone else's work yourself. What did you decide to do?",
+          "it": "Raccontami di una volta, di recente, in cui sarebbe stato più rapido farti carico tu del lavoro di un'altra persona. Che cosa hai deciso di fare?"
+        }
+      }
+    ],
+    "LAT": [
+      {
+        "position": 0,
+        "text": {
+          "en": "Tell me about a recent time when you took charge of something outside your formal role because the situation called for it. What did you do?",
+          "it": "Raccontami di una volta, di recente, in cui hai preso in mano una questione che non rientrava formalmente nel tuo ruolo, perché la situazione lo richiedeva. Che cosa hai fatto?"
+        }
+      },
+      {
+        "position": 1,
+        "text": {
+          "en": "Tell me about a recent time when you needed people to follow your lead without having any formal authority over them. How did you get them on board?",
+          "it": "Raccontami di una volta, di recente, in cui avevi bisogno che altre persone seguissero la tua guida senza avere su di loro alcuna autorità formale. Come le hai coinvolte?"
+        }
+      },
+      {
+        "position": 2,
+        "text": {
+          "en": "Tell me about a recent situation of strong pressure, uncertainty or open disagreement in which others were looking to you. How did you handle it?",
+          "it": "Raccontami di una situazione recente di forte pressione, incertezza o aperto disaccordo in cui gli altri guardavano a te. Come l'hai gestita?"
+        }
+      },
+      {
+        "position": 3,
+        "text": {
+          "en": "Tell me about a recent time when you held a clear position on an issue and had to decide whether to keep it or change it in the face of objections. What guided your decision?",
+          "it": "Raccontami di una volta, di recente, in cui avevi una posizione netta su una questione e hai dovuto decidere se mantenerla o cambiarla di fronte a delle obiezioni. Che cosa ha orientato la tua decisione?"
+        }
+      }
+    ]
+  }
+}

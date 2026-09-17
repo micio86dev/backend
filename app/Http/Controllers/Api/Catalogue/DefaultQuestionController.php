@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Actions\Catalogue\CreateDefaultQuestion;
 use App\Actions\Catalogue\DiscardUnusedDraftRevision;
 use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
@@ -55,7 +56,7 @@ class DefaultQuestionController extends Controller
         return CatalogueDefaultQuestionResource::collection($questions);
     }
 
-    public function store(StoreDefaultQuestionRequest $request): JsonResponse
+    public function store(StoreDefaultQuestionRequest $request, CreateDefaultQuestion $createDefaultQuestion): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
@@ -68,32 +69,27 @@ class DefaultQuestionController extends Controller
         // `ResolvesOpenDraftRevision::openDraftRevisionId()`'s own docblock.
         $draftId = $request->openDraftRevisionId();
 
-        // K3/K8 (framework-catalogue-authoring PR4b): locks the draft
-        // revision row before writing — see `BumpsRevisionContentVersion::
+        // K3/K8 (framework-catalogue-authoring PR4b): `CreateDefaultQuestion`
+        // (extracted here for feat/seed-default-questions so the console
+        // seeder shares this SAME write path) locks the draft revision row
+        // before writing — see `BumpsRevisionContentVersion::
         // withRevisionLockedForWrite()`'s own docblock. Caught explicitly so
         // Scramble documents the 409, matching `PlatformUserController::
-        // deactivate()`'s own `UserGuardException` catch.
-        // The audit write runs INSIDE this same locked transaction
-        // (framework-catalogue-authoring PR8) — see `CompetencyController::
-        // store()`'s identical comment for why.
+        // deactivate()`'s own `UserGuardException` catch. The audit write
+        // runs INSIDE that same locked transaction (framework-catalogue-
+        // authoring PR8) — see `CompetencyController::store()`'s identical
+        // comment for why.
         try {
-            $question = FrameworkDefaultQuestion::withRevisionLockedForWrite(
-                $draftId,
-                function () use ($request, $draftId, $actor): FrameworkDefaultQuestion {
-                    $question = FrameworkDefaultQuestion::create([...$request->validated(), 'revision_id' => $draftId]);
+            // `StoreDefaultQuestionRequest::rules()` is what actually
+            // guarantees this shape (`text` both locales required,
+            // `competency_id`/`position` required integers) — `validated()`'s
+            // own return type is a generic array, so this narrows to what
+            // those rules already enforce rather than widening
+            // `CreateDefaultQuestion::create()`'s own parameter type.
+            /** @var array{revision_id: int, competency_id: int, text: array<string, string>, position: int} $attributes */
+            $attributes = [...$request->validated(), 'revision_id' => $draftId];
 
-                    $this->auditWriter->record(
-                        actorId: $actor->id,
-                        action: 'catalogue.default_question.created',
-                        subjectType: 'FrameworkDefaultQuestion',
-                        subjectId: $question->id,
-                        before: null,
-                        after: [...$request->validated(), 'revision_id' => $draftId],
-                    );
-
-                    return $question;
-                },
-            );
+            $question = $createDefaultQuestion->create($attributes, $actor);
         } catch (RevisionPublishedDuringWriteException $e) {
             return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
         } catch (QueryException $e) {
