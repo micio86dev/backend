@@ -216,6 +216,81 @@ test('records an audit_logs row for every created default question, with the act
     )->toBeTrue();
 });
 
+test('--publish refuses cleanly, without publishing, when the source file names a competency the draft does not have', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    $actor = seedDefaultQuestionsActor();
+
+    $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
+    $realCode = (string) Competency::where('revision_id', $baseline->id)->value('code');
+
+    $path = seedDefaultQuestionsFixturePath([
+        $realCode => [['position' => 0, 'text' => ['en' => 'Real EN', 'it' => 'Real IT']]],
+        'NOPE_NOT_A_CODE' => [['position' => 0, 'text' => ['en' => 'x', 'it' => 'x']]],
+    ]);
+
+    $exitCode = Artisan::call('catalogue:seed-default-questions', [
+        '--actor-email' => $actor->email,
+        '--path' => $path,
+        '--publish' => true,
+    ]);
+
+    expect($exitCode)->not->toBe(0);
+    expect(Artisan::output())->toContain('NOPE_NOT_A_CODE');
+
+    $draft = FrameworkCatalogRevision::where('state', 'draft')->firstOrFail();
+    expect($draft->state)->toBe('draft');
+
+    // Only the baseline is published — PublishRevision::publish() was never
+    // invoked for the seeded draft, missing competency or not.
+    expect(FrameworkCatalogRevision::where('state', 'published')->count())->toBe(1);
+    expect(
+        DB::table('audit_logs')
+            ->where('subject_type', 'FrameworkCatalogRevision')
+            ->where('subject_id', $draft->id)
+            ->where('action', 'revision.published')
+            ->exists()
+    )->toBeFalse();
+
+    // The seeding itself still happened for the competency that does exist.
+    $competency = Competency::where('revision_id', $draft->id)->where('code', $realCode)->firstOrFail();
+    expect(FrameworkDefaultQuestion::where('revision_id', $draft->id)->where('competency_id', $competency->id)->count())->toBe(1);
+});
+
+test('a second run does not overwrite a hand-edited question and reports it as a conflict', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    $actor = seedDefaultQuestionsActor();
+
+    Artisan::call('catalogue:seed-default-questions', ['--actor-email' => $actor->email]);
+
+    $draft = FrameworkCatalogRevision::where('state', 'draft')->firstOrFail();
+
+    /** @var array{questions: array<string, list<array{position: int, text: array<string, string>}>>} $file */
+    $file = json_decode((string) file_get_contents(database_path('framework/default-questions.json')), true, 512, JSON_THROW_ON_ERROR);
+    $code = (string) array_key_first($file['questions']);
+    $position = $file['questions'][$code][0]['position'];
+
+    $competency = Competency::where('revision_id', $draft->id)->where('code', $code)->firstOrFail();
+    $question = FrameworkDefaultQuestion::where('revision_id', $draft->id)
+        ->where('competency_id', $competency->id)
+        ->where('position', $position)
+        ->firstOrFail();
+
+    // Simulate an operator's own hand-edit (or a stale value) applied
+    // directly to the row, bypassing CreateDefaultQuestion.
+    $question->setTranslations('text', ['en' => 'Hand-edited EN', 'it' => 'Hand-edited IT']);
+    $question->saveQuietly();
+
+    $exitCode = Artisan::call('catalogue:seed-default-questions', ['--actor-email' => $actor->email]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0);
+    expect($output)->toContain("{$code}:{$position}");
+    expect($output)->toContain('conflicting text');
+
+    $question->refresh();
+    expect($question->getTranslations('text'))->toBe(['en' => 'Hand-edited EN', 'it' => 'Hand-edited IT']);
+});
+
 test('refuses cleanly when no --actor-email is given and there is no unambiguous platform superadmin', function (): void {
     (new FrameworkCatalogSeeder)->run();
     // No platform superadmin created at all.

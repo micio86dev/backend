@@ -73,7 +73,7 @@ final class CatalogueSeedDefaultQuestionsCommand extends Command
 {
     protected $signature = 'catalogue:seed-default-questions
         {--dry-run : Report what would be created without writing anything}
-        {--publish : Publish the draft after seeding — refuses cleanly, reporting the violations, if the publish sweep finds any}
+        {--publish : Publish the draft after seeding — refuses cleanly, reporting the violations, if the publish sweep finds any, and refuses cleanly, reporting the missing competencies, if seeding itself left any competency without default questions}
         {--actor-email= : Email of the platform superadmin recorded as the actor for every created question and its audit row. Falls back to the sole platform superadmin when omitted and exactly one exists}
         {--path= : Override the default-questions JSON source path (testing only)}';
 
@@ -133,6 +133,17 @@ final class CatalogueSeedDefaultQuestionsCommand extends Command
             $this->warn('catalogue_seed_default_questions_publish_skipped_dry_run: --publish has no effect together with --dry-run.');
 
             return self::SUCCESS;
+        }
+
+        $missing = $result['missing'] ?? [];
+
+        if ($missing !== []) {
+            $this->error(sprintf(
+                'catalogue_seed_default_questions_publish_refused_incomplete_seed: refusing to publish — the source file is missing these competencies, so their default questions were never seeded: %s',
+                implode(', ', $missing),
+            ));
+
+            return self::FAILURE;
         }
 
         return $this->publishDraft($publishRevision, $actor);
