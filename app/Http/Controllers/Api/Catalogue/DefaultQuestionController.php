@@ -22,11 +22,12 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
 /**
- * Superadmin CRUD over catalogue-level default questions, scoped to the open
- * draft revision (framework-catalogue-authoring PR4, catalogue-authoring
- * spec — "Catalogue-Level Default Questions Per Competency"). See
- * `RoleController` for the per-action 403 rationale and the `update()`
- * no-auto-open rationale — identical here.
+ * Superadmin CRUD over catalogue-level default questions; writes are scoped
+ * to the open draft revision (framework-catalogue-authoring PR4,
+ * catalogue-authoring spec — "Catalogue-Level Default Questions Per
+ * Competency"). See `RoleController` for the read-side revision resolution,
+ * the per-action 403 rationale and the `update()` no-auto-open rationale —
+ * identical here.
  */
 class DefaultQuestionController extends Controller
 {
@@ -45,10 +46,10 @@ class DefaultQuestionController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::openDraft();
-        $questions = $draft === null
+        $revision = FrameworkCatalogRevision::viewable();
+        $questions = $revision === null
             ? collect()
-            : FrameworkDefaultQuestion::where('revision_id', $draft->id)
+            : FrameworkDefaultQuestion::where('revision_id', $revision->id)
                 ->orderBy('competency_id')->orderBy('position')->get();
 
         return CatalogueDefaultQuestionResource::collection($questions);

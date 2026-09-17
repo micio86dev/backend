@@ -171,6 +171,19 @@ class FrameworkCatalogRevision extends Model
     }
 
     /**
+     * The revision the superadmin catalogue surface shows: the open draft
+     * when one exists (editable), otherwise the latest published revision
+     * (read-only). `null` only before any revision has been published.
+     * Every catalogue list and `revisions/current` resolve through this one
+     * lookup, so the rows and the revision the UI labels them with always
+     * agree on which revision they mean.
+     */
+    public static function viewable(): ?self
+    {
+        return static::openDraft() ?? static::latestPublished();
+    }
+
+    /**
      * @return HasMany<Role, $this>
      */
     public function roles(): HasMany

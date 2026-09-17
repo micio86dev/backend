@@ -22,10 +22,10 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
 /**
- * Superadmin CRUD over BARS indicators, scoped to the open draft revision
- * (framework-catalogue-authoring PR3, D12). See `RoleController` for the
- * per-action 403 rationale and the `update()` no-auto-open rationale —
- * identical here.
+ * Superadmin CRUD over BARS indicators; writes are scoped to the open draft
+ * revision (framework-catalogue-authoring PR3, D12). See `RoleController`
+ * for the read-side revision resolution, the per-action 403 rationale and
+ * the `update()` no-auto-open rationale — identical here.
  */
 class BarsIndicatorController extends Controller
 {
@@ -44,10 +44,10 @@ class BarsIndicatorController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::openDraft();
-        $indicators = $draft === null
+        $revision = FrameworkCatalogRevision::viewable();
+        $indicators = $revision === null
             ? collect()
-            : BarsIndicator::where('revision_id', $draft->id)->orderBy('competency_id')->orderBy('position')->get();
+            : BarsIndicator::where('revision_id', $revision->id)->orderBy('competency_id')->orderBy('position')->get();
 
         return CatalogueBarsIndicatorResource::collection($indicators);
     }
