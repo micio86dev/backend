@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Actions\Catalogue\DiscardOpenDraftRevision;
 use App\Actions\Catalogue\OpenDraftRevision;
 use App\Actions\Catalogue\PublishRevision;
+use App\Exceptions\RevisionPublishedDuringWriteException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Catalogue\CatalogueRevisionResource;
 use App\Models\FrameworkCatalogRevision;
@@ -93,6 +95,41 @@ class RevisionController extends Controller
         }
 
         return (new CatalogueRevisionResource($draft))->response();
+    }
+
+    /**
+     * Abandons the open draft entirely — every uncommitted role, competency,
+     * BARS indicator and default question it holds. The catalogue reverts to
+     * showing the latest PUBLISHED revision, read-only, exactly the state it
+     * was in before `openDraft()` was ever called.
+     *
+     * `404` when no draft is open — nothing to discard. `409` when a
+     * concurrent write or publish raced this request for the revision lock
+     * (`RevisionPublishedDuringWriteException`, same contract every other
+     * catalogue write already answers with).
+     */
+    public function discard(Request $request, DiscardOpenDraftRevision $action): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $draft = FrameworkCatalogRevision::openDraft();
+
+        if ($draft === null) {
+            abort(Response::HTTP_NOT_FOUND, 'no open draft revision to discard');
+        }
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        try {
+            $action->discard($draft, $actor);
+        } catch (RevisionPublishedDuringWriteException $e) {
+            return response()->json(['error' => $e->errorCode(), 'message' => $e->getMessage()], Response::HTTP_CONFLICT);
+        }
+
+        $latest = FrameworkCatalogRevision::viewable();
+
+        return response()->json(['data' => $latest === null ? null : new CatalogueRevisionResource($latest)]);
     }
 
     /**
