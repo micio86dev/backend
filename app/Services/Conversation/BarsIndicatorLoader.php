@@ -57,13 +57,6 @@ use Illuminate\Database\Eloquent\Collection;
 final class BarsIndicatorLoader
 {
     /**
-     * Every real revision id is a positive serial — never reachable by an
-     * actual row, so a query scoped to it always resolves to empty rather
-     * than throwing when no published revision exists at all.
-     */
-    private const NO_PUBLISHED_REVISION = -1;
-
-    /**
      * Return all BARS indicators for the given role AND competency, ordered by position.
      *
      * @param  int  $roleId  Role primary key (from project.role_code → Role.id).
@@ -77,7 +70,7 @@ final class BarsIndicatorLoader
      */
     public function forRoleCompetency(int $roleId, int $competencyId, ?int $revisionId = null): Collection
     {
-        $revisionId ??= app(CatalogueRevisionResolver::class)->tryLatestPublished() ?? self::NO_PUBLISHED_REVISION;
+        $revisionId ??= app(CatalogueRevisionResolver::class)->tryLatestPublished() ?? CatalogueRevisionResolver::NO_PUBLISHED_REVISION;
 
         /** @var Collection<int, BarsIndicator> */
         return BarsIndicator::where('role_id', $roleId)

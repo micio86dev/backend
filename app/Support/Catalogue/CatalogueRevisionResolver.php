@@ -55,6 +55,18 @@ use RuntimeException;
 final class CatalogueRevisionResolver
 {
     /**
+     * Every real revision id is a positive serial — never reachable by an
+     * actual row, so a caller that scopes a query to this sentinel (after
+     * `tryLatestPublished()` returns `null`, an unseeded platform) resolves
+     * to an empty result rather than throwing. Shared here (R2-duplicated-
+     * sentinel) rather than redefined per caller: `FrameworkController` and
+     * `BarsIndicatorLoader` both pair it with `tryLatestPublished()`, and a
+     * caller-local copy is exactly the "same fact, two documents" drift
+     * CLAUDE.md warns about elsewhere in this codebase.
+     */
+    public const NO_PUBLISHED_REVISION = -1;
+
+    /**
      * The project's own pinned revision. `null` (no project context at all)
      * falls back to the latest published revision; an EXISTING project whose
      * pin does not resolve THROWS — see the class docblock.

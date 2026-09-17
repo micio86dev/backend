@@ -60,15 +60,13 @@ use Illuminate\Validation\Rule;
  */
 class FrameworkController extends Controller
 {
-    private const NO_PUBLISHED_REVISION = -1;
-
     public function __construct(
         private readonly CatalogueRevisionResolver $revisionResolver,
     ) {}
 
     private function latestPublishedOrSentinel(): int
     {
-        return $this->revisionResolver->tryLatestPublished() ?? self::NO_PUBLISHED_REVISION;
+        return $this->revisionResolver->tryLatestPublished() ?? CatalogueRevisionResolver::NO_PUBLISHED_REVISION;
     }
 
     /**
