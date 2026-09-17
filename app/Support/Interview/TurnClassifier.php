@@ -125,6 +125,14 @@ final class TurnClassifier
         $normalized = mb_strtolower(trim($text));
         $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
 
-        return rtrim($normalized, '.!?,;:。！？');
+        // Z19 (R3, framework-catalogue-authoring, optional — done, cheap and
+        // safe): `rtrim()`'s character-mask argument is BYTE-WISE, not
+        // multibyte-aware — it strips individual BYTES matching the mask,
+        // which corrupts a multi-byte punctuation character (`。！？`, each
+        // 3 UTF-8 bytes) whenever one of ITS OWN bytes happens to collide
+        // with a byte from another character in the mask or in the trimmed
+        // string. A `preg_replace()` with the `/u` (UTF-8) modifier treats
+        // the class as whole CHARACTERS instead.
+        return preg_replace('/[.!?,;:。！？]+$/u', '', $normalized) ?? $normalized;
     }
 }

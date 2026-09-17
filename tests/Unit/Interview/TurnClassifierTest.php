@@ -100,6 +100,36 @@ test('trailing punctuation is stripped before comparison', function (): void {
     expect($result)->toBe('primary');
 });
 
+/**
+ * Z19 (R3, optional — done, cheap and safe): the trailing-punctuation strip
+ * used to be a byte-wise `rtrim()`, unsafe on a multi-byte punctuation
+ * character (`。`/`！`/`？`, each 3 UTF-8 bytes) — `rtrim()` strips
+ * individual BYTES matching its mask, one at a time from the end, with no
+ * concept of a character boundary. A CJK ideograph immediately BEFORE the
+ * punctuation mark can share a byte VALUE with the mark's own bytes (both
+ * are UTF-8 continuation bytes, 0x80-0xBF) — `rtrim` then keeps eating past
+ * the punctuation mark and into the ideograph itself, and (empirically
+ * confirmed, not assumed) `一。` (U+4E00 + U+3002) is exactly such a case:
+ * the OLD `rtrim()` corrupted it to a truncated, invalid 3-byte sequence.
+ *
+ * Reflection reaches `normalize()` directly (private) — `classify()`'s own
+ * CONTAINMENT check cannot observe this defect on its own: when the SAME
+ * ideograph also ends the primary-question snapshot, `rtrim`'s trailing-byte
+ * scan corrupts BOTH strings identically (neither has actual punctuation,
+ * but `rtrim` never checks that — it strips whatever byte is last,
+ * regardless of source), so the corrupted primary still matches the
+ * corrupted turn and the classification result never changes. Only the RAW
+ * BYTES prove the corruption.
+ */
+test('normalize() does not corrupt a CJK ideograph immediately before a multibyte trailing punctuation mark', function (): void {
+    $normalize = new ReflectionMethod(TurnClassifier::class, 'normalize');
+    $normalize->setAccessible(true);
+
+    $result = $normalize->invoke(null, 'project一。');
+
+    expect($result)->toBe('project一');
+});
+
 test('a genuinely reworded turn does not match — not a similarity score', function (): void {
     // Paraphrased throughout, so the primary's exact wording is not a
     // contiguous substring of this turn under any normalisation.
