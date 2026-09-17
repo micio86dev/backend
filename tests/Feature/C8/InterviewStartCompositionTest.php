@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 /**
- * RED — Tasks 5.1–5.4 + graceful-degradation (PR2): InterviewController::start() composition wiring (C8 Phase 5).
+ * RED — Tasks 5.1–5.4: InterviewController::start() composition wiring (C8 Phase 5).
  *
  * Asserts:
  * (5.1) /start with valid standard competency → 201 + question_context.prompt_version non-null.
  * (5.2) Missing IT anchor translation → 422 anchor_translation_missing; no session; no provider call.
  * (5.3) Empty indicator set for the role → 422 composition_error; no provider call; session pending.
  * (5.4) Provider 5xx failure matrix unchanged after QuestionContext widening → 502 (C7a regression).
- * (5.6) RESUME in_corso + composition fails → 201 (not 422), fresh provider session issued, NO system_prompt in provider body (degraded), warning logged.
+ * (5.6) RESUME in_corso + composition fails → 422, no fresh provider session, session ref untouched.
  * (5.7) RESUME in_corso + composition succeeds → 201, provider body CONTAINS system_prompt (adaptive resume).
  * (5.8) NEW session + composition fails (regression guard) → still 422, no InterviewSession created, no provider call.
  *
@@ -20,7 +20,6 @@ declare(strict_types=1);
  *
  * Spec: REQ QuestionContext Carries Composed Prompt · REQ i18n hard-fail · REQ Provider Payload Contract.
  * REQ: InterviewController::start() wiring (C8 Phase 5 — M-3)
- * REQ: graceful-degradation on resume in_corso (C8 PR2 resilience fix)
  */
 
 use App\Models\BarsIndicator;
@@ -35,7 +34,6 @@ use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -454,71 +452,52 @@ function c8SeedResumeInCorsoScenario(): array
     return compact('org', 'project', 'participant', 'session');
 }
 
-test('5.6 RESUME in_corso + composition fails → 201 (not 422), fresh provider session issued, NO prompt in body (degraded), warning logged', function (): void {
-    // Capture the outbound HeyGen /contexts body to verify `prompt` is absent (degraded path)
-    $capturedContextBody = null;
-    Http::fake(function ($request) use (&$capturedContextBody) {
-        if (str_contains($request->url(), '/contexts')) {
-            // On degraded path the contexts call should NOT happen (no prompt → no context)
-            // OR if called: body must NOT have `prompt`
-            $capturedContextBody = $request->data();
+test('5.6 RESUME in_corso + composition fails → 422, no fresh provider session, the outgoing one torn down', function (): void {
+    // A resumed provider session without a system prompt would run the
+    // vendor's default persona, asking questions nobody authored — so a
+    // resume fails exactly like a fresh start.
+    $tokenCalls = 0;
+    $teardownRefs = [];
+    Http::fake(function ($request) use (&$tokenCalls, &$teardownRefs) {
+        $url = $request->url();
 
-            return Http::response(['data' => ['id' => 'ctx-resume-degrade']], 200);
-        }
-        if (str_contains($request->url(), '/sessions/token')) {
-            return Http::response(['data' => ['session_id' => 'heygen-session-resume', 'session_token' => 'heygen-token-resume']], 200);
+        if (str_contains($url, '/sessions/token')) {
+            $tokenCalls++;
         }
 
-        // teardown old session
+        if ($request->method() === 'DELETE' && str_contains($url, '/sessions/')) {
+            preg_match('#/sessions/([^/]+)$#', $url, $m);
+            $teardownRefs[] = $m[1];
+        }
+
         return Http::response([], 200);
     });
     Queue::fake();
 
-    Log::spy();
-
     $data = c8SeedResumeInCorsoScenario();
+    $oldRef = $data['session']->provider_session_ref;
     $bearer = CandidateTokenFactory::mintCandidateToken($data['participant']);
 
-    $response = $this
+    $this
         ->withHeaders(['Authorization' => 'Bearer '.$bearer])
-        ->postJson('/api/candidate/interview/start');
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'anchor_translation_missing');
 
-    // Must NOT lock out the candidate (graceful degradation)
-    $response->assertStatus(201);
-
-    // Session must still exist and be reused (not a new row)
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($data['org']->id);
     $resolver->setBypass(false);
-    expect(InterviewSession::where('participant_id', $data['participant']->id)->count())->toBe(1);
 
-    // Fresh provider session must have been issued (session ref updated)
     $data['session']->refresh();
-    expect($data['session']->provider_session_ref)->toBe('heygen-session-resume');
-    expect($data['session']->status)->toBe('in_corso');
-
-    // Provider body for /contexts must NOT contain `prompt` (degraded = null systemPrompt → no
-    // contexts call, OR contexts called without `prompt`).
-    // On degraded path: QuestionContext.systemPrompt=null → HeyGen provider omits the key entirely.
-    // So either $capturedContextBody is null (no contexts call) OR it has no `prompt` key.
-    if ($capturedContextBody !== null) {
-        expect($capturedContextBody)->not->toHaveKey('prompt');
-    }
-
-    // A warning must have been logged about the composition failure.
-    //
-    // Asserted by CONTENT, not by count. The count was incidental and became
-    // wrong when the resume path gained a second best-effort warning (harvesting
-    // the outgoing transcript before teardown). Pinning "exactly one warning in
-    // this request" tests how many things happen to log, not that the right one
-    // did.
-    Log::shouldHaveReceived('warning')
-        ->withArgs(fn (string $message) => str_contains($message, 'composition failed'));
-
-    // prompt_version in response must be non-null non-empty (FIX C1 — degraded resume path
-    // returns config('conversation.prompt_version') instead of null for C9 traceability).
-    $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
-    expect($response->json('question_context.prompt_version'))->toBe(config('conversation.prompt_version'));
+    expect($tokenCalls)->toBe(0)
+        // The candidate is refused, so nothing will ever speak to the outgoing
+        // provider session again — and HeyGen bills it until its own ceiling.
+        // The 422 ends it and forgets its ref, leaving the row in the state
+        // /suspend leaves: `in_corso`, resumable, pointing at nothing.
+        ->and($teardownRefs)->toBe([$oldRef])
+        ->and($data['session']->provider_session_ref)->toBeNull()
+        ->and($data['session']->status)->toBe('in_corso')
+        ->and(InterviewSession::where('participant_id', $data['participant']->id)->count())->toBe(1);
 });
 
 test('5.7 RESUME in_corso + composition succeeds → 201, provider body contains prompt (adaptive resume)', function (): void {

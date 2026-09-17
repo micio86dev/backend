@@ -27,9 +27,9 @@ use App\Support\AvatarTemplates\ActiveTemplateResolver;
  *     non-billable value on a later resolve, never climb back to `applied`.
  *     Under-report, never over-report (design D0).
  *   - `system_prompt_chars` — write-once AND never overwritten FROM a null.
- *     The degraded RESUME path (`InterviewController.php:206-213`)
- *     deliberately fabricates a null system prompt; a naive re-stamp would
- *     destroy a previously recorded good value — and `P` is the LARGEST
+ *     `QuestionContext::$systemPrompt` is nullable (`/start` always composes
+ *     one, and fails with 422 when it cannot); a naive re-stamp from a null
+ *     would destroy a previously recorded good value — and `P` is the LARGEST
  *     term in the cost estimator's `c_t` (design D10) because it is
  *     re-sent every turn.
  *
@@ -52,8 +52,8 @@ final class InterviewSessionLlmSnapshot
      * for `save()`-ing inside the same short DB transaction as `started_at`.
      *
      * @param  string|null  $systemPrompt  The composed system prompt for THIS
-     *                                     issue() call, or null on the degraded RESUME path
-     *                                     (composition failed — do NOT fabricate prompt text).
+     *                                     issue() call, or null when the caller has none
+     *                                     (never fabricated; a null never overwrites a value).
      */
     public function stamp(InterviewSession $session, ?string $systemPrompt): void
     {

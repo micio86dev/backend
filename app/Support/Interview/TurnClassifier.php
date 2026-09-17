@@ -60,34 +60,39 @@ use App\Models\Utterance;
  * instant a turn is recorded against it, it stops moving under the
  * comparison, which is the property this class actually depends on.
  *
- * CONSERVATIVE, NOT LENIENT. "Next unmatched" means a primary can only be
- * matched once and only in order — the classifier never re-matches an
- * earlier primary, and it never guesses which primary a turn was "probably"
- * answering. A turn that does not match the next unmatched primary is
- * `follow_up`, even when it happens to repeat an EARLIER primary's wording.
- * This is the direction OQ-C (framework-catalogue-authoring tasks.md)
- * accepts as a disclosed residual: a TTS/ASR round-trip that rewords a
- * primary produces a false `follow_up` and, downstream, a false transcript-
- * audit violation — it OVER-reports, and never silently reclassifies a
- * hidden primary as a follow-up instead.
+ * CONSERVATIVE, NOT LENIENT. A primary is matched once and only in order:
+ * the pointer advances only when a turn ends with the NEXT unmatched primary,
+ * and the classifier never guesses which primary a turn was "probably"
+ * answering. A TTS/ASR round-trip that rewords a primary produces a false
+ * `follow_up` (OQ-C, framework-catalogue-authoring tasks.md) — it
+ * OVER-reports, and never silently promotes a hidden question to a primary.
+ *
+ * A VERBATIM RE-ASK IS STILL `primary`, AND DOES NOT ADVANCE. A resumed
+ * competency opens by re-asking a primary word for word (the pending one, or
+ * the last one when every primary was already asked). That turn ends with an
+ * already-matched primary, so it is classified `primary` — it is the
+ * operator's question, not an invented one — but it does not move the
+ * pointer. Because of that, "how many primaries were asked" is NOT the number
+ * of `primary` rows: `matchedCount()` replays the session's `primary` rows in
+ * order and advances only on the rows that matched the next unmatched entry,
+ * which makes the count deterministic however many re-asks the transcript
+ * holds.
  *
  * QUERIED AT WRITE TIME BY DEFAULT, KEEPS NO STATE OF ITS OWN. `classify()`
- * counts this session's already-persisted `primary`-marked avatar turns to
- * find the next unmatched entry unless the caller supplies `$matchedCount`
- * explicitly. A caller writing several avatar turns in one batch (the
- * provider harvest) MAY pass the running count itself — tracked in memory
- * and incremented after each `primary` classification — rather than re-query
- * it before every row; either way, the count must reflect every avatar turn
- * classified so far in the SAME batch, persisted or not.
+ * replays this session's persisted `primary` rows unless the caller supplies
+ * `$matchedCount`. A caller writing several avatar turns in one batch (the
+ * provider harvest) passes the running count itself and increments it only
+ * when `advances()` says the row moved the pointer.
  */
 final class TurnClassifier
 {
     /**
      * Classify one avatar turn against `$session->primary_questions`.
      *
-     * `follow_up` when the session has no primary-question snapshot, when
-     * every primary is already matched, or when `$text` does not END WITH the
-     * next unmatched primary, verbatim, under normalisation.
+     * `primary` when `$text` ENDS WITH the next unmatched primary, or with
+     * an already-matched one (a verbatim re-ask), under normalisation.
+     * `follow_up` otherwise, including when the session has no
+     * primary-question snapshot.
      *
      * @param  int|null  $matchedCount  The number of primaries already
      *                                  matched for this session, when the
@@ -95,36 +100,97 @@ final class TurnClassifier
      *                                  classifying several rows in one pass —
      *                                  see `InterviewController::
      *                                  insertUtterances()`). `null` (the
-     *                                  default) queries it fresh, which is
-     *                                  always correct for a single live turn
-     *                                  and remains correct for a batch ONLY
-     *                                  if each row is persisted before the
-     *                                  next is classified.
+     *                                  default) replays it via
+     *                                  `matchedCount()`, which is correct for
+     *                                  a batch ONLY if each row is persisted
+     *                                  before the next is classified.
      */
     public function classify(InterviewSession $session, string $text, ?int $matchedCount = null): string
     {
-        $primaries = $session->primary_questions ?? [];
+        $primaries = self::primaries($session);
 
         if ($primaries === []) {
             return 'follow_up';
         }
 
-        $matchedCount ??= Utterance::where('interview_session_id', $session->id)
+        $matchedCount ??= $this->matchedCount($session);
+        $normalized = self::normalize($text);
+
+        if (self::endsWithPrimary($normalized, $primaries, $matchedCount)) {
+            return 'primary';
+        }
+
+        // A verbatim re-ask of a primary that was already matched.
+        for ($index = 0; $index < min($matchedCount, count($primaries)); $index++) {
+            if (self::endsWithPrimary($normalized, $primaries, $index)) {
+                return 'primary';
+            }
+        }
+
+        return 'follow_up';
+    }
+
+    /**
+     * Whether `$text` asks the NEXT unmatched primary, i.e. moves the pointer.
+     * A re-ask of an already-matched primary classifies as `primary` but
+     * returns false here.
+     */
+    public function advances(InterviewSession $session, string $text, int $matchedCount): bool
+    {
+        return self::endsWithPrimary(self::normalize($text), self::primaries($session), $matchedCount);
+    }
+
+    /**
+     * The number of distinct primaries already asked in this session: the
+     * persisted `primary` avatar rows replayed in transcript order, advancing
+     * only on the rows that asked the next unmatched primary.
+     */
+    public function matchedCount(InterviewSession $session): int
+    {
+        $primaries = self::primaries($session);
+
+        if ($primaries === []) {
+            return 0;
+        }
+
+        $texts = Utterance::where('interview_session_id', $session->id)
             ->where('speaker', 'avatar')
             ->where('turn_kind', 'primary')
-            ->count();
+            ->orderBy('ts')
+            ->orderBy('id')
+            ->pluck('text');
 
-        if ($matchedCount >= count($primaries)) {
-            return 'follow_up';
+        $matched = 0;
+
+        foreach ($texts as $text) {
+            if (self::endsWithPrimary(self::normalize((string) $text), $primaries, $matched)) {
+                $matched++;
+            }
         }
 
-        $next = self::normalize((string) $primaries[$matchedCount]);
+        return $matched;
+    }
 
-        if ($next === '') {
-            return 'follow_up';
+    /**
+     * @return list<string>
+     */
+    private static function primaries(InterviewSession $session): array
+    {
+        return $session->primary_questions ?? [];
+    }
+
+    /**
+     * @param  list<string>  $primaries
+     */
+    private static function endsWithPrimary(string $normalizedText, array $primaries, int $index): bool
+    {
+        if (! isset($primaries[$index])) {
+            return false;
         }
 
-        return str_ends_with(self::normalize($text), $next) ? 'primary' : 'follow_up';
+        $primary = self::normalize($primaries[$index]);
+
+        return $primary !== '' && str_ends_with($normalizedText, $primary);
     }
 
     /**
