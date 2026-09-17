@@ -452,14 +452,22 @@ function c8SeedResumeInCorsoScenario(): array
     return compact('org', 'project', 'participant', 'session');
 }
 
-test('5.6 RESUME in_corso + composition fails → 422, no fresh provider session, session untouched', function (): void {
+test('5.6 RESUME in_corso + composition fails → 422, no fresh provider session, the outgoing one torn down', function (): void {
     // A resumed provider session without a system prompt would run the
     // vendor's default persona, asking questions nobody authored — so a
     // resume fails exactly like a fresh start.
     $tokenCalls = 0;
-    Http::fake(function ($request) use (&$tokenCalls) {
-        if (str_contains($request->url(), '/sessions/token')) {
+    $teardownRefs = [];
+    Http::fake(function ($request) use (&$tokenCalls, &$teardownRefs) {
+        $url = $request->url();
+
+        if (str_contains($url, '/sessions/token')) {
             $tokenCalls++;
+        }
+
+        if ($request->method() === 'DELETE' && str_contains($url, '/sessions/')) {
+            preg_match('#/sessions/([^/]+)$#', $url, $m);
+            $teardownRefs[] = $m[1];
         }
 
         return Http::response([], 200);
@@ -482,7 +490,12 @@ test('5.6 RESUME in_corso + composition fails → 422, no fresh provider session
 
     $data['session']->refresh();
     expect($tokenCalls)->toBe(0)
-        ->and($data['session']->provider_session_ref)->toBe($oldRef)
+        // The candidate is refused, so nothing will ever speak to the outgoing
+        // provider session again — and HeyGen bills it until its own ceiling.
+        // The 422 ends it and forgets its ref, leaving the row in the state
+        // /suspend leaves: `in_corso`, resumable, pointing at nothing.
+        ->and($teardownRefs)->toBe([$oldRef])
+        ->and($data['session']->provider_session_ref)->toBeNull()
         ->and($data['session']->status)->toBe('in_corso')
         ->and(InterviewSession::where('participant_id', $data['participant']->id)->count())->toBe(1);
 });

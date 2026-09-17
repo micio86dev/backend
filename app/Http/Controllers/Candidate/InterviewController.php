@@ -102,7 +102,8 @@ class InterviewController extends Controller
      * RESUME in_corso:
      *   - Harvest the outgoing transcript, then compose: the opening re-asks the
      *     pending primary verbatim. A composition failure answers 422, as on a
-     *     fresh start.
+     *     fresh start, and ends the outgoing provider session on its way out —
+     *     nothing else would, and it bills until the provider's own ceiling.
      *   - issue() FRESH token.
      *   - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).
      *   - Persist new ref.
@@ -260,6 +261,7 @@ class InterviewController extends Controller
         // default persona, asking questions nobody authored.
         $liveSession = $this->activeInCorsoSession($pid, $nextCompetency['competency_code']);
         $isResumeInCorso = $liveSession !== null;
+        $outgoingRef = null;
 
         if ($liveSession !== null) {
             // HARVEST the outgoing provider session's transcript BEFORE
@@ -356,6 +358,17 @@ class InterviewController extends Controller
             $advancePhrase,
         );
         if ($compositionResult instanceof JsonResponse) {
+            // No fresh provider session will be issued, so the outgoing one —
+            // still live, still billing — has nothing left to hand over to.
+            // `handleResumeInCorso()` is the only other place that ends it, and
+            // this path never reaches it; left alone the conversation runs to
+            // the provider's own ceiling for an interview the candidate was
+            // just refused. Its transcript was harvested above, so ending it
+            // here loses nothing.
+            if ($liveSession !== null && $outgoingRef !== null) {
+                $this->releaseProviderSession($liveSession, $this->resolveProvider($liveSession->provider), $outgoingRef);
+            }
+
             return $compositionResult;
         }
 
@@ -578,33 +591,7 @@ class InterviewController extends Controller
         // that scoping to land before shipping.
         $this->harvestOutgoingTranscript($session, $provider, $ref);
 
-        // Then close the stretch, OUTSIDE any guard on the teardown succeeding:
-        // a live period is BEAI's own observation of elapsed interview time, not
-        // a mirror of the provider's state. Left open, every sum built on that
-        // table counts the paused minutes as live ones.
-        $this->liveClock->close($session, 'pause');
-
-        try {
-            $provider->teardown(ProviderToken::fromRef($session->provider, $ref));
-        } catch (\Throwable $e) {
-            // Non-fatal, matching the resume path. A teardown we could not
-            // confirm is a provider session that may still be billing, which is
-            // bad; refusing to let a candidate pause because of it is worse, and
-            // would leave the ref pointing at a session we have stopped using
-            // either way.
-            Log::warning('C7a: teardown on suspend failed (non-fatal)', [
-                'session_id' => $session->id,
-                'ref' => $ref,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Forget the ref LAST. Until this line the row still points at the
-        // session being torn down, so a crash anywhere above leaves a
-        // recoverable state rather than an orphaned provider conversation
-        // nothing references.
-        $session->provider_session_ref = null;
-        $session->save();
+        $this->releaseProviderSession($session, $provider, $ref);
 
         return response()->json(['suspended' => true], Response::HTTP_OK);
     }
@@ -1533,6 +1520,53 @@ class InterviewController extends Controller
         }
 
         $this->inspectAvatarSilence($session, $oldRef);
+    }
+
+    /**
+     * End the provider session this row points at and forget its ref.
+     *
+     * The tail both paths that STOP a live competency without ending it run,
+     * shared so they cannot drift: `/suspend`, and a resume `/start` whose
+     * composition failed and answers 422. Both arrive here having already
+     * harvested `$ref`'s transcript — this method never harvests, and calling
+     * it before that harvest would discard everything said in the stretch.
+     *
+     * It leaves the session `in_corso` with a NULL ref, which is precisely the
+     * state the next `/start` resumes.
+     *
+     * The live period closes OUTSIDE any guard on the teardown succeeding: a
+     * period is BEAI's own observation of elapsed interview time, not a mirror
+     * of the provider's state. Left open, every sum built on that table counts
+     * the stopped minutes as live ones.
+     *
+     * The teardown itself is best-effort. A teardown we could not confirm is a
+     * provider session that may still be billing, which is bad; failing the
+     * candidate's request over it is worse, and would leave the ref pointing at
+     * a session we have stopped using either way.
+     *
+     * The ref is forgotten LAST. Until that line the row still points at the
+     * session being torn down, so a crash anywhere above leaves a recoverable
+     * state rather than an orphaned provider conversation nothing references.
+     */
+    private function releaseProviderSession(
+        InterviewSession $session,
+        ProviderSessionService $provider,
+        string $ref,
+    ): void {
+        $this->liveClock->close($session, 'pause');
+
+        try {
+            $provider->teardown(ProviderToken::fromRef($session->provider, $ref));
+        } catch (\Throwable $e) {
+            Log::warning('C7a: teardown of the stopped provider session failed (non-fatal)', [
+                'session_id' => $session->id,
+                'ref' => $ref,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $session->provider_session_ref = null;
+        $session->save();
     }
 
     /**
