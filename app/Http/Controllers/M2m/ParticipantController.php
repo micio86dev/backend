@@ -10,9 +10,11 @@ use App\Models\ApiClient;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Project\ProjectInterviewability;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * M2M ParticipantController (C6 — Participant + SSO Ingress).
@@ -61,7 +63,6 @@ final class ParticipantController extends Controller
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'language' => ['nullable', 'string', 'max:10'],
-            'status' => ['nullable', 'string'],
         ]);
 
         // Resolve project SCOPED to caller org (cross-org → 404).
@@ -97,7 +98,16 @@ final class ParticipantController extends Controller
             ], 422);
         }
 
-        // Create or find existing participant — organization_id from project (NOT from request).
+        // Create participant — organization_id from project (NOT from
+        // request), status hardcoded (gga review finding, blocking): the
+        // candidate lifecycle (in_attesa → in_corso → in_valutazione →
+        // completato | errore) is a binding domain constraint, and
+        // `Participant::booted()`'s own transition guard only listens to
+        // `updating`, never `creating` — a caller-supplied `status` here
+        // would have reached the row unchecked, letting an M2M caller mint
+        // a participant already past the gates that status exists to
+        // enforce. C6 only ever creates `in_attesa` (see that guard's own
+        // docblock); this endpoint does the same.
         $participant = new Participant;
         $participant->forceFill([
             'organization_id' => $project->organization_id,  // server-side, NOT from request
@@ -107,9 +117,46 @@ final class ParticipantController extends Controller
             'email' => $validated['email'],
             'role_code' => $validated['role_code'] ?? null,
             'language' => $validated['language'] ?? null,
-            'status' => $validated['status'] ?? 'in_attesa',
+            'status' => 'in_attesa',
         ]);
-        $participant->save();
+
+        // R3-test-pins-500 (framework-catalogue-authoring, REQUIRED BEFORE
+        // ARCHIVE): this endpoint has no find-or-create path, so a
+        // `candidate_ref` or `email` that already has a row on this project
+        // — most often a genuine concurrent-request race, since the
+        // interviewability check above already ran — loses to one of these
+        // two unique constraints. Mapped to a clean 409, the same doctrine
+        // `SsoLinkController::store()` already applies to its own
+        // `EntryLinkRefused` conflicts, instead of an uncaught 500.
+        //
+        // `DB::transaction()`, not a bare `save()`: Postgres aborts the
+        // WHOLE ambient transaction on any failed statement, not just the
+        // one that failed — with no savepoint of its own, the 409 response
+        // below would be correct but every later query in the SAME request
+        // (or the same test's wrapping transaction) would fail with
+        // "current transaction is aborted" for a reason that has nothing to
+        // do with it. `DB::transaction()` opens a SAVEPOINT here, so only
+        // this insert unwinds.
+        try {
+            DB::transaction(function () use ($participant): void {
+                $participant->save();
+            });
+        } catch (QueryException $e) {
+            $reason = match (true) {
+                str_contains($e->getMessage(), 'participants_project_id_candidate_ref_unique') => 'duplicate_candidate_ref',
+                str_contains($e->getMessage(), 'participants_project_id_email_unique') => 'duplicate_email',
+                default => null,
+            };
+
+            if ($reason === null) {
+                throw $e;
+            }
+
+            return response()->json([
+                'message' => 'Conflict: a participant already exists for this project with this '.($reason === 'duplicate_email' ? 'email.' : 'candidate_ref.'),
+                'reason' => $reason,
+            ], 409);
+        }
 
         return response()->json(new ParticipantResource($participant), 201);
     }

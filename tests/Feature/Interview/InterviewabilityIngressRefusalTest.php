@@ -273,23 +273,21 @@ test('M2M sso-link mint is NOT refused for a candidate who already has an Interv
  * exemption lets the request past the interviewability gate only to hit the
  * pre-existing `(project_id, candidate_ref)` unique constraint instead.
  *
- * ASSERTS THE ACTUAL, PRE-EXISTING OUTCOME EXPLICITLY (gga review finding,
- * blocking — a bare `not->toBe(422)` also passes on a crash, which is not
- * evidence of anything): this app registers no global `QueryException`
- * handler (same fact `StoreDefaultQuestionRequest`'s own docblock states for
- * the catalogue surface), so the unique-constraint collision surfaces as an
- * uncaught 500 — a DIFFERENT, pre-existing defect this task does not fix
- * (Z10 is the interviewability exemption; mapping this constraint to a
- * clean 409 is untouched, separate scope). What this test actually proves is
- * narrower and correct: interviewability is no longer the FIRST thing
- * refusing the request. The DB-level guarantee (still only ONE participant
- * row survives) is the unique constraint's own job, already covered by the
- * constraint itself — a post-500 query here would run inside the SAME
- * now-aborted Postgres transaction (`RefreshDatabase`'s wrapping one) and
- * fail with "current transaction is aborted", proving nothing about this
- * endpoint.
+ * ASSERTS THE ACTUAL OUTCOME EXPLICITLY (gga review finding, blocking — a
+ * bare `not->toBe(422)` also passes on a crash, which is not evidence of
+ * anything): `ParticipantController::store()` now catches this SPECIFIC
+ * constraint's `QueryException` and maps it to a clean 409, the same
+ * doctrine `SsoLinkController::store()` already applies to its own
+ * `EntryLinkRefused` conflicts — an uncaught 500 for a request whose only
+ * fault is a uniqueness race is not this endpoint's contract (R3-test-
+ * pins-500, framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE). What
+ * this test proves is narrower and correct: interviewability is no longer
+ * the FIRST thing refusing the request, and the eventual refusal is the
+ * duplicate-participant conflict, not `PROJECT_NOT_INTERVIEWABLE`. The
+ * DB-level guarantee (still only ONE participant row survives) stays the
+ * unique constraint's own job.
  */
-test('M2M participant enrolment exemption reaches the pre-existing duplicate-participant 500, not PROJECT_NOT_INTERVIEWABLE', function (): void {
+test('M2M participant enrolment exemption reaches the duplicate-participant 409, not PROJECT_NOT_INTERVIEWABLE', function (): void {
     $org = Organization::factory()->create();
     [$project] = iirNonInterviewableProject($org);
     ['key' => $key] = iirM2mClient($org, ['participants:create']);
@@ -308,5 +306,7 @@ test('M2M participant enrolment exemption reaches the pre-existing duplicate-par
         'display_name' => 'IIR Enrol Midinterview Candidate',
     ]);
 
-    $response->assertStatus(500);
+    $response->assertStatus(409);
+    $response->assertJson(['reason' => 'duplicate_candidate_ref']);
+    expect(Participant::where('project_id', $project->id)->where('candidate_ref', 'IIR-Enrol-Midinterview-001')->count())->toBe(1);
 });

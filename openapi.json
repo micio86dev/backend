@@ -4440,12 +4440,6 @@
                                             "null"
                                         ],
                                         "maxLength": 10
-                                    },
-                                    "status": {
-                                        "type": [
-                                            "string",
-                                            "null"
-                                        ]
                                     }
                                 },
                                 "required": [
@@ -4465,6 +4459,36 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "reason": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "enum": [
+                                                "duplicate_candidate_ref",
+                                                "duplicate_email",
+                                                null
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "reason"
+                                    ]
                                 }
                             }
                         }
