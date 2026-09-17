@@ -18,11 +18,13 @@ declare(strict_types=1);
 use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * A minimal fixture tree with real `it` content on ICO/PRS (indicator +
@@ -165,6 +167,49 @@ test('forget-locale --dry-run reports counts without writing anything', function
 test('forget-locale refuses to forget "en"', function (): void {
     $this->artisan('framework:forget-locale', ['locale' => 'en', '--force' => true])
         ->assertExitCode(1);
+});
+
+/**
+ * Z21 (R2-discard-closed-claim-overstated, framework-catalogue-authoring,
+ * REQUIRED BEFORE ARCHIVE): `DiscardUnusedDraftRevision`'s own "CLOSED"
+ * docblock used to claim EVERY catalogue-content write goes through
+ * `BumpsRevisionContentVersion::withRevisionLockedForWrite()` — false, this
+ * command is a genuine, disclosed exception. It writes `Role`/`Competency`/
+ * `BarsIndicator` rows belonging to ANY revision, including an open draft,
+ * through plain `->save()`, never through `withRevisionLockedForWrite()`.
+ * Pins the exact two-part shape that docblock now describes: no lock query
+ * is issued, yet `content_version` still bumps (the model's own `saved`
+ * listener fires regardless of which caller triggered the save).
+ */
+test('forget-locale writes to an open draft without taking the revision lock the CRUD surface takes', function (): void {
+    $draft = FrameworkCatalogRevision::factory()->draft()->create();
+    $role = Role::factory()->create([
+        'revision_id' => $draft->id,
+        'name' => ['en' => 'Individual Contributor', 'it' => 'Collaboratore Individuale'],
+    ]);
+
+    $before = $draft->fresh()->content_version;
+
+    $lockQueries = 0;
+    DB::listen(function ($query) use (&$lockQueries): void {
+        if (str_contains($query->sql, 'framework_catalog_revisions')
+            && str_contains(strtolower($query->sql), 'for update')) {
+            $lockQueries++;
+        }
+    });
+
+    $this->artisan('framework:forget-locale', ['locale' => 'it', '--force' => true])
+        ->assertExitCode(0);
+
+    expect($lockQueries)->toBe(
+        0,
+        "forget-locale issued a revision lock query — DiscardUnusedDraftRevision's disclosed exception is stale and should be removed instead of asserted here"
+    );
+    expect($draft->fresh()->content_version)->toBeGreaterThan(
+        $before,
+        'the write must still bump content_version through the ordinary saved event, even without the lock'
+    );
+    expect($role->fresh()->hasTranslation('name', 'it'))->toBeFalse();
 });
 
 test('forget-locale bumps the catalog revision when it actually removes something', function (): void {

@@ -46,9 +46,12 @@ use Throwable;
  * a freshly-cloned draft starts, and stays, at `0` until a REAL write
  * reaches it through the catalogue's actual CRUD surface, by ANY caller.
  *
- * CLOSED (framework-catalogue-authoring PR4b, K3 — widens and closes H12,
- * which this class's own gga-review history left as a disclosed residual
- * window): every catalogue-content write now goes through
+ * CLOSED for the catalogue's own CRUD surface (framework-catalogue-authoring
+ * PR4b, K3 — widens and closes H12, which this class's own gga-review
+ * history left as a disclosed residual window): every write issued by the
+ * four catalogue controllers (`RoleController`/`CompetencyController`/
+ * `BarsIndicatorController`/`DefaultQuestionController`) and by
+ * `catalogue:import` goes through
  * `BumpsRevisionContentVersion::withRevisionLockedForWrite()`, which locks
  * THIS SAME revision row (`SELECT ... FOR UPDATE`) BEFORE performing the
  * write, and keeps the write's own INSERT/UPDATE/DELETE and its
@@ -62,6 +65,31 @@ use Throwable;
  * under genuine concurrency in
  * `tests/Feature/Catalogue/DiscardRaceWithConcurrentWriteTest.php`, the
  * same separate-OS-process shape H3/H4/H6 use.
+ *
+ * NOT CLOSED for `framework:forget-locale` (Z21, R2-discard-closed-claim-
+ * overstated, REQUIRED BEFORE ARCHIVE — disclosed, not fixed):
+ * `ForgetFrameworkLocaleCommand` iterates and saves EVERY `Role`/
+ * `Competency`/`BarsIndicator` row on the platform, including any row that
+ * belongs to the currently open draft, through a plain `->save()` — never
+ * through `withRevisionLockedForWrite()`. `content_version` still bumps
+ * (each model's own `saved` listener fires regardless of which caller
+ * triggered the save — see `BumpsRevisionContentVersion`'s own docblock),
+ * but nothing takes the row lock FIRST, so a `discard()` call that acquires
+ * the lock before that command reaches a given draft's first row can still
+ * delete the draft out from under it. That is not silent data loss the way
+ * the CLOSED race above used to be: the command's own later `->save()` on
+ * the now-gone row simply affects zero rows (Postgres does not error on
+ * that), and there is nothing left to lose — the row it meant to edit is
+ * already gone. Left as-is rather than widened into a per-revision lock:
+ * this command is a rare, forced (`--force` required outside `local`),
+ * already-destructive, ops-only rollback that already refuses to run while
+ * any `FrameworkVersion` is locked, and it iterates the whole platform in
+ * one query, not per-revision — retrofitting a single-revision lock into
+ * that shape is a larger change than this narrow, non-corrupting residual
+ * race justifies. Pinned by
+ * `tests/Feature/Console/ForgetLocaleCommandTest.php` ("forget-locale writes
+ * to an open draft without taking the revision lock the CRUD surface
+ * takes").
  */
 final class DiscardUnusedDraftRevision
 {
