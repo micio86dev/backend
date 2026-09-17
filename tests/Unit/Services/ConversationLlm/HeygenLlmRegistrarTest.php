@@ -197,9 +197,41 @@ test('create: first bind POSTs /v1/secrets then POSTs /v1/llm-configurations, an
 
         return $request->method() === 'POST'
             && $request['model_name'] === 'gemini-3-flash-preview'
-            && $request['base_url'] === 'https://generativelanguage.googleapis.com/v1beta/openai/'
+            // The STORED `LlmModel::base_url` carries a trailing slash
+            // (registrarModel() above, mirroring the seeded catalog row) —
+            // the value actually sent to HeyGen must not.
+            && $request['base_url'] === 'https://generativelanguage.googleapis.com/v1beta/openai'
             && $request['secret_id'] === 'sec_new';
     });
+});
+
+/**
+ * The naive-join defect this guards against: HeyGen joins `base_url` with
+ * its OWN leading slash, so a trailing slash surviving into that join
+ * produces `//chat/completions`, which 404s — the avatar speaks its opening
+ * line and then goes silent on the model's real first turn.
+ */
+test('the base_url sent to HeyGen never ends in a trailing slash', function (): void {
+    Http::fake([
+        '*liveavatar.com/v1/secrets' => Http::response(heygenSecretResponse('sec_new'), 200),
+        '*liveavatar.com/v1/llm-configurations' => Http::response(heygenConfigurationResponse('cfg_new'), 200),
+    ]);
+
+    app(HeygenLlmRegistrar::class)->ensureConfiguration(registrarHeygenTemplate());
+
+    // Isolated to the configuration POST specifically — an `Http::assertSent`
+    // callback that returns true for every OTHER recorded request (the
+    // secrets POST here) would be satisfied by that unrelated request alone
+    // and never actually inspect this one's body, regardless of what it
+    // contains.
+    $configurationRequests = collect(Http::recorded())->filter(
+        fn (array $pair): bool => str_contains($pair[0]->url(), '/v1/llm-configurations')
+    )->values();
+
+    expect($configurationRequests)->toHaveCount(1);
+
+    $body = $configurationRequests->first()[0];
+    expect($body['base_url'])->toBeString()->not->toEndWith('/');
 });
 
 /**

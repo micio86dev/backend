@@ -45,6 +45,50 @@ return [
         'audio_tokens_per_second' => null,
     ],
     [
+        // fix/heygen-gemini-flash-lite: `gemini-3-flash-preview` above is a
+        // THINKING model, and HeyGen's turn-based FULL-mode custom-LLM path
+        // has no room for a thinking pass between a candidate's turn ending
+        // and the avatar's next line — the session stalls after the opening
+        // line (which this model never generates) on the model's own first
+        // real turn. This row is the replacement: thinking OFF by default,
+        // ~0.7s measured time-to-first-token against the real BEAI interview
+        // prompt in a production spike, with no reasoning-token latency.
+        //
+        // `gemini-3.1-flash-lite-preview`, WITH the suffix — confirmed
+        // 2026-09-17 by querying
+        // `GET https://generativelanguage.googleapis.com/v1beta/openai/models`
+        // directly from the production container: it returns 200 and lists
+        // this id as currently available. `gemini-3.1-flash-lite` (no
+        // `-preview`) is also listed there, but it was never measured
+        // against the interview prompt — this row binds to the id that was
+        // actually benchmarked, not the unmeasured sibling.
+        //
+        // Pricing: matches the published `gemini-3.1-flash-lite` rate below
+        // because Google has not published a separate rate card entry for
+        // the `-preview` id; UNVERIFIED that the two ids are billed
+        // identically — flag for confirmation before this row drives real
+        // spend at volume.
+        'key' => 'gemini-3.1-flash-lite-preview',
+        'vendor' => 'google',
+        'display_name' => 'Gemini 3.1 Flash Lite Preview',
+        'base_url' => 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        'capability' => LlmCapability::Text->value,
+        'sort_order' => 15,
+        'rate_card_source_url' => 'https://ai.google.dev/gemini-api/docs/pricing',
+        'rate_card_verified_at' => '2026-09-17 00:00:00',
+        'text_input_usd_per_million' => '0.250000',
+        'text_output_usd_per_million' => '1.500000',
+        'text_input_usd_per_million_high' => null,
+        'text_output_usd_per_million_high' => null,
+        'context_tier_threshold_tokens' => null,
+        // Published separately from the text/image/video rate above.
+        'audio_input_usd_per_million' => '0.500000',
+        'audio_output_usd_per_million' => null,
+        'audio_input_usd_per_minute' => null,
+        'audio_output_usd_per_minute' => null,
+        'audio_tokens_per_second' => null,
+    ],
+    [
         'key' => 'gemini-3.1-pro-preview',
         'vendor' => 'google',
         'display_name' => 'Gemini 3.1 Pro Preview',

@@ -477,7 +477,10 @@ test('L2: HeyGen /v1/llm-configurations outbound body matches the golden JSON', 
     $golden = loadProviderFixture('heygen/llm_configuration_create_request_golden.json');
     $golden['display_name'] = $capturedBody['display_name'];
     $golden['model_name'] = $model->key;
-    $golden['base_url'] = $model->base_url;
+    // `LlmModel::base_url` stores a trailing slash; `HeygenLlmRegistrar`
+    // strips it before this call (fix/heygen-gemini-flash-lite) — a naive
+    // join on HeyGen's own side produces `//chat/completions` otherwise.
+    $golden['base_url'] = rtrim($model->base_url, '/');
     $golden['secret_id'] = loadProviderFixture('heygen/secret_create_response.json')['data']['id'];
 
     $this->assertEqualsCanonicalizing($golden, $capturedBody);

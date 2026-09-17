@@ -29,7 +29,7 @@ test('admin, operator, and viewer can all read the registry', function (): void 
         $this->withToken(authTokenForRole($org, $role))
             ->getJson('/api/llm-models')
             ->assertOk()
-            ->assertJsonCount(4, 'data');
+            ->assertJsonCount(5, 'data');
 
         resetAuthGuardState();
     }
