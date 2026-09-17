@@ -174,6 +174,26 @@ test('restores a deselection-trashed row instead of copying a fresh default, pre
     expect($questions->first()->text['en'])->toBe('Operator-authored question EN');
 });
 
+test('excludes soft-deleted projects from the backfill', function (): void {
+    $org = Organization::factory()->create();
+    [$project, $competency, $revision] = backfillFixtureProjectWithUnsatisfiedCompetency($org);
+
+    FrameworkDefaultQuestion::factory()->create([
+        'competency_id' => $competency->id,
+        'revision_id' => $revision->id,
+        'position' => 0,
+        'text' => ['en' => 'Default question EN', 'it' => 'Domanda predefinita IT'],
+    ]);
+
+    $project->delete();
+
+    $this->artisan('beai:backfill-project-questions')
+        ->assertExitCode(0)
+        ->expectsOutputToContain('Backfilled 0 competency selection(s)');
+
+    expect(ProjectQuestion::withoutGlobalScopes()->where('project_id', $project->id)->count())->toBe(0);
+});
+
 test('--org filters the backfill to a single organization', function (): void {
     $orgA = Organization::factory()->create(['slug' => 'backfill-org-a-'.uniqid()]);
     $orgB = Organization::factory()->create(['slug' => 'backfill-org-b-'.uniqid()]);

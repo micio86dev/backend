@@ -95,7 +95,15 @@ final class BackfillProjectQuestionsCommand extends Command
         $incompleteLines = [];
 
         foreach ($organizations as $organization) {
-            $projects = Project::withoutGlobalScopes()
+            // `withoutGlobalScope('tenant')` only — never `withoutGlobalScopes()`
+            // (R3-backfill-includes-soft-deleted-projects): this command runs
+            // outside any HTTP tenant context and needs to see every
+            // organization's own projects in turn, but it must NOT also drop
+            // `SoftDeletingScope`. A soft-deleted project's own selection is
+            // no longer live — `ProjectInterviewability` is a gate on
+            // interviews a deleted project can never run, so copying
+            // catalogue defaults into it would be pure waste, not a fix.
+            $projects = Project::withoutGlobalScope('tenant')
                 ->where('organization_id', $organization->id)
                 ->orderBy('id')
                 ->get();
