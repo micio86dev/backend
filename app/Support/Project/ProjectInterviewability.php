@@ -115,10 +115,21 @@ final class ProjectInterviewability
      * `SsoExchangeController`) need only the boolean and calling
      * `evaluate()` there would read as needing the competency list too.
      *
+     * `interview.interviewability_gate` (default true) is read HERE ONLY —
+     * every caller of `isInterviewable()`/`evaluate()`/`evaluateForCandidate()`
+     * converges on this method, so flipping it off stages a rollout for
+     * every ingress point without a duplicated check per controller.
+     * `unsatisfiedCompetencyCodes()` stays UNGATED — the backfill command
+     * needs its real answer regardless, or the switch would make it a no-op.
+     *
      * @return array{interviewable: bool, unsatisfied_competency_codes: list<string>}
      */
     public function evaluate(Project $project): array
     {
+        if (! (bool) config('interview.interviewability_gate', true)) {
+            return ['interviewable' => true, 'unsatisfied_competency_codes' => []];
+        }
+
         $unsatisfied = $this->unsatisfiedCompetencyCodes($project);
 
         $interviewable = $unsatisfied === [] && DB::table('project_competencies')

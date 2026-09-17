@@ -103,6 +103,22 @@ test('entry-link mint is refused for a non-interviewable project — 422 PROJECT
     expect(Participant::where('project_id', $project->id)->count())->toBe(0);
 });
 
+test('entry-link mint succeeds for a non-interviewable project once the interviewability gate is switched off', function (): void {
+    config(['interview.candidate_app_url' => 'https://interview.example.test', 'interview.interviewability_gate' => false]);
+    $org = Organization::factory()->create();
+    [$project] = iirNonInterviewableProject($org);
+    $token = iirOperatorToken($org);
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'iir-gate-off-001',
+        'email' => 'iir-gate-off@example.test',
+        'display_name' => 'IIR Gate Off Candidate',
+    ]);
+
+    $response->assertCreated();
+});
+
 test('M2M participant enrolment is refused at the API boundary — candidate_ref echoed byte-for-byte, no participant row', function (): void {
     $org = Organization::factory()->create();
     [$project] = iirNonInterviewableProject($org);

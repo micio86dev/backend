@@ -64,6 +64,23 @@ function acsSeedDefaults(Competency $competency, array $texts): void
 }
 
 /**
+ * Publishes a SECOND revision — never the project's own pinned baseline —
+ * whose competency matches $competency's own CODE, carrying one default
+ * question. Mirrors `BackfillProjectQuestionsCommandTest`'s own
+ * `backfillFixturePublishLaterDefault()`: the shape
+ * `ApplyCompetencySelection::latestPublishedDefaults()` looks for, and the
+ * REALISTIC way a default ever gets authored — never written straight onto
+ * the published baseline the way `acsSeedDefaults()` above does.
+ */
+function acsPublishLaterDefault(Competency $competency, array $text): void
+{
+    $laterRevision = FrameworkCatalogRevision::factory()->draft()->create();
+    $laterCompetency = Competency::factory()->create(['revision_id' => $laterRevision->id, 'code' => $competency->code]);
+    FrameworkDefaultQuestion::factory()->create(['competency_id' => $laterCompetency->id, 'position' => 0, 'text' => $text]);
+    $laterRevision->update(['state' => 'published', 'published_at' => now()]);
+}
+
+/**
  * @param  list<int>  $competencyIds
  * @return array<string, mixed>
  */
@@ -120,6 +137,33 @@ test('selecting a competency copies its defaults, in authored order', function (
     expect($rows->pluck('text.en')->all())->toBe(['first', 'second']);
     expect($rows->pluck('position')->all())->toBe([0, 1]);
     expect($rows->every(fn (ProjectQuestion $q) => $q->operator_modified === false))->toBeTrue();
+});
+
+/**
+ * R3-autofill-inert-for-baseline-pins: `acsSeedDefaults()` above writes
+ * defaults straight onto the pinned (baseline) revision, which no product
+ * write path can ever do — every pre-existing `FrameworkVersion` is pinned
+ * to the baseline and the baseline is never authored with defaults. This is
+ * the realistic shape: the pin has nothing, a LATER revision does, and
+ * `apply()`'s fresh-selection path must auto-fill from it via the same
+ * latest-published fallback the backfill command already used.
+ */
+test('a fresh selection on a baseline-pinned project auto-fills from the latest published revision when the pin has none', function (): void {
+    ['org' => $org, 'token' => $token, 'fv' => $fv] = acsSetUp();
+    $col = acsCompetency('COL');
+    acsPublishLaterDefault($col, ['en' => 'Later default EN', 'it' => 'Domanda successiva IT']);
+
+    $response = $this->withToken($token)->postJson('/api/projects', acsPayload($fv->id, [$col->id]));
+    $response->assertCreated();
+    $projectId = $response->json('data.id');
+
+    $rows = TenantContextScope::runFor(
+        $org->id,
+        fn () => ProjectQuestion::where('project_id', $projectId)->get(),
+    );
+
+    expect($rows)->toHaveCount(1);
+    expect($rows->first()->text['en'])->toBe('Later default EN');
 });
 
 test('the cap truncates the copy, keeping the first N in authored order', function (): void {

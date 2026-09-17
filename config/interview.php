@@ -248,6 +248,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Interviewability Gate (R4-interviewability-deploy-cutover)
+    |--------------------------------------------------------------------------
+    |
+    | Gates every ingress (entry-link mint, M2M mint, SSO exchange, /start)
+    | on "every selected competency has a live question" — RATIFIED, stays
+    | true by default. Flip false ONLY to stage a production rollout while
+    | defaults are authored/published and `beai:backfill-project-questions`
+    | runs; `App\Support\Project\ProjectInterviewability::evaluate()` is the
+    | one place this is read.
+    |
+    */
+    'interviewability_gate' => (bool) env('BEAI_INTERVIEWABILITY_GATE', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Provider Smoke Check Gate (PR4 — design D10, layer L3)
     |--------------------------------------------------------------------------
     |

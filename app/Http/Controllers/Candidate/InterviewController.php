@@ -188,10 +188,13 @@ class InterviewController extends Controller
                 ->where('project_id', $project->id)
                 ->exists();
 
+            // `evaluate()`, never `unsatisfiedCompetencyCodes()` directly —
+            // `evaluate()` is where the interviewability gate short-circuits,
+            // so this branch honours it like the fresh-start one below does.
             $blocked = $hasAnySessionOnProject
                 ? in_array(
                     $nextCompetency['competency_code'],
-                    $this->projectInterviewability->unsatisfiedCompetencyCodes($project),
+                    $this->projectInterviewability->evaluate($project)['unsatisfied_competency_codes'],
                     true,
                 )
                 : ! $this->projectInterviewability->isInterviewable($project);

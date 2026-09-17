@@ -71,7 +71,7 @@ final class ApplyCompetencySelection
      */
     public function ensureCompetencyHasQuestions(Project $project, int $competencyId): void
     {
-        $this->applyOneAttachedCompetency($project, $competencyId, allowLatestPublishedFallback: true);
+        $this->applyOneAttachedCompetency($project, $competencyId);
     }
 
     /**
@@ -107,7 +107,7 @@ final class ApplyCompetencySelection
      *      re-save with the same competency set must not duplicate rows).
      *   3. Neither → copy the catalogue defaults as a fresh snapshot.
      */
-    private function applyOneAttachedCompetency(Project $project, int $competencyId, bool $allowLatestPublishedFallback = false): void
+    private function applyOneAttachedCompetency(Project $project, int $competencyId): void
     {
         // Z8: scoped to `deleted_by_deselection = true` — a row an operator
         // deleted individually (the column's `false` default) is excluded
@@ -134,7 +134,7 @@ final class ApplyCompetencySelection
             return;
         }
 
-        $this->copyDefaults($project, $competencyId, $allowLatestPublishedFallback);
+        $this->copyDefaults($project, $competencyId);
     }
 
     /**
@@ -233,11 +233,15 @@ final class ApplyCompetencySelection
      * column default — never written explicitly, since `ApplyCompetencySelection`
      * is the one write path that must not claim these rows as operator-authored).
      *
-     * $allowLatestPublishedFallback: backfill-command ONLY (always `false` on
-     * the fresh-selection path `apply()` uses) — when the pin has nothing,
-     * try the latest PUBLISHED revision instead; see `latestPublishedDefaults()`.
+     * Falls back to the latest PUBLISHED revision's defaults (matched by
+     * competency CODE — see `latestPublishedDefaults()`) whenever the pinned
+     * revision has none, for BOTH callers alike: `apply()`'s fresh-selection
+     * path and `ensureCompetencyHasQuestions()`'s backfill path. Every
+     * pre-existing `FrameworkVersion` is pinned to the baseline, which is
+     * never authored with defaults, so the pin alone cannot auto-fill
+     * either one (R3-autofill-inert-for-baseline-pins).
      */
-    private function copyDefaults(Project $project, int $competencyId, bool $allowLatestPublishedFallback = false): void
+    private function copyDefaults(Project $project, int $competencyId): void
     {
         $revisionId = $project->frameworkVersion?->revision_id;
 
@@ -255,7 +259,7 @@ final class ApplyCompetencySelection
             ->orderBy('position')
             ->get();
 
-        if ($defaults->isEmpty() && $allowLatestPublishedFallback) {
+        if ($defaults->isEmpty()) {
             $defaults = $this->latestPublishedDefaults($competencyId, $revisionId);
         }
 
@@ -278,13 +282,13 @@ final class ApplyCompetencySelection
     }
 
     /**
-     * BACKFILL-ONLY FALLBACK (R4-interviewability-rollout-unrecoverable).
-     * Every pre-existing project is pinned to the BASELINE, whose defaults
-     * are always empty (the seeder never writes them; catalogue CRUD only
-     * ever lands in a NEW published revision) — so the pin alone can never
-     * recover. Matched by CODE, not id: competency rows are revision-scoped
-     * (a full clone per draft/publish, D1), so the pinned competency's own
-     * id never appears in a different revision's rows.
+     * FALLBACK for a pinned revision with no defaults. Every pre-existing
+     * project is pinned to the BASELINE, whose defaults are always empty
+     * (the seeder never writes them; catalogue CRUD only ever lands in a
+     * NEW published revision) — so the pin alone can never recover, on a
+     * fresh selection or a backfill alike. Matched by CODE, not id:
+     * competency rows are revision-scoped (a full clone per draft/publish,
+     * D1), so the pinned competency's own id never appears elsewhere.
      *
      * @return Collection<int, FrameworkDefaultQuestion>
      */

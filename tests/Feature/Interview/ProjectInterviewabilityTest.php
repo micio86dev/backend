@@ -109,6 +109,20 @@ test('zero selected competencies is NOT interviewable — an extension beyond th
     expect(app(ProjectInterviewability::class)->isInterviewable($project))->toBeFalse();
 });
 
+test('the interviewability gate defaults to enabled', function (): void {
+    expect((bool) config('interview.interviewability_gate'))->toBeTrue();
+});
+
+test('switch off reports every project interviewable, while unsatisfiedCompetencyCodes still reflects reality for the backfill command', function (): void {
+    config(['interview.interviewability_gate' => false]);
+    $org = Organization::factory()->create();
+    piCompetency('COL');
+    $project = piProject($org, ['COL']);
+
+    expect(app(ProjectInterviewability::class)->isInterviewable($project))->toBeTrue();
+    expect(app(ProjectInterviewability::class)->unsatisfiedCompetencyCodes($project))->toBe(['COL']);
+});
+
 test('minting succeeds once every selected competency has a live question', function (): void {
     // The spec's own "Minting succeeds once the project is interviewable"
     // scenario, expressed at the predicate level: adding a question back
