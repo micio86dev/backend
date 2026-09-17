@@ -27,6 +27,21 @@ declare(strict_types=1);
  * framework's own teardown rollback has something to close. The now-real
  * fixture rows are deleted explicitly in `finally`, cascading from
  * `organizations`.
+ *
+ * TWO organizations get committed for real here, not one: `TenantScoped`
+ * (`app/Models/Concerns/TenantScoped.php`) unconditionally overwrites
+ * `organization_id` on `creating` from the resolver, but `Project::factory()`
+ * defaults `framework_version_id` to `FrameworkVersion::factory()`, whose OWN
+ * default is `'organization_id' => Organization::factory()` — that nested
+ * factory relationship resolves (a real INSERT) to obtain an id BEFORE
+ * `TenantScoped` discards it in favour of `$org->id`. The result is a second,
+ * bare organization with no rows pointing at it at all, created as a pure
+ * side effect. Under ordinary `RefreshDatabase` rollback this is invisible
+ * (everything disappears together); once this test commits for real, it is a
+ * genuine orphan that `where('id', $org->id)` alone would never find.
+ * `$committedOrgIds` snapshots every organization that exists right before
+ * the real commit, so cleanup deletes all of them regardless of how many a
+ * factory chain happens to create.
  */
 
 use App\Models\InterviewSession;
@@ -68,6 +83,12 @@ test('Z16: a request waiting on a genuinely locked session row times out with a 
     ]);
 
     $token = CandidateTokenFactory::mintCandidateToken($participant);
+
+    // Snapshot every organization that exists right now — see the class
+    // docblock: Project::factory()'s default FrameworkVersion::factory()
+    // silently creates and discards a SECOND, bare organization alongside
+    // $org, and cleanup below must find both.
+    $committedOrgIds = Organization::pluck('id')->all();
 
     // Commit the fixture for REAL — a genuinely separate connection cannot
     // see it while it is still inside RefreshDatabase's own wrapping
@@ -115,7 +136,19 @@ test('Z16: a request waiting on a genuinely locked session row times out with a 
         // Manual cleanup — these rows are genuinely committed now, so
         // RefreshDatabase's own rollback at teardown never touches them.
         // Cascades from organizations to framework_versions/projects/
-        // participants/interview_sessions.
-        DB::table('organizations')->where('id', $org->id)->delete();
+        // participants/interview_sessions. whereIn(), not where('id', $org->id):
+        // see the class docblock — Project::factory() commits a second, bare
+        // organization alongside $org, and only $committedOrgIds accounts for
+        // both.
+        //
+        // This delete itself runs inside the transaction DB::beginTransaction()
+        // reopened above, which RefreshDatabase's own teardown then rolls
+        // back — so without an explicit DB::commit() here, the delete would
+        // be silently undone and $org would leak right back. Reopen once
+        // more immediately after, exactly as above, so teardown still has a
+        // transaction to close.
+        DB::table('organizations')->whereIn('id', $committedOrgIds)->delete();
+        DB::commit();
+        DB::beginTransaction();
     }
 });
