@@ -25,6 +25,7 @@ use App\Models\Organization;
 use App\Models\Project;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Tenancy\ActingOrganization;
 use App\Support\Tenancy\TenantResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\DB;
@@ -984,4 +985,66 @@ test('a potential project refuses a role_code with a code, not a sentence', func
         ->assertUnprocessable();
 
     expect($response->json('errors.role_code.0'))->toBe('role_code_must_be_null');
+});
+
+/**
+ * A superadmin ACTING AS one organization creates/updates a project pinning
+ * THAT organization's own `framework_version_id`/`avatar_template_id`.
+ *
+ * Regression for the same bug class `ApiClientActingSuperadminTest.php`
+ * already caught for `ApiClient`: `StoreProjectRequest`/`UpdateProjectRequest`
+ * resolved the org-scoped `framework_version_id`/`avatar_template_id`/`slug`
+ * checks from `$user->organization_id` directly — always `null` for a
+ * superadmin — instead of `TenantResolver::getOrgId()`, which `TenantContext`
+ * narrows to the ACTING org. `where('organization_id', null)` degrades to
+ * `whereNull(...)`, matching zero rows regardless of the id submitted, while
+ * `GET /avatar-templates/options` and `GET /api/framework/versions` (both
+ * TenantModel-scoped, so both already resolver-correct) kept listing that
+ * same org's real ids — a picker that offers values the submit unconditionally
+ * refuses.
+ */
+test('superadmin acting as an org creates a project pinning THAT org\'s framework version and template', function (): void {
+    $org = Organization::factory()->create();
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+    app(ActingOrganization::class)->set((int) $superadmin->id, (int) $org->id);
+    $token = auth('api')->login($superadmin);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+
+    $response = $this->withToken($token)->postJson('/api/projects', crudStandardPayload($fv->id));
+
+    $response->assertCreated();
+    expect(Project::find($response->json('data.id'))->organization_id)->toBe($org->id);
+});
+
+test('superadmin acting as an org updates a project\'s avatar template pinned to THAT org', function (): void {
+    $org = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
+    $project = Project::factory()->create([
+        'framework_version_id' => $fv->id,
+        'avatar_template_id' => templateIdForCurrentOrg(),
+        'status' => 'draft',
+        'assessment_type' => 'standard',
+        'role_code' => 'ICO',
+    ]);
+    $otherTemplate = AvatarTemplate::create([
+        'name' => 'Other template '.uniqid(),
+        'provider' => 'heygen',
+        'config' => [],
+    ]);
+
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+    app(ActingOrganization::class)->set((int) $superadmin->id, (int) $org->id);
+    $token = auth('api')->login($superadmin);
+
+    $response = $this->withToken($token)
+        ->patchJson("/api/projects/{$project->id}", ['avatar_template_id' => $otherTemplate->id]);
+
+    $response->assertOk();
+    expect($project->fresh()->avatar_template_id)->toBe($otherTemplate->id);
 });

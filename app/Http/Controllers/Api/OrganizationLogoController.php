@@ -7,7 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\OrganizationResource;
 use App\Models\Organization;
-use App\Models\User;
+use App\Support\Tenancy\TenantResolver;
 use App\Support\Uploads\ImageMagicBytes;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
 use Dedoc\Scramble\Attributes\Response;
@@ -137,9 +137,9 @@ final class OrganizationLogoController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
-        $organization = Organization::findOrFail($user->organization_id);
+        // The ACTING org, never `$request->user()->organization_id`
+        // directly — see `OrganizationController`'s own docblock for why.
+        $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
 
         $this->authorize('update', $organization);
 
@@ -238,9 +238,9 @@ final class OrganizationLogoController extends Controller
      */
     public function destroy(Request $request): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
-        $organization = Organization::findOrFail($user->organization_id);
+        // The ACTING org, never `$request->user()->organization_id`
+        // directly — see `OrganizationController`'s own docblock for why.
+        $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
 
         $this->authorize('update', $organization);
 
