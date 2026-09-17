@@ -170,9 +170,8 @@ class HeygenProvider implements ProviderSessionService
 
         // @wire-source start.ts:255 (`opening_text`, the avatar's first spoken line,
         // composed SEPARATELY from `prompt` — PR3, design D9). Omitted when the caller
-        // has no composed greeting (e.g. the RESUME-degraded path never fails to
-        // compose an opening — only the system prompt can degrade — but the null
-        // path is kept for symmetry and defensive callers).
+        // has no composed greeting; `/start` always composes one, so the null path
+        // exists for symmetry with `prompt` and for defensive callers.
         if ($ctx->openingText !== null) {
             $body['opening_text'] = $ctx->openingText;
         }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Conversation;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\SpokenOpening;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Models\BarsIndicator;
@@ -20,7 +21,8 @@ use Illuminate\Database\Eloquent\Collection;
  * text and anchors are translated, everything else is English interviewer instruction.
  * (This docblock previously claimed all sections were localised. They never were, and a
  * reader who believed it would localise one section and not its neighbours.)
- *   1. Role/interview-style instructions.
+ *   1. Role/interview-style instructions, then the OPENING paragraph: what the
+ *      provider already spoke before this prompt runs (see SpokenOpening).
  *   2. Coverage topics — ordered, role-scoped BARS indicator text (internal; not revealed
  *      verbatim). The ONLY localised section.
  *   3. STAR coverage protocol + the same-episode constraint (star-interviewer-protocol).
@@ -29,8 +31,8 @@ use Illuminate\Database\Eloquent\Collection;
  *   4. Follow-up budget: "ask at most N follow-up questions" (ratified N=4, from config;
  *      a per-project override follows as `project-followup-budget`). ON TOP of the
  *      primary questions, never merged with their count (D7).
- *   5. Nudge: if answer < nudge_min_chars, re-prompt once — does NOT consume a follow-up slot.
- *      Omitted when nudge_min_chars is null or 0.
+ *   5. Nudge: a short answer to a substantive question may be re-prompted once — does NOT
+ *      consume a follow-up slot. A soft rule; omitted when nudge_min_chars is null or 0.
  *   6. Primary questions: the competency's COMPLETE primary set — the operator's
  *      own questions for this project × competency, when any exist. Injected
  *      BEFORE the advance rule and not after — the advance rule is what tells
@@ -78,14 +80,11 @@ final class SystemPromptComposer
      *                                          rows, in the order they must be asked. Not
      *                                          additive to `$followUpBudget`: these questions
      *                                          ARE the primaries (D7), and the model's only
-     *                                          generative latitude is follow-ups on one of them.
-     * @param  bool  $openingSpokeFirstPrimary  True when `OpeningTextComposer` already spoke
-     *                                          `$primaryQuestions[0]` as the opening greeting
-     *                                          for this request (every variant except `resume`,
-     *                                          and only when at least one primary exists). The
-     *                                          primary-questions section then tells the model
-     *                                          to continue from primary 2 rather than leaving it
-     *                                          to infer that primary 1 was already asked.
+     *                                          generative latitude is follow-ups.
+     * @param  SpokenOpening|null  $spokenOpening  What `OpeningTextComposer` spoke as this
+     *                                             request's opening. Null means the fresh-start
+     *                                             default: primary 1, or the fallback episode
+     *                                             question when there are no primaries.
      * @param  int|null  $revisionId  The catalogue revision `$roleId`/`$competencyId` were
      *                                resolved against — framework-catalogue-authoring PR3b,
      *                                H1. Threaded straight through to `BarsIndicatorLoader`;
@@ -95,7 +94,8 @@ final class SystemPromptComposer
      *                                omitted, the loader defaults to the latest published
      *                                revision, never "any revision".
      *
-     * @throws CompositionException When no indicators exist for the role+competency pair.
+     * @throws CompositionException When no indicators exist for the role+competency pair,
+     *                              or `$spokenOpening` names a primary the set does not have.
      * @throws AnchorTranslationMissingException When any indicator field lacks a $projectLocale translation.
      */
     public function compose(
@@ -108,7 +108,7 @@ final class SystemPromptComposer
         ?string $advancePhrase = null,
         ?int $minQuestions = null,
         array $primaryQuestions = [],
-        bool $openingSpokeFirstPrimary = false,
+        ?SpokenOpening $spokenOpening = null,
         ?int $revisionId = null,
     ): ComposedPrompt {
         $indicators = $this->loader->forRoleCompetency($roleId, $competencyId, $revisionId);
@@ -135,16 +135,19 @@ final class SystemPromptComposer
         // buildBudgetSection() and buildPrimaryQuestionsSection() below, which
         // are now fed independently rather than through one merged number.
         $effectiveMinimum = $this->effectiveMinimum($minQuestions, count($primaryQuestions), $followUpBudget);
+        $spokenOpening = self::resolveSpokenOpening($spokenOpening, $primaryQuestions);
 
         $coverageSection = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
         $starSection = $this->buildStarSection();
         $budgetSection = $this->buildBudgetSection($followUpBudget);
         $nudgeSection = $this->buildNudgeSection($nudgeMinChars);
-        $advanceSection = $this->buildAdvanceSection($advancePhrase, $effectiveMinimum);
-        $primarySection = $this->buildPrimaryQuestionsSection($primaryQuestions, $openingSpokeFirstPrimary);
+        $advanceSection = $this->buildAdvanceSection($advancePhrase, $effectiveMinimum, $primaryQuestions !== []);
+        $primarySection = $this->buildPrimaryQuestionsSection($primaryQuestions, $spokenOpening);
+        $openingSection = $this->buildOpeningSection($primaryQuestions, $spokenOpening);
 
         $text = $this->assemblePrompt(
             $competencyCode,
+            $openingSection,
             $coverageSection,
             $starSection,
             $budgetSection,
@@ -189,11 +192,13 @@ final class SystemPromptComposer
      * legally close.
      *
      * `min($configured, count($primaryQuestions) + $followUpBudget)` makes
-     * that impossible. There is no separate "+1 for the opening question" term
-     * any more: the opening question IS `$primaryQuestions[0]` (D7 — the two
-     * composers resolve it from the same array), so it is already counted
-     * inside `count($primaryQuestions)` rather than sitting outside both
-     * numbers. Because the result can never exceed
+     * that impossible. There is no separate "+1 for the opening question"
+     * term: the opening always speaks one of `$primaryQuestions` (primary 1 on
+     * a fresh start, the pending or last one on a resume, where questions
+     * asked before the interruption also count), so it is already counted
+     * inside `count($primaryQuestions)`. With no primaries the fallback
+     * opening is the one question the budget does not cover, which only
+     * leaves more room under the minimum. Because the result can never exceed
      * `count($primaryQuestions) + $followUpBudget`, BUDGET EXHAUSTION ALWAYS
      * SATISFIES THE MINIMUM, so the "OR the follow-up budget is exhausted"
      * escape hatch in the advance rule stays reachable under every possible
@@ -263,10 +268,16 @@ final class SystemPromptComposer
      * Section 3: the STAR coverage protocol and the same-episode constraint
      * (star-interviewer-protocol D-3).
      *
+     * It opens with how an episode comes to exist at all. A primary is the
+     * operator's question and may not ask for one ("Ciao! Come ti chiami?"),
+     * so the follow-ups are where the model leads the candidate to a concrete
+     * past episode relevant to the competency. STAR then governs that episode.
+     *
      * The same-episode constraint lives INSIDE this section rather than in one
      * of its own: it is meaningless except in reference to the episode STAR is
      * describing, and separating them would let a future editor delete one
-     * without noticing the other stopped making sense.
+     * without noticing the other stopped making sense. It binds follow-ups
+     * only: a later primary may change the subject, and asking it is required.
      *
      * Action and Result are singled out deliberately. `PromptBuilder`'s
      * EVALUATION_STANDARDS refuses to award a 4 or 5 without concrete personal
@@ -274,18 +285,21 @@ final class SystemPromptComposer
      * what the evaluator is REQUIRED to find. Those two prompts are a matched
      * pair; an edit to either should check the other.
      *
-     * The rule is stated ONCE. The reference log repeats it three times;
-     * repetition competes with the other rules in this prompt for the model's
-     * attention, and if once proves insufficient in a live interview the fix is
-     * repetition WITH EVIDENCE, not on the reference's authority.
+     * The same-episode rule is stated ONCE: repetition competes with the other
+     * rules in this prompt for the model's attention.
      */
     private function buildStarSection(): string
     {
         return <<<'STAR'
-The candidate will describe ONE episode from their own past. Your job is to make that
-single episode complete enough to assess. After EVERY answer, work out which of these
-five is least covered for the episode under discussion, and make your next question
-close that gap:
+This competency is assessed on what the candidate actually did in the past. A primary
+question does not always ask for that: it may be a greeting or a general question. When
+an answer does not already describe a specific episode from the candidate's own past,
+use your follow-ups to lead from that answer to ONE such episode relevant to this
+competency.
+
+Once an episode is under discussion, make it complete enough to assess. After EVERY
+answer about it, work out which of these five is least covered, and make your next
+follow-up close that gap:
   S — Situation: the concrete circumstances, and when and where it happened.
   T — Task: what the candidate was responsible for delivering.
   C — Context: the constraints, pressures and people involved.
@@ -301,10 +315,11 @@ Ask for them explicitly rather than hoping they arrive.
 If an element genuinely does not apply to this episode, or the candidate says they
 cannot recall it, treat it as covered and do not ask about it again.
 
-STAY ON ONE EPISODE. Every follow-up must deepen the SAME episode the candidate has
-already begun describing. Do NOT ask for a second or different example. The single
+STAY ON ONE EPISODE. Once the candidate has begun describing an episode, every follow-up
+must deepen the SAME episode. Do NOT ask for a second or different example. The single
 exception: if the episode turns out to contain no assessable behaviour at all, you may
-ask for a different one.
+ask for a different one. This rule governs follow-ups only: a primary question still to
+be asked may move to another subject, and you must still ask it.
 STAR;
     }
 
@@ -333,7 +348,12 @@ STAR;
     /**
      * Section 5: Nudge instruction (SA-03). Omitted when nudge_min_chars is null or 0.
      *
-     * REQ: SA-03 — if answer < threshold chars, re-prompt once without consuming a follow-up slot.
+     * REQ: SA-03 — a short answer may be re-prompted once without consuming a follow-up slot.
+     *
+     * Scoped to substantive questions and worded as a permission, not an
+     * obligation: a primary may be "what's your name?", and a hard
+     * character threshold would trap the model re-prompting a complete
+     * one-word answer.
      */
     private function buildNudgeSection(?int $nudgeMinChars): string
     {
@@ -341,9 +361,11 @@ STAR;
             return '';
         }
 
-        return "If a candidate's answer is shorter than {$nudgeMinChars} characters, "
-            .'re-prompt once asking them to elaborate. '
-            .'This re-prompt does NOT consume a follow-up budget slot.';
+        return 'If the candidate\'s answer to a question that asks them to describe, explain or '
+            ."give an example is shorter than {$nudgeMinChars} characters, you may re-prompt once "
+            .'asking them to elaborate. This re-prompt does NOT consume a follow-up budget slot. A short '
+            .'answer to a simple question — their name, a yes or a no — is complete: accept it '
+            .'and move on, and never re-prompt it.';
     }
 
     /**
@@ -385,61 +407,131 @@ STAR;
     }
 
     /**
+     * The opening the prompt describes: the caller's, or the fresh-start
+     * default when none was given.
+     *
+     * @param  list<string>  $primaryQuestions
+     *
+     * @throws CompositionException When the opening names a primary the set does not have.
+     */
+    private static function resolveSpokenOpening(?SpokenOpening $opening, array $primaryQuestions): SpokenOpening
+    {
+        if ($primaryQuestions === []) {
+            return SpokenOpening::fallback($opening !== null && $opening->resumed);
+        }
+
+        $opening ??= SpokenOpening::primary(1);
+
+        if ($opening->primaryNumber === null || $opening->primaryNumber > count($primaryQuestions)) {
+            throw new CompositionException(
+                'SystemPromptComposer: the spoken opening does not name one of the '
+                .count($primaryQuestions).' primary questions, so the prompt cannot state what was asked.',
+            );
+        }
+
+        return $opening;
+    }
+
+    /**
+     * The OPENING paragraph: what the provider already spoke before this
+     * prompt runs, quoted when it was a primary. The model cannot hear its
+     * own greeting, so this is the only way it knows what the candidate's
+     * next reply is answering.
+     *
+     * @param  list<string>  $questions
+     */
+    private function buildOpeningSection(array $questions, SpokenOpening $opening): string
+    {
+        $resumed = $opening->resumed
+            ? 'This conversation was interrupted and has just resumed; questions asked before the '
+                .'interruption count toward the minimum in the ADVANCE RULE. '
+            : '';
+
+        if ($opening->primaryNumber === null) {
+            return 'OPENING: '.$resumed.'You have ALREADY spoken your opening line, which asked the '
+                .'candidate to describe a specific episode from their work related to this '
+                .'competency. Do NOT ask for one again. Treat their next reply as that episode and '
+                .'begin probing it.';
+        }
+
+        $number = $opening->primaryNumber;
+        $quoted = 'primary question '.$number.', word for word: "'.$questions[$number - 1].'"';
+
+        $spoken = match (true) {
+            $opening->isReAskOfAskedPrimary() => 'Every primary question was already asked before the '
+                .'interruption; your opening line re-asked the last one, '.$quoted.', to restart the '
+                .'conversation.',
+            $opening->resumed => 'Your opening line re-asked '.$quoted.'.',
+            default => 'You have ALREADY spoken your opening line, which was '.$quoted.'.',
+        };
+
+        return 'OPENING: '.$resumed.$spoken.' Do NOT ask it again. The candidate\'s next reply is '
+            .'their answer to it.';
+    }
+
+    /**
      * Section 6: the competency's complete primary-question set — the
      * operator's own `project_questions` rows for this project × competency
      * (framework-catalogue-authoring PR7, D7).
      *
-     * WHY THIS EXISTS. The backoffice has offered a per-competency question
-     * editor since C4, and nothing ever read what it saved. `ProjectQuestion`
-     * was reachable only from its own controller, request and resource — no
-     * part of the interview touched it — so an operator could write the exact
-     * question they needed asked, watch it persist, and then listen to the
-     * avatar improvise something else entirely. The feature was write-only.
-     *
-     * WHY THE PROMPT AND NOT THE SPOKEN OPENING. The opening greets and hands
-     * over; what to ASK is an instruction to the interviewer. Recited as an
-     * opening, the avatar would say the question and then have no idea it was
-     * supposed to have asked it — it would probe as if the exchange had not
-     * happened, and the operator's question would be a line of narration.
+     * WHY THE PROMPT AND NOT ONLY THE SPOKEN OPENING. The opening speaks one
+     * primary; the rest must be asked by the model, in order and verbatim,
+     * and it can only do that if it has the list.
      *
      * COMPLETE, NOT ADDITIVE, AND NOT A SUGGESTION. This is the FULL primary
-     * set for the competency, not a mandatory add-on layered over a separate
-     * model-driven budget (D7 — the additive arithmetic this replaces is
-     * deleted, not adjusted). The model may not introduce, substitute,
-     * reorder or reword a primary of its own; its only generative latitude is
-     * follow-ups on a primary already asked. "Topics you might explore" would
-     * yield an interview that sometimes asks them, which from the operator's
-     * side is indistinguishable from the write-only bug this section fixes.
+     * set for the competency (D7). The model may not introduce, substitute,
+     * reorder or reword a primary; its generative latitude is follow-ups,
+     * which may probe an answer or lead from it toward a concrete episode.
      *
-     * `$openingSpokeFirstPrimary` states a fact rather than removing an item:
-     * the numbered list below always lists every primary, because it is the
-     * transcript-facing "complete set" record; when true, an extra sentence
-     * tells the model primary 1 was already spoken as the opening greeting
-     * and it must continue from primary 2, rather than leaving the model to
-     * infer that from context (D7).
+     * The numbered list always lists every primary. The progress sentence
+     * says which primaries are already asked and what comes next, and only
+     * ever names "primary question N" for an N that exists: with one
+     * primary, or once the last one has been spoken, it says that every
+     * primary is asked and the rest of the competency is follow-ups.
+     *
+     * With no primaries (reachable only while the interviewability gate is
+     * off) there is no list; the section says the fallback opening was the
+     * competency's only question.
      *
      * @param  list<string>  $questions
      */
-    private function buildPrimaryQuestionsSection(array $questions, bool $openingSpokeFirstPrimary): string
+    private function buildPrimaryQuestionsSection(array $questions, SpokenOpening $opening): string
     {
         if ($questions === []) {
-            return '';
+            return 'This competency has no primary questions: your opening line was its only '
+                .'primary question, and everything you ask from here on is a follow-up.';
         }
+
+        $total = count($questions);
+        $spoken = (int) $opening->primaryNumber;
 
         $lines = [
             'The numbered list below is the COMPLETE set of primary questions for this '
-            .'competency, in order. You MUST ask every one of them, phrased exactly as '
+            .'competency, in order. Every one of them MUST be asked, phrased exactly as '
             .'written, before you end the competency. You may NOT introduce, substitute, '
             .'reorder or reword a primary question of your own — your only generative '
-            .'latitude is follow-up questions on a primary you have already asked. Ask '
-            .'them as part of the conversation rather than reading a list, and probe each '
-            .'answer with your ordinary follow-up rules.',
+            .'latitude is follow-up questions. A follow-up may probe the answer just given, '
+            .'or lead from it toward one concrete episode from the candidate\'s own past '
+            .'that is relevant to this competency. Ask the primaries as part of the '
+            .'conversation rather than reading a list.',
         ];
 
-        if ($openingSpokeFirstPrimary) {
-            $lines[] = 'Primary question 1 has ALREADY been spoken as your opening greeting '
-                .'— do NOT ask it again. Continue from primary question 2.';
+        if ($opening->resumed && $opening->primariesAskedBefore > 0 && ! $opening->isReAskOfAskedPrimary()) {
+            $lines[] = $opening->primariesAskedBefore === 1
+                ? 'Primary question 1 was asked before the interruption.'
+                : 'Primary questions 1-'.$opening->primariesAskedBefore.' were asked before the interruption.';
         }
+
+        $lines[] = match (true) {
+            $opening->isReAskOfAskedPrimary() => 'Every primary question has already been asked, so '
+                .'everything you ask from here on is a follow-up.',
+            $spoken >= $total => 'Primary question '.$spoken.' was your opening line and is the last '
+                .'one: every primary question has now been asked, so everything you ask from here '
+                .'on is a follow-up.',
+            default => 'Primary question '.$spoken.' was your opening line. After the candidate '
+                .'answers it, ask follow-ups as needed, then continue with primary question '
+                .($spoken + 1).'.',
+        };
 
         $lines[] = '';
 
@@ -456,7 +548,7 @@ STAR;
      *
      * REQ: R-5 advance signal, star-interviewer-protocol D-4.
      */
-    private function buildAdvanceSection(?string $advancePhrase, int $minQuestions): string
+    private function buildAdvanceSection(?string $advancePhrase, int $minQuestions, bool $hasPrimaries): string
     {
         // The phrase must be QUOTED here, verbatim. It used to say "speak
         // end_phrase" and never said what end_phrase was — the avatar was told
@@ -473,22 +565,32 @@ STAR;
         // clamped it to at most `count(primaryQuestions) + followUpBudget` —
         // so "budget exhausted" can never be blocked by a minimum the avatar
         // has not yet reached.
+        //
+        // Every clause must stay satisfiable together: "every primary asked"
+        // is always reachable because the model asks them, and budget
+        // exhaustion satisfies the clamped minimum. Nothing here may forbid
+        // closing once those hold — not "never before coverage", not "never
+        // after the first answer" — or a one-primary, zero-budget competency
+        // could never close.
         $floor = $minQuestions === 1
             ? 'you have asked at least 1 question in this competency'
             : "you have asked at least {$minQuestions} questions in this competency";
 
+        if ($hasPrimaries) {
+            $floor = 'every primary question has been asked and '.$floor;
+        }
+
         if ($advancePhrase === null || trim($advancePhrase) === '') {
             return 'Speak the closing phrase ONLY when all coverage topics have been addressed '
                 .'OR the follow-up budget is exhausted, AND '.$floor.'. '
-                .'Do NOT close after the first answer.';
+                .'Do NOT close after the first answer unless these conditions already hold.';
         }
 
         return 'When all coverage topics have been addressed OR the follow-up budget is '
             .'exhausted, AND '.$floor.', you MUST end your turn by saying this sentence '
             .'exactly, word for word, as your final sentence: "'.$advancePhrase.'" '
             .'Say it verbatim — do not paraphrase, translate or add to it. '
-            .'Do NOT say it after the first answer, and never say it before the coverage '
-            .'topics are addressed.';
+            .'Do NOT say it before these conditions hold.';
     }
 
     /**
@@ -496,6 +598,7 @@ STAR;
      */
     private function assemblePrompt(
         string $competencyCode,
+        string $openingSection,
         string $coverageSection,
         string $starSection,
         string $budgetSection,
@@ -507,14 +610,7 @@ STAR;
             'You are an adaptive interviewer conducting a BARS-based competency assessment '
             ."for the [{$competencyCode}] competency.",
             '',
-            // The avatar has ALREADY spoken an opening line that asks for the
-            // episode (lang/{locale}/interview.php `opening.*`), delivered by the
-            // provider as its greeting field before this prompt ever runs. The
-            // model must not re-ask it: the candidate's first utterance IS the
-            // answer to a question they have already heard.
-            'OPENING: you have ALREADY greeted the candidate and ALREADY asked them to describe '
-            .'a specific episode. Do NOT open by asking for one again. Treat their next reply as '
-            .'the episode and begin probing it.',
+            $openingSection,
             '',
             'COVERAGE TOPICS (evaluate these behavioral indicators — do not reveal them verbatim):',
             $coverageSection,

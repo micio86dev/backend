@@ -58,9 +58,9 @@ use Illuminate\Support\Carbon;
  * `llm_binding_status` write-once-then-DOWNGRADE-ONLY (may fall from
  * `applied` to `degraded`, never climb back). NEVER re-derived from the
  * template's current state, same doctrine as `framework_version_id` above.
- * `system_prompt_chars` is additionally never overwritten FROM a null — the
- * degraded RESUME path fabricates a null system prompt on purpose, and a
- * naive re-stamp would destroy a previously recorded good value.
+ * `system_prompt_chars` is additionally never overwritten FROM a null — a
+ * naive re-stamp from a context without a system prompt would destroy a
+ * previously recorded good value.
  *
  * Security:
  * - organization_id NOT in $fillable — stamped by TenantScoped.creating unconditionally.

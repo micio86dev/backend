@@ -16,38 +16,21 @@ declare(strict_types=1);
  * Adding a new language = adding lang/{locale}/interview.php. Missing languages fall
  * back to the platform default language (config app.fallback_locale) at resolution time.
  *
- * `opening.*` (PR3, design D9): il saluto iniziale pronunciato dall'avatar per
- * ciascuna variante, composto da App\Services\Conversation\OpeningTextComposer.
- * `:competency` viene sostituito con il nome visualizzato della competenza, e
- * `:question` — solo in `retry_authored` — con la domanda scritta dall'operatore.
- *
- * OGNI variante TERMINA CON UNA DOMANDA, e non è cosmesi. Prima annunciavano
- * soltanto l'argomento: il provider pronunciava la frase, l'LLM non aveva alcun
- * turno utente a cui rispondere e RESTAVA IN ATTESA. Il candidato doveva dire
- * "ok" prima che arrivasse la prima domanda vera — un turno morto a ogni
- * competenza, osservato in produzione il 2026-08-25.
- *
- * `resume` invita a PROSEGUIRE, non a iniziare: chi riprende era già dentro un
- * episodio, e chiedergliene uno nuovo perderebbe quanto già raccontato.
+ * `opening.*`: composed by App\Services\Conversation\OpeningTextComposer. An
+ * operator-authored primary question is the opening, verbatim:
+ *   - `fallback` is spoken only when a competency has NO primary questions,
+ *     which is reachable only while the interviewability gate is off. It is
+ *     that competency's only question, so it ends in a question.
+ *     `:competency` is the competency's display name.
+ *   - `retry_authored` wraps the question (`:question`) the retry re-asks in
+ *     an apology for a failure on our side.
  */
 return [
     'end_phrase' => 'Passiamo alla prossima domanda.',
     'final_phrase' => 'Grazie per il tuo tempo.',
 
     'opening' => [
-        'first' => 'Ciao, e benvenuto! Iniziamo parlando di :competency. Raccontami un episodio specifico e concreto in cui questo è emerso nel tuo lavoro: cosa è successo?',
-        'next' => 'Bene, passiamo ora a parlare di :competency. Raccontami un episodio specifico in cui questo è emerso: cosa è successo?',
-        'resume' => 'Riprendiamo da dove eravamo rimasti, parlando di :competency. Vai pure avanti da dove ti eri fermato.',
-        'retry' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo con :competency. Raccontami un episodio specifico in cui questo è emerso: cosa è successo?',
-
-        /*
-         * `retry` quando l'operatore ha scritto lui la domanda. Le varianti
-         * `first`/`next` in quel caso non usano alcun template: la domanda
-         * autorale È l'apertura. `retry` no, e non è un'eccezione cosmetica:
-         * le scuse non sono un saluto, sono la spiegazione di un guasto
-         * NOSTRO. Toglierle farebbe leggere la ripetizione come "non mi hai
-         * ascoltato".
-         */
+        'fallback' => 'Parliamo di :competency. Raccontami un episodio specifico del tuo lavoro in cui questo è emerso: cosa è successo?',
         'retry_authored' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo. :question',
     ],
 ];

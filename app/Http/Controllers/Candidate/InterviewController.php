@@ -8,6 +8,7 @@ use App\Actions\ConversationLlm\RecordConversationLlmUsage;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
@@ -97,6 +98,9 @@ class InterviewController extends Controller
      * (4d) DB failure after provider success → teardown(in-memory token) + 500.
      *
      * RESUME in_corso:
+     *   - Harvest the outgoing transcript, then compose: the opening re-asks the
+     *     pending primary verbatim. A composition failure answers 422, as on a
+     *     fresh start.
      *   - issue() FRESH token.
      *   - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).
      *   - Persist new ref.
@@ -145,7 +149,7 @@ class InterviewController extends Controller
         }
 
         // (FIX W1) Guard: only 'standard' assessment type is supported by the composition engine.
-        // 'potential' and any future types must not reach composition or the degraded bypass.
+        // 'potential' and any future types must not reach composition.
         // This check applies on BOTH the fresh-start AND the resume in_corso path.
         // ($project is guaranteed non-null here: the project_not_found early return above
         // narrows it, and project_id is a non-nullable FK.)
@@ -213,9 +217,9 @@ class InterviewController extends Controller
         // failure): both the opening-greeting lookup below and
         // composePromptForCompetency() must agree on the same revision for the
         // same request. `tryForProject()`, never `forProject()`: an unresolved
-        // pin must degrade the SAME way as "role/competency not found" already
-        // does — a `composition_error` on NEW, a graceful RESUME degrade — never
-        // an uncaught 500 on a live candidate request.
+        // pin must fail the SAME way as "role/competency not found" already
+        // does — a `composition_error` 422 — never an uncaught 500 on a live
+        // candidate request.
         $revisionId = $this->revisionResolver->tryForProject($project);
 
         // Resolved ONCE, here, and reused below (framework-catalogue-
@@ -226,7 +230,7 @@ class InterviewController extends Controller
         // as its `$competency` parameter) all need this SAME
         // `(code, revisionId)` row — three independent lookups with
         // identical inputs collapsed into one. `$nextCompetencyRow` is
-        // reused as `$openingCompetency` below and passed directly into
+        // reused for the opening's competency name and passed directly into
         // `composePromptForCompetency()` rather than re-queried by either.
         $nextCompetencyRow = Competency::where('code', $nextCompetency['competency_code'])
             ->where('revision_id', $revisionId)
@@ -248,16 +252,36 @@ class InterviewController extends Controller
 
         // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
         //
-        // Failure semantics depend on whether this is a RESUME or a NEW session:
-        //   NEW/pending path  → fail-fast (422); no InterviewSession created; no provider call.
-        //   RESUME in_corso   → degrade gracefully; issue fresh provider session WITHOUT a system
-        //                       prompt (legacy non-adaptive body); log a warning. The candidate
-        //                       must not be locked out of an in-progress interview due to a
-        //                       transient composition failure.
-        //
-        // We peek BEFORE attempting composition so we can determine the correct failure mode
-        // without creating any row or making any provider call.
-        $isResumeInCorso = $this->hasActiveInCorsoSession($pid, $nextCompetency['competency_code']);
+        // A composition failure answers 422 on EVERY path, the resume included:
+        // no session is created, no provider session is issued. A resumed
+        // provider session without a system prompt would run the vendor's
+        // default persona, asking questions nobody authored.
+        $liveSession = $this->activeInCorsoSession($pid, $nextCompetency['competency_code']);
+        $isResumeInCorso = $liveSession !== null;
+
+        if ($liveSession !== null) {
+            // HARVEST the outgoing provider session's transcript BEFORE
+            // composing: the resumed opening re-asks the pending primary,
+            // and which primary is pending is counted from the persisted
+            // transcript. This is also the last moment that transcript is
+            // readable — the provider session is torn down in
+            // handleResumeInCorso(). Best-effort and scoped to the ref, so a
+            // retried /start re-harvests the same stretch idempotently. A
+            // suspended session has no ref: /suspend already harvested it.
+            $outgoingRef = $liveSession->provider_session_ref;
+
+            if ($outgoingRef !== null) {
+                $this->harvestOutgoingTranscript($liveSession, $this->resolveProvider($liveSession->provider), $outgoingRef);
+            }
+
+            // Once turns exist, the session's own snapshot is the list those
+            // turns were classified against, so the prompt, the re-asked
+            // opening and the classifier all index the same list. A row
+            // predating the snapshot column has none; the live list is used.
+            if ($liveSession->utterances()->exists()) {
+                $primaryQuestions = $liveSession->primary_questions ?? $primaryQuestions;
+            }
+        }
 
         // (PR3) Hoisted here (was previously computed only on the non-resume path, just
         // before handleIssuePending()): both flags are needed to select the opening-greeting
@@ -274,13 +298,9 @@ class InterviewController extends Controller
         // silently overwrite started_at to now() below, destroying the true start time.
         $isFirst = $participant->started_at === null;
 
-        // Hoisted here, ahead of its only previous use site further down
-        // (framework-catalogue-authoring PR7, D7): `$openingVariant` — and
-        // therefore `$openingSpokeFirstPrimary` below — must be known BEFORE
-        // composePromptForCompetency() runs, so the composed prompt and the
-        // spoken opening agree on whether primary 1 was already handed to the
-        // candidate. `$nextCompetency['reoffer']` has been available since
-        // the resolveNextCompetency() call above; only its consumption moves.
+        // Resolved before composePromptForCompetency() runs, together with
+        // `$spokenOpening` below, so the composed prompt and the spoken
+        // opening describe the same turn.
         $isReoffer = ($nextCompetency['reoffer'] ?? false) === true;
         $openingVariant = match (true) {
             $isResumeInCorso => 'resume',
@@ -289,12 +309,19 @@ class InterviewController extends Controller
             default => 'next',
         };
 
-        // True whenever OpeningTextComposer is about to speak primary 1 as
-        // this request's opening greeting (every variant except `resume`,
-        // and only when a primary actually exists) — D7. The composed system
-        // prompt then tells the model primary 1 was already asked rather than
-        // leaving it to infer that from the conversation so far.
-        $openingSpokeFirstPrimary = $openingVariant !== 'resume' && $primaryQuestions !== [];
+        // What the opening is about to speak, stated to the model so the two
+        // agree (D7): primary 1 on a fresh start; on a resume, the pending
+        // primary — the one after the last distinct primary already asked —
+        // or the last one when every primary was asked; the gate-off
+        // fallback question when the competency has no primaries.
+        $spokenOpening = match (true) {
+            $primaryQuestions === [] => SpokenOpening::fallback($isResumeInCorso),
+            $liveSession !== null => SpokenOpening::resumed(
+                $this->turnClassifier->matchedCount($liveSession),
+                count($primaryQuestions),
+            ),
+            default => SpokenOpening::primary(1),
+        };
 
         // Which sentence ends THIS turn: the last competency gets the final
         // phrase, every other one the intermediate. Resolved from the same
@@ -313,21 +340,11 @@ class InterviewController extends Controller
             $nextCompetencyRow,
             $primaryQuestions,
             $followUpBudget,
-            $openingSpokeFirstPrimary,
+            $spokenOpening,
             $advancePhrase,
         );
         if ($compositionResult instanceof JsonResponse) {
-            if (! $isResumeInCorso) {
-                // NEW/pending path — hard fail. No session, no provider call.
-                return $compositionResult;
-            }
-
-            // RESUME in_corso — degrade: proceed with null system prompt.
-            Log::warning('C8: composition failed on resume in_corso path — degrading to legacy non-adaptive body', [
-                'participant_id' => $pid,
-                'competency_code' => $nextCompetency['competency_code'],
-                'composition_error' => $compositionResult->getData(assoc: true)['error'] ?? 'unknown',
-            ]);
+            return $compositionResult;
         }
 
         // (2) Create-or-RESUME session row.
@@ -398,17 +415,9 @@ class InterviewController extends Controller
         // resume would leave that count pointing at a DIFFERENT entry of a
         // list the operator edited in between (deleted, reordered, or added
         // a primary) than the one the earlier turns were actually matched
-        // against, corrupting the audit rather than keeping it honest. A
-        // resume's freshly composed prompt is sent to the model regardless
-        // — only the STORED reference the audit compares against must stay
-        // fixed once turns exist to compare.
-        //
-        // Skipped on the DEGRADED resume path (`$compositionResult` is a
-        // `JsonResponse`) for the same reason stated differently: that path
-        // sends NO fresh system prompt at all, so there is nothing new to
-        // agree with.
-        if (! ($compositionResult instanceof JsonResponse)
-            && ($session->primary_questions !== $primaryQuestions || $session->follow_up_budget !== $followUpBudget)
+        // against, corrupting the audit rather than keeping it honest — which
+        // is why a resume with turns composes from that stored list too.
+        if (($session->primary_questions !== $primaryQuestions || $session->follow_up_budget !== $followUpBudget)
             && ! $session->utterances()->exists()
         ) {
             $session->primary_questions = $primaryQuestions;
@@ -419,59 +428,31 @@ class InterviewController extends Controller
         // Re-resolve the provider after we know the project override.
         $providerService = $this->resolveProvider($providerName);
 
-        // Build QuestionContext. On the degraded RESUME path, compositionResult is a JsonResponse
-        // (composition failed), so we fall back to null system prompt (no fresh BARS prompt was
-        // composed — do NOT fabricate prompt text) but restore the prompt_version from config
-        // so /start always returns a non-null prompt_version in every 201 response (FIX C1).
-        $systemPrompt = ($compositionResult instanceof JsonResponse) ? null : $compositionResult->text;
-        $promptVersion = ($compositionResult instanceof JsonResponse)
-            ? (string) config('conversation.prompt_version')
-            : $compositionResult->version;
+        $systemPrompt = $compositionResult->text;
+        $promptVersion = $compositionResult->version;
 
-        // (PR3, design D9) Compose the opening greeting — INDEPENDENT of the composed
-        // system prompt's success/failure. The avatar must never go silent, even on the
-        // degraded RESUME path (only the system prompt degrades there, never the greeting).
-        // `$openingVariant` was hoisted above, before composePromptForCompetency() ran
-        // (framework-catalogue-authoring PR7, D7) — reused here unchanged: 'resume' on
-        // RESUME in_corso, else 'retry' on a re-offer, else 'first'/'next'. Locale =
-        // $project->language (matches the system prompt, per D9).
-        //
-        // Reused from the hoisted lookup above (framework-catalogue-
-        // authoring PR3b, H11) — the SAME row `composePromptForCompetency()`
-        // resolves via the identical `(code, revisionId)` pair.
-        $openingCompetency = $nextCompetencyRow;
-        $competencyName = $openingCompetency?->getTranslation('name', $project->language)
+        // (PR3, design D9) Compose the opening greeting. `$openingVariant`
+        // only decides the retry apology; WHICH question is spoken is
+        // `$spokenOpening`, the same value the system prompt was composed
+        // with, so the prompt quotes exactly what the candidate hears.
+        // Locale = $project->language (matches the system prompt, per D9).
+        $competencyName = $nextCompetencyRow?->getTranslation('name', $project->language)
             ?? $nextCompetency['competency_code'];
 
-        // Primary 1 — the operator's own first question for this competency,
-        // when there is one (ratified 2026-09-08). Reported from production:
-        // an operator authored their questions and the avatar still opened
-        // with the template's generic "raccontami un episodio", so the first
-        // thing any candidate ever heard was never the operator's.
-        //
-        // It is the SAME array element the system prompt's primary-questions
-        // section lists as primary 1 — not a separate, additional question
-        // (D7, this PR's own fix: the two composers used to disagree about
-        // whether primary 1 had already been asked, so a candidate could be
-        // asked it twice). `$openingSpokeFirstPrimary`, hoisted above, is what
-        // tells the system prompt primary 1 was already spoken here. The
-        // composer decides what to do per variant: `resume` ignores it
-        // entirely, since that variant continues an episode already under way.
-        $firstPrimary = $primaryQuestions[0] ?? null;
+        $spokenPrimary = $spokenOpening->primaryNumber === null
+            ? null
+            : ($primaryQuestions[$spokenOpening->primaryNumber - 1] ?? null);
 
         $openingText = $this->openingComposer
-            ->compose($openingVariant, $competencyName, $project->language, $firstPrimary)
+            ->compose($openingVariant, $competencyName, $project->language, $spokenPrimary)
             ->text;
 
         $ctx = new QuestionContext(
             competencyCode: $session->competency_code,
             questionIndex: $session->question_index,
             // C8: thread composed prompt and version into QuestionContext (M-3).
-            // On the degraded RESUME path systemPrompt is null (legacy non-adaptive provider
-            // body), but promptVersion is restored from config (FIX C1) — never null in a 201.
             systemPrompt: $systemPrompt,
             promptVersion: $promptVersion,
-            // PR3: opening greeting, always composed (never null on this path — see above).
             openingText: $openingText,
             // Hotfix 0.22.1: HeyGen's avatar_persona.language must match the
             // project's configured language (i18n mandate), same source PR3/D9
@@ -516,17 +497,17 @@ class InterviewController extends Controller
      *
      * WHY THAT IS CHEAP RATHER THAN DRASTIC
      * -------------------------------------
-     * This is the FIRST HALF of `handleResumeInCorso()`, which already exists
-     * and is already relied upon: harvest the outgoing transcript while it is
-     * still readable, close the live-clock stretch, tear the provider session
-     * down. The second half — issuing a fresh token — is what `/start` does,
-     * and `OpeningTextComposer` already carries a `resume` variant written for
-     * exactly this.
+     * This is the FIRST HALF of the resume path `/start` already runs:
+     * harvest the outgoing transcript while it is still readable, close the
+     * live-clock stretch, tear the provider session down. The second half —
+     * issuing a fresh token whose opening re-asks the pending primary — is
+     * what `/start` does.
      *
      * So resume needs no new endpoint. Suspend leaves the session `in_corso`
      * with a NULL ref, which is precisely the state `/start` already resumes:
-     * `handleResumeInCorso()` guards its harvest and teardown with
-     * `$oldRef !== null`, so it skips straight to issuing.
+     * both the harvest in `start()` and the teardown in
+     * `handleResumeInCorso()` are guarded by a non-null ref, so it skips
+     * straight to issuing.
      *
      * WHAT IT DELIBERATELY DOES NOT TOUCH
      * -----------------------------------
@@ -851,12 +832,11 @@ class InterviewController extends Controller
      * `$primaryQuestions` — this method used to re-resolve the identical
      * row a second time for the same request.
      *
-     * `$followUpBudget` and `$openingSpokeFirstPrimary` are also hoisted to
-     * `start()` (framework-catalogue-authoring PR7, D7): the budget is
-     * reused when the session's `follow_up_budget` snapshot is written, and
-     * `$openingSpokeFirstPrimary` depends on `$openingVariant`, which
-     * `start()` must resolve before this call so the composed prompt and the
-     * spoken opening agree on whether primary 1 was already asked.
+     * `$followUpBudget` and `$spokenOpening` are also resolved by `start()`
+     * (framework-catalogue-authoring PR7, D7): the budget is reused when the
+     * session's `follow_up_budget` snapshot is written, and the spoken
+     * opening is what `start()` hands the opening composer, so the prompt
+     * and the opening agree on which primary was spoken.
      *
      * @param  list<string>  $primaryQuestions
      */
@@ -867,14 +847,14 @@ class InterviewController extends Controller
         ?Competency $competency,
         array $primaryQuestions,
         int $followUpBudget,
-        bool $openingSpokeFirstPrimary,
+        SpokenOpening $spokenOpening,
         ?string $advancePhrase = null,
     ): ComposedPrompt|JsonResponse {
         if ($revisionId === null) {
             // The project's own pin did not resolve (`CatalogueRevisionResolver::
             // tryForProject()` — framework-catalogue-authoring PR3b, H1). Treated
-            // identically to "role/competency not found in catalog" below: a
-            // NEW/pending /start hard-fails 422, a RESUME degrades gracefully.
+            // identically to "role/competency not found in catalog" below: /start
+            // hard-fails 422.
             // Never falls back to "latest published" here — that would pin an
             // already-created project onto whatever revision happens to be
             // newest right now (CLAUDE.md ruling 3).
@@ -922,7 +902,7 @@ class InterviewController extends Controller
                 // queried a second time here. These ARE the primaries, never
                 // additive to `$followUpBudget` — see SystemPromptComposer.
                 primaryQuestions: $primaryQuestions,
-                openingSpokeFirstPrimary: $openingSpokeFirstPrimary,
+                spokenOpening: $spokenOpening,
                 revisionId: $revisionId,
             );
         } catch (AnchorTranslationMissingException) {
@@ -933,21 +913,16 @@ class InterviewController extends Controller
     }
 
     /**
-     * Check whether an active in_corso session already exists for this participant + competency.
-     *
-     * Used as a cheap pre-check BEFORE composition so we can decide the correct failure mode:
-     *   - true  → RESUME path → composition failure degrades gracefully (log + null prompt).
-     *   - false → NEW/pending path → composition failure returns 422 immediately.
-     *
-     * A single EXISTS-style count query scoped to (participant_id, competency_code, status=in_corso).
-     * This runs before createOrResumeSession() so it never creates any row.
+     * The in_corso session for this participant + competency, when one exists
+     * — the RESUME path. Read before createOrResumeSession(), so it never
+     * creates any row.
      */
-    private function hasActiveInCorsoSession(int $participantId, string $competencyCode): bool
+    private function activeInCorsoSession(int $participantId, string $competencyCode): ?InterviewSession
     {
         return InterviewSession::where('participant_id', $participantId)
             ->where('competency_code', $competencyCode)
             ->where('status', 'in_corso')
-            ->exists();
+            ->first();
     }
 
     /**
@@ -1152,22 +1127,10 @@ class InterviewController extends Controller
         $this->liveClock->close($session, 'resume');
 
         if ($oldRef !== null) {
-            // (b0) HARVEST the outgoing session's transcript BEFORE tearing it
-            // down. This is the last moment it is readable.
-            //
-            // Without it a resume silently destroyed everything said before it.
-            // Each resume issues a NEW provider_session_ref; at /end,
-            // reconcileTranscript() fetches only the surviving session and
-            // replaceUtterances() DELETEs the rest. Observed in production: a
-            // competency holding the resume greeting and one word, while an
-            // un-resumed one held twenty-seven turns — and the candidate had
-            // answered all of them. BARS then scored the fragment.
-            //
-            // Best-effort by design: a transcript we cannot fetch is turns we
-            // never had, which is no worse than today. Losing the candidate's
-            // access to a live interview over it would be.
-            $this->harvestOutgoingTranscript($session, $provider, $oldRef);
-
+            // The outgoing transcript was already harvested by start(),
+            // before composition. Without that harvest a resume would
+            // destroy everything said before it: each resume issues a NEW
+            // provider_session_ref, and /end reconciles only the surviving one.
             $oldToken = ProviderToken::fromRef($session->provider, $oldRef);
             try {
                 $provider->teardown($oldToken);
@@ -1419,31 +1382,25 @@ class InterviewController extends Controller
      * which are not part of what "no hidden questions" audits.
      *
      * `$matchedCount` is read ONCE, before the loop, then tracked in memory
-     * and incremented after each `primary` classification — rather than
-     * asking `TurnClassifier` to re-COUNT the `utterances` table before
-     * every avatar row, which this runs inside `/end`'s locked transaction
-     * (`replaceUtteranceStretch()`'s caller) for. This is an optimisation
-     * only: passing the count explicitly changes nothing about WHICH rows
-     * classify as `primary` — it is the exact count a fresh query would
-     * return at that point in the batch, since every earlier row in this
-     * same call has already been accounted for in memory before its
-     * successor is classified.
+     * and incremented only when a row asks the NEXT unmatched primary — a
+     * verbatim re-ask is `primary` but does not advance it. It is the count
+     * `TurnClassifier::matchedCount()` would replay at that point in the
+     * batch, without re-reading the `utterances` table before every avatar
+     * row inside `/end`'s locked transaction.
      *
      * @param  array<array-key, array<string, mixed>>  $rows
      */
     private function insertUtterances(InterviewSession $session, array $rows): void
     {
-        $matchedCount = Utterance::where('interview_session_id', $session->id)
-            ->where('speaker', 'avatar')
-            ->where('turn_kind', 'primary')
-            ->count();
+        $matchedCount = $this->turnClassifier->matchedCount($session);
 
         try {
             foreach ($rows as $row) {
                 if (($row['speaker'] ?? null) === 'avatar') {
-                    $row['turn_kind'] = $this->turnClassifier->classify($session, (string) $row['text'], $matchedCount);
+                    $text = (string) $row['text'];
+                    $row['turn_kind'] = $this->turnClassifier->classify($session, $text, $matchedCount);
 
-                    if ($row['turn_kind'] === 'primary') {
+                    if ($this->turnClassifier->advances($session, $text, $matchedCount)) {
                         $matchedCount++;
                     }
                 }
@@ -1728,10 +1685,8 @@ class InterviewController extends Controller
      * Machine-facing field — returned literally in every locale (not localized).
      *
      * @param  string|null  $language  The PROJECT's language (BCP-ish locale, may be null).
-     * @param  string|null  $promptVersion  Composed prompt template version (C8). On the standard
-     *                                      path this is the composed prompt's version; on the
-     *                                      degraded resume path it falls back to the config
-     *                                      version (FIX C1) so a 201 never carries a null version.
+     * @param  string|null  $promptVersion  Composed prompt template version (C8) — the composed
+     *                                      prompt's version on every 201.
      */
     private function buildSuccessResponse(
         InterviewSession $session,

@@ -80,16 +80,17 @@ test('OpeningTextComposer\'s opening question and SystemPromptComposer\'s primar
     expect($capturedContextBody['prompt'])->toContain('1. Divergence-proof primary one.');
     expect($capturedContextBody['prompt'])->toContain('2. Divergence-proof primary two.');
 
-    // The prompt states primary 1 was already spoken — the composer was
+    // The prompt quotes primary 1 as the spoken opening — the composer was
     // TOLD this, not left to infer it from the conversation so far.
-    expect($capturedContextBody['prompt'])->toContain('Primary question 1 has ALREADY been spoken');
+    expect($capturedContextBody['prompt'])
+        ->toContain('which was primary question 1, word for word: "Divergence-proof primary one."')
+        ->toContain('continue with primary question 2');
 });
 
-test('a RESUME never states primary 1 was already spoken, and never truncates the primary list', function (): void {
-    // The opening template is unconditional for `resume` (OpeningTextComposer
-    // ignores the authored question entirely on that variant, D9) — and
-    // `openingSpokeFirstPrimary` must be false on that same variant, so the
-    // full primary list is stated with no "already spoken" claim.
+test('a RESUME after the only primary was asked re-asks it and never truncates the primary list', function (): void {
+    // The harvested transcript already holds the only primary, so the
+    // resumed opening re-asks it verbatim and the prompt says every primary
+    // was already asked — from the SAME primary array the list is built from.
     Queue::fake();
 
     $capturedContextBody = [];
@@ -139,6 +140,7 @@ test('a RESUME never states primary 1 was already spoken, and never truncates th
         ->postJson('/api/candidate/interview/start')
         ->assertStatus(201);
 
-    expect($capturedContextBody['prompt'])->not->toContain('ALREADY been spoken');
+    expect($capturedContextBody['opening_text'])->toBe('Resume-proof primary one.');
+    expect($capturedContextBody['prompt'])->toContain('Every primary question was already asked before the interruption');
     expect($capturedContextBody['prompt'])->toContain('1. Resume-proof primary one.');
 });
