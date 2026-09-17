@@ -31,6 +31,7 @@ use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -113,6 +114,16 @@ function startProjectWithCompetencies(Organization $org, int $count = 2, ?string
             'position' => 0,
         ]);
         $ind->save();
+
+        // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+        // project where a selected competency has zero live
+        // `project_questions` rows.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "C7a fixture question {$i}"],
+            'position' => 0,
+        ]);
 
         $competencies[] = $comp;
     }
@@ -596,6 +607,43 @@ test('POST /start no remaining competency → 422', function (): void {
     $response->assertStatus(422);
 });
 
+// With the gate off, /start must proceed on a zero-question competency
+// exactly as it did before the gate existed — never crash on the empty
+// `primary_questions` array `composePromptForCompetency()` then composes.
+test('POST /start with the interviewability gate OFF succeeds on a question-less competency, matching pre-gate behaviour', function (): void {
+    config(['interview.interviewability_gate' => false]);
+    Http::fake(heygenSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    $project = startProject($org);
+    $role = Role::factory()->create(['code' => $project->role_code]);
+    $comp = Competency::factory()->create();
+    DB::table('project_competencies')->insert(['project_id' => $project->id, 'competency_id' => $comp->id, 'position' => 0]);
+
+    $ind = new BarsIndicator;
+    $ind->forceFill([
+        'role_id' => $role->id,
+        'competency_id' => $comp->id,
+        'text' => ['en' => 'gate-off fixture indicator'],
+        'anchor_5' => ['en' => 'Excellent'],
+        'anchor_3' => ['en' => 'Adequate'],
+        'anchor_1' => ['en' => 'Insufficient'],
+        'position' => 0,
+    ]);
+    $ind->save();
+    // Deliberately NO ProjectQuestion row — the gate-off scenario.
+
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $response = $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(201);
+});
+
 test('POST /start with project.provider_override = tavus → Tavus provider called', function (): void {
     Http::fake([
         '*tavusapi*/v2/conversations*' => Http::response([
@@ -724,8 +772,13 @@ test('POST /start on a recovered participant (status=in_attesa, started_at alrea
     $participant->refresh();
     expect($participant->started_at->getTimestamp())->toBe($originalStartedAt->getTimestamp());
 
-    // The avatar context was composed with the "next" opening greeting
-    // ("Great, let's move on...") — NOT the "first" one ("Hi, and welcome!").
+    // The avatar context was composed with the "next" opening greeting —
+    // NOT the "first" one ("Hi, and welcome!"). Asserted via the AUTHORED
+    // question text now (framework-catalogue-authoring PR6, D5 — every
+    // fixture competency carries one live `project_questions` row, which
+    // `OpeningTextComposer` returns verbatim for `first`/`next` rather than
+    // the generic "Great, let's move on..." template): the "next" variant
+    // still shows through by the ABSENCE of the "first" variant's own text.
     Http::assertSent(function ($req) {
         if (! str_contains($req->url(), '/contexts')) {
             return false;
@@ -733,7 +786,7 @@ test('POST /start on a recovered participant (status=in_attesa, started_at alrea
 
         $body = $req->data();
 
-        return str_contains($body['opening_text'] ?? '', "Great, let's move on")
+        return str_contains($body['opening_text'] ?? '', 'C7a fixture question 0')
             && ! str_contains($body['opening_text'] ?? '', 'Hi, and welcome');
     });
 });

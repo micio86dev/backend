@@ -45,9 +45,16 @@ function makeSsoProject(Organization $org, array $attrs = []): Project
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(array_merge([
+    $project = Project::factory()->create(array_merge([
         'status' => 'active',
     ], $attrs));
+
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful M2M participant create, not the thing
+    // under test here.
+    makeProjectInterviewable($project);
+
+    return $project;
 }
 
 function makeSsoParticipant(Project $project, Organization $org, ?string $ref = null): Participant
@@ -91,6 +98,36 @@ test('store creates participant with organization_id from project (not from requ
     // org from project, NOT from input
     expect($participant->organization_id)->toBe($org->id);
     expect($participant->organization_id)->not->toBe(99999);
+});
+
+/**
+ * A caller-supplied `status` must never reach the row (gga review finding
+ * on the Z28 batch, blocking): the candidate lifecycle
+ * (`in_attesa → in_corso → in_valutazione → completato | errore`) is a
+ * binding domain constraint, and `Participant::booted()`'s own transition
+ * guard only listens to `updating`, never `creating` — nothing below the
+ * controller would have caught an M2M caller minting a participant that
+ * already reads as `completato`, skipping every read gate that status
+ * exists to enforce.
+ */
+test('store ignores a caller-supplied status — every new participant is in_attesa', function (): void {
+    $org = Organization::factory()->create();
+    $project = makeSsoProject($org);
+    $m2m = makeSsoM2mClient($org);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
+        ->postJson('/api/m2m/participants', [
+            'project_id' => $project->id,
+            'candidate_ref' => 'cand-status-001',
+            'display_name' => 'Test Candidate',
+            'email' => uniqid('cand-').'@example.test',
+            'status' => 'completato',
+        ]);
+
+    $response->assertStatus(201);
+
+    $participant = Participant::where('candidate_ref', 'cand-status-001')->firstOrFail();
+    expect($participant->status)->toBe('in_attesa');
 });
 
 test('store cross-org project_id → 404', function (): void {

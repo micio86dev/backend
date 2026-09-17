@@ -20,6 +20,7 @@ use App\Models\CatalogMeta;
 use App\Models\Competency;
 use App\Models\Role;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Recursively strip the `it` key out of every nested locale-map in a
@@ -101,6 +102,11 @@ test('seeder writes an IT translation from a nested-locale source field; en unch
     $icoBars = json_decode(file_get_contents("{$barsDir}/ICO.json"), true, 512, JSON_THROW_ON_ERROR);
     $icoBars['PRS'][0]['scale']['5']['it'] = 'Testo ancora 5 in italiano, dal fixture di test.';
     file_put_contents("{$barsDir}/ICO.json", json_encode($icoBars));
+
+    // framework-catalogue-authoring PR2 (D2): forced to draft so this
+    // re-seed can write at all — this test is about locale-merge writing,
+    // not the write gate (a separate, already-covered concern).
+    DB::table('framework_catalog_revisions')->where('is_baseline', true)->update(['state' => 'draft', 'published_at' => null]);
 
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 

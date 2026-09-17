@@ -13,6 +13,7 @@ declare(strict_types=1);
  */
 
 use App\Models\Competency;
+use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
@@ -392,6 +393,9 @@ test('store: potential blocked when only MTG seeded (partial catalog) → 422 PO
         'type' => 'potential',
         'name' => json_encode(['en' => 'MTG']),
         'definition' => json_encode(['en' => 'Test']),
+        // `revision_id` no longer defaults at the DB level (framework-
+        // catalogue-authoring PR3, DEFAULT removal) — named explicitly.
+        'revision_id' => FrameworkCatalogRevision::where('is_baseline', true)->value('id'),
     ]);
 
     $response = $this->withToken($token)

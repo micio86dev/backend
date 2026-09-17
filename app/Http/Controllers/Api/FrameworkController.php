@@ -13,6 +13,7 @@ use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Role;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -38,9 +39,36 @@ use Illuminate\Validation\Rule;
  *
  * A missing FrameworkVersion MUST return 200 with the global catalog and pin_context: null.
  * NEVER call firstOrFail() on FrameworkVersion.
+ *
+ * Revision scoping (framework-catalogue-authoring PR3b, H1): every action
+ * below is called BEFORE a project exists — there is no pin to resolve
+ * against yet — so every read is scoped to the LATEST PUBLISHED revision via
+ * `CatalogueRevisionResolver`, never a draft. Once a role/competency is
+ * resolved to a specific, revision-correct row, every relation traversed
+ * from it (`Role::competencies()`, `BarsIndicator::where('role_id', ...)`)
+ * is automatically safe: the composite FKs on `framework_role_competency`
+ * and `framework_bars_indicators` guarantee a row's `role_id`/
+ * `competency_id` and its own `revision_id` always agree, so a stray
+ * cross-revision match is impossible once the STARTING row is correct.
+ *
+ * `tryLatestPublished()`, never `latestPublished()`: this class's own
+ * docblock above promises "a missing FrameworkVersion MUST return 200 with
+ * the global catalog" — an unseeded platform with no published revision at
+ * all is the same class of "nothing to show yet", not a 500. `NO_PUBLISHED_
+ * REVISION` is an impossible id (every real revision id is a positive
+ * serial), so every query below naturally resolves to empty/404 instead.
  */
 class FrameworkController extends Controller
 {
+    public function __construct(
+        private readonly CatalogueRevisionResolver $revisionResolver,
+    ) {}
+
+    private function latestPublishedOrSentinel(): int
+    {
+        return $this->revisionResolver->tryLatestPublished() ?? CatalogueRevisionResolver::NO_PUBLISHED_REVISION;
+    }
+
     /**
      * GET /api/framework/roles
      *
@@ -51,7 +79,9 @@ class FrameworkController extends Controller
     {
         $this->resolveLocale($request);
 
-        $roles = Role::with('competencies')->get();
+        $roles = Role::with('competencies')
+            ->where('revision_id', $this->latestPublishedOrSentinel())
+            ->get();
 
         // Optionally surface org's FrameworkVersion as pin_context (if it exists)
         $pinContext = FrameworkVersion::first()?->only(['id', 'version', 'label', 'is_locked']);
@@ -70,7 +100,9 @@ class FrameworkController extends Controller
     {
         $this->resolveLocale($request);
 
-        $role = Role::where('code', strtoupper($roleCode))->firstOrFail();
+        $role = Role::where('code', strtoupper($roleCode))
+            ->where('revision_id', $this->latestPublishedOrSentinel())
+            ->firstOrFail();
 
         $competencies = $role->competencies()->get();
 
@@ -115,6 +147,7 @@ class FrameworkController extends Controller
 
         $competencies = Competency::query()
             ->where('type', 'potential')
+            ->where('revision_id', $this->latestPublishedOrSentinel())
             ->orderBy('code')
             ->get();
 
@@ -135,8 +168,14 @@ class FrameworkController extends Controller
     {
         $this->resolveLocale($request);
 
-        $role = Role::where('code', strtoupper($roleCode))->firstOrFail();
-        $competency = Competency::where('code', strtoupper($competencyCode))->firstOrFail();
+        $latestPublished = $this->latestPublishedOrSentinel();
+
+        $role = Role::where('code', strtoupper($roleCode))
+            ->where('revision_id', $latestPublished)
+            ->firstOrFail();
+        $competency = Competency::where('code', strtoupper($competencyCode))
+            ->where('revision_id', $latestPublished)
+            ->firstOrFail();
 
         $indicators = BarsIndicator::where('role_id', $role->id)
             ->where('competency_id', $competency->id)

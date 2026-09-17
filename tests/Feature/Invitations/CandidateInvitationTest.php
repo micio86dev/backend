@@ -63,6 +63,10 @@ function invitableProject(): array
         'deadline_at' => null,
     ]);
 
+    // framework-catalogue-authoring PR6 — interviewability is a
+    // precondition of a successful invite/mint, not the thing under test here.
+    makeProjectInterviewable($project);
+
     return ['token' => auth('api')->login($user), 'project' => $project, 'org' => $org];
 }
 

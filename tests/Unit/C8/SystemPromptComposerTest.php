@@ -273,7 +273,7 @@ function starPrompt(int $budget = 4, ?int $minQuestions = null, ?string $advance
         roleId: $role->id,
         competencyId: $competency->id,
         projectLocale: 'en',
-        budget: $budget,
+        followUpBudget: $budget,
         nudgeMinChars: null,
         advancePhrase: $advancePhrase,
         minQuestions: $minQuestions,
@@ -293,15 +293,16 @@ test('(i) task 1.1 — a minimum below the budget ceiling is used as configured'
         ->toContain('at least 4 questions');
 });
 
-test('(j) task 1.2 — a minimum exceeding the budget is CLAMPED, never thrown', function (): void {
-    // budget 2 permits 3 questions (1 opening + 2 follow-ups). A configured
-    // minimum of 6 would instruct the avatar to ask at least 6 while asking at
-    // most 3 — unsatisfiable. It then never speaks the closing phrase, the
-    // competency runs to its session cap, and HeyGen kills the session with
-    // MAX_DURATION_REACHED. This system has shipped that defect once already.
+test('(j) task 1.2 — a minimum exceeding what primaries + budget permit is CLAMPED, never thrown', function (): void {
+    // No primaries in this helper (count 0), budget 2 permits 2 questions
+    // total. A configured minimum of 6 would instruct the avatar to ask at
+    // least 6 while asking at most 2 — unsatisfiable. It then never speaks
+    // the closing phrase, the competency runs to its session cap, and
+    // HeyGen kills the session with MAX_DURATION_REACHED. This system has
+    // shipped that defect once already.
     $prompt = starPromptReflowed(budget: 2, minQuestions: 6);
 
-    expect($prompt)->toContain('at least 3 questions')
+    expect($prompt)->toContain('at least 2 questions')
         ->and($prompt)->not->toContain('at least 6 questions');
 });
 
@@ -320,21 +321,26 @@ test('(l) task 1.4 — a zero or negative configured minimum floors at 1, never 
         ->toContain('at least 1 question');
 });
 
-test('(m) task 1.5 — GRID: the stated minimum never exceeds what the budget permits', function (): void {
+test('(m) task 1.5 — GRID: the stated minimum never exceeds what primaries + budget permit', function (): void {
     // The property that keeps budget exhaustion always able to satisfy the
     // minimum, and therefore keeps the "OR budget exhausted" escape hatch
     // reachable under every configuration. Asserted across the grid rather than
-    // trusted by reading the arithmetic.
+    // trusted by reading the arithmetic. No primaries in this helper (count 0),
+    // so the ceiling is the budget alone (D7 — no separate "+1 opening" term;
+    // the opening question is primary 1, already inside the primary count).
     foreach ([0, 1, 2, 4, 8] as $budget) {
         foreach ([1, 2, 4, 6, 10] as $minimum) {
             $prompt = starPromptReflowed(budget: $budget, minQuestions: $minimum);
 
-            $expected = max(1, min($minimum, $budget + 1));
+            $expected = max(1, min($minimum, $budget));
 
             expect($prompt)->toContain("at least {$expected} question");
 
-            // And never a value above the ceiling.
-            for ($over = $budget + 2; $over <= 12; $over++) {
+            // And never a value above what was actually stated — the floor
+            // (max(1, ...)) can push $expected above the raw budget when
+            // budget is 0, so the "never exceeds" bound is relative to
+            // $expected itself, not to $budget directly.
+            for ($over = $expected + 1; $over <= 12; $over++) {
                 expect($prompt)->not->toContain("at least {$over} question");
             }
         }
@@ -461,7 +467,7 @@ test('(y) task 5.7 — identical arguments compose an identical prompt', functio
         'roleId' => $role->id,
         'competencyId' => $competency->id,
         'projectLocale' => 'en',
-        'budget' => 4,
+        'followUpBudget' => 4,
         'nudgeMinChars' => null,
         'advancePhrase' => 'Grazie.',
         'minQuestions' => 4,
@@ -511,9 +517,9 @@ test('authored questions are injected into the prompt, in order', function (): v
         roleId: $role->id,
         competencyId: $competency->id,
         projectLocale: 'en',
-        budget: 2,
+        followUpBudget: 2,
         nudgeMinChars: null,
-        authoredQuestions: [
+        primaryQuestions: [
             'Tell me about a time you rebuilt a team after a reorganisation.',
             'What did the first week look like?',
         ],
@@ -545,9 +551,9 @@ test('a competency with no authored questions composes exactly as before', funct
         roleId: $role->id,
         competencyId: $competency->id,
         projectLocale: 'en',
-        budget: 2,
+        followUpBudget: 2,
         nudgeMinChars: null,
-        authoredQuestions: [],
+        primaryQuestions: [],
     );
 
     expect($withEmpty->text)->toBe($without->text);
@@ -566,31 +572,29 @@ test('authored questions are stated as mandatory, not as suggestions', function 
         roleId: $role->id,
         competencyId: $competency->id,
         projectLocale: 'en',
-        budget: 2,
+        followUpBudget: 2,
         nudgeMinChars: null,
-        authoredQuestions: ['Describe a decision you regret.'],
+        primaryQuestions: ['Describe a decision you regret.'],
     );
 
     expect($result->text)->toContain('MUST');
 });
 
 /**
- * The advance condition must stay satisfiable no matter what a superadmin sets.
+ * The follow-up budget is NEVER inflated by the primary count (D7 reversal).
  *
- * Section 6 tells the avatar it MUST ask every authored question before ending
- * the competency; section 4 caps how many it may ask. The authored count is a
- * platform setting clamped only at the floor, so it can exceed the follow-up
- * budget — and then the prompt mandates and forbids the same question. The model
- * never speaks the closing phrase, matchesEndPhrase() never matches, and the
- * session runs to MAX_DURATION_REACHED: the exact failure effectiveMinimum()
- * exists to prevent, reached by a route that bypassed it.
+ * Section 6 tells the avatar it MUST ask every primary question before ending
+ * the competency; section 4 caps how many FOLLOW-UPS it may ask, independently.
+ * A primary count folded into the budget used to make the total silently
+ * double-count a question that was never a follow-up in the first place — the
+ * exact additive arithmetic this change deletes.
  */
-test('(d3) more authored questions than the budget raises the budget rather than contradicting it', function (): void {
+test('(d3) a large primary set does not inflate the follow-up budget', function (): void {
     $role = Role::factory()->create(['code' => 'AQB_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'AQB_'.uniqid()]);
     composerMakeIndicator($role->id, $competency->id, 0);
 
-    $authored = [
+    $primaries = [
         'Tell me about a deadline you missed.',
         'What did you change afterwards?',
         'Who else was affected?',
@@ -609,31 +613,26 @@ test('(d3) more authored questions than the budget raises the budget rather than
         null,
         'Thank you for your time.',
         null,
-        $authored,
+        $primaries,
     );
 
-    // Budget 2 PLUS 6 required questions. Not max(): taking the larger would
-    // read "at most 6", which is six mandatory questions filling six slots and
-    // nothing left to probe the answers with — while the same section asks the
-    // avatar to probe each one. Drop the arithmetic entirely and this reads
-    // "at most 2", a cap below the number of questions it is ordered to ask.
-    expect($result->text)->toContain('at most 8 follow-up');
-    expect($result->text)->not->toContain('at most 2 follow-up');
+    // The budget stays exactly what was passed — 2 — regardless of how many
+    // primaries exist. Never their sum (8), and never a cap raised to
+    // accommodate them.
+    expect($result->text)->toContain('at most 2 follow-up');
+    expect($result->text)->not->toContain('at most 8 follow-up');
     expect($result->text)->not->toContain('at most 6 follow-up');
 
-    foreach ($authored as $question) {
+    foreach ($primaries as $question) {
         expect($result->text)->toContain($question);
     }
 });
 
 /**
- * The blanks are dropped BEFORE the count that raises the budget.
- *
- * The section filters them either way, so the arithmetic is the only thing that
- * can disagree: counting first inflates the budget by questions nobody asks.
- * Move the normalisation below the count and this goes red.
+ * The blanks are dropped from the primary-questions section, and the budget
+ * was never a function of the primary count to begin with (D7).
  */
-test('(d4) blank authored questions raise neither the budget nor the section', function (): void {
+test('(d4) blank primary questions are dropped from the section; the budget is unaffected either way', function (): void {
     $role = Role::factory()->create(['code' => 'AQN_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'AQN_'.uniqid()]);
     composerMakeIndicator($role->id, $competency->id, 0);
@@ -651,12 +650,19 @@ test('(d4) blank authored questions raise neither the budget nor the section', f
         ['Real question.', '   ', '', 'Another real question.'],
     );
 
-    // Budget 2 plus the TWO real questions, not the four slots given.
-    expect($result->text)->toContain('at most 4 follow-up');
-    expect($result->text)->not->toContain('at most 6 follow-up');
+    // The budget is 2 regardless of how many primaries were passed, blank or
+    // real — it was never derived from their count.
+    expect($result->text)->toContain('at most 2 follow-up');
+    expect($result->text)->not->toContain('at most 4 follow-up');
 
     expect($result->text)->toContain('Real question.');
     expect($result->text)->toContain('Another real question.');
+
+    // The blanks are dropped BEFORE numbering: the two real questions are
+    // primaries 1 and 2, never 1 and 4 (which the untrimmed 4-slot array
+    // would produce).
+    expect($result->text)->toContain('1. Real question.');
+    expect($result->text)->toContain('2. Another real question.');
 });
 
 /**

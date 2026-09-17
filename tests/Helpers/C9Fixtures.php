@@ -17,6 +17,7 @@ use App\Models\Competency;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -82,6 +83,18 @@ function casProject(Organization $org, int $count = 1): array
         ]);
         $ind->save();
 
+        // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+        // project where a SELECTED competency has zero live
+        // `project_questions` rows. One per competency, so every existing
+        // caller of this shared fixture keeps reaching composition instead
+        // of a fresh `project_not_interviewable` 422.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "CAS fixture question {$i}", 'it' => "Domanda CAS {$i}"],
+            'position' => 0,
+        ]);
+
         $competencies[] = $comp;
     }
 
@@ -92,10 +105,13 @@ function casProject(Organization $org, int $count = 1): array
  * A project with `$count` competencies at 0-based `project_competencies.position`
  * (interview-question-index-offset) — matching the REAL production writers
  * (`ProjectController::store()`/`update()` — plain array `foreach`, 0-based array
- * index) rather than `casProject()`'s 1-based `$i + 1`. Needed wherever a test
- * asserts the actual persisted `question_index` value: `casProject()`'s 1-based
- * positions happen to cancel the historic `position - 1` defect out, which is
- * exactly why it never caught it.
+ * index). Needed wherever a test asserts the actual persisted `question_index`
+ * value: `casProject()`'s positions are ALSO 0-based today (the historic
+ * 1-based-fixture defect this docblock used to distinguish from was fixed
+ * there directly), but `casDenseProject()` is kept as the explicit,
+ * self-documenting choice for tests whose own subject is `question_index`
+ * positioning — its name states that guarantee where `casProject()`'s does
+ * not commit to it.
  *
  * @return array{0: Project, 1: list<Competency>}
  */
@@ -136,6 +152,15 @@ function casDenseProject(Organization $org, int $count = 1): array
         ]);
         $ind->save();
 
+        // framework-catalogue-authoring PR6 (D5) — see `casProject()`'s
+        // identical note above.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "CAS dense fixture question {$i}", 'it' => "Domanda CAS densa {$i}"],
+            'position' => 0,
+        ]);
+
         $competencies[] = $comp;
     }
 
@@ -170,7 +195,6 @@ function casClientErrorFake(): array
     return ['*liveavatar*' => Http::response(['message' => 'malformed request'], 422)];
 }
 
-/** Provider returns 5xx → ProviderFailureClass::Upstream → session error AND participant errore. */
 /** A provider call that succeeds, for the paths where the failure is not the subject. */
 function heygenOkFake(): array
 {

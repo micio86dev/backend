@@ -33,6 +33,7 @@ use App\Models\Competency;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
@@ -87,6 +88,16 @@ function phrasesProjectWithCompetencies(Organization $org, int $count = 1, ?stri
             'position' => 0,
         ]);
         $ind->save();
+
+        // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+        // project where a selected competency has zero live
+        // `project_questions` rows.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "Phrases fixture question {$i}", 'it' => "Domanda {$i}", 'fr' => "Question {$i}"],
+            'position' => 0,
+        ]);
 
         $competencies[] = $comp;
     }

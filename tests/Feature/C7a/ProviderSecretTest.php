@@ -26,6 +26,7 @@ use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantContextScope;
@@ -81,6 +82,16 @@ function secretProjectWithComp(Organization $org): array
         'position' => 0,
     ]);
     $ind->save();
+
+    // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+    // project where a selected competency has zero live `project_questions`
+    // rows.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $comp->id,
+        'text' => ['en' => 'Secret test question'],
+        'position' => 0,
+    ]);
 
     return [$project, $comp];
 }
@@ -228,6 +239,16 @@ test('14.3: /start response does NOT contain TAVUS_API_KEY value', function (): 
         'position' => 0,
     ]);
     $ind->save();
+
+    // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+    // project where a selected competency has zero live `project_questions`
+    // rows.
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $comp->id,
+        'text' => ['en' => 'Tavus secret test question'],
+        'position' => 0,
+    ]);
 
     $participant = secretParticipant($org, $project, 'in_attesa');
     $token = secretBearer($participant);

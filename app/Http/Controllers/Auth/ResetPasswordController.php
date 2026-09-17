@@ -132,16 +132,16 @@ final class ResetPasswordController extends Controller
 
     /**
      * Same action, same table, same superadmin fallback as
-     * `ResetUserPasswordCommand::recordAudit()` — the audit trail must not
-     * acquire a hole shaped like "the common case" now that the common case is
-     * self-service.
-     *
-     * `audit_logs.organization_id` is a NOT NULL foreign key because the table
-     * is tenant-scoped by design, and a platform superadmin has no tenant for
-     * the row to belong to. Faking a real org's id would misattribute the reset
-     * into that org's trail; widening the column would weaken an invariant
-     * every other row depends on. The log fallback is deliberate and visible,
-     * not a silent gap.
+     * `ResetUserPasswordCommand::recordAudit()` — see that method's own
+     * docblock for the full reasoning, including why `audit_logs.
+     * organization_id` being nullable since framework-catalogue-authoring
+     * PR8 does not, on its own, retire the application-log fallback here:
+     * `PlatformAuditWriter` is scoped to catalogue mutations and revision
+     * publishes, and wiring it into password recovery is a separate
+     * behaviour change left out of that PR's scope. Faking a real org's id
+     * would misattribute the reset into that org's trail, which stays wrong
+     * regardless of nullability. The log fallback is deliberate and
+     * visible, not a silent gap.
      */
     private function recordAudit(User $user): void
     {

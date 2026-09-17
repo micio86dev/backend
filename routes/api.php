@@ -6,6 +6,11 @@ declare(strict_types=1);
 // breaking changes require a new /api/v2/ prefix, coordinated across consumers.
 // See docs/api-versioning.md for the full contract.
 
+use App\Http\Controllers\Api\Catalogue\BarsIndicatorController;
+use App\Http\Controllers\Api\Catalogue\CompetencyController as CatalogueCompetencyController;
+use App\Http\Controllers\Api\Catalogue\DefaultQuestionController;
+use App\Http\Controllers\Api\Catalogue\RevisionController;
+use App\Http\Controllers\Api\Catalogue\RoleController as CatalogueRoleController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationIndexController;
@@ -211,6 +216,42 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::patch('admin/platform-users/{id}', [PlatformUserController::class, 'update']);
     Route::post('admin/platform-users/{id}/deactivate', [PlatformUserController::class, 'deactivate']);
     Route::post('admin/platform-users/{id}/activate', [PlatformUserController::class, 'activate']);
+});
+
+// ─── Framework Catalogue Authoring (framework-catalogue-authoring PR3, D12) ──
+// Superadmin-only, platform-global — no organization_id anywhere in this
+// surface. Behind TenantContext like every other platform surface above
+// (PlatformUserController's own note applies verbatim): a superadmin
+// reaches it through the same middleware that grants their bypass.
+Route::middleware(['auth:api', TenantContext::class])->prefix('catalogue')->group(function (): void {
+    Route::get('revisions/current', [RevisionController::class, 'current']);
+    Route::post('revisions/publish', [RevisionController::class, 'publish']);
+
+    Route::get('roles', [CatalogueRoleController::class, 'index']);
+    Route::post('roles', [CatalogueRoleController::class, 'store']);
+    Route::patch('roles/{role}', [CatalogueRoleController::class, 'update'])->whereNumber('role');
+    Route::delete('roles/{role}', [CatalogueRoleController::class, 'destroy'])->whereNumber('role');
+    // framework-catalogue-authoring PR8b: attach/detach/reorder a role's
+    // competency set in one idempotent write — see `RoleController::
+    // updateCompetencies()`'s own docblock.
+    Route::put('roles/{role}/competencies', [CatalogueRoleController::class, 'updateCompetencies'])->whereNumber('role');
+
+    Route::get('competencies', [CatalogueCompetencyController::class, 'index']);
+    Route::post('competencies', [CatalogueCompetencyController::class, 'store']);
+    Route::patch('competencies/{competency}', [CatalogueCompetencyController::class, 'update'])->whereNumber('competency');
+    Route::delete('competencies/{competency}', [CatalogueCompetencyController::class, 'destroy'])->whereNumber('competency');
+
+    Route::get('bars-indicators', [BarsIndicatorController::class, 'index']);
+    Route::post('bars-indicators', [BarsIndicatorController::class, 'store']);
+    Route::patch('bars-indicators/{indicator}', [BarsIndicatorController::class, 'update'])->whereNumber('indicator');
+    Route::delete('bars-indicators/{indicator}', [BarsIndicatorController::class, 'destroy'])->whereNumber('indicator');
+
+    // framework-catalogue-authoring PR4: catalogue-level default questions,
+    // scoped to the open draft revision exactly like the three above.
+    Route::get('default-questions', [DefaultQuestionController::class, 'index']);
+    Route::post('default-questions', [DefaultQuestionController::class, 'store']);
+    Route::patch('default-questions/{defaultQuestion}', [DefaultQuestionController::class, 'update'])->whereNumber('defaultQuestion');
+    Route::delete('default-questions/{defaultQuestion}', [DefaultQuestionController::class, 'destroy'])->whereNumber('defaultQuestion');
 });
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────

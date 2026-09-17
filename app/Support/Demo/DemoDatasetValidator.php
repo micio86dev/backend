@@ -6,6 +6,7 @@ namespace App\Support\Demo;
 
 use App\Models\BarsIndicator;
 use App\Models\Role;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use RuntimeException;
 
 /**
@@ -136,6 +137,7 @@ final class DemoDatasetValidator
         $errors = [];
         $projectsByKey = self::projectsByKey($projects);
         $roleIdByCode = [];
+        $latestPublished = app(CatalogueRevisionResolver::class)->tryLatestPublished();
 
         foreach ($participants ?? DemoDataset::participants() as $participant) {
             if ($participant['scores'] === []) {
@@ -158,7 +160,24 @@ final class DemoDatasetValidator
                 continue;
             }
 
-            $roleIdByCode[$roleCode] ??= Role::where('code', $roleCode)->value('id');
+            // Scoped to the latest PUBLISHED revision (framework-catalogue-
+            // authoring PR3b, H1) — this is a pre-write fixture sanity check
+            // with no organization or FrameworkVersion to pin against yet,
+            // so "latest published" is the closest available approximation
+            // of "the catalog a fresh demo run will seed against". A raw,
+            // unscoped lookup would resolve whichever of a baseline/draft
+            // pair sharing this code Postgres returns first, which is worse.
+            //
+            // KNOWN, ACCEPTED gap: on a top-up run reusing an EXISTING
+            // project pinned to an OLDER revision, `DemoWriter`'s own
+            // `forFrameworkVersion($version)` resolves that older pin, which
+            // can disagree with "latest published" here. This check never
+            // serves live candidate traffic, and a false failure here is a
+            // developer annoyance, not a correctness incident — unlike the
+            // reader this task exists to fix.
+            $roleIdByCode[$roleCode] ??= $latestPublished === null
+                ? null
+                : Role::where('code', $roleCode)->where('revision_id', $latestPublished)->value('id');
             $roleId = $roleIdByCode[$roleCode];
 
             if ($roleId === null) {

@@ -124,6 +124,15 @@ final class AdminEvaluationSerializer
      * both extend TenantModel) — never `withoutGlobalScopes()`, which is
      * reserved for the queued-job assembler.
      *
+     * Takes the resolved `Participant` model, not a bare id (gga review
+     * finding): `Participant` does NOT extend TenantModel and carries no
+     * global scope, so a bare `Participant::find($id)` here would happily
+     * return another organization's row. The caller (`SessionEvidenceReader`)
+     * already holds an org-verified `InterviewSession` and resolves its
+     * `participant` relation from it — the SAME trust chain `AdminEvaluation
+     * Serializer::serialize()`/`meta()` rely on for the `Participant` they
+     * are handed, rather than a second, independently-scoped lookup.
+     *
      * @return array{
      *     score: float|null,
      *     reliability: string,
@@ -131,17 +140,28 @@ final class AdminEvaluationSerializer
      *     unscorable_reason: string|null
      * }|null
      */
-    public function serializeCompetency(int $participantId, string $competencyCode): ?array
+    public function serializeCompetency(Participant $participant, string $competencyCode): ?array
     {
+        // `indicatorScores` orders itself (`CompetencyResult::indicatorScores()`
+        // — `behaviors` is a positional list, and the relation's own default
+        // order is what keeps this method and `serialize()` from disagreeing.
         $result = CompetencyResult::query()
-            ->whereHas('evaluation', fn ($query) => $query->where('participant_id', $participantId))
+            ->whereHas('evaluation', fn ($query) => $query->where('participant_id', $participant->id))
             ->where('competency_code', $competencyCode)
-            // Explicitly ordered: `behaviors` is a positional list, and DB
-            // insertion order is a coincidence, not a guarantee.
-            ->with(['indicatorScores' => fn ($query) => $query->orderBy('position')->orderBy('id')])
+            ->with('indicatorScores')
             ->first();
 
-        return $result === null ? null : $this->serializeCompetencyResult($result);
+        if ($result === null) {
+            return null;
+        }
+
+        // Same localized-indicator-name catalogue `serialize()` uses (gga
+        // review finding): this method used to render indicator names in
+        // the frozen, project-language `indicator_text` unconditionally,
+        // while `serialize()` resolved the reader's locale from the
+        // catalogue — the exact defect this class's own docblock says the
+        // two surfaces "must never disagree" about.
+        return $this->serializeCompetencyResult($result, $this->indicatorCatalogue($participant));
     }
 
     /**
@@ -189,14 +209,6 @@ final class AdminEvaluationSerializer
     }
 
     /**
-     * @return array{
-     *     score: float|null,
-     *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
-     *     unscorable_reason: string|null
-     * }
-     */
-    /**
      * Indicator names for this participant's role, in the ACTIVE locale, keyed
      * `COMPETENCY_CODE:position`.
      *
@@ -218,16 +230,42 @@ final class AdminEvaluationSerializer
      */
     private function indicatorCatalogue(Participant $participant): array
     {
-        // The FK-backed relation is inferred NON-null by Larastan, so `?->`
-        // on it is reported as dead code — the participant's own `role_code`
-        // is read as the fallback for a project that has none.
-        $roleCode = $participant->project->role_code ?? $participant->role_code;
+        $project = $participant->project;
+
+        if ($project === null) {
+            return [];
+        }
+
+        $roleCode = $project->role_code ?? $participant->role_code;
 
         if ($roleCode === null) {
             return [];
         }
 
-        $role = Role::where('code', $roleCode)->first();
+        // The project's OWN pinned revision (framework-catalogue-authoring
+        // PR3b, H1) — an unscoped `where('code', ...)` would resolve
+        // whichever of a baseline/draft pair sharing this code Postgres
+        // returns first, and this report can be read long after a later
+        // draft has been opened for unrelated authoring work.
+        //
+        // NEVER `CatalogueRevisionResolver::forProject()`/`tryForProject()`
+        // (gga review finding): both fall back to the LATEST PUBLISHED
+        // revision when there is no project to pin against, which is the
+        // wrong default for a report — it must render indicator NAMES
+        // against the revision the project was ACTUALLY pinned to, never
+        // whatever happens to be newest when the report is later viewed
+        // (CLAUDE.md ruling 3). An unpinned project degrades to the SAME
+        // empty-map fallback as "no role" above, matching this method's own
+        // documented best-effort contract — the stored `indicator_text` is
+        // exactly right for evidence, unlike `meta()`'s scoring provenance,
+        // which throws because it has no fallback text to degrade to.
+        $version = $project->frameworkVersion;
+
+        if ($version === null || $version->revision_id === null) {
+            return [];
+        }
+
+        $role = Role::where('code', $roleCode)->where('revision_id', $version->revision_id)->first();
 
         if ($role === null) {
             return [];
@@ -236,6 +274,7 @@ final class AdminEvaluationSerializer
         $map = [];
 
         BarsIndicator::where('role_id', $role->id)
+            ->where('revision_id', $version->revision_id)
             ->with('competency:id,code')
             ->get()
             ->each(function (BarsIndicator $indicator) use (&$map): void {

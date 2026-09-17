@@ -104,12 +104,18 @@ class ProjectQuestionController extends Controller
             ->where('competency_id', $validated['competency_id'])
             ->max('position');
 
-        $question = ProjectQuestion::create([
+        // `operator_modified` is NOT in $fillable (see the model docblock),
+        // so it is set by direct attribute assignment rather than through
+        // the mass-assigned array above — this write path is what MAKES a
+        // row operator-authored (D9), unconditionally, every time.
+        $question = new ProjectQuestion([
             'project_id' => $project->id,
             'competency_id' => $validated['competency_id'],
             'text' => $validated['text'],
             'position' => $max === null ? 0 : (int) $max + 1,
         ]);
+        $question->operator_modified = true;
+        $question->save();
 
         return ProjectQuestionResource::make($question->load('competency'))
             ->response()
@@ -127,7 +133,15 @@ class ProjectQuestionController extends Controller
         // competency is not movable. The rules used to live inline here, in
         // parallel with StoreProjectQuestionRequest's: raising `max:2000` in
         // one would have left the other silently disagreeing.
-        $question->update(['text' => $request->validated('text')]);
+        //
+        // `operator_modified` flips to true UNCONDITIONALLY (D9) — no
+        // `isDirty('text')` check. An operator who saves an unchanged row
+        // has still claimed it: the flag records that a human touched this
+        // row through the authoring surface, not that the text literally
+        // changed. Direct attribute assignment, same reason as store().
+        $question->fill(['text' => $request->validated('text')]);
+        $question->operator_modified = true;
+        $question->save();
 
         return ProjectQuestionResource::make($question->load('competency'));
     }

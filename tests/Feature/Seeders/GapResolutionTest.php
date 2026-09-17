@@ -18,6 +18,30 @@ declare(strict_types=1);
 
 use App\Models\FrameworkGap;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * These tests re-seed a SECOND time against content they just edited, and
+ * expect the edit to actually land — but the baseline is populated (and
+ * `published`, by construction) after the first run, so a second run is
+ * blocked by design (framework-catalogue-authoring PR2, D2: a published,
+ * already-populated baseline accepts zero writes). Forcing the baseline back
+ * to `draft` — the same query-builder bypass
+ * `tests/Feature/C4/Seeder/SeederLockGuardTest.php`'s own forced-draft
+ * scenario uses — makes the SECOND (and any later) run in each test an
+ * actual, unblocked mutation, which is what these tests are about: whether a
+ * gap resolves once the underlying content genuinely changes in the
+ * database, not whether the write gate happens to let it through. Called
+ * ONCE, right after the first `run()` in each test — nothing in the seeder
+ * ever re-publishes the baseline, so every later `run()` in the same test
+ * stays unblocked without forcing it again.
+ */
+function forceGapResolutionBaselineDraft(): void
+{
+    DB::table('framework_catalog_revisions')
+        ->where('is_baseline', true)
+        ->update(['state' => 'draft', 'published_at' => null]);
+}
 
 /**
  * Build a full fixture tree (roles.json, competencies.json, bars/) copied
@@ -64,6 +88,7 @@ test('missing_role_meta gap resolves once responsibilities becomes non-empty', f
     ]);
     $seeder = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
     $seeder->run();
+    forceGapResolutionBaselineDraft();
 
     expect(
         FrameworkGap::where('kind', 'missing_role_meta')
@@ -105,6 +130,7 @@ test('role_no_bars gap resolves once bars/{ROLE}.json exists', function (): void
 
     $seeder = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
     $seeder->run();
+    forceGapResolutionBaselineDraft();
 
     expect(
         FrameworkGap::where('kind', 'role_no_bars')
@@ -150,6 +176,7 @@ test('competency_no_bars gap resolves once the pair is covered', function (): vo
 
     $seeder = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
     $seeder->run();
+    forceGapResolutionBaselineDraft();
 
     expect(
         FrameworkGap::where('kind', 'competency_no_bars')
@@ -198,6 +225,7 @@ test('competency_no_bars gap preserves row identity through a reopen after resol
 
     $seeder = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
     $seeder->run();
+    forceGapResolutionBaselineDraft();
 
     $initialGap = FrameworkGap::where('kind', 'competency_no_bars')
         ->where('role_code', 'FLL')
@@ -274,6 +302,7 @@ test('competency_no_bars orphan gap resolves once roles.json no longer assigns t
 
     $seeder = new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir);
     $seeder->run();
+    forceGapResolutionBaselineDraft();
 
     // FLL:PRS is now a currently-unanchored (but still currently-assigned) pair
     // in the fixture copy — see the fixture setup above.

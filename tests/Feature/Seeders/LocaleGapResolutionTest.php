@@ -19,6 +19,23 @@ declare(strict_types=1);
 
 use App\Models\FrameworkGap;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * See the identical helper's docblock in the sibling
+ * `tests/Feature/Seeders/GapResolutionTest.php`: these tests re-seed against
+ * content they just edited and expect the edit to land, which needs the
+ * baseline to genuinely NOT be write-blocked on the second (and any later)
+ * `run()` — the write gate (framework-catalogue-authoring PR2, D2) otherwise
+ * blocks every run after the first against an already-populated, `published`
+ * baseline regardless of what changed in the JSON.
+ */
+function forceLocaleGapResolutionBaselineDraft(): void
+{
+    DB::table('framework_catalog_revisions')
+        ->where('is_baseline', true)
+        ->update(['state' => 'draft', 'published_at' => null]);
+}
 
 /**
  * Recursively strip the `it` key out of every nested locale-map in a
@@ -108,6 +125,7 @@ test('missing_translation resolves once a full role×competency pair (12 strings
     )->toBeTrue('gap must start pending — no IT strings exist yet');
 
     fillFullItTranslationForIcoPrs($barsDir);
+    forceLocaleGapResolutionBaselineDraft();
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 
     expect(
@@ -162,6 +180,7 @@ test('missing_translation global row resolves only once every anchored pair is f
         ->and($globalGap->note)->toContain('pending');
 
     fillFullItTranslationForIcoPrs($barsDir);
+    forceLocaleGapResolutionBaselineDraft();
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 
     $globalGap = $globalGap->fresh();
@@ -195,6 +214,7 @@ test('missing_translation global row transitions from pending (accurate count) t
     foreach (glob("{$sourceBase}/bars/*.json") as $barsFile) {
         copy($barsFile, "{$barsDir}/".basename($barsFile));
     }
+    forceLocaleGapResolutionBaselineDraft();
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 
     $globalGap = $globalGap->fresh();
@@ -258,6 +278,7 @@ test('missing_translation per-pair gap resolves (orphan sweep) once its pair is 
     $roles['ICO']['competencies'] = array_values(array_filter($roles['ICO']['competencies'], fn ($c) => $c !== 'PRS'));
     file_put_contents($rolesFile, json_encode($roles));
 
+    forceLocaleGapResolutionBaselineDraft();
     (new FrameworkCatalogSeeder($rolesFile, $competenciesFile, $barsDir))->run();
 
     expect(

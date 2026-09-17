@@ -148,6 +148,17 @@ class AppServiceProvider extends ServiceProvider
         // same menu is exactly the drift UserAbilities exists to end.
         Gate::define('viewPlatformSettings', static fn (User $user): bool => $user->is_superadmin === true);
 
+        // framework-catalogue-authoring PR3, D12 — same shape, same
+        // reasoning: the catalogue is platform content, not a tenant's, so
+        // no org-scoped policy can describe who may edit it. NOT the
+        // enforcement point: every catalogue controller action repeats
+        // `abort_unless($this->isSuperadmin($request), 403)` inline
+        // (`PlatformUserController`'s precedent) — this Gate exists only so
+        // `UserAbilities::for()` answers `catalogue.manage` from a real
+        // `Gate::allows()` call instead of re-deriving `is_superadmin` a
+        // second time for the backoffice's rendering hint.
+        Gate::define('manageCatalogue', static fn (User $user): bool => $user->is_superadmin === true);
+
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //
         // Two conditions, deliberately, and this is a considered DEVIATION from

@@ -31,6 +31,7 @@ use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Utterance;
@@ -95,6 +96,16 @@ function recoveryProjectWithCompetencies(Organization $org, int $count = 3): arr
             'position' => 0,
         ]);
         $ind->save();
+
+        // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+        // project where a selected competency has zero live
+        // `project_questions` rows.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $comp->id,
+            'text' => ['en' => "recovery fixture question {$i}"],
+            'position' => 0,
+        ]);
 
         $competencies[] = $comp;
     }

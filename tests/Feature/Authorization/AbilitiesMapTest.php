@@ -56,6 +56,7 @@ function expectedAbilities(): array
             'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
+            'catalogue' => ['manage' => false],
         ],
         'operator' => [
             'organization' => ['view' => true, 'update' => false],
@@ -69,6 +70,7 @@ function expectedAbilities(): array
             'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
+            'catalogue' => ['manage' => false],
         ],
         'viewer' => [
             'organization' => ['view' => true, 'update' => false],
@@ -80,6 +82,7 @@ function expectedAbilities(): array
             'participants' => ['viewAny' => true, 'create' => false, 'recover' => false],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
+            'catalogue' => ['manage' => false],
         ],
     ];
 }

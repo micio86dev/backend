@@ -49,6 +49,7 @@ use App\Models\InterviewSessionLivePeriod;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Models\Utterance;
 use App\Support\Jwt\CandidateTokenFactory;
@@ -126,6 +127,16 @@ function suspendOrgWithProject(): array
             'position' => 0,
         ]);
         $indicator->save();
+
+        // framework-catalogue-authoring PR6 (D5) — `/start` now refuses a
+        // project where a selected competency has zero live
+        // `project_questions` rows.
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $competency->id,
+            'text' => ['en' => "Suspend fixture question {$i}"],
+            'position' => 0,
+        ]);
     }
 
     return [$org, $project];

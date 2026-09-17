@@ -28,7 +28,10 @@ use InvalidArgumentException;
  *   scale.5    → anchor5 (stored in BarsIndicator.anchor5)
  *   scale.3    → anchor3 (stored in BarsIndicator.anchor3)
  *   scale.1    → anchor1 (stored in BarsIndicator.anchor1)
- *   array index → position (0-based, stable JSON insertion order)
+ *   array index → position (0-based, stable JSON insertion order), UNLESS
+ *                 the entry itself carries an explicit `position` key (see
+ *                 `normalizeBars()` — Z1, framework-catalogue-authoring),
+ *                 in which case the explicit value wins.
  *
  * Locale dimension (framework-catalog-it-translations, design D1). Every
  * translatable field's JSON value MUST be an explicit locale map at the
@@ -87,16 +90,25 @@ final class CompetencyNormalizer
     {
         $indicators = [];
 
-        foreach ($barsArray as $position => $barEntry) {
-            /** @var array{indicator: mixed, scale: array{5: mixed, 3: mixed, 1: mixed}} $barEntry */
+        foreach ($barsArray as $arrayIndex => $barEntry) {
+            /** @var array{indicator: mixed, scale: array{5: mixed, 3: mixed, 1: mixed}, position?: mixed} $barEntry */
             $scale = $barEntry['scale'];
 
+            // Z1 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE):
+            // `catalogue:export` now emits the STORED `position`, not merely
+            // the array's own order — a CRUD-authored, non-sequential
+            // position set (e.g. 5, 10 after deletions/reassignments) round-
+            // trips unchanged instead of being silently reindexed to 0, 1.
+            // The array index remains the fallback for the vendored trees
+            // (`docs/app_description/.../bars/*.json`), which carry no
+            // explicit `position` key and are always authored in 0-based
+            // sequential order already.
             $indicators[] = new IndicatorDTO(
                 text: $this->normalizeLocaleMap($barEntry['indicator'] ?? null, 'indicator'),
                 anchor5: $this->normalizeLocaleMap($scale['5'] ?? null, 'scale.5'),
                 anchor3: $this->normalizeLocaleMap($scale['3'] ?? null, 'scale.3'),
                 anchor1: $this->normalizeLocaleMap($scale['1'] ?? null, 'scale.1'),
-                position: (int) $position,
+                position: (int) ($barEntry['position'] ?? $arrayIndex),
             );
         }
 

@@ -96,10 +96,37 @@ class CompetencyResult extends TenantModel
     /**
      * Individual indicator scores for this competency result.
      *
+     * Ordered by `position` (gga review finding, framework-catalogue-
+     * authoring PR3b): `behaviors` is a positional list — the SAME order
+     * `AdminEvaluationSerializer::serializeCompetencyResult()` renders it
+     * in, and the docblock's own "the session view and the full report must
+     * never disagree" promise. Ordering it here, on the relation itself,
+     * means every caller inherits it instead of some re-declaring it
+     * (`serializeCompetency()`'s ad hoc `->orderBy('position')->orderBy('id')`)
+     * and others (`serialize()`) reading whatever order PostgreSQL happens to
+     * return — a silent reshuffle of a positional list, never a scoring
+     * defect (indicator NAMES stay correct, keyed `CODE:position`), but
+     * still the exact class of drift this relation exists to prevent.
+     * `id` breaks a tie between two rows written in the same request with
+     * the same `position` (should not happen, but ties order deterministic
+     * regardless).
+     *
+     * Z11 (R3-indicator-scores-default-order-aggregate, REQUIRED BEFORE
+     * ARCHIVE): a HAND-WRITTEN `groupBy()` aggregate query built directly on
+     * this relation (e.g. `indicatorScores()->groupBy(...)->selectRaw('avg(score)...')`)
+     * fails on Postgres — "column must appear in the GROUP BY clause" —
+     * because this method's own `orderBy` survives into it. Eloquent's OWN
+     * aggregate helpers (`->avg()`/`->sum()`/`->count()` called directly on
+     * the relation, and `withAvg()`/`withCount()`) already strip `orders`
+     * themselves before running and are NOT affected. Call `->reorder()`
+     * first in any HAND-WRITTEN grouped-aggregate path against this
+     * relation — see `CompetencyResultIndicatorScoresAggregateTest.php` for
+     * both the reproduced failure and the fix.
+     *
      * @return HasMany<IndicatorScore, $this>
      */
     public function indicatorScores(): HasMany
     {
-        return $this->hasMany(IndicatorScore::class);
+        return $this->hasMany(IndicatorScore::class)->orderBy('position')->orderBy('id');
     }
 }

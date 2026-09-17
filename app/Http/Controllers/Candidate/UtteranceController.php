@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Candidate;
 
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
+use App\Models\InterviewSession;
+use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
@@ -35,6 +37,12 @@ use Symfony\Component\HttpFoundation\Response;
  * DB::affectingStatement() returns the number of rows inserted. If 0, the session
  * was not in_corso at insertion time → 409 Conflict. This eliminates the TOCTOU window.
  *
+ * The classify-then-insert sequence (framework-catalogue-authoring PR7, D8)
+ * additionally runs inside a transaction holding `SELECT ... FOR UPDATE` on
+ * the session row, so two avatar turns for the SAME session can never both
+ * classify against the same pre-write count of matched primaries — see
+ * `store()`.
+ *
  * Response contract:
  * - 202 Accepted  → utterance persisted (session was in_corso at INSERT time)
  * - 404 Not Found → session not owned by authenticated candidate (resolveOwnedSession)
@@ -46,6 +54,20 @@ use Symfony\Component\HttpFoundation\Response;
 class UtteranceController extends Controller
 {
     use ResolvesOwnedSession;
+
+    /**
+     * Z16 (framework-catalogue-authoring, REQUIRED BEFORE ARCHIVE): the cap
+     * on how long a request waits for another request's `SELECT ... FOR
+     * UPDATE` on the SAME session row before giving up — bounded below the
+     * product's own voice-latency NFR (CLAUDE.md: "< 2-3 s") so a candidate
+     * never perceives a stall longer than a single turn is already allowed
+     * to take.
+     */
+    private const LOCK_TIMEOUT_MS = 2000;
+
+    public function __construct(
+        private readonly TurnClassifier $turnClassifier,
+    ) {}
 
     /**
      * Ingest a live transcript utterance (best-effort).
@@ -77,63 +99,69 @@ class UtteranceController extends Controller
         // MUST be invoked FIRST, before any DB mutation (design WARNING-4).
         $session = $this->resolveOwnedSession((int) $validated['session_id']);
 
-        // ATOMIC conditional INSERT (FIX-2 TOCTOU guard).
-        // DB::affectingStatement() returns the number of rows actually inserted.
-        // The WHERE EXISTS guarantees the status check and INSERT are one atomic operation.
-        // If 0 rows → session was not in_corso when the INSERT ran → 409 (not 202 or 500).
-        //
-        // `provider_session_ref` is read FROM the session row inside this same
-        // statement rather than passed in, so the stamp is atomic with the
-        // status check: the row is tagged with the stretch that was current at
-        // the instant it was accepted, not with one read a moment earlier. That
-        // tag is what lets a resume replace exactly the stretch it fetched.
         // The AMBIENT tenant — what the global scope itself reads, and what
-        // `DB::affectingStatement()` bypasses.
-        //
-        // Binding `$session->organization_id` here instead would be a TAUTOLOGY:
-        // match row X by id, then assert row X's org equals row X's own org,
-        // read off the model just loaded. It cannot fail, so it defends nothing.
-        // This value comes from a different source, which is the whole point.
-        //
-        // Be precise about what that buys, because there is no test here and the
-        // reason matters: today the two can never disagree. `TenantContextCandidate`
-        // derives the ambient tenant from the same token that owns the session,
-        // and `resolveOwnedSession()` 404s on anything else, so no request can
-        // reach this line with them differing — which is exactly why no mutation
-        // test can distinguish the two bindings. This is defence in depth against
-        // a future ingress that resolves the session some other way, not a
-        // behaviour change, and it is not evidence of one.
+        // `DB::affectingStatement()` below bypasses. Resolved once, reused by
+        // both the lock and the INSERT.
         $orgId = app(TenantResolver::class)->getOrgId();
 
-        // GUARDED, for the same reason insertUtterances() is in
-        // InterviewController: this statement binds the candidate's verbatim
-        // speech, and a QueryException escaping to Laravel's default handler is
-        // logged via getMessage(), which formatMessage() builds by interpolating
-        // every binding into the SQL. That would put the transcript in plaintext
-        // in the application log — and this is the highest-volume utterance write
-        // in the product, once per turn of every interview, where the batch paths
-        // run twice per competency.
+        // Primary-vs-follow-up classification (framework-catalogue-authoring
+        // PR7, D8) — only ever computed for an AVATAR turn; a candidate's own
+        // speech is not part of what "no hidden questions" audits.
         //
-        // The rethrow carries no previous exception on purpose: chaining it would
-        // hand the handler the same interpolated string this catch withholds.
+        // LOCKED, not merely read-before-insert. `classify()` counts this
+        // session's already-persisted `primary`-marked avatar turns to find
+        // the next unmatched one — two avatar turns landing concurrently for
+        // the SAME session (a live turn racing the provider harvest, or two
+        // retried client requests) could otherwise both read the same count
+        // and both match the same primary. `SELECT ... FOR UPDATE` on the
+        // session row serialises classify-then-insert across concurrent
+        // requests for this session without touching the conditional
+        // INSERT's own atomicity (FIX-2) or its 409 semantics — a session no
+        // longer `in_corso` still 409s exactly as before, now simply after
+        // waiting for the lock rather than racing for it. Requests for
+        // DIFFERENT sessions never contend: the lock is row-scoped.
+        //
+        // Z16 (R4-utterance-lock-latency, framework-catalogue-authoring,
+        // REQUIRED BEFORE ARCHIVE): the critical section between acquiring
+        // the lock and releasing it (COMMIT) is kept to exactly the three
+        // statements it needs — the lock, `classify()`'s own single COUNT
+        // query, and the INSERT — never widened by anything else. BOUNDED,
+        // not merely minimal: `SET LOCAL lock_timeout` caps how long a
+        // request will wait for another request's (or a stuck connection's)
+        // lock on this SAME session row, so a slow or wedged writer can
+        // never stall the live turn loop indefinitely — every OTHER session
+        // is already unaffected (the lock is row-scoped), this bounds the
+        // SAME-session queuing case specifically. `55P03` (`lock_not_available`,
+        // Postgres's own code for a `lock_timeout` expiry) is mapped to a
+        // distinct, RETRIABLE 503 — never the generic `utterance_insert_failed`
+        // 500, which would tell a client to give up on a turn that a
+        // heartbeat later would likely have accepted.
         try {
-            $rowsInserted = DB::affectingStatement(
-                'INSERT INTO utterances (interview_session_id, organization_id, speaker, text, ts, provider_session_ref)
-                 SELECT ?, ?, ?, ?, ?::timestamptz, s.provider_session_ref
-                 FROM interview_sessions s
-                 WHERE s.id = ? AND s.organization_id = ? AND s.status = ?',
-                [
-                    $session->id,
-                    $orgId,
-                    $validated['speaker'],
-                    $validated['text'],
-                    $validated['ts'],
-                    $session->id,
-                    $orgId,
-                    'in_corso',
-                ]
-            );
+            $rowsInserted = DB::transaction(function () use ($session, $orgId, $validated): int {
+                // `SET LOCAL` does not accept a bound parameter in Postgres
+                // (it is not a value position the extended query protocol
+                // supports) — safe to inline directly, since the value is
+                // this class's own internal constant, never request input.
+                DB::statement('SET LOCAL lock_timeout = '.self::LOCK_TIMEOUT_MS);
+
+                InterviewSession::where('id', $session->id)
+                    ->where('organization_id', $orgId)
+                    ->lockForUpdate()
+                    ->value('id');
+
+                $turnKind = $validated['speaker'] === 'avatar'
+                    ? $this->turnClassifier->classify($session, $validated['text'])
+                    : null;
+
+                return $this->insertUtteranceAtomically($session, $orgId, $validated, $turnKind);
+            });
         } catch (QueryException $e) {
+            if ($e->getCode() === '55P03') {
+                Log::warning('C7a: live utterance insert timed out waiting for the session lock', SafeDbContext::for($e));
+
+                return response()->json(['error' => 'utterance_lock_timeout'], Response::HTTP_SERVICE_UNAVAILABLE);
+            }
+
             Log::error('C7a: live utterance insert failed', SafeDbContext::for($e));
 
             throw new \RuntimeException('utterance_insert_failed');
@@ -150,5 +178,74 @@ class UtteranceController extends Controller
         }
 
         return response()->json(null, Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * The atomic conditional INSERT (FIX-2 TOCTOU guard), extracted so the
+     * classify-then-insert sequence in `store()` can wrap both under one
+     * transaction and row lock without duplicating this statement.
+     *
+     * Returns the number of rows actually inserted. The WHERE EXISTS-style
+     * `AND s.status = 'in_corso'` guarantees the status check and INSERT are
+     * one atomic operation — 0 rows means the session was not `in_corso`
+     * when the INSERT ran, which `store()` turns into 409 (not 202 or 500).
+     *
+     * `provider_session_ref` is read FROM the session row inside this same
+     * statement rather than passed in, so the stamp is atomic with the
+     * status check: the row is tagged with the stretch that was current at
+     * the instant it was accepted, not with one read a moment earlier. That
+     * tag is what lets a resume replace exactly the stretch it fetched.
+     *
+     * `$orgId` — the AMBIENT tenant, what the global scope itself reads and
+     * what this raw statement bypasses — is passed in rather than re-read,
+     * so it stays the SAME value `store()`'s row lock above used.
+     *
+     * Binding `$session->organization_id` here instead would be a TAUTOLOGY:
+     * match row X by id, then assert row X's org equals row X's own org,
+     * read off the model just loaded. It cannot fail, so it defends nothing.
+     * This value comes from a different source, which is the whole point.
+     *
+     * Be precise about what that buys, because there is no test here and the
+     * reason matters: today the two can never disagree. `TenantContextCandidate`
+     * derives the ambient tenant from the same token that owns the session,
+     * and `resolveOwnedSession()` 404s on anything else, so no request can
+     * reach this line with them differing — which is exactly why no mutation
+     * test can distinguish the two bindings. This is defence in depth against
+     * a future ingress that resolves the session some other way, not a
+     * behaviour change, and it is not evidence of one.
+     *
+     * Left UNGUARDED by its own try/catch: `store()`'s caller already wraps
+     * the whole classify-then-insert transaction in one, so a QueryException
+     * here is caught and logged via `SafeDbContext` exactly as before —
+     * this statement binds the candidate's verbatim speech, and an
+     * unguarded QueryException reaching Laravel's default handler would log
+     * `getMessage()` in full, putting the transcript in plaintext in the
+     * application log on the highest-volume write in the product.
+     *
+     * @param  array{session_id: int, speaker: string, text: string, ts: string}  $validated
+     */
+    private function insertUtteranceAtomically(
+        InterviewSession $session,
+        ?int $orgId,
+        array $validated,
+        ?string $turnKind,
+    ): int {
+        return DB::affectingStatement(
+            'INSERT INTO utterances (interview_session_id, organization_id, speaker, text, ts, provider_session_ref, turn_kind)
+             SELECT ?, ?, ?, ?, ?::timestamptz, s.provider_session_ref, ?
+             FROM interview_sessions s
+             WHERE s.id = ? AND s.organization_id = ? AND s.status = ?',
+            [
+                $session->id,
+                $orgId,
+                $validated['speaker'],
+                $validated['text'],
+                $validated['ts'],
+                $turnKind,
+                $session->id,
+                $orgId,
+                'in_corso',
+            ]
+        );
     }
 }
