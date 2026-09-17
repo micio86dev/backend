@@ -754,7 +754,7 @@ class InterviewController extends Controller
         }
 
         // Observation only, after the commit: the stretch /end just stored.
-        $this->avatarSilence->inspect($session, $session->provider_session_ref);
+        $this->inspectAvatarSilence($session, $session->provider_session_ref);
 
         if ($progress !== null) {
             event(new CompetencySessionEnded(
@@ -1512,7 +1512,32 @@ class InterviewController extends Controller
             return;
         }
 
-        $this->avatarSilence->inspect($session, $oldRef);
+        $this->inspectAvatarSilence($session, $oldRef);
+    }
+
+    /**
+     * Observability guard around `AvatarSilenceDetector::inspect()`.
+     *
+     * The detector is observation-only (see its own docblock) and MUST NEVER
+     * decide this request's outcome. A failure inside it — a DB error, or
+     * the log sink its Sentry breadcrumbs depend on being unavailable — is
+     * exactly the kind of infrastructure hiccup neither `/end` nor a resumed
+     * `/start` should turn into a 500 for a candidate: the transcript and
+     * session state this method runs after have already committed. Caught,
+     * reported, and swallowed, the same non-fatal shape every other best-
+     * effort observation in this controller already uses (teardown, harvest).
+     */
+    private function inspectAvatarSilence(InterviewSession $session, ?string $ref): void
+    {
+        try {
+            $this->avatarSilence->inspect($session, $ref);
+        } catch (\Throwable $e) {
+            Log::error('C7a: avatar silence detection failed (non-fatal)', [
+                'session_id' => $session->id,
+                'provider_session_ref' => $ref,
+                ...SafeDbContext::for($e),
+            ]);
+        }
     }
 
     /**
