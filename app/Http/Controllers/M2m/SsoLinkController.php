@@ -97,17 +97,18 @@ final class SsoLinkController extends Controller
 
         // D5/D6 (framework-catalogue-authoring PR6) — before `mint`, same as
         // `EntryLinkController`/`ParticipantController`: the calling system
-        // learns this before any candidate is ever invited. `evaluate()`
-        // avoids running the same query twice for one refusal.
-        // `candidate_ref` echoed byte-for-byte, same reasoning as the M2M
-        // participant refusal.
-        //
-        // Z10 (REQUIRED BEFORE ARCHIVE) — `evaluateForCandidate()`: exempts a
-        // candidate who already has an `InterviewSession` on this project,
-        // same exemption the SSO exchange and `/start` already apply (Z9).
-        // Without it, re-minting a replacement sso-link for a mid-interview
+        // learns this before any candidate is ever invited.
+        // `evaluateForCandidate()`, not a bare `evaluate()` (Z10, REQUIRED
+        // BEFORE ARCHIVE) — it exempts a candidate who already has an
+        // `InterviewSession` on this project, the same exemption the SSO
+        // exchange and `/start` already apply (Z9); internally it still
+        // falls back to ONE `evaluate()` call for a non-exempt candidate, so
+        // this stays a single query for one refusal either way. Without the
+        // exemption, re-minting a replacement sso-link for a mid-interview
         // candidate whose token expired was refused by an UNRELATED,
         // not-yet-reached competency's later misconfiguration.
+        // `candidate_ref` echoed byte-for-byte, same reasoning as the M2M
+        // participant refusal.
         $interviewability = $this->projectInterviewability->evaluateForCandidate($project, $validated['candidate_ref']);
         if (! $interviewability['interviewable']) {
             return response()->json([
