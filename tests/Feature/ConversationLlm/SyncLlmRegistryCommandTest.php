@@ -24,12 +24,13 @@ test('running the sync command twice yields an identical row set', function (): 
     $secondRun = LlmModel::orderBy('key')->get(['id', 'key', 'updated_at'])->toArray();
 
     expect($secondRun)->toBe($firstRun);
-    expect(LlmModel::count())->toBe(4);
+    expect(LlmModel::count())->toBe(5);
 });
 
 test('the first run reports every seeded key as added', function (): void {
     $this->artisan('beai:sync-llm-registry')
         ->expectsOutputToContain('added: gemini-3-flash-preview')
+        ->expectsOutputToContain('added: gemini-3.1-flash-lite-preview')
         ->expectsOutputToContain('added: gemini-3.1-pro-preview')
         ->expectsOutputToContain('added: gemini-3.1-flash-live-preview')
         ->expectsOutputToContain('added: gemini-2.5-flash-native-audio-preview-12-2025')

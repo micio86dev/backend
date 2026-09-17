@@ -18,14 +18,15 @@ use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use Database\Seeders\LlmModelRegistrySeeder;
 
-test('the seeder produces exactly the four verified model keys and no others', function (): void {
+test('the seeder produces exactly the five verified model keys and no others', function (): void {
     (new LlmModelRegistrySeeder)->run();
 
     $keys = LlmModel::pluck('key')->all();
 
-    expect($keys)->toHaveCount(4);
+    expect($keys)->toHaveCount(5);
     expect($keys)->toEqualCanonicalizing([
         'gemini-3-flash-preview',
+        'gemini-3.1-flash-lite-preview',
         'gemini-3.1-pro-preview',
         'gemini-3.1-flash-live-preview',
         'gemini-2.5-flash-native-audio-preview-12-2025',
@@ -77,8 +78,8 @@ test('a model removed from the seed array becomes unavailable, never deleted, an
     expect($stillThere->display_name)->toBe($original->display_name);
     expect($stillThere->is_available)->toBeFalse();
 
-    // The other three, still present in the array, remain available.
-    expect(LlmModel::where('is_available', true)->count())->toBe(3);
+    // The other four, still present in the array, remain available.
+    expect(LlmModel::where('is_available', true)->count())->toBe(4);
 });
 
 test('a re-run of the seeder never disturbs an AvatarTemplate bound to a seeded model (deferred P1.11 obligation, closing GAP 2)', function (): void {

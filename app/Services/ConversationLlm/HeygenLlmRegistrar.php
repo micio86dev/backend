@@ -217,7 +217,24 @@ final class HeygenLlmRegistrar
         $body = [
             'display_name' => $this->configurationDisplayName($template),
             'model_name' => $model->key,
-            'base_url' => $model->base_url,
+            // `LlmModel::base_url` is stored WITH its trailing slash (see the
+            // `llm_models` migration docblock) — that shape is correct for
+            // `GeminiKeyValidator`'s own naive `{base_url}chat/completions`
+            // concatenation, but HeyGen joins `base_url` with its OWN leading
+            // slash on the vendor side. A trailing slash surviving into that
+            // join produces `//chat/completions`, which 404s — the avatar
+            // speaks its opening line (composed server-side, never touching
+            // this URL) and then goes silent on the model's real first turn.
+            // Stripped HERE, at the one place this value crosses the wire to
+            // HeyGen, rather than on the stored value every other consumer
+            // still depends on ending in `/`.
+            //
+            // No null guard needed: the `llm_models` migration declares
+            // `base_url` as a plain non-nullable `string` column, and
+            // `LlmModel` casts nothing over it, so `$model->base_url` is
+            // always a `string` here — never PHP 8.1+'s deprecated null-to-
+            // non-nullable-parameter path.
+            'base_url' => rtrim($model->base_url, '/'),
             'secret_id' => $secretId,
         ];
 

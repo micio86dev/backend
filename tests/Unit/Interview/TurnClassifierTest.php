@@ -216,11 +216,27 @@ test('a retry opening still matches when the primary is the turn\'s final questi
     expect($result)->toBe('primary');
 });
 
-test('a turn matching an EARLIER, already-matched primary does not re-match — next unmatched only', function (): void {
+test('a verbatim re-ask of an already-matched primary is primary but does not advance the pointer', function (): void {
+    $session = turnClassifierSession(['Primary one.', 'Primary two.']);
+    turnClassifierMarkMatched($session, 'Primary one.');
+    $classifier = new TurnClassifier;
+
+    expect($classifier->classify($session, 'Primary one.'))->toBe('primary')
+        ->and($classifier->advances($session, 'Primary one.', 1))->toBeFalse();
+
+    turnClassifierMarkMatched($session, 'Primary one.');
+
+    // Two primary rows, one distinct primary asked: primary 2 is still next.
+    expect($classifier->matchedCount($session))->toBe(1)
+        ->and($classifier->classify($session, 'Primary two.'))->toBe('primary')
+        ->and($classifier->advances($session, 'Primary two.', 1))->toBeTrue();
+});
+
+test('a turn that merely repeats an earlier primary in the middle of its text is still a follow-up', function (): void {
     $session = turnClassifierSession(['Primary one.', 'Primary two.']);
     turnClassifierMarkMatched($session, 'Primary one.');
 
-    $result = (new TurnClassifier)->classify($session, 'Primary one.');
+    $result = (new TurnClassifier)->classify($session, 'Primary one. Tell me more about that.');
 
     expect($result)->toBe('follow_up');
 });
@@ -234,13 +250,31 @@ test('a turn matching the next unmatched primary (primary 2) classifies as prima
     expect($result)->toBe('primary');
 });
 
-test('every primary already matched → follow_up, even for text that repeats a primary verbatim', function (): void {
+test('every primary already matched: a re-ask of the last one is primary and the count stays put', function (): void {
     $session = turnClassifierSession(['Primary one.']);
     turnClassifierMarkMatched($session, 'Primary one.');
+    $classifier = new TurnClassifier;
 
-    $result = (new TurnClassifier)->classify($session, 'Primary one.');
+    expect($classifier->classify($session, 'Primary one.'))->toBe('primary')
+        ->and($classifier->advances($session, 'Primary one.', 1))->toBeFalse()
+        ->and($classifier->classify($session, 'Something else entirely?'))->toBe('follow_up');
 
-    expect($result)->toBe('follow_up');
+    turnClassifierMarkMatched($session, 'Primary one.');
+
+    expect($classifier->matchedCount($session))->toBe(1);
+});
+
+test('matchedCount() replays primary rows in order and counts each primary once', function (): void {
+    $session = turnClassifierSession(['Primary one.', 'Primary two.', 'Primary three.']);
+    $classifier = new TurnClassifier;
+
+    expect($classifier->matchedCount($session))->toBe(0);
+
+    turnClassifierMarkMatched($session, 'Primary one.');
+    turnClassifierMarkMatched($session, 'Sorry, we had a technical problem. Primary one.');
+    turnClassifierMarkMatched($session, 'Primary two.');
+
+    expect($classifier->matchedCount($session))->toBe(2);
 });
 
 test('no primary_questions snapshot at all → follow_up', function (): void {

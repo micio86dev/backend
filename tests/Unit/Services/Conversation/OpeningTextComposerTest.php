@@ -3,40 +3,29 @@
 declare(strict_types=1);
 
 /**
- * RED — PR3 (opening greeting composer, design D9/D11).
- *
- * `OpeningTextComposer` is a pure, locale-keyed template — a SIBLING of
- * `SystemPromptComposer`, never inside it. It builds the avatar's spoken
- * opening line from `lang/{locale}/interview.php` keys `opening.{first,next,resume}`
- * with a `:competency` placeholder, and NEVER touches BARS indicator/anchor
- * content (anti-leak invariant, mirrors `interview-session/spec.md:341-349`).
+ * `OpeningTextComposer` builds the avatar's spoken opening line. It is a
+ * SIBLING of `SystemPromptComposer`, never inside it, and never touches BARS
+ * indicator/anchor content (anti-leak invariant).
  *
  * Asserts:
- * - Determinism: same inputs → same text and version.
- * - Version equals config('conversation.prompt_version') — shared with the
- *   system prompt, per D9 ("one version, both strings ship together").
- * - Each variant (first/next/resume) resolves to a DIFFERENT template.
- * - `:competency` is interpolated with the given competency name.
- * - Locale fallback: an unknown locale falls back to config('app.fallback_locale').
- * - Anti-leak: the composer has no BARS dependency at all — it cannot leak
- *   anchor/indicator text because it never receives it. Asserted by construction:
- *   the composed text is EXACTLY the interpolated lang string, nothing more.
- * - Unknown variant → InvalidArgumentException (fail loud, not a silent default).
- *
- * Spec: REQ QuestionContext Carries a Composed Opening Greeting (delta spec, interview-conversation)
- * REQ: OpeningTextComposer (PR3 — design D9)
+ * - An authored primary is the opening, verbatim, for first/next/resume.
+ * - `retry` wraps it (or the fallback) in the apology.
+ * - With no authored primary (interviewability gate off), every variant uses
+ *   the ONE gate-off fallback, `interview.opening.fallback`.
+ * - Determinism, version stamping, locale fallback, unknown variant → throw.
  */
 
 use App\DTOs\Conversation\ComposedOpening;
+use App\Exceptions\Conversation\CompositionException;
 use App\Services\Conversation\OpeningTextComposer;
 
-test('compose() for variant "first" returns the localized opening.first template with competency interpolated', function (): void {
+test('without an authored question, compose() returns the gate-off fallback with competency interpolated', function (): void {
     $composer = new OpeningTextComposer;
 
     $result = $composer->compose('first', 'Problem Solving', 'en');
 
     expect($result)->toBeInstanceOf(ComposedOpening::class);
-    expect($result->text)->toBe(trans('interview.opening.first', ['competency' => 'Problem Solving'], 'en'));
+    expect($result->text)->toBe(trans('interview.opening.fallback', ['competency' => 'Problem Solving'], 'en'));
     expect($result->text)->toContain('Problem Solving');
 });
 
@@ -59,16 +48,13 @@ test('compose() version equals config(conversation.prompt_version) — shared wi
     expect($result->version)->toBe('conv-test-999');
 });
 
-test('compose() variants first/next/resume each resolve to a DIFFERENT template', function (): void {
+test('without an authored question, first/next/resume all use the same fallback', function (): void {
     $composer = new OpeningTextComposer;
 
     $first = $composer->compose('first', 'Drive', 'en')->text;
-    $next = $composer->compose('next', 'Drive', 'en')->text;
-    $resume = $composer->compose('resume', 'Drive', 'en')->text;
 
-    expect($first)->not->toBe($next);
-    expect($first)->not->toBe($resume);
-    expect($next)->not->toBe($resume);
+    expect($composer->compose('next', 'Drive', 'en')->text)->toBe($first);
+    expect($composer->compose('resume', 'Drive', 'en')->text)->toBe($first);
 });
 
 test('compose() falls back to the platform default locale when the requested locale has no interview.php file', function (): void {
@@ -77,7 +63,7 @@ test('compose() falls back to the platform default locale when the requested loc
     $result = $composer->compose('first', 'Insight', 'fr');
 
     $fallback = (string) config('app.fallback_locale');
-    expect($result->text)->toBe(trans('interview.opening.first', ['competency' => 'Insight'], $fallback));
+    expect($result->text)->toBe(trans('interview.opening.fallback', ['competency' => 'Insight'], $fallback));
 });
 
 test('compose() never reaches BARS anchor/indicator text — output is exactly the interpolated template (anti-leak)', function (): void {
@@ -101,20 +87,21 @@ test('compose() with an unknown variant throws InvalidArgumentException (fail lo
         ->toThrow(InvalidArgumentException::class);
 });
 
-// ─── 'retry' — the fourth variant (interview-continuous-flow, D10) ────────────
+// ─── 'retry' (interview-continuous-flow, D10) ─────────────────────────────────
 //
-// A competency that ended in `error` is offered to the candidate again. Without
-// its own greeting the avatar simply asks the same thing twice, which reads as
-// not having listened — the candidate has no way to know they are re-attempting
-// rather than being ignored.
+// A competency that ended in `error` is offered to the candidate again. The
+// apology explains a failure on OUR side; without it the repeat reads as not
+// having been listened to.
 
-test("compose('retry') is a distinct greeting, not the 'next' one reused", function (): void {
+test("compose('retry') without an authored question apologises, then asks the fallback", function (): void {
     $composer = new OpeningTextComposer;
 
     $retry = $composer->compose('retry', 'Networking', 'it')->text;
-    $next = $composer->compose('next', 'Networking', 'it')->text;
+    $fallback = trans('interview.opening.fallback', ['competency' => 'Networking'], 'it');
 
-    expect($retry)->not->toBe($next);
+    expect($retry)->not->toBe($fallback)
+        ->and($retry)->toContain('problema tecnico')
+        ->and($retry)->toEndWith($fallback);
 });
 
 test("compose('retry') interpolates the competency name in both locales", function (): void {
@@ -176,14 +163,14 @@ test('the same replacement applies to a subsequent competency', function (): voi
     expect($result->text)->toBe('Parlami di un conflitto in team.');
 });
 
-test('a RESUME keeps its template — the candidate is mid-episode, not starting one', function (): void {
-    // Re-asking the authored question here would throw away what they have
-    // already said and read as not having been listened to.
+test('a RESUME re-asks the authored question it is given, verbatim', function (): void {
+    // The controller passes the pending primary (or the last one when every
+    // primary was already asked); the opening is that question as written.
     $composer = new OpeningTextComposer;
 
     $result = $composer->compose('resume', 'Collaboration', 'it', 'Parlami di un conflitto in team.');
 
-    expect($result->text)->toBe(trans('interview.opening.resume', ['competency' => 'Collaboration'], 'it'));
+    expect($result->text)->toBe('Parlami di un conflitto in team.');
 });
 
 test('a RETRY keeps its apology and ends on the authored question', function (): void {
@@ -203,7 +190,7 @@ test('a blank authored question falls back to the template rather than opening o
 
     $result = $composer->compose('first', 'Problem Solving', 'it', '   ');
 
-    expect($result->text)->toBe(trans('interview.opening.first', ['competency' => 'Problem Solving'], 'it'));
+    expect($result->text)->toBe(trans('interview.opening.fallback', ['competency' => 'Problem Solving'], 'it'));
 });
 
 test('the version is stamped identically whether or not a question was authored', function (): void {
@@ -242,4 +229,12 @@ test('an unknown locale falls back to English for the authored retry, not to a p
         trans('interview.opening.retry_authored', ['question' => 'Conte-me sobre um conflito.'], 'en')
     );
     expect($result->text)->not->toContain(':question');
+});
+
+test('a blank conversation.prompt_version is refused on the authored and the fallback path alike', function (): void {
+    config(['conversation.prompt_version' => '  ']);
+    $composer = new OpeningTextComposer;
+
+    expect(fn () => $composer->compose('first', 'X', 'en', 'Authored?'))->toThrow(CompositionException::class)
+        ->and(fn () => $composer->compose('first', 'X', 'en'))->toThrow(CompositionException::class);
 });

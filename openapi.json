@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.52.0"
+        "version": "0.53.0"
     },
     "servers": [
         {
@@ -3341,7 +3341,7 @@
         "/candidate/interview/start": {
             "post": {
                 "operationId": "interview.start",
-                "description": "Sequence (from design data flow \u2014 CRITICAL: provider call is OUTSIDE any DB txn):\n(1) Resolve next competency by project_competencies.position ASC.\n(1b) `ProjectInterviewability` gate (framework-catalogue-authoring PR6,\n     D5/D6) \u2014 422 `project_not_interviewable`, skipped when a session\n     already exists for THIS competency; see the gate's own inline\n     comment for the whole-project vs. per-competency distinction.\n(2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException \u2192 re-query.\n(3) ProviderSessionService.issue() \u2014 OUTSIDE any DB transaction.\n(4a) Provider success \u2192 short DB txn: UPDATE session + participant (FIX-8).\n(4b) Provider 5xx \u2192 session error + participant errore + 502.\n(4c) Provider 429 \u2192 session stays pending + 429 provider_busy (NOT errore).\n(4d) DB failure after provider success \u2192 teardown(in-memory token) + 500.\n\nRESUME in_corso:\n  - issue() FRESH token.\n  - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).\n  - Persist new ref.\n\nRESUME pending:\n  - Retry issue(). On success, persist ref and flip to in_corso.\n\nFIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.\n\nThe 201 shape is spelled out for Scramble because it cannot follow\n`buildSuccessResponse()` \u2014 a private helper two call sites deep, whose\nfields come from method calls on `$this`. Left inferred, it produced a\nshape MISSING `audio_only` entirely, and the candidate app generates its\nclient from this spec: the field existed on the wire, was absent from the\ntype, and reading it was a compile error in the app that needs it.",
+                "description": "Sequence (from design data flow \u2014 CRITICAL: provider call is OUTSIDE any DB txn):\n(1) Resolve next competency by project_competencies.position ASC.\n(1b) `ProjectInterviewability` gate (framework-catalogue-authoring PR6,\n     D5/D6) \u2014 422 `project_not_interviewable`, skipped when a session\n     already exists for THIS competency; see the gate's own inline\n     comment for the whole-project vs. per-competency distinction.\n(2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException \u2192 re-query.\n(3) ProviderSessionService.issue() \u2014 OUTSIDE any DB transaction.\n(4a) Provider success \u2192 short DB txn: UPDATE session + participant (FIX-8).\n(4b) Provider 5xx \u2192 session error + participant errore + 502.\n(4c) Provider 429 \u2192 session stays pending + 429 provider_busy (NOT errore).\n(4d) DB failure after provider success \u2192 teardown(in-memory token) + 500.\n\nRESUME in_corso:\n  - Harvest the outgoing transcript, then compose: the opening re-asks the\n    pending primary verbatim. A composition failure answers 422, as on a\n    fresh start, and ends the outgoing provider session on its way out \u2014\n    nothing else would, and it bills until the provider's own ceiling.\n  - issue() FRESH token.\n  - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).\n  - Persist new ref.\n\nRESUME pending:\n  - Retry issue(). On success, persist ref and flip to in_corso.\n\nFIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.\n\nThe 201 shape is spelled out for Scramble because it cannot follow\n`buildSuccessResponse()` \u2014 a private helper two call sites deep, whose\nfields come from method calls on `$this`. Left inferred, it produced a\nshape MISSING `audio_only` entirely, and the candidate app generates its\nclient from this spec: the field existed on the wire, was absent from the\ntype, and reading it was a compile error in the app that needs it.",
                 "summary": "Create or resume a provider session for the next competency interview",
                 "tags": [
                     "Interview"
@@ -3441,7 +3441,7 @@
         "/candidate/interview/suspend": {
             "post": {
                 "operationId": "interview.suspend",
-                "description": "WHY A PAUSE HAS TO DO THIS\n--------------------------\nThe client used to pause by muting the candidate's own microphone and\nnothing else. Two things followed, and both were reported from a real\ninterview: the avatar kept its turn and kept talking through the pause,\nand the provider conversation stayed open. Tavus and HeyGen bill live\nconversation minutes, so a candidate who stepped away was billed for an\ninterview nobody was having.\n\nInterrupting the avatar and muting its audio locally would fix the first\nsymptom and none of the second. Only ending the provider session stops\nthe meter, so that is what pause does.\n\nWHY THAT IS CHEAP RATHER THAN DRASTIC\n-------------------------------------\nThis is the FIRST HALF of `handleResumeInCorso()`, which already exists\nand is already relied upon: harvest the outgoing transcript while it is\nstill readable, close the live-clock stretch, tear the provider session\ndown. The second half \u2014 issuing a fresh token \u2014 is what `/start` does,\nand `OpeningTextComposer` already carries a `resume` variant written for\nexactly this.\n\nSo resume needs no new endpoint. Suspend leaves the session `in_corso`\nwith a NULL ref, which is precisely the state `/start` already resumes:\n`handleResumeInCorso()` guards its harvest and teardown with\n`$oldRef !== null`, so it skips straight to issuing.\n\nWHAT IT DELIBERATELY DOES NOT TOUCH\n-----------------------------------\n`status`, `ended_at`, the participant, and the scoring dispatch. A paused\ninterview is not a finished one, and a pause that reached `/end`'s\nmachinery would score a candidate on the half of an answer they had given\nwhen they stepped away.\n\nIDEMPOTENT. The client sends this on the pause gesture and again on\npage-hide; both can fire for one action. A null ref means there is\nnothing left to tear down, which is success, not an error state to show\na candidate mid-interview.",
+                "description": "WHY A PAUSE HAS TO DO THIS\n--------------------------\nThe client used to pause by muting the candidate's own microphone and\nnothing else. Two things followed, and both were reported from a real\ninterview: the avatar kept its turn and kept talking through the pause,\nand the provider conversation stayed open. Tavus and HeyGen bill live\nconversation minutes, so a candidate who stepped away was billed for an\ninterview nobody was having.\n\nInterrupting the avatar and muting its audio locally would fix the first\nsymptom and none of the second. Only ending the provider session stops\nthe meter, so that is what pause does.\n\nWHY THAT IS CHEAP RATHER THAN DRASTIC\n-------------------------------------\nThis is the FIRST HALF of the resume path `/start` already runs:\nharvest the outgoing transcript while it is still readable, close the\nlive-clock stretch, tear the provider session down. The second half \u2014\nissuing a fresh token whose opening re-asks the pending primary \u2014 is\nwhat `/start` does.\n\nSo resume needs no new endpoint. Suspend leaves the session `in_corso`\nwith a NULL ref, which is precisely the state `/start` already resumes:\nboth the harvest in `start()` and the teardown in\n`handleResumeInCorso()` are guarded by a non-null ref, so it skips\nstraight to issuing.\n\nWHAT IT DELIBERATELY DOES NOT TOUCH\n-----------------------------------\n`status`, `ended_at`, the participant, and the scoring dispatch. A paused\ninterview is not a finished one, and a pause that reached `/end`'s\nmachinery would score a candidate on the half of an answer they had given\nwhen they stepped away.\n\nIDEMPOTENT. The client sends this on the pause gesture and again on\npage-hide; both can fire for one action. A null ref means there is\nnothing left to tear down, which is success, not an error state to show\na candidate mid-interview.",
                 "summary": "Pause the interview by TEARING THE PROVIDER SESSION DOWN",
                 "tags": [
                     "Interview"
@@ -6216,7 +6216,7 @@
         "/catalogue/revisions/current": {
             "get": {
                 "operationId": "revision.current",
-                "summary": "READ-ONLY (gga review finding, blocking): this used to auto-open a\ndraft on every call, which breaks HTTP safety on a GET \u2014 a prefetch,\nretry, or monitoring probe from a superadmin session would clone\n~450 rows for a request nobody asked to be a write. Auto-open on\n\"first edit\" still happens, correctly, where an edit actually\noccurs \u2014 via each catalogue-write FormRequest's own\n`ResolvesOpenDraftRevision::openDraftRevisionId()` (framework-\ncatalogue-authoring PR3b, H5; not the controller body directly, and\nnot called a second time there). This endpoint only reports whatever\nis currently true \u2014 `null` when nothing is open yet",
+                "summary": "READ-ONLY: a GET never opens a draft \u2014 a prefetch, retry, or\nmonitoring probe must not clone ~450 rows. Reports the revision the\ncatalogue lists currently return (`FrameworkCatalogRevision::\nviewable()`): the open draft (`editable: true`), otherwise the latest\npublished revision (`editable: false`). `null` only before anything\nhas been published",
                 "tags": [
                     "Revision"
                 ],
@@ -6237,6 +6237,79 @@
                                                     "type": "null"
                                                 }
                                             ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/catalogue/revisions/draft": {
+            "post": {
+                "operationId": "revision.openDraft",
+                "description": "Audited only when a draft was actually created, inside the same\ntransaction as the clone: returning an existing draft changes nothing,\nand a clone whose audit row fails to write rolls back with it rather\nthan leaving an unaudited platform mutation behind.\n`404` when no published revision exists to clone from.",
+                "summary": "Opens the draft a superadmin edits, cloned from the latest published\nrevision, or returns the one already open \u2014 idempotent, `201` when\nthis call created it and `200` when it continued an existing one.\nAfter it, every catalogue list returns the draft's own row ids, which\nare the only ids the write endpoints accept",
+                "tags": [
+                    "Revision"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`CatalogueRevisionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueRevisionResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "`CatalogueRevisionResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CatalogueRevisionResource"
                                         }
                                     },
                                     "required": [
@@ -8445,6 +8518,9 @@
                             "integer",
                             "null"
                         ]
+                    },
+                    "editable": {
+                        "type": "boolean"
                     }
                 },
                 "required": [
@@ -8453,7 +8529,8 @@
                     "is_baseline",
                     "label",
                     "published_at",
-                    "parent_revision_id"
+                    "parent_revision_id",
+                    "editable"
                 ],
                 "title": "CatalogueRevisionResource"
             },

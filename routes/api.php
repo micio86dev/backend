@@ -225,6 +225,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // reaches it through the same middleware that grants their bypass.
 Route::middleware(['auth:api', TenantContext::class])->prefix('catalogue')->group(function (): void {
     Route::get('revisions/current', [RevisionController::class, 'current']);
+    Route::post('revisions/draft', [RevisionController::class, 'openDraft']);
     Route::post('revisions/publish', [RevisionController::class, 'publish']);
 
     Route::get('roles', [CatalogueRoleController::class, 'index']);

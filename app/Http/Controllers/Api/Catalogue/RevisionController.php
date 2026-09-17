@@ -4,22 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Catalogue;
 
+use App\Actions\Catalogue\OpenDraftRevision;
 use App\Actions\Catalogue\PublishRevision;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Catalogue\CatalogueRevisionResource;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\User;
+use App\Support\Superadmin\PlatformAuditWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 /**
- * The revision lifecycle surface: read the open draft, publish it
- * (framework-catalogue-authoring PR3, D1/D3/D12). See `RoleController` for
- * the per-action 403 rationale — identical here.
+ * The revision lifecycle surface: read the revision the catalogue shows,
+ * open a draft, publish it (framework-catalogue-authoring PR3, D1/D3/D12).
+ * See `RoleController` for the per-action 403 rationale — identical here.
  */
 class RevisionController extends Controller
 {
+    public function __construct(
+        private readonly PlatformAuditWriter $auditWriter,
+    ) {}
+
     private function isSuperadmin(Request $request): bool
     {
         $user = $request->user();
@@ -28,24 +35,64 @@ class RevisionController extends Controller
     }
 
     /**
-     * READ-ONLY (gga review finding, blocking): this used to auto-open a
-     * draft on every call, which breaks HTTP safety on a GET — a prefetch,
-     * retry, or monitoring probe from a superadmin session would clone
-     * ~450 rows for a request nobody asked to be a write. Auto-open on
-     * "first edit" still happens, correctly, where an edit actually
-     * occurs — via each catalogue-write FormRequest's own
-     * `ResolvesOpenDraftRevision::openDraftRevisionId()` (framework-
-     * catalogue-authoring PR3b, H5; not the controller body directly, and
-     * not called a second time there). This endpoint only reports whatever
-     * is currently true — `null` when nothing is open yet.
+     * READ-ONLY: a GET never opens a draft — a prefetch, retry, or
+     * monitoring probe must not clone ~450 rows. Reports the revision the
+     * catalogue lists currently return (`FrameworkCatalogRevision::
+     * viewable()`): the open draft (`editable: true`), otherwise the latest
+     * published revision (`editable: false`). `null` only before anything
+     * has been published.
      */
     public function current(Request $request): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $revision = FrameworkCatalogRevision::openDraft();
+        $revision = FrameworkCatalogRevision::viewable();
 
         return response()->json(['data' => $revision === null ? null : new CatalogueRevisionResource($revision)]);
+    }
+
+    /**
+     * Opens the draft a superadmin edits, cloned from the latest published
+     * revision, or returns the one already open — idempotent, `201` when
+     * this call created it and `200` when it continued an existing one.
+     * After it, every catalogue list returns the draft's own row ids, which
+     * are the only ids the write endpoints accept.
+     *
+     * Audited only when a draft was actually created, inside the same
+     * transaction as the clone: returning an existing draft changes nothing,
+     * and a clone whose audit row fails to write rolls back with it rather
+     * than leaving an unaudited platform mutation behind.
+     * `404` when no published revision exists to clone from.
+     */
+    public function openDraft(Request $request, OpenDraftRevision $action): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $draft = DB::transaction(function () use ($action, $actor): FrameworkCatalogRevision {
+            $draft = $action->open();
+
+            if ($draft->wasRecentlyCreated) {
+                $this->auditWriter->record(
+                    actorId: $actor->id,
+                    action: 'revision.draft_opened',
+                    subjectType: 'FrameworkCatalogRevision',
+                    subjectId: $draft->id,
+                    before: null,
+                    after: ['revision_id' => $draft->id, 'parent_revision_id' => $draft->parent_revision_id],
+                );
+            }
+
+            return $draft;
+        });
+
+        if ($draft->wasRecentlyCreated) {
+            return (new CatalogueRevisionResource($draft))->response()->setStatusCode(Response::HTTP_CREATED);
+        }
+
+        return (new CatalogueRevisionResource($draft))->response();
     }
 
     /**
