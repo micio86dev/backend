@@ -270,6 +270,16 @@ class InterviewController extends Controller
             // handleResumeInCorso(). Best-effort and scoped to the ref, so a
             // retried /start re-harvests the same stretch idempotently. A
             // suspended session has no ref: /suspend already harvested it.
+            // `handleResumeInCorso()` reads its OWN `$oldRef` off a
+            // separately re-fetched InterviewSession (createOrResumeSession()'s
+            // UniqueConstraintViolationException path), not off `$outgoingRef`
+            // here — two reads of "the old ref" that must always agree.
+            // Nothing between this line and that read ever writes
+            // `provider_session_ref` on this row (issue() returns a fresh
+            // ProviderToken without touching the session it was handed; the
+            // one intervening save() below only ever touches
+            // primary_questions/follow_up_budget), so they do — pinned by
+            // ResumeHarvestTeardownRefTest.
             $outgoingRef = $liveSession->provider_session_ref;
 
             if ($outgoingRef !== null) {
@@ -1392,6 +1402,16 @@ class InterviewController extends Controller
      * `TurnClassifier::matchedCount()` would replay at that point in the
      * batch, without re-reading the `utterances` table before every avatar
      * row inside `/end`'s locked transaction.
+     *
+     * R3-batch-vs-replay-order: this in-memory count and a LATER
+     * `matchedCount()` replay (which orders persisted rows by `ts`, then
+     * `id`) stay consistent because both callers hand `$rows` in the
+     * provider's own chronological (ts-ascending) transcript order, and
+     * inserting ONE ROW AT A TIME assigns each row's `id` in that same
+     * order — so `ORDER BY ts, id` over the persisted rows reproduces
+     * exactly this loop's iteration order. A bulk insert would not
+     * guarantee that id/ts correspondence, which is the other reason
+     * (besides D8 above) this stays row-at-a-time.
      *
      * @param  array<array-key, array<string, mixed>>  $rows
      */
