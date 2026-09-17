@@ -12,8 +12,8 @@ use App\Http\Resources\ProjectResource;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
-use App\Models\User;
 use App\Support\Projects\ProjectWebhookDefaults;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -75,11 +75,13 @@ class ProjectController extends Controller
      */
     public function store(StoreProjectRequest $request): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
         // Plain Model — resolved explicitly, not via the TenantScoped global scope
         // (Organization carries no organization_id of its own; its id IS the tenant key).
-        $organization = Organization::findOrFail($user->organization_id);
+        // The ACTING org, never `$user->organization_id` directly — see
+        // `StoreProjectRequest::rules()` for why (null for a superadmin,
+        // which would 404 this lookup instead of resolving the org they are
+        // acting as).
+        $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
 
         $project = DB::transaction(function () use ($request, $organization): Project {
             $competencyIds = $request->input('competency_ids', []);

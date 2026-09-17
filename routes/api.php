@@ -226,6 +226,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 Route::middleware(['auth:api', TenantContext::class])->prefix('catalogue')->group(function (): void {
     Route::get('revisions/current', [RevisionController::class, 'current']);
     Route::post('revisions/draft', [RevisionController::class, 'openDraft']);
+    Route::delete('revisions/draft', [RevisionController::class, 'discard']);
     Route::post('revisions/publish', [RevisionController::class, 'publish']);
 
     Route::get('roles', [CatalogueRoleController::class, 'index']);

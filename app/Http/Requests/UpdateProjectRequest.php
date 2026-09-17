@@ -6,7 +6,7 @@ namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\Project;
-use App\Models\User;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -114,9 +114,11 @@ class UpdateProjectRequest extends FormRequest
      */
     public function rules(): array
     {
-        /** @var User $user */
-        $user = $this->user();
-        $orgId = $user->organization_id;
+        // The ACTING org, never `$user->organization_id` directly — see
+        // `StoreProjectRequest::rules()` for why (that column is null for a
+        // superadmin, which would make every org-scoped check below match
+        // zero rows regardless of the value submitted).
+        $orgId = app(TenantResolver::class)->getOrgId();
 
         $project = $this->resolvedProject();
 

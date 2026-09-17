@@ -129,3 +129,41 @@ test('an ordinary admin cannot set an acting organization', function (): void {
         ->putJson('/api/admin/acting-organization', ['organization_id' => $theirs->id])
         ->assertForbidden();
 });
+
+/**
+ * Regression: `OrganizationController`/`OrganizationLogoController` resolved
+ * `$request->user()->organization_id` directly — null for a superadmin, so
+ * `Organization::findOrFail(null)` 404'd `GET/PATCH /api/organization` on
+ * every backoffice visit while acting as a client, even though the switch
+ * above correctly narrowed every OTHER tenant-scoped read.
+ */
+test('acting as one client reads THAT client\'s organization settings, not a 404', function (): void {
+    $acme = Organization::factory()->create(['name' => 'Acme']);
+    Organization::factory()->create(['name' => 'Globex']);
+
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)
+        ->putJson('/api/admin/acting-organization', ['organization_id' => $acme->id])
+        ->assertOk();
+
+    $response = $this->withToken($token)->getJson('/api/organization');
+
+    $response->assertOk();
+    expect($response->json('data.name'))->toBe('Acme');
+});
+
+test('acting as one client updates THAT client\'s organization settings, not a 404', function (): void {
+    $acme = Organization::factory()->create(['name' => 'Acme']);
+
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)
+        ->putJson('/api/admin/acting-organization', ['organization_id' => $acme->id])
+        ->assertOk();
+
+    $response = $this->withToken($token)->patchJson('/api/organization', ['name' => 'Acme Renamed']);
+
+    $response->assertOk();
+    expect($acme->fresh()->name)->toBe('Acme Renamed');
+});

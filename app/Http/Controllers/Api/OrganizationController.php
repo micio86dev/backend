@@ -8,7 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateOrganizationRequest;
 use App\Http\Resources\Admin\OrganizationResource;
 use App\Models\Organization;
-use App\Models\User;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -16,9 +16,15 @@ use Illuminate\Http\JsonResponse;
  *
  * GET/PATCH /api/organization — the singular, self-resolving org settings
  * resource. No id ever appears in the path or is read from the request; the
- * org resolves EXCLUSIVELY from `$request->user()->organization_id` (the
+ * org resolves EXCLUSIVELY from `TenantResolver::getOrgId()` (the
  * M2m/ParticipantController.php:110-111 explicit-resolve discipline, minus
  * even the id — there is no IDOR surface to test here at all).
+ *
+ * NOT `$request->user()->organization_id`: that column is null for a
+ * superadmin, which 404'd this endpoint on every backoffice visit while
+ * acting as an organization (or with none selected) — the resolver is what
+ * `TenantContext` narrows to the ACTING org, and every other TenantModel read
+ * already follows it for free through the global scope.
  */
 class OrganizationController extends Controller
 {
@@ -27,9 +33,7 @@ class OrganizationController extends Controller
      */
     public function show(): OrganizationResource
     {
-        /** @var User $user */
-        $user = request()->user();
-        $organization = Organization::findOrFail($user->organization_id);
+        $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
 
         $this->authorize('view', $organization);
 
@@ -45,9 +49,7 @@ class OrganizationController extends Controller
      */
     public function update(UpdateOrganizationRequest $request): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
-        $organization = Organization::findOrFail($user->organization_id);
+        $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
 
         $organization->update($request->safe()->only([
             'name',
