@@ -33,6 +33,7 @@ use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
+use App\Support\Interview\AvatarSilenceDetector;
 use App\Support\Interview\CompetencyTally;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Interview\TurnClassifier;
@@ -75,6 +76,7 @@ class InterviewController extends Controller
         private readonly CatalogueRevisionResolver $revisionResolver,
         private readonly ProjectInterviewability $projectInterviewability,
         private readonly TurnClassifier $turnClassifier,
+        private readonly AvatarSilenceDetector $avatarSilence,
     ) {}
 
     // =========================================================================
@@ -750,6 +752,9 @@ class InterviewController extends Controller
 
             return response()->json(['error' => 'provider_error'], Response::HTTP_BAD_GATEWAY);
         }
+
+        // Observation only, after the commit: the stretch /end just stored.
+        $this->avatarSilence->inspect($session, $session->provider_session_ref);
 
         if ($progress !== null) {
             event(new CompetencySessionEnded(
@@ -1503,7 +1508,11 @@ class InterviewController extends Controller
                 'session_id' => $session->id,
                 ...SafeDbContext::for($e),
             ]);
+
+            return;
         }
+
+        $this->avatarSilence->inspect($session, $oldRef);
     }
 
     /**

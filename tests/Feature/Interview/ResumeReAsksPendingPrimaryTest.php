@@ -9,7 +9,8 @@ declare(strict_types=1);
  * the next /start resumes the same in_corso session. The opening it speaks is
  * the primary after the last one already asked — or the last primary, when
  * every one was asked — and the composed prompt says so. The re-ask is a
- * `primary` turn that never counts a primary twice.
+ * `primary` turn that never counts a primary twice. Harvest and /end also
+ * report a stretch where the avatar went silent after its opening.
  *
  * Uses the shared `cas*()` fixtures (`tests/Helpers/C9Fixtures.php`).
  */
@@ -21,6 +22,7 @@ use App\Models\Utterance;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 /**
@@ -214,4 +216,49 @@ test('a composition failure on resume fails the start with 422 and issues no pro
     expect($calls->tokens)->toBe(1)
         ->and($session->status)->toBe('in_corso')
         ->and($session->provider_session_ref)->toBeNull();
+});
+
+test('a harvested stretch where the avatar never answered after the opening logs provider_avatar_silent', function (): void {
+    resumeReAskFake([
+        ['role' => 'assistant', 'transcript' => 'Ciao! Come ti chiami?', 'time_ms' => 9000],
+        ['role' => 'user', 'transcript' => 'Marco.', 'time_ms' => 8000],
+        ['role' => 'user', 'transcript' => 'Hello?', 'time_ms' => 7000],
+        ['role' => 'user', 'transcript' => 'Are you there?', 'time_ms' => 6000],
+        ['role' => 'user', 'transcript' => 'Can you hear me?', 'time_ms' => 5000],
+    ]);
+
+    $started = resumeReAskStart();
+    Log::spy();
+
+    test()->withHeaders(['Authorization' => 'Bearer '.$started['bearer']])
+        ->postJson('/api/candidate/interview/suspend', ['session_id' => $started['session_id']])
+        ->assertOk();
+
+    Log::shouldHaveReceived('warning')->withArgs(
+        fn (string $message, array $context = []): bool => $message === 'provider_avatar_silent'
+            && $context['session_id'] === $started['session_id']
+            && $context['candidate_turns'] === 4,
+    );
+});
+
+test('/end checks the surviving stretch for a silent avatar', function (): void {
+    resumeReAskFake([
+        ['role' => 'assistant', 'transcript' => 'Ciao! Come ti chiami?', 'time_ms' => 9000],
+        ['role' => 'user', 'transcript' => 'Marco.', 'time_ms' => 8000],
+        ['role' => 'user', 'transcript' => 'Hello?', 'time_ms' => 7000],
+        ['role' => 'user', 'transcript' => 'Are you there?', 'time_ms' => 6000],
+        ['role' => 'user', 'transcript' => 'Can you hear me?', 'time_ms' => 5000],
+    ]);
+
+    $started = resumeReAskStart();
+    Log::spy();
+
+    test()->withHeaders(['Authorization' => 'Bearer '.$started['bearer']])
+        ->postJson('/api/candidate/interview/end', ['session_id' => $started['session_id'], 'ended_reason' => 'completed'])
+        ->assertOk();
+
+    Log::shouldHaveReceived('warning')->withArgs(
+        fn (string $message, array $context = []): bool => $message === 'provider_avatar_silent'
+            && $context['session_id'] === $started['session_id'],
+    );
 });
