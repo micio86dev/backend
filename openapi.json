@@ -5550,19 +5550,7 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "allOf": [
-                                    {
-                                        "$ref": "#/components/schemas/UpdateProjectRequest"
-                                    },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "competency_ids": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/UpdateProjectRequest"
                             }
                         }
                     }
@@ -11025,6 +11013,131 @@
             "UpdateProjectRequest": {
                 "type": "object",
                 "description": "UpdateProjectRequest (C4 Project Configuration).\n\nValidates PATCH /api/projects/{id} payload.\n\nKey invariants:\n- framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).\n  Any PATCH that includes this field is rejected with 422 \u2014 even the same value, even on draft.\n- slug: self-ignoring unique rule (->ignore) with soft-delete exclusion\n- Immutability: changing assessment_type or role_code when the resulting status is 'active' or\n  'archived' \u2192 422\n- Lifecycle: allowed transitions are draft\u2192active and active\u2192archived only.\n  Forbidden (active\u2192draft, archived\u2192active, archived\u2192draft) \u2192 422.\n\nSubstituteBindings note: the route parameter 'project' is an int (no implicit model binding \u2014\nSubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding\nwould resolve Project before the tenant scope is set). Manual findOrFail() inside controller\nand FormRequest methods ensures the TenantScoped global scope is active at resolution time.",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "assessment_type": {
+                        "type": "string",
+                        "enum": [
+                            "standard",
+                            "potential"
+                        ]
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": "string",
+                        "enum": [
+                            "it",
+                            "en"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Approved status enum: draft|active|archived (no gone_live)",
+                        "enum": [
+                            "draft",
+                            "active",
+                            "archived"
+                        ]
+                    },
+                    "competency_ids": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "integer",
+                            "description": "`exists` is load-bearing: `validateStandard` iterates\n`whereIn(...)->get()`, so an unknown id is never looped over and\nreached the foreign key as a 500. Scoped to this project's own\npinned revision (framework-catalogue-authoring PR3b, H1) \u2014 see\n`compositionRevisionId()`."
+                        }
+                    },
+                    "pause_every_n_competencies": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 255
+                    },
+                    "nudge_min_chars": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 65535
+                    },
+                    "exit_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
+                    "error_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
+                    "webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
+                    "avatar_template_id": {
+                        "type": "integer",
+                        "description": "`sometimes` WITHOUT `nullable`: see `avatarTemplateRule()`."
+                    },
+                    "webhook_secret": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 1024
+                    },
+                    "webhook_events": {
+                        "type": "array",
+                        "description": "Closed event-type set (C10 D10) \u2014 not env-overridable, so Rule::in reads\nthe config, never a hardcoded list.",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "progress",
+                                "evaluation"
+                            ]
+                        }
+                    },
+                    "deadline_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "goes_live_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                },
                 "title": "UpdateProjectRequest"
             },
             "UpdateRoleCompetenciesRequest": {

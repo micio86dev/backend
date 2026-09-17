@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Models\Organization;
-use App\Models\User;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,11 +22,12 @@ class UpdateOrganizationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        /** @var User|null $user */
-        $user = $this->user();
-        $organization = Organization::find($user?->organization_id);
+        // The ACTING org, never `$user->organization_id` directly — see
+        // `OrganizationController`'s own docblock for why (null for a
+        // superadmin, which refused every PATCH while acting as a client).
+        $organization = Organization::find(app(TenantResolver::class)->getOrgId());
 
-        return $organization !== null && ($user?->can('update', $organization) ?? false);
+        return $organization !== null && ($this->user()?->can('update', $organization) ?? false);
     }
 
     /**

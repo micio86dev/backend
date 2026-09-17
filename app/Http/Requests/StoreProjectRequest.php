@@ -7,8 +7,8 @@ namespace App\Http\Requests;
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\FrameworkVersion;
 use App\Models\Project;
-use App\Models\User;
 use App\Support\Catalogue\CatalogueRevisionResolver;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -63,9 +63,16 @@ class StoreProjectRequest extends FormRequest
      */
     public function rules(): array
     {
-        /** @var User $user */
-        $user = $this->user();
-        $orgId = $user->organization_id;
+        // The ACTING org (superadmin "acting as" support), never
+        // `$user->organization_id` directly: that column is null for a
+        // superadmin, and every org-scoped `exists`/`unique` check below
+        // would degrade to `whereNull('organization_id')` — matching zero
+        // rows regardless of the value submitted, while the GET endpoints
+        // that list valid `framework_version_id`/`avatar_template_id`
+        // options for the picker (both TenantModel-scoped) correctly resolve
+        // through this same resolver and would keep offering values this
+        // request rejected unconditionally.
+        $orgId = app(TenantResolver::class)->getOrgId();
 
         /** @var list<string> $supportedLocales */
         $supportedLocales = config('app.supported_locales', ['en', 'it']);
