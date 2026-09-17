@@ -22,10 +22,10 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
 /**
- * Superadmin CRUD over catalogue competencies, scoped to the open draft
- * revision (framework-catalogue-authoring PR3, D12). See `RoleController`
- * for the per-action 403 rationale and the `update()` no-auto-open
- * rationale — identical here.
+ * Superadmin CRUD over catalogue competencies; writes are scoped to the open
+ * draft revision (framework-catalogue-authoring PR3, D12). See
+ * `RoleController` for the read-side revision resolution, the per-action
+ * 403 rationale and the `update()` no-auto-open rationale — identical here.
  */
 class CompetencyController extends Controller
 {
@@ -44,8 +44,8 @@ class CompetencyController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::openDraft();
-        $competencies = $draft === null ? collect() : Competency::where('revision_id', $draft->id)->orderBy('code')->get();
+        $revision = FrameworkCatalogRevision::viewable();
+        $competencies = $revision === null ? collect() : Competency::where('revision_id', $revision->id)->orderBy('code')->get();
 
         return CatalogueCompetencyResource::collection($competencies);
     }

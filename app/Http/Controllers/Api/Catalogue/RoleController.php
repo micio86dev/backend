@@ -23,8 +23,11 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
 /**
- * Superadmin CRUD over catalogue roles, scoped to the open draft revision
- * (framework-catalogue-authoring PR3, D12).
+ * Superadmin CRUD over catalogue roles (framework-catalogue-authoring PR3,
+ * D12). Writes are scoped to the open draft revision; `index()` reads
+ * `FrameworkCatalogRevision::viewable()` — the open draft, or the latest
+ * published revision as a read-only view when no draft is open — so the
+ * catalogue is never shown empty just because nobody is editing it.
  *
  * Every action repeats `abort_unless($this->isSuperadmin($request), 403)`
  * inline — copied verbatim from `PlatformUserController:87,102`, never
@@ -49,12 +52,12 @@ class RoleController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $draft = FrameworkCatalogRevision::openDraft();
+        $revision = FrameworkCatalogRevision::viewable();
         // Eager-loaded (framework-catalogue-authoring PR8b, gga review
         // finding): `CatalogueRoleResource::competency_ids` reads this
         // relation for every role it serializes — unloaded, that is one
         // query per role.
-        $roles = $draft === null ? collect() : Role::with('competencies')->where('revision_id', $draft->id)->orderBy('code')->get();
+        $roles = $revision === null ? collect() : Role::with('competencies')->where('revision_id', $revision->id)->orderBy('code')->get();
 
         return CatalogueRoleResource::collection($roles);
     }
