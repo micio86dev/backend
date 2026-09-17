@@ -50,9 +50,18 @@ use Illuminate\Http\Request;
  */
 class RevisionPublishedDuringWriteException extends Exception
 {
+    /**
+     * `$cause` has no default (R2-exception-default-cause): Z13's own
+     * discipline above is "named at the throw site, where the distinction
+     * is actually observed" — a default silently mislabels a future throw
+     * site that forgets to pass it as `Published` even when the real cause
+     * is `Discarded`, exactly the confusion Z13 exists to close. Every
+     * current throw site (`BumpsRevisionContentVersion::
+     * withRevisionLockedForWrite()`) already names it explicitly.
+     */
     public function __construct(
-        string $message = '',
-        private readonly RevisionWriteConflictCause $cause = RevisionWriteConflictCause::Published,
+        string $message,
+        private readonly RevisionWriteConflictCause $cause,
     ) {
         parent::__construct($message);
     }
