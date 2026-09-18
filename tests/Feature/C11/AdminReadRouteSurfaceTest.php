@@ -46,6 +46,10 @@ test('the admin participant route surface is exactly the enumerated set', functi
         // enumerates — it shares the URI prefix only, so it is listed here
         // rather than filtered out, to keep the enumeration exhaustive.
         'api/participants/{id}/recover',
+        // (scoring-audit-jev, design D12) POST /api/participants/{id}/evaluation/audit
+        // is also a WRITE (dispatches a paid third-party audit run), not a
+        // read — listed here for the same reason /recover is above.
+        'api/participants/{id}/evaluation/audit',
         'api/dashboard/metrics',
     ]);
 });

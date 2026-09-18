@@ -129,6 +129,7 @@ final class ParticipantController extends Controller
         return new EvaluationResource(
             $this->evaluationSerializer->serialize($participant),
             $this->evaluationSerializer->meta($participant),
+            $this->evaluationSerializer->auditMeta($participant),
         );
     }
 }

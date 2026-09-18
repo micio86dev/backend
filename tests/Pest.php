@@ -545,6 +545,39 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Config/TruncationRetryConfigTest.php');
 
+// Unit/Config/AuditConfigTest.php (scoring-audit-jev P1.1) — needs TestCase
+// so config() resolves against the booted app. No DB needed: pure
+// config-invariant assertions pinning the shipped `scoring.audit` defaults,
+// same shape as TruncationRetryConfigTest.php immediately above.
+pest()->extend(TestCase::class)
+    ->in('Unit/Config/AuditConfigTest.php');
+
+// Unit/Support/Observability/AuditRunCostEstimatorTest.php (scoring-audit-jev
+// P3a.12) — needs TestCase so config() resolves against the booted app, same
+// shape as Unit/Support/Http above. ResponseFingerprintTest.php in this same
+// directory is pure logic and needs no app context, but extending TestCase
+// for the whole directory is harmless for it — it declares no expectations
+// about which TestCase class it runs under.
+pest()->extend(TestCase::class)
+    ->in('Unit/Support/Observability');
+
+// Unit/Policies (scoring-audit-jev P4.1) — needs TestCase + RefreshDatabase:
+// EvaluationPolicyAuditTest creates real Organization/User rows and assigns
+// real Spatie roles (team-scoped), same shape as Unit/C4/ProjectPolicyTest.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Policies');
+
+// Feature/Audit (scoring-audit-jev P1.13) — registered explicitly per this
+// file's own "EVERY Feature subdirectory has to be named here" convention
+// (see the block at the bottom of this file), not only when a factory is
+// used. P1's own FakeAuditJudgeBindingTest.php writes no rows, but P2 onward
+// adds real Feature/Audit tests that DO (migrations, tenancy, cascade
+// deletes) — registering RefreshDatabase now avoids a second edit later and
+// keeps this directory from ever running unwrapped once those land.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Audit');
+
 // ─── pluggable-conversation-llm (P0/P1) ────────────────────────────────────────
 
 // Unit/Support/AvatarTemplates — needs TestCase + RefreshDatabase:

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Contracts\AuditJudge;
 use App\Contracts\LLMProvider;
 use App\Contracts\RedisEvictionPolicyProbe;
 use App\Models\ApiClient;
@@ -20,12 +21,14 @@ use App\Policies\OrganizationPolicy;
 use App\Policies\ParticipantPolicy;
 use App\Policies\ProjectPolicy;
 use App\Policies\UserPolicy;
+use App\Services\Audit\TypesafeJevJudge;
 use App\Services\LLM\AnthropicLLMProvider;
 use App\Services\Scoring\AssessableFractionReliability;
 use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
 use App\Services\Scoring\ThresholdValidityPredicate;
 use App\Support\Auth\RedisConfigEvictionPolicyProbe;
+use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -58,6 +61,17 @@ class AppServiceProvider extends ServiceProvider
             // C9 D7 (resolved): production binding calls the Anthropic Messages API
             // directly via Laravel's Http client — NO third-party SDK, NO D25 blocker.
             $this->app->bind(LLMProvider::class, AnthropicLLMProvider::class);
+        }
+
+        // scoring-audit-jev (proposal AD-5, design C-B/D3): AuditJudge joins the
+        // exact if/else above, in the same method, immediately below it. All
+        // standard tests use FakeAuditJudge — zero HTTP requests to TypeSafe.
+        // The @ai-group real-API lane (workflow_dispatch) runs outside the
+        // testing environment and therefore resolves TypesafeJevJudge.
+        if ($this->app->environment('testing')) {
+            $this->app->bind(AuditJudge::class, FakeAuditJudge::class);
+        } else {
+            $this->app->bind(AuditJudge::class, TypesafeJevJudge::class);
         }
 
         // C9 PR3: D5 — Bind injectable ReliabilityStrategy and ValidityPredicate.

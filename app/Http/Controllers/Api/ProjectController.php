@@ -189,16 +189,27 @@ class ProjectController extends Controller
                 $attach[$competencyId] = ['position' => $position];
             }
 
-            // D10: `sync()`'s return value IS the observation — `attached`/
-            // `detached` are the ground truth of what this request actually
-            // changed, never re-derived from a pre-read diff (wrong under a
+            // D10: `sync()`'s return value IS the observation — `detached`
+            // is the ground truth of what this request actually removed,
+            // never re-derived from a pre-read diff (wrong under a
             // concurrent write). `updated` (a pure position change) is
             // deliberately ignored — it is not a selection change.
             $changes = $resolved->competencies()->sync($attach);
 
+            // The FULL currently-selected set, not `$changes['attached']`
+            // (this sync call's diff alone): `ApplyCompetencySelection::
+            // ensureCompetencyHasQuestions()`'s own docblock documents
+            // calling it for an already-attached competency as a safe no-op
+            // when live questions already exist — so this self-heals any
+            // competency stuck attached with zero `project_questions` (e.g.
+            // selected before this write path existed, or before the
+            // framework_version_id revision-scoping bug above this method
+            // once blocked the save that would have seeded them) on every
+            // ordinary PATCH, at no cost to the common case where nothing
+            // changed.
             $this->applyCompetencySelection->apply(
                 $resolved,
-                array_values(array_map('intval', $changes['attached'])),
+                array_map('intval', array_keys($attach)),
                 array_values(array_map('intval', $changes['detached'])),
             );
         });

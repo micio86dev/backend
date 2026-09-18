@@ -70,6 +70,37 @@ class FrameworkController extends Controller
     }
 
     /**
+     * The revision a competency-picker read should be scoped to, given the
+     * `framework_version_id` (if any) the caller is asking on behalf of.
+     *
+     * Mirrors `StoreProjectRequest::compositionRevisionId()` exactly — that
+     * is the revision `competency_ids` will be validated against on submit,
+     * so the picker offering anything else is a contract mismatch: an org
+     * whose `framework_version_id` is pinned to an OLDER revision than
+     * "latest published" (the catalogue was republished since that pin was
+     * created — CLAUDE.md ruling 3, "a framework version is pinned once,
+     * never retargeted") would see ids from the wrong revision and have them
+     * refused as `competency_unknown` on save, even though they were
+     * correctly ticked.
+     *
+     * No `framework_version_id` given → `latestPublishedOrSentinel()`,
+     * unchanged from before this existed (a picker asked with no version
+     * context yet, e.g. before the create form's default selection resolves).
+     */
+    private function targetRevisionId(Request $request): int
+    {
+        $versionId = $request->query('framework_version_id');
+
+        if (! is_numeric($versionId)) {
+            return $this->latestPublishedOrSentinel();
+        }
+
+        $version = FrameworkVersion::find((int) $versionId);
+
+        return $this->revisionResolver->tryForFrameworkVersion($version) ?? CatalogueRevisionResolver::NO_PUBLISHED_REVISION;
+    }
+
+    /**
      * GET /api/framework/roles
      *
      * Returns all global roles for ANY authenticated org.
@@ -101,7 +132,7 @@ class FrameworkController extends Controller
         $this->resolveLocale($request);
 
         $role = Role::where('code', strtoupper($roleCode))
-            ->where('revision_id', $this->latestPublishedOrSentinel())
+            ->where('revision_id', $this->targetRevisionId($request))
             ->firstOrFail();
 
         $competencies = $role->competencies()->get();
@@ -147,7 +178,7 @@ class FrameworkController extends Controller
 
         $competencies = Competency::query()
             ->where('type', 'potential')
-            ->where('revision_id', $this->latestPublishedOrSentinel())
+            ->where('revision_id', $this->targetRevisionId($request))
             ->orderBy('code')
             ->get();
 
