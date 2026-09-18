@@ -57,7 +57,13 @@ final class TypesafeJevJudge implements AuditJudge
         if (! $response->successful()) {
             throw new AuditJudgeException(
                 message: "TypeSafe returned HTTP {$response->status()}",
-                retryable: $response->status() >= 500,
+                // 5xx is a vendor-side failure; 429 (rate limited) and 408
+                // (request timeout) are also transient and safe to retry
+                // (P3b: this flag had zero consumers through P3a, confirmed
+                // by reading every AuditJudgeException call site before
+                // fixing the classification — a functionally inert bug is
+                // still a wrong one once something starts reading it).
+                retryable: $response->status() >= 500 || in_array($response->status(), [408, 429], true),
             );
         }
 

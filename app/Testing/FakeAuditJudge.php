@@ -75,6 +75,7 @@ final class FakeAuditJudge implements AuditJudge
 
         return new AuditBatchResult(
             verdicts: $verdicts,
+            omissions: [],
             inputTokens: $this->inputTokens,
             outputTokens: $this->outputTokens,
             judgeModel: $this->judgeModel,

@@ -6,6 +6,7 @@ namespace App\Services\Audit;
 
 use App\DTOs\Audit\AuditBatchResult;
 use App\DTOs\Audit\AuditVerdict;
+use App\Enums\Audit\AuditOutcomeReason;
 use App\Exceptions\Audit\AuditJudgeException;
 use Illuminate\Support\Facades\Log;
 
@@ -22,23 +23,21 @@ use Illuminate\Support\Facades\Log;
  * https://docs.typesafe.ai/api.md.
  *
  * Mapping rules:
- *   - envelope unparseable / not an object            → AuditJudgeException
- *   - a subject's ordinal key absent from the answers  → omitted from verdicts
- *   - any of its three probabilities absent/non-numeric → omitted from verdicts
- *   - any probability outside [0,1]                     → omitted from verdicts
- *   - answers present for keys never sent               → ignored, logged at warning
+ *   - envelope unparseable / not an object              → AuditJudgeException
+ *   - "usage" present but not an object, or "model"
+ *     present but not a string                          → AuditJudgeException
+ *   - a subject's ordinal key ENTIRELY absent (none of
+ *     its 3 suffixed questions present)                  → omitted, reason VerdictMissing
+ *   - some but not all of its 3 probabilities
+ *     present/numeric                                     → omitted, reason VerdictUnparseable
+ *   - all 3 present/numeric but one outside [0,1]          → omitted, reason ProbabilityOutOfDomain
+ *   - answers present for keys never sent                 → ignored, logged at warning
  *
- * KNOWN GAP, noted rather than silently resolved: this class distinguishes
- * three structurally different reasons a subject can be omitted
- * (`verdict_missing` / `verdict_unparseable` / `probability_out_of_domain`,
- * design D3/C-E), but `AuditBatchResult` — exactly as specified by design D2
- * — carries only the SURVIVING `$verdicts`, with no channel for WHY an
- * omitted subject was omitted. `AuditEvaluationJob` (P3b, out of this
- * batch's scope) needs that per-subject reason to pick the correct
- * `AuditOutcomeReason::Verdict*` case. This gap must be resolved when P3b is
- * implemented — either by extending `AuditBatchResult`/`AuditVerdict` with a
- * reasons channel, or by another mechanism — and is flagged here rather than
- * silently designed around, per this batch's scope (P1 only).
+ * Every omitted subject's reason is recorded on
+ * `AuditBatchResult::$omissions` (P3b resolution of the gap P1 flagged
+ * forward: `$verdicts` alone told the caller a subject was missing, never
+ * WHY). `AuditEvaluationJob` reads this channel to pick the correct
+ * `malformed` row's `outcome_reason`.
  */
 final class JevResponseMapper
 {
@@ -47,7 +46,8 @@ final class JevResponseMapper
     /**
      * @param  array<string, int>  $keyMap  ordinal key => indicatorScoreId, exactly what was sent
      *
-     * @throws AuditJudgeException when the envelope is unparseable or not an object
+     * @throws AuditJudgeException when the envelope is unparseable, not an
+     *                             object, or carries a malformed "usage"/"model" field
      */
     public function map(mixed $json, array $keyMap, int $latencyMs): AuditBatchResult
     {
@@ -59,6 +59,16 @@ final class JevResponseMapper
 
         if (! is_array($answers)) {
             throw new AuditJudgeException('TypeSafe response envelope carries no "answers" object.');
+        }
+
+        $usage = $json['usage'] ?? null;
+        if ($usage !== null && ! is_array($usage)) {
+            throw new AuditJudgeException('TypeSafe response envelope carries a non-object "usage" field.');
+        }
+
+        $model = $json['model'] ?? null;
+        if ($model !== null && ! is_string($model)) {
+            throw new AuditJudgeException('TypeSafe response envelope carries a non-string "model" field.');
         }
 
         $sentQuestionIds = [];
@@ -76,17 +86,28 @@ final class JevResponseMapper
         }
 
         $verdicts = [];
+        $omissions = [];
 
         foreach ($keyMap as $key => $indicatorScoreId) {
             $relevance = $this->extractProbability($answers, "{$key}.relevance");
             $calibration = $this->extractProbability($answers, "{$key}.calibration");
             $grounding = $this->extractProbability($answers, "{$key}.grounding");
 
+            if ($relevance === null && $calibration === null && $grounding === null) {
+                $omissions[$indicatorScoreId] = AuditOutcomeReason::VerdictMissing;
+
+                continue;
+            }
+
             if ($relevance === null || $calibration === null || $grounding === null) {
+                $omissions[$indicatorScoreId] = AuditOutcomeReason::VerdictUnparseable;
+
                 continue;
             }
 
             if (! $this->inDomain($relevance) || ! $this->inDomain($calibration) || ! $this->inDomain($grounding)) {
+                $omissions[$indicatorScoreId] = AuditOutcomeReason::ProbabilityOutOfDomain;
+
                 continue;
             }
 
@@ -101,9 +122,10 @@ final class JevResponseMapper
 
         return new AuditBatchResult(
             verdicts: $verdicts,
-            inputTokens: (int) ($json['usage']['input_tokens'] ?? 0),
-            outputTokens: (int) ($json['usage']['output_tokens'] ?? 0),
-            judgeModel: (string) ($json['model'] ?? config('scoring.audit.judge_model', 'jev-1')),
+            omissions: $omissions,
+            inputTokens: $this->extractTokenCount($usage, 'input_tokens'),
+            outputTokens: $this->extractTokenCount($usage, 'output_tokens'),
+            judgeModel: $model ?? (string) config('scoring.audit.judge_model', 'jev-1'),
             latencyMs: $latencyMs,
         );
     }
@@ -121,5 +143,20 @@ final class JevResponseMapper
     private function inDomain(float $probability): bool
     {
         return $probability >= 0.0 && $probability <= 1.0;
+    }
+
+    /**
+     * Guarded extraction — never throws. `map()`'s own explicit `is_array($usage)`
+     * check above is what turns a genuinely malformed "usage" field into a clean
+     * `AuditJudgeException`; this helper only handles a well-formed object whose
+     * individual token count is missing or the wrong type.
+     *
+     * @param  array<string, mixed>|null  $usage
+     */
+    private function extractTokenCount(?array $usage, string $key): int
+    {
+        $value = $usage[$key] ?? null;
+
+        return (is_int($value) || is_float($value)) ? (int) $value : 0;
     }
 }

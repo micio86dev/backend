@@ -56,6 +56,32 @@ test('a 4xx response yields a non-retryable exception', function (): void {
     }
 });
 
+test('a 429 (rate limited) response yields a retryable exception', function (): void {
+    Http::fake(['*' => Http::response('Too many requests.', 429)]);
+
+    $judge = new TypesafeJevJudge;
+
+    try {
+        $judge->judge(auditRequestFixture());
+        $this->fail('Expected AuditJudgeException to be thrown.');
+    } catch (AuditJudgeException $e) {
+        expect($e->isRetryable())->toBeTrue();
+    }
+});
+
+test('a 408 (request timeout) response yields a retryable exception', function (): void {
+    Http::fake(['*' => Http::response('Request timeout.', 408)]);
+
+    $judge = new TypesafeJevJudge;
+
+    try {
+        $judge->judge(auditRequestFixture());
+        $this->fail('Expected AuditJudgeException to be thrown.');
+    } catch (AuditJudgeException $e) {
+        expect($e->isRetryable())->toBeTrue();
+    }
+});
+
 test('a transport failure yields a retryable exception', function (): void {
     Http::fake(function (): never {
         throw new ConnectionException('Could not connect to TypeSafe.');

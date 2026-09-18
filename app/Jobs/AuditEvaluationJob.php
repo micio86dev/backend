@@ -10,6 +10,7 @@ use App\DTOs\Audit\AuditSubject;
 use App\Enums\Audit\AuditOutcomeReason;
 use App\Enums\Audit\AuditRunStatus;
 use App\Enums\Audit\AuditVerdictStatus;
+use App\Exceptions\Audit\AuditJudgeException;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use App\Models\IndicatorScore;
@@ -32,12 +33,22 @@ use Throwable;
  * Post-hoc audit of persisted indicator scores (scoring-audit-jev, proposal
  * AD-5, design D6/D7). Trigger-agnostic (spec: "Audit Runs Are Operator-
  * Triggered Only") — this job dispatches from nothing in v1 except the P4
- * controller (not yet built as of P3a).
+ * controller.
  *
- * HAPPY PATH ONLY in this slice (P3a) — every judge() call is assumed to
- * succeed. Per-competency `Throwable` isolation, degraded rows, and
- * `failed()`'s best-effort write are P3b's scope (design D6's "KNOWN
- * CEILING" section, tasks.md P3b.1-P3b.19).
+ * Per-competency `Throwable` isolation (P3b, design D6/AD-3): a failure
+ * judging one competency never aborts the run — every other competency is
+ * still judged, and the failed competency's judgeable indicators receive
+ * `unavailable` rows. A verdict absent from an otherwise-successful call is
+ * the distinct `malformed` case (spec: "A Per-Subject Malformed Verdict Is
+ * Distinct From A Competency-Level Unavailable Outcome").
+ *
+ * Run `status` derivation (P3b) is read directly off design D6's own
+ * pseudocode structure: `runFailureReason` is set ONLY inside the per-
+ * competency `catch` block, never elsewhere — so by construction, a run
+ * with zero throws stays `completed` even when it carries `malformed`
+ * verdicts (those are visible via `indicators_malformed`, not via `status`).
+ * `partial` when at least one but not every judgeable competency threw;
+ * `failed` when every judgeable competency threw (0 judged).
  *
  * The run row is written ONCE, at the end, in one transaction (D6) — verdicts
  * are buffered in memory while every competency is judged, then the run row
@@ -140,6 +151,14 @@ final class AuditEvaluationJob implements ShouldQueue
         $latencyMs = 0;
         $judgeModelVersion = (string) config('scoring.audit.judge_model');
 
+        // Run-level failure tracking (D6's pseudocode: `runFailureReason ??=
+        // 'judge_unavailable'` — set ONLY inside the catch branch, first
+        // throw wins). `$attemptedAnyJudgeCall`/`$everyAttemptedCallThrew`
+        // together derive `failed` vs `partial` vs `completed` below.
+        $runFailureReason = null;
+        $attemptedAnyJudgeCall = false;
+        $everyAttemptedCallThrew = true;
+
         foreach ($competencyResults as $competencyResult) {
             [$skipped, $judgeable] = $this->partition($competencyResult->indicatorScores);
 
@@ -163,7 +182,35 @@ final class AuditEvaluationJob implements ShouldQueue
                 $judgeable,
             );
 
-            $result = $judge->judge(new AuditRequest($competencyResult->competency_code, $subjects));
+            $attemptedAnyJudgeCall = true;
+
+            try {
+                $result = $judge->judge(new AuditRequest($competencyResult->competency_code, $subjects));
+            } catch (Throwable $e) {
+                // Per-competency isolation (AD-3, design D6): this
+                // competency's vendor call could not be completed at all —
+                // every one of its judgeable subjects is `unavailable`,
+                // never `malformed` (that status is reserved for a call
+                // that DID succeed but a specific subject's verdict was
+                // unusable).
+                $reason = $this->unavailableReasonFor($e);
+
+                foreach ($judgeable as $indicator) {
+                    $bufferedAudits[] = [
+                        'indicator_score_id' => $indicator->id,
+                        'status' => AuditVerdictStatus::Unavailable->value,
+                        'support_probability' => null,
+                        'question_probabilities' => null,
+                        'outcome_reason' => $reason->value,
+                    ];
+                }
+
+                $runFailureReason ??= 'judge_unavailable';
+
+                continue;
+            }
+
+            $everyAttemptedCallThrew = false;
 
             $inputTokens += $result->inputTokens;
             $outputTokens += $result->outputTokens;
@@ -175,11 +222,23 @@ final class AuditEvaluationJob implements ShouldQueue
 
                 if ($verdict === null) {
                     // A verdict absent from a call that itself succeeded is
-                    // the `malformed` case — P3b wires the reason channel
-                    // and the row write for it (design C-C known gap,
-                    // tasks.md P3b.5-P3b.8). Not reachable in this slice:
-                    // FakeAuditJudge's default behaviour always returns a
-                    // verdict for every subject sent.
+                    // the distinct `malformed` case (spec: "A Per-Subject
+                    // Malformed Verdict Is Distinct From A Competency-Level
+                    // Unavailable Outcome"). `JevResponseMapper` always
+                    // records a reason for every subject it omits
+                    // (`AuditBatchResult::$omissions`); the fallback below is
+                    // defensive only — reachable if a future `AuditJudge`
+                    // implementation violates that invariant.
+                    $reason = $result->omissions[$indicator->id] ?? AuditOutcomeReason::VerdictMissing;
+
+                    $bufferedAudits[] = [
+                        'indicator_score_id' => $indicator->id,
+                        'status' => AuditVerdictStatus::Malformed->value,
+                        'support_probability' => null,
+                        'question_probabilities' => null,
+                        'outcome_reason' => $reason->value,
+                    ];
+
                     continue;
                 }
 
@@ -196,12 +255,18 @@ final class AuditEvaluationJob implements ShouldQueue
         $counters = $this->reconcileCounters($bufferedAudits);
         $estimatedCostUsd = $costEstimator->estimate($judgeModelVersion, $inputTokens, $outputTokens);
 
-        DB::transaction(function () use ($evaluation, $counters, $inputTokens, $outputTokens, $estimatedCostUsd, $latencyMs, $judgeModelVersion, $bufferedAudits): void {
+        [$runStatus, $runFailureReason] = match (true) {
+            $attemptedAnyJudgeCall && $everyAttemptedCallThrew => [AuditRunStatus::Failed, $runFailureReason ?? 'judge_unavailable'],
+            $runFailureReason !== null => [AuditRunStatus::Partial, $runFailureReason],
+            default => [AuditRunStatus::Completed, null],
+        };
+
+        DB::transaction(function () use ($evaluation, $counters, $inputTokens, $outputTokens, $estimatedCostUsd, $latencyMs, $judgeModelVersion, $bufferedAudits, $runStatus, $runFailureReason): void {
             $run = IndicatorScoreAuditRun::create([
                 'evaluation_id' => $evaluation->id,
                 'requested_by_user_id' => $this->requestedByUserId,
-                'status' => AuditRunStatus::Completed->value,
-                'failure_reason' => null,
+                'status' => $runStatus->value,
+                'failure_reason' => $runFailureReason,
                 'indicators_total' => $counters['total'],
                 'indicators_judged' => $counters['judged'],
                 'indicators_skipped' => $counters['skipped'],
@@ -303,6 +368,47 @@ final class AuditEvaluationJob implements ShouldQueue
         ];
     }
 
+    /**
+     * Classifies a per-competency judge failure into one of the three
+     * `unavailable` reasons (design C-E). `AuditJudgeException` carries no
+     * richer machine-readable classification than `isRetryable()` and a
+     * `previous` throwable — deliberately NOT `$e->getMessage()` (design
+     * D3's own rule: "the reason is a machine key, never $e->getMessage()").
+     *
+     * `getPrevious() !== null` is exactly `TypesafeJevJudge`'s transport
+     * branch (connection refused, DNS failure, or a timeout collapsed
+     * together — see below) — the vendor could not be reached at all.
+     * A present `AuditJudgeException` with no previous is a non-2xx response
+     * or an unparseable/malformed envelope — the vendor WAS reached.
+     *
+     * KNOWN LIMITATION, documented rather than silently guessed:
+     * `AuditOutcomeReason::JudgeTimeout` is not reachable from this method.
+     * `TypesafeJevJudge` wraps every `Http::withHeaders()->timeout()->post()`
+     * throwable (including a genuine timeout) into the same transport
+     * branch as a connection failure, and distinguishing them would mean
+     * inspecting the vendor SDK's own exception hierarchy for a wire that
+     * design.md's own C-C already flags UNVERIFIED. `JudgeTimeout` stays a
+     * legal, reachable-in-principle `AuditOutcomeReason` case for when that
+     * verification lands; forcing a guess now would be the same mistake
+     * C-C already warns against.
+     */
+    private function unavailableReasonFor(Throwable $e): AuditOutcomeReason
+    {
+        if ($e instanceof AuditJudgeException && $e->getPrevious() !== null) {
+            return AuditOutcomeReason::JudgeUnreachable;
+        }
+
+        if ($e instanceof AuditJudgeException) {
+            return AuditOutcomeReason::JudgeHttpError;
+        }
+
+        // Any other Throwable — e.g. a defensive type guard elsewhere in the
+        // judge chain raising something other than AuditJudgeException.
+        // The safest generic classification: the vendor could not be
+        // usefully reached for this competency.
+        return AuditOutcomeReason::JudgeUnreachable;
+    }
+
     private function releaseLock(): void
     {
         if ($this->lockOwner === null) {
@@ -313,19 +419,57 @@ final class AuditEvaluationJob implements ShouldQueue
     }
 
     /**
-     * P3b implements the full best-effort degraded-row write for the D6
-     * "KNOWN CEILING" case (a worker kill mid-run). Not wired here — out of
-     * this slice's happy-path scope. The lock is still released via
-     * handle()'s own `finally` for every failure that reaches THIS method
-     * (queue exhaustion after $tries), because `failed()` is a SEPARATE
-     * invocation from handle() and does not share its finally block.
+     * Best-effort degraded-row write for design D6's KNOWN CEILING: a worker
+     * kill mid-run ($timeout exceeded, OOM, container restart during
+     * deploy) loses the cost record of calls already made — the *attempt*
+     * is recorded even though the *spend* is not (tasks.md P3b.13's own
+     * framing). Mirrors `ScoreEvaluationJob::failed()`'s "org not derivable
+     * → log and skip the tenant-scoped write" branch. Writes NO indicator
+     * rows — only the run row, with all four counters at 0 (satisfying the
+     * coverage CHECK: `0 = 0+0+0+0`) and `failure_reason = 'job_killed'`.
+     *
+     * The lock is released here unconditionally, in every branch — this is
+     * a SEPARATE invocation from handle() and does not share its `finally`.
      */
     public function failed(Throwable $e): void
     {
-        Log::error('AuditEvaluationJob: job exhausted retries (P3b implements the degraded-row write)', [
+        Log::error('AuditEvaluationJob: job exhausted retries — writing best-effort failed run row (design D6 known ceiling)', [
             'evaluation_id' => $this->evaluationId,
             'error' => $e->getMessage(),
         ]);
+
+        $evaluation = Evaluation::withoutGlobalScopes()->find($this->evaluationId);
+        $orgId = $evaluation?->organization_id;
+
+        if ($evaluation === null || $orgId === null || $orgId < 1) {
+            Log::error('AuditEvaluationJob: cannot derive organization context in failed() — skipping the tenant-scoped write', [
+                'evaluation_id' => $this->evaluationId,
+            ]);
+
+            $this->releaseLock();
+
+            return;
+        }
+
+        TenantContextScope::runFor($orgId, function () use ($evaluation): void {
+            IndicatorScoreAuditRun::create([
+                'evaluation_id' => $evaluation->id,
+                'requested_by_user_id' => $this->requestedByUserId,
+                'status' => AuditRunStatus::Failed->value,
+                'failure_reason' => 'job_killed',
+                'indicators_total' => 0,
+                'indicators_judged' => 0,
+                'indicators_skipped' => 0,
+                'indicators_unavailable' => 0,
+                'indicators_malformed' => 0,
+                'input_tokens' => 0,
+                'output_tokens' => 0,
+                'estimated_cost_usd' => null,
+                'latency_ms' => 0,
+                'judge_model_version' => (string) config('scoring.audit.judge_model'),
+                'audit_prompt_version' => (string) config('scoring.audit.prompt_version'),
+            ]);
+        });
 
         $this->releaseLock();
     }
