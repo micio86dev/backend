@@ -76,9 +76,14 @@ final class AuditEvaluationJob implements ShouldQueue
      * scoring.audit.timeout_seconds (30) x 1.1 = 594 -> ceil to 600. MUST
      * stay strictly below queue.runtime.worker_timeout (1260,
      * config/queue.php) or the worker refuses to boot
-     * (QueueRuntimeInvariant).
+     * (QueueRuntimeInvariant). Exposed as a const (not only the instance
+     * property below) so `EvaluationAuditController` (P4) can derive its
+     * lock TTL — `$timeout + 120` (design D7) — WITHOUT instantiating this
+     * job, keeping the number single-sourced.
      */
-    public int $timeout = 600;
+    public const int TIMEOUT_SECONDS = 600;
+
+    public int $timeout = self::TIMEOUT_SECONDS;
 
     public function __construct(
         private readonly int $evaluationId,
@@ -153,11 +158,11 @@ final class AuditEvaluationJob implements ShouldQueue
 
         // Run-level failure tracking (D6's pseudocode: `runFailureReason ??=
         // 'judge_unavailable'` — set ONLY inside the catch branch, first
-        // throw wins). `$attemptedAnyJudgeCall`/`$everyAttemptedCallThrew`
-        // together derive `failed` vs `partial` vs `completed` below.
+        // throw wins). The FINAL `status`/`failure_reason` are derived below
+        // from the indicator-grain counters, not from these flags alone
+        // (P4 review finding #2) — this variable still carries the more
+        // specific per-competency-throw reason forward when one occurred.
         $runFailureReason = null;
-        $attemptedAnyJudgeCall = false;
-        $everyAttemptedCallThrew = true;
 
         foreach ($competencyResults as $competencyResult) {
             [$skipped, $judgeable] = $this->partition($competencyResult->indicatorScores);
@@ -170,21 +175,33 @@ final class AuditEvaluationJob implements ShouldQueue
                 continue;
             }
 
-            $subjects = array_map(
-                static fn (IndicatorScore $indicator): AuditSubject => new AuditSubject(
-                    indicatorScoreId: $indicator->id,
-                    position: $indicator->position,
-                    indicatorText: $indicator->indicator_text,
-                    score: $indicator->score,
-                    explanation: $indicator->explanation,
-                    excerpts: array_values($indicator->excerpts),
-                ),
-                $judgeable,
-            );
-
-            $attemptedAnyJudgeCall = true;
-
             try {
+                // Construction happens INSIDE this try (P4 review finding
+                // #1). `excerpts` is a NOT NULL `json` column, but it CAN
+                // hold the JSON literal `null` — a value distinct from `[]`
+                // that partition()'s `excerpts === []` skip check (D5) does
+                // NOT catch — and `explanation` is dynamically typed on the
+                // Eloquent attribute regardless of the DB's own NOT NULL
+                // constraint. Building the strictly-typed AuditSubject from a
+                // row like that throws a TypeError; if that throw escaped
+                // this try, it would kill the whole job (job_killed) and
+                // discard every verdict already paid for in earlier
+                // competencies — contradicting the documented guarantee that
+                // one competency's failure never aborts the run. Falling into
+                // the catch below classifies it via unavailableReasonFor()'s
+                // own documented "any other Throwable" fallback.
+                $subjects = array_map(
+                    static fn (IndicatorScore $indicator): AuditSubject => new AuditSubject(
+                        indicatorScoreId: $indicator->id,
+                        position: $indicator->position,
+                        indicatorText: $indicator->indicator_text,
+                        score: $indicator->score,
+                        explanation: $indicator->explanation,
+                        excerpts: array_values($indicator->excerpts),
+                    ),
+                    $judgeable,
+                );
+
                 $result = $judge->judge(new AuditRequest($competencyResult->competency_code, $subjects));
             } catch (Throwable $e) {
                 // Per-competency isolation (AD-3, design D6): this
@@ -209,8 +226,6 @@ final class AuditEvaluationJob implements ShouldQueue
 
                 continue;
             }
-
-            $everyAttemptedCallThrew = false;
 
             $inputTokens += $result->inputTokens;
             $outputTokens += $result->outputTokens;
@@ -255,10 +270,25 @@ final class AuditEvaluationJob implements ShouldQueue
         $counters = $this->reconcileCounters($bufferedAudits);
         $estimatedCostUsd = $costEstimator->estimate($judgeModelVersion, $inputTokens, $outputTokens);
 
+        // Status is derived from indicator-grain OUTCOMES, not merely from
+        // whether a competency-level judge call threw (P4 review finding
+        // #2): `AuditRunStatus`'s own docblock requires `Completed` to mean
+        // "no competency's judge call threw, AND no verdict was malformed",
+        // and `Failed` to mean "every judgeable indicator... ended
+        // unavailable or malformed". A run with zero throws but every
+        // verdict malformed must NOT read `completed`. `$runFailureReason`
+        // still carries the more specific 'judge_unavailable' when an actual
+        // competency-level throw occurred; 'malformed_verdicts' covers a
+        // degraded outcome produced entirely by per-subject malformed
+        // verdicts with no throw at all — `failure_reason` is an
+        // unconstrained string (design D4), so this value needs no
+        // migration.
+        $degradedIndicators = $counters['unavailable'] + $counters['malformed'];
+
         [$runStatus, $runFailureReason] = match (true) {
-            $attemptedAnyJudgeCall && $everyAttemptedCallThrew => [AuditRunStatus::Failed, $runFailureReason ?? 'judge_unavailable'],
-            $runFailureReason !== null => [AuditRunStatus::Partial, $runFailureReason],
-            default => [AuditRunStatus::Completed, null],
+            $degradedIndicators === 0 => [AuditRunStatus::Completed, null],
+            $counters['judged'] === 0 => [AuditRunStatus::Failed, $runFailureReason ?? 'malformed_verdicts'],
+            default => [AuditRunStatus::Partial, $runFailureReason ?? 'malformed_verdicts'],
         };
 
         DB::transaction(function () use ($evaluation, $counters, $inputTokens, $outputTokens, $estimatedCostUsd, $latencyMs, $judgeModelVersion, $bufferedAudits, $runStatus, $runFailureReason): void {

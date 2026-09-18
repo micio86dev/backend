@@ -35,6 +35,7 @@ use App\Models\Project;
 use App\Services\Audit\TypesafeJevJudge;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\FakeAuditJudge;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -157,4 +158,52 @@ test('a genuinely malformed envelope through the REAL TypesafeJevJudge/JevRespon
 
     $run = IndicatorScoreAuditRun::withoutGlobalScopes()->where('evaluation_id', $fixture['evaluation']->id)->firstOrFail();
     expect($run->status)->toBe(AuditRunStatus::Failed);
+});
+
+test('a persisted indicator row whose excerpts JSON decodes to PHP null does not kill the run — the run survives and sibling competencies stay judged', function (): void {
+    // RED — P4 review finding #1: AuditSubject construction previously ran
+    // OUTSIDE the per-competency try/catch. `excerpts` is a NOT NULL `json`
+    // column (2026_07_22_000003_create_indicator_scores_table.php:57), so it
+    // can never hold a SQL NULL — but it CAN hold the four-byte JSON literal
+    // `null`, which is a value distinct from `[]` and is NOT caught by
+    // partition()'s `excerpts === []` skip check (D5). The `array` cast then
+    // decodes it back to PHP `null`, and building AuditSubject
+    // (`excerpts: array_values($indicator->excerpts)`) threw an uncaught
+    // TypeError that escaped the per-competency try/catch entirely, killing
+    // the whole job (`job_killed`) and discarding every verdict already
+    // paid for — contradicting the documented guarantee that one
+    // competency's failure never aborts the run.
+    $fixture = failureIsolationFixture();
+
+    DB::table('indicator_scores')
+        ->where('id', $fixture['indicators']['STG']->id)
+        ->update(['excerpts' => 'null']);
+
+    $fake = new FakeAuditJudge(defaultSupportProbability: 0.8);
+    app()->instance(AuditJudge::class, $fake);
+
+    expect(fn () => AuditEvaluationJob::dispatch($fixture['evaluation']->id, null, null))
+        ->not->toThrow(Throwable::class);
+
+    $stgAudit = IndicatorScoreAudit::withoutGlobalScopes()
+        ->where('indicator_score_id', $fixture['indicators']['STG']->id)
+        ->first();
+
+    expect($stgAudit)->not->toBeNull()
+        ->and($stgAudit->status)->toBe(AuditVerdictStatus::Unavailable)
+        ->and($stgAudit->outcome_reason)->not->toBeNull();
+
+    foreach (['COL', 'PRS', 'DRV', 'INS'] as $code) {
+        $audit = IndicatorScoreAudit::withoutGlobalScopes()
+            ->where('indicator_score_id', $fixture['indicators'][$code]->id)
+            ->first();
+
+        expect($audit)->not->toBeNull()
+            ->and($audit->status)->toBe(AuditVerdictStatus::Judged);
+    }
+
+    $run = IndicatorScoreAuditRun::withoutGlobalScopes()->where('evaluation_id', $fixture['evaluation']->id)->firstOrFail();
+    expect($run->status)->toBe(AuditRunStatus::Partial)
+        ->and($run->indicators_judged)->toBe(4)
+        ->and($run->indicators_unavailable)->toBe(1);
 });

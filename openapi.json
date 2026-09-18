@@ -2612,6 +2612,102 @@
                 }
             }
         },
+        "/participants/{id}/evaluation/audit": {
+            "post": {
+                "operationId": "evaluationAudit.store",
+                "tags": [
+                    "EvaluationAudit"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "queued"
+                                        },
+                                        "evaluation_id": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "evaluation_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Redis unavailable -> refuse, not proceed (design D7). Fail\nCLOSED: the cheaper mistake here is a refused request, not a\nduplicate vendor charge for the same evaluation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "audit_already_running"
+                                                }
+                                            },
+                                            "required": [
+                                                "reason"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "audit_lock_unavailable"
+                                                }
+                                            },
+                                            "required": [
+                                                "reason"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "reason": {
+                                                    "type": "string",
+                                                    "const": "audit_disabled"
+                                                }
+                                            },
+                                            "required": [
+                                                "reason"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/evaluations/summary": {
             "get": {
                 "operationId": "evaluationIndex.summary",

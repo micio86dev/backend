@@ -17,6 +17,7 @@ use App\DTOs\Audit\AuditBatchResult;
 use App\DTOs\Audit\AuditRequest;
 use App\DTOs\Audit\AuditVerdict;
 use App\Enums\Audit\AuditOutcomeReason;
+use App\Enums\Audit\AuditRunStatus;
 use App\Enums\Audit\AuditVerdictStatus;
 use App\Jobs\AuditEvaluationJob;
 use App\Models\CompetencyResult;
@@ -146,4 +147,46 @@ test('a malformed verdict increments indicators_malformed only, never indicators
         ->and($run->indicators_unavailable)->toBe(0)
         ->and($run->indicators_judged)->toBe(1)
         ->and($run->indicators_total)->toBe(2);
+});
+
+test('a run where every judgeable indicator ends up malformed (no competency call threw) is NOT recorded completed', function (): void {
+    // RED — P4 review finding #2: `AuditRunStatus::Completed`'s own docblock
+    // says "No competency's judge call threw, AND no verdict was malformed."
+    // The prior derivation set `$runStatus = completed` whenever no throw
+    // occurred, regardless of how many verdicts were malformed — a run with
+    // zero throws and 100% malformed verdicts was recorded `completed`,
+    // contradicting the enum's own contract.
+    $fixture = malformedVerdictFixture();
+
+    app()->instance(AuditJudge::class, new class($fixture['present']->id, $fixture['missing']->id) implements AuditJudge
+    {
+        public function __construct(private readonly int $presentId, private readonly int $missingId) {}
+
+        public function judge(AuditRequest $request): AuditBatchResult
+        {
+            // Both subjects omitted — the call itself does not throw, but
+            // NOTHING in this competency's response is usable.
+            return new AuditBatchResult(
+                verdicts: [],
+                omissions: [
+                    $this->presentId => AuditOutcomeReason::VerdictMissing,
+                    $this->missingId => AuditOutcomeReason::VerdictMissing,
+                ],
+                inputTokens: 10,
+                outputTokens: 5,
+                judgeModel: 'stub-jev',
+                latencyMs: 1,
+            );
+        }
+    });
+
+    AuditEvaluationJob::dispatch($fixture['evaluation']->id, null, null);
+
+    $run = IndicatorScoreAuditRun::withoutGlobalScopes()->where('evaluation_id', $fixture['evaluation']->id)->firstOrFail();
+
+    expect($run->status)->not->toBe(AuditRunStatus::Completed)
+        ->and($run->status)->toBe(AuditRunStatus::Failed)
+        ->and($run->indicators_judged)->toBe(0)
+        ->and($run->indicators_malformed)->toBe(2)
+        ->and($run->failure_reason)->not->toBeNull();
 });

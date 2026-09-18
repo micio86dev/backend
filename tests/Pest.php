@@ -561,6 +561,13 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Support/Observability');
 
+// Unit/Policies (scoring-audit-jev P4.1) — needs TestCase + RefreshDatabase:
+// EvaluationPolicyAuditTest creates real Organization/User rows and assigns
+// real Spatie roles (team-scoped), same shape as Unit/C4/ProjectPolicyTest.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Policies');
+
 // Feature/Audit (scoring-audit-jev P1.13) — registered explicitly per this
 // file's own "EVERY Feature subdirectory has to be named here" convention
 // (see the block at the bottom of this file), not only when a factory is
