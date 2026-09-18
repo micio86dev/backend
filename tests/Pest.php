@@ -545,6 +545,23 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Config/TruncationRetryConfigTest.php');
 
+// Unit/Config/AuditConfigTest.php (scoring-audit-jev P1.1) — needs TestCase
+// so config() resolves against the booted app. No DB needed: pure
+// config-invariant assertions pinning the shipped `scoring.audit` defaults,
+// same shape as TruncationRetryConfigTest.php immediately above.
+pest()->extend(TestCase::class)
+    ->in('Unit/Config/AuditConfigTest.php');
+
+// Feature/Audit (scoring-audit-jev P1.13) — registered explicitly per this
+// file's own "EVERY Feature subdirectory has to be named here" convention
+// (see the block at the bottom of this file), not only when a factory is
+// used. P1's own FakeAuditJudgeBindingTest.php writes no rows, but P2 onward
+// adds real Feature/Audit tests that DO (migrations, tenancy, cascade
+// deletes) — registering RefreshDatabase now avoids a second edit later and
+// keeps this directory from ever running unwrapped once those land.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Audit');
+
 // ─── pluggable-conversation-llm (P0/P1) ────────────────────────────────────────
 
 // Unit/Support/AvatarTemplates — needs TestCase + RefreshDatabase:
