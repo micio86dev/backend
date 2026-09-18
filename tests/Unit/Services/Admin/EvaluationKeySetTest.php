@@ -16,6 +16,11 @@ declare(strict_types=1);
  *
  * B3.2: `behaviors[]` now gains `unassessable_reason` — this file's second
  * test's expected list is updated accordingly.
+ *
+ * P5 (scoring-audit-jev, design D9): `behaviors[]` now ALSO gains `audit` —
+ * this is the P5 RED the design document names explicitly. A never-audited
+ * evaluation still renders the key, with the synthetic `never_audited`
+ * status (never a missing key) — asserted by the third test below.
  */
 
 use App\Models\Competency;
@@ -82,8 +87,38 @@ test('each behaviors[] entry key set equals the explicit expected list', functio
     $behaviorKeys = array_keys($serialized['COL']['behaviors'][0]);
     sort($behaviorKeys);
 
-    $expected = ['excerpts', 'explanation', 'indicator', 'score', 'unassessable_reason'];
+    $expected = ['audit', 'excerpts', 'explanation', 'indicator', 'score', 'unassessable_reason'];
     sort($expected);
 
     expect($behaviorKeys)->toBe($expected, 'A behaviors[] entry gained or lost a key — update this list AND the backoffice hand-typed interface together.');
+});
+
+test('a never-audited behaviors[] entry renders the never_audited status, never a missing audit key', function (): void {
+    $org = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $project = Project::factory()->create();
+    $competency = Competency::factory()->create(['code' => 'COL']);
+    $project->competencies()->attach($competency->id, ['position' => 0]);
+
+    $participant = Participant::factory()->forProject($project)->withStatus('completato')->create();
+    $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+
+    $result = CompetencyResult::factory()->valid()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'COL',
+    ]);
+    IndicatorScore::factory()->create(['competency_result_id' => $result->id]);
+
+    $serialized = (new AdminEvaluationSerializer)->serialize($participant);
+
+    expect($serialized['COL']['behaviors'][0])->toHaveKey('audit')
+        ->and($serialized['COL']['behaviors'][0]['audit'])->toBe([
+            'status' => 'never_audited',
+            'support_probability' => null,
+            'outcome_reason' => null,
+        ]);
 });

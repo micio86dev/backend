@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Catalogue\RevisionController;
 use App\Http\Controllers\Api\Catalogue\RoleController as CatalogueRoleController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
+use App\Http\Controllers\Api\EvaluationAuditController;
 use App\Http\Controllers\Api\EvaluationIndexController;
 use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\LlmCredentialController;
@@ -453,6 +454,24 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/participants/{id}/recover', [ParticipantRecoveryController::class, 'store']);
+});
+
+// ─── Post-hoc Audit Trigger (scoring-audit-jev) ────────────────────────────
+// POST /api/participants/{id}/evaluation/audit — the SOLE authorized path to
+// request a TypeSafe/Jev audit run over an already-completed evaluation. Own
+// route group, adjacent to (NOT inside) the Admin Read API block — it is a
+// WRITE, not a read (design D12).
+//
+// Every accepted call fans out into up to 18 paid third-party AI calls — the
+// most expensive per-request primitive in this API. throttle:6,1 follows the
+// cost-primitive precedent already recorded for POST /forgot-password
+// (:107-108), deliberately tighter than the storage-burn routes' 10,1.
+// EvaluationPolicy::audit denies operator AND viewer (admin only, D12),
+// diverging from every other ability on that policy.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::post('/participants/{id}/evaluation/audit', [EvaluationAuditController::class, 'store'])
+        ->middleware('throttle:6,1');
 });
 
 // ─── Admin Read API delta: Evaluations (backoffice-missing-pages D6/D7) ──────

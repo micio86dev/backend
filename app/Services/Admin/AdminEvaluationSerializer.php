@@ -8,9 +8,11 @@ use App\Models\BarsIndicator;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use App\Models\IndicatorScore;
+use App\Models\IndicatorScoreAudit;
 use App\Models\Participant;
 use App\Models\Role;
 use App\Services\Scoring\ReliabilityRenderer;
+use App\Support\Admin\AuditVerdictReader;
 use RuntimeException;
 
 /**
@@ -48,20 +50,35 @@ use RuntimeException;
  * `Project::competencies()` (Project.php:183-188, already `orderByPivot`) — a
  * pure collaborator, not reimplemented here.
  *
+ * `behaviors[].audit` and `meta.audit` (scoring-audit-jev, design D9) add the
+ * post-hoc TypeSafe/Jev audit verdict as a SIBLING of every existing key —
+ * additive only, nothing above is removed, renamed, or retyped. Resolved
+ * exclusively through `AuditVerdictReader` (design D10), the only class in
+ * `app/` permitted to query either audit table directly — this class never
+ * queries `IndicatorScoreAudit` itself, which is exactly what
+ * `AuditAppendOnlyArchTest` arch-tests against. `auditVerdicts()` resolves
+ * the LATEST run for the whole report, once, mirroring
+ * `indicatorCatalogue()`'s own "one query for the whole report" doctrine —
+ * never "latest verdict per indicator" (see `auditVerdicts()`'s own
+ * docblock for why those differ).
+ *
  * REQ: Evaluation Serializer Is Scoped, Not Copied From the Webhook Assembler
  *      (openspec/changes/admin-dashboards/specs/admin-read-api/spec.md)
+ * REQ: Evaluation Read Surface Exposes Per-Indicator Audit Status
+ *      (openspec/changes/scoring-audit-jev/specs/admin-read-api/spec.md)
  */
 final class AdminEvaluationSerializer
 {
     public function __construct(
         private readonly ReliabilityRenderer $reliabilityRenderer = new ReliabilityRenderer,
+        private readonly AuditVerdictReader $verdictReader = new AuditVerdictReader,
     ) {}
 
     /**
      * @return array<string, array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null, audit: array{status: string, support_probability: float|null, outcome_reason: string|null}}>,
      *     unscorable_reason: string|null
      * }>
      */
@@ -98,9 +115,10 @@ final class AdminEvaluationSerializer
 
         $output = [];
         $catalogue = $this->indicatorCatalogue($participant);
+        $verdicts = $this->auditVerdicts($evaluation->id);
 
         foreach ($orderedResults as $code => $result) {
-            $output[$code] = $this->serializeCompetencyResult($result, $catalogue);
+            $output[$code] = $this->serializeCompetencyResult($result, $catalogue, $verdicts);
         }
 
         return $output;
@@ -136,7 +154,7 @@ final class AdminEvaluationSerializer
      * @return array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null, audit: array{status: string, support_probability: float|null, outcome_reason: string|null}}>,
      *     unscorable_reason: string|null
      * }|null
      */
@@ -161,7 +179,18 @@ final class AdminEvaluationSerializer
         // while `serialize()` resolved the reader's locale from the
         // catalogue — the exact defect this class's own docblock says the
         // two surfaces "must never disagree" about.
-        return $this->serializeCompetencyResult($result, $this->indicatorCatalogue($participant));
+        //
+        // Same `auditVerdicts()` resolution `serialize()` uses, keyed off
+        // $result->evaluation_id — already a loaded column on the fetched
+        // CompetencyResult, so this costs no extra lookup beyond
+        // auditVerdicts()'s own two queries. This is the AD-7/D9 invariant:
+        // both surfaces call the identical private helper, so they can never
+        // emit a different `audit` object for the same indicator.
+        return $this->serializeCompetencyResult(
+            $result,
+            $this->indicatorCatalogue($participant),
+            $this->auditVerdicts($result->evaluation_id),
+        );
     }
 
     /**
@@ -205,6 +234,57 @@ final class AdminEvaluationSerializer
             'prompt_version' => $evaluation->prompt_version,
             'model_version' => $evaluation->model_version,
             'framework_version' => $frameworkVersion->version,
+        ];
+    }
+
+    /**
+     * Audit-run provenance for the `meta.audit` response sibling
+     * (scoring-audit-jev design D9) — the LATEST run's own counters and
+     * versions, or `null` when the evaluation has never been audited.
+     *
+     * Unlike `meta()`, this is non-throwing: "never audited" is an ordinary
+     * state at this read surface, not a failure — the same distinction
+     * `serializeCompetency()`'s own docblock draws for an unscored
+     * competency.
+     *
+     * @return array{
+     *     run_id: int,
+     *     status: string,
+     *     judge_model_version: string,
+     *     audit_prompt_version: string,
+     *     created_at: string,
+     *     indicators_total: int,
+     *     indicators_judged: int,
+     *     indicators_skipped: int,
+     *     indicators_unavailable: int,
+     *     indicators_malformed: int
+     * }|null
+     */
+    public function auditMeta(Participant $participant): ?array
+    {
+        $evaluation = Evaluation::where('participant_id', $participant->id)->first();
+
+        if ($evaluation === null) {
+            return null;
+        }
+
+        $run = $this->verdictReader->latestRunFor($evaluation->id);
+
+        if ($run === null) {
+            return null;
+        }
+
+        return [
+            'run_id' => $run->id,
+            'status' => $run->status->value,
+            'judge_model_version' => $run->judge_model_version,
+            'audit_prompt_version' => $run->audit_prompt_version,
+            'created_at' => $run->created_at->toIso8601String(),
+            'indicators_total' => $run->indicators_total,
+            'indicators_judged' => $run->indicators_judged,
+            'indicators_skipped' => $run->indicators_skipped,
+            'indicators_unavailable' => $run->indicators_unavailable,
+            'indicators_malformed' => $run->indicators_malformed,
         ];
     }
 
@@ -299,16 +379,49 @@ final class AdminEvaluationSerializer
     }
 
     /**
+     * Every indicator's LATEST-run audit verdict for one evaluation, keyed by
+     * `indicator_score_id` — resolved through `AuditVerdictReader` (design
+     * D10) ONCE for the whole report, mirroring `indicatorCatalogue()`'s own
+     * "one query for the whole report" doctrine.
+     *
+     * Takes `int $evaluationId` rather than `Participant` (a deliberate
+     * refinement of design D9's literal signature, same class of refinement
+     * P4's controller lock try/catch already needed over D12's literal code
+     * sketch): both callers already hold the evaluation id for free —
+     * `serialize()` from the `Evaluation` it already fetched, `serializeCompetency()`
+     * from `$result->evaluation_id`, an already-loaded column — so resolving it
+     * from a bare `Participant` here would cost a THIRD query this method's own
+     * "exactly 2 queries" contract (`AuditVerdictsQueryCountTest`) does not pay.
+     *
+     * Exactly 2 queries when the evaluation HAS been audited
+     * (`latestRunFor()` + `verdictsForRun()`), exactly 1 when it has not
+     * (`latestRunFor()` returns null, `verdictsForRun()` is never called).
+     *
+     * @return array<int, IndicatorScoreAudit>
+     */
+    private function auditVerdicts(int $evaluationId): array
+    {
+        $run = $this->verdictReader->latestRunFor($evaluationId);
+
+        if ($run === null) {
+            return [];
+        }
+
+        return $this->verdictReader->verdictsForRun($run->id);
+    }
+
+    /**
      * @param  array<string, string>  $catalogue  indicator names in the reader's
      *                                            locale, keyed `CODE:position`
+     * @param  array<int, IndicatorScoreAudit>  $verdicts  keyed by indicator_score_id
      * @return array{
      *     score: float|null,
      *     reliability: string,
-     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>,
+     *     behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null, audit: array{status: string, support_probability: float|null, outcome_reason: string|null}}>,
      *     unscorable_reason: string|null
      * }
      */
-    private function serializeCompetencyResult(CompetencyResult $result, array $catalogue = []): array
+    private function serializeCompetencyResult(CompetencyResult $result, array $catalogue = [], array $verdicts = []): array
     {
         return [
             'score' => $result->score,
@@ -343,6 +456,12 @@ final class AdminEvaluationSerializer
                     // grain) and failure_reason (ai_requests grain). `null`
                     // for a legally-scored indicator (B3, admin-read-api D11).
                     'unassessable_reason' => $indicator->unassessable_reason,
+                    // ADDITIVE ONLY (scoring-audit-jev spec — "MUST NOT
+                    // remove, rename, or change the type of any existing
+                    // field"). NEVER a missing key: an indicator with no
+                    // verdict row renders the synthetic `never_audited`
+                    // status rather than being omitted.
+                    'audit' => $this->serializeAudit($verdicts[$indicator->id] ?? null),
                 ])
                 ->values()
                 ->all(),
@@ -351,6 +470,43 @@ final class AdminEvaluationSerializer
             // containment D11/admin-read-api). Localization of the LABEL happens
             // in the backoffice, never here.
             'unscorable_reason' => $result->unscorable_reason,
+        ];
+    }
+
+    /**
+     * One indicator's `audit` object — `never_audited` (a WIRE-ONLY status,
+     * never a value the `indicator_score_audits.status` CHECK admits) when no
+     * verdict row exists for it in the latest run, otherwise the verdict's
+     * own status/probability/reason verbatim (scoring-audit-jev spec, design
+     * D9).
+     *
+     * `outcome_reason`, not `reason` — design D9's own code sketch says
+     * `reason`, but the RATIFIED spec.md scenario
+     * ("`audit: { status: "judged", support_probability: 0.82, outcome_reason: null }`")
+     * and the column's own name (design C-E) both say `outcome_reason`. The
+     * spec is the WHAT and wins over a stale code sketch in the HOW document
+     * — the same class of correction this codebase already makes explicit
+     * for a drifted path (C-A) or a drifted column name (C-E) elsewhere in
+     * this very change.
+     *
+     * `support_probability` is cast `decimal:4` on the model (a STRING, to
+     * avoid float-precision loss on write) — cast to `float` here because the
+     * WIRE contract is `float|null` (spec.md, `EvaluationKeySetTest`).
+     *
+     * @return array{status: string, support_probability: float|null, outcome_reason: string|null}
+     */
+    private function serializeAudit(?IndicatorScoreAudit $audit): array
+    {
+        if ($audit === null) {
+            return ['status' => 'never_audited', 'support_probability' => null, 'outcome_reason' => null];
+        }
+
+        return [
+            'status' => $audit->status->value,
+            'support_probability' => $audit->support_probability === null
+                ? null
+                : (float) $audit->support_probability,
+            'outcome_reason' => $audit->outcome_reason?->value,
         ];
     }
 }

@@ -179,4 +179,70 @@ return [
         'budget_ceiling' => (int) env('SCORING_TRUNCATION_RETRY_CEILING', 8192),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Post-hoc Audit (TypeSafe / Jev) — scoring-audit-jev, proposal AD-1, design D13
+    |--------------------------------------------------------------------------
+    |
+    | `truncation_retry`-shaped, with tests/Unit/Config/AuditConfigTest.php
+    | pinning the SHIPPED defaults the way TruncationRetryConfigTest.php does.
+    |
+    | enabled:          Kill switch (AD-1). In v1 "enabled" means an OPERATOR
+    |                   MAY ASK — never that the platform spends. false makes
+    |                   the trigger route refuse (409 audit_disabled) and an
+    |                   already-dispatched job no-op with zero rows written.
+    |                   No listener is registered on EvaluationCompleted, so
+    |                   this flag never causes a run on its own.
+    | api_key:          TYPESAFE_API_KEY env var. NEVER hardcode. Provisioned
+    |                   in Railway `api` production only after the pending
+    |                   GDPR sub-processor sign-off (CLAUDE.md ruling 2) names
+    |                   this flow — see Phase 0.2 of the change's tasks.md.
+    | base_url:         TypeSafe API base URL (override for staging/proxy).
+    | judge_model:      The EXACT vendor model id, recorded verbatim on every
+    |                   run as judge_model_version. UNVERIFIED (design.md
+    |                   C-C) — this session had no network access to confirm
+    |                   TypeSafe's published API against
+    |                   https://docs.typesafe.ai/api.md /
+    |                   https://docs.typesafe.ai/primitives/noul.md, so
+    |                   'jev-1' is a placeholder pending that verification
+    |                   task, following the pluggable-conversation-llm P5.0
+    |                   precedent for an unresolved live-API question. An
+    |                   alias would silently repoint and the judgment history
+    |                   would stop meaning anything (mirrors model_version's
+    |                   own reasoning above).
+    | prompt_version:   Semver for the audit's three Noul questions (D2:
+    |                   relevance/calibration/grounding). Bump on ANY edit to
+    |                   them — the scoring prompt_version idiom, one grain over.
+    | timeout_seconds:  Per-request Http timeout. Feeds
+    |                   AuditEvaluationJob::$timeout's derivation (design.md
+    |                   D7/C-F) — raising it materially changes that job's
+    |                   own $timeout, which must stay strictly below
+    |                   queue.runtime.worker_timeout.
+    |
+    | cost_rates_usd_per_million: OWN meter, keyed by the exact judge model
+    |                   id. NEVER summed into the cost_rates_usd_per_million
+    |                   above — AD-2: the two are different vendors on
+    |                   different meters, and folding them would poison the
+    |                   scoring-cost dashboard's zero-cost anomaly signal. An
+    |                   unknown model yields estimated_cost_usd = NULL, never
+    |                   0.0 (design.md D8) — a different fact from "free".
+    |                   Empty until C-C's rate-card verification lands.
+    |
+    | No `support_threshold`, no `batch_size` key in v1 (design.md D9/D2):
+    | v1 persists the raw probability with no derived band, and batching is a
+    | fixed per-competency shape, not an operator-configurable value.
+    |
+    */
+    'audit' => [
+        'enabled' => (bool) env('SCORING_AUDIT_ENABLED', true),
+        'api_key' => env('TYPESAFE_API_KEY', ''),
+        'base_url' => env('TYPESAFE_BASE_URL', 'https://api.typesafe.ai'),
+        'judge_model' => env('SCORING_AUDIT_JUDGE_MODEL', 'jev-1'),
+        'prompt_version' => env('SCORING_AUDIT_PROMPT_VERSION', '1.0.0'),
+        'timeout_seconds' => (int) env('SCORING_AUDIT_TIMEOUT', 30),
+        'cost_rates_usd_per_million' => [
+            // 'jev-1' => ['input' => ?, 'output' => ?],   // pending C-C
+        ],
+    ],
+
 ];
