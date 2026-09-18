@@ -24,16 +24,27 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * via `with()` — never merged into the competency map, which is keyed by
  * competency code and frameworks are custom/versioned per tenant (a reserved
  * key inside that map would risk colliding with a tenant-authored code).
+ *
+ * `meta.audit` (scoring-audit-jev, design D9) is a second, independent
+ * sibling of `data`, treated exactly like `meta.scoring` — including that it
+ * is absent from the session-review view (`SessionEvidenceReader::forSession()`
+ * emits competency-level keys only). UNLIKE a per-behavior `audit` object,
+ * `meta.audit` legitimately renders `null` for a never-audited evaluation —
+ * the Testing Strategy's own words are "meta.audit is null", not "meta.audit
+ * is never a missing key"; that stronger guarantee applies to
+ * `behaviors[].audit` only.
  */
 class EvaluationResource extends JsonResource
 {
     /**
-     * @param  array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null}>, unscorable_reason: string|null}>  $resource
+     * @param  array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null, audit: array{status: string, support_probability: float|null, outcome_reason: string|null}}>, unscorable_reason: string|null}>  $resource
      * @param  array{prompt_version: string, model_version: string, framework_version: string}|null  $scoringMeta
+     * @param  array{run_id: int, status: string, judge_model_version: string, audit_prompt_version: string, created_at: string, indicators_total: int, indicators_judged: int, indicators_skipped: int, indicators_unavailable: int, indicators_malformed: int}|null  $auditMeta
      */
     public function __construct(
         array $resource,
         private readonly ?array $scoringMeta = null,
+        private readonly ?array $auditMeta = null,
     ) {
         parent::__construct($resource);
     }
@@ -51,11 +62,14 @@ class EvaluationResource extends JsonResource
      */
     public function with(Request $request): array
     {
-        if ($this->scoringMeta === null) {
+        if ($this->scoringMeta === null && $this->auditMeta === null) {
             return [];
         }
 
-        return ['meta' => ['scoring' => $this->scoringMeta]];
+        return ['meta' => [
+            'scoring' => $this->scoringMeta,
+            'audit' => $this->auditMeta,
+        ]];
     }
 
     /**
