@@ -552,6 +552,15 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Config/AuditConfigTest.php');
 
+// Unit/Support/Observability/AuditRunCostEstimatorTest.php (scoring-audit-jev
+// P3a.12) — needs TestCase so config() resolves against the booted app, same
+// shape as Unit/Support/Http above. ResponseFingerprintTest.php in this same
+// directory is pure logic and needs no app context, but extending TestCase
+// for the whole directory is harmless for it — it declares no expectations
+// about which TestCase class it runs under.
+pest()->extend(TestCase::class)
+    ->in('Unit/Support/Observability');
+
 // Feature/Audit (scoring-audit-jev P1.13) — registered explicitly per this
 // file's own "EVERY Feature subdirectory has to be named here" convention
 // (see the block at the bottom of this file), not only when a factory is
