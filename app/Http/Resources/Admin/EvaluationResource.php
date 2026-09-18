@@ -50,7 +50,13 @@ class EvaluationResource extends JsonResource
     }
 
     /**
-     * @return array<string, mixed>
+     * Return type reuses the constructor's `$resource` shape verbatim — this
+     * IS that array, returned unmodified (D5: the serializer, not the
+     * resource, owns the shape).
+     *
+     * @return array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null, audit: array{status: string, support_probability: float|null, outcome_reason: string|null}}>, unscorable_reason: string|null}>
+     *
+     * @scramble-return array<string, array{score: float|null, reliability: string, behaviors: array<int, array{indicator: string, score: int|null, explanation: string, excerpts: array<int, string>, unassessable_reason: string|null, audit: array{status: string, support_probability: float|null, outcome_reason: string|null}}>, unscorable_reason: string|null}>
      */
     public function toArray(Request $request): array
     {
@@ -58,6 +64,20 @@ class EvaluationResource extends JsonResource
     }
 
     /**
+     * NOT annotated with `@scramble-return`, deliberately: Scramble's
+     * `JsonResourceTypeToSchema::toSchema()` resolves the schema exclusively
+     * from a `MethodCallReferenceType` on `toArray()` — `with()` is never
+     * invoked, referenced, or merged by either `JsonResourceExtension` or
+     * `JsonResourceTypeToSchema` (dedoc/scramble, checked against the
+     * installed vendor source). An annotation here would be silently inert:
+     * it can never surface `meta.scoring`/`meta.audit` in the exported
+     * OpenAPI schema, and a docblock that claims a shape the tool provably
+     * never reads is worse than no docblock — it tells a future reader this
+     * was solved when it was not. `meta` stays untyped in the generated
+     * client; consumers read it from `AdminEvaluationSerializer::meta()` /
+     * `::auditMeta()`'s own documented shapes until Scramble supports typing
+     * `with()`.
+     *
      * @return array<string, mixed>
      */
     public function with(Request $request): array

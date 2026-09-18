@@ -8965,7 +8965,97 @@
             },
             "EvaluationResource": {
                 "type": "object",
-                "additionalProperties": {},
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "score": {
+                            "type": [
+                                "number",
+                                "null"
+                            ]
+                        },
+                        "reliability": {
+                            "type": "string"
+                        },
+                        "behaviors": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "indicator": {
+                                        "type": "string"
+                                    },
+                                    "score": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    },
+                                    "explanation": {
+                                        "type": "string"
+                                    },
+                                    "excerpts": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "unassessable_reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "audit": {
+                                        "type": "object",
+                                        "properties": {
+                                            "status": {
+                                                "type": "string"
+                                            },
+                                            "support_probability": {
+                                                "type": [
+                                                    "number",
+                                                    "null"
+                                                ]
+                                            },
+                                            "outcome_reason": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        },
+                                        "required": [
+                                            "status",
+                                            "support_probability",
+                                            "outcome_reason"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "indicator",
+                                    "score",
+                                    "explanation",
+                                    "excerpts",
+                                    "unassessable_reason",
+                                    "audit"
+                                ]
+                            }
+                        },
+                        "unscorable_reason": {
+                            "type": [
+                                "string",
+                                "null"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "score",
+                        "reliability",
+                        "behaviors",
+                        "unscorable_reason"
+                    ]
+                },
                 "title": "EvaluationResource"
             },
             "ForgotPasswordRequest": {
