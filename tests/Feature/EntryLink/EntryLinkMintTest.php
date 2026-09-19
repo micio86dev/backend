@@ -174,6 +174,73 @@ test('a failed (errore) participant refuses the mint with 409, reason failed, an
     expect($response->json('message'))->not->toContain('completed');
 });
 
+test('a completed participant matched only by email (different candidate_ref) refuses the mint with 409 and reason completed', function (): void {
+    // `participants` carries two independent unique constraints per project
+    // (candidate_ref, email). A mint carrying a brand-new candidate_ref but an
+    // email already tied to a `completato` row in this project must still
+    // refuse with a clean 409 here — not sail through to a raw DB
+    // unique-constraint violation downstream at the SSO exchange.
+    config(['interview.candidate_app_url' => 'https://interview.example.com']);
+    $org = Organization::factory()->create();
+    $project = mintTestProject($org);
+    $token = mintTestOperator($org);
+    $sharedEmail = uniqid('cand-').'@example.test';
+
+    $p = new Participant;
+    $p->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'mint-cand-original-ref',
+        'display_name' => 'Done',
+        'email' => $sharedEmail,
+        'status' => 'in_valutazione',
+    ]);
+    $p->save();
+    DB::table('participants')->where('id', $p->id)->update(['status' => 'completato']);
+
+    $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'mint-cand-brand-new-ref',
+        'display_name' => 'Done',
+        'email' => $sharedEmail,
+    ])
+        ->assertStatus(409)
+        ->assertJson([
+            'message' => 'entry_link_participant_completed',
+            'reason' => 'completed',
+        ]);
+});
+
+test('a failed (errore) participant matched only by email (different candidate_ref) refuses the mint with 409 and reason failed', function (): void {
+    config(['interview.candidate_app_url' => 'https://interview.example.com']);
+    $org = Organization::factory()->create();
+    $project = mintTestProject($org);
+    $token = mintTestOperator($org);
+    $sharedEmail = uniqid('cand-').'@example.test';
+
+    $p = new Participant;
+    $p->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'mint-cand-original-errored-ref',
+        'display_name' => 'Errored',
+        'email' => $sharedEmail,
+        'status' => 'in_attesa',
+    ]);
+    $p->save();
+    DB::table('participants')->where('id', $p->id)->update(['status' => 'errore']);
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'mint-cand-brand-new-errored-ref',
+        'display_name' => 'Errored',
+        'email' => $sharedEmail,
+    ]);
+
+    $response->assertStatus(409)->assertJson(['reason' => 'failed']);
+    expect($response->json('message'))->not->toContain('completed');
+});
+
 test('lang omitted resolves end-to-end through the composer: project.language=en produces an /en/-prefixed entry_url', function (): void {
     // Unit-level coverage of this fallback chain already exists
     // (EntryLinkMinterTest: "lang omitted falls back to the project
