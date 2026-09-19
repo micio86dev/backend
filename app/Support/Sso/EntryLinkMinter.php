@@ -55,18 +55,32 @@ final class EntryLinkMinter
             throw new EntryLinkRefused(EntryLinkRefusalReason::RoleCode, $roleCodeError);
         }
 
-        $existingStatus = Participant::where('project_id', $project->id)
-            ->where('candidate_ref', $candidateRef)
-            ->value('status');
+        // `participants` carries TWO independent unique constraints per
+        // project — candidate_ref (C6) and email
+        // (2026_09_01_180000_add_email_to_participants, ruling 8) — so a
+        // terminal row can be reached by EITHER axis alone, and the two axes
+        // can implicate two different rows. Checking candidate_ref only let a
+        // request carrying a new candidate_ref but an email already tied to a
+        // terminal row sail past this guard and die later on the database's
+        // own unique-constraint violation when the exchange writes the row.
+        $existingStatuses = Participant::where('organization_id', $project->organization_id)
+            ->where('project_id', $project->id)
+            ->where(function ($query) use ($candidateRef, $email): void {
+                $query->where('candidate_ref', $candidateRef)
+                    ->orWhere('email', $email);
+            })
+            ->pluck('status');
 
         // (participant-error-recovery D3) split by which terminal status:
         // 'completato' really is done; 'errore' is now recoverable by an
-        // operator, so it must not be reported as completed.
-        if ($existingStatus === 'completato') {
+        // operator, so it must not be reported as completed. Precedence is
+        // preserved even when the two axes implicate DIFFERENT rows: a
+        // completato match on either axis always outranks an errore match.
+        if ($existingStatuses->contains('completato')) {
             throw new EntryLinkRefused(EntryLinkRefusalReason::Completed);
         }
 
-        if ($existingStatus === 'errore') {
+        if ($existingStatuses->contains('errore')) {
             throw new EntryLinkRefused(EntryLinkRefusalReason::Failed);
         }
 
