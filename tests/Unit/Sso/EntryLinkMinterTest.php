@@ -135,6 +135,104 @@ test('a failed (errore) participant refuses the mint with reason failed', functi
     }
 });
 
+test('a completed participant matched only by email (different candidate_ref) refuses the mint with reason completed', function (): void {
+    // `participants` carries TWO independent unique constraints per project —
+    // candidate_ref (C6) and email (2026_09_01_180000_add_email_to_participants)
+    // — so a terminal row can be reached by either axis alone. A mint request
+    // carrying a brand-new candidate_ref but an email that already belongs to
+    // a `completato` row in this project must still refuse, or it sails past
+    // this guard and later dies on the DB's own unique-constraint violation
+    // when the exchange writes the row.
+    $org = Organization::factory()->create();
+    $project = minterActiveProject($org);
+    $sharedEmail = uniqid('cand-').'@example.test';
+
+    $p = new Participant;
+    $p->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'original-cand-ref',
+        'display_name' => 'Done',
+        'email' => $sharedEmail,
+        'status' => 'in_valutazione',
+    ]);
+    $p->save();
+    DB::table('participants')->where('id', $p->id)->update(['status' => 'completato']);
+
+    try {
+        (new EntryLinkMinter)->mint($project, 'brand-new-cand-ref', 'Done', $sharedEmail, null, null);
+        expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
+    } catch (EntryLinkRefused $e) {
+        expect($e->reason)->toBe(EntryLinkRefusalReason::Completed);
+    }
+});
+
+test('a failed (errore) participant matched only by email (different candidate_ref) refuses the mint with reason failed', function (): void {
+    $org = Organization::factory()->create();
+    $project = minterActiveProject($org);
+    $sharedEmail = uniqid('cand-').'@example.test';
+
+    $p = new Participant;
+    $p->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'original-errored-ref',
+        'display_name' => 'Errored',
+        'email' => $sharedEmail,
+        'status' => 'in_attesa',
+    ]);
+    $p->save();
+    DB::table('participants')->where('id', $p->id)->update(['status' => 'errore']);
+
+    try {
+        (new EntryLinkMinter)->mint($project, 'brand-new-errored-ref', 'Errored', $sharedEmail, null, null);
+        expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
+    } catch (EntryLinkRefused $e) {
+        expect($e->reason)->toBe(EntryLinkRefusalReason::Failed);
+    }
+});
+
+test('when candidate_ref matches an errore row and email matches a different completato row, completed wins (anchor-primacy-style precedence)', function (): void {
+    // The two axes can now implicate two DIFFERENT rows (impossible before
+    // this fix, when only candidate_ref was checked). Preserve the existing
+    // single-row precedence: completato always outranks errore.
+    $org = Organization::factory()->create();
+    $project = minterActiveProject($org);
+    $sharedCandidateRef = 'precedence-cand-ref';
+    $sharedEmail = uniqid('cand-').'@example.test';
+
+    $erroredRow = new Participant;
+    $erroredRow->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => $sharedCandidateRef,
+        'display_name' => 'Errored Row',
+        'email' => uniqid('other-').'@example.test',
+        'status' => 'in_attesa',
+    ]);
+    $erroredRow->save();
+    DB::table('participants')->where('id', $erroredRow->id)->update(['status' => 'errore']);
+
+    $completedRow = new Participant;
+    $completedRow->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'unrelated-cand-ref',
+        'display_name' => 'Completed Row',
+        'email' => $sharedEmail,
+        'status' => 'in_valutazione',
+    ]);
+    $completedRow->save();
+    DB::table('participants')->where('id', $completedRow->id)->update(['status' => 'completato']);
+
+    try {
+        (new EntryLinkMinter)->mint($project, $sharedCandidateRef, 'Whoever', $sharedEmail, null, null);
+        expect(false)->toBeTrue('Expected EntryLinkRefused to be thrown.');
+    } catch (EntryLinkRefused $e) {
+        expect($e->reason)->toBe(EntryLinkRefusalReason::Completed);
+    }
+});
+
 test('expires_at equals the decoded exp claim of the minted token', function (): void {
     $org = Organization::factory()->create();
     $project = minterActiveProject($org);
