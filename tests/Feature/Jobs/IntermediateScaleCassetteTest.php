@@ -47,13 +47,13 @@ function intermediateOrg(): Organization
     return Organization::factory()->create();
 }
 
-function intermediateProject(Organization $org): Project
+function intermediateProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function intermediateParticipant(Organization $org, Project $project): Participant
@@ -75,12 +75,17 @@ function intermediateParticipant(Organization $org, Project $project): Participa
 /**
  * Create the minimal scenario for a competency with N indicators.
  *
+ * $role MUST be the role $project->role_code resolves to — all three
+ * competencies below are authored under the SAME role the project pins
+ * (ScoreEvaluationJob scopes indicators by both role_id and competency_id).
+ *
  * @param  array<int, array{text: string}>  $indicatorSpecs
  */
 function intermediateSetupCompetency(
     Organization $org,
     Project $project,
     Participant $participant,
+    Role $role,
     string $compCode,
     int $pivotPosition,
     array $indicatorSpecs,
@@ -90,7 +95,6 @@ function intermediateSetupCompetency(
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'ROLE_'.$compCode.'_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $compCode]);
 
     $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => $pivotPosition]]);
@@ -139,11 +143,13 @@ function intermediateSetupCompetency(
 
 test('(a)-(c) residual score levels survive the full pipeline: INTA 3.00, INTB 4.50, INTC 3.50', function (): void {
     $org = intermediateOrg();
-    $project = intermediateProject($org);
+    // One role, pinned by the project, shared by all three competencies below.
+    $role = Role::factory()->create(['code' => 'ROLE_INTERMEDIATE_'.uniqid()]);
+    $project = intermediateProject($org, $role->code);
     $participant = intermediateParticipant($org, $project);
 
     // INTA: 3 indicators → LLM returns {4,2,3} → mean = 3.00
-    $intA = intermediateSetupCompetency($org, $project, $participant, 'INTA', 0, [
+    $intA = intermediateSetupCompetency($org, $project, $participant, $role, 'INTA', 0, [
         ['text' => 'Adapt communication style to the audience'],
         ['text' => 'Structure information logically'],
         ['text' => 'Check for mutual understanding'],
@@ -154,7 +160,7 @@ test('(a)-(c) residual score levels survive the full pipeline: INTA 3.00, INTB 4
     ]);
 
     // INTB: 3 indicators → LLM returns {5,4,-1} → mean = 4.50
-    $intB = intermediateSetupCompetency($org, $project, $participant, 'INTB', 1, [
+    $intB = intermediateSetupCompetency($org, $project, $participant, $role, 'INTB', 1, [
         ['text' => 'Take initiative without being asked'],
         ['text' => 'Anticipate downstream problems'],
         ['text' => 'Push back on unrealistic deadlines'],
@@ -164,7 +170,7 @@ test('(a)-(c) residual score levels survive the full pipeline: INTA 3.00, INTB 4
     ]);
 
     // INTC: 4 indicators → LLM returns {2,3,4,5} → mean = 3.50 (D9 boundary case)
-    $intC = intermediateSetupCompetency($org, $project, $participant, 'INTC', 2, [
+    $intC = intermediateSetupCompetency($org, $project, $participant, $role, 'INTC', 2, [
         ['text' => 'Give constructive feedback'],
         ['text' => 'Receive feedback without defensiveness'],
         ['text' => 'Follow up on agreed action items'],

@@ -29,6 +29,7 @@ use App\Models\Evaluation;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\CassetteLLMProvider;
 use App\Testing\CassetteResponse;
@@ -37,9 +38,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 /**
- * @return array{0: Organization, 1: Project, 2: Participant}
+ * @return array{0: Organization, 1: Project, 2: Participant, 3: Role}
  */
-function truncationRetrySetup(): array
+function truncationRetrySetup(string $roleCode): array
 {
     $org = Organization::factory()->create();
 
@@ -47,7 +48,10 @@ function truncationRetrySetup(): array
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    // Role created before Project so role_code pins the same role the
+    // indicators below are authored under (ScoreEvaluationJob scopes by both).
+    $role = Role::factory()->create(['code' => $roleCode]);
+    $project = Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $role->code]);
 
     $participant = new Participant;
     $participant->forceFill([
@@ -60,7 +64,7 @@ function truncationRetrySetup(): array
     ]);
     $participant->save();
 
-    return [$org, $project, $participant->fresh()];
+    return [$org, $project, $participant->fresh(), $role];
 }
 
 // A complete, valid single-indicator body — shaped for
@@ -76,8 +80,8 @@ test('a) first attempt truncates, retry at double budget completes: two ai_reque
         'scoring.truncation_retry.budget_ceiling' => 8192,
     ]);
 
-    [$org, $project, $participant] = truncationRetrySetup();
-    $setup = setupScoringCompetency($org, $project, $participant, 'PRS');
+    [$org, $project, $participant, $role] = truncationRetrySetup('ROLE_PRS_'.uniqid());
+    $setup = setupScoringCompetency($org, $project, $participant, 'PRS', $role);
     $competencyCode = $setup['competency']->code;
 
     $cassette = new CassetteLLMProvider([
@@ -126,8 +130,8 @@ test('b) both the original call and the retry truncate: exactly two calls ever, 
         'scoring.truncation_retry.budget_ceiling' => 8192,
     ]);
 
-    [$org, $project, $participant] = truncationRetrySetup();
-    $setup = setupScoringCompetency($org, $project, $participant, 'PRS');
+    [$org, $project, $participant, $role] = truncationRetrySetup('ROLE_PRS_'.uniqid());
+    $setup = setupScoringCompetency($org, $project, $participant, 'PRS', $role);
     $competencyCode = $setup['competency']->code;
 
     $cassette = new CassetteLLMProvider([
@@ -171,8 +175,8 @@ test('c) a non-truncated fence/prose failure is never retried at an enlarged bud
         'scoring.truncation_retry.budget_ceiling' => 8192,
     ]);
 
-    [$org, $project, $participant] = truncationRetrySetup();
-    $setup = setupScoringCompetency($org, $project, $participant, 'STG');
+    [$org, $project, $participant, $role] = truncationRetrySetup('ROLE_STG_'.uniqid());
+    $setup = setupScoringCompetency($org, $project, $participant, 'STG', $role);
     $competencyCode = $setup['competency']->code;
 
     $fixture = require base_path('tests/Fixtures/cassettes/malformed_negative.php');

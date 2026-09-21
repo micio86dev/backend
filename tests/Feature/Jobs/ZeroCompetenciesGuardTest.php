@@ -18,6 +18,7 @@ use App\Jobs\ScoreEvaluationJob;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -33,7 +34,17 @@ test('project with 0 project_competencies → participant errore, no EvaluationC
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    // The project must pin a role that RESOLVES. The job resolves
+    // `project.role_code` before the competency loop and ends the participant
+    // when it does not — which reaches this test's own `errore` expectation
+    // without ever running the zero-competencies invariant it exists to prove.
+    $role = Role::factory()->create(['code' => 'ZEROCOMP_'.uniqid()]);
+
+    $project = Project::factory()->create([
+        'status' => 'active',
+        'language' => 'en',
+        'role_code' => $role->code,
+    ]);
 
     // No competencies attached to project (0 project_competencies)
     expect($project->competencies()->count())->toBe(0);

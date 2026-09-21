@@ -40,13 +40,13 @@ function goldenOrg(): Organization
     return Organization::factory()->create();
 }
 
-function goldenProject(Organization $org): Project
+function goldenProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function goldenParticipant(Organization $org, Project $project): Participant
@@ -68,12 +68,17 @@ function goldenParticipant(Organization $org, Project $project): Participant
 /**
  * Create the minimal scenario for a competency with N indicators.
  *
+ * $role MUST be the role $project->role_code resolves to — both COL and SLF
+ * are authored under the SAME role here, matching the one project pins
+ * (ScoreEvaluationJob scopes indicators by both role_id and competency_id).
+ *
  * @param  array<int, array{score: int, text: string}>  $indicatorSpecs
  */
 function createGoldenCompetency(
     Organization $org,
     Project $project,
     Participant $participant,
+    Role $role,
     string $compCode,
     int $pivotPosition,
     array $indicatorSpecs,
@@ -82,7 +87,6 @@ function createGoldenCompetency(
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'ROLE_'.$compCode.'_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $compCode]);
 
     $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => $pivotPosition]]);
@@ -145,18 +149,20 @@ function createGoldenCompetency(
 
 test('(a)+(b) golden cassette: COL {5,3,3} → 3.67 and SLF {5,3,-1} → 4.0', function (): void {
     $org = goldenOrg();
-    $project = goldenProject($org);
+    // One role, pinned by the project, shared by both competencies below.
+    $role = Role::factory()->create(['code' => 'ROLE_GOLDEN_'.uniqid()]);
+    $project = goldenProject($org, $role->code);
     $participant = goldenParticipant($org, $project);
 
     // COL: 3 indicators → LLM returns {5,3,3} → mean = 3.67
-    $colCompetency = createGoldenCompetency($org, $project, $participant, 'COL', 0, [
+    $colCompetency = createGoldenCompetency($org, $project, $participant, $role, 'COL', 0, [
         ['text' => 'Work effectively with others', 'score' => 5],
         ['text' => 'Willingly help colleagues in trouble', 'score' => 3],
         ['text' => 'Demonstrate commitment to team goals', 'score' => 3],
     ]);
 
     // SLF: 3 indicators → LLM returns {5,3,-1} → mean = 4.0
-    $slfCompetency = createGoldenCompetency($org, $project, $participant, 'SLF', 1, [
+    $slfCompetency = createGoldenCompetency($org, $project, $participant, $role, 'SLF', 1, [
         ['text' => 'Describe products and services accurately', 'score' => 5],
         ['text' => 'Link own arguments to customer needs', 'score' => 3],
         ['text' => 'Negotiate to reach solutions', 'score' => -1],

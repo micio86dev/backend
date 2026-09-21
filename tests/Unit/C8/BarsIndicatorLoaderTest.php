@@ -11,6 +11,9 @@ declare(strict_types=1);
  * (c) Role with no indicators for the competency → empty Collection.
  * (d) Indicators are ordered by position (ascending).
  * (e) Cross-role contamination is impossible — the two sets are fully disjoint.
+ * (f) A null $roleId is the ROLE-LESS predicate (`potential` MTG/LAT), emitted
+ *     as `whereNull('role_id')` — never a null-bound `=`, which PostgreSQL
+ *     evaluates as UNKNOWN and which would return nothing at all.
  *
  * Spec: REQ BarsIndicatorLoader · Scenarios: cross-role isolation, position order.
  * REQ: BarsIndicatorLoader (C8 Phase 2 — RV-2)
@@ -29,7 +32,7 @@ use Illuminate\Support\Collection;
  *
  * @param  array<string, mixed>  $overrides
  */
-function loaderMakeIndicator(int $roleId, int $competencyId, int $position, array $overrides = []): BarsIndicator
+function loaderMakeIndicator(?int $roleId, int $competencyId, int $position, array $overrides = []): BarsIndicator
 {
     $indicator = new BarsIndicator;
     $indicator->forceFill(array_merge([
@@ -155,4 +158,37 @@ test('(e) cross-role isolation: FLL and MLL sets are fully disjoint for the same
     foreach ($fllInds as $fllInd) {
         expect($mllIds)->not->toContain($fllInd->id);
     }
+});
+
+test('(f) a null roleId resolves the role-less rows and never a role-scoped one', function (): void {
+    $role = Role::factory()->create(['code' => 'LESS_'.uniqid()]);
+    $competency = Competency::factory()->potential()->create(['code' => 'MTG_'.uniqid()]);
+
+    // Role-less rows — how MTG/LAT are authored: they belong to a competency
+    // and to no role (`framework_bars_indicators.role_id` is nullable).
+    $roleLess = collect([
+        loaderMakeIndicator(null, $competency->id, 0),
+        loaderMakeIndicator(null, $competency->id, 1),
+        loaderMakeIndicator(null, $competency->id, 2),
+    ]);
+
+    // A role-scoped row for the SAME competency must stay out of the result.
+    $roleScoped = loaderMakeIndicator($role->id, $competency->id, 0);
+
+    $loader = new BarsIndicatorLoader;
+
+    $result = $loader->forRoleCompetency(null, $competency->id);
+
+    // The regression this guards: `where('role_id', null)` emits `role_id = ?`
+    // bound to NULL, which PostgreSQL evaluates as UNKNOWN — zero rows, and
+    // every potential competency would silently become role_no_bars.
+    expect($result)->toHaveCount(3);
+    expect($result->pluck('id')->all())->toBe($roleLess->pluck('id')->all());
+    expect($result->pluck('id')->all())->not->toContain($roleScoped->id);
+
+    // The converse still holds: asking for the role returns only its own row.
+    $scopedResult = $loader->forRoleCompetency($role->id, $competency->id);
+
+    expect($scopedResult)->toHaveCount(1);
+    expect($scopedResult->first()->id)->toBe($roleScoped->id);
 });
