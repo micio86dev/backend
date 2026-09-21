@@ -194,22 +194,28 @@ return [
     |                   No listener is registered on EvaluationCompleted, so
     |                   this flag never causes a run on its own.
     | api_key:          TYPESAFE_API_KEY env var. NEVER hardcode. Provisioned
-    |                   in Railway `api` production only after the pending
-    |                   GDPR sub-processor sign-off (CLAUDE.md ruling 2) names
-    |                   this flow — see Phase 0.2 of the change's tasks.md.
+    |                   in Railway `api` production (scoring-audit-jev-prod-recovery,
+    |                   2026-09-21).
     | base_url:         TypeSafe API base URL (override for staging/proxy).
-    | judge_model:      The EXACT vendor model id, recorded verbatim on every
-    |                   run as judge_model_version. UNVERIFIED (design.md
-    |                   C-C) — this session had no network access to confirm
-    |                   TypeSafe's published API against
-    |                   https://docs.typesafe.ai/api.md /
-    |                   https://docs.typesafe.ai/primitives/noul.md, so
-    |                   'jev-1' is a placeholder pending that verification
-    |                   task, following the pluggable-conversation-llm P5.0
-    |                   precedent for an unresolved live-API question. An
-    |                   alias would silently repoint and the judgment history
-    |                   would stop meaning anything (mirrors model_version's
-    |                   own reasoning above).
+    | judge_model:      The value SENT in every request's `model` field.
+    |                   'jev-latest' asks TypeSafe for its current flagship
+    |                   model (confirmed against the live API contract,
+    |                   https://docs.typesafe.ai/api.md — the original
+    |                   'jev-1' placeholder is not a model id the real API
+    |                   recognises). This is deliberately NOT what gets
+    |                   recorded as judge_model_version on a run: the
+    |                   response's own `model` field (e.g. "jev-1.13.0") is
+    |                   the EXACT pinned model that actually answered, and
+    |                   JevResponseMapper::map() already records THAT. Only
+    |                   when the response omits `model` entirely does it fall
+    |                   back to THIS alias — and provenance IS lost in that
+    |                   one case: the run's `judge_model_version` records
+    |                   'jev-latest' rather than the pinned id that actually
+    |                   answered, because TypeSafe never told us which one it
+    |                   was. That fallback exists only so the non-nullable
+    |                   `judge_model_version` column always has a value; it is
+    |                   a last resort, not a second source of precise
+    |                   provenance.
     | prompt_version:   Semver for the audit's three Noul questions (D2:
     |                   relevance/calibration/grounding). Bump on ANY edit to
     |                   them — the scoring prompt_version idiom, one grain over.
@@ -237,7 +243,7 @@ return [
         'enabled' => (bool) env('SCORING_AUDIT_ENABLED', true),
         'api_key' => env('TYPESAFE_API_KEY', ''),
         'base_url' => env('TYPESAFE_BASE_URL', 'https://api.typesafe.ai'),
-        'judge_model' => env('SCORING_AUDIT_JUDGE_MODEL', 'jev-1'),
+        'judge_model' => env('SCORING_AUDIT_JUDGE_MODEL', 'jev-latest'),
         'prompt_version' => env('SCORING_AUDIT_PROMPT_VERSION', '1.0.0'),
         'timeout_seconds' => (int) env('SCORING_AUDIT_TIMEOUT', 30),
         'cost_rates_usd_per_million' => [

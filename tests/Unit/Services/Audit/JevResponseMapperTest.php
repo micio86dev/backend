@@ -8,19 +8,24 @@ use App\Services\Audit\JevResponseMapper;
 use Illuminate\Support\Facades\Log;
 
 /**
- * RED — P1.9 (table-driven): response mapping rules (design D3). Response
- * envelope shape — UNVERIFIED (C-C), same placeholder-status caveat as
- * `JevRequestBuilderTest`: a flat `answers` map keyed by question id
- * (`"i1.relevance" => 0.9`), the natural continuation of the request
- * envelope's own question-id namespace and Noul's "probability of yes"
- * contract, guessed from the TypeSafe skill's description because no
- * network access was available to confirm the live response shape.
+ * Response mapping rules (design D3, table-driven). Response envelope shape
+ * confirmed against the live TypeSafe API contract
+ * (https://docs.typesafe.ai/api.md, read during the
+ * scoring-audit-jev-prod-recovery follow-up): each answer is a NESTED object
+ * `{"type": "noul", "noul": 0.9}`, not a flat float — the original P1.9
+ * placeholder guessed the latter, and every real response silently mapped
+ * to "malformed" because of it.
  *
  * P3b (`omissions` assertions below): resolves the gap P1 left open —
  * `AuditBatchResult` now carries WHY a subject was omitted, not only THAT it
  * was, distinguishing the three `AuditOutcomeReason::Verdict*` cases design
  * D3/C-E define.
  */
+function jevNou(float|string $value): array
+{
+    return ['type' => 'noul', 'noul' => $value];
+}
+
 test('a subject whose ordinal key is entirely absent omits that subject, reason VerdictMissing', function (): void {
     $mapper = new JevResponseMapper;
 
@@ -35,9 +40,42 @@ test('a non-numeric probability omits the subject, reason VerdictUnparseable', f
 
     $result = $mapper->map([
         'answers' => [
-            'i1.relevance' => 'not-a-number',
-            'i1.calibration' => 0.8,
-            'i1.grounding' => 0.7,
+            'i1.relevance' => jevNou('not-a-number'),
+            'i1.calibration' => jevNou(0.8),
+            'i1.grounding' => jevNou(0.7),
+        ],
+    ], ['i1' => 501], 120);
+
+    expect($result->verdicts)->toBe([])
+        ->and($result->omissions)->toBe([501 => AuditOutcomeReason::VerdictUnparseable]);
+});
+
+test('a flat float answer (the pre-fix placeholder shape) is treated as unparseable, never as a valid probability', function (): void {
+    $mapper = new JevResponseMapper;
+
+    $result = $mapper->map([
+        'answers' => [
+            'i1.relevance' => 0.9,
+            'i1.calibration' => jevNou(0.8),
+            'i1.grounding' => jevNou(0.7),
+        ],
+    ], ['i1' => 501], 120);
+
+    expect($result->verdicts)->toBe([])
+        ->and($result->omissions)->toBe([501 => AuditOutcomeReason::VerdictUnparseable]);
+});
+
+test('an answer carrying a numeric "noul" key but a different "type" is treated as unparseable, never as a valid probability', function (): void {
+    $mapper = new JevResponseMapper;
+
+    $result = $mapper->map([
+        'answers' => [
+            // Same nested shape as a real Noul answer, but the discriminator
+            // says something else — checking for a numeric "noul" key alone
+            // would silently accept it as a probability it never claimed to be.
+            'i1.relevance' => ['type' => 'something-else', 'noul' => 0.9],
+            'i1.calibration' => jevNou(0.8),
+            'i1.grounding' => jevNou(0.7),
         ],
     ], ['i1' => 501], 120);
 
@@ -50,9 +88,9 @@ test('a probability outside [0,1] omits the subject, reason ProbabilityOutOfDoma
 
     $result = $mapper->map([
         'answers' => [
-            'i1.relevance' => 1.5,
-            'i1.calibration' => 0.8,
-            'i1.grounding' => 0.7,
+            'i1.relevance' => jevNou(1.5),
+            'i1.calibration' => jevNou(0.8),
+            'i1.grounding' => jevNou(0.7),
         ],
     ], ['i1' => 501], 120);
 
@@ -64,7 +102,7 @@ test('a "usage" field that is not an object throws AuditJudgeException', functio
     $mapper = new JevResponseMapper;
 
     expect(fn () => $mapper->map([
-        'answers' => ['i1.relevance' => 0.9, 'i1.calibration' => 0.9, 'i1.grounding' => 0.9],
+        'answers' => ['i1.relevance' => jevNou(0.9), 'i1.calibration' => jevNou(0.9), 'i1.grounding' => jevNou(0.9)],
         'usage' => 'not-an-object',
     ], ['i1' => 501], 120))->toThrow(AuditJudgeException::class);
 });
@@ -73,16 +111,41 @@ test('a "model" field that is not a string throws AuditJudgeException', function
     $mapper = new JevResponseMapper;
 
     expect(fn () => $mapper->map([
-        'answers' => ['i1.relevance' => 0.9, 'i1.calibration' => 0.9, 'i1.grounding' => 0.9],
+        'answers' => ['i1.relevance' => jevNou(0.9), 'i1.calibration' => jevNou(0.9), 'i1.grounding' => jevNou(0.9)],
         'model' => ['unexpected' => 'shape'],
     ], ['i1' => 501], 120))->toThrow(AuditJudgeException::class);
+});
+
+test('records the response\'s own pinned "model" field as judgeModel, not the config alias', function (): void {
+    $mapper = new JevResponseMapper;
+
+    $result = $mapper->map([
+        'answers' => ['i1.relevance' => jevNou(0.9), 'i1.calibration' => jevNou(0.9), 'i1.grounding' => jevNou(0.9)],
+        'model' => 'jev-1.13.0',
+    ], ['i1' => 501], 120);
+
+    expect($result->judgeModel)->toBe('jev-1.13.0');
+});
+
+test('falls back to the config alias for judgeModel only when the response omits "model" entirely — provenance is lost in that case', function (): void {
+    // config/scoring.php's judge_model docblock: this fallback exists only so
+    // the non-nullable judge_model_version column always has a value; it is
+    // NOT a second source of precise provenance.
+    config()->set('scoring.audit.judge_model', 'jev-latest');
+    $mapper = new JevResponseMapper;
+
+    $result = $mapper->map([
+        'answers' => ['i1.relevance' => jevNou(0.9), 'i1.calibration' => jevNou(0.9), 'i1.grounding' => jevNou(0.9)],
+    ], ['i1' => 501], 120);
+
+    expect($result->judgeModel)->toBe('jev-latest');
 });
 
 test('a "usage" object with a non-numeric token count defaults that count to zero rather than throwing', function (): void {
     $mapper = new JevResponseMapper;
 
     $result = $mapper->map([
-        'answers' => ['i1.relevance' => 0.9, 'i1.calibration' => 0.9, 'i1.grounding' => 0.9],
+        'answers' => ['i1.relevance' => jevNou(0.9), 'i1.calibration' => jevNou(0.9), 'i1.grounding' => jevNou(0.9)],
         'usage' => ['input_tokens' => 'not-a-number', 'output_tokens' => 50],
     ], ['i1' => 501], 120);
 
@@ -97,12 +160,12 @@ test('answers present for keys never sent are ignored and logged at warning', fu
 
     $result = $mapper->map([
         'answers' => [
-            'i1.relevance' => 0.9,
-            'i1.calibration' => 0.85,
-            'i1.grounding' => 0.8,
-            'i99.relevance' => 0.5,
-            'i99.calibration' => 0.5,
-            'i99.grounding' => 0.5,
+            'i1.relevance' => jevNou(0.9),
+            'i1.calibration' => jevNou(0.85),
+            'i1.grounding' => jevNou(0.8),
+            'i99.relevance' => jevNou(0.5),
+            'i99.calibration' => jevNou(0.5),
+            'i99.grounding' => jevNou(0.5),
         ],
     ], ['i1' => 501], 120);
 
@@ -117,9 +180,9 @@ test('support_probability is the minimum of the three raw probabilities for a fu
 
     $result = $mapper->map([
         'answers' => [
-            'i1.relevance' => 0.9,
-            'i1.calibration' => 0.42,
-            'i1.grounding' => 0.8,
+            'i1.relevance' => jevNou(0.9),
+            'i1.calibration' => jevNou(0.42),
+            'i1.grounding' => jevNou(0.8),
         ],
     ], ['i1' => 501], 120);
 
