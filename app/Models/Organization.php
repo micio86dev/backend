@@ -97,10 +97,26 @@ class Organization extends Model
      * effect in already-sent messages instead of breaking them. The
      * short-lived signature lives behind the redirect, where nothing has to
      * remember it.
+     *
+     * The QUERY STRING is not stable, and that is deliberate: it is a
+     * cache-buster, `?v=<the stored object's own filename>`. `show()` answers
+     * this route with `Cache-Control: public, max-age=<redirect_cache_seconds>`
+     * (up to ten minutes) — a stable path with no version signal, so an admin
+     * who replaces the logo and reloads the very settings page that just
+     * requested it keeps seeing the FILE THAT UPLOAD REPLACED, because the
+     * browser serves its cached redirect rather than asking again. `store()`
+     * mints a fresh UUID filename on every upload, so this value changes
+     * exactly when, and only when, the logo does. `show()` never reads the
+     * query string — it resolves `logo_path` fresh from the database — so an
+     * old email or an already-open candidate tab still resolves to whatever
+     * logo is current today; only a NEW request for this URL sees a fresh
+     * string to fetch.
      */
     public function absoluteLogoUrl(): ?string
     {
-        if ($this->logo_path === null) {
+        $key = $this->logo_path;
+
+        if ($key === null) {
             return null;
         }
 
@@ -117,7 +133,9 @@ class Organization extends Model
         // that has not been forced.
         $path = route('organizations.logo', ['organization' => $this->getKey()], absolute: false);
 
-        return rtrim((string) config('app.url'), '/').'/'.ltrim($path, '/');
+        $version = basename($key);
+
+        return rtrim((string) config('app.url'), '/').'/'.ltrim($path, '/').'?v='.rawurlencode($version);
     }
 
     /**
