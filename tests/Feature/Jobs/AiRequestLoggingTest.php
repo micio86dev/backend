@@ -59,13 +59,13 @@ function aiLogOrg(): Organization
     return Organization::factory()->create();
 }
 
-function aiLogProject(Organization $org): Project
+function aiLogProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function aiLogParticipant(Organization $org, Project $project): Participant
@@ -88,10 +88,11 @@ function aiLogParticipant(Organization $org, Project $project): Participant
 
 test('(a) ai_requests row persisted with evaluation_id (never null) when competency is scored', function (): void {
     $org = aiLogOrg();
-    $project = aiLogProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_COL_'.uniqid()]);
+    $project = aiLogProject($org, $role->code);
     $participant = aiLogParticipant($org, $project);
 
-    $setup = setupScoringCompetency($org, $project, $participant, 'COL');
+    $setup = setupScoringCompetency($org, $project, $participant, 'COL', $role);
 
     // Cassette with a valid single-indicator LLM response for this competency
     $competencyCode = $setup['competency']->code;
@@ -130,10 +131,11 @@ test('(a) ai_requests row persisted with evaluation_id (never null) when compete
 
 test('(c) ai_requests row carries the derived fingerprint for a successful call (A3.4, D6)', function (): void {
     $org = aiLogOrg();
-    $project = aiLogProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_COL_'.uniqid()]);
+    $project = aiLogProject($org, $role->code);
     $participant = aiLogParticipant($org, $project);
 
-    $setup = setupScoringCompetency($org, $project, $participant, 'COL');
+    $setup = setupScoringCompetency($org, $project, $participant, 'COL', $role);
     $competencyCode = $setup['competency']->code;
 
     $llmJson = json_encode([
@@ -166,7 +168,11 @@ test('(b) unscorable competency (role_no_bars) → no ai_requests row', function
     // We need a setup where a competency has NO BarsIndicator for its role.
     // The job should detect role_no_bars and skip LLM call.
     $org = aiLogOrg();
-    $project = aiLogProject($org);
+    // Role must resolve (so the job reaches the per-competency loop) while
+    // carrying no BarsIndicator for this competency, so role_no_bars fires
+    // for the right reason instead of an unresolvable role_code.
+    $role = Role::factory()->create(['code' => 'ROLE_NOBARS_'.uniqid()]);
+    $project = aiLogProject($org, $role->code);
     $participant = aiLogParticipant($org, $project);
 
     $resolver = app(TenantResolver::class);

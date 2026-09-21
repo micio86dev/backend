@@ -30,14 +30,30 @@ class OrganizationController extends Controller
 {
     /**
      * GET /api/organization
+     *
+     * `data: null` — never a 404 — when `getOrgId()` itself is null: a
+     * superadmin with no acting organization selected (TenantContext's
+     * explicit bypass branch). The backoffice shell layout calls this
+     * endpoint unconditionally on every authenticated page to paint the
+     * tenant's brand colour, so this is not a rare corner: it is what every
+     * superadmin session hits before ever choosing "Act as", and a raw
+     * `findOrFail(null)` turned that ordinary state into an unhandled
+     * `ModelNotFoundException` logged as a 404 on every single page load.
+     * Mirrors `RevisionController::current()`'s nullable-resource shape.
      */
-    public function show(): OrganizationResource
+    public function show(): JsonResponse
     {
-        $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
+        $orgId = app(TenantResolver::class)->getOrgId();
+
+        if ($orgId === null) {
+            return response()->json(['data' => null]);
+        }
+
+        $organization = Organization::findOrFail($orgId);
 
         $this->authorize('view', $organization);
 
-        return new OrganizationResource($organization);
+        return response()->json(['data' => new OrganizationResource($organization)]);
     }
 
     /**

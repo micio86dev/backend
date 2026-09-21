@@ -58,7 +58,10 @@ function gatePolicyAllUnassessableSetup(): array
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    // Role created before Project so role_code pins the same role the
+    // indicators below are authored under (ScoreEvaluationJob scopes by both).
+    $role = Role::factory()->create(['code' => 'ROLE_GATE_'.uniqid()]);
+    $project = Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $role->code]);
 
     $participant = new Participant;
     $participant->forceFill([
@@ -71,8 +74,6 @@ function gatePolicyAllUnassessableSetup(): array
     ]);
     $participant->save();
     $participant = $participant->fresh();
-
-    $role = Role::factory()->create(['code' => 'ROLE_GATE_'.uniqid()]);
 
     // COMP_A: 2 indicators, BOTH illegal scores — every indicator fails
     // validation, none legally scored.

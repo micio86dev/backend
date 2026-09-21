@@ -19,6 +19,7 @@ use App\Models\Evaluation;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\CassetteLLMProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,7 +33,8 @@ test('no column of a failed ai_requests row contains any substring of the raw re
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    $role = Role::factory()->create(['code' => 'ROLE_STG_'.uniqid()]);
+    $project = Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $role->code]);
 
     $participant = new Participant;
     $participant->forceFill([
@@ -46,7 +48,7 @@ test('no column of a failed ai_requests row contains any substring of the raw re
     $participant->save();
     $participant = $participant->fresh();
 
-    $setup = setupScoringCompetency($org, $project, $participant, 'STG');
+    $setup = setupScoringCompetency($org, $project, $participant, 'STG', $role);
     $competencyCode = $setup['competency']->code;
 
     // A distinctive marker that would NEVER legitimately appear in any

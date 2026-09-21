@@ -16,6 +16,22 @@ declare(strict_types=1);
  */
 
 use App\Models\Organization;
+use App\Models\User;
+
+test('GET /api/organization returns null data, never a 404, for a superadmin with no acting org', function (): void {
+    // The backoffice shell layout calls this endpoint unconditionally on
+    // every authenticated page to paint the tenant's brand colour
+    // (backoffice/app/layouts/default.vue). A superadmin who has not yet
+    // picked "Act as" is an ordinary, expected state — not a missing
+    // resource — so this must not surface as an unhandled 404.
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+    $token = auth('api')->login($superadmin);
+
+    $response = $this->withToken($token)->getJson('/api/organization');
+
+    $response->assertOk();
+    expect($response->json('data'))->toBeNull();
+});
 
 test('GET /api/organization always resolves the caller org, ignoring any id/query param', function (): void {
     $org = Organization::factory()->create(['name' => 'Acme Corp']);

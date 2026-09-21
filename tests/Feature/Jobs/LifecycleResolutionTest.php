@@ -42,13 +42,13 @@ function lcOrg(): Organization
     return Organization::factory()->create();
 }
 
-function lcProject(Organization $org): Project
+function lcProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function lcParticipant(Organization $org, Project $project, string $status = 'in_valutazione'): Participant
@@ -70,12 +70,15 @@ function lcParticipant(Organization $org, Project $project, string $status = 'in
 /**
  * Set up a single scored competency for the participant using a cassette LLM provider.
  *
+ * $role MUST be the role $project->role_code resolves to.
+ *
  * Returns the competency code.
  */
 function lcSetupCompetency(
     Organization $org,
     Project $project,
     Participant $participant,
+    Role $role,
     string $compCode,
     int $position = 0,
 ): string {
@@ -83,7 +86,6 @@ function lcSetupCompetency(
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'ROLE_LC_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $compCode]);
 
     $project->competencies()->attach($competency->id, ['position' => $position]);
@@ -161,7 +163,11 @@ test('(a) pending Evaluation → participant transitions to completato', functio
     Event::fake([EvaluationCompleted::class]);
 
     $org = lcOrg();
-    $project = lcProject($org);
+    // Role must resolve (so the job reaches the per-competency loop) while
+    // carrying no BarsIndicator for this competency, so role_no_bars fires
+    // for the right reason instead of an unresolvable role_code.
+    $role = Role::factory()->create(['code' => 'ROLE_LC_PEND_'.uniqid()]);
+    $project = lcProject($org, $role->code);
     $participant = lcParticipant($org, $project);
 
     // Attach 1 competency but pre-score it as unscorable (role_no_bars) → 0/1=0% → pending
@@ -172,7 +178,7 @@ test('(a) pending Evaluation → participant transitions to completato', functio
     $competency = Competency::factory()->create(['code' => 'LC_PEND_'.uniqid()]);
     $project->competencies()->attach($competency->id, ['position' => 0]);
 
-    // No BarsIndicators → role_no_bars path → valid=false → 0/1 < 90% → pending
+    // No BarsIndicators for this (role, competency) pair → role_no_bars path → valid=false → 0/1 < 90% → pending
 
     // Add a session so the job finds it
     $session = InterviewSession::create([
@@ -210,12 +216,13 @@ test('(b) completed Evaluation → participant transitions to completato', funct
     Event::fake([EvaluationCompleted::class]);
 
     $org = lcOrg();
-    $project = lcProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_LC_COMP_'.uniqid()]);
+    $project = lcProject($org, $role->code);
     $participant = lcParticipant($org, $project);
 
     // 1 competency with 1 indicator scored 5 → reliability 1.0, valid=true → 1/1=100% → completed
     $compCode = 'LC_COMP_'.uniqid();
-    lcSetupCompetency($org, $project, $participant, $compCode, 0);
+    lcSetupCompetency($org, $project, $participant, $role, $compCode, 0);
 
     // Wire cassette with score 5
     $cassette = [$compCode => lcCassetteResponse()];
@@ -240,7 +247,9 @@ test('(c) race guard: participant already errore → skip in_valutazione→compl
     Event::fake([EvaluationCompleted::class]);
 
     $org = lcOrg();
-    $project = lcProject($org);
+    // Role resolution is never reached in this scenario (the job exits at the
+    // step-1 errore guard), so no Role needs to exist for this code.
+    $project = lcProject($org, 'ROLE_LC_RACE_'.uniqid());
 
     // Participant is already 'errore' (concurrent failed() already ran)
     $participant = lcParticipant($org, $project, 'errore');

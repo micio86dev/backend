@@ -9,14 +9,24 @@ use App\Support\Catalogue\CatalogueRevisionResolver;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Loads BARS indicators scoped by BOTH role_id AND competency_id.
+ * Loads BARS indicators scoped by BOTH role_id AND competency_id — the SINGLE
+ * shared lookup for C8 (conversation) and C9 (scoring) alike.
  *
- * This class is C8-owned and MUST NOT reference or modify ScoreEvaluationJob
- * or any C9 code. C9's inline competency-only query is left untouched (RV-2).
+ * The C8 RV-2 carve-out this class was born under — "C9's inline
+ * competency-only query is left untouched" — is REVERSED: that duplicated,
+ * role-less query was the root cause of cross-role indicator contamination in
+ * scoring, and `ScoreEvaluationJob` now resolves through here.
  *
  * Cross-role correctness property: indicators for the same competency code but
  * a different role are never returned. This prevents cross-role contamination
  * — a correctness invariant, not cosmetic.
+ *
+ * `$roleId === null` is NOT an error state — it is the ROLE-LESS predicate for
+ * `potential` assessments (MTG/LAT), whose rows carry `role_id IS NULL` because
+ * a potential project has no `role_code` by rule. It is deliberately emitted as
+ * `whereNull('role_id')`, never `where('role_id', null)`: PostgreSQL evaluates
+ * `x = NULL` as UNKNOWN, which would silently return zero rows and turn every
+ * potential competency into `role_no_bars`.
  *
  * GLOBAL: BarsIndicator is not tenant-scoped; no organization_id filter applied.
  * Framework version is pinned via project.framework_version_id at the call site;
@@ -59,7 +69,9 @@ final class BarsIndicatorLoader
     /**
      * Return all BARS indicators for the given role AND competency, ordered by position.
      *
-     * @param  int  $roleId  Role primary key (from project.role_code → Role.id).
+     * @param  int|null  $roleId  Role primary key (from project.role_code → Role.id), or
+     *                            null for a role-less (`potential`) lookup — emitted as
+     *                            `whereNull('role_id')`, never a null-bound `=` comparison.
      * @param  int  $competencyId  Competency primary key.
      * @param  int|null  $revisionId  Scopes indicators to this catalogue revision — a
      *                                role/competency pair whose rows belong to a DIFFERENT
@@ -68,15 +80,20 @@ final class BarsIndicatorLoader
      *                                LATEST PUBLISHED revision (never "any revision").
      * @return Collection<int, BarsIndicator> Ordered by position ascending; may be empty.
      */
-    public function forRoleCompetency(int $roleId, int $competencyId, ?int $revisionId = null): Collection
+    public function forRoleCompetency(?int $roleId, int $competencyId, ?int $revisionId = null): Collection
     {
         $revisionId ??= app(CatalogueRevisionResolver::class)->tryLatestPublished() ?? CatalogueRevisionResolver::NO_PUBLISHED_REVISION;
 
+        $query = BarsIndicator::where('competency_id', $competencyId)
+            ->where('revision_id', $revisionId);
+
+        if ($roleId === null) {
+            $query->whereNull('role_id');
+        } else {
+            $query->where('role_id', $roleId);
+        }
+
         /** @var Collection<int, BarsIndicator> */
-        return BarsIndicator::where('role_id', $roleId)
-            ->where('competency_id', $competencyId)
-            ->where('revision_id', $revisionId)
-            ->orderBy('position')
-            ->get();
+        return $query->orderBy('position')->get();
     }
 }

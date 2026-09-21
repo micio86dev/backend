@@ -96,10 +96,24 @@ final class ParticipantInterviewAggregator
 
         $sessionsTotal = $sessions->count();
 
+        // `total()` counts the project's CURRENT `project_competencies` —
+        // ProjectController::update() lets an admin resync that set on an
+        // already-active project with no lifecycle guard. Plain `ended()`
+        // would still count a competency the participant finished BEFORE it
+        // was detached, so a detach-then-attach-something-new edit could
+        // report "fully done" while the newly attached competency had not
+        // been started at all (admin-summary-progress-detach-reattach-fix).
+        // `endedAmongAttached()` scopes the numerator to the SAME live set
+        // `total()` counts, so the two can never disagree — see its own
+        // docblock for why this scoping must stay OFF the candidate
+        // completion CAS.
+        $done = $tally->endedAmongAttached($participantId, $projectId);
+        $total = $tally->total($projectId);
+
         return [
             'progress' => [
-                'done' => $tally->ended($participantId, $projectId),
-                'total' => $tally->total($projectId),
+                'done' => $done,
+                'total' => $total,
             ],
             'elapsed' => [
                 // Absent, never 0: 0 asserts "it took no time", which is

@@ -133,6 +133,75 @@ test('progress: 15 project competencies, 6 ended, reports 6/15', function (): vo
     expect($result['progress'])->toBe(['done' => 6, 'total' => 15]);
 });
 
+test('progress: a competency detached from the project after completion never reports done > total', function (): void {
+    // Reproduces the production defect (participant #43, backoffice):
+    // ProjectController::update() lets an admin edit competency_ids on an
+    // already-active project with NO lifecycle guard. If the admin detaches
+    // a competency the candidate already completed a session for, the raw
+    // historical `ended()` count would still include it while `total()`
+    // (a live COUNT of project_competencies) has already shrunk — the
+    // display must never show more done than total.
+    //
+    // `endedAmongAttached()` (admin-summary-progress-detach-reattach-fix)
+    // scopes done to the SAME live set total() counts, so the detached
+    // competency's session drops out of BOTH figures together: 2/2, not the
+    // earlier "clamp done up to 3/3" hack that just hid the mismatch.
+    $org = aggOrg();
+    [$project, $comps] = aggProjectWithCompetencies($org, 3);
+    $participant = aggParticipant($org, $project);
+
+    foreach ($comps as $comp) {
+        aggSession($participant, $project, $comp->code, ['status' => 'completed']);
+    }
+
+    // Admin detaches one competency post-completion — mirrors sync() in
+    // ProjectController::update(), which carries no such guard today.
+    DB::table('project_competencies')
+        ->where('project_id', $project->id)
+        ->where('competency_id', $comps[0]->id)
+        ->delete();
+
+    $result = (new ParticipantInterviewAggregator)->aggregate($participant);
+
+    expect($result['progress']['total'])->toBeGreaterThanOrEqual($result['progress']['done']);
+    expect($result['progress'])->toBe(['done' => 2, 'total' => 2]);
+});
+
+test('progress: detaching a done competency and attaching a fresh one never reports false-complete', function (): void {
+    // The gap the clamp-based fix above left open: a detach that is also a
+    // REPLACE. Three competencies are done; the admin detaches one of them
+    // and attaches a competency the participant has never touched. `total()`
+    // stays 3 (two survivors plus the new one), and the honest `done` figure
+    // must stay at 2 — the two still-attached, still-finished competencies —
+    // never 3, which would tell the operator the participant finished a
+    // competency they have not even started.
+    $org = aggOrg();
+    [$project, $comps] = aggProjectWithCompetencies($org, 3);
+    $participant = aggParticipant($org, $project);
+
+    foreach ($comps as $comp) {
+        aggSession($participant, $project, $comp->code, ['status' => 'completed']);
+    }
+
+    DB::table('project_competencies')
+        ->where('project_id', $project->id)
+        ->where('competency_id', $comps[0]->id)
+        ->delete();
+
+    $replacement = Competency::factory()->create();
+    DB::table('project_competencies')->insert([
+        'project_id' => $project->id,
+        'competency_id' => $replacement->id,
+        'position' => 99,
+    ]);
+    // No session ever created for $replacement — the participant has not
+    // started it.
+
+    $result = (new ParticipantInterviewAggregator)->aggregate($participant);
+
+    expect($result['progress'])->toBe(['done' => 2, 'total' => 3]);
+});
+
 // ── D4 — elapsed ─────────────────────────────────────────────────────────
 
 test('elapsed: two finished sessions of 300s and 480s sum to 780s, with coverage counts', function (): void {
