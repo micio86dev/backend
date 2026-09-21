@@ -15,11 +15,12 @@ use Illuminate\Support\Facades\Http;
  * D3). Mirrors `AnthropicLLMProvider` structurally: raw `Http`, NO
  * third-party SDK — therefore NO D25 dependency to pin.
  *
- * Endpoint path and wire shape — UNVERIFIED (design.md C-C): no network
- * access was available this session to confirm them against
- * https://docs.typesafe.ai/api.md and
- * https://docs.typesafe.ai/primitives/noul.md. `self::JUDGE_PATH` is a
- * placeholder pending that verification task.
+ * Endpoint path and wire shape confirmed against the live TypeSafe API
+ * contract (https://docs.typesafe.ai/api.md, read during the
+ * scoring-audit-jev-prod-recovery follow-up — the original P1.0
+ * verification task, unavailable during the original apply session).
+ * `self::JUDGE_PATH` was `/v1/judgments`; the real endpoint is
+ * `/v1/systemone`.
  *
  * The one deliberate divergence from `AnthropicLLMProvider`: the response
  * body is NOT put into the exception message. The request body here
@@ -29,7 +30,7 @@ use Illuminate\Support\Facades\Http;
  */
 final class TypesafeJevJudge implements AuditJudge
 {
-    private const JUDGE_PATH = '/v1/judgments';
+    private const JUDGE_PATH = '/v1/systemone';
 
     public function __construct(
         private readonly JevRequestBuilder $builder = new JevRequestBuilder,

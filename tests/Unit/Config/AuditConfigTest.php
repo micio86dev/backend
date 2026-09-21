@@ -16,7 +16,7 @@ test('shipped scoring.audit defaults: enabled=true, api_key empty, judge_model, 
     expect(config('scoring.audit.enabled'))->toBeTrue()
         ->and(config('scoring.audit.api_key'))->toBe('')
         ->and(config('scoring.audit.base_url'))->toBe('https://api.typesafe.ai')
-        ->and(config('scoring.audit.judge_model'))->toBe('jev-1')
+        ->and(config('scoring.audit.judge_model'))->toBe('jev-latest')
         ->and(config('scoring.audit.prompt_version'))->toBe('1.0.0')
         ->and(config('scoring.audit.timeout_seconds'))->toBe(30)
         ->and(config('scoring.audit.cost_rates_usd_per_million'))->toBe([]);
