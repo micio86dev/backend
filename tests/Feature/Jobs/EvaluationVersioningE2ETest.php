@@ -35,7 +35,10 @@ test('full job run: Evaluation versioning fields (framework_version_id, model_ve
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    // Role created before Project so role_code pins the same role the
+    // indicator below is authored under (ScoreEvaluationJob scopes by both).
+    $role = Role::factory()->create(['code' => 'ROLE_VER_'.uniqid()]);
+    $project = Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $role->code]);
 
     $participant = new Participant;
     $participant->forceFill([
@@ -51,7 +54,6 @@ test('full job run: Evaluation versioning fields (framework_version_id, model_ve
 
     // Set up 1 competency with 1 indicator
     $compCode = 'VER_'.uniqid();
-    $role = Role::factory()->create(['code' => 'ROLE_VER_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $compCode]);
     $project->competencies()->attach($competency->id, ['position' => 0]);
 

@@ -93,12 +93,15 @@ function defParticipant(Organization $org, Project $project, string $status = 'i
 /**
  * Create a minimal scored competency + session + utterance.
  *
+ * $role MUST be the role $project->role_code resolves to.
+ *
  * @return array{competency: Competency, session: InterviewSession}
  */
 function defSetupCompetency(
     Organization $org,
     Project $project,
     Participant $participant,
+    Role $role,
     string $compCode,
     bool $withIndicator = true,
 ): array {
@@ -106,7 +109,6 @@ function defSetupCompetency(
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'DEF_ROLE_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $compCode.'_'.uniqid()]);
     $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
 
@@ -376,7 +378,10 @@ test('(3) runScoringPipeline: participant with non-existent project_id → no-op
 
 test('(4) scoring loop: competency with no InterviewSession → skipped (no CompetencyResult created)', function (): void {
     $org = defOrg();
-    $project = defProject($org);
+    // Role must resolve (so the job reaches the per-competency loop) so the
+    // missing-session skip fires for the right reason, not an unresolvable role_code.
+    $role = Role::factory()->create(['code' => 'NO_SESSION_'.uniqid()]);
+    $project = defProject($org, ['role_code' => $role->code]);
     $participant = defParticipant($org, $project);
 
     // Attach a competency to the project but do NOT create an InterviewSession for it.
@@ -384,7 +389,6 @@ test('(4) scoring loop: competency with no InterviewSession → skipped (no Comp
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'NO_SESSION_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'NOSESS_'.uniqid()]);
     $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
 
@@ -427,10 +431,11 @@ test('(5) CW5: scoreCompetency UniqueConstraintViolationException → skipped gr
     // This simulates the race where another job already persisted the result.
 
     $org = defOrg();
-    $project = defProject($org);
+    $role = Role::factory()->create(['code' => 'DEF_ROLE_CW5_'.uniqid()]);
+    $project = defProject($org, ['role_code' => $role->code]);
     $participant = defParticipant($org, $project);
 
-    $setup = defSetupCompetency($org, $project, $participant, 'CW5', withIndicator: true);
+    $setup = defSetupCompetency($org, $project, $participant, $role, 'CW5', withIndicator: true);
     $competency = $setup['competency'];
 
     // Run the job once to create the Evaluation and the CompetencyResult.
@@ -509,11 +514,15 @@ test('(6) alt unscorable policy (false): unscorable competency excluded from gat
     Config::set('scoring.gate.count_unscorable_against_total', false);
 
     $org = defOrg();
-    $project = defProject($org);
+    // One role, pinned by the project, shared by both competencies below — comp2
+    // deliberately gets no BarsIndicator authored under it, so it is genuinely
+    // role_no_bars rather than merely under a different (unpinned) role.
+    $role = Role::factory()->create(['code' => 'ALTPOL_ROLE_'.uniqid()]);
+    $project = defProject($org, ['role_code' => $role->code]);
     $participant = defParticipant($org, $project);
 
     // Competency 1: has indicators + session → will be scored normally.
-    $setup1 = defSetupCompetency($org, $project, $participant, 'ALTPOL_SCORED', withIndicator: true);
+    $setup1 = defSetupCompetency($org, $project, $participant, $role, 'ALTPOL_SCORED', withIndicator: true);
     $comp1 = $setup1['competency'];
 
     // Competency 2: no indicators → role_no_bars → unscorable.
@@ -522,7 +531,6 @@ test('(6) alt unscorable policy (false): unscorable competency excluded from gat
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role2 = Role::factory()->create(['code' => 'ALTPOL_NOBARS_'.uniqid()]);
     $comp2 = Competency::factory()->create(['code' => 'ALTPOL_NOBARS_'.uniqid()]);
     $project->competencies()->syncWithoutDetaching([$comp2->id => ['position' => 1]]);
     // No BarsIndicator for comp2 → role_no_bars.
@@ -588,7 +596,11 @@ test('(7) PromptBuilder RoleNoBarsException path: scoreCompetency with empty ind
     // → isEmpty() at line 518 → persistUnscorable(role_no_bars) (lines 519-530).
 
     $org = defOrg();
-    $project = defProject($org);
+    // Role must resolve (so the job reaches scoreCompetency's isEmpty() check)
+    // while carrying no BarsIndicator for this competency, so role_no_bars
+    // fires for the right reason instead of an unresolvable role_code.
+    $role = Role::factory()->create(['code' => 'PROMPTBARS_ROLE_'.uniqid()]);
+    $project = defProject($org, ['role_code' => $role->code]);
     $participant = defParticipant($org, $project);
 
     // Competency with no BarsIndicators → role_no_bars path via isEmpty() check.

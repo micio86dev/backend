@@ -54,13 +54,13 @@ function detOrg(): Organization
     return Organization::factory()->create();
 }
 
-function detProject(Organization $org): Project
+function detProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function detParticipant(Organization $org, Project $project): Participant
@@ -82,15 +82,18 @@ function detParticipant(Organization $org, Project $project): Participant
 /**
  * Set up one competency (COL, 3 indicators matching the golden cassette) for a fresh participant.
  *
+ * $role MUST be the role the project's role_code resolves to — indicators are
+ * authored under it, and ScoreEvaluationJob scopes by both role_id and
+ * competency_id.
+ *
  * Returns the Competency instance.
  */
-function detSetupCompetency(Organization $org, Project $project, Participant $participant): Competency
+function detSetupCompetency(Organization $org, Project $project, Participant $participant, Role $role): Competency
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'DET_ROLE_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'DET_COL_'.uniqid()]);
 
     $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
@@ -220,9 +223,10 @@ test('(a–c) same input at temperature=0 → two runs produce identical scores,
     $org = detOrg();
 
     // ── RUN 1 ─────────────────────────────────────────────────────────────────
-    $project1 = detProject($org);
+    $role1 = Role::factory()->create(['code' => 'DET_ROLE_'.uniqid()]);
+    $project1 = detProject($org, $role1->code);
     $participant1 = detParticipant($org, $project1);
-    $competency1 = detSetupCompetency($org, $project1, $participant1);
+    $competency1 = detSetupCompetency($org, $project1, $participant1, $role1);
 
     app()->instance(LLMProvider::class, detCassetteForCompetencyCode($competency1->code));
 
@@ -257,9 +261,10 @@ test('(a–c) same input at temperature=0 → two runs produce identical scores,
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project2 = detProject($org);
+    $role2 = Role::factory()->create(['code' => 'DET_ROLE_'.uniqid()]);
+    $project2 = detProject($org, $role2->code);
     $participant2 = detParticipant($org, $project2);
-    $competency2 = detSetupCompetency($org, $project2, $participant2);
+    $competency2 = detSetupCompetency($org, $project2, $participant2, $role2);
 
     app()->instance(LLMProvider::class, detCassetteForCompetencyCode($competency2->code));
 
@@ -317,9 +322,10 @@ test('(d) determinism holds over residual score levels {5,4,2} (bars-full-scale-
     $org = detOrg();
 
     // ── RUN 1 ─────────────────────────────────────────────────────────────────
-    $project1 = detProject($org);
+    $role1 = Role::factory()->create(['code' => 'DET_ROLE_'.uniqid()]);
+    $project1 = detProject($org, $role1->code);
     $participant1 = detParticipant($org, $project1);
-    $competency1 = detSetupCompetency($org, $project1, $participant1);
+    $competency1 = detSetupCompetency($org, $project1, $participant1, $role1);
 
     app()->instance(LLMProvider::class, detResidualCassetteForCompetencyCode($competency1->code));
 
@@ -349,9 +355,10 @@ test('(d) determinism holds over residual score levels {5,4,2} (bars-full-scale-
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project2 = detProject($org);
+    $role2 = Role::factory()->create(['code' => 'DET_ROLE_'.uniqid()]);
+    $project2 = detProject($org, $role2->code);
     $participant2 = detParticipant($org, $project2);
-    $competency2 = detSetupCompetency($org, $project2, $participant2);
+    $competency2 = detSetupCompetency($org, $project2, $participant2, $role2);
 
     app()->instance(LLMProvider::class, detResidualCassetteForCompetencyCode($competency2->code));
 

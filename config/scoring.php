@@ -106,8 +106,16 @@ return [
     | overrides BOTH defaults and must be bumped separately, at deploy time —
     | this config/.env.example parity guard cannot see or enforce that value.
     |
+    | Bumped 3.1.0 -> 3.2.0 (scoring-role-scoped-indicators): traceability only.
+    | The prompt TEMPLATE is unchanged; WHICH indicators get injected into it
+    | changed — the role-scoped BarsIndicatorLoader replaces the unscoped
+    | competency-only query, so a competency's rubric no longer carries every
+    | other role's anchors. An Evaluation scored before this fix is not
+    | comparable to one scored after it, and prompt_version is the field that
+    | says so.
+    |
     */
-    'prompt_version' => env('SCORING_PROMPT_VERSION', '3.1.0'),
+    'prompt_version' => env('SCORING_PROMPT_VERSION', '3.2.0'),
 
     /*
     |--------------------------------------------------------------------------

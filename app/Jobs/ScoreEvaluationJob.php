@@ -31,6 +31,8 @@ use App\Models\IndicatorScore;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
+use App\Services\Conversation\BarsIndicatorLoader;
 use App\Services\Scoring\CompletionGate;
 use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
@@ -42,6 +44,7 @@ use App\Services\Scoring\PromptBuilder;
 use App\Services\Scoring\ResponseEnvelopeStripper;
 use App\Services\Scoring\ScoringFailureClassifier;
 use App\Services\Scoring\TranscriptAssembler;
+use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Observability\ResponseFingerprint;
 use App\Support\Tenancy\TenantContextScope;
@@ -306,6 +309,62 @@ class ScoreEvaluationJob implements ShouldQueue
             return;
         }
 
+        // ── Resolve the pinned catalogue revision and role ONCE, before the loop ──
+        // `role_code` is null for `potential` (MTG/LAT are role-less by design —
+        // a legal state, not a failure). For `standard` it MUST resolve to a real
+        // Role row: falling through to null would query `role_id IS NULL` and
+        // silently score a standard project against the role-less potential set,
+        // reintroducing this exact class of contamination under another name.
+        //
+        // The lookup is BY CODE, so it must be revision-scoped: once a draft is
+        // open every role code exists twice, and `framework_roles` is UNIQUE
+        // (revision_id, code), not unique on code alone.
+        //
+        // Aborting is not enough on its own, and a bare `return` here would be a
+        // real defect: by this point enterEvaluationGuard() has written the
+        // Evaluation row as `processing` and the participant is still
+        // `in_valutazione`. Nothing throws, so failed() never runs — no
+        // EvaluationFailed, no `errore` transition — and
+        // resolveEvaluationTerminalState() is skipped, so there is no terminal
+        // status and no webhook. A re-dispatch resumes into the Processing
+        // branch, reaches this same guard and returns again: the candidate is
+        // stranded permanently and the calling system is never told. So this arm
+        // ends the participant the way failed() and the `orgId < 1` guard do.
+        $revisionId = app(CatalogueRevisionResolver::class)->tryForProject($project);
+        $roleId = null;
+
+        if ($revisionId === null) {
+            Log::error('ScoreEvaluationJob: project has no resolvable catalogue revision — aborting before any further write', [
+                'participant_id' => $this->participantId,
+                'project_id' => $project->id,
+            ]);
+
+            $this->endParticipantUnresolvable($participant);
+
+            return;
+        }
+
+        if ($project->role_code !== null) {
+            $role = Role::where('code', $project->role_code)
+                ->where('revision_id', $revisionId)
+                ->first();
+
+            if ($role === null) {
+                Log::error('ScoreEvaluationJob: project.role_code has no matching Role in the pinned revision — aborting before any further write', [
+                    'participant_id' => $this->participantId,
+                    'project_id' => $project->id,
+                    'role_code' => $project->role_code,
+                    'revision_id' => $revisionId,
+                ]);
+
+                $this->endParticipantUnresolvable($participant);
+
+                return;
+            }
+
+            $roleId = (int) $role->id;
+        }
+
         $projectLocale = (string) ($project->language ?? 'en');
         $competencies = $project->competencies()->get();
 
@@ -327,6 +386,7 @@ class ScoreEvaluationJob implements ShouldQueue
         $llmProvider = app(LLMProvider::class);
         $transcriptAssembler = new TranscriptAssembler;
         $promptBuilder = new PromptBuilder;
+        $barsIndicatorLoader = new BarsIndicatorLoader;
         $evaluationParser = new EvaluationParser;
         $indicatorValidator = new IndicatorValidator;
         $excerptValidator = new ExcerptValidator;
@@ -370,13 +430,19 @@ class ScoreEvaluationJob implements ShouldQueue
             }
 
             // ── Load BARS indicators ──────────────────────────────────────
-            // Indicators are loaded scoped by competency only (not role_id),
-            // because in the current data model BarsIndicator.competency_id identifies
-            // the competency and the indicators are associated by competency across roles.
-            // TODO(PR3): if multi-role projects are needed, filter by role_id too.
-            $indicators = BarsIndicator::where('competency_id', $competency->id)
-                ->orderBy('position')
-                ->get();
+            // Scoped by BOTH role_id AND competency_id through the single shared
+            // lookup C8 already uses. `framework_bars_indicators` is UNIQUE
+            // (role_id, competency_id, position), so one competency carries 3
+            // rows PER ROLE: a competency-only query returned every other role's
+            // anchors too, attached scores by array position to indicator text
+            // belonging to other roles, and inflated the reliability denominator
+            // from 3 to 3 x roles. `$roleId` is null only for a role-less
+            // (`potential`) project, where the loader emits whereNull.
+            $indicators = $barsIndicatorLoader->forRoleCompetency(
+                roleId: $roleId,
+                competencyId: (int) $competency->id,
+                revisionId: $revisionId,
+            );
 
             // ── Score this competency ─────────────────────────────────────
             try {
@@ -1001,6 +1067,21 @@ class ScoreEvaluationJob implements ShouldQueue
         }
 
         // (b) ALWAYS emit EvaluationFailed, regardless of transition outcome or context derivability.
+        event(new EvaluationFailed($this->participantId));
+    }
+
+    /**
+     * End a participant whose project cannot be resolved against the catalogue.
+     *
+     * Mirrors failed() rather than the `orgId < 1` guard: this runs AFTER the
+     * Evaluation row exists, so the calling system must be told the evaluation
+     * will never arrive. Emitting EvaluationFailed is what makes the outcome
+     * observable instead of a silent, permanently-resumable no-op.
+     */
+    private function endParticipantUnresolvable(Participant $participant): void
+    {
+        $participant->refresh();
+        $this->transitionParticipantToErrore($participant);
         event(new EvaluationFailed($this->participantId));
     }
 

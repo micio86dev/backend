@@ -39,13 +39,13 @@ function resumeOrg(): Organization
     return Organization::factory()->create();
 }
 
-function resumeProject(Organization $org): Project
+function resumeProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function resumeParticipant(Organization $org, Project $project): Participant
@@ -65,15 +65,19 @@ function resumeParticipant(Organization $org, Project $project): Participant
 }
 
 /**
+ * $role MUST be the role $project->role_code resolves to — all three
+ * competencies in the test below are authored under the SAME role the
+ * project pins (ScoreEvaluationJob scopes indicators by both role_id and
+ * competency_id).
+ *
  * @return array{competency: Competency, session: InterviewSession}
  */
-function createResumeCompetency(Organization $org, Project $project, Participant $participant, string $code, int $pos): array
+function createResumeCompetency(Organization $org, Project $project, Participant $participant, Role $role, string $code, int $pos): array
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'ROLE_'.$code.'_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $code.'_'.uniqid()]);
 
     $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => $pos]]);
@@ -117,12 +121,14 @@ function createResumeCompetency(Organization $org, Project $project, Participant
 
 test('resume-skip: already-scored competencies are not re-sent to the LLM on retry', function (): void {
     $org = resumeOrg();
-    $project = resumeProject($org);
+    // One role, pinned by the project, shared by all three competencies below.
+    $role = Role::factory()->create(['code' => 'ROLE_RESUME_'.uniqid()]);
+    $project = resumeProject($org, $role->code);
     $participant = resumeParticipant($org, $project);
 
-    $setup1 = createResumeCompetency($org, $project, $participant, 'COMP1', 0);
-    $setup2 = createResumeCompetency($org, $project, $participant, 'COMP2', 1);
-    $setup3 = createResumeCompetency($org, $project, $participant, 'COMP3', 2);
+    $setup1 = createResumeCompetency($org, $project, $participant, $role, 'COMP1', 0);
+    $setup2 = createResumeCompetency($org, $project, $participant, $role, 'COMP2', 1);
+    $setup3 = createResumeCompetency($org, $project, $participant, $role, 'COMP3', 2);
 
     $comp1 = $setup1['competency'];
     $comp2 = $setup2['competency'];

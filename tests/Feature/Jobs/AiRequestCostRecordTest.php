@@ -24,6 +24,7 @@ use App\Models\AiRequest;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\CassetteLLMProvider;
@@ -36,13 +37,13 @@ function costOrg(): Organization
     return Organization::factory()->create();
 }
 
-function costProject(Organization $org): Project
+function costProject(Organization $org, string $roleCode): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    return Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $roleCode]);
 }
 
 function costParticipant(Organization $org, Project $project): Participant
@@ -65,9 +66,12 @@ function costParticipant(Organization $org, Project $project): Participant
 function costRun(string $body): ?AiRequest
 {
     $org = costOrg();
-    $project = costProject($org);
+    // Role created before Project so role_code pins the same role the
+    // indicators below are authored under (ScoreEvaluationJob scopes by both).
+    $role = Role::factory()->create(['code' => 'ROLE_COL_'.uniqid()]);
+    $project = costProject($org, $role->code);
     $participant = costParticipant($org, $project);
-    $setup = setupScoringCompetency($org, $project, $participant, 'COL');
+    $setup = setupScoringCompetency($org, $project, $participant, 'COL', $role);
 
     app()->instance(
         LLMProvider::class,

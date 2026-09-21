@@ -46,7 +46,10 @@ test('3 indicators failing 3 different ways all persist, siblings unaffected reg
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    // Role created before Project so role_code pins the same role the
+    // indicators below are authored under (ScoreEvaluationJob scopes by both).
+    $role = Role::factory()->create(['code' => 'ROLE_PII_'.uniqid()]);
+    $project = Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $role->code]);
 
     $participant = new Participant;
     $participant->forceFill([
@@ -60,7 +63,6 @@ test('3 indicators failing 3 different ways all persist, siblings unaffected reg
     $participant->save();
     $participant = $participant->fresh();
 
-    $role = Role::factory()->create(['code' => 'ROLE_PII_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'PII_'.uniqid()]);
     $project->competencies()->attach($competency->id, ['position' => 0]);
 

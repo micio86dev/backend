@@ -37,6 +37,7 @@ use App\Models\IndicatorScore;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Role;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\CassetteLLMProvider;
 use App\Testing\CassetteResponse;
@@ -51,7 +52,10 @@ test('a truncated response is recorded as truncated/llm_truncated, never llm_par
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $project = Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    // Role created before Project so role_code pins the same role the
+    // indicators below are authored under (ScoreEvaluationJob scopes by both).
+    $role = Role::factory()->create(['code' => 'ROLE_PRS_'.uniqid()]);
+    $project = Project::factory()->create(['status' => 'active', 'language' => 'en', 'role_code' => $role->code]);
 
     $participant = new Participant;
     $participant->forceFill([
@@ -65,7 +69,7 @@ test('a truncated response is recorded as truncated/llm_truncated, never llm_par
     $participant->save();
     $participant = $participant->fresh();
 
-    $setup = setupScoringCompetency($org, $project, $participant, 'PRS');
+    $setup = setupScoringCompetency($org, $project, $participant, 'PRS', $role);
     $competencyCode = $setup['competency']->code;
 
     $fixture = require base_path('tests/Fixtures/cassettes/truncated_response.php');

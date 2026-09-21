@@ -24,18 +24,30 @@ use App\Models\Utterance;
 use App\Support\Tenancy\TenantResolver;
 
 /**
- * Creates a minimal scored competency setup: Role, Competency (attached to project),
+ * Creates a minimal scored competency setup: Competency (attached to project),
  * BarsIndicator with EN translations, and an InterviewSession with one utterance.
  *
+ * The caller-provided `$role` MUST be the role `$project->role_code` resolves
+ * to — ScoreEvaluationJob loads indicators scoped by BOTH role_id and
+ * competency_id, so an indicator authored under a mismatched role is never
+ * seen by the job (see RoleScopedIndicatorsTest).
+ *
  * @return array{role: Role, competency: Competency, session: InterviewSession}
+ *
+ * @throws InvalidArgumentException when $role does not match $project->role_code
  */
-function setupScoringCompetency(Organization $org, Project $project, Participant $participant, string $compCode): array
+function setupScoringCompetency(Organization $org, Project $project, Participant $participant, string $compCode, Role $role): array
 {
+    if ($project->role_code !== $role->code) {
+        throw new InvalidArgumentException(
+            "setupScoringCompetency(): project role_code [{$project->role_code}] does not match role code [{$role->code}]."
+        );
+    }
+
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'ROLE_'.$compCode.'_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => $compCode.'_'.uniqid()]);
 
     // Attach competency to project

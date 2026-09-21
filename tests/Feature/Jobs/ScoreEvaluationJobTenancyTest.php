@@ -53,13 +53,19 @@ function scoreTenancyOrg(): Organization
     return Organization::factory()->create();
 }
 
-function scoreTenancyProject(Organization $org): Project
+function scoreTenancyProject(Organization $org, ?string $roleCode = null): Project
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    return Project::factory()->create(['status' => 'active', 'language' => 'en']);
+    $attrs = ['status' => 'active', 'language' => 'en'];
+
+    if ($roleCode !== null) {
+        $attrs['role_code'] = $roleCode;
+    }
+
+    return Project::factory()->create($attrs);
 }
 
 function scoreTenancyParticipant(Organization $org, Project $project): Participant
@@ -82,14 +88,15 @@ function scoreTenancyParticipant(Organization $org, Project $project): Participa
  * Minimal scored-competency setup producing all 4 write types when the pipeline
  * runs to completion: Evaluation, CompetencyResult, IndicatorScore, AiRequest.
  * Mirrors tests/Feature/Jobs/AiRequestLoggingTest.php::setupScoringCompetency().
+ *
+ * $role MUST be the role $project->role_code resolves to.
  */
-function scoreTenancySetupCompetency(Organization $org, Project $project, Participant $participant): string
+function scoreTenancySetupCompetency(Organization $org, Project $project, Participant $participant, Role $role): string
 {
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    $role = Role::factory()->create(['code' => 'ROLE_TENANCY_'.uniqid()]);
     $competency = Competency::factory()->create(['code' => 'TEN_'.uniqid()]);
     $project->competencies()->attach($competency->id, ['position' => 0]);
 
@@ -214,9 +221,10 @@ beforeEach(function (): void {
 
 test('(1) ambient null (post Queue::before) — all 4 written rows carry the participant org', function (): void {
     $org = scoreTenancyOrg();
-    $project = scoreTenancyProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_TENANCY_'.uniqid()]);
+    $project = scoreTenancyProject($org, $role->code);
     $participant = scoreTenancyParticipant($org, $project);
-    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant);
+    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant, $role);
     scoreTenancyBindCassette($competencyCode);
 
     // Ambient is already null in a fresh test — nothing to set. dispatch() still
@@ -243,9 +251,10 @@ test('(1) ambient null (post Queue::before) — all 4 written rows carry the par
 test('(2) ambient holds a foreign org — all 4 written rows still carry the participant org', function (): void {
     $org = scoreTenancyOrg();
     $foreignOrg = scoreTenancyOrg();
-    $project = scoreTenancyProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_TENANCY_'.uniqid()]);
+    $project = scoreTenancyProject($org, $role->code);
     $participant = scoreTenancyParticipant($org, $project);
-    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant);
+    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant, $role);
     scoreTenancyBindCassette($competencyCode);
 
     $resolver = app(TenantResolver::class);
@@ -273,9 +282,10 @@ test('(2) ambient holds a foreign org — all 4 written rows still carry the par
 
 test('(3) ambient bypass=true — rows carry the participant org and isBypass() is observed false inside the job', function (): void {
     $org = scoreTenancyOrg();
-    $project = scoreTenancyProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_TENANCY_'.uniqid()]);
+    $project = scoreTenancyProject($org, $role->code);
     $participant = scoreTenancyParticipant($org, $project);
-    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant);
+    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant, $role);
     scoreTenancyBindCassette($competencyCode);
 
     // EvaluationCompleted fires INSIDE the TenantContextScope boundary (design D3),
@@ -315,9 +325,10 @@ test('(4) participant org unresolvable — zero rows written, no exception, erro
 
 test('(5) no leak — dispatching ScoreEvaluationJob does not bleed context into the next job', function (): void {
     $org = scoreTenancyOrg();
-    $project = scoreTenancyProject($org);
+    $role = Role::factory()->create(['code' => 'ROLE_TENANCY_'.uniqid()]);
+    $project = scoreTenancyProject($org, $role->code);
     $participant = scoreTenancyParticipant($org, $project);
-    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant);
+    $competencyCode = scoreTenancySetupCompetency($org, $project, $participant, $role);
     scoreTenancyBindCassette($competencyCode);
 
     ScoreEvaluationJob::dispatch($participant->id);
