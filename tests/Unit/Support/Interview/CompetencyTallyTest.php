@@ -191,3 +191,67 @@ test('a spent-retry error session mixed with normally-ended sessions matches the
     expect($tally->ended($participant->id, $project->id))->toBe(3)
         ->and($tally->total($project->id))->toBe(4);
 });
+
+// ── endedAmongAttached() (admin-summary-progress-detach-reattach-fix) ──────
+//
+// Shares endedQuery() with ended() (D5), so these tests pin the one thing
+// that predicate-sharing does NOT already guarantee: that the extra
+// "still attached" filter is additive, never a replacement for the
+// completed/timeout/skipped/spent-retry-error rule ended()'s own tests above
+// already cover exhaustively.
+
+test('endedAmongAttached() applies the same spent-retry error-ceiling rule as ended()', function (): void {
+    $org = tallyOrg();
+    [$project, $comps] = tallyProjectWithCompetencies($org, 2);
+    $participant = tallyParticipant($org, $project);
+
+    // Not yet spent its re-offer — must not count.
+    tallySession($org, $participant, $project, $comps[0]->code, [
+        'status' => 'error',
+        'error_count' => 1,
+    ]);
+    // Spent-retry — must count.
+    tallySession($org, $participant, $project, $comps[1]->code, [
+        'status' => 'error',
+        'error_count' => 2,
+    ]);
+
+    $tally = new CompetencyTally;
+
+    expect($tally->endedAmongAttached($participant->id, $project->id))->toBe(1);
+});
+
+test('endedAmongAttached() excludes a session whose competency has been detached from the project', function (): void {
+    $org = tallyOrg();
+    [$project, $comps] = tallyProjectWithCompetencies($org, 2);
+    $participant = tallyParticipant($org, $project);
+
+    tallySession($org, $participant, $project, $comps[0]->code, ['status' => 'completed']);
+    tallySession($org, $participant, $project, $comps[1]->code, ['status' => 'completed']);
+
+    DB::table('project_competencies')
+        ->where('project_id', $project->id)
+        ->where('competency_id', $comps[0]->id)
+        ->delete();
+
+    $tally = new CompetencyTally;
+
+    expect($tally->endedAmongAttached($participant->id, $project->id))->toBe(1)
+        ->and($tally->ended($participant->id, $project->id))->toBe(2);
+});
+
+test('endedAmongAttached() equals ended() when nothing has been detached', function (): void {
+    $org = tallyOrg();
+    [$project, $comps] = tallyProjectWithCompetencies($org, 3);
+    $participant = tallyParticipant($org, $project);
+
+    foreach ($comps as $comp) {
+        tallySession($org, $participant, $project, $comp->code, ['status' => 'completed']);
+    }
+
+    $tally = new CompetencyTally;
+
+    expect($tally->endedAmongAttached($participant->id, $project->id))
+        ->toBe($tally->ended($participant->id, $project->id))
+        ->toBe(3);
+});

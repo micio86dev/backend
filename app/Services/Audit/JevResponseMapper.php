@@ -15,12 +15,15 @@ use Illuminate\Support\Facades\Log;
  * (design D3), unit-testable without an HTTP fake. Deciding what
  * `malformed` means lives entirely here — see the mapping rules table below.
  *
- * Response envelope shape — UNVERIFIED (design.md C-C): a flat `answers`
- * map keyed by question id (`"i1.relevance" => 0.9`), the natural
- * continuation of the request envelope's own question-id namespace and
- * Noul's "probability of yes" contract. No network access was available
- * this session to confirm the live TypeSafe response shape against
- * https://docs.typesafe.ai/api.md.
+ * Response envelope shape confirmed against the live TypeSafe API contract
+ * (https://docs.typesafe.ai/api.md, read during the
+ * scoring-audit-jev-prod-recovery follow-up — the original P1.0
+ * verification task): `answers` is a map keyed by question id, but each
+ * VALUE is a nested Noul answer object — `"i1.relevance" => {"type": "noul",
+ * "noul": 0.9}` — never a flat float. The original placeholder guessed a
+ * flat float; a real response mapped every subject to `malformed` because of
+ * it. A flat float is now explicitly treated as unparseable (never a valid
+ * probability), so a stray pre-fix-shaped payload fails loud, not silently.
  *
  * Mapping rules:
  *   - envelope unparseable / not an object              → AuditJudgeException
@@ -125,7 +128,7 @@ final class JevResponseMapper
             omissions: $omissions,
             inputTokens: $this->extractTokenCount($usage, 'input_tokens'),
             outputTokens: $this->extractTokenCount($usage, 'output_tokens'),
-            judgeModel: $model ?? (string) config('scoring.audit.judge_model', 'jev-1'),
+            judgeModel: $model ?? (string) config('scoring.audit.judge_model', 'jev-latest'),
             latencyMs: $latencyMs,
         );
     }
@@ -135,7 +138,25 @@ final class JevResponseMapper
      */
     private function extractProbability(array $answers, string $questionId): ?float
     {
-        $value = $answers[$questionId] ?? null;
+        $entry = $answers[$questionId] ?? null;
+
+        // The real Noul answer is a nested object, `{"type": "noul", "noul":
+        // 0.9}` — a flat scalar here (the pre-fix placeholder shape) is
+        // unparseable, never a valid probability.
+        if (! is_array($entry)) {
+            return null;
+        }
+
+        // The "noul" discriminator is checked, not merely the field's
+        // presence: an answer of some OTHER type that happens to also carry
+        // a numeric `noul` key must fail the same way a flat float already
+        // does, rather than being read as a probability it never claimed to
+        // be.
+        if (($entry['type'] ?? null) !== 'noul') {
+            return null;
+        }
+
+        $value = $entry['noul'] ?? null;
 
         return (is_int($value) || is_float($value)) ? (float) $value : null;
     }
