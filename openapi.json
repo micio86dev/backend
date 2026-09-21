@@ -4003,24 +4003,40 @@
         "/organization": {
             "get": {
                 "operationId": "organization.show",
+                "description": "`data: null` \u2014 never a 404 \u2014 when `getOrgId()` itself is null: a\nsuperadmin with no acting organization selected (TenantContext's\nexplicit bypass branch). The backoffice shell layout calls this\nendpoint unconditionally on every authenticated page to paint the\ntenant's brand colour, so this is not a rare corner: it is what every\nsuperadmin session hits before ever choosing \"Act as\", and a raw\n`findOrFail(null)` turned that ordinary state into an unhandled\n`ModelNotFoundException` logged as a 404 on every single page load.\nMirrors `RevisionController::current()`'s nullable-resource shape.",
                 "summary": "GET /api/organization",
                 "tags": [
                     "Organization"
                 ],
                 "responses": {
                     "200": {
-                        "description": "`OrganizationResource`",
+                        "description": "",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/components/schemas/OrganizationResource"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/OrganizationResource"
+                                                }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "null"
+                                                }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
-                                    },
-                                    "required": [
-                                        "data"
                                     ]
                                 }
                             }
