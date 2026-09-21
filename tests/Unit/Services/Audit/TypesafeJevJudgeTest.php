@@ -10,11 +10,11 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
 /**
- * RED — P1.11: `TypesafeJevJudge` — raw `Http`, structured exactly per
- * design D3. Endpoint path — UNVERIFIED (design.md C-C): no network access
- * was available this session to confirm it against
- * https://docs.typesafe.ai/api.md, so these tests assert only on `Http::fake()`
- * matching the configured `scoring.audit.base_url`, never a literal path.
+ * `TypesafeJevJudge` — raw `Http`, structured exactly per design D3.
+ * Endpoint path confirmed against the live TypeSafe API contract
+ * (https://docs.typesafe.ai/api.md, read during the
+ * scoring-audit-jev-prod-recovery follow-up): `POST /v1/systemone`, not the
+ * original `/v1/judgments` placeholder.
  */
 function auditRequestFixture(): AuditRequest
 {
@@ -115,9 +115,9 @@ test('the exception message contains no response body — status code only, neve
 test('a successful response is delegated to the response mapper and returns an AuditBatchResult', function (): void {
     Http::fake(['*' => Http::response([
         'answers' => [
-            'i1.relevance' => 0.9,
-            'i1.calibration' => 0.85,
-            'i1.grounding' => 0.8,
+            'i1.relevance' => ['type' => 'noul', 'noul' => 0.9],
+            'i1.calibration' => ['type' => 'noul', 'noul' => 0.85],
+            'i1.grounding' => ['type' => 'noul', 'noul' => 0.8],
         ],
     ], 200)]);
 
@@ -127,4 +127,14 @@ test('a successful response is delegated to the response mapper and returns an A
 
     expect($result->verdicts)->toHaveKey(501)
         ->and($result->verdicts[501]->supportProbability)->toBe(0.8);
+});
+
+test('the request is posted to /v1/systemone against the configured base URL', function (): void {
+    config()->set('scoring.audit.base_url', 'https://api.typesafe.ai');
+    Http::fake(['*' => Http::response(['answers' => []], 200)]);
+
+    $judge = new TypesafeJevJudge;
+    $judge->judge(auditRequestFixture());
+
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://api.typesafe.ai/v1/systemone');
 });
