@@ -674,7 +674,13 @@ test('the logo URL points at this API, never at the private object store', funct
     // Exact, not a prefix match. A prefix assertion passes for any absolute
     // URL this API could emit, including the storage endpoint once `AWS_URL`
     // is set to something that happens to share a host.
-    expect($url)->toBe("http://api.test/api/organizations/{$org->id}/logo");
+    //
+    // The `?v=` query string is the cache-buster (`Organization::absoluteLogoUrl()`)
+    // — the stored object's own filename, asserted against `logo_path` rather
+    // than hardcoded so this test does not know the upload's UUID.
+    $version = basename((string) $org->fresh()->logo_path);
+
+    expect($url)->toBe("http://api.test/api/organizations/{$org->id}/logo?v={$version}");
 });
 
 test('the same stable URL reaches the email and the candidate app', function (): void {
@@ -699,8 +705,46 @@ test('the same stable URL reaches the email and the candidate app', function ():
         'Authorization' => 'Bearer '.brandingCandidateToken($participant),
     ])->getJson('/api/candidate/session')->json('data.branding.logo_url');
 
-    expect($candidateUrl)->toBe("http://api.test/api/organizations/{$org->id}/logo")
+    $version = basename((string) $org->fresh()->logo_path);
+
+    expect($candidateUrl)->toBe("http://api.test/api/organizations/{$org->id}/logo?v={$version}")
         ->and($org->fresh()->absoluteLogoUrl())->toBe($candidateUrl);
+});
+
+test('replacing the logo changes the cache-busting query string, so a stale browser cache is bypassed', function (): void {
+    // The regression this closes: `show()` answers with `Cache-Control:
+    // public, max-age=<redirect_cache_seconds>` (up to ten minutes) against a
+    // route that names the ORGANIZATION, never the stored object. Before this
+    // fix, that route was byte-identical before and after a replace, so an
+    // admin who uploaded a new logo and reloaded the very settings page that
+    // requested it kept seeing the file that upload replaced — the browser
+    // served its own cached redirect without ever asking the server again.
+    // The path must stay stable (emails and the candidate app depend on it
+    // resolving for days), but the query string must change on every upload,
+    // so the second logo's full URL is one the browser has never fetched.
+    Storage::fake();
+    config(['app.url' => 'http://api.test']);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'first.png'),
+    ])->assertOk();
+
+    $firstUrl = (string) $this->withToken($token)->getJson('/api/organization')->json('data.logo_url');
+
+    $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingRealPng(), 'second.png'),
+    ])->assertOk();
+
+    $secondUrl = (string) $this->withToken($token)->getJson('/api/organization')->json('data.logo_url');
+
+    [$firstPath] = explode('?', $firstUrl, 2);
+    [$secondPath] = explode('?', $secondUrl, 2);
+
+    expect($secondPath)->toBe($firstPath)
+        ->and($secondUrl)->not->toBe($firstUrl);
 });
 
 test('the logo endpoint redirects to a short-lived object URL', function (): void {
