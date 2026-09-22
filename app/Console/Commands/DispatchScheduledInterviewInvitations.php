@@ -1,0 +1,321 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Enums\ParticipantSchedulingStatus;
+use App\Exceptions\Sso\EntryLinkRefused;
+use App\Jobs\SendCandidateInvitationJob;
+use App\Jobs\SendScheduledInterviewNoticeJob;
+use App\Models\Participant;
+use App\Support\Scheduling\ScheduledInterviewWindow;
+use App\Support\Sso\EntryLinkMinter;
+use App\Support\Sso\EntryLinkUrlComposer;
+use App\Support\Tenancy\TenantContextScope;
+use Closure;
+use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
+
+/**
+ * The periodic sweep that turns a scheduled `participants` row into the two
+ * emails a candidate actually receives (interview-scheduling, design AD-4).
+ *
+ * Modeled directly on `ReapStaleInterviews`: same `withoutGlobalScopes()`
+ * platform-wide SELECT (this command carries no ambient tenant context and
+ * acts for nobody), same per-row `DB::transaction()` + `lockForUpdate()` +
+ * re-check-under-lock idempotency (design AD-5), same
+ * `TenantContextScope::runFor()` wrapping around every write and every
+ * tenant-scoped read (design AD-8) — `Participant::project()` resolves a
+ * `Project`, which DOES extend `TenantModel`, so without an established
+ * context that relation's global scope would silently return null for every
+ * row.
+ *
+ * TWO INDEPENDENT SELECTIONS, not one — this is the load-bearing shape (design
+ * AD-4):
+ *   - notice-due:  scheduling_status = Pending    AND scheduled_at <= now() + NOTICE_LEAD_MINUTES
+ *   - start-due:   scheduling_status IN (Pending, NoticeSent) AND scheduled_at <= now()
+ * A participant whose notice window a slow tick skipped entirely (still
+ * `Pending` once `scheduled_at` itself has passed) is caught by `IN
+ * (Pending, NoticeSent)` on the start-due side regardless — the "notice never
+ * fired on time" case degrades to "still gets a start email", never to
+ * "gets nothing" (AD-10's residual-risk list). A participant whose delay is
+ * severe enough to cross BOTH thresholds before a single tick runs is
+ * therefore picked up by BOTH selections in the SAME run: the notice loop
+ * sends first and advances it to `NoticeSent`, and the start loop — already
+ * matching via `NoticeSent` — sends immediately after. Exactly one notice
+ * email and exactly one start email, never zero of either, which is what the
+ * spec's own backlog scenario requires.
+ *
+ * Each participant is processed inside its own try/catch: one row's refusal
+ * (e.g. `EntryLinkMinter` rejecting a project whose gates closed between
+ * scheduling and send time) is logged and skipped rather than aborting the
+ * whole sweep — the same per-row isolation `ReapStaleInterviews` gets for
+ * free from running each session in its own transaction, made explicit here
+ * because a thrown `EntryLinkRefused` would otherwise end the run for every
+ * OTHER organization's due participants too.
+ */
+final class DispatchScheduledInterviewInvitations extends Command
+{
+    protected $signature = 'beai:dispatch-scheduled-invitations
+                            {--dry-run : Report what would be sent, without writing anything or dispatching any job}';
+
+    protected $description = 'Send the interview-scheduling notice and start emails whose windows have arrived, advancing scheduling_status under lock';
+
+    public function __construct(
+        private readonly EntryLinkMinter $minter,
+        private readonly EntryLinkUrlComposer $composer,
+    ) {
+        parent::__construct();
+    }
+
+    public function handle(): int
+    {
+        $dryRun = (bool) $this->option('dry-run');
+        $now = now();
+
+        $noticeDue = $this->noticeDueParticipants($now);
+        $startDue = $this->startDueParticipants($now);
+
+        $noticesSent = 0;
+        $startsSent = 0;
+
+        foreach ($noticeDue as $participant) {
+            $this->line(sprintf(
+                '  notice: participant %d (%s), scheduled %s',
+                $participant->id,
+                $participant->candidate_ref,
+                (string) $participant->scheduled_at,
+            ));
+
+            if ($dryRun) {
+                continue;
+            }
+
+            if ($this->processOne($participant, fn (): bool => $this->sendNotice($participant))) {
+                $noticesSent++;
+            }
+        }
+
+        foreach ($startDue as $participant) {
+            $this->line(sprintf(
+                '  start: participant %d (%s), scheduled %s',
+                $participant->id,
+                $participant->candidate_ref,
+                (string) $participant->scheduled_at,
+            ));
+
+            if ($dryRun) {
+                continue;
+            }
+
+            if ($this->processOne($participant, fn (): bool => $this->sendStart($participant))) {
+                $startsSent++;
+            }
+        }
+
+        $verb = $dryRun ? 'would send' : 'sent';
+        $this->info(sprintf(
+            '%s %d notice(s) and %d start email(s).',
+            $verb,
+            $dryRun ? $noticeDue->count() : $noticesSent,
+            $dryRun ? $startDue->count() : $startsSent,
+        ));
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Participants whose notice window has arrived: still `Pending` and due
+     * within `ScheduledInterviewWindow::NOTICE_LEAD_MINUTES` of now.
+     *
+     * @return Collection<int, Participant>
+     */
+    private function noticeDueParticipants(Carbon $now): Collection
+    {
+        return Participant::query()
+            // Platform-wide sweep, exactly like ReapStaleInterviews::staleSessions():
+            // the scheduler carries no tenant context and acts for nobody.
+            ->withoutGlobalScopes()
+            ->where('scheduling_status', ParticipantSchedulingStatus::Pending->value)
+            ->where('scheduled_at', '<=', $now->copy()->addMinutes(ScheduledInterviewWindow::NOTICE_LEAD_MINUTES))
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Participants whose start moment has arrived: `Pending` OR `NoticeSent`
+     * (the backlog-catch-up case, design AD-4) and their `scheduled_at` is
+     * now in the past.
+     *
+     * @return Collection<int, Participant>
+     */
+    private function startDueParticipants(Carbon $now): Collection
+    {
+        return Participant::query()
+            ->withoutGlobalScopes()
+            ->whereIn('scheduling_status', [
+                ParticipantSchedulingStatus::Pending->value,
+                ParticipantSchedulingStatus::NoticeSent->value,
+            ])
+            ->where('scheduled_at', '<=', $now)
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Runs $action under this participant's own tenant context, isolating a
+     * single row's failure from every other organization's due participants.
+     *
+     * @param  Closure(): bool  $action
+     */
+    private function processOne(Participant $participant, Closure $action): bool
+    {
+        try {
+            return TenantContextScope::runFor((int) $participant->organization_id, $action);
+        } catch (Throwable $e) {
+            Log::error('interview-scheduling sweep: failed to process a due participant', [
+                'participant_id' => $participant->id,
+                'organization_id' => $participant->organization_id,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Sends the advance notice and advances Pending -> NoticeSent.
+     *
+     * Idempotency (design AD-5): the row is locked and its status re-checked
+     * UNDER the lock before anything is sent — a concurrent tick or an
+     * overlapping run that already advanced this row is a silent no-op here,
+     * never a second notice.
+     */
+    private function sendNotice(Participant $participant): bool
+    {
+        return DB::transaction(function () use ($participant): bool {
+            // organization_id filtered explicitly even though Participant
+            // carries no global scope of its own (it does NOT extend
+            // TenantModel) and $participant->id here always comes from this
+            // command's own trusted sweep query, never external input: this
+            // re-fetch is the ONLY line of defense a Participant read gets,
+            // so it is never trusted to stay narrow by construction alone —
+            // same discipline M2m\ParticipantController's own reads apply.
+            $locked = Participant::withoutGlobalScopes()
+                ->whereKey($participant->id)
+                ->where('organization_id', $participant->organization_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($locked === null || $locked->scheduling_status !== ParticipantSchedulingStatus::Pending) {
+                return false;
+            }
+
+            $project = $locked->project;
+
+            if ($project === null) {
+                return false;
+            }
+
+            SendScheduledInterviewNoticeJob::dispatch(
+                $locked->email,
+                $locked->display_name,
+                (string) $project->organization?->name,
+                $project->name,
+                $locked->language ?? $project->language ?? config('app.fallback_locale', 'en'),
+                $project->organization?->primary_color,
+                $project->organization?->absoluteLogoUrl(),
+            );
+
+            $locked->scheduling_status = ParticipantSchedulingStatus::NoticeSent;
+            $locked->save();
+
+            return true;
+        });
+    }
+
+    /**
+     * Mints the entry link NOW (design AD-6 — never earlier), sends the
+     * SAME `CandidateInvitationNotification` the immediate path already
+     * uses, and advances Pending|NoticeSent -> Started.
+     *
+     * Idempotency: same lock + re-check-under-lock discipline as
+     * `sendNotice()` — a row already `Started` (or `Cancelled`) by the time
+     * this transaction acquires the lock is left untouched.
+     */
+    private function sendStart(Participant $participant): bool
+    {
+        return DB::transaction(function () use ($participant): bool {
+            // organization_id filtered explicitly — same reasoning as
+            // sendNotice()'s own re-fetch above.
+            $locked = Participant::withoutGlobalScopes()
+                ->whereKey($participant->id)
+                ->where('organization_id', $participant->organization_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($locked === null || ! in_array($locked->scheduling_status, [
+                ParticipantSchedulingStatus::Pending,
+                ParticipantSchedulingStatus::NoticeSent,
+            ], true)) {
+                return false;
+            }
+
+            $project = $locked->project;
+
+            if ($project === null) {
+                return false;
+            }
+
+            try {
+                $minted = $this->minter->mint(
+                    $project,
+                    $locked->candidate_ref,
+                    $locked->display_name,
+                    $locked->email,
+                    $locked->role_code,
+                    $locked->language,
+                );
+            } catch (EntryLinkRefused $e) {
+                Log::warning('interview-scheduling sweep: EntryLinkMinter refused a due participant', [
+                    'participant_id' => $locked->id,
+                    'reason' => $e->reason->value,
+                ]);
+
+                return false;
+            }
+
+            $entryUrl = $this->composer->compose($minted->token, $minted->lang);
+
+            // Same date-rendered-in-the-candidate's-own-language treatment as
+            // EntryLinkController::store() (:244-246) — a copy, on a Carbon
+            // instance, so locale() (getter/setter, static|string return) does
+            // not mutate the instance the response would otherwise read from.
+            $expiresAt = $minted->expiresAt->copy();
+            $expiresAt->locale($minted->lang);
+            $expiresLabel = $expiresAt->isoFormat('LLL');
+
+            SendCandidateInvitationJob::dispatch(
+                $locked->email,
+                $entryUrl,
+                $locked->display_name,
+                (string) $project->organization?->name,
+                $project->name,
+                $expiresLabel,
+                $minted->lang,
+                $project->organization?->primary_color,
+                $project->organization?->absoluteLogoUrl(),
+            );
+
+            $locked->scheduling_status = ParticipantSchedulingStatus::Started;
+            $locked->save();
+
+            return true;
+        });
+    }
+}

@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\DispatchScheduledInterviewInvitations;
 use App\Console\Commands\ReapStaleInterviews;
 use App\Console\Commands\ReconcileLlmUsage;
 use App\Exceptions\Admin\LifecycleNotReadyException;
@@ -93,6 +94,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // advanced.
         $schedule->command(ReapStaleInterviews::class)
             ->everyFifteenMinutes()
+            ->onOneServer()
+            ->withoutOverlapping();
+
+        // interview-scheduling (design AD-4): every minute, not every 15 like
+        // its neighbor above — the notice-at-T-15 / start-at-T-0 thresholds
+        // ARE the feature, unlike ReapStaleInterviews's coarser staleness
+        // window, where being a few minutes late changes nothing observable.
+        // withoutOverlapping() as well as onOneServer(): a concurrent tick
+        // must not double-send either email — enforced structurally by this
+        // AND by the command's own per-row lockForUpdate() (design AD-5).
+        $schedule->command(DispatchScheduledInterviewInvitations::class)
+            ->everyMinute()
             ->onOneServer()
             ->withoutOverlapping();
     })
