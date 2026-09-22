@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\M2m;
 
+use App\Actions\Scheduling\CreateScheduledParticipant;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ParticipantResource;
 use App\Models\ApiClient;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Project\ProjectInterviewability;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -32,12 +35,28 @@ use Illuminate\Support\Facades\DB;
  * - index/show: manual ->where('organization_id', $orgId) filter (mirrors ApiClientController).
  * - No show for cross-org participant → 404.
  *
- * REQ: M2M Participant CRUD
+ * Flow (interview-scheduling, design AD-1 amendment, tasks T-C1 — mirrors
+ * `EntryLinkController::store()`'s own scheduled branch, PR-B):
+ *   store validates an optional `scheduled_at` with the SAME shared
+ *   `ScheduledStartWithinLeadTime` rule the backoffice surface uses (AD-3 —
+ *   never re-typed as inline logic twice). When present, creation delegates
+ *   to the SAME shared `CreateScheduledParticipant` action PR-B introduced
+ *   — no divergent row-creation logic (AD-1's "one shared code path"). When
+ *   absent, the immediate path below is byte-for-byte unchanged: this
+ *   endpoint has never minted or sent anything on either branch, unlike
+ *   `EntryLinkController`'s immediate path.
+ *
+ * REQ: M2M Participant CRUD,
+ *      Optional Scheduled Start On Participant Creation,
+ *      Scheduled Start Must Be In The Future,
+ *      Both Surfaces Agree On Acceptance
+ *      (sdd/interview-scheduling/spec, Engram #2221)
  */
 final class ParticipantController extends Controller
 {
     public function __construct(
         private readonly ProjectInterviewability $projectInterviewability,
+        private readonly CreateScheduledParticipant $createScheduledParticipant,
     ) {}
 
     /**
@@ -63,6 +82,12 @@ final class ParticipantController extends Controller
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'language' => ['nullable', 'string', 'max:10'],
+            // interview-scheduling (design AD-2/AD-3, T-C1): optional future
+            // start time, validated by the SAME rule object PR-B's
+            // `EntryLinkController` already uses — the explicit-offset
+            // check, the future check, and the minimum-lead-time check all
+            // live in ONE place, never re-typed per surface.
+            'scheduled_at' => ['sometimes', new ScheduledStartWithinLeadTime],
         ]);
 
         // Resolve project SCOPED to caller org (cross-org → 404).
@@ -96,6 +121,38 @@ final class ParticipantController extends Controller
                 'competency_codes' => $interviewability['unsatisfied_competency_codes'],
                 'candidate_ref' => $validated['candidate_ref'],
             ], 422);
+        }
+
+        // interview-scheduling (design AD-1 amendment, tasks T-C1): the
+        // SCHEDULED branch. Delegates to the SAME `CreateScheduledParticipant`
+        // action `EntryLinkController::store()`'s own scheduled branch uses
+        // (PR-B) — one shared row-creation code path, not a re-implementation
+        // (AD-1). Conflict mapping below stays THIS endpoint's own
+        // pre-existing sentence-shaped 409 (`message` + `reason`) — never
+        // converged with `EntryLinkController`'s machine-code convention,
+        // which is a distinct, legitimate per-surface style already in place
+        // before this change (the `reason` values themselves —
+        // `duplicate_candidate_ref`/`duplicate_email` — are identical across
+        // both surfaces; that field, not `message`, is the parity contract).
+        if (array_key_exists('scheduled_at', $validated)) {
+            $result = $this->createScheduledParticipant->handle(
+                $project,
+                $validated['candidate_ref'],
+                $validated['display_name'],
+                $validated['email'],
+                $validated['role_code'] ?? null,
+                $validated['language'] ?? null,
+                Carbon::parse($validated['scheduled_at']),
+            );
+
+            if ($result['conflict'] !== null) {
+                return response()->json([
+                    'message' => 'Conflict: a participant already exists for this project with this '.($result['conflict'] === 'duplicate_email' ? 'email.' : 'candidate_ref.'),
+                    'reason' => $result['conflict'],
+                ], 409);
+            }
+
+            return response()->json(new ParticipantResource($result['participant']), 201);
         }
 
         // Create participant — organization_id from project (NOT from
