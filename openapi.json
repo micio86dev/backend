@@ -2512,6 +2512,10 @@
                                         ],
                                         "maxLength": 10
                                     },
+                                    "scheduled_at": {
+                                        "type": "string",
+                                        "description": "interview-scheduling (design AD-2/AD-3): optional future start\ntime. The rule object owns the explicit-offset check, the\nfuture check, and the minimum-lead-time check \u2014 the SAME rule\nobject the M2M create and the reschedule endpoint use, never\nre-typed as inline logic three times."
+                                    },
                                     "send_email": {
                                         "type": "boolean",
                                         "description": "Defaults to TRUE. The operator pressed \"invite a candidate\";\nproducing a link and silently not sending it is the behaviour\nthat made this feature necessary in the first place. An operator\nwho wants to deliver the link some other way opts out explicitly."
@@ -2529,27 +2533,34 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "",
+                        "description": "`App.Http.Resources.ParticipantResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "entry_url": {
-                                            "type": "string"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "entry_url": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                },
+                                                "email_sent": {
+                                                    "type": "boolean",
+                                                    "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
+                                                }
+                                            },
+                                            "required": [
+                                                "entry_url",
+                                                "expires_at",
+                                                "email_sent"
+                                            ]
                                         },
-                                        "expires_at": {
-                                            "type": "string"
-                                        },
-                                        "email_sent": {
-                                            "type": "boolean",
-                                            "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
+                                        {
+                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
                                         }
-                                    },
-                                    "required": [
-                                        "entry_url",
-                                        "expires_at",
-                                        "email_sent"
                                     ]
                                 }
                             }
@@ -2588,6 +2599,21 @@
                                                 "reason": {
                                                     "type": "string",
                                                     "const": "failed"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "reason": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
@@ -8333,6 +8359,25 @@
                             "null"
                         ]
                     },
+                    "scheduled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "scheduling_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "pending",
+                            "notice_sent",
+                            "started",
+                            "cancelled",
+                            null
+                        ]
+                    },
                     "branding": {
                         "type": "object",
                         "properties": {
@@ -8419,6 +8464,8 @@
                     "started_at",
                     "completed_at",
                     "created_at",
+                    "scheduled_at",
+                    "scheduling_status",
                     "branding",
                     "project"
                 ],

@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Scheduling\CreateScheduledParticipant;
 use App\Exceptions\Sso\EntryLinkRefusalReason;
 use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ParticipantResource;
 use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
+use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * EntryLinkController (operator-interview-link).
@@ -31,23 +35,38 @@ use Illuminate\Http\Request;
  *      class-string is read off the policy's own constant, not referenced
  *      directly here — see `ParticipantPolicy::MODEL`'s own docblock for the
  *      arch-guard reason.
- *   2. Validate the request body (mirrors the M2M mint's body verbatim).
+ *   2. Validate the request body (mirrors the M2M mint's body verbatim),
+ *      including the optional `scheduled_at` (interview-scheduling, design
+ *      AD-2/AD-3) validated via the shared `ScheduledStartWithinLeadTime`
+ *      rule — BEFORE `send_email` is ever read, since a scheduled request
+ *      implies no email decision is relevant.
  *   3. Resolve Project::findOrFail, scoped by TenantContext's TenantScoped
  *      global scope (cross-org → 404).
  *   4. `ProjectInterviewability::evaluateForCandidate()` (framework-catalogue-
  *      authoring PR6, D5/D6; Z10) — 422 `PROJECT_NOT_INTERVIEWABLE` +
  *      `competency_codes` before the minter is ever reached, unless this
  *      candidate already has a session.
- *   5. Delegate the mint decision to EntryLinkMinter::mint() — the SAME
+ *   5. SCHEDULED BRANCH (interview-scheduling, design AD-1 amendment): when
+ *      `scheduled_at` is present, delegate to `CreateScheduledParticipant`
+ *      (the SAME shared action `M2m\ParticipantController::store()`'s own
+ *      scheduled branch uses) and return 201 with a `ParticipantResource` —
+ *      no mint, no `entry_url`, no email. `EntryLinkMinter`/
+ *      `SendCandidateInvitationJob` are never reached on this branch.
+ *      When `scheduled_at` is absent, behavior below is byte-for-byte
+ *      unchanged — this is a strict superset of steps 6-8.
+ *   6. Delegate the mint decision to EntryLinkMinter::mint() — the SAME
  *      shared logic the M2M mint uses (design D1).
- *   6. Compose the absolute entry_url via EntryLinkUrlComposer — fails loud
+ *   7. Compose the absolute entry_url via EntryLinkUrlComposer — fails loud
  *      (500) if CANDIDATE_APP_URL is unconfigured.
- *   7. Respond 201 { entry_url, expires_at } — never the bare token (design
+ *   8. Respond 201 { entry_url, expires_at } — never the bare token (design
  *      D1's "operator-facing payload" rule).
  *
  * REQ: Operator-Facing Entry Link Mint Endpoint,
- *      Entry Link Response Composes the Absolute URL
- *      (openspec/changes/operator-interview-link/specs/participant-sso/spec.md)
+ *      Entry Link Response Composes the Absolute URL,
+ *      Optional Scheduled Start On Participant Creation,
+ *      Scheduled Start Must Be In The Future
+ *      (openspec/changes/operator-interview-link/specs/participant-sso/spec.md,
+ *      sdd/interview-scheduling/spec)
  */
 final class EntryLinkController extends Controller
 {
@@ -55,6 +74,7 @@ final class EntryLinkController extends Controller
         private readonly EntryLinkMinter $minter,
         private readonly EntryLinkUrlComposer $composer,
         private readonly ProjectInterviewability $projectInterviewability,
+        private readonly CreateScheduledParticipant $createScheduledParticipant,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -71,6 +91,12 @@ final class EntryLinkController extends Controller
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
+            // interview-scheduling (design AD-2/AD-3): optional future start
+            // time. The rule object owns the explicit-offset check, the
+            // future check, and the minimum-lead-time check — the SAME rule
+            // object the M2M create and the reschedule endpoint use, never
+            // re-typed as inline logic three times.
+            'scheduled_at' => ['sometimes', new ScheduledStartWithinLeadTime],
             // Defaults to TRUE. The operator pressed "invite a candidate";
             // producing a link and silently not sending it is the behaviour
             // that made this feature necessary in the first place. An operator
@@ -108,6 +134,41 @@ final class EntryLinkController extends Controller
                 'error' => 'PROJECT_NOT_INTERVIEWABLE',
                 'competency_codes' => $interviewability['unsatisfied_competency_codes'],
             ], 422);
+        }
+
+        // interview-scheduling (design AD-1 amendment, tasks T-B1): the
+        // SCHEDULED branch. Creates the participant row EAGERLY — this is
+        // the only creation path this endpoint has ever had a reason to
+        // write directly, since scheduling defers the very click the
+        // immediate path still waits for (unchanged below). No mint, no
+        // entry_url, no email — the sweep (PR-D) mints and sends later.
+        if (array_key_exists('scheduled_at', $validated)) {
+            $result = $this->createScheduledParticipant->handle(
+                $project,
+                $validated['candidate_ref'],
+                $validated['display_name'],
+                $validated['email'],
+                $validated['role_code'] ?? null,
+                $validated['lang'] ?? null,
+                Carbon::parse($validated['scheduled_at']),
+            );
+
+            if ($result['conflict'] !== null) {
+                // `message` carries the CODE, not a sentence — same
+                // convention this file already documents a few lines below
+                // for EntryLinkRefusalReason::Completed/Failed: the response
+                // body is machine-facing (CLAUDE.md "machine-facing
+                // responses are not localized"), and the backoffice already
+                // translates codes through `translateServerCode`.
+                return response()->json([
+                    'message' => $result['conflict'] === 'duplicate_email'
+                        ? 'entry_link_participant_duplicate_email'
+                        : 'entry_link_participant_duplicate_candidate_ref',
+                    'reason' => $result['conflict'],
+                ], 409);
+            }
+
+            return response()->json(new ParticipantResource($result['participant']), 201);
         }
 
         try {
