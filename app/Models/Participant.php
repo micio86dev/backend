@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ParticipantSchedulingStatus;
 use App\Exceptions\ParticipantTransitionException;
 use Database\Factories\ParticipantFactory;
 use Illuminate\Auth\Authenticatable;
@@ -51,6 +52,8 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore' $status
  * @property Carbon|null $started_at
  * @property Carbon|null $completed_at
+ * @property Carbon|null $scheduled_at
+ * @property ParticipantSchedulingStatus|null $scheduling_status
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
@@ -64,6 +67,12 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
      *
      * organization_id is intentionally excluded — set ONLY server-side from
      * $project->organization_id (named security invariant).
+     *
+     * scheduled_at/scheduling_status are also intentionally excluded
+     * (interview-scheduling, design AD-1) — every write path uses
+     * forceFill(), mirroring the existing organization_id discipline; mass
+     * assignment of a scheduling field from an uncontrolled array is exactly
+     * the kind of surface this list is deliberately narrow to prevent.
      *
      * @var list<string>
      */
@@ -80,6 +89,11 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
     /**
      * Attribute casts.
      *
+     * scheduled_at/scheduling_status (interview-scheduling, design AD-1): both
+     * null together (never scheduled) or both non-null — enforced by the
+     * `participants_scheduling_status_pair_check` DB CHECK constraint, not by
+     * this cast list.
+     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -87,6 +101,8 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
         return [
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
+            'scheduled_at' => 'datetime',
+            'scheduling_status' => ParticipantSchedulingStatus::class,
         ];
     }
 
