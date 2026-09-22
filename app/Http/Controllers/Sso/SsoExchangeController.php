@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Sso;
 
+use App\Enums\ParticipantSchedulingStatus;
 use App\Events\ParticipantCreated;
 use App\Http\Controllers\Controller;
 use App\Models\InterviewSession;
@@ -50,6 +51,9 @@ use Tymon\JWTAuth\JWTAuth;
  *   8. role_code belt check                                → fail: 403 generic
  *   9. PRE-FLIGHT read of the Step 4 participant row (primary blocked-status
  *      check); status ≠ in_attesa                          → fail: 403 generic
+ *      ALSO (AD-11, interview-scheduling): scheduling_status ∈
+ *      {Pending, Cancelled}                                → fail: 403 generic
+ *      (see "Scheduled participants" note below Step 4 for why this is safe)
  *  10. Atomic upsert ON CONFLICT(project_id, candidate_ref) DO UPDATE
  *      WHERE status='in_attesa' (secondary safety net)
  *  11. Mint candidate JWT (setTTL 120)                     → 200 { access_token }
@@ -72,6 +76,10 @@ use Tymon\JWTAuth\JWTAuth;
  *
  * Security invariants:
  * - All 403 bodies are GENERIC ("Access denied") — no state information disclosed.
+ *   This also covers a pre-created SCHEDULED participant found in an anomalous
+ *   `scheduling_status` (Pending/Cancelled) at Step 9 — see AD-11
+ *   (sdd/interview-scheduling/design, Engram #2222): never a distinct HTTP
+ *   status (e.g. 410) or message, which would leak which gate fired.
  * - jti consumed at step 5, before display_name check (step 6) and gates (steps 7-9)
  *   — but AFTER interviewability (step 4, Z14).
  * - Project resolved via withoutGlobalScope('tenant') only — keeps SoftDeletingScope.
@@ -156,6 +164,14 @@ final class SsoExchangeController extends Controller
         // filtered explicitly alongside `project_id` (gga review finding —
         // the literal tenancy rule, belt over the project-scoped filter that
         // already pins the tenant).
+        //
+        // Scheduled participants (AD-11, interview-scheduling, added
+        // 2026-09-22): this row is NOT always absent on the FIRST exchange
+        // anymore — the scheduled path (EntryLinkController /
+        // M2m\ParticipantController) creates it EAGERLY at scheduling time,
+        // with `scheduling_status = Pending`, later advanced by the sweep to
+        // `NoticeSent`/`Started`. Step 9 below reads THIS SAME
+        // `$existingParticipant` to gate on that field — no second query.
         $candidateRef = (string) $payload->get('candidate_ref');
         $existingParticipant = Participant::where('organization_id', $project->organization_id)
             ->where('project_id', $project->id)
@@ -218,9 +234,37 @@ final class SsoExchangeController extends Controller
             return $this->generic403($project);
         }
 
+        // AD-11 (interview-scheduling, added 2026-09-22): a pre-created
+        // SCHEDULED participant (see the Step 4 note above) found here in an
+        // ANOMALOUS scheduling_status is rejected with the SAME generic 403
+        // every other gate in this controller returns — never a distinct
+        // status (e.g. 410) or message, which would disclose which gate
+        // fired. `Pending` means no genuine sso-link JWT for this candidate
+        // can exist yet (the sweep only mints one in the SAME locked
+        // transaction that advances the row to `Started`) — reaching this
+        // controller while still `Pending` is a signed-token anomaly, not a
+        // normal state a retry would resolve. `Cancelled` means the schedule
+        // was withdrawn before the candidate ever received a link. Both
+        // `NoticeSent` and `Started` (and `null`, the immediate path) fall
+        // through unchanged to the existing Step 10 upsert below — its `SET`
+        // clause already excludes `scheduled_at`/`scheduling_status`, so a
+        // compatible row's scheduling columns are left untouched.
+        $schedulingStatus = $existingParticipant?->scheduling_status;
+        if (in_array($schedulingStatus, [ParticipantSchedulingStatus::Pending, ParticipantSchedulingStatus::Cancelled], true)) {
+            return $this->generic403($project);
+        }
+
         // C10 D5: "created" is inferred from THIS pre-flight read, captured BEFORE
         // the upsert runs — never re-derived from the post-upsert row (which always
         // exists by the time we could inspect it).
+        //
+        // AD-11: for a scheduled participant, this row already existed (eager
+        // creation at scheduling time) by the time its REAL first exchange
+        // reaches here, so `$isNewCandidate` correctly evaluates `false` and
+        // `ParticipantCreated` correctly never fires for it — intentional,
+        // matching `M2m\ParticipantController::store()`'s own precedent of
+        // never firing that event for a directly/eagerly created row. Not a
+        // gap to "fix" here.
         $isNewCandidate = $existingStatus === null;
 
         // ── Step 10: Atomic upsert ────────────────────────────────────────────
