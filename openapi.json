@@ -812,6 +812,111 @@
                 }
             }
         },
+        "/avatar-templates/catalogue": {
+            "get": {
+                "operationId": "avatarTemplate.catalogue",
+                "description": "Gated by the SAME `viewAny` ability as `fieldSpecs()` above: this\nendpoint proxies a platform-level provider account (no tenant data of\nits own), but it carries provider-side identifiers the picker will let\nan admin select \u2014 the same \"closer to credentials than to settings\"\nreasoning `AvatarTemplatePolicy` already applies to `config`.\n\nNever a 500: `AvatarProviderCatalogue::fetch()` degrades a provider\nfailure to `{status: 'unavailable', items: []}` on its own (D3); this\naction's only failure mode is a 422 for an unrecognized\n`provider`/`resource` pair, checked BEFORE ever calling the provider.",
+                "summary": "A provider's real inventory for one resource type \u2014 the picker's data\nsource (avatar-template-catalogue PR1, design D1/D3/D4)",
+                "tags": [
+                    "AvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "provider",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                ""
+                            ]
+                        }
+                    },
+                    {
+                        "name": "resource",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "voice",
+                                "avatar",
+                                "replica"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "status": {
+                                                            "type": "string",
+                                                            "const": "unavailable"
+                                                        },
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            },
+                                                            "minItems": 0,
+                                                            "maxItems": 0,
+                                                            "additionalItems": false
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "status",
+                                                        "items"
+                                                    ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "status": {
+                                                            "type": "string",
+                                                            "const": "ok"
+                                                        },
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "status",
+                                                        "items"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/avatar-templates/{id}/activate": {
             "post": {
                 "operationId": "avatarTemplate.activate",

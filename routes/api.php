@@ -381,6 +381,11 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // projects. See AvatarTemplateController::options().
     Route::get('/avatar-templates/options', [AvatarTemplateController::class, 'options']);
     Route::get('/avatar-templates/field-specs', [AvatarTemplateController::class, 'fieldSpecs']);
+    // avatar-template-catalogue PR1 (D1): one generic endpoint, provider and
+    // resource as query params. Declared BEFORE /{id}, same reason as
+    // `field-specs`/`options` above — registered after, Laravel would match
+    // "catalogue" as an id and 404 with no hint why.
+    Route::get('/avatar-templates/catalogue', [AvatarTemplateController::class, 'catalogue']);
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
 
