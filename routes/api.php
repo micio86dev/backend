@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\OrganizationLogoController;
 use App\Http\Controllers\Api\ParticipantController as AdminParticipantController;
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ParticipantRecoveryController;
+use App\Http\Controllers\Api\ParticipantScheduleController;
 use App\Http\Controllers\Api\PlatformUserController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
@@ -456,6 +457,19 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/participants/{id}/recover', [ParticipantRecoveryController::class, 'store']);
 });
 
+// ─── Participant Scheduling (interview-scheduling PR-E) ────────────────────
+// PATCH/DELETE /api/participants/{id}/schedule — reschedule/cancel a
+// scheduled interview. Own route group, adjacent to (NOT inside) the Admin
+// Read API block above — it is a WRITE, not a read. ParticipantPolicy::update
+// denies viewer; RescheduleParticipant/CancelParticipantSchedule resolve the
+// row scoped by TenantResolver's org id (cross-org -> 404) under a row lock
+// (design AD-5/AD-7).
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::patch('/participants/{id}/schedule', [ParticipantScheduleController::class, 'update']);
+    Route::delete('/participants/{id}/schedule', [ParticipantScheduleController::class, 'destroy']);
+});
+
 // ─── Post-hoc Audit Trigger (scoring-audit-jev) ────────────────────────────
 // POST /api/participants/{id}/evaluation/audit — the SOLE authorized path to
 // request a TypeSafe/Jev audit run over an already-completed evaluation. Own
@@ -527,6 +541,14 @@ Route::prefix('m2m')
             ->middleware('ability:participants:read');
         Route::get('/participants/{id}', [ParticipantController::class, 'show'])
             ->middleware('ability:participants:read');
+
+        // ─── interview-scheduling PR-E: reschedule/cancel ──────────────────────
+        // PATCH/DELETE /api/m2m/participants/{id}/schedule (participants:schedule)
+        // Deliberately a NARROWER ability than participants:create (AD-7).
+        Route::patch('/participants/{id}/schedule', [ParticipantController::class, 'updateSchedule'])
+            ->middleware('ability:participants:schedule');
+        Route::delete('/participants/{id}/schedule', [ParticipantController::class, 'cancelSchedule'])
+            ->middleware('ability:participants:schedule');
 
         // ─── C6: SSO-Link Mint ────────────────────────────────────────────────
         // POST /api/m2m/sso-link (sso_link:generate)
