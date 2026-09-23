@@ -30,10 +30,13 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 function sweepOrg(): Organization
 {
@@ -210,6 +213,78 @@ function jobProperty(object $job, string $property): mixed
     return $ref->getValue($job);
 }
 
+/**
+ * Asserts all NINE positional constructor arguments `sendStart()` passes to
+ * `SendCandidateInvitationJob::dispatch(...)` — in the exact order the
+ * command builds them — rather than just the recipient address. Two of the
+ * nine cannot be compared to a precomputed literal because they are freshly
+ * minted per call (the JWT token embedded in `entryUrl` carries a fresh
+ * `jti`/`iat`, so `expiresAtLabel` is derived from that same token's own
+ * `exp`): both are instead verified against the REAL value a second,
+ * independent decode of the token in `entryUrl` produces, which proves
+ * `entryUrl` is the actual minted link for this exact participant/project —
+ * never empty, a placeholder, or another row's link — rather than merely
+ * well-formed.
+ *
+ * DISCOVERY (out of scope for this fixup, NOT fixed here): decoding the
+ * token surfaced a separate, real, pre-existing defect —
+ * `CandidateTokenFactory::mintSsoLink()` never copies its `$claims['email']`
+ * argument into the JWT payload it builds, even though `EntryLinkMinter`
+ * passes `'email' => $email` into it explicitly and
+ * `SsoExchangeController::store()` (line ~289) reads `$payload->get('email')`
+ * back out to build its `INSERT ... ON CONFLICT DO UPDATE SET email =
+ * EXCLUDED.email` upsert. Every sso-link exchange therefore reads a null
+ * email claim and falls back to the `{candidate_ref}@invalid.beai.local`
+ * placeholder — INCLUDING on the `DO UPDATE` branch, which overwrites an
+ * already-correct participant email (e.g. one this very command already
+ * sent an invitation to) with that placeholder on every exchange. This is
+ * unrelated to the 9-argument dispatch payload under test here (the job's
+ * own `email` argument comes straight from the participant row, never from
+ * the token) and touches a different, security-sensitive subsystem — it is
+ * reported to the user rather than silently fixed in this test-only fixup.
+ */
+function assertStartInvitationPayload(
+    object $job,
+    Participant $participant,
+    Project $project,
+    Organization $org,
+    string $expectedLang,
+): bool {
+    expect(jobProperty($job, 'email'))->toBe($participant->email);
+
+    $entryUrl = jobProperty($job, 'entryUrl');
+    $defaultLocale = config('interview.frontend_default_locale', 'it');
+    $expectedPrefix = $expectedLang === $defaultLocale ? '' : "{$expectedLang}/";
+    expect($entryUrl)->toStartWith("https://interview.example.test/{$expectedPrefix}interview/");
+
+    $token = Str::afterLast($entryUrl, '/interview/');
+    expect($token)->not->toBeEmpty();
+
+    // NOTE: the sso-link JWT never carries an `email` claim at all (a
+    // separate, pre-existing defect in `CandidateTokenFactory::mintSsoLink()`
+    // — see the discovery note above this function) — verify identity via the
+    // claims the token DOES carry instead.
+    $payload = JWTAuth::setToken($token)->getPayload();
+    expect($payload->get('candidate_ref'))->toBe($participant->candidate_ref);
+    expect($payload->get('display_name'))->toBe($participant->display_name);
+    expect((int) $payload->get('project_id'))->toBe($project->id);
+    expect((int) $payload->get('org_id'))->toBe($org->id);
+    expect($payload->get('lang'))->toBe($expectedLang);
+
+    expect(jobProperty($job, 'displayName'))->toBe($participant->display_name);
+    expect(jobProperty($job, 'organizationName'))->toBe((string) $org->name);
+    expect(jobProperty($job, 'projectName'))->toBe($project->name);
+
+    $expiresAt = Carbon::createFromTimestamp((int) $payload->get('exp'))->locale($expectedLang);
+    expect(jobProperty($job, 'expiresAtLabel'))->toBe($expiresAt->isoFormat('LLL'));
+
+    expect(jobProperty($job, 'locale'))->toBe($expectedLang);
+    expect(jobProperty($job, 'brandColor'))->toBe($org->primary_color);
+    expect(jobProperty($job, 'brandLogoUrl'))->toBe($org->absoluteLogoUrl());
+
+    return true;
+}
+
 beforeEach(function (): void {
     Bus::fake();
     config(['interview.candidate_app_url' => 'https://interview.example.test']);
@@ -264,7 +339,7 @@ describe('the start moment', function (): void {
         Bus::assertNotDispatched(SendScheduledInterviewNoticeJob::class);
         Bus::assertDispatched(
             SendCandidateInvitationJob::class,
-            fn ($job): bool => jobProperty($job, 'email') === $participant->email,
+            fn ($job): bool => assertStartInvitationPayload($job, $participant, $project, $org, 'en'),
         );
     });
 
@@ -342,12 +417,12 @@ describe('multi-tenancy', function (): void {
         Bus::assertDispatched(
             SendCandidateInvitationJob::class,
             fn ($job): bool => jobProperty($job, 'email') === $participantA->email
-                && jobProperty($job, 'organizationName') === $projectA->organization->name,
+                && assertStartInvitationPayload($job, $participantA, $projectA, $orgA, 'en'),
         );
         Bus::assertDispatched(
             SendCandidateInvitationJob::class,
             fn ($job): bool => jobProperty($job, 'email') === $participantB->email
-                && jobProperty($job, 'organizationName') === $projectB->organization->name,
+                && assertStartInvitationPayload($job, $participantB, $projectB, $orgB, 'en'),
         );
     });
 });
