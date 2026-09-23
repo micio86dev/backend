@@ -62,6 +62,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Services\ApiKeyGenerator;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -184,6 +185,48 @@ test('store with scheduled_at persists scheduled_at and scheduling_status pendin
     expect($participant->status)->toBe('in_attesa');
     expect($participant->scheduling_status->value)->toBe('pending');
     expect($participant->scheduled_at)->not->toBeNull();
+});
+
+test('a scheduled create with a non-zero explicit UTC offset persists and returns the correct UTC instant, not the local wall-clock digits', function (): void {
+    $org = Organization::factory()->create();
+    $project = m2mSchedProject($org);
+    $m2m = m2mSchedClient($org);
+
+    // Mirrors EntryLinkScheduledCreationTest.php's identically-named test
+    // (PR-B) for the M2M surface: every OTHER case in this file builds its
+    // input from a zero-offset UTC clock, so this is the only case that can
+    // catch a Carbon::parse()->utc() regression that stores the raw
+    // wall-clock digits or shifts by the offset instead of converting it.
+    $expectedInstant = now('UTC')->addMinutes(30)->startOfSecond();
+    $inputWithNonZeroOffset = $expectedInstant->copy()->setTimezone('+02:00')->toIso8601String();
+    expect($inputWithNonZeroOffset)->toContain('+02:00');
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
+        ->postJson('/api/m2m/participants', [
+            'project_id' => $project->id,
+            'candidate_ref' => 'm2m-sched-offset',
+            'display_name' => 'Offset Candidate',
+            'email' => uniqid('m2m-sched-offset-').'@example.test',
+            'language' => 'en',
+            'scheduled_at' => $inputWithNonZeroOffset,
+        ]);
+
+    $response->assertStatus(201);
+
+    $returnedInstant = Carbon::parse($response->json('scheduled_at'));
+    expect($returnedInstant->equalTo($expectedInstant))->toBeTrue();
+    expect($returnedInstant->getTimestamp())->toBe($expectedInstant->getTimestamp());
+
+    $participant = Participant::where('candidate_ref', 'm2m-sched-offset')->firstOrFail();
+    expect($participant->scheduled_at->equalTo($expectedInstant))->toBeTrue();
+    expect($participant->scheduled_at->getTimestamp())->toBe($expectedInstant->getTimestamp());
+
+    // Guards specifically against the wall-clock-digits regression: the local
+    // representation ("...T<local time>+02:00") is two hours AHEAD of the
+    // correct UTC instant, so if the offset were ever dropped or misapplied
+    // the persisted/returned instant would equal this wrong value instead.
+    $wallClockDigitsMisreadAsUtc = $expectedInstant->copy()->addHours(2);
+    expect($participant->scheduled_at->equalTo($wallClockDigitsMisreadAsUtc))->toBeFalse();
 });
 
 test('store without scheduled_at is byte-for-byte unchanged — non-regression', function (): void {

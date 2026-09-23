@@ -142,7 +142,15 @@ final class ParticipantController extends Controller
                 $validated['email'],
                 $validated['role_code'] ?? null,
                 $validated['language'] ?? null,
-                Carbon::parse($validated['scheduled_at']),
+                // ->utc() is load-bearing, not cosmetic (same defect fixed in
+                // EntryLinkController::store() for PR-B): Eloquent's datetime
+                // cast formats the Carbon instance in ITS OWN timezone when
+                // writing to the DB (HasAttributes::fromDateTime() never
+                // normalizes to app timezone), so a Carbon still holding a
+                // non-zero offset (e.g. "+02:00") would persist its LOCAL
+                // wall-clock digits as if they were already UTC — silently
+                // shifting the stored instant by the offset.
+                Carbon::parse($validated['scheduled_at'])->utc(),
             );
 
             if ($result['conflict'] !== null) {
