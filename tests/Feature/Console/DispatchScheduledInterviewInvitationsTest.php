@@ -245,6 +245,85 @@ describe('multi-tenancy', function (): void {
     });
 });
 
+describe('a permanently-failing participant is cancelled, not retried forever', function (): void {
+    test('a project relation that no longer resolves at start time is cancelled and never reselected', function (): void {
+        $orgA = sweepOrg();
+        $orgB = sweepOrg();
+        $projectB = sweepProject($orgB);
+        // organization_id = orgA but project_id points at orgB's project:
+        // under TenantContextScope::runFor(orgA), Project's own tenant scope
+        // filters this relation to null — the same "gone" shape a hard
+        // delete would leave, without fighting the FK's cascadeOnDelete.
+        $participant = sweepParticipant($orgA, $projectB, [
+            'scheduled_at' => now()->subMinute(),
+            'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
+        ]);
+
+        runSweep();
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Cancelled);
+        Bus::assertNothingDispatched();
+    });
+
+    test('a project relation that no longer resolves at notice time is cancelled', function (): void {
+        $orgA = sweepOrg();
+        $orgB = sweepOrg();
+        $projectB = sweepProject($orgB);
+        $participant = sweepParticipant($orgA, $projectB, [
+            'scheduled_at' => now()->addMinutes(10),
+            'scheduling_status' => ParticipantSchedulingStatus::Pending,
+        ]);
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Cancelled);
+        Bus::assertNothingDispatched();
+    });
+
+    test('a project whose entry gates permanently refuse the mint is cancelled', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        // Project's own lifecycle guard forbids reverting 'active' -> 'draft',
+        // so the gate is closed here via a past deadline instead:
+        // EntryLinkMinter::mint() refuses with EntryLinkRefusalReason::Gates,
+        // and no amount of retrying reopens a closed deadline.
+        $project->update(['deadline_at' => now()->subDay()]);
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->subMinute(),
+            'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
+        ]);
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Cancelled);
+        Bus::assertNothingDispatched();
+    });
+
+    test('a row stuck past the retry-staleness floor is cancelled instead of retried indefinitely', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->subMinutes(90),
+            'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
+        ]);
+
+        // Every save keeps failing EXCEPT the one that finally cancels the
+        // row — the genuinely-transient-forever case the staleness floor
+        // exists for, distinguished here only by its destination status.
+        Event::listen('eloquent.saved: '.Participant::class, function (Participant $p): void {
+            if ($p->scheduling_status !== ParticipantSchedulingStatus::Cancelled) {
+                throw new RuntimeException('deadlock victim');
+            }
+        });
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Cancelled);
+        Bus::assertNothingDispatched();
+    });
+});
+
 describe('reporting without acting', function (): void {
     test('--dry-run names the due participants and changes nothing', function (): void {
         $org = sweepOrg();
