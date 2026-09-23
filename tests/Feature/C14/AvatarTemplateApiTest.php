@@ -401,6 +401,43 @@ test('the field spec carries label KEYS, never rendered text', function (): void
     }
 });
 
+test('the four catalogue-backed fields name their resource type (avatar-template-catalogue PR2)', function (): void {
+    $org = Organization::factory()->create();
+
+    $response = $this->withToken(templateActor($org, 'platform'))
+        ->getJson('/api/avatar-templates/field-specs');
+
+    $heygen = collect($response->json('data.heygen'))->keyBy('key');
+    $tavus = collect($response->json('data.tavus'))->keyBy('key');
+
+    expect($heygen['avatarId']['catalogue_resource'])->toBe('avatar');
+    expect($heygen['voiceId']['catalogue_resource'])->toBe('voice');
+    expect($tavus['faceId']['catalogue_resource'])->toBe('replica');
+    expect($tavus['palId']['catalogue_resource'])->toBe('voice');
+});
+
+test('a field with no provider catalogue omits the key entirely, not null', function (): void {
+    $org = Organization::factory()->create();
+
+    $response = $this->withToken(templateActor($org, 'platform'))
+        ->getJson('/api/avatar-templates/field-specs');
+
+    $heygen = collect($response->json('data.heygen'))->keyBy('key');
+    $tavus = collect($response->json('data.tavus'))->keyBy('key');
+
+    // A present-but-null value would invite a client to call the catalogue
+    // endpoint for a field that has nothing to return (D2).
+    expect($tavus['ttsExternalVoiceId'])->not->toHaveKey('catalogue_resource');
+
+    foreach (['interactivityType', 'maxSessionDurationSec', 'videoQuality', 'videoEncoding', 'voiceSpeed', 'voiceStability', 'voiceSimilarityBoost', 'voiceStyle', 'voiceUseSpeakerBoost'] as $key) {
+        expect($heygen[$key])->not->toHaveKey('catalogue_resource');
+    }
+
+    foreach (['audioOnly', 'maxCallDurationSec', 'participantAbsentTimeoutSec', 'enableRecording', 'enableClosedCaptions', 'llmTemperature', 'llmSpeculativeInference', 'ttsEngine', 'turnTakingPatience', 'interruptibility', 'voiceIsolation', 'idleEngagement'] as $key) {
+        expect($tavus[$key])->not->toHaveKey('catalogue_resource');
+    }
+});
+
 test('every role can read the PICKER list, and it carries no provider identifiers', function (): void {
     // `projects.avatar_template_id` is NOT NULL, so an operator creating a
     // project must choose a template — and an operator who cannot list them

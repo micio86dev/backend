@@ -86,8 +86,8 @@ final class ProviderFieldSpecs
             // have to serve every project in it. Leaving the control would let an
             // operator pick a language and hear no difference — the exact failure
             // the comments in TemplatePayload already warn about.
-            new FieldSpec('avatarId', FieldType::Text, $l('avatarId'), required: true, hintKey: $h('avatarId')),
-            new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId')),
+            new FieldSpec('avatarId', FieldType::Text, $l('avatarId'), required: true, hintKey: $h('avatarId'), catalogueResource: 'avatar'),
+            new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId'), catalogueResource: 'voice'),
             new FieldSpec('interactivityType', FieldType::Select, $l('interactivityType'), options: ['CONVERSATIONAL', 'PUSH_TO_TALK'], hintKey: $h('interactivityType')),
             new FieldSpec('maxSessionDurationSec', FieldType::Number, $l('maxSessionDurationSec'), min: 30, max: self::HEYGEN_MAX_SECONDS, hintKey: $h('maxSessionDurationSec')),
             new FieldSpec('videoQuality', FieldType::Select, $l('videoQuality'), options: ['very_high', 'high', 'medium', 'low'], hintKey: $h('videoQuality')),
@@ -114,8 +114,8 @@ final class ProviderFieldSpecs
             // operator pick a language and hear no difference — the exact failure
             // the comments in TemplatePayload already warn about.
             // Conversation-level: sent when the conversation is created.
-            new FieldSpec('faceId', FieldType::Text, $l('faceId'), required: true, hintKey: $h('faceId')),
-            new FieldSpec('palId', FieldType::Text, $l('palId'), required: true, hintKey: $h('palId')),
+            new FieldSpec('faceId', FieldType::Text, $l('faceId'), required: true, hintKey: $h('faceId'), catalogueResource: 'replica'),
+            new FieldSpec('palId', FieldType::Text, $l('palId'), required: true, hintKey: $h('palId'), catalogueResource: 'voice'),
             new FieldSpec('audioOnly', FieldType::Checkbox, $l('audioOnly'), hintKey: $h('audioOnly')),
             new FieldSpec('maxCallDurationSec', FieldType::Number, $l('maxCallDurationSec'), min: 30, max: self::TAVUS_MAX_SECONDS, hintKey: $h('maxCallDurationSec')),
             new FieldSpec('participantAbsentTimeoutSec', FieldType::Number, $l('participantAbsentTimeoutSec'), min: 10, max: self::TAVUS_MAX_SECONDS, hintKey: $h('participantAbsentTimeoutSec')),
