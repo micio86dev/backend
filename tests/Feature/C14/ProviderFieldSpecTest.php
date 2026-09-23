@@ -13,7 +13,25 @@ declare(strict_types=1);
  */
 
 use App\Support\AvatarTemplates\ConfigValidator;
+use App\Support\AvatarTemplates\FieldSpec;
+use App\Support\AvatarTemplates\FieldType;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
+
+// ─── catalogue_resource metadata (avatar-template-catalogue PR2, D2) ─────────
+
+test('toArray includes catalogue_resource when the spec carries one', function (): void {
+    $field = new FieldSpec('voiceId', FieldType::Text, 'avatar_templates.field.voiceId', catalogueResource: 'voice');
+
+    expect($field->toArray())->toHaveKey('catalogue_resource', 'voice');
+});
+
+test('toArray omits catalogue_resource entirely when the spec carries none', function (): void {
+    $field = new FieldSpec('ttsExternalVoiceId', FieldType::Text, 'avatar_templates.field.ttsExternalVoiceId');
+
+    // "Absent, not null" — a present-but-null value would invite a client to
+    // call the catalogue endpoint for a field that has nothing to return.
+    expect($field->toArray())->not->toHaveKey('catalogue_resource');
+});
 
 test('both providers publish a non-empty field spec', function (): void {
     expect(ProviderFieldSpecs::for('heygen'))->not->toBeEmpty();

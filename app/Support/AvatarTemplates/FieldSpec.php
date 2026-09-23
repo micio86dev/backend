@@ -43,6 +43,16 @@ final readonly class FieldSpec
         public int|float|null $max = null,
         public int|float|null $step = null,
         public ?string $palPath = null,
+        /**
+         * Which provider catalogue resource (`voice`|`avatar`|`replica`) backs
+         * this field, if any (avatar-template-catalogue PR2, D2).
+         *
+         * Orthogonal to `type`: the stored value stays a plain string and
+         * `ConfigValidator` needs no change. Nullable so most fields — including
+         * `ttsExternalVoiceId`, which has no provider catalogue at all — simply
+         * omit it, exactly like `hintKey`.
+         */
+        public ?string $catalogueResource = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -58,6 +68,7 @@ final readonly class FieldSpec
             'min' => $this->min,
             'max' => $this->max,
             'step' => $this->step,
+            'catalogue_resource' => $this->catalogueResource,
         ], fn (mixed $v): bool => $v !== null && $v !== false);
     }
 }
