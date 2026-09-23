@@ -143,7 +143,12 @@ final class AvatarTemplateController extends Controller
         $this->authorize('viewAny', AvatarTemplate::class);
 
         $validated = $request->validate([
-            'provider' => ['required', 'string', 'in:'.implode(',', self::PROVIDERS)],
+            // Literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS) — Scramble's
+            // static analyzer cannot evaluate implode() over a class constant and was
+            // emitting an empty-string-only enum for `provider` in openapi.json, making
+            // the documented endpoint unreachable and poisoning the generated TS client
+            // with `provider: ""` (avatar-template-catalogue, caught by native review).
+            'provider' => ['required', 'string', 'in:heygen,tavus'],
             'resource' => ['required', 'string', 'in:voice,avatar,replica'],
         ]);
 
@@ -174,7 +179,8 @@ final class AvatarTemplateController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
-            'provider' => ['required', 'string', 'in:'.implode(',', self::PROVIDERS)],
+            // Literal list — see catalogue()'s validation for why implode(self::PROVIDERS) is not used.
+            'provider' => ['required', 'string', 'in:heygen,tavus'],
             'config' => ['required', 'array'],
             // Both-or-neither is enforced by the DB CHECK (I1) and by
             // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
