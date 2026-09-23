@@ -825,10 +825,12 @@
                         "name": "provider",
                         "in": "query",
                         "required": true,
+                        "description": "Literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS) \u2014 Scramble's\nstatic analyzer cannot evaluate implode() over a class constant and was\nemitting an empty-string-only enum for `provider` in openapi.json, making\nthe documented endpoint unreachable and poisoning the generated TS client\nwith `provider: \"\"` (avatar-template-catalogue, caught by native review).",
                         "schema": {
                             "type": "string",
                             "enum": [
-                                ""
+                                "heygen",
+                                "tavus"
                             ]
                         }
                     },
@@ -1070,8 +1072,10 @@
                                     },
                                     "provider": {
                                         "type": "string",
+                                        "description": "Literal list \u2014 see catalogue()'s validation for why implode(self::PROVIDERS) is not used.",
                                         "enum": [
-                                            ""
+                                            "heygen",
+                                            "tavus"
                                         ]
                                     },
                                     "config": {
