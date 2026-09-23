@@ -36,6 +36,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Services\ApiKeyGenerator;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
@@ -122,6 +123,49 @@ test('a scheduled create persists scheduled_at and scheduling_status pending, an
     expect($participant->scheduled_at)->not->toBeNull();
 
     Bus::assertNotDispatched(SendCandidateInvitationJob::class);
+});
+
+test('a scheduled create with a non-zero explicit UTC offset persists and returns the correct UTC instant, not the local wall-clock digits', function (): void {
+    config(['interview.candidate_app_url' => 'https://interview.example.com']);
+    $org = Organization::factory()->create();
+    $project = schedulingProject($org);
+    $token = schedulingOperatorToken($org);
+
+    // The instant under test, computed once in UTC. The request body encodes
+    // the SAME instant with an explicit non-zero "+02:00" offset instead of
+    // "Z"/"+00:00" — every other case in this file builds its input from a
+    // zero-offset clock, so this is the only case that can catch a regression
+    // that stores the raw wall-clock digits or shifts by the offset instead
+    // of converting it (R3-offset-roundtrip-unproved).
+    $expectedInstant = now('UTC')->addMinutes(90)->startOfSecond();
+    $inputWithNonZeroOffset = $expectedInstant->copy()->setTimezone('+02:00')->toIso8601String();
+    expect($inputWithNonZeroOffset)->toContain('+02:00');
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'sched-cand-offset',
+        'display_name' => 'Offset Candidate',
+        'email' => uniqid('sched-').'@example.test',
+        'lang' => 'en',
+        'scheduled_at' => $inputWithNonZeroOffset,
+    ]);
+
+    $response->assertStatus(201);
+
+    $returnedInstant = Carbon::parse($response->json('scheduled_at'));
+    expect($returnedInstant->equalTo($expectedInstant))->toBeTrue();
+    expect($returnedInstant->getTimestamp())->toBe($expectedInstant->getTimestamp());
+
+    $participant = Participant::where('candidate_ref', 'sched-cand-offset')->firstOrFail();
+    expect($participant->scheduled_at->equalTo($expectedInstant))->toBeTrue();
+    expect($participant->scheduled_at->getTimestamp())->toBe($expectedInstant->getTimestamp());
+
+    // Guards specifically against the wall-clock-digits regression: the local
+    // representation ("...T<local time>+02:00") is two hours AHEAD of the
+    // correct UTC instant, so if the offset were ever dropped or misapplied
+    // the persisted/returned instant would equal this wrong value instead.
+    $wallClockDigitsMisreadAsUtc = $expectedInstant->copy()->addHours(2);
+    expect($participant->scheduled_at->equalTo($wallClockDigitsMisreadAsUtc))->toBeFalse();
 });
 
 test('omitting scheduled_at preserves the exact immediate behavior — mints, dispatches, and creates no participant row here', function (): void {

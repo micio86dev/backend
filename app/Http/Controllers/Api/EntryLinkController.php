@@ -150,7 +150,17 @@ final class EntryLinkController extends Controller
                 $validated['email'],
                 $validated['role_code'] ?? null,
                 $validated['lang'] ?? null,
-                Carbon::parse($validated['scheduled_at']),
+                // ->utc() is load-bearing, not cosmetic: Eloquent's datetime
+                // cast formats the Carbon instance in ITS OWN timezone when
+                // writing to the DB (HasAttributes::fromDateTime() never
+                // normalizes to app timezone), so a Carbon still holding a
+                // non-zero offset (e.g. "+02:00") would persist its LOCAL
+                // wall-clock digits as if they were already UTC — silently
+                // shifting the stored instant by the offset. Every existing
+                // test in EntryLinkScheduledCreationTest built its input from
+                // a zero-offset UTC clock, so this bug was invisible until a
+                // non-zero-offset round-trip case was added.
+                Carbon::parse($validated['scheduled_at'])->utc(),
             );
 
             if ($result['conflict'] !== null) {
