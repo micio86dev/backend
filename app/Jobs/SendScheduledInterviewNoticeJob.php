@@ -86,17 +86,24 @@ final class SendScheduledInterviewNoticeJob implements ShouldQueue
         $branding->setOrganizationName($this->organizationName);
         $branding->setLogoUrl($this->brandLogoUrl);
 
-        // Routed to an ADDRESS, not to a notifiable model — same reasoning as
-        // SendCandidateInvitationJob: a Participant is not a user of this
-        // system and must never become one.
-        Notification::route('mail', $this->email)->notify(
-            (new CandidateInterviewNoticeNotification(
-                $this->displayName,
-                $this->organizationName,
-                $this->projectName,
-            ))->locale($this->locale)
-        );
-
-        $branding->forget();
+        // try/finally, not a trailing forget(): a worker is a long-lived
+        // process handling one tenant's mail after another's, and a throw
+        // from notify() (mail transport error, template failure) must never
+        // leave THIS tenant's colour set for whatever job that worker picks
+        // up next.
+        try {
+            // Routed to an ADDRESS, not to a notifiable model — same
+            // reasoning as SendCandidateInvitationJob: a Participant is not a
+            // user of this system and must never become one.
+            Notification::route('mail', $this->email)->notify(
+                (new CandidateInterviewNoticeNotification(
+                    $this->displayName,
+                    $this->organizationName,
+                    $this->projectName,
+                ))->locale($this->locale)
+            );
+        } finally {
+            $branding->forget();
+        }
     }
 }

@@ -31,6 +31,7 @@ use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Event;
 
 function sweepOrg(): Organization
 {
@@ -258,6 +259,49 @@ describe('reporting without acting', function (): void {
         expect(Artisan::output())->toContain($participant->candidate_ref);
         expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Pending);
         Bus::assertNothingDispatched();
+    });
+});
+
+describe('dispatch waits for the transaction to commit', function (): void {
+    test('a failure while saving sendNotice\'s status advance leaves no notice queued and the row Pending', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->addMinutes(10),
+            'scheduling_status' => ParticipantSchedulingStatus::Pending,
+        ]);
+
+        // Registered on the per-test dispatcher only (same pattern as
+        // ResetUserPasswordCommandTest), so it does not leak across the suite.
+        // It fires once the locked row's UPDATE has actually run inside
+        // DB::transaction(), forcing a rollback AFTER the write but BEFORE the
+        // command could ever see a successful commit.
+        Event::listen('eloquent.saved: '.Participant::class, function (): void {
+            throw new RuntimeException('deadlock victim');
+        });
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Pending);
+        Bus::assertNotDispatched(SendScheduledInterviewNoticeJob::class);
+    });
+
+    test('a failure while saving sendStart\'s status advance leaves no start email queued and the row unchanged', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->subMinute(),
+            'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
+        ]);
+
+        Event::listen('eloquent.saved: '.Participant::class, function (): void {
+            throw new RuntimeException('deadlock victim');
+        });
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
+        Bus::assertNotDispatched(SendCandidateInvitationJob::class);
     });
 });
 

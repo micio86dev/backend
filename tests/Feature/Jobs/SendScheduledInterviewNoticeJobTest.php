@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 use App\Jobs\SendScheduledInterviewNoticeJob;
 use App\Notifications\CandidateInterviewNoticeNotification;
+use App\Support\Mail\EmailBranding;
 use Illuminate\Support\Facades\Notification;
 
 test('the notice job sends the notice notification, addressed to the candidate and localized', function (): void {
@@ -98,3 +99,30 @@ test('it renders in both it and en without falling back to missing-key placehold
     'it' => ['it', 'in arrivo'],
     'en' => ['en', 'coming up'],
 ]);
+
+test('branding is forgotten even when the send throws, and the exception still propagates', function (): void {
+    // No Notification::fake() here — a fake short-circuits before the real
+    // ChannelManager::send() runs, so it could never throw. Mocking the
+    // Dispatcher `send()` call the real AnonymousNotifiable::notify() reaches
+    // (Notification::route()->notify() -> app(Dispatcher::class)->send())
+    // is what actually exercises the throw path.
+    Notification::shouldReceive('send')->once()->andThrow(new RuntimeException('smtp unreachable'));
+
+    $job = new SendScheduledInterviewNoticeJob(
+        'giulia@example.test',
+        'Giulia Ferrari',
+        'Acme Assessments',
+        'Sales Team 2026',
+        'it',
+        '#112233',
+        'https://cdn.example.test/logo.png',
+    );
+
+    expect(fn () => $job->handle())->toThrow(RuntimeException::class, 'smtp unreachable');
+
+    $branding = app(EmailBranding::class);
+
+    expect($branding->primaryColor())->toBeNull()
+        ->and($branding->organizationName())->toBeNull()
+        ->and($branding->logoUrl())->toBeNull();
+});

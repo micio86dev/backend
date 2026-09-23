@@ -198,7 +198,16 @@ final class DispatchScheduledInterviewInvitations extends Command
      */
     private function sendNotice(Participant $participant): bool
     {
-        return DB::transaction(function () use ($participant): bool {
+        // The transaction ONLY locks, checks and saves; it returns the
+        // dispatch payload (or null) rather than dispatching from inside the
+        // closure. `SendScheduledInterviewNoticeJob::dispatch()` runs below,
+        // AFTER `DB::transaction()` has returned — i.e. only once the advance
+        // to NoticeSent has actually committed. A save failure (deadlock
+        // victim, lock-wait timeout, connection loss) throws OUT of
+        // DB::transaction(), rolls the row back, and never reaches the
+        // dispatch line at all: the next tick still sees this row Pending and
+        // gets exactly one more chance, never a duplicate notice.
+        $noticeArgs = DB::transaction(function () use ($participant): ?array {
             // organization_id filtered explicitly even though Participant
             // carries no global scope of its own (it does NOT extend
             // TenantModel) and $participant->id here always comes from this
@@ -213,16 +222,19 @@ final class DispatchScheduledInterviewInvitations extends Command
                 ->first();
 
             if ($locked === null || $locked->scheduling_status !== ParticipantSchedulingStatus::Pending) {
-                return false;
+                return null;
             }
 
             $project = $locked->project;
 
             if ($project === null) {
-                return false;
+                return null;
             }
 
-            SendScheduledInterviewNoticeJob::dispatch(
+            $locked->scheduling_status = ParticipantSchedulingStatus::NoticeSent;
+            $locked->save();
+
+            return [
                 $locked->email,
                 $locked->display_name,
                 (string) $project->organization?->name,
@@ -230,13 +242,16 @@ final class DispatchScheduledInterviewInvitations extends Command
                 $locked->language ?? $project->language ?? config('app.fallback_locale', 'en'),
                 $project->organization?->primary_color,
                 $project->organization?->absoluteLogoUrl(),
-            );
-
-            $locked->scheduling_status = ParticipantSchedulingStatus::NoticeSent;
-            $locked->save();
-
-            return true;
+            ];
         });
+
+        if ($noticeArgs === null) {
+            return false;
+        }
+
+        SendScheduledInterviewNoticeJob::dispatch(...$noticeArgs);
+
+        return true;
     }
 
     /**
@@ -250,7 +265,13 @@ final class DispatchScheduledInterviewInvitations extends Command
      */
     private function sendStart(Participant $participant): bool
     {
-        return DB::transaction(function () use ($participant): bool {
+        // Same dispatch-after-commit shape as sendNotice() above: the
+        // transaction returns the dispatch payload (or null), and
+        // `SendCandidateInvitationJob::dispatch()` runs only AFTER
+        // DB::transaction() has returned — never from inside the closure — so
+        // a save failure rolls the advance to Started back without ever
+        // having queued the entry-link email.
+        $startArgs = DB::transaction(function () use ($participant): ?array {
             // organization_id filtered explicitly — same reasoning as
             // sendNotice()'s own re-fetch above.
             $locked = Participant::withoutGlobalScopes()
@@ -263,13 +284,13 @@ final class DispatchScheduledInterviewInvitations extends Command
                 ParticipantSchedulingStatus::Pending,
                 ParticipantSchedulingStatus::NoticeSent,
             ], true)) {
-                return false;
+                return null;
             }
 
             $project = $locked->project;
 
             if ($project === null) {
-                return false;
+                return null;
             }
 
             try {
@@ -287,7 +308,7 @@ final class DispatchScheduledInterviewInvitations extends Command
                     'reason' => $e->reason->value,
                 ]);
 
-                return false;
+                return null;
             }
 
             $entryUrl = $this->composer->compose($minted->token, $minted->lang);
@@ -300,7 +321,10 @@ final class DispatchScheduledInterviewInvitations extends Command
             $expiresAt->locale($minted->lang);
             $expiresLabel = $expiresAt->isoFormat('LLL');
 
-            SendCandidateInvitationJob::dispatch(
+            $locked->scheduling_status = ParticipantSchedulingStatus::Started;
+            $locked->save();
+
+            return [
                 $locked->email,
                 $entryUrl,
                 $locked->display_name,
@@ -310,12 +334,15 @@ final class DispatchScheduledInterviewInvitations extends Command
                 $minted->lang,
                 $project->organization?->primary_color,
                 $project->organization?->absoluteLogoUrl(),
-            );
-
-            $locked->scheduling_status = ParticipantSchedulingStatus::Started;
-            $locked->save();
-
-            return true;
+            ];
         });
+
+        if ($startArgs === null) {
+            return false;
+        }
+
+        SendCandidateInvitationJob::dispatch(...$startArgs);
+
+        return true;
     }
 }
