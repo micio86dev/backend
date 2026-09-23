@@ -284,7 +284,11 @@ final class DispatchScheduledInterviewInvitations extends Command
             return false;
         }
 
-        SendScheduledInterviewNoticeJob::dispatch(...$noticeArgs);
+        try {
+            SendScheduledInterviewNoticeJob::dispatch(...$noticeArgs);
+        } catch (Throwable $e) {
+            $this->logPostCommitDispatchFailure($participant, 'notice', ParticipantSchedulingStatus::NoticeSent, $e);
+        }
 
         return true;
     }
@@ -379,8 +383,42 @@ final class DispatchScheduledInterviewInvitations extends Command
             return false;
         }
 
-        SendCandidateInvitationJob::dispatch(...$startArgs);
+        try {
+            SendCandidateInvitationJob::dispatch(...$startArgs);
+        } catch (Throwable $e) {
+            $this->logPostCommitDispatchFailure($participant, 'start', ParticipantSchedulingStatus::Started, $e);
+        }
 
         return true;
+    }
+
+    /**
+     * The one failure mode this sweep cannot self-heal: `sendNotice()` /
+     * `sendStart()` above already committed the status advance, and BOTH
+     * sweep selections exclude `NoticeSent`-that-should-have-dispatched and
+     * `Started` rows from ever being reselected. Reverting the already-saved
+     * status here would only trade this bug for a double-send race against a
+     * concurrent tick, so the row is deliberately left as-is; this is purely
+     * an observability fix, making the failure loud and actionable instead of
+     * indistinguishable from `processOne()`'s generic (retry-next-tick) catch.
+     * The message and the extra fields (`project_id`, `email`, `stage`,
+     * `persisted_status`) are what let an operator tell "will retry itself"
+     * apart from "gone forever unless someone resends by hand".
+     */
+    private function logPostCommitDispatchFailure(
+        Participant $participant,
+        string $stage,
+        ParticipantSchedulingStatus $persistedStatus,
+        Throwable $e,
+    ): void {
+        Log::error('interview-scheduling sweep: SILENT DATA LOSS RISK — post-commit dispatch failed, status already advanced and this row will never be reselected; manual resend required', [
+            'participant_id' => $participant->id,
+            'organization_id' => $participant->organization_id,
+            'project_id' => $participant->project_id,
+            'email' => $participant->email,
+            'stage' => $stage,
+            'persisted_status' => $persistedStatus->value,
+            'exception' => $e->getMessage(),
+        ]);
     }
 }

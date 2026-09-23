@@ -29,9 +29,11 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 
 function sweepOrg(): Organization
 {
@@ -73,6 +75,56 @@ function sweepParticipant(Organization $org, Project $project, array $attrs = []
     $participant->save();
 
     return $participant;
+}
+
+/**
+ * Overrides the container's `Dispatcher` binding, AFTER `Bus::fake()` already
+ * ran in `beforeEach()`, with one that always throws — simulating an
+ * unreachable queue backend or a serialization failure on the actual
+ * `dispatch()` call. `Bus::fake()` cannot express this: it records a
+ * dispatched job instead of sending it, so it can never itself throw. Laravel
+ * rebuilds the container fresh per test, so this binding never leaks into any
+ * other test's `Bus::fake()` behavior.
+ */
+function bindThrowingDispatcher(string $message): void
+{
+    app()->instance(Dispatcher::class, new class($message) implements Dispatcher
+    {
+        public function __construct(private readonly string $message) {}
+
+        public function dispatch($command)
+        {
+            throw new RuntimeException($this->message);
+        }
+
+        public function dispatchSync($command, $handler = null) {}
+
+        public function dispatchNow($command, $handler = null) {}
+
+        public function dispatchAfterResponse($command, $handler = null) {}
+
+        public function chain($jobs = null) {}
+
+        public function hasCommandHandler($command)
+        {
+            return false;
+        }
+
+        public function getCommandHandler($command)
+        {
+            return false;
+        }
+
+        public function pipeThrough(array $pipes)
+        {
+            return $this;
+        }
+
+        public function map(array $map)
+        {
+            return $this;
+        }
+    });
 }
 
 /**
@@ -390,6 +442,66 @@ describe('dispatch waits for the transaction to commit', function (): void {
 
         expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
         Bus::assertNotDispatched(SendCandidateInvitationJob::class);
+    });
+});
+
+describe('a dispatch that throws AFTER the status advance already committed', function (): void {
+    test('sendNotice: the NoticeSent advance is kept, never reverted, and the failure is logged as a distinguishable, actionable error', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->addMinutes(10),
+            'scheduling_status' => ParticipantSchedulingStatus::Pending,
+        ]);
+
+        Log::spy();
+        bindThrowingDispatcher('queue backend unreachable');
+
+        runSweep();
+
+        // The DB::transaction() already committed NoticeSent before the
+        // dispatch line ever ran — a post-commit dispatch failure must NOT
+        // revert it (that would just trade this bug for a double-send race
+        // against a concurrent tick).
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
+
+        Log::shouldHaveReceived('error')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'SILENT DATA LOSS')
+                && $context['participant_id'] === $participant->id
+                && $context['organization_id'] === $org->id
+                && $context['project_id'] === $project->id
+                && $context['email'] === $participant->email
+                && $context['stage'] === 'notice'
+                && $context['persisted_status'] === ParticipantSchedulingStatus::NoticeSent->value
+                && $context['exception'] === 'queue backend unreachable');
+    });
+
+    test('sendStart: the Started advance is kept, never reverted, and the failure is logged as a distinguishable, actionable error', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->subMinute(),
+            'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
+        ]);
+
+        Log::spy();
+        bindThrowingDispatcher('queue backend unreachable');
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Started);
+
+        Log::shouldHaveReceived('error')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'SILENT DATA LOSS')
+                && $context['participant_id'] === $participant->id
+                && $context['organization_id'] === $org->id
+                && $context['project_id'] === $project->id
+                && $context['email'] === $participant->email
+                && $context['stage'] === 'start'
+                && $context['persisted_status'] === ParticipantSchedulingStatus::Started->value
+                && $context['exception'] === 'queue backend unreachable');
     });
 });
 
