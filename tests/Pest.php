@@ -654,6 +654,13 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Admin');
 
+// Unit/Actions/Scheduling — needs TestCase + RefreshDatabase (interview-scheduling
+// PR-E: RescheduleParticipantTest calls the action directly against real
+// Participant/Project factory rows, bypassing the HTTP layer entirely).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Actions/Scheduling');
+
 // ─── projects.avatar_template_id is NOT NULL ──────────────────────────────────
 
 /**

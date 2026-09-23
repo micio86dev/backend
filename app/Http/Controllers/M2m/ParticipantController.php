@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\M2m;
 
+use App\Actions\Scheduling\CancelParticipantSchedule;
 use App\Actions\Scheduling\CreateScheduledParticipant;
+use App\Actions\Scheduling\RescheduleParticipant;
+use App\Exceptions\Sso\ParticipantScheduleRefusalReason;
+use App\Exceptions\Sso\ParticipantScheduleRefused;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ParticipantResource;
 use App\Models\ApiClient;
@@ -25,9 +29,11 @@ use Illuminate\Support\Facades\DB;
  * Admin-only (M2M caller) participant management.
  *
  * Routes (all under /api/m2m, auth:api-m2m):
- *   POST /participants          (participants:create)
- *   GET  /participants          (participants:read)
- *   GET  /participants/{id}     (participants:read)
+ *   POST /participants                    (participants:create)
+ *   GET  /participants                    (participants:read)
+ *   GET  /participants/{id}               (participants:read)
+ *   PATCH  /participants/{id}/schedule    (participants:schedule)
+ *   DELETE /participants/{id}/schedule    (participants:schedule)
  *
  * Security invariants:
  * - store: project resolved SCOPED to caller org (cross-org → 404).
@@ -46,10 +52,19 @@ use Illuminate\Support\Facades\DB;
  *   endpoint has never minted or sent anything on either branch, unlike
  *   `EntryLinkController`'s immediate path.
  *
+ * PR-E addition (tasks T-E4, design AD-7): `updateSchedule()`/`cancelSchedule()`
+ * delegate to the SAME `RescheduleParticipant`/`CancelParticipantSchedule`
+ * actions the backoffice `ParticipantScheduleController` uses — one shared
+ * locked state-transition, not a re-implementation. Gated by a NEW, narrower
+ * ability `participants:schedule` (deliberately NOT `participants:create`,
+ * AD-7's least-privilege reasoning: a client provisioned only to create
+ * participants has no standing reason to also reschedule/cancel them).
+ *
  * REQ: M2M Participant CRUD,
  *      Optional Scheduled Start On Participant Creation,
  *      Scheduled Start Must Be In The Future,
- *      Both Surfaces Agree On Acceptance
+ *      Both Surfaces Agree On Acceptance,
+ *      Reschedule And Cancel Are Symmetric Across Both Surfaces
  *      (sdd/interview-scheduling/spec, Engram #2221)
  */
 final class ParticipantController extends Controller
@@ -57,6 +72,8 @@ final class ParticipantController extends Controller
     public function __construct(
         private readonly ProjectInterviewability $projectInterviewability,
         private readonly CreateScheduledParticipant $createScheduledParticipant,
+        private readonly RescheduleParticipant $rescheduleParticipant,
+        private readonly CancelParticipantSchedule $cancelParticipantSchedule,
     ) {}
 
     /**
@@ -263,5 +280,72 @@ final class ParticipantController extends Controller
             ->findOrFail($id);
 
         return new ParticipantResource($participant);
+    }
+
+    /**
+     * Reschedule a participant's scheduled interview (interview-scheduling,
+     * design AD-7, tasks T-E4).
+     *
+     * PATCH /api/m2m/participants/{id}/schedule
+     * Auth: auth:api-m2m + ability:participants:schedule
+     */
+    public function updateSchedule(Request $request, int $id): JsonResponse
+    {
+        /** @var ApiClient $client */
+        $client = $request->user('api-m2m');
+
+        $validated = $request->validate([
+            'scheduled_at' => ['required', new ScheduledStartWithinLeadTime],
+        ]);
+
+        try {
+            $updated = $this->rescheduleParticipant->handle(
+                $id,
+                $client->organization_id,
+                Carbon::parse($validated['scheduled_at']),
+            );
+        } catch (ParticipantScheduleRefused $e) {
+            return response()->json(['reason' => $e->reason->value], $this->scheduleRefusalStatus($e->reason));
+        }
+
+        return response()->json(new ParticipantResource($updated), 200);
+    }
+
+    /**
+     * Cancel a participant's scheduled interview (interview-scheduling,
+     * design AD-7, tasks T-E4).
+     *
+     * DELETE /api/m2m/participants/{id}/schedule
+     * Auth: auth:api-m2m + ability:participants:schedule
+     */
+    public function cancelSchedule(Request $request, int $id): JsonResponse
+    {
+        /** @var ApiClient $client */
+        $client = $request->user('api-m2m');
+
+        try {
+            $updated = $this->cancelParticipantSchedule->handle($id, $client->organization_id);
+        } catch (ParticipantScheduleRefused $e) {
+            return response()->json(['reason' => $e->reason->value], $this->scheduleRefusalStatus($e->reason));
+        }
+
+        return response()->json(new ParticipantResource($updated), 200);
+    }
+
+    /**
+     * Maps a refusal reason onto THIS surface's own HTTP status — duplicated
+     * with (not shared with) `Api\ParticipantScheduleController`'s own
+     * mapping, deliberately: each surface owns its own response shape, and
+     * the two are required to agree only on VALUES (AD-7's symmetry
+     * requirement), never on a shared implementation (mirrors
+     * `EntryLinkRefused`'s documented "each caller maps its own" convention).
+     */
+    private function scheduleRefusalStatus(ParticipantScheduleRefusalReason $reason): int
+    {
+        return match ($reason) {
+            ParticipantScheduleRefusalReason::Terminal => 409,
+            ParticipantScheduleRefusalReason::LeadTimeTooShort,
+            ParticipantScheduleRefusalReason::NotScheduled => 422,
+        };
     }
 }

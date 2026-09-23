@@ -50,6 +50,14 @@ test('the admin participant route surface is exactly the enumerated set', functi
         // is also a WRITE (dispatches a paid third-party audit run), not a
         // read — listed here for the same reason /recover is above.
         'api/participants/{id}/evaluation/audit',
+        // (interview-scheduling PR-E, design AD-7) PATCH+DELETE
+        // /api/participants/{id}/schedule are also WRITEs (reschedule/cancel
+        // a scheduled interview), not reads — listed twice (once per HTTP
+        // method sharing the same URI) for the same reason /recover is
+        // above; toEqualCanonicalizing() requires every route entry, not
+        // just every distinct URI.
+        'api/participants/{id}/schedule',
+        'api/participants/{id}/schedule',
         'api/dashboard/metrics',
     ]);
 });
