@@ -34,17 +34,4 @@ final class ScheduledInterviewWindow
      * reschedule (before or after the notice has already fired).
      */
     public const int MINIMUM_SCHEDULING_LEAD_MINUTES = 16;
-
-    /**
-     * How long `DispatchScheduledInterviewInvitations` keeps retrying a
-     * participant whose processing threw (a save deadlock, a lock-wait
-     * timeout — the genuinely transient case) before giving up on it.
-     *
-     * The sweep cannot always tell a transient failure from a permanent one
-     * from inside a generic `catch (Throwable)`, so once a row has been due
-     * for longer than this many minutes without ever converging, it is
-     * cancelled outright rather than re-selected and re-attempted forever —
-     * a pragmatic bound, not a precise transient/permanent classifier.
-     */
-    public const int MAX_RETRY_STALENESS_MINUTES = 60;
 }

@@ -178,63 +178,27 @@ final class DispatchScheduledInterviewInvitations extends Command
         try {
             return TenantContextScope::runFor((int) $participant->organization_id, $action);
         } catch (Throwable $e) {
+            // Deliberately does NOT cancel: a generic Throwable here (a save
+            // deadlock, a lock-wait timeout) is the transient case, and
+            // `scheduled_at` measures how overdue the row is, not how many
+            // times it has already been retried — every backlogged row
+            // (worker down, deploy window) is already past any staleness
+            // floor on its very FIRST attempt, so gating cancellation on
+            // `scheduled_at` cancelled exactly the rows this sweep exists to
+            // catch up on. Structural, never-self-resolving failures (a null
+            // project relation, an `EntryLinkRefused`) are cancelled inline
+            // by their own call site instead — see `cancelScheduling()`'s
+            // call sites in `sendNotice()`/`sendStart()`. Leaving this row
+            // untouched means it is re-selected and retried next tick,
+            // accepting unbounded retry on a truly permanent-but-unrecognized
+            // failure as the lesser risk.
             Log::error('interview-scheduling sweep: failed to process a due participant', [
                 'participant_id' => $participant->id,
                 'organization_id' => $participant->organization_id,
                 'exception' => $e->getMessage(),
             ]);
 
-            $this->cancelIfStale($participant, $e);
-
             return false;
-        }
-    }
-
-    /**
-     * Pragmatic bound on unbounded retry: a generic `Throwable` from
-     * `$action` (a save deadlock, a lock-wait timeout) leaves
-     * `scheduling_status` untouched by design, so the row is due again on
-     * the very next tick — correct for a genuinely transient failure, but
-     * with no floor on `scheduled_at` it also describes a row that will
-     * NEVER converge, retried and logged forever. Once such a row has been
-     * due for longer than `MAX_RETRY_STALENESS_MINUTES`, cancel it instead
-     * of trusting the next tick to do better than this one did.
-     */
-    private function cancelIfStale(Participant $participant, Throwable $cause): void
-    {
-        if ($participant->scheduled_at === null
-            || $participant->scheduled_at->gt(now()->subMinutes(ScheduledInterviewWindow::MAX_RETRY_STALENESS_MINUTES))
-        ) {
-            return;
-        }
-
-        try {
-            TenantContextScope::runFor((int) $participant->organization_id, function () use ($participant, $cause): void {
-                $locked = Participant::withoutGlobalScopes()
-                    ->whereKey($participant->id)
-                    ->where('organization_id', $participant->organization_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($locked === null || ! in_array($locked->scheduling_status, [
-                    ParticipantSchedulingStatus::Pending,
-                    ParticipantSchedulingStatus::NoticeSent,
-                ], true)) {
-                    return;
-                }
-
-                $this->cancelScheduling($locked, sprintf(
-                    'exceeded the %d-minute retry-staleness floor after: %s',
-                    ScheduledInterviewWindow::MAX_RETRY_STALENESS_MINUTES,
-                    $cause->getMessage(),
-                ));
-            });
-        } catch (Throwable $e) {
-            Log::error('interview-scheduling sweep: failed to cancel a stale participant', [
-                'participant_id' => $participant->id,
-                'organization_id' => $participant->organization_id,
-                'exception' => $e->getMessage(),
-            ]);
         }
     }
 
@@ -378,8 +342,8 @@ final class DispatchScheduledInterviewInvitations extends Command
             } catch (EntryLinkRefused $e) {
                 // A structural refusal (closed gates, a mismatched role_code,
                 // a terminal duplicate on another axis) will never pass on a
-                // later retry, unlike a save deadlock — cancel now rather
-                // than let cancelIfStale() reach the same row later.
+                // later retry, unlike a save deadlock — cancel now, inline,
+                // rather than relying on processOne()'s generic catch.
                 $this->cancelScheduling($locked, sprintf('EntryLinkMinter refused: %s', $e->reason->value));
 
                 return null;

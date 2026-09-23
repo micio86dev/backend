@@ -300,27 +300,36 @@ describe('a permanently-failing participant is cancelled, not retried forever', 
         Bus::assertNothingDispatched();
     });
 
-    test('a row stuck past the retry-staleness floor is cancelled instead of retried indefinitely', function (): void {
+});
+
+describe('a transient failure never permanently cancels a backlogged participant', function (): void {
+    test('a backlogged participant that hits a generic transient failure is left retryable, not cancelled, and still gets its email once the failure clears', function (): void {
         $org = sweepOrg();
         $project = sweepProject($org);
+        // The exact backlog shape the command's own header treats as
+        // first-class: worker down / deploy window, far past scheduled_at,
+        // still NoticeSent. Cancelling this on its very first transient
+        // failure is exactly the finding this test guards against.
         $participant = sweepParticipant($org, $project, [
-            'scheduled_at' => now()->subMinutes(90),
+            'scheduled_at' => now()->subHours(3),
             'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
         ]);
 
-        // Every save keeps failing EXCEPT the one that finally cancels the
-        // row — the genuinely-transient-forever case the staleness floor
-        // exists for, distinguished here only by its destination status.
-        Event::listen('eloquent.saved: '.Participant::class, function (Participant $p): void {
-            if ($p->scheduling_status !== ParticipantSchedulingStatus::Cancelled) {
-                throw new RuntimeException('deadlock victim');
-            }
+        Event::listen('eloquent.saved: '.Participant::class, function (): void {
+            throw new RuntimeException('transient deadlock');
         });
 
         runSweep();
 
-        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Cancelled);
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
         Bus::assertNothingDispatched();
+
+        Event::forget('eloquent.saved: '.Participant::class);
+
+        runSweep();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Started);
+        Bus::assertDispatchedTimes(SendCandidateInvitationJob::class, 1);
     });
 });
 
