@@ -10,6 +10,7 @@ use App\Models\AvatarTemplate;
 use App\Models\Project;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
+use App\Support\AvatarTemplates\AvatarProviderCatalogue;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TavusPalSync;
@@ -31,6 +32,21 @@ use Symfony\Component\HttpFoundation\Response;
 final class AvatarTemplateController extends Controller
 {
     private const PROVIDERS = ['heygen', 'tavus'];
+
+    /**
+     * Which `resource` values are valid for each provider (avatar-template-
+     * catalogue PR1, delta spec: "resource (voice | avatar for heygen;
+     * voice | replica for tavus)"). Coupled deliberately — `replica` is a
+     * real resource value, just not for `heygen`, so validating provider and
+     * resource independently would accept a combination that has nothing to
+     * fetch.
+     *
+     * @var array<string, list<string>>
+     */
+    private const CATALOGUE_RESOURCES = [
+        'heygen' => ['voice', 'avatar'],
+        'tavus' => ['voice', 'replica'],
+    ];
 
     public function index(): AnonymousResourceCollection
     {
@@ -105,6 +121,42 @@ final class AvatarTemplateController extends Controller
         }
 
         return response()->json(['data' => $specs]);
+    }
+
+    /**
+     * A provider's real inventory for one resource type — the picker's data
+     * source (avatar-template-catalogue PR1, design D1/D3/D4).
+     *
+     * Gated by the SAME `viewAny` ability as `fieldSpecs()` above: this
+     * endpoint proxies a platform-level provider account (no tenant data of
+     * its own), but it carries provider-side identifiers the picker will let
+     * an admin select — the same "closer to credentials than to settings"
+     * reasoning `AvatarTemplatePolicy` already applies to `config`.
+     *
+     * Never a 500: `AvatarProviderCatalogue::fetch()` degrades a provider
+     * failure to `{status: 'unavailable', items: []}` on its own (D3); this
+     * action's only failure mode is a 422 for an unrecognized
+     * `provider`/`resource` pair, checked BEFORE ever calling the provider.
+     */
+    public function catalogue(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', AvatarTemplate::class);
+
+        $validated = $request->validate([
+            'provider' => ['required', 'string', 'in:'.implode(',', self::PROVIDERS)],
+            'resource' => ['required', 'string', 'in:voice,avatar,replica'],
+        ]);
+
+        $provider = $validated['provider'];
+        $resource = $validated['resource'];
+
+        if (! in_array($resource, self::CATALOGUE_RESOURCES[$provider], true)) {
+            throw ValidationException::withMessages([
+                'resource' => 'unknown_resource_for_provider',
+            ]);
+        }
+
+        return response()->json(['data' => AvatarProviderCatalogue::fetch($provider, $resource)]);
     }
 
     public function show(int $id): AvatarTemplateResource
