@@ -131,6 +131,13 @@ test('every ShouldQueue job under app/ references TenantContextScope or is expli
         // all, which is a stronger property than opening a scope would give
         // it: there is nothing here for a tenant boundary to be crossed BY.
         'App\\Jobs\\SendCandidateInvitationJob' => 'Reads nothing. Every value arrives as a scalar from the already-authorized request, so the job performs no query, tenant-scoped or otherwise.',
+        // SendScheduledInterviewNoticeJob (interview-scheduling, design AD-9)
+        // is the exact same shape as SendCandidateInvitationJob above, for
+        // the identical reason: DispatchScheduledInterviewInvitations
+        // resolves every value it needs under its OWN TenantContextScope::runFor()
+        // block before dispatching this job, so the job itself reads nothing
+        // and performs no query, tenant-scoped or otherwise.
+        'App\\Jobs\\SendScheduledInterviewNoticeJob' => 'Reads nothing. Every value arrives as a scalar from DispatchScheduledInterviewInvitations, which already resolved it under its own TenantContextScope::runFor() block, so the job performs no query, tenant-scoped or otherwise.',
         // ResyncCredentialBindingsJob is cross-tenant BY CONSTRUCTION, and
         // unlike the jobs above it is cross-tenant on the WRITE side too.
         //

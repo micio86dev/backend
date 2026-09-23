@@ -15,6 +15,11 @@ return [
     'allowed' => [
         'participants:create',
         'participants:read',
+        // interview-scheduling (design AD-7): deliberately narrower than
+        // participants:create — a client provisioned only to create
+        // participants has no standing reason to also reschedule/cancel
+        // their scheduled interview.
+        'participants:schedule',
         'evaluations:read',
         'progress:read',
         'projects:read',

@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.55.4"
+        "version": "0.56.0"
     },
     "servers": [
         {
@@ -2512,6 +2512,10 @@
                                         ],
                                         "maxLength": 10
                                     },
+                                    "scheduled_at": {
+                                        "type": "string",
+                                        "description": "interview-scheduling (design AD-2/AD-3): optional future start\ntime. The rule object owns the explicit-offset check, the\nfuture check, and the minimum-lead-time check \u2014 the SAME rule\nobject the M2M create and the reschedule endpoint use, never\nre-typed as inline logic three times."
+                                    },
                                     "send_email": {
                                         "type": "boolean",
                                         "description": "Defaults to TRUE. The operator pressed \"invite a candidate\";\nproducing a link and silently not sending it is the behaviour\nthat made this feature necessary in the first place. An operator\nwho wants to deliver the link some other way opts out explicitly."
@@ -2529,34 +2533,41 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "",
+                        "description": "`App.Http.Resources.ParticipantResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "entry_url": {
-                                            "type": "string"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "entry_url": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                },
+                                                "email_sent": {
+                                                    "type": "boolean",
+                                                    "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
+                                                }
+                                            },
+                                            "required": [
+                                                "entry_url",
+                                                "expires_at",
+                                                "email_sent"
+                                            ]
                                         },
-                                        "expires_at": {
-                                            "type": "string"
-                                        },
-                                        "email_sent": {
-                                            "type": "boolean",
-                                            "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
+                                        {
+                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
                                         }
-                                    },
-                                    "required": [
-                                        "entry_url",
-                                        "expires_at",
-                                        "email_sent"
                                     ]
                                 }
                             }
                         }
                     },
                     "409": {
-                        "description": "",
+                        "description": "`message` carries the CODE, not a sentence \u2014 same\nconvention this file already documents a few lines below\nfor EntryLinkRefusalReason::Completed/Failed: the response\nbody is machine-facing (CLAUDE.md \"machine-facing\n responses are not localized\"), and the backoffice already\ntranslates codes through `translateServerCode`.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -2588,6 +2599,25 @@
                                                 "reason": {
                                                     "type": "string",
                                                     "const": "failed"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "entry_link_participant_duplicate_email",
+                                                        "entry_link_participant_duplicate_candidate_ref"
+                                                    ]
+                                                },
+                                                "reason": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
@@ -4552,6 +4582,10 @@
                                             "null"
                                         ],
                                         "maxLength": 10
+                                    },
+                                    "scheduled_at": {
+                                        "type": "string",
+                                        "description": "interview-scheduling (design AD-2/AD-3, T-C1): optional future\nstart time, validated by the SAME rule object PR-B's\n`EntryLinkController` already uses \u2014 the explicit-offset\ncheck, the future check, and the minimum-lead-time check all\nlive in ONE place, never re-typed per surface."
                                     }
                                 },
                                 "required": [
@@ -4580,26 +4614,45 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string"
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "reason": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "enum": [
+                                                        "duplicate_candidate_ref",
+                                                        "duplicate_email",
+                                                        null
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
+                                            ]
                                         },
-                                        "reason": {
-                                            "type": [
-                                                "string",
-                                                "null"
-                                            ],
-                                            "enum": [
-                                                "duplicate_candidate_ref",
-                                                "duplicate_email",
-                                                null
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "reason": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "reason"
                                             ]
                                         }
-                                    },
-                                    "required": [
-                                        "message",
-                                        "reason"
                                     ]
                                 }
                             }
@@ -4809,6 +4862,115 @@
                 }
             }
         },
+        "/m2m/participants/{id}/schedule": {
+            "patch": {
+                "operationId": "participant.updateSchedule",
+                "description": "PATCH /api/m2m/participants/{id}/schedule\nAuth: auth:api-m2m + ability:participants:schedule",
+                "summary": "Reschedule a participant's scheduled interview (interview-scheduling,\ndesign AD-7, tasks T-E4)",
+                "tags": [
+                    "Participant"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "scheduled_at": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "scheduled_at"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "participant.cancelSchedule",
+                "description": "DELETE /api/m2m/participants/{id}/schedule\nAuth: auth:api-m2m + ability:participants:schedule",
+                "summary": "Cancel a participant's scheduled interview (interview-scheduling,\ndesign AD-7, tasks T-E4)",
+                "tags": [
+                    "Participant"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/participants/{id}/transcript/download": {
             "get": {
                 "operationId": "admin.participants.transcript.download",
@@ -4986,6 +5148,119 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/participants/{id}/schedule": {
+            "patch": {
+                "operationId": "participantSchedule.update",
+                "summary": "PATCH /api/participants/{id}/schedule",
+                "tags": [
+                    "ParticipantSchedule"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "scheduled_at": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "scheduled_at"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "participantSchedule.destroy",
+                "summary": "DELETE /api/participants/{id}/schedule",
+                "tags": [
+                    "ParticipantSchedule"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
@@ -8333,6 +8608,25 @@
                             "null"
                         ]
                     },
+                    "scheduled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "scheduling_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "pending",
+                            "notice_sent",
+                            "started",
+                            "cancelled",
+                            null
+                        ]
+                    },
                     "branding": {
                         "type": "object",
                         "properties": {
@@ -8419,6 +8713,8 @@
                     "started_at",
                     "completed_at",
                     "created_at",
+                    "scheduled_at",
+                    "scheduling_status",
                     "branding",
                     "project"
                 ],

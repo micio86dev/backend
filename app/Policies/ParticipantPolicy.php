@@ -85,4 +85,19 @@ class ParticipantPolicy
     {
         return $user->hasRole('admin') || $user->hasRole('operator');
     }
+
+    /**
+     * Reschedule or cancel a scheduled interview (interview-scheduling,
+     * design AD-7) — admin and operator only, `viewer` denied. Same
+     * reasoning as `create()`/`recover()`: this mutates the candidate's
+     * future contact schedule (a write with real consequences — a wrong
+     * reschedule can misinform a candidate, a wrong cancel silently drops
+     * them), not a read. Model-less, like `create()`/`recover()` — the
+     * check runs BEFORE the row is resolved (403 before 404, D4's
+     * established failure order).
+     */
+    public function update(User $user): bool
+    {
+        return $user->hasRole('admin') || $user->hasRole('operator');
+    }
 }
