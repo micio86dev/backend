@@ -50,8 +50,8 @@ class CandidateTokenFactory
      * The jti is auto-populated by tymon's factory. It is NOT stored in Redis here —
      * the exchange endpoint performs the sole atomic consume on first use.
      *
-     * @param  array<string, mixed>  $claims  Must include 'candidate_ref', 'project_id', 'org_id', 'display_name'.
-     *                                        Optional: 'role_code', 'lang'.
+     * @param  array<string, mixed>  $claims  Must include 'candidate_ref', 'project_id', 'org_id', 'display_name',
+     *                                        'email'. Optional: 'role_code', 'lang'.
      * @return string Signed HS256 JWT
      */
     public static function mintSsoLink(array $claims): string
@@ -63,6 +63,7 @@ class CandidateTokenFactory
             'typ' => 'sso-link',
             'candidate_ref' => $candidateRef,
             'display_name' => $claims['display_name'],
+            'email' => $claims['email'],
             'project_id' => $claims['project_id'],
             'org_id' => $claims['org_id'],
             'role_code' => $claims['role_code'] ?? null,

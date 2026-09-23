@@ -47,6 +47,30 @@ test('sso-link JWT carries sub=candidate_ref (not a numeric sub)', function (): 
     expect($payload->get('sub'))->toBe('ext-abc-123');
 });
 
+test('sso-link JWT carries the email claim passed to mintSsoLink', function (): void {
+    $email = uniqid('cand-').'@example.test';
+
+    $claims = [
+        'candidate_ref' => 'ref-email-001',
+        'display_name' => 'Test User',
+        'email' => $email,
+        'project_id' => 1,
+        'org_id' => 1,
+        'role_code' => 'ICO',
+        'lang' => 'en',
+    ];
+
+    $token = CandidateTokenFactory::mintSsoLink($claims);
+    $payload = JWTAuth::setToken($token)->getPayload();
+
+    // EntryLinkMinter passes 'email' explicitly (it is the only writer of
+    // this claim), and SsoExchangeController::exchange() reads it back to
+    // upsert participants.email. A missing/null claim here silently falls
+    // through to the '@invalid.beai.local' placeholder at exchange time,
+    // corrupting the candidate's global identity (CLAUDE.md ruling 8).
+    expect($payload->get('email'))->toBe($email);
+});
+
 test('sso-link JWT carries typ=sso-link', function (): void {
     $claims = [
         'candidate_ref' => 'ref-001',

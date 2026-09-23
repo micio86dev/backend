@@ -159,6 +159,108 @@ test('language resolved from sso-link lang claim', function (): void {
     expect($participant->language)->toBe('es');
 });
 
+// ---------------------------------------------------------------------------
+// Email identity (CandidateTokenFactory hotfix — sso-jwt-missing-email-claim)
+// ---------------------------------------------------------------------------
+
+test('participants.email is set from the sso-link token, never the @invalid.beai.local placeholder', function (): void {
+    $org = Organization::factory()->create();
+    $project = makeExchangeProject($org);
+    $realEmail = 'real-candidate-'.uniqid().'@example.test';
+
+    $token = CandidateTokenFactory::mintSsoLink([
+        'candidate_ref' => 'cand-real-email',
+        'display_name' => 'Real Candidate',
+        'email' => $realEmail,
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => $project->role_code,
+        'lang' => 'en',
+    ]);
+
+    $this->getJson('/api/sso/exchange?token='.$token)->assertOk();
+
+    $participant = Participant::where('project_id', $project->id)
+        ->where('candidate_ref', 'cand-real-email')
+        ->first();
+
+    expect($participant)->not->toBeNull();
+    expect($participant->email)->toBe($realEmail);
+    expect($participant->email)->not->toContain('@invalid.beai.local');
+});
+
+test('re-exchange keeps the same real email and (project_id, email) stays unique per project', function (): void {
+    $org = Organization::factory()->create();
+    $project = makeExchangeProject($org);
+    $realEmail = 'stable-'.uniqid().'@example.test';
+
+    $token1 = CandidateTokenFactory::mintSsoLink([
+        'candidate_ref' => 'cand-stable-email',
+        'display_name' => 'First Name',
+        'email' => $realEmail,
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => $project->role_code,
+        'lang' => 'en',
+    ]);
+    $this->getJson('/api/sso/exchange?token='.$token1)->assertOk();
+
+    $token2 = CandidateTokenFactory::mintSsoLink([
+        'candidate_ref' => 'cand-stable-email',
+        'display_name' => 'Second Name',
+        'email' => $realEmail,
+        'project_id' => $project->id,
+        'org_id' => $org->id,
+        'role_code' => $project->role_code,
+        'lang' => 'en',
+    ]);
+    $this->getJson('/api/sso/exchange?token='.$token2)->assertOk();
+
+    $participants = Participant::where('project_id', $project->id)
+        ->where('candidate_ref', 'cand-stable-email')
+        ->get();
+
+    expect($participants)->toHaveCount(1);
+    expect($participants->first()->email)->toBe($realEmail);
+});
+
+test('the same email in two different organizations/projects is allowed (no cross-tenant uniqueness)', function (): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $projectA = makeExchangeProject($orgA);
+    $projectB = makeExchangeProject($orgB);
+    $sharedEmail = 'shared-'.uniqid().'@example.test';
+
+    $tokenA = CandidateTokenFactory::mintSsoLink([
+        'candidate_ref' => 'cand-shared-a',
+        'display_name' => 'Candidate A',
+        'email' => $sharedEmail,
+        'project_id' => $projectA->id,
+        'org_id' => $orgA->id,
+        'role_code' => $projectA->role_code,
+        'lang' => 'en',
+    ]);
+    $tokenB = CandidateTokenFactory::mintSsoLink([
+        'candidate_ref' => 'cand-shared-b',
+        'display_name' => 'Candidate B',
+        'email' => $sharedEmail,
+        'project_id' => $projectB->id,
+        'org_id' => $orgB->id,
+        'role_code' => $projectB->role_code,
+        'lang' => 'en',
+    ]);
+
+    $this->getJson('/api/sso/exchange?token='.$tokenA)->assertOk();
+    $this->getJson('/api/sso/exchange?token='.$tokenB)->assertOk();
+
+    $participantA = Participant::where('project_id', $projectA->id)->where('candidate_ref', 'cand-shared-a')->first();
+    $participantB = Participant::where('project_id', $projectB->id)->where('candidate_ref', 'cand-shared-b')->first();
+
+    expect($participantA->email)->toBe($sharedEmail);
+    expect($participantB->email)->toBe($sharedEmail);
+    expect($participantA->organization_id)->not->toBe($participantB->organization_id);
+});
+
 test('language falls back to project.language when lang claim absent', function (): void {
     $org = Organization::factory()->create();
     $project = makeExchangeProject($org, ['language' => 'it']);
