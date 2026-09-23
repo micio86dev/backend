@@ -287,7 +287,15 @@ final class DispatchScheduledInterviewInvitations extends Command
         try {
             SendScheduledInterviewNoticeJob::dispatch(...$noticeArgs);
         } catch (Throwable $e) {
-            $this->logPostCommitDispatchFailure($participant, 'notice', ParticipantSchedulingStatus::NoticeSent, $e);
+            $this->revertPostCommitDispatchFailure(
+                $participant,
+                ParticipantSchedulingStatus::Pending,
+                'notice',
+                ParticipantSchedulingStatus::NoticeSent,
+                $e,
+            );
+
+            return false;
         }
 
         return true;
@@ -310,7 +318,18 @@ final class DispatchScheduledInterviewInvitations extends Command
         // DB::transaction() has returned — never from inside the closure — so
         // a save failure rolls the advance to Started back without ever
         // having queued the entry-link email.
-        $startArgs = DB::transaction(function () use ($participant): ?array {
+        // Captured BY REFERENCE from inside the transaction closure below:
+        // the row's real scheduling_status under the very same lock that
+        // performs the advance, needed by the catch below to revert to the
+        // status this SPECIFIC advance came from — which, for the backlog
+        // case (design AD-4), may be `Pending` or `NoticeSent` depending on
+        // whether the notice itself already fired earlier in this same run.
+        // The placeholder below is never actually used: it is unconditionally
+        // overwritten before the closure returns non-null, which is the only
+        // case the code below reads it back in.
+        $previousStatus = ParticipantSchedulingStatus::Pending;
+
+        $startArgs = DB::transaction(function () use ($participant, &$previousStatus): ?array {
             // organization_id filtered explicitly — same reasoning as
             // sendNotice()'s own re-fetch above.
             $locked = Participant::withoutGlobalScopes()
@@ -325,6 +344,8 @@ final class DispatchScheduledInterviewInvitations extends Command
             ], true)) {
                 return null;
             }
+
+            $previousStatus = $locked->scheduling_status;
 
             $project = $locked->project;
 
@@ -386,38 +407,66 @@ final class DispatchScheduledInterviewInvitations extends Command
         try {
             SendCandidateInvitationJob::dispatch(...$startArgs);
         } catch (Throwable $e) {
-            $this->logPostCommitDispatchFailure($participant, 'start', ParticipantSchedulingStatus::Started, $e);
+            $this->revertPostCommitDispatchFailure($participant, $previousStatus, 'start', ParticipantSchedulingStatus::Started, $e);
+
+            return false;
         }
 
         return true;
     }
 
     /**
-     * The one failure mode this sweep cannot self-heal: `sendNotice()` /
-     * `sendStart()` above already committed the status advance, and BOTH
-     * sweep selections exclude `NoticeSent`-that-should-have-dispatched and
-     * `Started` rows from ever being reselected. Reverting the already-saved
-     * status here would only trade this bug for a double-send race against a
-     * concurrent tick, so the row is deliberately left as-is; this is purely
-     * an observability fix, making the failure loud and actionable instead of
-     * indistinguishable from `processOne()`'s generic (retry-next-tick) catch.
-     * The message and the extra fields (`project_id`, `email`, `stage`,
-     * `persisted_status`) are what let an operator tell "will retry itself"
-     * apart from "gone forever unless someone resends by hand".
+     * Recovers from the one failure mode a post-commit dispatch throw
+     * creates: `sendNotice()` / `sendStart()` above already committed the
+     * `NoticeSent`/`Started` advance inside `DB::transaction()`, and BOTH
+     * sweep selections exclude the row at that new status — left as-is it
+     * would never be reselected again, i.e. "never sent and never retried".
+     *
+     * A single, separate UPDATE — deliberately OUTSIDE the already-committed
+     * transaction and without opening a new one of its own — reverts the row
+     * to $revertTo, the exact status it held before THIS specific advance
+     * (`Pending` for a failed notice; `Pending` or `NoticeSent` for a failed
+     * start, depending on whether the notice itself had already fired
+     * earlier in the same run — the caller passes the value it captured
+     * under the very same lock that performed the advance). A plain
+     * `$participant->save()` would not do here: `$participant` is the
+     * outer, before-the-transaction model instance, and its in-memory
+     * `scheduling_status` attribute was never touched by the transaction's
+     * own `$locked` copy — Eloquent's dirty-tracking would see no change
+     * from $participant's own original value and silently skip the write.
+     * Either reverted status remains included in at least one sweep
+     * selection, so the row is retried on the next tick instead of being
+     * lost.
+     *
+     * Residual risk, accepted rather than solved here: if the queue
+     * library's dispatch() call had actually enqueued the job before
+     * throwing (e.g. the exception surfaced from post-enqueue bookkeeping,
+     * not the enqueue itself), this revert makes the next tick send a
+     * SECOND email for a link already queued. Judged strictly better than
+     * the alternative — silently losing the email forever — and the typical
+     * dispatch failure shape in practice is "could not enqueue at all", not
+     * this rarer one.
      */
-    private function logPostCommitDispatchFailure(
+    private function revertPostCommitDispatchFailure(
         Participant $participant,
+        ParticipantSchedulingStatus $revertTo,
         string $stage,
         ParticipantSchedulingStatus $persistedStatus,
         Throwable $e,
     ): void {
-        Log::error('interview-scheduling sweep: SILENT DATA LOSS RISK — post-commit dispatch failed, status already advanced and this row will never be reselected; manual resend required', [
+        Participant::withoutGlobalScopes()
+            ->whereKey($participant->id)
+            ->where('organization_id', $participant->organization_id)
+            ->update(['scheduling_status' => $revertTo->value]);
+
+        Log::error('interview-scheduling sweep: post-commit dispatch failed after the status advance committed; reverted to '.$revertTo->value.' so this row is retried on the next tick', [
             'participant_id' => $participant->id,
             'organization_id' => $participant->organization_id,
             'project_id' => $participant->project_id,
             'email' => $participant->email,
             'stage' => $stage,
             'persisted_status' => $persistedStatus->value,
+            'reverted_status' => $revertTo->value,
             'exception' => $e->getMessage(),
         ]);
     }

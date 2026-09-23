@@ -128,6 +128,61 @@ function bindThrowingDispatcher(string $message): void
 }
 
 /**
+ * Same shape as `bindThrowingDispatcher()`, but throws only when the
+ * dispatched command is an instance of $throwingClass — every other command
+ * is a silent no-op (a stand-in for "sent fine", since this test only cares
+ * about the status the FAILING dispatch reverts to). Needed to reproduce a
+ * same-run backlog sequence where the notice dispatch genuinely succeeds
+ * (advancing Pending -> NoticeSent for real) and ONLY the start dispatch
+ * that follows, moments later in the same tick, throws.
+ */
+function bindSelectivelyThrowingDispatcher(string $throwingClass, string $message): void
+{
+    app()->instance(Dispatcher::class, new class($throwingClass, $message) implements Dispatcher
+    {
+        public function __construct(
+            private readonly string $throwingClass,
+            private readonly string $message,
+        ) {}
+
+        public function dispatch($command)
+        {
+            if ($command instanceof $this->throwingClass) {
+                throw new RuntimeException($this->message);
+            }
+        }
+
+        public function dispatchSync($command, $handler = null) {}
+
+        public function dispatchNow($command, $handler = null) {}
+
+        public function dispatchAfterResponse($command, $handler = null) {}
+
+        public function chain($jobs = null) {}
+
+        public function hasCommandHandler($command)
+        {
+            return false;
+        }
+
+        public function getCommandHandler($command)
+        {
+            return false;
+        }
+
+        public function pipeThrough(array $pipes)
+        {
+            return $this;
+        }
+
+        public function map(array $map)
+        {
+            return $this;
+        }
+    });
+}
+
+/**
  * Runs the command the way the SCHEDULER runs it: with no ambient tenant
  * context whatsoever — see ReapStaleInterviewsTest::runReaper()'s own
  * docblock for exactly why this matters.
@@ -446,7 +501,7 @@ describe('dispatch waits for the transaction to commit', function (): void {
 });
 
 describe('a dispatch that throws AFTER the status advance already committed', function (): void {
-    test('sendNotice: the NoticeSent advance is kept, never reverted, and the failure is logged as a distinguishable, actionable error', function (): void {
+    test('sendNotice: the NoticeSent advance is REVERTED to Pending so the row is retried, the sweep reports it as not sent, and the failure is logged as a distinguishable, actionable error', function (): void {
         $org = sweepOrg();
         $project = sweepProject($org);
         $participant = sweepParticipant($org, $project, [
@@ -458,26 +513,33 @@ describe('a dispatch that throws AFTER the status advance already committed', fu
         bindThrowingDispatcher('queue backend unreachable');
 
         runSweep();
+        $output = Artisan::output();
 
         // The DB::transaction() already committed NoticeSent before the
-        // dispatch line ever ran — a post-commit dispatch failure must NOT
-        // revert it (that would just trade this bug for a double-send race
-        // against a concurrent tick).
-        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
+        // dispatch line ever ran, but a post-commit dispatch failure means
+        // the candidate's email was never actually sent — leaving NoticeSent
+        // committed would exclude this row from EVERY sweep selection
+        // forever (design finding: "never sent and never retried"). The
+        // compensating write below reverts it back to Pending, which the
+        // notice-due AND start-due selections both still match.
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Pending);
+        expect($output)->toContain('0 notice(s)');
 
         Log::shouldHaveReceived('error')
             ->once()
-            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'SILENT DATA LOSS')
+            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'post-commit dispatch failed')
+                && str_contains($message, 'reverted')
                 && $context['participant_id'] === $participant->id
                 && $context['organization_id'] === $org->id
                 && $context['project_id'] === $project->id
                 && $context['email'] === $participant->email
                 && $context['stage'] === 'notice'
                 && $context['persisted_status'] === ParticipantSchedulingStatus::NoticeSent->value
+                && $context['reverted_status'] === ParticipantSchedulingStatus::Pending->value
                 && $context['exception'] === 'queue backend unreachable');
     });
 
-    test('sendStart: the Started advance is kept, never reverted, and the failure is logged as a distinguishable, actionable error', function (): void {
+    test('sendStart: the Started advance is REVERTED to NoticeSent (its status before this advance) so the row is retried, the sweep reports it as not sent, and the failure is logged', function (): void {
         $org = sweepOrg();
         $project = sweepProject($org);
         $participant = sweepParticipant($org, $project, [
@@ -489,19 +551,56 @@ describe('a dispatch that throws AFTER the status advance already committed', fu
         bindThrowingDispatcher('queue backend unreachable');
 
         runSweep();
+        $output = Artisan::output();
 
-        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::Started);
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
+        expect($output)->toContain('0 start email(s)');
 
         Log::shouldHaveReceived('error')
             ->once()
-            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'SILENT DATA LOSS')
+            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'post-commit dispatch failed')
+                && str_contains($message, 'reverted')
                 && $context['participant_id'] === $participant->id
                 && $context['organization_id'] === $org->id
                 && $context['project_id'] === $project->id
                 && $context['email'] === $participant->email
                 && $context['stage'] === 'start'
                 && $context['persisted_status'] === ParticipantSchedulingStatus::Started->value
+                && $context['reverted_status'] === ParticipantSchedulingStatus::NoticeSent->value
                 && $context['exception'] === 'queue backend unreachable');
+    });
+
+    test('sendStart backlog case: the revert target is captured dynamically as NoticeSent — set by the notice dispatch moments earlier in the SAME run — never hardcoded from the row\'s original Pending fixture value', function (): void {
+        $org = sweepOrg();
+        $project = sweepProject($org);
+        // Still Pending and already past BOTH thresholds (design AD-4's own
+        // backlog scenario): the notice loop advances it to NoticeSent and
+        // its dispatch genuinely succeeds; only the START dispatch that
+        // follows, moments later in the SAME run, throws. The value
+        // sendStart() must revert to is NoticeSent — the row's real status
+        // at THAT point in this run — not the Pending it started the run
+        // with, and not a value hardcoded from this fixture.
+        $participant = sweepParticipant($org, $project, [
+            'scheduled_at' => now()->subHours(2),
+            'scheduling_status' => ParticipantSchedulingStatus::Pending,
+        ]);
+
+        Log::spy();
+        bindSelectivelyThrowingDispatcher(SendCandidateInvitationJob::class, 'queue backend unreachable');
+
+        runSweep();
+        $output = Artisan::output();
+
+        expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
+        expect($output)->toContain('1 notice(s)')
+            ->and($output)->toContain('0 start email(s)');
+
+        Log::shouldHaveReceived('error')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'post-commit dispatch failed')
+                && $context['stage'] === 'start'
+                && $context['persisted_status'] === ParticipantSchedulingStatus::Started->value
+                && $context['reverted_status'] === ParticipantSchedulingStatus::NoticeSent->value);
     });
 });
 
