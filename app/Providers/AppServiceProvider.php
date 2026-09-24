@@ -342,18 +342,31 @@ class AppServiceProvider extends ServiceProvider
         }
 
         // public-api step 3: the `public-api` named rate limiter — SPEC.md
-        // §3.2 "Rate limiting: per organization, token bucket". This
-        // declarative registration is the single source of truth for the
-        // bucket DEFINITION (key + limit); `App\Http\Middleware\PublicApi\
-        // RateLimitPublicApi` reads the SAME `keyFor()`/`maxAttemptsFor()` it
-        // calls here rather than re-deriving either independently — see that
-        // class's own docblock for why the middleware talks to the
-        // underlying `Illuminate\Cache\RateLimiter` counter directly instead
-        // of through the `throttle:public-api` alias (contract-mandated
-        // header names/shape Laravel's built-in middleware does not
-        // produce). `Limit::none()` for a request with no resolved client is
-        // unreachable in the real `/v1` stack (`AuthenticatePublicApi`
-        // always runs first) but keeps this callback total.
+        // §3.2 "Rate limiting: per organization, token bucket". G-30
+        // (documented judgement call, step 3 review follow-up 5): despite
+        // that wording, this is a FIXED-WINDOW counter, not a token bucket
+        // — `Illuminate\Cache\RateLimiter` has no other mode. A fixed
+        // window can let a client push up to `2 * max` requests through a
+        // short span straddling a window boundary (`max` at the end of one
+        // window, `max` more at the start of the next); a true token
+        // bucket would not. That cross-window burst is an accepted
+        // deviation from the spec's literal wording — see
+        // `RateLimitPublicApi`'s own docblock for the full reasoning and
+        // for the WITHIN-window atomicity guarantee this class does hold
+        // (a single window can never itself exceed `max`).
+        //
+        // This declarative registration is the single source of truth for
+        // the bucket DEFINITION (key + limit) AND the live bucket
+        // `RateLimitPublicApi` resolves through `$limiter->limiter(
+        // 'public-api')` rather than calling `keyFor()`/`maxAttemptsFor()`
+        // directly — see that class's own docblock for why the middleware
+        // still talks to the underlying `Illuminate\Cache\RateLimiter`
+        // counter directly instead of through the `throttle:public-api`
+        // alias (contract-mandated header names/shape Laravel's built-in
+        // middleware does not produce). `Limit::none()` for a request with
+        // no resolved client is unreachable in the real `/v1` stack
+        // (`AuthenticatePublicApi` always runs first) but keeps this
+        // callback total.
         RateLimiter::for('public-api', function (Request $request) {
             /** @var ApiClient|null $client */
             $client = $request->attributes->get('public_api.client');

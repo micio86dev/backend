@@ -23,9 +23,12 @@ use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
+use Tests\Helpers\PublicApi\ThrowsHttpResponseExceptionMiddleware;
 
 beforeEach(function (): void {
     Route::middleware([AssignRequestId::class])->prefix('api/v1')->group(function (): void {
@@ -48,6 +51,29 @@ beforeEach(function (): void {
         Route::get('/_probe/throttled', function (): never {
             throw new TooManyRequestsHttpException(5, 'Too Many Attempts.');
         });
+
+        // Step 3 review follow-up 8: a Gate/policy denial thrown as a raw
+        // AuthorizationException (e.g. Gate::authorize()) — Laravel's OWN
+        // exception handler converts this to AccessDeniedHttpException
+        // BEFORE any render() callback ever sees it (see
+        // Illuminate\Foundation\Exceptions\Handler::prepareException()),
+        // so this probe exercises the REAL end-to-end conversion, not a
+        // direct call to the renderer.
+        Route::get('/_probe/authz', function (): never {
+            throw new AuthorizationException('This action is unauthorized.');
+        });
+
+        // Step 3 review follow-up 10: a generic HttpExceptionInterface
+        // (neither a 404/405 nor TooManyRequestsHttpException) must keep
+        // its OWN headers — e.g. Retry-After on a 503 maintenance response.
+        Route::get('/_probe/maintenance', function (): never {
+            throw new HttpException(503, 'Maintenance.', null, ['Retry-After' => '120']);
+        });
+
+        // Step 3 review follow-up 9 — see ThrowsHttpResponseExceptionMiddleware's
+        // own docblock for why this must throw from MIDDLEWARE, not a route action.
+        Route::get('/_probe/http-response-exception', fn () => response()->json(['ok' => true]))
+            ->middleware(ThrowsHttpResponseExceptionMiddleware::class);
     });
 
     Route::middleware([AssignRequestId::class, RejectApiKeyInQuery::class, AuthenticatePublicApi::class])
@@ -121,4 +147,28 @@ test('T-CONV-004: a missing scope → 403 insufficient_scope, problem+json valid
 
     $response->assertStatus(403)->assertJsonPath('code', 'insufficient_scope');
     $this->assertProblemMatchesContract($response, 403);
+});
+
+// ─── Step 3 review follow-ups (items 8-10) ─────────────────────────────────
+
+test('review follow-up 8 (G-31): a policy AuthorizationException on /v1 renders 404 not_found, never a misleading 403', function (): void {
+    $response = $this->getJson('/api/v1/_probe/authz');
+
+    $response->assertStatus(404)->assertJsonPath('code', 'not_found');
+    $this->assertProblemMatchesContract($response, 404);
+});
+
+test('review follow-up 9: HttpResponseException passes through untouched — abort(response()) on /v1 is never turned into a 500', function (): void {
+    $response = $this->getJson('/api/v1/_probe/http-response-exception');
+
+    $response->assertStatus(418)->assertJson(['custom' => 'shape']);
+});
+
+test('review follow-up 10: a generic HttpException on /v1 keeps its own headers (e.g. Retry-After on a 503)', function (): void {
+    $response = $this->getJson('/api/v1/_probe/maintenance');
+
+    $response->assertStatus(503)
+        ->assertJsonPath('code', 'internal_error')
+        ->assertHeader('Retry-After', '120');
+    $this->assertProblemMatchesContract($response, 503);
 });

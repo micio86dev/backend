@@ -76,6 +76,13 @@ return [
      * reads these ONLY when the organization has no per-org override
      * (`organizations.public_api_rate_limit_live`/`_test` — both nullable,
      * configurable in the backoffice).
+     *
+     * G-30 (documented judgement call): the SPEC wording above says "token
+     * bucket"; the actual implementation is a FIXED-WINDOW counter (see
+     * `RateLimitPublicApi`'s own docblock) — a documented, accepted
+     * deviation, not a bug. A fixed window can admit a short burst of up to
+     * `2 * max` requests straddling a window boundary; it never admits more
+     * than `max` WITHIN a single window.
      */
     'rate_limit' => [
         'live' => (int) (env('PUBLIC_API_RATE_LIMIT_LIVE') ?: 600),

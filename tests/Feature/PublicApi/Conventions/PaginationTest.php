@@ -83,32 +83,34 @@ test('T-CONV-001: a row inserted after fetching page 1 never shifts page 2', fun
     expect($page3['next_cursor'])->toBeNull();
 });
 
-test('T-CONV-002: limit=0 → 422 validation_failed (min)', function (): void {
+test('T-CONV-002 (G-28): limit=0 → 400 validation_failed (min), not 422 — query-parameter errors are 400', function (): void {
     $response = $this->getJson('/api/v1/_probe/clients?limit=0');
 
-    $response->assertStatus(422)
+    $response->assertStatus(400)
         ->assertJsonPath('code', 'validation_failed')
         ->assertJsonPath('errors.0.field', 'limit')
         ->assertJsonPath('errors.0.code', 'min');
-    $this->assertProblemMatchesContract($response, 422);
+    $this->assertProblemMatchesContract($response, 400);
 });
 
-test('T-CONV-002: limit=101 → 422 validation_failed (max)', function (): void {
+test('T-CONV-002 (G-28): limit=101 → 400 validation_failed (max), not 422', function (): void {
     $response = $this->getJson('/api/v1/_probe/clients?limit=101');
 
-    $response->assertStatus(422)
+    $response->assertStatus(400)
         ->assertJsonPath('code', 'validation_failed')
         ->assertJsonPath('errors.0.field', 'limit')
         ->assertJsonPath('errors.0.code', 'max');
+    $this->assertProblemMatchesContract($response, 400);
 });
 
-test('T-CONV-002: limit=abc → 422 validation_failed (integer)', function (): void {
+test('T-CONV-002 (G-28): limit=abc → 400 validation_failed (integer), not 422', function (): void {
     $response = $this->getJson('/api/v1/_probe/clients?limit=abc');
 
-    $response->assertStatus(422)
+    $response->assertStatus(400)
         ->assertJsonPath('code', 'validation_failed')
         ->assertJsonPath('errors.0.field', 'limit')
         ->assertJsonPath('errors.0.code', 'integer');
+    $this->assertProblemMatchesContract($response, 400);
 });
 
 test('T-CONV-002: limit=100 is accepted', function (): void {

@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Support\PublicApi;
 
 use App\Exceptions\PublicApi\InvalidCursorException;
+use App\Exceptions\PublicApi\QueryValidationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use LogicException;
 
 /**
  * Cursor-based pagination for the BEAI Public API (`/v1`) — SPEC.md §3.2
@@ -69,7 +70,7 @@ final class CursorPage
      * @param  Builder<Model>  $query  UNORDERED — this method applies its own `created_at desc, id desc` order and must own it entirely.
      * @return array{data: list<mixed>, next_cursor: string|null, has_more: bool}
      *
-     * @throws ValidationException when `?limit=` is present and out of `[1, 100]` or non-integer.
+     * @throws QueryValidationException when `?limit=` is present and out of `[1, 100]` or non-integer (G-28: renders 400, not 422 — a QUERY parameter, not a request body).
      * @throws InvalidCursorException when `?cursor=` is present and unsigned, mistampered, or malformed.
      */
     public static function paginate(Builder $query, Request $request, callable $mapItem): array
@@ -100,9 +101,7 @@ final class CursorPage
         $last = $page->last();
 
         if ($hasMore && $last !== null) {
-            $lastId = $last->getKey();
-            $lastId = is_int($lastId) || is_string($lastId) ? $lastId : '';
-            $nextCursor = self::encodeCursor($last->getAttribute('created_at'), $lastId);
+            $nextCursor = self::encodeCursor($last);
         }
 
         return [
@@ -120,10 +119,19 @@ final class CursorPage
             return self::DEFAULT_LIMIT;
         }
 
-        Validator::make(
+        $validator = Validator::make(
             ['limit' => $raw],
             ['limit' => ['required', 'integer', 'min:'.self::MIN_LIMIT, 'max:'.self::MAX_LIMIT]],
-        )->validate();
+        );
+
+        if ($validator->fails()) {
+            // G-28: Validator::validate() always throws the plain, base
+            // ValidationException — replicated manually here (fails() +
+            // throw) so a query-parameter failure carries the tagged
+            // QueryValidationException instead, which
+            // PublicApiExceptionRenderer maps to 400, not 422.
+            throw new QueryValidationException($validator);
+        }
 
         return (int) $raw;
     }
@@ -189,13 +197,40 @@ final class CursorPage
         return [$createdAt, ctype_digit($id) ? (int) $id : $id];
     }
 
-    private static function encodeCursor(mixed $createdAt, int|string $id): string
+    /**
+     * Review follow-up 11: previously silently fell back to `Carbon::now()`
+     * (and, at the call site, to an empty-string id) when `created_at` or
+     * the primary key was unusable — encoding a cursor that points at the
+     * WRONG row, or no row at all, rather than surfacing the data problem
+     * that produced it. A model whose `created_at` is genuinely null (a
+     * nullable column) or whose key is neither `int` nor `string` cannot be
+     * placed in a `(created_at, id)` cursor at all; it is a configuration
+     * error in the caller's query/model, not something to paper over.
+     *
+     * @throws LogicException naming the model class and the unusable column.
+     */
+    private static function encodeCursor(Model $model): string
     {
+        $createdAt = $model->getAttribute('created_at');
+
         $carbon = match (true) {
             $createdAt instanceof Carbon => $createdAt,
             is_string($createdAt) => Carbon::parse($createdAt),
-            default => Carbon::now(),
+            default => throw new LogicException(sprintf(
+                '%s: cannot build a pagination cursor — created_at is null or not a usable timestamp.',
+                $model::class,
+            )),
         };
+
+        $id = $model->getKey();
+
+        if (! is_int($id) && ! is_string($id)) {
+            throw new LogicException(sprintf(
+                '%s: cannot build a pagination cursor — the primary key is neither int nor string.',
+                $model::class,
+            ));
+        }
+
         $payload = $carbon->copy()->utc()->format(self::CURSOR_TIMESTAMP_FORMAT).'|'.$id;
         $signature = hash_hmac('sha256', $payload, config()->string('app.key'));
 

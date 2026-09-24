@@ -21,7 +21,12 @@ use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
+use Illuminate\Cache\RateLimiter;
+use Illuminate\Cache\Repository;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Tests\Helpers\PublicApi\StaleReadArrayStore;
+use Tests\Helpers\PublicApi\ThrowingArrayStore;
 
 beforeEach(function (): void {
     Route::middleware([
@@ -122,4 +127,108 @@ test('T-CONV-007: with no org override, the platform default limit applies', fun
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl')
         ->assertOk()
         ->assertHeader('RateLimit-Limit', (string) config('public_api.rate_limit.live'));
+});
+
+// ─── Step 3 review follow-ups (items 1-4) ──────────────────────────────────
+
+test('review follow-up 1: RateLimit-Remaining is computed correctly when the cache store returns attempts as a numeric string (Redis behaviour)', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 10]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    // A REAL cache repository underneath (hit()/availableIn() must keep
+    // working) whose attempts() is forced to return a numeric STRING —
+    // exactly what Illuminate\Cache\RateLimiter::attempts() gets back from
+    // a Redis-backed store, since increment()/add() are called with
+    // withoutSerializationOrCompression() and Redis itself has no native
+    // integer type.
+    $fakeLimiter = new class(app('cache.store')) extends RateLimiter
+    {
+        public function attempts($key)
+        {
+            return '3';
+        }
+    };
+    app()->instance(RateLimiter::class, $fakeLimiter);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+
+    $response->assertOk()->assertHeader('RateLimit-Remaining', '7');
+});
+
+test('review follow-up 2: a rate-limiter cache outage fails open — the request proceeds without RateLimit-* headers, never a 500', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 5]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    $throwingRepository = new Repository(new ThrowingArrayStore(['increment']));
+    app()->instance(RateLimiter::class, new RateLimiter($throwingRepository));
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+
+    $response->assertOk();
+    expect($response->headers->has('RateLimit-Limit'))->toBeFalse();
+    expect($response->headers->has('RateLimit-Remaining'))->toBeFalse();
+});
+
+test('review follow-up 3: rate limiting stays atomic — a stale attempts() read never lets a burst exceed the limit', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 3]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    // Every attempts()/tooManyAttempts() read sees "0 attempts so far",
+    // frozen — exactly what a concurrent request's own hit() has not yet
+    // been observed as under a real check-then-hit race. increment()
+    // (what hit() writes through) still mutates the real counter, so only
+    // an implementation that trusts hit()'s OWN return value — never a
+    // separate attempts() read — stays correctly bounded.
+    $staleRepository = new Repository(new StaleReadArrayStore(0));
+    app()->instance(RateLimiter::class, new RateLimiter($staleRepository));
+
+    $statuses = [];
+    foreach (range(1, 4) as $_) {
+        $statuses[] = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+            ->getJson('/api/v1/_probe/rl')
+            ->getStatusCode();
+    }
+
+    expect($statuses)->toBe([200, 200, 200, 429]);
+});
+
+test('review follow-up 3b: N+1 sequential hits at the limit boundary yield exactly N successes', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 4]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    $statuses = [];
+    foreach (range(1, 5) as $_) {
+        $statuses[] = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+            ->getJson('/api/v1/_probe/rl')
+            ->getStatusCode();
+    }
+
+    expect($statuses)->toBe([200, 200, 200, 200, 429]);
+});
+
+test('review follow-up 4: the organization rate-limit override is cached — the second request makes zero organization queries', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 7]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    // Warm-up — populate whatever cache the fix introduces, so only the
+    // SECOND request is charged for it.
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl')->assertOk();
+
+    $organizationQueries = 0;
+    DB::listen(function ($query) use (&$organizationQueries): void {
+        if (str_contains($query->sql, '"organizations"')) {
+            $organizationQueries++;
+        }
+    });
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl')
+        ->assertOk()
+        ->assertHeader('RateLimit-Limit', '7');
+
+    expect($organizationQueries)->toBe(0);
 });

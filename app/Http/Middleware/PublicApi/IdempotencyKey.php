@@ -7,11 +7,14 @@ namespace App\Http\Middleware\PublicApi;
 use App\Models\ApiClient;
 use App\Support\PublicApi\Problem;
 use Closure;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * `Idempotency-Key` support for `POST` routes on the BEAI Public API
@@ -31,6 +34,16 @@ use Symfony\Component\HttpFoundation\Response;
  * a durable audit trail, so it belongs with the rest of this API's
  * request-scoped cache state rather than acquiring its own persistence
  * layer.
+ *
+ * Every cache touch below — the lock, the replay-record read, and the
+ * replay-record write — is exception-guarded and FAILS OPEN on a cache
+ * outage (step 3 review follow-up 7), the same discipline
+ * `App\Http\Middleware\PublicApi\RateLimitPublicApi` and `App\Support\
+ * PublicApi\ApiKeyResolver` already apply to their own cache touches: a
+ * Redis outage must never turn a `POST` request into a 500, and a cache
+ * failure that happens AFTER the handler already succeeded must never
+ * discard that response — idempotency itself is a best-effort convenience,
+ * not something the caller's request should die for.
  *
  * MUST run after `AuthenticatePublicApi` (needs `public_api.client` for the
  * scope key) — applied per-route via the `idempotent` alias rather than
@@ -82,25 +95,38 @@ final class IdempotencyKey
         }
 
         $scope = self::scopeFor($client, $request, $rawKey);
-        $lock = Cache::lock('idem:'.$scope, config()->integer('public_api.idempotency.lock_ttl_seconds', 30));
 
         try {
+            $lock = Cache::lock('idem:'.$scope, config()->integer('public_api.idempotency.lock_ttl_seconds', 30));
             $lock->block(config()->integer('public_api.idempotency.lock_wait_seconds', 5));
         } catch (LockTimeoutException) {
             return Problem::make($request, 409, 'idempotency_in_progress', 'Idempotency key already in progress');
+        } catch (Throwable $e) {
+            self::logCacheOutage($e);
+
+            // Fail open — process the request without idempotency rather
+            // than 500 the caller for a cache outage that has nothing to do
+            // with their request.
+            return $next($request);
         }
 
         try {
             return $this->handleLocked($request, $next, $scope);
         } finally {
-            $lock->release();
+            self::releaseQuietly($lock);
         }
     }
 
     /**
-     * The scope key `hash('sha256', "{org_id}|{mode}|{method}|{path}|{key}")`
-     * — SPEC.md §3.2 "same key + same org + same body within 24h". Public so
-     * a test can hold the SAME lock externally to exercise the concurrent
+     * The scope key
+     * `hash('sha256', "{org_id}|{mode}|{client_id}|{method}|{path}|{key}")`
+     * — SPEC.md §3.2 "same key + same org + same body within 24h", WITH the
+     * API client id folded in (step 3 review follow-up 6): two DIFFERENT
+     * clients of the SAME organization sharing an `Idempotency-Key` value —
+     * a coincidence the contract never rules out — used to collide on the
+     * exact same scope, so the second client's request silently replayed
+     * the FIRST client's response instead of running its own. Public so a
+     * test can hold the SAME lock externally to exercise the concurrent
      * (`idempotency_in_progress`) branch deterministically.
      */
     public static function scopeFor(ApiClient $client, Request $request, string $rawKey): string
@@ -108,6 +134,7 @@ final class IdempotencyKey
         return hash('sha256', implode('|', [
             $client->organization_id,
             $client->mode->value,
+            $client->id,
             $request->method(),
             $request->path(),
             $rawKey,
@@ -122,8 +149,16 @@ final class IdempotencyKey
         $storeKey = 'idempotency:'.$scope;
         $fingerprint = hash('sha256', (string) $request->getContent());
 
-        /** @var array{fingerprint: string, status: int, headers: array<string, string>, body: string}|null $cached */
-        $cached = Cache::get($storeKey);
+        try {
+            /** @var array{fingerprint: string, status: int, headers: array<string, string>, body: string}|null $cached */
+            $cached = Cache::get($storeKey);
+        } catch (Throwable $e) {
+            self::logCacheOutage($e);
+
+            // Fail open — process the request without idempotency rather
+            // than 500 on a read failure.
+            $cached = null;
+        }
 
         if ($cached !== null) {
             if (! hash_equals($cached['fingerprint'], $fingerprint)) {
@@ -136,12 +171,23 @@ final class IdempotencyKey
         $response = $next($request);
 
         if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300) {
-            Cache::put($storeKey, [
-                'fingerprint' => $fingerprint,
-                'status' => $response->getStatusCode(),
-                'headers' => self::replayableHeaders($response),
-                'body' => (string) $response->getContent(),
-            ], config()->integer('public_api.idempotency.record_ttl_seconds', 86400));
+            try {
+                Cache::put($storeKey, [
+                    'fingerprint' => $fingerprint,
+                    'status' => $response->getStatusCode(),
+                    'headers' => self::replayableHeaders($response),
+                    'body' => (string) $response->getContent(),
+                ], config()->integer('public_api.idempotency.record_ttl_seconds', 86400));
+            } catch (Throwable $e) {
+                self::logCacheOutage($e);
+
+                // Guarded — a cache write failure here must never turn an
+                // already-SUCCEEDED request into a 500; the response below
+                // is returned normally, it is just never recorded for
+                // replay (the caller's own retry, if any, re-executes the
+                // handler instead of replaying — no worse than idempotency
+                // being unavailable entirely).
+            }
         }
 
         return $response;
@@ -179,5 +225,33 @@ final class IdempotencyKey
         $response->headers->set('Idempotent-Replayed', 'true');
 
         return $response;
+    }
+
+    /**
+     * A lock release failure is non-fatal — the lock's own TTL
+     * (`public_api.idempotency.lock_ttl_seconds`) bounds the worst case
+     * (another request waits out the TTL instead of the release), never a
+     * 500 on an otherwise-successful request.
+     */
+    private static function releaseQuietly(Lock $lock): void
+    {
+        try {
+            $lock->release();
+        } catch (Throwable $e) {
+            self::logCacheOutage($e);
+        }
+    }
+
+    /**
+     * Logged at most once per request — every catch site above is reached
+     * at most once per request lifecycle (none of them loop), so no
+     * separate de-duplication bookkeeping is needed.
+     */
+    private static function logCacheOutage(Throwable $e): void
+    {
+        Log::warning('public-api: idempotency cache unavailable — failing open', [
+            'exception' => $e::class,
+            'message' => $e->getMessage(),
+        ]);
     }
 }

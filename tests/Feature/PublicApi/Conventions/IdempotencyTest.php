@@ -22,9 +22,11 @@ use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
+use Illuminate\Cache\Repository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Route;
+use Tests\Helpers\PublicApi\ThrowingArrayStore;
 
 beforeEach(function (): void {
     Route::middleware([
@@ -168,4 +170,79 @@ test('a non-2xx response is never replayed — a second identical-key request re
     $first->assertStatus(422);
     $second->assertStatus(422);
     expect($second->headers->get('Idempotent-Replayed'))->toBeNull();
+});
+
+// ─── Step 3 review follow-ups (items 6-7) ──────────────────────────────────
+
+test('review follow-up 6: the same Idempotency-Key and body from a DIFFERENT client of the same organization is never replayed', function (): void {
+    $org = Organization::factory()->create();
+
+    $rawKeyA = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKeyA)->create(['organization_id' => $org->id]);
+
+    $rawKeyB = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKeyB)->create(['organization_id' => $org->id]);
+
+    $sharedIdempotencyKey = 'shared-key-across-clients';
+    $payload = ['a' => 1];
+
+    $first = $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyA, 'Idempotency-Key' => $sharedIdempotencyKey])
+        ->postJson('/api/v1/_probe/idempotent', $payload);
+    $first->assertCreated();
+    $firstCallNumber = $first->json('call_number');
+
+    $second = $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyB, 'Idempotency-Key' => $sharedIdempotencyKey])
+        ->postJson('/api/v1/_probe/idempotent', $payload);
+
+    $second->assertCreated();
+    expect($second->headers->get('Idempotent-Replayed'))->toBeNull();
+    expect($second->json('call_number'))->not->toBe($firstCallNumber);
+});
+
+test('review follow-up 7a: a lock-acquisition cache outage fails open — the handler runs normally, no 500', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    Cache::swap(new Repository(new ThrowingArrayStore(['lock'], keyPrefix: 'idem:')));
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.$rawKey,
+        'Idempotency-Key' => 'outage-key-lock',
+    ])->postJson('/api/v1/_probe/idempotent', ['a' => 1]);
+
+    $response->assertCreated();
+    expect($response->headers->get('Idempotent-Replayed'))->toBeNull();
+});
+
+test('review follow-up 7b: a cache-read outage fails open — the handler runs normally instead of replaying, no 500', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    Cache::swap(new Repository(new ThrowingArrayStore(['get'], keyPrefix: 'idempotency:')));
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.$rawKey,
+        'Idempotency-Key' => 'outage-key-read',
+    ])->postJson('/api/v1/_probe/idempotent', ['a' => 1]);
+
+    $response->assertCreated();
+    expect($response->headers->get('Idempotent-Replayed'))->toBeNull();
+});
+
+test('review follow-up 7c: a cache-write outage after a successful handler still returns the real response, no 500', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    Cache::swap(new Repository(new ThrowingArrayStore(['put'], keyPrefix: 'idempotency:')));
+
+    $response = $this->withHeaders([
+        'Authorization' => 'Bearer '.$rawKey,
+        'Idempotency-Key' => 'outage-key-write',
+    ])->postJson('/api/v1/_probe/idempotent', ['a' => 1]);
+
+    $response->assertCreated();
+    expect($response->json('received'))->toBe(['a' => 1]);
 });
