@@ -55,10 +55,18 @@ final class InterviewSerializer
      * single row each — ever pass) falls back to the original per-row query,
      * which is the right cost for exactly one row.
      *
+     * `$recordingReady`, when given, is used VERBATIM instead of running a
+     * per-participant query — the SAME batched-vs-single-row split
+     * `$progress` already draws (gga review, step 6 follow-up, finding 5):
+     * `InterviewController::index()`/`show()` batch it for the whole page
+     * via `progressForMany()`; `null` (the default, and the only thing
+     * `store()` — a brand-new enrolment with no recording possible yet —
+     * ever passes) falls back to a per-row lookup.
+     *
      * @param  list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>|null  $progress
      * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string}
      */
-    public static function toArray(Participant $participant, bool $expandProject = false, ?array $progress = null): array
+    public static function toArray(Participant $participant, bool $expandProject = false, ?array $progress = null, ?bool $recordingReady = null): array
     {
         $status = InterviewStatus::fromStored($participant->status);
         $project = self::project($participant);
@@ -75,17 +83,34 @@ final class InterviewSerializer
             'livemode' => $participant->mode === ApiKeyMode::Live,
             'metadata' => $participant->metadata ?? [],
             'exit_redirect_url' => $participant->exit_redirect_url,
-            'hosted_url' => self::hostedUrl(),
+            // ALWAYS null here — a plain read never has a fresh session
+            // token to embed one for. Exported as `string|null` (not the
+            // literal `null` this line alone would infer) by
+            // `App\Support\Scramble\InterviewHostedUrlNullableExtension` —
+            // see that class's own docblock; step 6 review follow-up, Part
+            // A item 4 removed the runtime config hack this used to
+            // route through.
+            'hosted_url' => null,
             'progress' => $progress ?? self::progress($participant),
             'started_at' => $participant->started_at?->toISOString(),
             'completed_at' => $participant->completed_at?->toISOString(),
             'transcript_ready' => in_array($status, [InterviewStatus::UnderEvaluation, InterviewStatus::Completed], true),
             'scoring_ready' => $status === InterviewStatus::Completed,
-            // G-01 (binding): video recordings are backoffice-only, never
-            // exposed via the public API — audio readiness is not yet wired
-            // in step 5 (no recording pipeline read here), so this is
-            // always false until a later step adds it.
-            'recording_ready' => false,
+            // G-01: true iff an `interview_recordings` row exists for this
+            // participant (audio only — video is never exposed, see
+            // `App\Http\Controllers\PublicApi\RecordingController`'s own
+            // docblock). gga review, step 6 follow-up, finding 5: this used
+            // to be a hardcoded `false` left over from before step 6 built
+            // the recording pipeline.
+            // (bool) cast — `self::recordingReady()`'s return flows through
+            // a loop-populated array (`recordingReadyForMany()`'s own
+            // `$result[...] = true;`), which Scramble's export could not
+            // narrow precisely and rendered as `anyOf: [string, boolean]`
+            // without this cast, despite the method's own native `: bool`
+            // return type. Caught via the `scramble:export` diff, not a
+            // test — same class of fix as
+            // `App\Support\Scramble\InterviewHostedUrlNullableExtension`.
+            'recording_ready' => (bool) ($recordingReady ?? self::recordingReady($participant)),
             'created_at' => (string) $participant->created_at->toISOString(),
             'updated_at' => (string) $participant->updated_at->toISOString(),
         ];
@@ -95,32 +120,6 @@ final class InterviewSerializer
         }
 
         return $data;
-    }
-
-    /**
-     * `null` in EVERY environment that leaves `public_api.
-     * interview_hosted_url_override` unset (see this class's own docblock
-     * for why a plain read never has a fresh token to embed one for) — but
-     * genuinely `?string`, not a bare literal `null` (step 5 review
-     * follow-up, Part B item 4): Scramble's schema inference reads an
-     * array literal's value types from the code that builds it, not from
-     * `toArray()`'s own `@return` docblock, so a literal `null` there
-     * exported `Interview.hosted_url` as the type `null` only, never the
-     * `string|null` `openapi.yaml`'s own `Interview` schema declares it
-     * as. `PublicApiExceptionRenderer`-style honesty: a REAL, reachable
-     * branch (config-driven, never a compile-time-constant `null`) is
-     * what makes PHPStan accept the `?string` return type on its own
-     * merits, without an ignore — the SAME reason this config key exists
-     * at all, not only to satisfy static analysis. No production
-     * environment sets it; it is documented purely as the contract
-     * escape hatch a future SPEC.md revision (or an operator override)
-     * could use without another docblock/type round-trip.
-     */
-    private static function hostedUrl(): ?string
-    {
-        $override = config('public_api.interview_hosted_url_override');
-
-        return is_string($override) && $override !== '' ? $override : null;
     }
 
     /**
@@ -185,16 +184,25 @@ final class InterviewSerializer
 
         $participantIds = [];
         $projectIds = [];
+        $organizationIds = [];
 
         foreach ($participants as $participant) {
             $participantIds[] = $participant->id;
             $projectIds[] = $participant->project_id;
+            $organizationIds[] = $participant->organization_id;
         }
 
         $projectIds = array_values(array_unique($projectIds));
+        // gga review, step 6 follow-up, finding 6: threaded through to BOTH
+        // batch queries below — see each one's own docblock for why.
+        // Usually a single-element list (every real caller's page is one
+        // organization's own `/v1/interviews`), but not assumed to be:
+        // `array_unique()` so a deliberately multi-org batch (this class's
+        // own unit tests) still filters correctly.
+        $organizationIds = array_values(array_unique($organizationIds));
 
-        $competenciesByProject = self::competencyCodesByProject($projectIds);
-        $sessionsByParticipant = self::sessionsByParticipant($participantIds);
+        $competenciesByProject = self::competencyCodesByProject($projectIds, $organizationIds);
+        $sessionsByParticipant = self::sessionsByParticipant($participantIds, $organizationIds);
 
         $result = [];
 
@@ -217,14 +225,27 @@ final class InterviewSerializer
     }
 
     /**
+     * `project_competencies` itself carries no `organization_id` column —
+     * its own migration documents that as a deliberate D22 EXEMPTION,
+     * inheriting scoping implicitly through the `project_id` FK
+     * (`projects` IS tenant-scoped). Joined to `projects` here (gga review,
+     * step 6 follow-up, finding 6) so that inheritance is made EXPLICIT —
+     * matching the SAME "stated explicitly, never relied on transitively"
+     * discipline every other tenant-scoped query in this codebase already
+     * follows for the identical reason — rather than trusting that
+     * `$projectIds` was already correctly scoped by the caller.
+     *
      * @param  list<int>  $projectIds
+     * @param  list<int>  $organizationIds
      * @return array<int, list<string>> keyed by project id, competency codes in project order
      */
-    private static function competencyCodesByProject(array $projectIds): array
+    private static function competencyCodesByProject(array $projectIds, array $organizationIds): array
     {
         $rows = DB::table('project_competencies')
             ->join('framework_competencies', 'project_competencies.competency_id', '=', 'framework_competencies.id')
+            ->join('projects', 'project_competencies.project_id', '=', 'projects.id')
             ->whereIn('project_competencies.project_id', $projectIds)
+            ->whereIn('projects.organization_id', $organizationIds)
             ->orderBy('project_competencies.position')
             ->select(['project_competencies.project_id as project_id', 'framework_competencies.code as code'])
             ->get();
@@ -248,13 +269,20 @@ final class InterviewSerializer
     }
 
     /**
+     * `interview_sessions` DOES carry its own `organization_id` column
+     * (`InterviewSession extends TenantModel`) — filtered directly here
+     * (gga review, step 6 follow-up, finding 6), the same D22 discipline
+     * `competencyCodesByProject()`'s own docblock explains.
+     *
      * @param  list<int>  $participantIds
+     * @param  list<int>  $organizationIds
      * @return array<int, array<string, array{question_index: mixed, ended_at: mixed}>> keyed by [participant_id][competency_code]
      */
-    private static function sessionsByParticipant(array $participantIds): array
+    private static function sessionsByParticipant(array $participantIds, array $organizationIds): array
     {
         $rows = DB::table('interview_sessions')
             ->whereIn('participant_id', $participantIds)
+            ->whereIn('organization_id', $organizationIds)
             ->select(['participant_id', 'competency_code', 'question_index', 'ended_at'])
             ->get();
 
@@ -323,5 +351,65 @@ final class InterviewSerializer
     private static function progress(Participant $participant): array
     {
         return self::progressForMany([$participant])[$participant->id] ?? [];
+    }
+
+    /**
+     * `recording_ready`, batched over a whole PAGE of participants in
+     * exactly ONE query, never one per row (gga review, step 6 follow-up,
+     * finding 5) — the SAME "batch, don't N+1" discipline `progressForMany()`
+     * already applies to its own two facts. A SEPARATE method rather than
+     * folded into `progressForMany()` itself: that method's own return
+     * shape (and every existing caller of it) is unchanged, so this adds a
+     * new batched fact without widening an already-public contract three
+     * call sites already depend on.
+     *
+     * @param  iterable<Participant>  $participants
+     * @return array<int, bool> keyed by participant id — a participant with
+     *                          no row is simply absent, never an explicit `false` entry
+     */
+    public static function recordingReadyForMany(iterable $participants): array
+    {
+        $participants = $participants instanceof \Traversable ? iterator_to_array($participants) : $participants;
+
+        if ($participants === []) {
+            return [];
+        }
+
+        $participantIds = [];
+        $organizationIds = [];
+
+        foreach ($participants as $participant) {
+            $participantIds[] = $participant->id;
+            $organizationIds[] = $participant->organization_id;
+        }
+
+        // organization_id filtered explicitly (finding 6's identical
+        // discipline) even though `InterviewRecording` is itself a
+        // TenantModel — this is a raw `DB::table()` read, which bypasses
+        // the Eloquent global scope entirely.
+        $rows = DB::table('interview_recordings')
+            ->whereIn('participant_id', array_values(array_unique($participantIds)))
+            ->whereIn('organization_id', array_values(array_unique($organizationIds)))
+            ->select(['participant_id'])
+            ->get();
+
+        $result = [];
+
+        foreach ($rows as $row) {
+            /** @var array{participant_id: mixed} $row */
+            $row = (array) $row;
+            $participantId = $row['participant_id'];
+
+            if (is_numeric($participantId)) {
+                $result[(int) $participantId] = true;
+            }
+        }
+
+        return $result;
+    }
+
+    private static function recordingReady(Participant $participant): bool
+    {
+        return self::recordingReadyForMany([$participant])[$participant->id] ?? false;
     }
 }

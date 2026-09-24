@@ -12,6 +12,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PublicApi\ProjectResource;
 use App\Models\Project;
 use App\Support\PublicApi\CursorPage;
+use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
 use Dedoc\Scramble\Attributes\Response;
@@ -39,17 +40,6 @@ final class ProjectController extends Controller
     private const EAGER_LOAD = ['frameworkVersion', 'avatarTemplate', 'competencies'];
 
     /**
-     * See `App\Http\Controllers\PublicApi\InterviewController::PROBLEM_SHAPE`'s
-     * own docblock — the identical `application/problem+json` body every
-     * `App\Support\PublicApi\Problem::make()` call produces, duplicated
-     * here (step 5 review follow-up, Part B item 6) rather than shared:
-     * PHP attribute arguments must be compile-time constants, and the two
-     * controllers have no common ancestor this constant could live on
-     * without widening either class's own responsibility.
-     */
-    private const PROBLEM_SHAPE = 'array{type: string, title: string, status: int, code: string, request_id: string, detail?: string, errors?: list<array{field: string, code: string, message?: string}>}';
-
-    /**
      * SPEC.md §3.2 "Filtering on list endpoints: `status`, ...". `role_code`
      * and `assessment_type` are Public-API-specific additions this
      * operation's own contract entry lists (`openapi.yaml` `listProjects`
@@ -62,12 +52,14 @@ final class ProjectController extends Controller
      * same fix, same reasoning, as `InterviewController::index()`'s own
      * docblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)
      * replace the incorrect auto-inferred `422` this method's own
-     * `QueryValidationException` throw produced.
+     * `QueryValidationException` throw produced — the shape now shared
+     * from `Problem::PROBLEM_SHAPE` (step 6 review follow-up, Part A item
+     * 6) rather than a copy of the constant this class used to declare.
      *
      * @response array{data: list<\App\Http\Resources\PublicApi\ProjectResource>, next_cursor: string|null, has_more: bool}
      */
     #[IgnoreResponse(422)]
-    #[Response(400, description: 'Malformed query parameter.', type: self::PROBLEM_SHAPE)]
+    #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
     public function index(Request $request): JsonResponse
     {
         $this->validateFilters($request);

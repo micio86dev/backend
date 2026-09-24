@@ -88,6 +88,34 @@ final class AdminEvaluationSerializer
             ->with('competencyResults.indicatorScores')
             ->firstOrFail();
 
+        $orderedResults = $this->orderedCompetencyResults($evaluation, $participant);
+
+        $output = [];
+        $catalogue = $this->indicatorCatalogue($participant);
+        $verdicts = $this->auditVerdicts($evaluation->id);
+
+        foreach ($orderedResults as $code => $result) {
+            $output[$code] = $this->serializeCompetencyResult($result, $catalogue, $verdicts);
+        }
+
+        return $output;
+    }
+
+    /**
+     * The project-order resolution `serialize()` above uses, extracted
+     * (step 6 review, public-api `App\PublicApi\Serializers\
+     * ScoringSerializer` reuse) so the public `/v1/interviews/{id}/scoring`
+     * surface orders its own `competencies` keys IDENTICALLY to this admin
+     * report, through the SAME logic, rather than a second copy that could
+     * silently drift. Pure extraction — `serialize()`'s own output is
+     * unchanged.
+     *
+     * @return array<string, CompetencyResult> keyed by competency_code, in
+     *                                         project order, with any CompetencyResult outside the project's
+     *                                         competency list appended after in DB order
+     */
+    public function orderedCompetencyResults(Evaluation $evaluation, Participant $participant): array
+    {
         $orderedCodes = $participant->project
             ? $participant->project->competencies()->pluck('code')->all()
             : [];
@@ -113,15 +141,7 @@ final class AdminEvaluationSerializer
             $orderedResults[$code] = $result;
         }
 
-        $output = [];
-        $catalogue = $this->indicatorCatalogue($participant);
-        $verdicts = $this->auditVerdicts($evaluation->id);
-
-        foreach ($orderedResults as $code => $result) {
-            $output[$code] = $this->serializeCompetencyResult($result, $catalogue, $verdicts);
-        }
-
-        return $output;
+        return $orderedResults;
     }
 
     /**

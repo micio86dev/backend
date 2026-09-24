@@ -12,19 +12,25 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\PublicApi\CreateInterviewRequest;
 use App\Http\Resources\PublicApi\InterviewResource;
 use App\Models\ApiClient;
+use App\Models\InterviewEvent;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\PublicApi\Serializers\AnswersSerializer;
 use App\PublicApi\Serializers\InterviewSerializer;
+use App\PublicApi\Serializers\ScoringSerializer;
+use App\PublicApi\Serializers\TranscriptSerializer;
 use App\Rules\PublicApi\Iso8601DateTime;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Expand;
 use App\Support\PublicApi\HostedInterviewUrlComposer;
 use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\Problem;
+use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantResolver;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -52,20 +58,20 @@ final class InterviewController extends Controller
     private const EXPANDABLE = ['project'];
 
     /**
-     * The BEAI Public API (`/v1`) `application/problem+json` body every
-     * `App\Support\PublicApi\Problem::make()` call produces (SPEC.md §3.2
-     * "Errors", `Problem`/`ErrorCode` schemas) — a PHPDoc type string, used
-     * on `#[Response(400, type: self::PROBLEM_SHAPE)]` below (step 5
-     * review follow-up, Part B item 6) rather than left to Scramble's own
-     * built-in exception inference, which only knows Laravel's generic
-     * `{message, errors}` validation-exception shape and would otherwise
-     * document `QueryValidationException` as a bare `422` with THAT
-     * shape — neither the actual status
-     * (`PublicApiExceptionRenderer` maps it to `400`, a query-parameter
-     * error per G-28) nor the actual body (`Problem::make()`'s own shape)
-     * this API ever sends.
+     * SPEC.md §3.3: transcript/answers readable from `under_evaluation`
+     * onward (G-15: an `error` interview stays `409 transcript_not_ready` —
+     * `Error` is deliberately absent here).
+     *
+     * @var list<InterviewStatus>
      */
-    private const PROBLEM_SHAPE = 'array{type: string, title: string, status: int, code: string, request_id: string, detail?: string, errors?: list<array{field: string, code: string, message?: string}>}';
+    private const TRANSCRIPT_READY_STATUSES = [InterviewStatus::UnderEvaluation, InterviewStatus::Completed];
+
+    /**
+     * SPEC.md §3.3: scoring readable only once `completed`.
+     *
+     * @var list<InterviewStatus>
+     */
+    private const SCORING_READY_STATUSES = [InterviewStatus::Completed];
 
     public function __construct(
         private readonly EnrolCandidate $enrolCandidate,
@@ -144,12 +150,27 @@ final class InterviewController extends Controller
      * as untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item
      * 6) replace the incorrect auto-inferred `422 {message, errors}` this
      * method's own `QueryValidationException` throw produced — see
-     * `self::PROBLEM_SHAPE`'s own docblock.
+     * `Problem::PROBLEM_SHAPE`'s own docblock (step 6 review follow-up,
+     * Part A item 6: now shared from `App\Support\PublicApi\Problem`
+     * rather than a copy of the constant declared on this class).
+     *
+     * `created_after`/`created_before` documented explicitly (step 6 review
+     * follow-up, Part A item 8) — without a `#[QueryParameter]` override,
+     * Scramble's own inference picked up the nearest preceding CODE COMMENT
+     * above `$request->query('created_after')` below as this parameter's
+     * description (an internal implementation note about
+     * `validateFilterFormats()`/`Validator::validated()`, meaningless to an
+     * API consumer, and `created_before` got no description at all). These
+     * two attributes describe the accepted FORMAT and the `400` a caller
+     * actually gets on a malformed value, the same contract
+     * `App\Rules\PublicApi\Iso8601DateTime` enforces.
      *
      * @response array{data: list<\App\Http\Resources\PublicApi\InterviewResource>, next_cursor: string|null, has_more: bool}
      */
     #[IgnoreResponse(422)]
-    #[Response(400, description: 'Malformed query parameter.', type: self::PROBLEM_SHAPE)]
+    #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
+    #[QueryParameter('created_after', description: 'Inclusive lower bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.', type: 'string')]
+    #[QueryParameter('created_before', description: 'Exclusive upper bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.', type: 'string')]
     public function index(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -215,8 +236,18 @@ final class InterviewController extends Controller
         if (is_string($createdAfter) && $createdAfter !== '') {
             $parsedCreatedAfter = Iso8601DateTime::parse($createdAfter);
 
+            // ->utc() (step 6 review follow-up, Part A item 3): a numeric-
+            // offset value (e.g. `+02:00`) parses into a CarbonImmutable
+            // whose OWN timezone carries that offset, not UTC. Binding it
+            // as-is lets the query builder format the WALL-CLOCK digits in
+            // that offset into the SQL parameter, which Postgres then reads
+            // back in the connection's session timezone — silently
+            // comparing against the wrong instant whenever that session
+            // timezone is not the same offset. Converting to UTC first
+            // makes the bound value the same absolute instant regardless of
+            // which of the four accepted shapes the caller used.
             if ($parsedCreatedAfter !== null) {
-                $query->where('created_at', '>=', $parsedCreatedAfter);
+                $query->where('created_at', '>=', $parsedCreatedAfter->utc());
             }
         }
 
@@ -225,7 +256,7 @@ final class InterviewController extends Controller
             $parsedCreatedBefore = Iso8601DateTime::parse($createdBefore);
 
             if ($parsedCreatedBefore !== null) {
-                $query->where('created_at', '<', $parsedCreatedBefore);
+                $query->where('created_at', '<', $parsedCreatedBefore->utc());
             }
         }
 
@@ -247,9 +278,11 @@ final class InterviewController extends Controller
         $query->with(self::projectEagerLoad($expandProject));
 
         // Fetch the page's raw Participant models first (identity map),
-        // batch-compute progress for the WHOLE page in one call — two
-        // queries total, never one per row (gga finding 4) — THEN serialize
-        // each row with its own precomputed slice.
+        // batch-compute progress AND recording readiness for the WHOLE page
+        // in two calls (three queries total: two for progress, one for
+        // recording_ready — gga finding 4, gga review step 6 follow-up
+        // finding 5) — THEN serialize each row with its own precomputed
+        // slice, never one query per row.
         $rawPage = CursorPage::paginate(
             $query,
             $request,
@@ -259,12 +292,14 @@ final class InterviewController extends Controller
         /** @var list<Participant> $participants */
         $participants = $rawPage['data'];
         $progressByParticipant = InterviewSerializer::progressForMany($participants);
+        $recordingReadyByParticipant = InterviewSerializer::recordingReadyForMany($participants);
 
         $rawPage['data'] = array_map(
             fn (Participant $participant): array => InterviewResource::make(
                 $participant,
                 $expandProject,
                 $progressByParticipant[$participant->id] ?? [],
+                $recordingReadyByParticipant[$participant->id] ?? false,
             )->resolve($request),
             $participants,
         );
@@ -294,8 +329,145 @@ final class InterviewController extends Controller
         // (e.g. `store()`, a brand-new enrolment with nothing to report
         // yet) still converges on this one implementation.
         $progress = InterviewSerializer::progressForMany([$participant])[$participant->id] ?? [];
+        $recordingReady = InterviewSerializer::recordingReadyForMany([$participant])[$participant->id] ?? false;
 
-        return InterviewResource::make($participant, $expandProject, $progress)->response();
+        return InterviewResource::make($participant, $expandProject, $progress, $recordingReady)->response();
+    }
+
+    /**
+     * `GET /v1/interviews/{id}/transcript` — SPEC.md §3.3, gate: status
+     * `under_evaluation` or `completed`, else `409 transcript_not_ready`
+     * (`error` included — G-15).
+     */
+    #[Response(409, description: 'Transcript not ready.', type: Problem::PROBLEM_SHAPE)]
+    public function transcript(Request $request, string $interview): JsonResponse
+    {
+        $organization = $this->resolveOrganization();
+        $participant = $this->resolveParticipant($interview, $organization);
+
+        if ($participant === null) {
+            abort(404);
+        }
+
+        $notReady = $this->guardReady($request, $participant, self::TRANSCRIPT_READY_STATUSES, 'transcript_not_ready', 'Transcript not ready');
+
+        if ($notReady !== null) {
+            return $notReady;
+        }
+
+        return PublicApiJson::response(TranscriptSerializer::toArray($participant));
+    }
+
+    /**
+     * `GET /v1/interviews/{id}/answers` — SPEC.md §3.3, same read gate as
+     * the transcript.
+     */
+    #[Response(409, description: 'Answers not ready.', type: Problem::PROBLEM_SHAPE)]
+    public function answers(Request $request, string $interview): JsonResponse
+    {
+        $organization = $this->resolveOrganization();
+        $participant = $this->resolveParticipant($interview, $organization);
+
+        if ($participant === null) {
+            abort(404);
+        }
+
+        $notReady = $this->guardReady($request, $participant, self::TRANSCRIPT_READY_STATUSES, 'transcript_not_ready', 'Answers not ready');
+
+        if ($notReady !== null) {
+            return $notReady;
+        }
+
+        return PublicApiJson::response([
+            'interview_id' => PublicId::encode($participant),
+            'answers' => AnswersSerializer::toArray($participant),
+        ]);
+    }
+
+    /**
+     * `GET /v1/interviews/{id}/scoring` — SPEC.md §3.3, gate: status
+     * `completed` only, else `409 scoring_not_ready`.
+     */
+    #[Response(409, description: 'Scoring not ready.', type: Problem::PROBLEM_SHAPE)]
+    public function scoring(Request $request, string $interview): JsonResponse
+    {
+        $organization = $this->resolveOrganization();
+        $participant = $this->resolveParticipant($interview, $organization);
+
+        if ($participant === null) {
+            abort(404);
+        }
+
+        $notReady = $this->guardReady($request, $participant, self::SCORING_READY_STATUSES, 'scoring_not_ready', 'Scoring not ready');
+
+        if ($notReady !== null) {
+            return $notReady;
+        }
+
+        return PublicApiJson::response((new ScoringSerializer)->toArray($participant));
+    }
+
+    /**
+     * `GET /v1/interviews/{id}/events` — SPEC.md §3.3, `App\Support\
+     * PublicApi\CursorPage` in its ASCENDING form (G-12: the one documented
+     * exception to `created_at desc`). `InterviewEvent.public_id` (`evt_`)
+     * is what every real row already carries — see that model's own
+     * docblock; no participant special-cases its absence.
+     *
+     * @response array{data: list<array{id: string, type: string, occurred_at: string, data: array<string, mixed>|null}>, next_cursor: string|null, has_more: bool}
+     */
+    #[IgnoreResponse(422)]
+    #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
+    public function events(Request $request, string $interview): JsonResponse
+    {
+        $organization = $this->resolveOrganization();
+        $participant = $this->resolveParticipant($interview, $organization);
+
+        if ($participant === null) {
+            abort(404);
+        }
+
+        $query = InterviewEvent::where('participant_id', $participant->id);
+
+        // occurred_at, not created_at (G-12) — the event's own LOGICAL
+        // timestamp, which the owning migration documents as possibly
+        // predating created_at for a queued writer; see CursorPage::
+        // paginateAscending()'s own docblock for the $column parameter.
+        $rawPage = CursorPage::paginateAscending(
+            $query,
+            $request,
+            fn (InterviewEvent $event): array => array_filter([
+                'id' => PublicId::encode($event),
+                'type' => $event->type,
+                'occurred_at' => $event->occurred_at->toIso8601String(),
+                // `data` is declared `type: object` in the contract — never
+                // nullable — and is not in `InterviewEvent`'s own `required`
+                // list. `array_filter()` (strict `!== null`, never the
+                // default falsy-value filter) OMITS the key entirely for an
+                // event recorded with no payload, rather than sending a
+                // `data: null` no `object`-typed schema without an explicit
+                // `"null"` member accepts.
+                'data' => $event->data,
+            ], fn (mixed $value): bool => $value !== null),
+            column: 'occurred_at',
+        );
+
+        return PublicApiJson::response($rawPage);
+    }
+
+    /**
+     * @param  list<InterviewStatus>  $readyStatuses
+     * @param  'transcript_not_ready'|'scoring_not_ready'  $code
+     */
+    private function guardReady(Request $request, Participant $participant, array $readyStatuses, string $code, string $title): ?JsonResponse
+    {
+        $status = InterviewStatus::fromStored($participant->status);
+
+        if (in_array($status, $readyStatuses, true)) {
+            return null;
+        }
+
+        return Problem::make($request, 409, $code, $title);
     }
 
     private function resolveOrganization(): Organization
