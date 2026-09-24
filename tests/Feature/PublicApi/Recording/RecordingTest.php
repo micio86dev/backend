@@ -13,9 +13,51 @@ use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Tests\Helpers\PublicApi\Step6Fixtures;
+
+test('T-INT-022/023: the recording lookup query orders by id desc — the documented tie-break the unique constraint makes unreachable today, but which stays live code with its own rationale', function (): void {
+    // A previous round deleted the test asserting this ORDER BY with no
+    // replacement, on the grounds that two rows can't coexist for the same
+    // participant_id (interview_recordings_participant_id_unique makes it
+    // impossible — proven directly by the test just below). That still
+    // leaves the ORDER BY itself unproven: it is live code with a
+    // documented rationale (RecordingController::show(), "orderBy is added
+    // regardless, as cheap defence in depth ... if this constraint is ever
+    // relaxed later"), and deserves at least one assertion. Reading the
+    // ACTUAL executed SQL via DB::listen (rather than the query builder's
+    // own ->toSql()) proves the clause really reaches the database on the
+    // real request path, not merely that RecordingController's source
+    // happens to call ->orderBy() somewhere.
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    TenantContextScope::runFor($org->id, function () use ($participant): void {
+        InterviewRecording::factory()->create([
+            'participant_id' => $participant->id,
+            'object_key' => 'recordings/only.ogg',
+        ]);
+    });
+
+    /** @var list<string> $recordingQueries */
+    $recordingQueries = [];
+    DB::listen(function ($query) use (&$recordingQueries): void {
+        if (str_contains($query->sql, 'interview_recordings')) {
+            $recordingQueries[] = $query->sql;
+        }
+    });
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/recording');
+
+    expect($recordingQueries)->not->toBeEmpty();
+    expect($recordingQueries[0])
+        ->toContain('order by')
+        ->and(strtolower($recordingQueries[0]))->toContain('desc');
+});
 
 test('T-INT-023: a second InterviewRecording row for the same participant is rejected at the database level (interview_recordings_participant_id_unique)', function (): void {
     // Step 6 review follow-up, finding 8, asked for a "two rows, most

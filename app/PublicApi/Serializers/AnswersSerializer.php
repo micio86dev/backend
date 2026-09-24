@@ -152,7 +152,28 @@ final class AnswersSerializer
                 }
 
                 if (isset($bucketPositionByQuestionIndex[$questionIndex])) {
-                    $currentPosition = $bucketPositionByQuestionIndex[$questionIndex];
+                    $resolvedPosition = $bucketPositionByQuestionIndex[$questionIndex];
+
+                    // Step 7 review follow-up fix: $lastRoutedPosition alone is
+                    // not enough to detect a resumed run — it is only ever
+                    // written by a CANDIDATE turn, so a later primary that is
+                    // asked but never answered (silence) leaves it untouched.
+                    // When the pointer then moves back to an earlier bucket the
+                    // stale $lastRoutedPosition can coincidentally equal the
+                    // restored $currentPosition, and the next candidate turn
+                    // silently resumes whatever run was open there before the
+                    // pointer moved away — wrongly spanning the entire gap
+                    // spent on the intervening (unanswered) question. Whenever
+                    // an AVATAR primary turn actually MOVES the bucket pointer
+                    // — whether by advancing to a brand-new primary or by a
+                    // re-ask resolving back to an earlier one — invalidate
+                    // $lastRoutedPosition so the next candidate turn is always
+                    // treated as the start of a fresh run, answered or not.
+                    if ($resolvedPosition !== $currentPosition) {
+                        $lastRoutedPosition = null;
+                    }
+
+                    $currentPosition = $resolvedPosition;
                 }
 
                 continue;

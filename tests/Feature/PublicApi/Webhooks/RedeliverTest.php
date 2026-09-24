@@ -231,6 +231,57 @@ test('T-WHD-016: redelivering a dead delivery continues attempt_count from its p
     expect($fresh->delivered_at)->not->toBeNull();
 });
 
+test('T-WHD-016b: redelivering a dead delivery already at max_attempts-1 that fails again goes straight back to dead, never granted a fresh retry budget', function (): void {
+    // The whole point of $attemptCountOffset (T-WHD-016 above) is that a
+    // redelivered row's attempt_count keeps counting its real lifetime
+    // total instead of resetting to 1. This is the other half of that
+    // guarantee: a row that had ALREADY spent every attempt but one, when
+    // redelivered and failing again, must dead-letter immediately —
+    // DeliverWebhookJob::recordRetryable() compares attemptCount against
+    // max_attempts BEFORE deciding retryable vs exhausted, so the single
+    // fresh dispatch attempt (attempts()=1) plus the offset (5) reaches
+    // attempt_count=6=max_attempts and must NOT be treated as "just
+    // another retryable failure" with a full new backoff schedule ahead
+    // of it — it must land on 'dead', not 'pending' with a fresh
+    // next_attempt_at.
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['webhooks:write']);
+
+    $targetUrl = 'https://client.example.com/inbound-webhook';
+
+    $project = TenantContextScope::runFor($org->id, fn () => Project::factory()->create([
+        'organization_id' => $org->id,
+        'webhook_url' => $targetUrl,
+        'webhook_secret' => 'a-real-secret',
+    ]));
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    $delivery = TenantContextScope::runFor($org->id, fn () => WebhookDelivery::factory()->forParticipant($participant)->create([
+        'status' => WebhookDeliveryStatus::Dead,
+        'target_url' => $targetUrl,
+        'attempt_count' => 5,
+        'max_attempts' => 6,
+    ]));
+
+    Http::fake([$targetUrl => Http::response(['error' => 'still unavailable'], 503)]);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/webhooks/deliveries/'.WebhookDeliveryId::encode($delivery).'/redeliver');
+
+    $response->assertStatus(202);
+
+    // Exactly one HTTP attempt was made by this single synchronous
+    // dispatch — the assertion that actually distinguishes "dead-lettered
+    // immediately" from "granted a fresh retry budget" is the row's final
+    // state below, not the call count (which would be 1 either way under
+    // the sync driver — see DeliverWebhookJobTest's own class doc).
+    Http::assertSentCount(1);
+
+    $fresh = TenantContextScope::runFor($org->id, fn () => WebhookDelivery::find($delivery->id));
+    expect($fresh->status)->toBe(WebhookDeliveryStatus::Dead);
+    expect($fresh->attempt_count)->toBe(6);
+    expect($fresh->last_response_status)->toBe(503);
+});
+
 // ─── gga pre-commit follow-up (finding 2): soft-deleted project ────────────
 
 test('T-WHD-017: redelivering a delivery whose project was later soft-deleted still succeeds', function (): void {

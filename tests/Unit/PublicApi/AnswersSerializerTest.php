@@ -166,3 +166,82 @@ test('answer_duration_seconds for a re-asked question does not span the unrelate
     // sums only each contiguous run's own span: (15-10) + (510-510) = 5s.
     expect(round($first['answer_duration_seconds']))->toBe(5.0);
 });
+
+test('answer_duration_seconds for a re-asked question does not span an unanswered later question either', function (): void {
+    // The run-detection previously only updated $lastRoutedPosition on
+    // CANDIDATE turns. When a later primary is asked and NEVER answered
+    // (silence), no candidate turn ever routes through that later
+    // bucket, so $lastRoutedPosition is left pointing at the earlier
+    // bucket's position the whole time. Re-asking that earlier question
+    // then moves $currentPosition away and back to the SAME value with
+    // nothing having ever witnessed the excursion, so the stale
+    // $lastRoutedPosition coincidentally matches $currentPosition again
+    // and the bug silently treats the re-ask's answer as a continuation
+    // of the FIRST run — wrongly spanning the entire unanswered gap.
+    $org = Organization::factory()->create();
+
+    $answers = TenantContextScope::runFor($org->id, function () use ($org) {
+        $project = Project::factory()->create(['organization_id' => $org->id]);
+
+        $participant = new Participant;
+        $participant->forceFill([
+            'organization_id' => $org->id,
+            'project_id' => $project->id,
+            'candidate_ref' => 'reask-silence-'.uniqid(),
+            'display_name' => 'Re-ask Silence Fixture',
+            'email' => uniqid('reask-silence-').'@example.test',
+            'status' => 'in_corso',
+            'language' => 'en',
+            'started_at' => now()->subMinutes(10),
+        ]);
+        $participant->save();
+
+        $primaries = ['First question?', 'Second question?'];
+
+        $session = InterviewSession::create([
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => 0,
+            'competency_code' => 'COL',
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'fake',
+            'status' => 'in_corso',
+            'primary_questions' => $primaries,
+        ]);
+
+        $t0 = now();
+
+        // Q0 asked and answered once (a single, zero-span run). Q1 is
+        // then asked but the candidate never answers it (silence — no
+        // candidate turn at all). Q0 is later re-asked and answered.
+        $turns = [
+            ['avatar', $primaries[0], 0],
+            ['candidate', 'Answer to Q0.', 10],
+            ['avatar', $primaries[1], 20],
+            // silence — no candidate turn for Q1
+            ['avatar', $primaries[0], 500],
+            ['candidate', 'Late addition to Q0.', 510],
+        ];
+
+        foreach ($turns as $i => [$speaker, $text, $offsetSeconds]) {
+            $utterance = new Utterance;
+            $utterance->forceFill([
+                'organization_id' => $org->id,
+                'interview_session_id' => $session->id,
+                'speaker' => $speaker,
+                'text' => $text,
+                'ts' => $t0->copy()->addSeconds($offsetSeconds),
+            ]);
+            $utterance->save();
+        }
+
+        return AnswersSerializer::toArray($participant->fresh());
+    });
+
+    $first = collect($answers)->firstWhere('question_index', 0);
+
+    // Correct behaviour: two separate zero-span runs, (10-10) + (510-510) = 0.
+    // The bug this test catches produces 500 instead (510 - 10), silently
+    // counting the whole unanswered Q1 gap as part of Q0's own answer time.
+    expect($first['answer_duration_seconds'])->toBe(0.0);
+});
