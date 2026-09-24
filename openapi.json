@@ -3180,6 +3180,134 @@
                 }
             }
         },
+        "/embed/exchange": {
+            "get": {
+                "operationId": "exchange.exchange",
+                "tags": [
+                    "Exchange"
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "default": ""
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "No `Set-Cookie` \u2014 G-32/T-TOK-008.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "access_token"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "410": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "const": "Session token already consumed"
+                                        },
+                                        "status": {
+                                            "type": "integer",
+                                            "const": 410
+                                        },
+                                        "code": {
+                                            "type": "string",
+                                            "const": "token_consumed"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "null"
+                                        },
+                                        "errors": {
+                                            "type": "null"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id",
+                                        "detail",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "const": "Invalid session token"
+                                        },
+                                        "status": {
+                                            "type": "integer",
+                                            "const": 401
+                                        },
+                                        "code": {
+                                            "type": "string",
+                                            "const": "token_invalid"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "null"
+                                        },
+                                        "errors": {
+                                            "type": "null"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id",
+                                        "detail",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/auth/forgot-password": {
             "post": {
                 "operationId": "auth.forgotPassword",
@@ -3611,6 +3739,274 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/interviews": {
+            "post": {
+                "operationId": "public-api.interviews.store",
+                "tags": [
+                    "Interview"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateInterviewRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "interview": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "session_token": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "hosted_url": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "interview",
+                                        "session_token",
+                                        "expires_at",
+                                        "hosted_url"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "type": {
+                                                    "type": "string"
+                                                },
+                                                "title": {
+                                                    "type": "string",
+                                                    "const": "Duplicate enrolment"
+                                                },
+                                                "status": {
+                                                    "type": "integer",
+                                                    "const": 409
+                                                },
+                                                "code": {
+                                                    "type": "string",
+                                                    "const": "duplicate_enrolment"
+                                                },
+                                                "request_id": {
+                                                    "type": "string"
+                                                },
+                                                "detail": {
+                                                    "type": "string",
+                                                    "const": "candidate.email is already enrolled in this project."
+                                                },
+                                                "errors": {
+                                                    "type": "null"
+                                                }
+                                            },
+                                            "required": [
+                                                "type",
+                                                "title",
+                                                "status",
+                                                "code",
+                                                "request_id",
+                                                "detail",
+                                                "errors"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "type": {
+                                                    "type": "string"
+                                                },
+                                                "title": {
+                                                    "type": "string",
+                                                    "const": "Duplicate enrolment"
+                                                },
+                                                "status": {
+                                                    "type": "integer",
+                                                    "const": 409
+                                                },
+                                                "code": {
+                                                    "type": "string",
+                                                    "const": "duplicate_enrolment"
+                                                },
+                                                "request_id": {
+                                                    "type": "string"
+                                                },
+                                                "detail": {
+                                                    "type": "string",
+                                                    "const": "candidate.candidate_ref is already enrolled in this project."
+                                                },
+                                                "errors": {
+                                                    "type": "null"
+                                                }
+                                            },
+                                            "required": [
+                                                "type",
+                                                "title",
+                                                "status",
+                                                "code",
+                                                "request_id",
+                                                "detail",
+                                                "errors"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                }
+            },
+            "get": {
+                "operationId": "public-api.interviews.index",
+                "tags": [
+                    "Interview"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "project_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "email",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "candidate_ref",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "created_after",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "created_before",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "metadata",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "next_cursor": {
+                                            "type": "string"
+                                        },
+                                        "has_more": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "next_cursor",
+                                        "has_more"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/QueryValidationException"
+                    }
+                }
+            }
+        },
+        "/v1/interviews/{interview}": {
+            "get": {
+                "operationId": "public-api.interviews.show",
+                "tags": [
+                    "Interview"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`InterviewResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/InterviewResource"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
                     }
                 }
             }
@@ -7728,6 +8124,101 @@
                 }
             }
         },
+        "/v1/interviews/{interview}/session-tokens": {
+            "post": {
+                "operationId": "public-api.interviews.session-tokens.store",
+                "tags": [
+                    "SessionToken"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session_token": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "hosted_url": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "session_token",
+                                        "expires_at",
+                                        "hosted_url"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "const": "Invalid state"
+                                        },
+                                        "status": {
+                                            "type": "integer",
+                                            "const": 409
+                                        },
+                                        "code": {
+                                            "type": "string",
+                                            "const": "invalid_state"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string",
+                                            "const": "Session tokens can only be minted while the interview is pending."
+                                        },
+                                        "errors": {
+                                            "type": "null"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id",
+                                        "detail",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                }
+            }
+        },
         "/candidate/interview/snapshot": {
             "post": {
                 "operationId": "snapshot.store",
@@ -9686,6 +10177,67 @@
                 ],
                 "title": "CompetencyResource"
             },
+            "CreateInterviewRequest": {
+                "type": "object",
+                "description": "`POST /v1/interviews` request validation (public-api step 5, SPEC.md \u00a73.3\n\"Create interview \u2014 request\", `CreateInterviewRequest` schema).\n\nFORMAT only \u2014 `project_id`'s prefix/existence/tenancy, the project-active\ngate, the `exit_redirect_url` allowed-domain check and the duplicate-\nenrolment check all need the resolved `Project`/`Organization` and live\nin `App\\Http\\Controllers\\PublicApi\\InterviewController::store()` and\n`App\\Actions\\PublicApi\\EnrolCandidate` \u2014 mirroring\n`App\\Http\\Controllers\\PublicApi\\ProjectController::show()`'s own \"decode,\n * never bind\" discipline for a public-id path/body field (G-36).\n\n`authorize()` returns `true` unconditionally: scope enforcement is\n`App\\Http\\Middleware\\PublicApi\\RequireScope`'s job, applied per-route in\n`routes/api.php` (`scope:interviews:write`) \u2014 the SAME division of labour\nevery other `/v1` write endpoint follows.",
+                "properties": {
+                    "project_id": {
+                        "type": "string"
+                    },
+                    "candidate": {
+                        "type": "object",
+                        "properties": {
+                            "candidate_ref": {
+                                "type": "string",
+                                "maxLength": 255
+                            },
+                            "email": {
+                                "type": "string",
+                                "format": "email",
+                                "description": "max:255 (gga round 3 finding 2) \u2014 matches participants.email's\nown column width; without it a caller-supplied value long\nenough to overflow that column reaches the database as a\ntruncation error (500) instead of the intended 422 here.",
+                                "maxLength": 255
+                            },
+                            "display_name": {
+                                "type": "string",
+                                "maxLength": 255
+                            },
+                            "language": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "ISO 639-1, matching `openapi.yaml`'s `Language` schema pattern\nexactly (`^[a-z]{2}$`) \u2014 no further allow-list check: the\ncontract does not restrict `candidate.language` to a\nper-project or per-platform locale set, and this endpoint has\nno such catalogue to validate against (unlike\n`config/translatable.php`'s `supported_locales`, which is a\nBACKOFFICE UI concept).",
+                                "pattern": "^[a-z]{2}$"
+                            }
+                        },
+                        "required": [
+                            "candidate_ref",
+                            "email",
+                            "display_name"
+                        ]
+                    },
+                    "metadata": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "exit_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri",
+                        "description": "https-only (SPEC.md \u00a73.3 \"It must be https\") \u2014 `url` alone\naccepts http too, so the scheme is checked separately.\nmax:2048 (gga round 3 finding 2) \u2014 matches the migration's own\n`varchar(2048)` column width for this field, and the admin\n`StoreProjectRequest`/`UpdateProjectRequest` validation rule\nfor the same-shaped `exit_redirect_url` field.",
+                        "maxLength": 2048
+                    }
+                },
+                "required": [
+                    "project_id",
+                    "candidate"
+                ],
+                "title": "CreateInterviewRequest"
+            },
             "DashboardActivityResource": {
                 "type": "object",
                 "properties": {
@@ -10008,6 +10560,245 @@
                     "updated_at"
                 ],
                 "title": "FrameworkVersionResource"
+            },
+            "InterviewResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "project_id": {
+                        "type": "string"
+                    },
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "livemode": {
+                        "type": "boolean"
+                    },
+                    "metadata": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "exit_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "hosted_url": {
+                        "type": "null"
+                    },
+                    "progress": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "competency_code": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "string",
+                                            "enum": [
+                                                ""
+                                            ]
+                                        }
+                                    ]
+                                },
+                                "answers": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "question_index": {
+                                                "type": "integer"
+                                            },
+                                            "answered_at": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "question_index",
+                                            "answered_at"
+                                        ]
+                                    }
+                                }
+                            },
+                            "required": [
+                                "competency_code",
+                                "answers"
+                            ]
+                        }
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "completed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "transcript_ready": {
+                        "type": "boolean"
+                    },
+                    "scoring_ready": {
+                        "type": "boolean"
+                    },
+                    "recording_ready": {
+                        "type": "boolean",
+                        "description": "G-01 (binding): video recordings are backoffice-only, never\nexposed via the public API \u2014 audio readiness is not yet wired\nin step 5 (no recording pipeline read here), so this is\nalways false until a later step adds it."
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    },
+                    "project": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "slug": {
+                                "type": "string"
+                            },
+                            "role_code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "assessment_type": {
+                                "type": "string"
+                            },
+                            "language": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "framework_version": {
+                                "type": "object",
+                                "properties": {
+                                    "version": {
+                                        "type": "string",
+                                        "description": "`framework_version_id` is NOT NULL, but the relation\naccessor's static type is still nullable (an unloaded\nrelation renders null rather than fatal, the same\ndiscipline `Project::avatarTemplate()`'s own docblock\ndocuments) \u2014 an empty string/null pair is the honest\nanswer when the caller forgot to eager-load it, never a\nfatal error on a read-only endpoint."
+                                    },
+                                    "label": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "version",
+                                    "label"
+                                ]
+                            },
+                            "competencies": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "pause_every_n_competencies": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "nudge_min_chars": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "exit_redirect_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "avatar_display_name": {
+                                "type": "string"
+                            },
+                            "created_at": {
+                                "type": "string"
+                            },
+                            "updated_at": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "role_code",
+                            "assessment_type",
+                            "language",
+                            "status",
+                            "framework_version",
+                            "competencies",
+                            "pause_every_n_competencies",
+                            "nudge_min_chars",
+                            "exit_redirect_url",
+                            "avatar_display_name",
+                            "created_at",
+                            "updated_at"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "project_id",
+                    "candidate_ref",
+                    "email",
+                    "display_name",
+                    "role_code",
+                    "language",
+                    "status",
+                    "livemode",
+                    "metadata",
+                    "exit_redirect_url",
+                    "hosted_url",
+                    "progress",
+                    "started_at",
+                    "completed_at",
+                    "transcript_ready",
+                    "scoring_ready",
+                    "recording_ready",
+                    "created_at",
+                    "updated_at",
+                    "project"
+                ],
+                "title": "InterviewResource"
             },
             "LlmCredentialResource": {
                 "type": "object",
