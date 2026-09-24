@@ -264,6 +264,78 @@ test('T-AUTH-006: GET /v1/projects returns each organization\'s own rows only, a
         ->assertNotFound();
 });
 
+// ─── T-AUTH-010: G-35 middleware-priority ordering, on a real scoped route ──────
+//
+// Part A follow-up 3: the missing proof G-35's fix (bootstrap/app.php's
+// `prependToPriorityList()` chain) actually holds on the FULL real `/v1`
+// stack — `AssignRequestId → RejectApiKeyInQuery → AuthenticatePublicApi →
+// PublicApiTenantContext → RateLimitPublicApi → RequireScope →
+// SubstituteBindings` — not just on the isolated probe route T-AUTH-005/009
+// used before step 4 added a real scope-protected, model-bound route.
+// `GET /v1/projects` carries BOTH `scope:projects:read` AND
+// `SubstituteBindings` (via `{project}` on the detail route below), so it
+// is the one real operation that can actually exercise the ordering bug
+// G-35 fixed: were `RequireScope` still pulled ahead of
+// `AuthenticatePublicApi`, a `beai_test_` key would either fail the wrong
+// check or silently authenticate as whatever client an EARLIER request
+// resolved.
+test('T-AUTH-010: a beai_test_ key succeeds on scope-protected GET /v1/projects, and two sequential different-key requests never cross-authenticate', function (): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+
+    $rawTestKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
+    ApiClient::factory()->withRawKey($rawTestKey)->create([
+        'organization_id' => $orgA->id,
+        'mode' => ApiKeyMode::Test,
+        'abilities' => ['projects:read'],
+    ]);
+
+    // A test-mode key reaches a scope-protected, SubstituteBindings-bound
+    // `/v1` route at all — proves `AuthenticatePublicApi` (which resolves
+    // `mode`) and `RequireScope` both ran, in the RIGHT order, ahead of
+    // route-model binding.
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawTestKey])
+        ->getJson('/api/v1/projects')
+        ->assertOk();
+
+    // Two DIFFERENT organizations' keys, hit in sequence against the SAME
+    // real route+guard, must each resolve their OWN client — never the
+    // other's, the exact symptom G-35 describes (`RequestGuard` caching a
+    // stale resolved user across requests when `RequireScope` ran before
+    // `AuthenticatePublicApi`).
+    $rawKeyA = ApiKeyGenerator::generate();
+    ApiClient::factory()->withRawKey($rawKeyA)->create(['organization_id' => $orgA->id, 'abilities' => ['projects:read']]);
+
+    $rawKeyB = ApiKeyGenerator::generate();
+    ApiClient::factory()->withRawKey($rawKeyB)->create(['organization_id' => $orgB->id, 'abilities' => ['projects:read']]);
+
+    TenantContextScope::runFor($orgA->id, function () use ($orgA): void {
+        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada', 'provider' => 'heygen', 'config' => []]);
+        Project::factory()->count(1)->create(['organization_id' => $orgA->id, 'avatar_template_id' => $avatarTemplate->id]);
+    });
+    TenantContextScope::runFor($orgB->id, function () use ($orgB): void {
+        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada', 'provider' => 'heygen', 'config' => []]);
+        Project::factory()->count(3)->create(['organization_id' => $orgB->id, 'avatar_template_id' => $avatarTemplate->id]);
+    });
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyA])
+        ->getJson('/api/v1/projects')
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyB])
+        ->getJson('/api/v1/projects')
+        ->assertOk()
+        ->assertJsonCount(3, 'data');
+
+    // Repeat A after B, in the SAME PHP process/guard instance, to catch a
+    // guard-level cache pointing at the wrong (LAST resolved) client.
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyA])
+        ->getJson('/api/v1/projects')
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+});
+
 // ─── T-AUTH-007: mode + browser-origin defense ────────────────────────────────
 
 test('T-AUTH-007: a beai_test_ key stamps ApiMode test, a live key stamps live', function (): void {

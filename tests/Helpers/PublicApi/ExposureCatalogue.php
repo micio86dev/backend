@@ -74,6 +74,62 @@ final class ExposureCatalogue
                 'webhook_events',
                 'webhook_url',
             ],
+
+            // Interview (public-api step 5) — admin `Admin\ParticipantResource`
+            // (list/summary) UNION `Admin\ParticipantDetailResource` (detail),
+            // both flattened together, against `App\PublicApi\Serializers\
+            // InterviewSerializer` — mirrors how the Project entry above merges
+            // its own admin resource with its nested AvatarTemplateResource.
+            // `id`/`project_id`/`candidate_ref`/`email`/`display_name`/
+            // `role_code`/`language`/`status`/`started_at`/`completed_at`/
+            // `created_at` are shared field NAMES on both sides (this catalogue
+            // diffs PATHS, never value types — admin's `id` is a bigint,
+            // public's is a `int_…` string, exactly like Project's own `id`)
+            // and so are absent from both lists below.
+            'Interview' => [
+                // admin-only: a flat convenience field (list view) and the
+                // full nested Project object (detail view) — the public
+                // equivalent is `project_id` (a reference) plus, only under
+                // `?expand=project`, the SAME `Project` schema T-EXPOSE-001
+                // already proves for Project — never this flat/nested shape.
+                'project_name',
+                'project.id',
+                'project.name',
+                'project.status',
+                'project.goes_live_at',
+                'project.deadline_at',
+                // admin-only: ParticipantDetailResource nests started_at/
+                // completed_at/session_count under `timeline` IN ADDITION to
+                // ParticipantResource's own bare `started_at`/`completed_at`
+                // (which DO match the public shape and are excluded from
+                // this list for exactly that reason).
+                'timeline.started_at',
+                'timeline.completed_at',
+                'timeline.session_count',
+                // admin-only aggregate progress/elapsed/cost — SPEC.md §3.4
+                // "Per-provider cost breakdowns ... not exposed", and elapsed
+                // time / done-of-total progress are backoffice operator
+                // conveniences, not part of the binding Interview resource.
+                'progress.done',
+                'progress.total',
+                'elapsed.seconds',
+                'elapsed.sessions_counted',
+                'elapsed.sessions_total',
+                'cost.amount',
+                'cost.currency',
+                'cost.is_estimate',
+                'cost.sessions_estimated',
+                'cost.sessions_total',
+                // admin-only download links (transcript/evaluation) — never
+                // in the public serializer; the public API's own transcript/
+                // scoring endpoints (later steps) are a SEPARATE surface.
+                'files.transcript.type',
+                'files.transcript.ref',
+                'files.transcript.url',
+                'files.evaluation_raw.type',
+                'files.evaluation_raw.ref',
+                'files.evaluation_raw.url',
+            ],
         ];
     }
 
@@ -92,6 +148,26 @@ final class ExposureCatalogue
                 'framework_version.version',
                 'framework_version.label',
                 'competencies[].name',
+            ],
+
+            // Interview (public-api step 5) — see the matching comment in
+            // exclusions() above for the comparison this pairs with.
+            'Interview' => [
+                'livemode',
+                'metadata',
+                'exit_redirect_url',
+                'hosted_url',
+                // The public `progress[]` shape genuinely differs from
+                // admin's `progress.{done,total}` aggregate — see
+                // exclusions() above; this is its own field name/path, not
+                // a renamed version of the admin one.
+                'progress[].competency_code',
+                'progress[].answers',
+                'transcript_ready',
+                'scoring_ready',
+                'recording_ready',
+                // Neither admin resource exposes `updated_at` at all.
+                'updated_at',
             ],
         ];
     }

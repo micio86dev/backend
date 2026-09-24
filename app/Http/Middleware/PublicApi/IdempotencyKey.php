@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware\PublicApi;
 
 use App\Models\ApiClient;
+use App\Support\PublicApi\IdempotencyRecordCodec;
 use App\Support\PublicApi\Problem;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
@@ -20,8 +21,10 @@ use Throwable;
  * `Idempotency-Key` support for `POST` routes on the BEAI Public API
  * (`/v1`) — SPEC.md §3.2 "Idempotency", registered as the `idempotent` alias
  * (public-api step 3) for routes to opt into explicitly (`->middleware(
- * 'idempotent')`) once step 4+ adds the first `POST` endpoint — no route
- * applies it yet.
+ * 'idempotent')`). `POST /v1/interviews` (public-api step 5) is the first
+ * route that applies it — `POST /v1/interviews/{id}/session-tokens`
+ * deliberately does NOT (G-16: a duplicate mint always revokes the previous
+ * token, so it can never be a safe replay).
  *
  * Storage is G-26 (documented judgement call): the CONFIGURED cache store —
  * Redis in production, `array` in tests — the same store every other
@@ -129,18 +132,16 @@ final class IdempotencyKey
      * test can hold the SAME lock externally to exercise the concurrent
      * (`idempotency_in_progress`) branch deterministically.
      *
-     * Step 3 Part A follow-up 3: folding the client id into the scope
-     * changed the computed scope — and therefore the cache key
-     * (`idempotency:{scope}`) — for EVERY previously-stored replay record,
-     * since the hashed input now includes a segment (`{client_id}`) it did
-     * not before. This is a one-time key rollover, not a migration: no
-     * environment has this code deployed yet, records are disposable cache
-     * state with a bounded TTL (`record_ttl_seconds`, default 24h) and no
-     * durable persistence, so the only practical effect — once deployed —
-     * is that any in-flight replay record computed under the OLD scope
-     * simply expires unread, and a client's next request within its own
-     * 24h window recomputes fresh rather than replaying. No data
-     * migration or backfill is required.
+     * Changing what this hash is computed over changes the resulting cache
+     * key (`idempotency:{scope}`) for every record a previous scope shape
+     * would have stored — records written under an earlier key shape are
+     * simply never matched by the current one. That is never a problem
+     * worth migrating: a replay record is disposable cache state with a
+     * bounded TTL (`record_ttl_seconds`, default 24h), not durable
+     * persistence, so an unmatched old record just expires unread, and a
+     * client's next request within its own 24h window recomputes fresh
+     * rather than replaying. No data migration or backfill is ever
+     * required when this hash's inputs change.
      */
     public static function scopeFor(ApiClient $client, Request $request, string $rawKey): string
     {
@@ -163,8 +164,14 @@ final class IdempotencyKey
         $fingerprint = hash('sha256', (string) $request->getContent());
 
         try {
-            /** @var array{fingerprint: string, status: int, headers: array<string, string>, body: string}|null $cached */
-            $cached = Cache::get($storeKey);
+            $raw = Cache::get($storeKey);
+            // gga round 4 finding 2: the STORED value is `IdempotencyRecordCodec::encode()`'s
+            // ciphertext (a string), never the plain record array — decoded
+            // here, back into the SAME shape this method used to read
+            // directly off the cache. `decode()` returning null (a
+            // corrupted/foreign-key/pre-codec entry) is treated exactly
+            // like a cache miss, never a 500.
+            $cached = is_string($raw) ? IdempotencyRecordCodec::decode($raw) : null;
         } catch (Throwable $e) {
             self::logCacheOutage($e);
 
@@ -185,12 +192,20 @@ final class IdempotencyKey
 
         if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300) {
             try {
-                Cache::put($storeKey, [
+                // gga round 4 finding 2: ENCRYPTED at rest — a successful
+                // POST /v1/interviews response carries a LIVE session_token
+                // (and the hosted_url built from it) in its body, and this
+                // record would otherwise sit in the cache store, in the
+                // clear, for up to record_ttl_seconds (default 24h). See
+                // IdempotencyRecordCodec's own docblock.
+                $encoded = IdempotencyRecordCodec::encode([
                     'fingerprint' => $fingerprint,
                     'status' => $response->getStatusCode(),
                     'headers' => self::replayableHeaders($response),
                     'body' => (string) $response->getContent(),
-                ], config()->integer('public_api.idempotency.record_ttl_seconds', 86400));
+                ]);
+
+                Cache::put($storeKey, $encoded, config()->integer('public_api.idempotency.record_ttl_seconds', 86400));
             } catch (Throwable $e) {
                 self::logCacheOutage($e);
 

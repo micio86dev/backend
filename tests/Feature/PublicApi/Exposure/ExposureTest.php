@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 use App\Enums\ApiKeyMode;
 use App\Http\Resources\Admin\OrganizationResource as AdminOrganizationResource;
+use App\Http\Resources\Admin\ParticipantDetailResource as AdminParticipantDetailResource;
+use App\Http\Resources\Admin\ParticipantResource as AdminParticipantResource;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Http\Resources\ProjectResource as AdminProjectResource;
 use App\Models\ApiClient;
@@ -17,7 +19,9 @@ use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
+use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\OrganizationSerializer;
 use App\PublicApi\Serializers\ProjectSerializer;
 use App\Services\ApiKeyGenerator;
@@ -114,6 +118,48 @@ test('T-EXPOSE-001: Project (+ its nested avatar template) — admin minus publi
     });
 });
 
+test('T-EXPOSE-001: Interview — admin (list ∪ detail) minus public equals exactly the frozen exclusion list, public minus admin equals exactly the frozen addition list', function (): void {
+    $org = Organization::factory()->create();
+
+    TenantContextScope::runFor($org->id, function () use ($org): void {
+        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada', 'provider' => 'heygen', 'config' => []]);
+        $project = Project::factory()->create([
+            'organization_id' => $org->id,
+            'avatar_template_id' => $avatarTemplate->id,
+        ]);
+
+        $competency = Competency::query()->where('code', 'COM')->first()
+            ?? Competency::factory()->create(['code' => 'COM']);
+        $project->competencies()->attach($competency->id, ['position' => 1]);
+
+        $participant = Participant::factory()->forProject($project)->create([
+            'organization_id' => $org->id,
+            // Empty metadata flattens to the bare `metadata` leaf — see
+            // ExposureCatalogue's own "list of scalars/empty list" rule.
+            'metadata' => null,
+        ])->refresh();
+
+        $adminListKeys = ExposureCatalogue::flattenKeys((new AdminParticipantResource($participant))->toArray(request()));
+        $adminDetailKeys = ExposureCatalogue::flattenKeys((new AdminParticipantDetailResource($participant))->toArray(request()));
+        $adminKeys = array_values(array_unique(array_merge($adminListKeys, $adminDetailKeys)));
+
+        $publicKeys = ExposureCatalogue::flattenKeys(InterviewSerializer::toArray($participant));
+
+        $exclusions = array_values(array_diff($adminKeys, $publicKeys));
+        $additions = array_values(array_diff($publicKeys, $adminKeys));
+
+        sort($exclusions);
+        sort($additions);
+        $expectedExclusions = ExposureCatalogue::exclusions()['Interview'];
+        $expectedAdditions = ExposureCatalogue::additions()['Interview'];
+        sort($expectedExclusions);
+        sort($expectedAdditions);
+
+        expect($exclusions)->toBe($expectedExclusions);
+        expect($additions)->toBe($expectedAdditions);
+    });
+});
+
 // ─── T-EXPOSE-002: no secret-shaped value ever leaks ────────────────────────
 
 test('T-EXPOSE-002: GET /v1/organization never contains a beai_live_/beai_test_/tavus/heygen value, even with a webhook secret configured', function (): void {
@@ -172,6 +218,63 @@ test('T-EXPOSE-002: GET /v1/projects and GET /v1/projects/{id} never contain a b
         ->getJson('/api/v1/projects/'.PublicId::encode($project));
     $detail->assertOk();
     assertNoForbiddenPattern($detail->getContent());
+});
+
+test('T-EXPOSE-002: POST/GET /v1/interviews never contain a beai_live_/beai_test_/tavus/heygen value, even on a Tavus/HeyGen-backed project', function (): void {
+    config(['interview.candidate_app_url' => 'https://interview.example.com']);
+
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create([
+        'organization_id' => $org->id,
+        'abilities' => ['interviews:write', 'interviews:read'],
+    ]);
+
+    $project = TenantContextScope::runFor($org->id, function () use ($org): Project {
+        $avatarTemplate = AvatarTemplate::create([
+            'name' => 'Ada',
+            'provider' => 'heygen',
+            'config' => ['persona_id' => 'heygen_persona_9', 'api_key' => 'heygen_live_abc123'],
+        ]);
+
+        return Project::factory()->create([
+            'organization_id' => $org->id,
+            'avatar_template_id' => $avatarTemplate->id,
+            'status' => 'active',
+            'webhook_url' => 'https://tavus.example/hook',
+            'webhook_secret' => 'project-secret',
+        ]);
+    });
+
+    $create = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/interviews', [
+            'project_id' => PublicId::encode($project),
+            'candidate' => [
+                'candidate_ref' => 'expose-ref',
+                'email' => 'expose@example.com',
+                'display_name' => 'Expose Candidate',
+            ],
+        ]);
+
+    $create->assertCreated();
+    // `session_token`/`hosted_url` are genuinely present and deliberately
+    // NOT scanned as leaks — they carry no `beai_live_`/`beai_test_` API-key
+    // marker (a different token format, HS256 JWT vs. the key generator's
+    // own prefix scheme) and no provider name.
+    $interviewOnly = $create->json('interview');
+    assertNoForbiddenPattern(json_encode($interviewOnly));
+
+    $id = $create->json('interview.id');
+
+    $detail = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.$id);
+    $detail->assertOk();
+    assertNoForbiddenPattern($detail->getContent());
+
+    $list = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews');
+    $list->assertOk();
+    assertNoForbiddenPattern($list->getContent());
 });
 
 /**
