@@ -42,6 +42,7 @@ use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
+use App\Http\Controllers\Embed\ExchangeController as EmbedExchangeController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\M2m\AbilityCatalogController;
 use App\Http\Controllers\M2m\ApiClientController;
@@ -49,8 +50,10 @@ use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
 use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController;
+use App\Http\Controllers\PublicApi\InterviewController as PublicApiInterviewController;
 use App\Http\Controllers\PublicApi\OrganizationController as PublicApiOrganizationController;
 use App\Http\Controllers\PublicApi\ProjectController as PublicApiProjectController;
+use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTokenController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
@@ -120,27 +123,11 @@ Route::prefix('v1')
 // and `GET /projects/{project}` require `projects:read`.
 //
 // `SubstituteBindings` is applied PER-ROUTE below, never in this outer
-// array, and `scope:projects:read` is always given BEFORE it. Step 4 review
-// finding: `RequireScope` is in `bootstrap/app.php`'s global middleware
-// PRIORITY list (forced to run immediately before `SubstituteBindings`,
-// wherever that lands). When `SubstituteBindings` was part of THIS outer
-// array — i.e. GIVEN before `scope:projects:read` on the nested group added
-// below it — `Illuminate\Routing\SortedMiddleware` had to violate that
-// given order to satisfy the priority constraint, and it did so by pulling
-// `RequireScope` all the way to the FRONT of the pipeline — running it
-// BEFORE `AuthenticatePublicApi` even resolved a client. `RequireScope` then
-// silently fell through to `Auth::guard('api-m2m')`'s own lazy `viaRequest`
-// resolution (`AppServiceProvider::boot()`, `allowTestMode: false`) instead
-// of `AuthenticatePublicApi`'s intended one, and — because a `RequestGuard`
-// caches its resolved user for the lifetime of the guard instance — a LATER
-// request through the SAME guard object (e.g. two different API clients
-// hit in sequence, as `T-AUTH-005`/`T-AUTH-009` do) could silently
-// authenticate as the FIRST request's client. Giving `scope:` before
-// `SubstituteBindings` in every route's own given array removes the need
-// for any reordering at all, so `AuthenticatePublicApi` keeps running
-// first, exactly where `route:list -v`'s displayed (pre-sort) order always
-// claimed it did — `route:list` was not lying, it just was not showing the
-// order actually dispatched.
+// array (a C4 convention — see `bootstrap/app.php`'s own comment above its
+// `prependToPriorityList()` calls for the FULL account of why `/v1`'s
+// entire authenticated stack — not just `SubstituteBindings` — is on that
+// priority list, and what broke before it was: G-35,
+// `docs/specs/public-api/DECISIONS-NEEDED.md`).
 Route::prefix('v1')
     ->name('public-api.')
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
@@ -162,6 +149,29 @@ Route::prefix('v1')
                 ->middleware(SubstituteBindings::class);
             Route::get('/projects/{project}', [PublicApiProjectController::class, 'show'])
                 ->name('projects.show')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        // public-api step 5: `Interview` (SPEC.md §3.3). `scope:` is always
+        // given BEFORE `SubstituteBindings`, on every route, same convention
+        // as `/projects` above (G-35's own history is why this order is
+        // still given explicitly even though the priority list no longer
+        // strictly needs it to be).
+        Route::middleware('scope:interviews:write')->group(function (): void {
+            Route::post('/interviews', [PublicApiInterviewController::class, 'store'])
+                ->name('interviews.store')
+                ->middleware(['idempotent', SubstituteBindings::class]);
+            Route::post('/interviews/{interview}/session-tokens', [PublicApiSessionTokenController::class, 'store'])
+                ->name('interviews.session-tokens.store')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        Route::middleware('scope:interviews:read')->group(function (): void {
+            Route::get('/interviews', [PublicApiInterviewController::class, 'index'])
+                ->name('interviews.index')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}', [PublicApiInterviewController::class, 'show'])
+                ->name('interviews.show')
                 ->middleware(SubstituteBindings::class);
         });
     });
@@ -672,6 +682,19 @@ Route::prefix('m2m')
 
 Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class]);
+
+// ─── BEAI Public API session-token exchange (PUBLIC) (public-api step 5) ─────
+// PUBLIC endpoint, OUTSIDE /v1 — no API key, no TenantContext (SPEC.md §3.5,
+// G-32). Same TenantContext/RejectStaleCredentials isolation as
+// `/sso/exchange` immediately above, and for the identical reason.
+// `throttle:30,1`: a session token is single-use, so this route is a
+// brute-force-guessing surface against `?token=` the same way a password-
+// reset token endpoint is — unlike `/sso/exchange`, which has no throttle
+// today, this is a NEW route this step adds and the task instruction is
+// explicit about the limit.
+Route::get('/embed/exchange', [EmbedExchangeController::class, 'exchange'])
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware('throttle:30,1');
 
 // ─── Candidate Routes (C6) ───────────────────────────────────────────────────
 // Protected by auth:api-candidate → TenantContextCandidate → SubstituteBindings.

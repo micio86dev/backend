@@ -25,7 +25,15 @@ use Illuminate\Support\Str;
 final class Problem
 {
     /**
-     * @param  'invalid_api_key'|'api_key_in_query'|'browser_origin_forbidden'|'insufficient_scope'|'not_found'|'validation_failed'|'invalid_cursor'|'invalid_expand'|'invalid_state'|'duplicate_enrolment'|'project_not_active'|'idempotency_key_reused'|'idempotency_in_progress'|'redirect_url_not_allowed'|'metadata_limit_exceeded'|'not_ready'|'transcript_not_ready'|'scoring_not_ready'|'recording_not_ready'|'export_in_progress'|'rate_limited'|'internal_error'  $code
+     * `token_invalid`/`token_consumed` (public-api step 5, G-32) are NOT
+     * `/v1` `ErrorCode` enum members — `App\Http\Controllers\Embed\
+     * ExchangeController` lives outside `/v1` entirely (SPEC.md §3.5, a
+     * separate public surface with its own two error codes), and reuses
+     * this class purely for the shared `application/problem+json` shape
+     * and request-id stamping, not for contract membership. Reported as a
+     * G-item rather than silently added to the `/v1` contract.
+     *
+     * @param  'invalid_api_key'|'api_key_in_query'|'browser_origin_forbidden'|'insufficient_scope'|'not_found'|'validation_failed'|'invalid_cursor'|'invalid_expand'|'invalid_state'|'duplicate_enrolment'|'project_not_active'|'idempotency_key_reused'|'idempotency_in_progress'|'redirect_url_not_allowed'|'metadata_limit_exceeded'|'not_ready'|'transcript_not_ready'|'scoring_not_ready'|'recording_not_ready'|'export_in_progress'|'rate_limited'|'internal_error'|'token_invalid'|'token_consumed'  $code
      * @param  array<string, string>  $extraHeaders  merged onto the response — e.g. `WWW-Authenticate` on a 401, `Retry-After` on a 429.
      * @param  list<array{field: string, code: string, message?: string}>|null  $errors  the contract's `Problem.errors[]` validation-detail array (step 3) — omitted from the body entirely when null, per `components.schemas.Problem` (`errors` is not in `required`).
      */
