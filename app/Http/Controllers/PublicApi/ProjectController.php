@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\PublicApi;
 
+use App\Enums\AssessmentType;
+use App\Enums\ProjectStatus;
+use App\Enums\RoleCode;
 use App\Exceptions\PublicApi\QueryValidationException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PublicApi\ProjectResource;
@@ -13,6 +16,7 @@ use App\Support\PublicApi\PublicId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 /**
  * `GET /v1/projects` and `GET /v1/projects/{id}` — BEAI Public API
@@ -96,9 +100,9 @@ final class ProjectController extends Controller
     private function validateFilters(Request $request): void
     {
         $validator = Validator::make($request->query(), [
-            'status' => ['sometimes', 'string', 'in:draft,active,archived'],
-            'role_code' => ['sometimes', 'string', 'in:ICO,FLL,MLL,BUL,SRX'],
-            'assessment_type' => ['sometimes', 'string', 'in:standard,potential'],
+            'status' => ['sometimes', 'string', Rule::in(ProjectStatus::values())],
+            'role_code' => ['sometimes', 'string', Rule::in(RoleCode::values())],
+            'assessment_type' => ['sometimes', 'string', Rule::in(AssessmentType::values())],
         ]);
 
         if ($validator->fails()) {

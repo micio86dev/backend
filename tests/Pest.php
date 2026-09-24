@@ -707,6 +707,21 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PublicApi/Exposure');
 
+// Feature/PublicApi/Interviews/, SessionTokens/ — public-api step 5
+// (`POST/GET /v1/interviews(/{id})`, `POST /v1/interviews/{id}/session-tokens`)
+// tests create real Organization/ApiClient/Project/Participant rows via
+// factories — same reasoning as Feature/PublicApi/Projects above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Interviews');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/SessionTokens');
+
+// Feature/Embed — public-api step 5's `GET /api/embed/exchange` (G-32).
+// RefreshDatabase for the same reason as every other PublicApi feature dir.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Embed');
+
 // Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
 // exercises the legacy-rows cache/observer against real ApiClient rows.
 // ApiModeTest (no DB) is unaffected — extend()/use() are harmless for a

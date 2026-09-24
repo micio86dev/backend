@@ -43,6 +43,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -174,6 +175,14 @@ function scoreTenancyUnresolvableOrgParticipant(Project $project): int
             'display_name' => 'Unresolvable Org Test',
             'email' => uniqid('cand-').'@example.test',
             'status' => 'in_valutazione',
+            // public_id (public-api step 5, G-05) is NOT NULL with no
+            // default — this raw insert bypasses Eloquent entirely (that is
+            // the POINT of disabling triggers here), so
+            // App\Models\Concerns\HasPublicId's creating hook never runs;
+            // a value must be supplied explicitly, same fix applied to
+            // SsoExchangeController's own raw upsert and
+            // ConcurrentUpsertTest's direct-DB test.
+            'public_id' => (string) Str::ulid(),
             'created_at' => now(),
             'updated_at' => now(),
         ]);

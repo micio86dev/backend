@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Enums\AssessmentType;
+use App\Enums\ProjectStatus;
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
@@ -137,11 +139,11 @@ class UpdateProjectRequest extends FormRequest
                     ->ignore($project?->id),
             ],
             'name' => ['sometimes', 'string', 'max:255'],
-            'assessment_type' => ['sometimes', 'string', Rule::in(['standard', 'potential'])],
+            'assessment_type' => ['sometimes', 'string', Rule::in(AssessmentType::values())],
             'role_code' => ['sometimes', 'nullable', 'string'],
             'language' => ['sometimes', 'string', Rule::in($supportedLocales)],
             // Approved status enum: draft|active|archived (no gone_live)
-            'status' => ['sometimes', 'string', Rule::in(['draft', 'active', 'archived'])],
+            'status' => ['sometimes', 'string', Rule::in(ProjectStatus::values())],
             'competency_ids' => ['sometimes', 'nullable', 'array', 'list'],
             // `exists` is load-bearing: `validateStandard` iterates
             // `whereIn(...)->get()`, so an unknown id is never looped over and

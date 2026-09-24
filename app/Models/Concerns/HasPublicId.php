@@ -49,12 +49,51 @@ use Illuminate\Support\Str;
  * intentional and already relied on before this trait existed. Blindly
  * setting `public_id` regardless of whether the column currently exists
  * broke that pattern outright (`SQLSTATE[42703]: column "public_id" ...
- * does not exist`), so the `creating` hook checks `Schema::hasColumn()`
- * first — a real, uncached check on every insert (deliberately NOT
- * memoized: schema changes mid-process are exactly what these tests
- * exercise, so a static cache would silently reintroduce the same bug for
- * the second half of a rollback-then-migrate test) rather than the
- * unconditional write a production-only codebase could get away with.
+ * does not exist`), so the `creating` hook checks `Schema::hasColumn()`.
+ *
+ * Step 5 review follow-up (Part A item 2): a per-insert, always-live
+ * `Schema::hasColumn()` call was flagged as unnecessary steady-state
+ * overhead, with two suggested fixes. BOTH were tried and REJECTED, with
+ * evidence, rather than applied on faith:
+ *
+ *   1. Fix the archaeology tests to pass an explicit `public_id` and drop
+ *      the check entirely. REJECTED, verified by reading the call order:
+ *      in `BaselineRevisionMigrationTest`, `Organization::factory()->create()`
+ *      and `Project::factory()->create()` run AFTER `migrate:rollback` and
+ *      BEFORE the forward `Artisan::call('migrate')` — at that point the
+ *      `public_id` COLUMN itself does not exist on `organizations`/
+ *      `projects` (nor, from step 5 onward, on `participants`, now that
+ *      `Participant` also uses this trait). Supplying an explicit value for
+ *      a column absent from the table fails with the exact same
+ *      `SQLSTATE[42703]` regardless of who sets it — an explicit
+ *      `public_id` fixture cannot fix a missing column, so this option was
+ *      never actually available for this test, whatever a caller passes.
+ *   2. A static cache keyed by table, remembering only a CONFIRMED `true`
+ *      (never caching a `false`) — the refinement that survives the
+ *      ORIGINAL docblock's own objection to a naive cache (that one would
+ *      wrongly freeze `false` across the forward migration). REJECTED too,
+ *      empirically this time: `php artisan test tests/Feature/Migration/`
+ *      run as a BATCH failed this exact test with `SQLSTATE[42703]:
+ *      column "public_id" of relation "organizations" does not exist` — an
+ *      EARLIER test file in the same PHP process had already confirmed
+ *      `organizations.public_id` exists (that static cache persists for
+ *      the whole test run, not per test case), so by the time THIS test's
+ *      `migrate:rollback` removed the column, the trait trusted the stale
+ *      cached `true` and tried to insert into it anyway. A per-process
+ *      cache is unsafe for exactly the reason the table exists in the
+ *      first place: `migrate:rollback` inside a test can make a column
+ *      that was confirmed present earlier in the SAME process become
+ *      absent again, and nothing invalidates the cache when that happens.
+ *
+ * Both alternatives fail on the identical root cause — this trait cannot
+ * tell, from inside one `creating` hook, whether the schema it is running
+ * against right now is the one a cache (or a caller's assumption) was
+ * built from. A live check is the only construct that is never stale, and
+ * the read it performs (`information_schema` via `Schema::hasColumn()`) is
+ * cheap enough that this codebase's own CI budget has never flagged it —
+ * the "unnecessary overhead" concern was unverified, and verifying it
+ * surfaced a correctness regression it would have introduced instead. Kept
+ * as originally written.
  */
 trait HasPublicId
 {

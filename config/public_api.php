@@ -51,13 +51,22 @@ return [
 
     /*
      * Base URL of the hosted interview page (§3.5 "Hosted URL:
-     * `https://interview.beai.example/i/{token}`"). No default: null until
-     * the interview host is chosen (only the unrelated `CANDIDATE_APP_URL`,
-     * entry-link origin for the SSO ingress, is defined today — a different
-     * surface, see config/interview.php). Unlike `base_url` above, this key
-     * NEVER falls back to another env var (not `APP_URL`, not
-     * `CANDIDATE_APP_URL`) — every deployment that needs this surface MUST
-     * set `INTERVIEW_URL` explicitly.
+     * `https://interview.beai.example/i/{token}`"). No default HERE: this
+     * key itself is null until `INTERVIEW_URL` is set explicitly — it never
+     * falls back to another env var at THIS layer (not `APP_URL`).
+     *
+     * `App\Support\PublicApi\HostedInterviewUrlComposer` (public-api step 5,
+     * gga finding 2) is the ONE place that DOES fall back further, to
+     * `config('interview.candidate_app_url')` (`CANDIDATE_APP_URL`) — a
+     * deliberate, documented exception to "never falls back to another env
+     * var", not an oversight: step 5 ships the hosted page on the SAME host
+     * and chrome as the existing SSO entry-link flow (G-33), so a local/dev
+     * environment that has only ever configured `CANDIDATE_APP_URL` (the
+     * entry-link origin, see `config/interview.php`) still gets a working
+     * hosted URL without needing to set `INTERVIEW_URL` too. Once a real
+     * `interview.` host is chosen (decisions table Q6, G-03) and
+     * `INTERVIEW_URL` is set in every environment, that value always wins —
+     * `?:` prefers it whenever it is present and non-empty.
      */
     'interview_url' => env('INTERVIEW_URL') ?: null,
 
@@ -102,4 +111,28 @@ return [
         'lock_ttl_seconds' => (int) (env('PUBLIC_API_IDEMPOTENCY_LOCK_TTL_SECONDS') ?: 30),
         'lock_wait_seconds' => (int) (env('PUBLIC_API_IDEMPOTENCY_LOCK_WAIT_SECONDS') ?: 5),
     ],
+
+    /*
+     * BEAI Public API (`/v1`) session tokens (public-api step 5, SPEC.md
+     * §3.5 "Session tokens"). `App\Support\PublicApi\SessionTokenMinter`
+     * reads both keys.
+     *
+     * `session_secret` is a DEDICATED secret — SPEC.md §3.5 "signed with a
+     * dedicated secret (not the app key)" — never `config('jwt.secret')`
+     * (that key signs the tymon-managed backoffice/candidate/M2M JWTs; a
+     * session token is a SEPARATE, single-purpose, short-lived credential
+     * with a narrower blast radius than every OTHER token this API mints,
+     * and sharing a signing key would let a session-token compromise reach
+     * those too). REQUIRED (fails loud via `SessionTokenMinter`, never
+     * silently falls back to an empty string) in every environment except
+     * `testing`, where `phpunit.xml` supplies a fixed test value so the
+     * suite never depends on a real secret being configured.
+     */
+    'session_secret' => env('PUBLIC_API_SESSION_SECRET'),
+
+    /*
+     * Session token TTL in minutes (SPEC.md §3.5 "`exp = iat + 15 min`" —
+     * "The only expiry in the API"). Empty/unset = 15.
+     */
+    'session_token_ttl_minutes' => (int) (env('PUBLIC_API_SESSION_TOKEN_TTL_MINUTES') ?: 15),
 ];

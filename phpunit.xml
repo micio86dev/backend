@@ -49,6 +49,11 @@
         <env name="APP_ENV" value="testing"/>
         <env name="APP_KEY" value="base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="/>
         <env name="JWT_SECRET" value="testing-secret-key-for-phpunit-only-not-for-production-use"/>
+        <!-- public-api step 5: a DEDICATED session-token secret, distinct
+             from JWT_SECRET above (SPEC.md §3.5) — required in every
+             non-testing environment; fixed here so the suite never depends
+             on a real secret being configured. -->
+        <env name="PUBLIC_API_SESSION_SECRET" value="testing-session-secret-key-for-phpunit-only-not-for-production-use"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <!-- object-storage-fix: pinned so a developer with FILESYSTEM_DISK=s3 in
              their own .env cannot leak a real cloud disk into the suite the

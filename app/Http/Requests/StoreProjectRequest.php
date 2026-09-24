@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Enums\AssessmentType;
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\FrameworkVersion;
 use App\Models\Project;
@@ -95,7 +96,7 @@ class StoreProjectRequest extends FormRequest
                     ->whereNull('deleted_at'),
             ],
             'name' => ['required', 'string', 'max:255'],
-            'assessment_type' => ['required', 'string', Rule::in(['standard', 'potential'])],
+            'assessment_type' => ['required', 'string', Rule::in(AssessmentType::values())],
             'role_code' => ['nullable', 'string'],
             'language' => ['required', 'string', Rule::in($supportedLocales)],
             'competency_ids' => ['nullable', 'array', 'list'],

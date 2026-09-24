@@ -74,9 +74,37 @@ function phpFilesUnder(string $directory): array
  * regex. Adding a file here is a reviewable act; widening the pattern to catch
  * both forms is what makes it one.
  *
+ * gga round 4 finding 1: the SINGULAR-form half of `$tenantScopeStripCallPattern`
+ * below only matches `withoutGlobalScope('tenant')` (or `"tenant"`) — the
+ * LITERAL name `App\Models\Concerns\TenantScoped` registers its global scope
+ * under (`static::addGlobalScope('tenant', ...)`). `App\Http\Controllers\
+ * PublicApi\InterviewController::projectIncludingTrashed()` strips
+ * `SoftDeletingScope::class` — a DIFFERENT scope, on `Project` (still a
+ * `TenantModel` throughout that call), never the tenant scope — and does not
+ * match this pattern, so it needs no entry here: it was never a tenancy
+ * bypass, only ever a soft-delete one (public-api step 5, gga round 3
+ * finding 1). Narrowing the pattern to name the tenant scope specifically —
+ * rather than adding a named allowlist entry for every OTHER scope a future
+ * caller legitimately strips — keeps this list meaning "argued to bypass
+ * tenancy", not "happened to call a method whose name contains
+ * withoutGlobalScope".
+ *
  * @var array<string, string>
  */
 $tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm'];
+
+/**
+ * Matches an actual invocation (`::` or `->`) rather than a bare string, so
+ * prose describing the anti-pattern is not flagged as committing it:
+ *   - `withoutGlobalScopes(` — the PLURAL, no-args-or-not form. Always a
+ *     tenancy bypass in this codebase (nothing narrows it to "every scope
+ *     except tenant"), so any occurrence is flagged.
+ *   - `withoutGlobalScope('tenant'` / `withoutGlobalScope("tenant"` — the
+ *     SINGULAR form, ONLY when its argument is the literal tenant-scope
+ *     name. `withoutGlobalScope(SoftDeletingScope::class)` (or any other
+ *     scope) does NOT match — see the docblock above `$tenantScopeStripGuardedRoots`.
+ */
+$tenantScopeStripCallPattern = '/(->|::)withoutGlobalScopes\(|(->|::)withoutGlobalScope\(\s*[\'"]tenant[\'"]/';
 
 $tenantScopeStripAllowlist = [
     'Http/Controllers/Sso/SsoExchangeController.php' => 'SSO exchange resolves the project before any '
@@ -114,13 +142,10 @@ $tenantScopeStripAllowlist = [
  * that nobody had to argue for: exactly the shape the allowlist docblock above
  * calls "a gap in the regex" rather than "an allowance somebody argued for".
  */
-test('no tenant-scope strip exists in a guarded root outside the named allowlist', function () use ($tenantScopeStripAllowlist, $tenantScopeStripGuardedRoots): void {
+test('no tenant-scope strip exists in a guarded root outside the named allowlist', function () use ($tenantScopeStripAllowlist, $tenantScopeStripGuardedRoots, $tenantScopeStripCallPattern): void {
     $violations = [];
 
-    // `withoutGlobalScopes?\(` — BOTH forms. Matches an actual invocation
-    // (`::` or `->`) rather than a bare string, so prose describing the
-    // anti-pattern is not flagged as committing it.
-    $callPattern = '/(->|::)withoutGlobalScopes?\(/';
+    $callPattern = $tenantScopeStripCallPattern;
 
     foreach ($tenantScopeStripGuardedRoots as $root) {
         foreach (phpFilesUnder(base_path('app/'.$root)) as $file) {
@@ -143,10 +168,10 @@ test('no tenant-scope strip exists in a guarded root outside the named allowlist
         .implode(', ', $violations));
 })->group('arch');
 
-test('every allowlisted tenant-scope strip still exists, so the list cannot rot', function () use ($tenantScopeStripAllowlist): void {
+test('every allowlisted tenant-scope strip still exists, so the list cannot rot', function () use ($tenantScopeStripAllowlist, $tenantScopeStripCallPattern): void {
     // An allowlist nobody prunes becomes a licence for the next file that
     // happens to take the same path. If the call is gone, the entry goes too.
-    $callPattern = '/(->|::)withoutGlobalScopes?\(/';
+    $callPattern = $tenantScopeStripCallPattern;
 
     foreach (array_keys($tenantScopeStripAllowlist) as $relative) {
         $file = base_path('app').'/'.$relative;
@@ -160,13 +185,13 @@ test('every allowlisted tenant-scope strip still exists, so the list cannot rot'
     }
 })->group('arch');
 
-test('no tenant-scope strip exists anywhere under app/Services/Admin/ (task 5.3)', function (): void {
+test('no tenant-scope strip exists anywhere under app/Services/Admin/ (task 5.3)', function () use ($tenantScopeStripCallPattern): void {
     $violations = [];
 
     // Both forms here too — the singular slipped past this guard for the same
     // reason it slipped past the one above. No allowlist: nothing under
     // app/Services/Admin has ever needed one.
-    $callPattern = '/(->|::)withoutGlobalScopes?\(/';
+    $callPattern = $tenantScopeStripCallPattern;
 
     foreach (phpFilesUnder(base_path('app/Services/Admin')) as $file) {
         $source = file_get_contents($file);

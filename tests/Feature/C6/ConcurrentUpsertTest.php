@@ -24,6 +24,7 @@ use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 function makeConcurrentProject(Organization $org): Project
 {
@@ -90,12 +91,15 @@ test('ON CONFLICT upsert on (project_id, candidate_ref) — direct DB test', fun
     $ref = 'direct-upsert-test';
     $now = now()->toDateTimeString();
 
-    // Insert first row
+    // Insert first row. `public_id` (public-api step 5, G-05) is supplied
+    // explicitly — this raw statement mirrors `SsoExchangeController`'s own
+    // upsert exactly, including its reason for doing so: it bypasses
+    // Eloquent, so `HasPublicId`'s `creating` hook never runs.
     DB::statement("
         INSERT INTO participants
-            (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, created_at, updated_at)
+            (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, public_id, created_at, updated_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?, ?)
         ON CONFLICT (project_id, candidate_ref)
         DO UPDATE SET
             display_name = EXCLUDED.display_name,
@@ -104,14 +108,14 @@ test('ON CONFLICT upsert on (project_id, candidate_ref) — direct DB test', fun
             language     = EXCLUDED.language,
             updated_at   = EXCLUDED.updated_at
         WHERE participants.status = 'in_attesa'
-    ", [$org->id, $project->id, $ref, 'First Display', 'first@example.test', 'ICO', 'en', $now, $now]);
+    ", [$org->id, $project->id, $ref, 'First Display', 'first@example.test', 'ICO', 'en', (string) Str::ulid(), $now, $now]);
 
     // Second insert with same conflict key — should update, not error
     DB::statement("
         INSERT INTO participants
-            (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, created_at, updated_at)
+            (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, public_id, created_at, updated_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?, ?)
         ON CONFLICT (project_id, candidate_ref)
         DO UPDATE SET
             display_name = EXCLUDED.display_name,
@@ -120,7 +124,7 @@ test('ON CONFLICT upsert on (project_id, candidate_ref) — direct DB test', fun
             language     = EXCLUDED.language,
             updated_at   = EXCLUDED.updated_at
         WHERE participants.status = 'in_attesa'
-    ", [$org->id, $project->id, $ref, 'Second Display', 'second@example.test', 'ICO', 'en', $now, $now]);
+    ", [$org->id, $project->id, $ref, 'Second Display', 'second@example.test', 'ICO', 'en', (string) Str::ulid(), $now, $now]);
 
     $count = Participant::where('project_id', $project->id)->where('candidate_ref', $ref)->count();
     $participant = Participant::where('project_id', $project->id)->where('candidate_ref', $ref)->first();

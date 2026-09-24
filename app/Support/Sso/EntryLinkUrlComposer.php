@@ -63,8 +63,16 @@ final class EntryLinkUrlComposer
     /**
      * Returns the locale prefix segment, or null when the URL must be
      * unprefixed (the default locale, or an unsupported one — logged).
+     *
+     * Public (public-api step 5): `App\Support\PublicApi\
+     * HostedInterviewUrlComposer` reuses this EXACT prefix rule for the
+     * `/i/{token}` hosted page (SPEC.md §3.5) — the origin-selection and
+     * path segment differ between the two ('candidate_app_url'/`interview`
+     * here vs. `public_api.interview_url`/`i` there), but "which locales
+     * get a prefix, and which fall back unprefixed" must not fork into two
+     * independently-maintained answers.
      */
-    private function resolvePrefix(?string $lang): ?string
+    public function resolvePrefix(?string $lang): ?string
     {
         $defaultLocale = config('interview.frontend_default_locale', 'it');
         $locales = config('interview.frontend_locales', ['it', 'en']);
