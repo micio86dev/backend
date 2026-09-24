@@ -22,42 +22,46 @@ return [
      * loads at test time and what step 11's Scramble export is diffed
      * against (T-CONTRACT-001). Overridable so a future generated-copy path
      * (or a test double) does not require editing this file.
+     *
+     * Every default below is applied with `?:`, not `env()`'s own second
+     * argument: Laravel's `env()` returns an empty string for a
+     * present-but-empty `KEY=` line in `.env`, which never falls through to
+     * that second-argument default — only a genuinely UNSET key does. `?:`
+     * treats both "unset" and "empty" as "use the default".
      */
-    'contract_path' => env('PUBLIC_API_CONTRACT_PATH', base_path('public-api/openapi.yaml')),
+    'contract_path' => env('PUBLIC_API_CONTRACT_PATH') ?: base_path('public-api/openapi.yaml'),
 
     /*
      * Public base URL of `/v1` itself, e.g. `https://api.beai.example/v1`
      * (SPEC.md §2 architecture diagram, `openapi.yaml` `servers[0].url`).
      *
-     * Defaults to this API's own origin plus the Laravel route prefix —
+     * Defaults to this API's own origin (falling back to `http://localhost`
+     * if `APP_URL` is itself unset or empty) plus the Laravel route prefix —
      * host-agnostic until `api.` is confirmed (decisions table Q6, G-03).
      */
-    'base_url' => env('PUBLIC_API_URL', env('APP_URL').'/api/v1'),
+    'base_url' => env('PUBLIC_API_URL') ?: rtrim((string) (env('APP_URL') ?: 'http://localhost'), '/').'/api/v1',
 
     /*
      * Base URL of the generated developer docs site (§6 "Developer area",
-     * `developers.beai.example`). No default: unset until Q6/G-03 is
-     * resolved, and nothing in step 1 reads this for anything other than
-     * documentation cross-links.
+     * `developers.beai.example`). No default: unset (or blank) until
+     * Q6/G-03 is resolved, and nothing in step 1 reads this for anything
+     * other than documentation cross-links.
      */
-    'developers_url' => env('DEVELOPERS_URL'),
+    'developers_url' => env('DEVELOPERS_URL') ?: null,
 
     /*
      * Base URL of the hosted interview page (§3.5 "Hosted URL:
-     * `https://interview.beai.example/i/{token}`").
-     *
-     * Falls back to `FRONTEND_URL` when that key is defined in this
-     * deployment's environment; as of step 1 this codebase defines no such
-     * key (only the unrelated `CANDIDATE_APP_URL`, entry-link origin for
-     * the SSO ingress — a different surface, see config/interview.php), so
-     * the effective default is `null` until the interview host is chosen.
+     * `https://interview.beai.example/i/{token}`"). No default: null until
+     * the interview host is chosen (only the unrelated `CANDIDATE_APP_URL`,
+     * entry-link origin for the SSO ingress, is defined today — a different
+     * surface, see config/interview.php).
      */
-    'interview_url' => env('INTERVIEW_URL', env('FRONTEND_URL')),
+    'interview_url' => env('INTERVIEW_URL') ?: null,
 
     /*
      * Base URL of the `@beai/embed` CDN bundle (§4.1 packaging,
      * `https://cdn.beai.example/embed/v1.js`). No default for the same
      * reason as `developers_url` above.
      */
-    'embed_cdn_url' => env('EMBED_CDN_URL'),
+    'embed_cdn_url' => env('EMBED_CDN_URL') ?: null,
 ];

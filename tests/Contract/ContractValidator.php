@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Contract;
 
+use cebe\openapi\spec\Reference;
 use cebe\openapi\spec\Response;
 use cebe\openapi\spec\Schema;
 use Illuminate\Testing\TestResponse;
@@ -42,21 +43,39 @@ use Psr\Http\Message\ResponseInterface;
  * validator's `BodyValidator` never reads it, so a body violating ONLY a
  * `const` constraint silently passes — confirmed empirically before this was
  * added (`{"status":"degraded"}` validated clean against `/health`).
- * `assertDeclaredConstProperties()` below closes exactly that gap for
- * TOP-LEVEL object properties (all four uses in the current contract —
- * `/health.status`, `RecordingResource.kind`, the two webhook envelope
- * `event` fields — are top-level), by reading the same schema object the
- * base validator already parsed and comparing declared `const` values
- * against the decoded response body. It does not attempt a general JSON
- * Schema 2020-12 `const`/nested-schema implementation; if the contract ever
- * uses `const` inside a nested `properties`/`items` schema, this needs
- * extending or the upstream library needs to gain 3.1 support.
+ * `assertDeclaredConstProperties()` below closes exactly that gap. What it
+ * covers, precisely: the TOP-LEVEL properties of the response body's schema
+ * — either declared directly in `properties` (`/health.status`), OR
+ * contributed by a TOP-LEVEL `allOf` branch that is an inline object schema
+ * or a `$ref` to one (the two webhook envelope `event` fields, and
+ * `RecordingResource.kind`), merged in `allOf` order so a later branch's
+ * redeclaration of a property wins over an earlier one — exactly how
+ * `ProgressWebhookPayload`/`EvaluationWebhookPayload` narrow
+ * `WebhookEnvelope`'s plain `event: { $ref: WebhookEventType }` into their
+ * own `event: { const: ... }`. It does NOT attempt a general JSON Schema
+ * 2020-12 `const`/nested-schema implementation: a `const` declared inside a
+ * NESTED `properties`/`items` schema (i.e. anything deeper than the
+ * response body's own top-level properties and top-level `allOf` branches)
+ * is out of scope; if the contract ever needs that, this needs extending or
+ * the upstream library needs to gain 3.1 support.
  */
 final class ContractValidator
 {
-    private static ?ResponseValidator $validator = null;
+    /**
+     * One cached validator PER resolved `contract_path`, not a single slot
+     * for whichever path was configured the first time this ran in the
+     * process — otherwise overriding `config('public_api.contract_path')`
+     * (e.g. to an inline test fixture) after the first call would be
+     * silently ignored, keeping every later call validating against the
+     * FIRST contract ever seen.
+     *
+     * @var array<string, ResponseValidator>
+     */
+    private static array $validators = [];
 
     /**
+     * @param  TestResponse<\Symfony\Component\HttpFoundation\Response>  $response
+     *
      * @throws ValidationFailed when the response does not match the
      *                          contract's schema for this operation — undeclared status code, body
      *                          that fails its schema, a `const` mismatch (see class docblock), or a
@@ -73,15 +92,20 @@ final class ContractValidator
 
     private static function responseValidator(): ResponseValidator
     {
-        if (self::$validator === null) {
-            self::$validator = (new ValidatorBuilder)
-                ->fromYamlFile((string) config('public_api.contract_path'))
+        $path = config()->string('public_api.contract_path');
+
+        if (! isset(self::$validators[$path])) {
+            self::$validators[$path] = (new ValidatorBuilder)
+                ->fromYamlFile($path)
                 ->getResponseValidator();
         }
 
-        return self::$validator;
+        return self::$validators[$path];
     }
 
+    /**
+     * @param  TestResponse<\Symfony\Component\HttpFoundation\Response>  $response
+     */
     private static function toPsr7Response(TestResponse $response): ResponseInterface
     {
         return new Psr7Response(
@@ -110,6 +134,21 @@ final class ContractValidator
             return;
         }
 
+        if ($operation->responses === null) {
+            // The base `responseValidator()->validate()` call above already
+            // matched this exact status code against a declared response —
+            // it would have thrown otherwise. Reaching here with no
+            // `responses` block at all is a contract-parsing inconsistency,
+            // not a "nothing to check" case, so this fails loudly instead of
+            // silently skipping the const check.
+            throw new ValidationFailed(sprintf(
+                "Response [%s %s %d]: operation declares no 'responses' block, but the base validator already matched this status code.",
+                strtoupper($address->method()),
+                $address->path(),
+                $response->getStatusCode()
+            ));
+        }
+
         $responseSpec = $operation->responses->getResponse((string) $response->getStatusCode());
 
         if (! $responseSpec instanceof Response) {
@@ -120,7 +159,13 @@ final class ContractValidator
         $mediaType = $responseSpec->content[$contentType] ?? null;
         $schema = $mediaType?->schema;
 
-        if (! $schema instanceof Schema || $schema->properties === null) {
+        if (! $schema instanceof Schema) {
+            return;
+        }
+
+        $constProperties = self::topLevelConstProperties($schema);
+
+        if ($constProperties === []) {
             return;
         }
 
@@ -131,17 +176,19 @@ final class ContractValidator
             return;
         }
 
-        foreach ($schema->properties as $name => $propertySchema) {
-            // `const` is not in `Schema::attributes()` (see class docblock),
-            // so it is reached only through `SpecBaseObject`'s magic
-            // `__isset`/`__get` — the same mechanism that exposes `x-*`
-            // extensions — never through a typed accessor.
-            if (! $propertySchema instanceof Schema || ! isset($propertySchema->const)) {
+        foreach ($constProperties as $name => $expected) {
+            // An ABSENT property is only a violation when the schema also
+            // declares it `required` — and that is already enforced by the
+            // base `responseValidator()->validate()` call above, which runs
+            // (and throws) before this method is ever reached. A `const`
+            // property that is merely optional (e.g. `Recording.kind`) must
+            // be allowed to be absent; only a PRESENT value that mismatches
+            // is this method's own concern.
+            if (! array_key_exists($name, $body)) {
                 continue;
             }
 
-            $expected = $propertySchema->const;
-            $actual = $body[$name] ?? null;
+            $actual = $body[$name];
 
             if ($actual !== $expected) {
                 throw new ValidationFailed(sprintf(
@@ -155,5 +202,96 @@ final class ContractValidator
                 ));
             }
         }
+    }
+
+    /**
+     * Collects the response body schema's TOP-LEVEL properties that declare
+     * `const` — its own `properties` plus whatever each TOP-LEVEL `allOf`
+     * branch contributes (see the class docblock "Known gap" section for
+     * exactly what this covers and does not). No `null` guard on
+     * `$objectSchema->properties`: an object schema with no declared
+     * properties resolves it to an empty array at runtime (never `null`,
+     * per `cebe\openapi\SpecBaseObject::__get()`'s generic fallback for an
+     * `attributes()` entry typed as an array), so the `foreach` below
+     * already handles that case by simply not iterating.
+     *
+     * @return array<string, mixed> property name => its declared `const` value
+     */
+    private static function topLevelConstProperties(Schema $schema): array
+    {
+        $constProperties = [];
+
+        foreach (self::topLevelObjectSchemas($schema) as $objectSchema) {
+            foreach ($objectSchema->properties as $name => $propertySchema) {
+                $name = (string) $name;
+
+                $const = $propertySchema instanceof Schema
+                    ? self::declaredConst($propertySchema)
+                    : null;
+
+                if ($const !== null) {
+                    $constProperties[$name] = $const;
+                } else {
+                    // A later `allOf` branch (or the base schema itself)
+                    // redeclaring the same property WITHOUT `const` widens
+                    // it back — it no longer carries the constraint.
+                    unset($constProperties[$name]);
+                }
+            }
+        }
+
+        return $constProperties;
+    }
+
+    /**
+     * Reads a schema's `const` value. `const` is not in `Schema::attributes()`
+     * (see class docblock "Known gap"), so `SpecBaseObject` never exposes it
+     * through a typed `@property` — PHPStan has no declared property to read
+     * (`property.notFound` against `$schema->const`). The only documented,
+     * statically-typed way to reach it is `getSerializableData()`, which
+     * re-serialises the schema to a `stdClass` including whatever
+     * undeclared/"additional" keys (the same mechanism `x-*` extensions use)
+     * were present in the source document. Returns `null` both when `const`
+     * is absent AND when it is explicitly declared `null` — the current
+     * contract only ever declares string consts, so that ambiguity is out
+     * of scope (see the class docblock's "Known gap" section).
+     */
+    private static function declaredConst(Schema $schema): mixed
+    {
+        $data = $schema->getSerializableData();
+
+        if (! $data instanceof \stdClass) {
+            // `getSerializableData()` is only typed `@return mixed` upstream,
+            // but its implementation always returns `(object) $data` on
+            // every return path, i.e. a `stdClass` — this narrows that for
+            // PHPStan without asserting it away, and degrades safely to "no
+            // const" if that ever stops being true.
+            return null;
+        }
+
+        return property_exists($data, 'const') ? $data->const : null;
+    }
+
+    /**
+     * The schema itself, plus every TOP-LEVEL `allOf` element that resolves
+     * to an object schema — never anything nested deeper than that.
+     *
+     * @return list<Schema>
+     */
+    private static function topLevelObjectSchemas(Schema $schema): array
+    {
+        $schemas = [$schema];
+
+        foreach ($schema->allOf ?? [] as $element) {
+            if ($element instanceof Reference) {
+                $element = $element->resolve();
+            }
+
+            if ($element instanceof Schema) {
+                $schemas[] = $element;
+            }
+        }
+
+        return $schemas;
     }
 }
