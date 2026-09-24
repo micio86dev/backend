@@ -3183,6 +3183,7 @@
         "/embed/exchange": {
             "get": {
                 "operationId": "exchange.exchange",
+                "description": "`#[Response(200, type: 'array{access_token: string}')]` (step 6\nreview follow-up, Part A item 5) \u2014 `$accessToken` starts its life\nassigned a literal `null` below (so it has a value for the\n`$raceLost` early-return branch, which never reads it), and is only\never reassigned inside the `DB::transaction()` closure it is passed\ninto BY REFERENCE. Scramble's static inference does not follow a\nby-reference mutation through a closure call boundary, so without\nthis attribute it read only the INITIAL `null` assignment and\nexported this operation's `200` body as `{access_token: null}` \u2014\ntrue about the variable's DECLARED starting value, never about what\na real response actually contains: every code path that reaches\n`response()->json(['access_token' => $accessToken], 200)` below has\nalready returned early (`$this->invalid()`/`$this->consumed()`) for\nevery case where a candidate JWT was NOT minted, so `$accessToken`\nis always the `string` `CandidateTokenFactory::mintCandidateToken()`\nreturns by the time this line runs.",
                 "summary": "`?token=` documented as REQUIRED (step 5 review follow-up, Part B\nitem 5) \u2014 Scramble's own inference read\n`$request->query('token', '')`'s literal default and rendered the\nparameter as optional with a `\"\"` default, which is accurate about\nthis METHOD'S defensive handling of a missing value (never a 500)\nbut not about the CONTRACT: SPEC.md \u00a73.5 names `token` as the one\nparameter this operation accepts, and a caller who omits it always\ngets `401 token_invalid`, never a meaningful 200 \u2014 the same\n\"required in the contract, defended in code\" distinction\n`CreateInterviewRequest`'s own required fields already draw",
                 "tags": [
                     "Exchange"
@@ -3207,7 +3208,7 @@
                                     "type": "object",
                                     "properties": {
                                         "access_token": {
-                                            "type": "null"
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
@@ -3892,7 +3893,8 @@
             },
             "get": {
                 "operationId": "public-api.interviews.index",
-                "summary": "`data[]` documented as a list of `PublicInterview` objects, and\n`next_cursor` as the nullable string it genuinely is (step 5 review\nfollow-up, Part B item 2) \u2014 `CursorPage::paginate()`'s own\n`next_cursor: string|null` PHPDoc did not survive being returned\nthrough `response()->json($rawPage)`, so the exported spec\npreviously typed it as a non-nullable `string` and `data[]`'s items\nas untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item\n6) replace the incorrect auto-inferred `422 {message, errors}` this\nmethod's own `QueryValidationException` throw produced \u2014 see\n`self::PROBLEM_SHAPE`'s own docblock",
+                "description": "`created_after`/`created_before` documented explicitly (step 6 review\nfollow-up, Part A item 8) \u2014 without a `#[QueryParameter]` override,\nScramble's own inference picked up the nearest preceding CODE COMMENT\nabove `$request->query('created_after')` below as this parameter's\ndescription (an internal implementation note about\n`validateFilterFormats()`/`Validator::validated()`, meaningless to an\nAPI consumer, and `created_before` got no description at all). These\ntwo attributes describe the accepted FORMAT and the `400` a caller\nactually gets on a malformed value, the same contract\n`App\\Rules\\PublicApi\\Iso8601DateTime` enforces.",
+                "summary": "`data[]` documented as a list of `PublicInterview` objects, and\n`next_cursor` as the nullable string it genuinely is (step 5 review\nfollow-up, Part B item 2) \u2014 `CursorPage::paginate()`'s own\n`next_cursor: string|null` PHPDoc did not survive being returned\nthrough `response()->json($rawPage)`, so the exported spec\npreviously typed it as a non-nullable `string` and `data[]`'s items\nas untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item\n6) replace the incorrect auto-inferred `422 {message, errors}` this\nmethod's own `QueryValidationException` throw produced \u2014 see\n`Problem::PROBLEM_SHAPE`'s own docblock (step 6 review follow-up,\nPart A item 6: now shared from `App\\Support\\PublicApi\\Problem`\nrather than a copy of the constant declared on this class)",
                 "tags": [
                     "Interview"
                 ],
@@ -3926,9 +3928,16 @@
                         }
                     },
                     {
+                        "name": "metadata",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
                         "name": "created_after",
                         "in": "query",
-                        "description": "Normalised to a CarbonImmutable before the comparison (step 5\n review follow-up, item 6) \u2014 never the raw query string. By the\n time this runs, `validateFilterFormats()` above has already\n confirmed the value matches `Iso8601DateTime`'s own strict\n format set, so `parse()` is not expected to fail here; it is\n still checked defensively rather than trusted blindly, matching\n this method's own \"never Validator::validated()\" discipline for\n filter VALUES.",
+                        "description": "Inclusive lower bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.",
                         "schema": {
                             "type": "string"
                         }
@@ -3936,13 +3945,7 @@
                     {
                         "name": "created_before",
                         "in": "query",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "metadata",
-                        "in": "query",
+                        "description": "Exclusive upper bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.",
                         "schema": {
                             "type": "string"
                         }
@@ -4071,6 +4074,420 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                }
+            }
+        },
+        "/v1/interviews/{interview}/transcript": {
+            "get": {
+                "operationId": "public-api.interviews.transcript",
+                "summary": "`GET /v1/interviews/{id}/transcript` \u2014 SPEC.md \u00a73.3, gate: status\n`under_evaluation` or `completed`, else `409 transcript_not_ready`\n(`error` included \u2014 G-15)",
+                "tags": [
+                    "Interview"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "409": {
+                        "description": "Transcript not ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/interviews/{interview}/answers": {
+            "get": {
+                "operationId": "public-api.interviews.answers",
+                "summary": "`GET /v1/interviews/{id}/answers` \u2014 SPEC.md \u00a73.3, same read gate as\nthe transcript",
+                "tags": [
+                    "Interview"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "409": {
+                        "description": "Answers not ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/interviews/{interview}/scoring": {
+            "get": {
+                "operationId": "public-api.interviews.scoring",
+                "summary": "`GET /v1/interviews/{id}/scoring` \u2014 SPEC.md \u00a73.3, gate: status\n`completed` only, else `409 scoring_not_ready`",
+                "tags": [
+                    "Interview"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "409": {
+                        "description": "Scoring not ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/interviews/{interview}/events": {
+            "get": {
+                "operationId": "public-api.interviews.events",
+                "summary": "`GET /v1/interviews/{id}/events` \u2014 SPEC.md \u00a73.3, `App\\Support\\\nPublicApi\\CursorPage` in its ASCENDING form (G-12: the one documented\nexception to `created_at desc`). `InterviewEvent.public_id` (`evt_`)\nis what every real row already carries \u2014 see that model's own\ndocblock; no participant special-cases its absence",
+                "tags": [
+                    "Interview"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "type": {
+                                                        "type": "string"
+                                                    },
+                                                    "occurred_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "data": {
+                                                        "type": [
+                                                            "object",
+                                                            "null"
+                                                        ],
+                                                        "additionalProperties": {}
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "type",
+                                                    "occurred_at",
+                                                    "data"
+                                                ]
+                                            }
+                                        },
+                                        "next_cursor": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "has_more": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "next_cursor",
+                                        "has_more"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "400": {
+                        "description": "Malformed query parameter.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -6419,7 +6836,7 @@
         "/v1/projects": {
             "get": {
                 "operationId": "public-api.projects.index",
-                "description": "`data[]` documented as a list of `PublicProject` objects and\n`next_cursor` as nullable (step 5 review follow-up, Part B item 2) \u2014\nsame fix, same reasoning, as `InterviewController::index()`'s own\ndocblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)\nreplace the incorrect auto-inferred `422` this method's own\n`QueryValidationException` throw produced.",
+                "description": "`data[]` documented as a list of `PublicProject` objects and\n`next_cursor` as nullable (step 5 review follow-up, Part B item 2) \u2014\nsame fix, same reasoning, as `InterviewController::index()`'s own\ndocblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)\nreplace the incorrect auto-inferred `422` this method's own\n`QueryValidationException` throw produced \u2014 the shape now shared\nfrom `Problem::PROBLEM_SHAPE` (step 6 review follow-up, Part A item\n6) rather than a copy of the constant this class used to declare.",
                 "summary": "SPEC.md \u00a73.2 \"Filtering on list endpoints: `status`, ...\". `role_code`\nand `assessment_type` are Public-API-specific additions this\noperation's own contract entry lists (`openapi.yaml` `listProjects`\nparameters). An unrecognised value for any of the three answers `400\nvalidation_failed` via `QueryValidationException` (G-28) \u2014 a\nmalformed QUERY PARAMETER, never `422`",
                 "tags": [
                     "Project"
@@ -7308,6 +7725,127 @@
                                         "failed",
                                         "redis_eviction_policy",
                                         "mail"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/interviews/{interview}/recording": {
+            "get": {
+                "operationId": "public-api.interviews.recording",
+                "tags": [
+                    "Recording"
+                ],
+                "parameters": [
+                    {
+                        "name": "interview",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JSON_PRESERVE_ZERO_FRACTION (gga finding 2), via the shared\nPublicApiJson::response() \u2014 `duration_seconds` is stored/cast as\na plain `int` today (never a whole-number float PHP's own\njson_encode() would otherwise truncate), so this call carries no\nOBSERVABLE effect for this field right now, but keeps this\nendpoint on the same uniform, future-proof responder every other\n`/v1` action uses rather than being the one call site someone\nhas to remember to special-case later.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "interview_id": {
+                                            "type": "string"
+                                        },
+                                        "kind": {
+                                            "type": "string",
+                                            "const": "audio"
+                                        },
+                                        "url": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "format": {
+                                            "type": "string"
+                                        },
+                                        "duration_seconds": {
+                                            "type": "integer"
+                                        },
+                                        "size_bytes": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "interview_id",
+                                        "kind",
+                                        "url",
+                                        "expires_at",
+                                        "format",
+                                        "duration_seconds",
+                                        "size_bytes"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not found, or recording not ready (code=recording_not_ready).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
                                     ]
                                 }
                             }
@@ -11375,7 +11913,8 @@
                         "type": [
                             "string",
                             "null"
-                        ]
+                        ],
+                        "description": "ALWAYS null here \u2014 a plain read never has a fresh session\ntoken to embed one for. Exported as `string|null` (not the\nliteral `null` this line alone would infer) by\n`App\\Support\\Scramble\\InterviewHostedUrlNullableExtension` \u2014\nsee that class's own docblock; step 6 review follow-up, Part\nA item 4 removed the runtime config hack this used to\nroute through."
                     },
                     "progress": {
                         "anyOf": [
@@ -11437,7 +11976,7 @@
                     },
                     "recording_ready": {
                         "type": "boolean",
-                        "description": "G-01 (binding): video recordings are backoffice-only, never\nexposed via the public API \u2014 audio readiness is not yet wired\nin step 5 (no recording pipeline read here), so this is\nalways false until a later step adds it."
+                        "description": "G-01: true iff an `interview_recordings` row exists for this\nparticipant (audio only \u2014 video is never exposed, see\n`App\\Http\\Controllers\\PublicApi\\RecordingController`'s own\ndocblock). gga review, step 6 follow-up, finding 5: this used\nto be a hardcoded `false` left over from before step 6 built\nthe recording pipeline.\n(bool) cast \u2014 `self::recordingReady()`'s return flows through\na loop-populated array (`recordingReadyForMany()`'s own\n`$result[...] = true;`), which Scramble's export could not\nnarrow precisely and rendered as `anyOf: [string, boolean]`\nwithout this cast, despite the method's own native `: bool`\nreturn type. Caught via the `scramble:export` diff, not a\ntest \u2014 same class of fix as\n`App\\Support\\Scramble\\InterviewHostedUrlNullableExtension`."
                     },
                     "created_at": {
                         "type": "string"
