@@ -52,6 +52,12 @@ test('a token signed with a different secret fails verification', function (): v
 
     $foreignConfig = Configuration::forSymmetricSigner(new Sha256, InMemory::plainText('a-completely-different-secret-value'));
     $now = new DateTimeImmutable;
+    // Otherwise-complete (step 5 review follow-up, item 3): carries the
+    // SAME org/mode claims a real `mint()` would, so the wrong SIGNATURE is
+    // the one thing this test actually exercises — not a token that would
+    // also have failed on a missing claim, which would pass this test for
+    // the wrong reason if `SignedWith` validation were ever accidentally
+    // skipped.
     $foreignToken = $foreignConfig->builder()
         ->issuedBy('beai')
         ->permittedFor('embed')
@@ -59,6 +65,8 @@ test('a token signed with a different secret fails verification', function (): v
         ->identifiedBy('foreign-jti')
         ->issuedAt($now)
         ->expiresAt($now->modify('+15 minutes'))
+        ->withClaim('org', PublicId::encode($participant->organization))
+        ->withClaim('mode', 'live')
         ->getToken($foreignConfig->signer(), $foreignConfig->signingKey())
         ->toString();
 
@@ -66,15 +74,21 @@ test('a token signed with a different secret fails verification', function (): v
 });
 
 test('a token with the wrong audience fails verification', function (): void {
+    $participant = stmParticipant();
     $config = Configuration::forSymmetricSigner(new Sha256, InMemory::plainText(config()->string('public_api.session_secret')));
     $now = new DateTimeImmutable;
+    // Otherwise-complete (step 5 review follow-up, item 3) — real subject,
+    // org and mode, correctly signed — so `aud` is the ONE thing wrong,
+    // and it is genuinely the audience check deciding this test.
     $wrongAudience = $config->builder()
         ->issuedBy('beai')
         ->permittedFor('some-other-audience')
-        ->relatedTo('int_01ARZ3NDEKTSV4RRFFQ69G5FAV')
+        ->relatedTo(PublicId::encode($participant))
         ->identifiedBy('a-jti')
         ->issuedAt($now)
         ->expiresAt($now->modify('+15 minutes'))
+        ->withClaim('org', PublicId::encode($participant->organization))
+        ->withClaim('mode', 'live')
         ->getToken($config->signer(), $config->signingKey())
         ->toString();
 

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\PublicApi\Serializers;
 
+use App\Enums\ApiKeyMode;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\PublicId;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -20,8 +20,8 @@ use LogicException;
  * `createInterview`, `listInterviews` and `getInterview` (SPEC.md §3.4
  * "one serializer per resource").
  *
- * `hosted_url` is ALWAYS `null` here — a judgement call (see this class's
- * own report entry): a hosted URL is only meaningful paired with a FRESH,
+ * `hosted_url` is ALWAYS `null` here — a judgement call: a hosted URL is
+ * only meaningful paired with a FRESH,
  * unconsumed session token, and a plain read has none to embed. §3.3's own
  * contract note documents the alternative source: `POST /interviews` and
  * `POST /interviews/{id}/session-tokens` each carry their OWN `hosted_url`,
@@ -56,7 +56,7 @@ final class InterviewSerializer
      * which is the right cost for exactly one row.
      *
      * @param  list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>|null  $progress
-     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string}
+     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string}
      */
     public static function toArray(Participant $participant, bool $expandProject = false, ?array $progress = null): array
     {
@@ -72,10 +72,10 @@ final class InterviewSerializer
             'role_code' => $participant->role_code,
             'language' => (string) $participant->language,
             'status' => $status->value,
-            'livemode' => $participant->mode->value === 'live',
+            'livemode' => $participant->mode === ApiKeyMode::Live,
             'metadata' => $participant->metadata ?? [],
             'exit_redirect_url' => $participant->exit_redirect_url,
-            'hosted_url' => null,
+            'hosted_url' => self::hostedUrl(),
             'progress' => $progress ?? self::progress($participant),
             'started_at' => $participant->started_at?->toISOString(),
             'completed_at' => $participant->completed_at?->toISOString(),
@@ -95,6 +95,32 @@ final class InterviewSerializer
         }
 
         return $data;
+    }
+
+    /**
+     * `null` in EVERY environment that leaves `public_api.
+     * interview_hosted_url_override` unset (see this class's own docblock
+     * for why a plain read never has a fresh token to embed one for) — but
+     * genuinely `?string`, not a bare literal `null` (step 5 review
+     * follow-up, Part B item 4): Scramble's schema inference reads an
+     * array literal's value types from the code that builds it, not from
+     * `toArray()`'s own `@return` docblock, so a literal `null` there
+     * exported `Interview.hosted_url` as the type `null` only, never the
+     * `string|null` `openapi.yaml`'s own `Interview` schema declares it
+     * as. `PublicApiExceptionRenderer`-style honesty: a REAL, reachable
+     * branch (config-driven, never a compile-time-constant `null`) is
+     * what makes PHPStan accept the `?string` return type on its own
+     * merits, without an ignore — the SAME reason this config key exists
+     * at all, not only to satisfy static analysis. No production
+     * environment sets it; it is documented purely as the contract
+     * escape hatch a future SPEC.md revision (or an operator override)
+     * could use without another docblock/type round-trip.
+     */
+    private static function hostedUrl(): ?string
+    {
+        $override = config('public_api.interview_hosted_url_override');
+
+        return is_string($override) && $override !== '' ? $override : null;
     }
 
     /**
@@ -280,50 +306,22 @@ final class InterviewSerializer
     }
 
     /**
-     * Every project competency, LEFT JOINed to this participant's
-     * `interview_sessions` row for it — a competency with no session yet
-     * still appears, with an empty `answers` list (SPEC.md §3.3
-     * `CompetencyProgress`). Mirrors
-     * `App\Services\Webhooks\ProgressPayloadAssembler::assemble()`'s
-     * identical query shape (same underlying fact: one `interview_sessions`
-     * row per competency attempt, at most one `ended_at` per competency) —
-     * deliberately NOT reused directly, since that class returns the
-     * webhook's own payload envelope (`version`/`event`/`delivery_id`),
-     * not this schema's `competency_code`/`answers` shape.
+     * The single-row convenience `toArray()` falls back to when its own
+     * `$progress` argument is `null` (e.g. `App\Http\Controllers\PublicApi\
+     * InterviewController::store()`'s brand-new-enrolment response, which
+     * has nothing of its own to batch). DELEGATES to `progressForMany()`
+     * (step 5 review follow-up, item 9) rather than running its own,
+     * separate per-row query — `App\Http\Controllers\PublicApi\
+     * InterviewController::show()` now calls `progressForMany()` directly
+     * for the identical reason, so every `/v1` interview read converges on
+     * the SAME one implementation (`competencyCodesByProject()` +
+     * `sessionsByParticipant()`) rather than two independently-written
+     * queries that could silently drift apart.
      *
      * @return list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>
      */
     private static function progress(Participant $participant): array
     {
-        $rows = DB::table('project_competencies')
-            ->join('framework_competencies', 'project_competencies.competency_id', '=', 'framework_competencies.id')
-            ->leftJoin('interview_sessions', function (JoinClause $join) use ($participant): void {
-                $join->on('interview_sessions.competency_code', '=', 'framework_competencies.code')
-                    ->where('interview_sessions.participant_id', '=', $participant->id);
-            })
-            ->where('project_competencies.project_id', $participant->project_id)
-            ->orderBy('project_competencies.position')
-            ->select([
-                'framework_competencies.code as code',
-                'interview_sessions.question_index as question_index',
-                'interview_sessions.ended_at as ended_at',
-            ])
-            ->get();
-
-        $entries = [];
-
-        foreach ($rows as $row) {
-            /** @var array{code: mixed, question_index: mixed, ended_at: mixed} $row */
-            $row = (array) $row;
-
-            $code = $row['code'];
-
-            $entries[] = [
-                'competency_code' => is_string($code) ? $code : '',
-                'answers' => self::answersFromSession($row['question_index'], $row['ended_at']),
-            ];
-        }
-
-        return $entries;
+        return self::progressForMany([$participant])[$participant->id] ?? [];
     }
 }

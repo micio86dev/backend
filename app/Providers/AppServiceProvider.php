@@ -311,8 +311,15 @@ class AppServiceProvider extends ServiceProvider
         // spatie/laravel-translatable ^6.x does not publish a config file; the
         // Translatable singleton is configured programmatically here.
         // Values are read from config/translatable.php for traceability.
+        //
+        // `config()` returns `mixed` — narrowed here (step 5 review follow-up,
+        // PHPStan level-max on this touched file) rather than trusted as a
+        // string, matching `forcePublicRootUrl()`'s own discipline below for
+        // the identical reason.
+        $fallbackLocale = config('translatable.fallback_locale', 'en');
+
         Translatable::fallback(
-            fallbackLocale: config('translatable.fallback_locale', 'en'),
+            fallbackLocale: is_string($fallbackLocale) ? $fallbackLocale : 'en',
             fallbackAny: (bool) config('translatable.fallback_any', true),
         );
 
@@ -378,6 +385,31 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(RateLimitPublicApi::maxAttemptsFor($client))
                 ->by(RateLimitPublicApi::keyFor($client));
         });
+
+        // `embed-exchange` — GET /api/embed/exchange (public-api step 5,
+        // SPEC.md §3.5, G-32). A NAMED limiter (step 5 review follow-up,
+        // item 2), not the numeric `throttle:30,1` this route used before:
+        // Laravel's numeric form resolves its bucket key through
+        // `ThrottleRequests::resolveRequestSignature()`, which ALWAYS calls
+        // `$request->user()` on the application's DEFAULT guard first —
+        // regardless of whether this route runs any auth middleware at
+        // all. That guard is tymon's JWTGuard, whose own token parser
+        // chain reads a `token` QUERY/INPUT parameter by the SAME name
+        // this endpoint's own `?token=` contract parameter uses
+        // (`Tymon\JWTAuth\Http\Parser\QueryString`/`InputSource`, tymon's
+        // own default chain) — an array-shaped `?token[]=` value (never
+        // valid here, but never rejected before this middleware runs
+        // either) reached `explode('.', $array)` inside tymon's token
+        // validator and 500'd, before `ExchangeController::exchange()`
+        // ever got a chance to answer its own `401 token_invalid`. A named
+        // limiter's callback owns the bucket key OUTRIGHT (`->by()` below)
+        // and Laravel never calls `resolveRequestSignature()`/`$request->
+        // user()` for it — keyed on IP, matching this route's own
+        // docblock reasoning (a brute-force-guessing surface against
+        // `?token=`, not a per-account one).
+        RateLimiter::for('embed-exchange', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip() ?? 'unknown');
+        });
     }
 
     /**
@@ -403,7 +435,13 @@ class AppServiceProvider extends ServiceProvider
      */
     private function forcePublicRootUrl(): void
     {
-        $appUrl = (string) config('app.url');
+        // `config()` returns `mixed` — narrowed here rather than blindly
+        // `(string)`-cast (step 5 review follow-up, PHPStan level-max on
+        // this touched file: a blind cast on a non-scalar config value
+        // produces a PHP warning and an unhelpful string like "Array" at
+        // runtime, not a clean empty-string fallback).
+        $configuredAppUrl = config('app.url');
+        $appUrl = is_string($configuredAppUrl) ? $configuredAppUrl : '';
 
         if ($appUrl === '' || filter_var($appUrl, FILTER_VALIDATE_URL) === false) {
             return;

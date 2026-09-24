@@ -5,3 +5,13 @@ parameters:
     level: 8
     paths:
         - app/
+        # database/migrations/ is otherwise unscanned (most migrations are
+        # anonymous classes PHPStan gains little from analysing broadly) —
+        # these two are named individually (step 5 review follow-up, item
+        # 11) so PHPStan's project-level run can see the ONE real usage
+        # site of app/Support/Database/Migrations/Concerns/
+        # ChecksColumnNullability, which otherwise reports as an unused
+        # trait (`trait.unused`) purely because its only caller sits
+        # outside the scanned paths.
+        - database/migrations/2026_09_24_130000_add_public_id_to_organizations_and_projects_tables.php
+        - database/migrations/2026_09_24_140000_add_public_api_fields_to_participants_table.php

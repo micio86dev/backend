@@ -13,6 +13,7 @@ use App\Http\Middleware\PublicApi\IdempotencyKey;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
+use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
@@ -371,6 +372,179 @@ test('GET /v1/interviews?expand=project also serializes a soft-deleted project o
 
     $response->assertOk();
     expect($response->json('data.0.project.id'))->toBe(PublicId::encode($project));
+});
+
+// ─── step 5 review follow-up, Part B item 4: Interview.hosted_url is string|null ──
+
+test('GET /v1/interviews/{id} hosted_url is null by default', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+    ])->refresh());
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
+
+    $response->assertOk()->assertJsonPath('hosted_url', null);
+});
+
+test('GET /v1/interviews/{id} hosted_url reflects public_api.interview_hosted_url_override when configured', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+    ])->refresh());
+
+    config(['public_api.interview_hosted_url_override' => 'https://override.example/i/token']);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
+
+    $response->assertOk()->assertJsonPath('hosted_url', 'https://override.example/i/token');
+});
+
+// ─── step 5 review follow-up, item 9: one code path computes progress ───────
+
+test('GET /v1/interviews and GET /v1/interviews/{id} report IDENTICAL progress for the same participant', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    $participant = TenantContextScope::runFor($org->id, function () use ($org, $project): Participant {
+        $prs = Competency::factory()->create(['code' => 'PRS']);
+        $col = Competency::factory()->create(['code' => 'COL']);
+
+        $project->competencies()->attach([
+            $prs->id => ['position' => 0],
+            $col->id => ['position' => 1],
+        ]);
+
+        $participant = Participant::factory()->forProject($project)->create([
+            'organization_id' => $org->id,
+        ])->refresh();
+
+        // One competency answered (COL), the other untouched (PRS) — the
+        // shape `InterviewSerializer::progressForMany()` and its now-
+        // delegating single-row `progress()` must agree on identically:
+        // a competency with no session still appears, empty; one with a
+        // completed session carries exactly one answer.
+        InterviewSession::create([
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => 2,
+            'competency_code' => 'COL',
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'heygen',
+            'provider_session_ref' => null,
+            'status' => 'completed',
+            'ended_reason' => 'completed',
+            'started_at' => now()->subMinutes(5),
+            'ended_at' => now(),
+        ]);
+
+        return $participant;
+    });
+
+    $listResponse = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews');
+    $listResponse->assertOk();
+
+    $showResponse = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
+    $showResponse->assertOk();
+
+    $listProgress = $listResponse->json('data.0.progress');
+    $showProgress = $showResponse->json('progress');
+
+    expect($listProgress)->not->toBeEmpty();
+    expect($showProgress)->toBe($listProgress);
+});
+
+// ─── step 5 review follow-up, item 6: strict ISO 8601 created_after/created_before ──
+
+test('GET /v1/interviews?created_after= rejects a bare date with no time component with 400', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+
+    // The plain `'date'` rule this replaces (step 5 review follow-up,
+    // item 6) ACCEPTS this — `date_parse('2026-01-01')` resolves real
+    // Y/M/D components, so `checkdate()` passes even though there is no
+    // time component at all. Strict ISO 8601 requires one.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?created_after='.urlencode('2026-01-01'));
+
+    $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
+});
+
+test('GET /v1/interviews?created_before= rejects an ISO-shaped date-time with no timezone with 400', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+
+    // Also accepted by the plain `'date'` rule this replaces — every
+    // component `checkdate()` needs is present — but SPEC.md §3.2 requires
+    // UTC with an explicit `Z` or numeric offset, and this string has
+    // neither.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?created_before='.urlencode('2026-01-01T00:00:00'));
+
+    $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
+});
+
+test('GET /v1/interviews?created_after= rejects a relative phrase with 400, never a silently-parsed date', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?created_after='.urlencode('next monday'));
+
+    $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
+});
+
+test('GET /v1/interviews?created_after= accepts strict ISO 8601 (Z and numeric-offset forms) and filters by it', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    $older = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'created_at' => '2026-01-01T00:00:00Z',
+    ]));
+
+    $newer = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'created_at' => '2026-01-03T00:00:00Z',
+    ]));
+
+    // Numeric-offset form (+00:00), same instant as the Z-form cutoff the
+    // filter is proving — both are ISO 8601 (item 6's second accepted
+    // shape).
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?created_after='.urlencode('2026-01-02T00:00:00+00:00'));
+
+    $response->assertOk();
+    expect($response->json('data'))->toHaveCount(1);
+    expect($response->json('data.0.id'))->toBe(PublicId::encode($newer));
+});
+
+test('GET /v1/interviews?project_id= still matches a soft-deleted project (step 5 review follow-up, item 5)', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+    ])->refresh());
+
+    TenantContextScope::runFor($org->id, fn () => $project->delete());
+
+    // Resolving `project_id` withTrashed() (like every other read on this
+    // controller) — before the fix, the filter itself resolved the trashed
+    // project's public id to NO internal id (Project's default
+    // SoftDeletingScope hides it), so it silently matched NOTHING instead
+    // of the participant that is genuinely there.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?project_id='.PublicId::encode($project));
+
+    $response->assertOk();
+    expect($response->json('data'))->toHaveCount(1);
+    expect($response->json('data.0.id'))->toBe(PublicId::encode($participant));
 });
 
 test('POST /v1/interviews for a soft-deleted project_id → 404 (create stays gated on a LIVE project)', function (): void {

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Concerns\HasValues;
+
 /**
  * Project lifecycle status (project-config C4; public-api step 5, Part A
  * item 5).
@@ -19,15 +21,9 @@ namespace App\Enums;
  */
 enum ProjectStatus: string
 {
+    use HasValues;
+
     case Draft = 'draft';
     case Active = 'active';
     case Archived = 'archived';
-
-    /**
-     * @return list<string>
-     */
-    public static function values(): array
-    {
-        return array_map(fn (self $case): string => $case->value, self::cases());
-    }
 }

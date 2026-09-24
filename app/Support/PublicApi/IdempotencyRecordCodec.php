@@ -50,9 +50,14 @@ final class IdempotencyRecordCodec
     /**
      * `null` on ANY failure — a wrong/rotated `APP_KEY`, a corrupted cache
      * entry, or a pre-existing PLAINTEXT record written before this codec
-     * existed (never crashes the request; a stale record simply cannot be
-     * replayed, so the caller's request runs fresh, same as any other cache
-     * miss).
+     * existed. This method never crashes; what a `null` means to the
+     * CALLER is that caller's own decision, not this class's — `App\Http\
+     * Middleware\PublicApi\IdempotencyKey` (step 5 review follow-up, item
+     * 8) refuses with `500 internal_error` rather than treating a `null`
+     * here the same as a genuine cache miss, because a record existing at
+     * all but failing to decode is evidence something WAS stored for this
+     * key, and silently re-running the handler risks a duplicate side
+     * effect — see that middleware's own docblock for the full reasoning.
      *
      * @return array{fingerprint: string, status: int, headers: array<string, string>, body: string}|null
      */

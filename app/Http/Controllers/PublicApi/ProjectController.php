@@ -13,6 +13,8 @@ use App\Http\Resources\PublicApi\ProjectResource;
 use App\Models\Project;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\PublicId;
+use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -37,13 +39,35 @@ final class ProjectController extends Controller
     private const EAGER_LOAD = ['frameworkVersion', 'avatarTemplate', 'competencies'];
 
     /**
+     * See `App\Http\Controllers\PublicApi\InterviewController::PROBLEM_SHAPE`'s
+     * own docblock — the identical `application/problem+json` body every
+     * `App\Support\PublicApi\Problem::make()` call produces, duplicated
+     * here (step 5 review follow-up, Part B item 6) rather than shared:
+     * PHP attribute arguments must be compile-time constants, and the two
+     * controllers have no common ancestor this constant could live on
+     * without widening either class's own responsibility.
+     */
+    private const PROBLEM_SHAPE = 'array{type: string, title: string, status: int, code: string, request_id: string, detail?: string, errors?: list<array{field: string, code: string, message?: string}>}';
+
+    /**
      * SPEC.md §3.2 "Filtering on list endpoints: `status`, ...". `role_code`
      * and `assessment_type` are Public-API-specific additions this
      * operation's own contract entry lists (`openapi.yaml` `listProjects`
      * parameters). An unrecognised value for any of the three answers `400
      * validation_failed` via `QueryValidationException` (G-28) — a
      * malformed QUERY PARAMETER, never `422`.
+     *
+     * `data[]` documented as a list of `PublicProject` objects and
+     * `next_cursor` as nullable (step 5 review follow-up, Part B item 2) —
+     * same fix, same reasoning, as `InterviewController::index()`'s own
+     * docblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)
+     * replace the incorrect auto-inferred `422` this method's own
+     * `QueryValidationException` throw produced.
+     *
+     * @response array{data: list<\App\Http\Resources\PublicApi\ProjectResource>, next_cursor: string|null, has_more: bool}
      */
+    #[IgnoreResponse(422)]
+    #[Response(400, description: 'Malformed query parameter.', type: self::PROBLEM_SHAPE)]
     public function index(Request $request): JsonResponse
     {
         $this->validateFilters($request);

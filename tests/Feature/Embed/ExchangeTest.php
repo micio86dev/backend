@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 use Lcobucci\JWT\Configuration;
 use Lcobucci\JWT\Signer\Hmac\Sha256;
 use Lcobucci\JWT\Signer\Key\InMemory;
+use Tests\Helpers\PublicApi\ThrowingJwtAuth;
+use Tymon\JWTAuth\JWTAuth;
 
 /**
  * @return array{org: Organization, key: string, id: string, token: string, participant: Participant}
@@ -95,8 +97,13 @@ test('T-TOK-001: an expired session token → 401 token_invalid', function (): v
     ['participant' => $participant] = exgCreateInterview();
 
     $now = new DateTimeImmutable('-1 hour');
+    // The participant's REAL organization (step 5 review follow-up, item 3)
+    // — an otherwise-complete token, so `isExpired()` is what actually
+    // decides this test, not an incidental 401 from the placeholder org in
+    // `exgForeignToken()`'s own default never resolving to a real row.
     $expired = exgForeignToken([
         'sub' => PublicId::encode($participant),
+        'org' => PublicId::encode($participant->organization),
         'jti' => 'expired-jti',
         'iat' => $now,
         'exp' => $now->modify('+15 minutes'),
@@ -118,13 +125,59 @@ test('T-TOK-002: a second exchange of the same token → 410 token_consumed', fu
     $second->assertStatus(410)->assertJsonPath('code', 'token_consumed');
 });
 
+// ─── step 5 review follow-up, item 2: missing/empty/array-shaped ?token= ─────
+
+test('a missing ?token= query parameter → 401 token_invalid, never 500', function (): void {
+    $response = $this->getJson('/api/embed/exchange');
+
+    $response->assertStatus(401)->assertJsonPath('code', 'token_invalid');
+});
+
+test('an empty ?token= query parameter → 401 token_invalid, never 500', function (): void {
+    $response = $this->getJson('/api/embed/exchange?token=');
+
+    $response->assertStatus(401)->assertJsonPath('code', 'token_invalid');
+});
+
+test('an array-shaped ?token[]= query parameter → 401 token_invalid, never 500', function (): void {
+    $response = $this->getJson('/api/embed/exchange?token[]=a&token[]=b');
+
+    $response->assertStatus(401)->assertJsonPath('code', 'token_invalid');
+});
+
+// ─── step 5 review follow-up, item 1: mint failure rolls back the consume ────
+
+test('a candidate JWT mint failure after consume rolls back — 500, token still set, no event row', function (): void {
+    $exchange = exgCreateInterview();
+    $originalJti = $exchange['participant']->fresh()->session_token_jti;
+    expect($originalJti)->not->toBeNull();
+
+    app()->instance(JWTAuth::class, new ThrowingJwtAuth);
+
+    $response = $this->getJson('/api/embed/exchange?token='.$exchange['token']);
+
+    $response->assertStatus(500);
+
+    $participant = Participant::find($exchange['participant']->id);
+    expect($participant->session_token_jti)->toBe($originalJti);
+    expect($participant->status)->toBe('in_attesa');
+
+    $events = InterviewEvent::where('participant_id', $participant->id)->pluck('type')->all();
+    expect($events)->not->toContain('token_consumed');
+});
+
 // ─── T-TOK-004: wrong audience ────────────────────────────────────────────────
 
 test('T-TOK-004: a token with the wrong audience → 401 token_invalid', function (): void {
     ['participant' => $participant] = exgCreateInterview();
 
+    // Otherwise-complete token, real organization (step 5 review follow-up,
+    // item 3) — `aud` is the ONLY thing wrong with it, so it is genuinely
+    // the audience check deciding this test, not an incidental 401 from an
+    // org claim that was never going to resolve either way.
     $wrongAudience = exgForeignToken([
         'sub' => PublicId::encode($participant),
+        'org' => PublicId::encode($participant->organization),
         'aud' => 'not-embed',
     ]);
 
@@ -245,6 +298,8 @@ test('a malformed (non-org-prefixed) org claim → 401 token_invalid', function 
 test('a status change between the read and the consume UPDATE loses the race → 410 token_consumed, no token minted', function (): void {
     $exchange = exgCreateInterview();
     $participantId = $exchange['participant']->id;
+    $originalJti = $exchange['participant']->fresh()->session_token_jti;
+    expect($originalJti)->not->toBeNull();
 
     // Simulates a concurrent status transition landing between this
     // controller's participant lookup and its compare-and-clear UPDATE: the
@@ -266,11 +321,15 @@ test('a status change between the read and the consume UPDATE loses the race →
     $response = $this->getJson('/api/embed/exchange?token='.$exchange['token']);
 
     $response->assertStatus(410)->assertJsonPath('code', 'token_consumed');
+    expect($response->json())->not->toHaveKey('access_token');
 
     // The race must not have handed out a candidate JWT nor left the row
-    // half-consumed.
+    // half-consumed (step 5 review follow-up, item 4: session_token_jti is
+    // untouched too, not only status — the 0-row compare-and-clear must not
+    // have cleared it).
     $participant = Participant::find($participantId);
     expect($participant->status)->toBe('in_corso');
+    expect($participant->session_token_jti)->toBe($originalJti);
 });
 
 // ─── T-TOK-010: the minted candidate JWT is a real, usable session ───────────

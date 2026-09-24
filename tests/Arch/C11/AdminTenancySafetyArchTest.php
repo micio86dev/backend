@@ -74,20 +74,20 @@ function phpFilesUnder(string $directory): array
  * regex. Adding a file here is a reviewable act; widening the pattern to catch
  * both forms is what makes it one.
  *
- * gga round 4 finding 1: the SINGULAR-form half of `$tenantScopeStripCallPattern`
- * below only matches `withoutGlobalScope('tenant')` (or `"tenant"`) — the
- * LITERAL name `App\Models\Concerns\TenantScoped` registers its global scope
- * under (`static::addGlobalScope('tenant', ...)`). `App\Http\Controllers\
- * PublicApi\InterviewController::projectIncludingTrashed()` strips
- * `SoftDeletingScope::class` — a DIFFERENT scope, on `Project` (still a
- * `TenantModel` throughout that call), never the tenant scope — and does not
- * match this pattern, so it needs no entry here: it was never a tenancy
- * bypass, only ever a soft-delete one (public-api step 5, gga round 3
- * finding 1). Narrowing the pattern to name the tenant scope specifically —
- * rather than adding a named allowlist entry for every OTHER scope a future
- * caller legitimately strips — keeps this list meaning "argued to bypass
- * tenancy", not "happened to call a method whose name contains
- * withoutGlobalScope".
+ * gga round 4 finding 1, closed further by step 5 review follow-up item 15:
+ * the SINGULAR-form detection below now flags `withoutGlobalScope(...)` for
+ * EVERY argument except the literal, allowlisted `SoftDeletingScope::class`
+ * — see `$containsUnsafeGlobalScopeStrip`'s own docblock. `App\Http\
+ * Controllers\PublicApi\InterviewController::projectIncludingTrashed()`
+ * strips exactly that allowlisted scope, on `Project` (still a
+ * `TenantModel` throughout that call), never the tenant scope — so it needs
+ * no entry here: it was never a tenancy bypass, only ever a soft-delete one
+ * (public-api step 5, gga round 3 finding 1). Allowlisting that ONE safe
+ * call, rather than narrowing the pattern to the literal tenant-scope name,
+ * keeps this list meaning "argued to bypass tenancy", not "happened to call
+ * a method whose name contains withoutGlobalScope" — AND catches a
+ * variable-passed tenant scope name a name-narrowed pattern would still
+ * miss.
  *
  * @var array<string, string>
  */
@@ -99,12 +99,88 @@ $tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/Co
  *   - `withoutGlobalScopes(` — the PLURAL, no-args-or-not form. Always a
  *     tenancy bypass in this codebase (nothing narrows it to "every scope
  *     except tenant"), so any occurrence is flagged.
- *   - `withoutGlobalScope('tenant'` / `withoutGlobalScope("tenant"` — the
- *     SINGULAR form, ONLY when its argument is the literal tenant-scope
- *     name. `withoutGlobalScope(SoftDeletingScope::class)` (or any other
- *     scope) does NOT match — see the docblock above `$tenantScopeStripGuardedRoots`.
+ *   - `withoutGlobalScope(` — the SINGULAR form, flagged for EVERY argument
+ *     EXCEPT the literal `SoftDeletingScope::class` (step 5 review
+ *     follow-up, item 15). The previous shape here matched only a
+ *     LITERAL `'tenant'`/`"tenant"` string argument — which is exactly the
+ *     gap gga round 4 finding 1 closed for the STRING form and left open
+ *     for every other one: `withoutGlobalScope($someVariable)`, where the
+ *     variable happens to hold `'tenant'` at runtime, matched neither the
+ *     old pattern nor any allowlist entry, and would have passed this test
+ *     silently. Allowlisting the ONE call this codebase has ever argued is
+ *     safe (`App\Http\Controllers\PublicApi\InterviewController::
+ *     projectIncludingTrashed()`, `withoutGlobalScope(SoftDeletingScope::class)`
+ *     — dropping soft-delete scoping, never tenant scoping) and flagging
+ *     everything else closes that gap for good: a future caller cannot
+ *     introduce an unreviewed tenant-scope strip merely by NOT spelling the
+ *     scope name as a literal string.
  */
-$tenantScopeStripCallPattern = '/(->|::)withoutGlobalScopes\(|(->|::)withoutGlobalScope\(\s*[\'"]tenant[\'"]/';
+$tenantScopeStripPluralPattern = '/(->|::)withoutGlobalScopes\(/';
+
+$tenantScopeStripSingularPattern = '/(->|::)withoutGlobalScope\(\s*([^)]*)\)/';
+
+$tenantScopeStripAllowedSingularArgument = 'SoftDeletingScope::class';
+
+/**
+ * True when `$source` invokes `withoutGlobalScopes()` (always unsafe here)
+ * or `withoutGlobalScope(...)` with any argument OTHER than the literal,
+ * allowlisted `SoftDeletingScope::class` (see the pattern docblock above).
+ * The singular argument is matched with any amount of leading namespace —
+ * `SoftDeletingScope::class`, `\Illuminate\Database\Eloquent\
+ * SoftDeletingScope::class`, or an aliased import — all end in the same
+ * literal suffix.
+ */
+$containsUnsafeGlobalScopeStrip = function (string $source) use (
+    $tenantScopeStripPluralPattern,
+    $tenantScopeStripSingularPattern,
+    $tenantScopeStripAllowedSingularArgument,
+): bool {
+    if (preg_match($tenantScopeStripPluralPattern, $source) === 1) {
+        return true;
+    }
+
+    if (preg_match_all($tenantScopeStripSingularPattern, $source, $matches) < 1) {
+        return false;
+    }
+
+    foreach ($matches[2] as $argument) {
+        $argument = trim($argument);
+
+        if ($argument === $tenantScopeStripAllowedSingularArgument) {
+            continue;
+        }
+
+        if (str_ends_with($argument, '\\'.$tenantScopeStripAllowedSingularArgument)) {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
+};
+
+test('containsUnsafeGlobalScopeStrip flags every singular withoutGlobalScope() argument except the allowlisted SoftDeletingScope::class', function () use ($containsUnsafeGlobalScopeStrip): void {
+    // The gap this broadened detection closes (gga round 4 finding 1,
+    // extended by step 5 review follow-up item 15): a VARIABLE-passed
+    // tenant scope name, which never matched the old literal-`'tenant'`-only
+    // pattern.
+    expect($containsUnsafeGlobalScopeStrip('$query->withoutGlobalScope($someVariable);'))->toBeTrue();
+
+    // Still flagged: the literal string form the old pattern already caught.
+    expect($containsUnsafeGlobalScopeStrip("Project::withoutGlobalScope('tenant')->find(1);"))->toBeTrue();
+
+    // Still flagged unconditionally: the plural, no-narrowing form.
+    expect($containsUnsafeGlobalScopeStrip('Project::withoutGlobalScopes()->find(1);'))->toBeTrue();
+
+    // The one allowlisted safe case: NOT flagged, short-name or fully
+    // qualified.
+    expect($containsUnsafeGlobalScopeStrip('$relation->getQuery()->withoutGlobalScope(SoftDeletingScope::class);'))->toBeFalse();
+    expect($containsUnsafeGlobalScopeStrip('$relation->getQuery()->withoutGlobalScope(\Illuminate\Database\Eloquent\SoftDeletingScope::class);'))->toBeFalse();
+
+    // Prose with no `->`/`::` invocation is never a call.
+    expect($containsUnsafeGlobalScopeStrip('See withoutGlobalScope(\'tenant\') for details.'))->toBeFalse();
+})->group('arch');
 
 $tenantScopeStripAllowlist = [
     'Http/Controllers/Sso/SsoExchangeController.php' => 'SSO exchange resolves the project before any '
@@ -142,16 +218,14 @@ $tenantScopeStripAllowlist = [
  * that nobody had to argue for: exactly the shape the allowlist docblock above
  * calls "a gap in the regex" rather than "an allowance somebody argued for".
  */
-test('no tenant-scope strip exists in a guarded root outside the named allowlist', function () use ($tenantScopeStripAllowlist, $tenantScopeStripGuardedRoots, $tenantScopeStripCallPattern): void {
+test('no tenant-scope strip exists in a guarded root outside the named allowlist', function () use ($tenantScopeStripAllowlist, $tenantScopeStripGuardedRoots, $containsUnsafeGlobalScopeStrip): void {
     $violations = [];
-
-    $callPattern = $tenantScopeStripCallPattern;
 
     foreach ($tenantScopeStripGuardedRoots as $root) {
         foreach (phpFilesUnder(base_path('app/'.$root)) as $file) {
             $source = file_get_contents($file);
 
-            if ($source === false || preg_match($callPattern, $source) !== 1) {
+            if ($source === false || ! $containsUnsafeGlobalScopeStrip($source)) {
                 continue;
             }
 
@@ -168,11 +242,9 @@ test('no tenant-scope strip exists in a guarded root outside the named allowlist
         .implode(', ', $violations));
 })->group('arch');
 
-test('every allowlisted tenant-scope strip still exists, so the list cannot rot', function () use ($tenantScopeStripAllowlist, $tenantScopeStripCallPattern): void {
+test('every allowlisted tenant-scope strip still exists, so the list cannot rot', function () use ($tenantScopeStripAllowlist, $containsUnsafeGlobalScopeStrip): void {
     // An allowlist nobody prunes becomes a licence for the next file that
     // happens to take the same path. If the call is gone, the entry goes too.
-    $callPattern = $tenantScopeStripCallPattern;
-
     foreach (array_keys($tenantScopeStripAllowlist) as $relative) {
         $file = base_path('app').'/'.$relative;
 
@@ -180,23 +252,21 @@ test('every allowlisted tenant-scope strip still exists, so the list cannot rot'
 
         $source = file_get_contents($file);
 
-        expect($source !== false && preg_match($callPattern, $source) === 1)
+        expect($source !== false && $containsUnsafeGlobalScopeStrip($source))
             ->toBeTrue("Allowlisted file no longer strips a tenant scope — remove it: {$relative}");
     }
 })->group('arch');
 
-test('no tenant-scope strip exists anywhere under app/Services/Admin/ (task 5.3)', function () use ($tenantScopeStripCallPattern): void {
+test('no tenant-scope strip exists anywhere under app/Services/Admin/ (task 5.3)', function () use ($containsUnsafeGlobalScopeStrip): void {
     $violations = [];
 
     // Both forms here too — the singular slipped past this guard for the same
     // reason it slipped past the one above. No allowlist: nothing under
     // app/Services/Admin has ever needed one.
-    $callPattern = $tenantScopeStripCallPattern;
-
     foreach (phpFilesUnder(base_path('app/Services/Admin')) as $file) {
         $source = file_get_contents($file);
 
-        if ($source !== false && preg_match($callPattern, $source) === 1) {
+        if ($source !== false && $containsUnsafeGlobalScopeStrip($source)) {
             $violations[] = $file;
         }
     }

@@ -70,12 +70,13 @@ test('GET /api/organization returns exactly what Admin\OrganizationResource decl
     sort($actual);
 
     // public-api step 4 added App\Http\Resources\PublicApi\OrganizationResource
-    // — a second class also named (bare) "OrganizationResource". Scramble
-    // disambiguates same-basename schemas by fully qualifying them; the
-    // ADMIN class is the one under test here, so its schema name is now
-    // fully qualified rather than bare (the bare "OrganizationResource"
-    // name in openapi.json now names the PUBLIC one instead).
-    expect($actual)->toBe(specProperties('App.Http.Resources.Admin.OrganizationResource'));
+    // — a second class also named (bare) "OrganizationResource", which
+    // used to make Scramble fully-qualify one of the two on a basename
+    // collision (whichever it processed second). Step 5 review follow-up,
+    // Part A: the PUBLIC class now carries an explicit
+    // `#[SchemaName('PublicOrganization')]`, so this ADMIN class keeps its
+    // plain "OrganizationResource" schema name unconditionally.
+    expect($actual)->toBe(specProperties('OrganizationResource'));
 });
 
 test('GET /api/projects/{id} returns exactly what ProjectResource declares', function (): void {
@@ -89,11 +90,13 @@ test('GET /api/projects/{id} returns exactly what ProjectResource declares', fun
     $actual = array_keys($response->json('data'));
     sort($actual);
 
-    // Same disambiguation as the Admin\OrganizationResource test above —
-    // App\Http\Resources\PublicApi\ProjectResource (public-api step 4) now
-    // shares the bare "ProjectResource" basename with this ADMIN class, so
-    // Scramble fully-qualifies the admin one in openapi.json.
-    expect($actual)->toBe(specProperties('App.Http.Resources.ProjectResource'));
+    // Same fix as the Admin\OrganizationResource test above —
+    // App\Http\Resources\PublicApi\ProjectResource (public-api step 4)
+    // shares the bare "ProjectResource" basename with this ADMIN class;
+    // the public one now carries `#[SchemaName('PublicProject')]` (step 5
+    // review follow-up, Part A), so this admin class keeps its plain
+    // "ProjectResource" schema name unconditionally.
+    expect($actual)->toBe(specProperties('ProjectResource'));
 });
 
 test('GET /api/auth/me returns exactly the envelope the spec declares', function (): void {

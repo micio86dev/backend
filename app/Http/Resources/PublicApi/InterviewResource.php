@@ -6,6 +6,7 @@ namespace App\Http\Resources\PublicApi;
 
 use App\Models\Participant;
 use App\PublicApi\Serializers\InterviewSerializer;
+use Dedoc\Scramble\Attributes\SchemaName;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,8 +15,16 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * for `POST /v1/interviews`, `GET /v1/interviews` and
  * `GET /v1/interviews/{id}` (public-api step 5).
  *
+ * `#[SchemaName('PublicInterview')]` (step 5 review follow-up, Part A) —
+ * no OTHER `InterviewResource` class exists in this codebase today, so
+ * this class does not currently collide with anything, but naming it
+ * explicitly, alongside its `PublicOrganization`/`PublicProject` siblings,
+ * keeps every public-API resource schema distinctly and predictably named
+ * regardless of what a future admin-side class happens to be called.
+ *
  * @mixin Participant
  */
+#[SchemaName('PublicInterview')]
 final class InterviewResource extends JsonResource
 {
     /**

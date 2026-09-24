@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Rules\PublicApi;
 
 use Closure;
+use Dedoc\Scramble\Support\Generator\Types\ObjectType;
+use Dedoc\Scramble\Support\Generator\Types\StringType;
+use Dedoc\Scramble\Support\Generator\Types\Type as OpenApiType;
+use Dedoc\Scramble\Support\Generator\TypeTransformer;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
@@ -55,5 +59,25 @@ final class Metadata implements ValidationRule
                 $fail(sprintf('Every :attribute value must be a string of at most %d characters.', self::MAX_VALUE_LENGTH));
             }
         }
+    }
+
+    /**
+     * Self-describes this rule's OpenAPI schema (step 5 review follow-up,
+     * Part B item 3) — Scramble's own `RuleSetToSchemaTransformer` calls
+     * `docs()` on any custom rule object that defines it (checked via
+     * `method_exists`), which is the ONLY way this codebase found to make
+     * `metadata`'s exported type an object with string values: Scramble
+     * cannot statically evaluate what a `ValidationRule::validate()`
+     * method's body actually checks, so a field whose rules are only
+     * `['sometimes', 'nullable', new self]` had nothing to infer FROM and
+     * fell back to a bare, wrong `string|null`.
+     */
+    public function docs(OpenApiType $type, TypeTransformer $openApiTransformer): OpenApiType
+    {
+        $object = new ObjectType;
+        $object->additionalProperties = new StringType;
+        $object->description = 'Free-form key/value pairs (≤ 20 keys, key ≤ 40 chars, value ≤ 500 chars).';
+
+        return $object->nullable(true);
     }
 }

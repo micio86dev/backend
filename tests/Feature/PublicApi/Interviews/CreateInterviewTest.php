@@ -192,6 +192,23 @@ test('an exit_redirect_url host IN allowed_domains is accepted', function (): vo
     $response->assertJsonPath('interview.exit_redirect_url', 'https://hr.acme.example/assessment/done');
 });
 
+test('an exit_redirect_url host matching allowed_domains only by CASE is still accepted (step 5 review follow-up, item 7)', function (): void {
+    ['org' => $org, 'key' => $rawKey] = intOrgWithScopedKey();
+    $project = intCreateProject($org);
+
+    // allowed_domains carries the lower-case 'hr.acme.example' — a caller
+    // sending an UPPER-case host in the URL itself (hosts are
+    // case-insensitive per RFC 3986) must not be refused for a mismatch
+    // that is spelling, not substance.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/interviews', intValidPayload($project, [
+            'exit_redirect_url' => 'https://HR.ACME.EXAMPLE/assessment/done',
+        ]));
+
+    $response->assertCreated();
+    $response->assertJsonPath('interview.exit_redirect_url', 'https://HR.ACME.EXAMPLE/assessment/done');
+});
+
 // ─── gga round 3 finding 2: length limits ────────────────────────────────────
 
 test('gga finding 2: an exit_redirect_url over 2048 chars → 422 validation_failed, field named in errors[]', function (): void {

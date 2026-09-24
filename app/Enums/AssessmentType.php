@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Concerns\HasValues;
+
 /**
  * BEAI assessment type (CLAUDE.md binding domain constraint — mutually
  * exclusive `standard`/`potential`, immutable after go-live; public-api
@@ -18,14 +20,8 @@ namespace App\Enums;
  */
 enum AssessmentType: string
 {
+    use HasValues;
+
     case Standard = 'standard';
     case Potential = 'potential';
-
-    /**
-     * @return list<string>
-     */
-    public static function values(): array
-    {
-        return array_map(fn (self $case): string => $case->value, self::cases());
-    }
 }

@@ -687,14 +687,19 @@ Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
 // PUBLIC endpoint, OUTSIDE /v1 — no API key, no TenantContext (SPEC.md §3.5,
 // G-32). Same TenantContext/RejectStaleCredentials isolation as
 // `/sso/exchange` immediately above, and for the identical reason.
-// `throttle:30,1`: a session token is single-use, so this route is a
-// brute-force-guessing surface against `?token=` the same way a password-
-// reset token endpoint is — unlike `/sso/exchange`, which has no throttle
-// today, this is a NEW route this step adds and the task instruction is
-// explicit about the limit.
+// `throttle:embed-exchange` (step 5 review follow-up, item 2 — was the
+// numeric `throttle:30,1`; same 30/minute limit, registered as a NAMED
+// limiter in `AppServiceProvider::boot()` instead, whose own docblock has
+// the full reasoning: the numeric form's `$request->user()` call crashes
+// on an array-shaped `?token[]=` before this route's own 401 ever runs).
+// A session token is single-use, so this route is a brute-force-guessing
+// surface against `?token=` the same way a password-reset token endpoint
+// is — unlike `/sso/exchange`, which has no throttle today, this is a NEW
+// route this step adds and the task instruction is explicit about the
+// limit.
 Route::get('/embed/exchange', [EmbedExchangeController::class, 'exchange'])
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
-    ->middleware('throttle:30,1');
+    ->middleware('throttle:embed-exchange');
 
 // ─── Candidate Routes (C6) ───────────────────────────────────────────────────
 // Protected by auth:api-candidate → TenantContextCandidate → SubstituteBindings.

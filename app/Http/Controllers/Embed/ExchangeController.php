@@ -13,8 +13,10 @@ use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
 use App\Support\PublicApi\SessionTokenMinter;
 use App\Support\Tenancy\TenantContextScope;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * `GET /api/embed/exchange?token=<session_token>` — BEAI Public API session-
@@ -54,6 +56,19 @@ final class ExchangeController extends Controller
         private readonly SessionTokenMinter $sessionTokenMinter,
     ) {}
 
+    /**
+     * `?token=` documented as REQUIRED (step 5 review follow-up, Part B
+     * item 5) — Scramble's own inference read
+     * `$request->query('token', '')`'s literal default and rendered the
+     * parameter as optional with a `""` default, which is accurate about
+     * this METHOD'S defensive handling of a missing value (never a 500)
+     * but not about the CONTRACT: SPEC.md §3.5 names `token` as the one
+     * parameter this operation accepts, and a caller who omits it always
+     * gets `401 token_invalid`, never a meaningful 200 — the same
+     * "required in the contract, defended in code" distinction
+     * `CreateInterviewRequest`'s own required fields already draw.
+     */
+    #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
     public function exchange(Request $request): JsonResponse
     {
         $raw = $request->query('token', '');
@@ -97,43 +112,79 @@ final class ExchangeController extends Controller
             return $this->consumed($request);
         }
 
-        // Atomic compare-and-clear: only succeeds while `organization_id`,
-        // `session_token_jti` AND `status` STILL match what was just read —
-        // folding the lifecycle check into this SAME statement (gga finding
-        // 1) closes the window a separate "is it still pending?" read would
-        // leave open: a status transition landing between that read and this
-        // write could otherwise hand out a candidate JWT for an interview
-        // that is no longer `pending`. A concurrent second exchange of the
-        // SAME token loses this race too, for the identical reason (SPEC.md
-        // §3.5 "single-use") — both cases answer `410 token_consumed`
-        // rather than a second/late candidate JWT.
-        $consumed = Participant::where('id', $participant->id)
-            ->where('organization_id', $organization->id)
-            ->where('session_token_jti', $verified->jti)
-            ->where('status', 'in_attesa')
-            ->update(['session_token_jti' => null]);
+        // Compare-and-clear, the InterviewEvent insert and the candidate JWT
+        // mint all run inside ONE transaction (step 5 review follow-up,
+        // item 1): a mint failure (`CandidateTokenFactory::mintCandidateToken()`
+        // reaches tymon, which can throw) AFTER the compare-and-clear had
+        // already succeeded used to leave the token PERMANENTLY burned
+        // (`session_token_jti` cleared, an event recorded) with no candidate
+        // JWT ever handed out — the caller has no token left to retry with,
+        // and no way to recover the interview. Wrapping every write in this
+        // transaction means a mint failure now rolls the compare-and-clear
+        // AND the event insert back together: the token is still set,
+        // `status` is untouched, and the caller sees a real 500 to retry
+        // against, instead of a silently unrecoverable interview.
+        $accessToken = null;
+        $raceLost = false;
 
-        if ($consumed === 0) {
-            return $this->consumed($request);
-        }
+        DB::transaction(function () use ($participant, $organization, $verified, &$accessToken, &$raceLost): void {
+            // Atomic compare-and-clear: only succeeds while `organization_id`,
+            // `session_token_jti` AND `status` STILL match what was just
+            // read — folding the lifecycle check into this SAME statement
+            // (gga finding 1) closes the window a separate "is it still
+            // pending?" read would leave open: a status transition landing
+            // between that read and this write could otherwise hand out a
+            // candidate JWT for an interview that is no longer `pending`. A
+            // concurrent second exchange of the SAME token loses this race
+            // too, for the identical reason (SPEC.md §3.5 "single-use") —
+            // both cases answer `410 token_consumed` rather than a
+            // second/late candidate JWT.
+            $consumed = Participant::where('id', $participant->id)
+                ->where('organization_id', $organization->id)
+                ->where('session_token_jti', $verified->jti)
+                ->where('status', 'in_attesa')
+                ->update(['session_token_jti' => null]);
 
-        // InterviewEvent IS a TenantModel — this controller runs on the
-        // PUBLIC, unauthenticated embed-exchange route with no ambient
-        // TenantContext (no TenantContext/PublicApiTenantContext middleware
-        // reaches it — see this class's own docblock), so its `creating`
-        // stamp would otherwise throw `MissingTenantContextException`. The
-        // SAME pattern every console command and queued job in this
-        // codebase already uses to write a TenantModel row outside an HTTP
-        // request's own tenant-scoped middleware.
-        TenantContextScope::runFor($participant->organization_id, function () use ($participant): void {
-            InterviewEvent::create([
-                'participant_id' => $participant->id,
-                'type' => 'token_consumed',
-                'occurred_at' => now(),
-            ]);
+            if ($consumed === 0) {
+                // Not a failure to roll back — 0 rows changed, so there is
+                // nothing this transaction needs to undo. Flagged for the
+                // caller below rather than returned from here directly: a
+                // `return` inside this closure only exits the closure, not
+                // `exchange()` itself.
+                $raceLost = true;
+
+                return;
+            }
+
+            // InterviewEvent IS a TenantModel — this controller runs on the
+            // PUBLIC, unauthenticated embed-exchange route with no ambient
+            // TenantContext (no TenantContext/PublicApiTenantContext
+            // middleware reaches it — see this class's own docblock), so
+            // its `creating` stamp would otherwise throw
+            // `MissingTenantContextException`. The SAME pattern every
+            // console command and queued job in this codebase already uses
+            // to write a TenantModel row outside an HTTP request's own
+            // tenant-scoped middleware.
+            TenantContextScope::runFor($participant->organization_id, function () use ($participant): void {
+                InterviewEvent::create([
+                    'participant_id' => $participant->id,
+                    'type' => 'token_consumed',
+                    'occurred_at' => now(),
+                ]);
+            });
+
+            // Left to throw and propagate: `DB::transaction()` rolls back
+            // and rethrows on ANY exception from its callback, which is
+            // exactly the "mint failure burns nothing" guarantee this
+            // transaction exists for. Never caught here — a caller-visible
+            // 500 is the correct, honest outcome for a genuinely failed
+            // mint, not a silently swallowed one.
+            $accessToken = CandidateTokenFactory::mintCandidateToken($participant);
         });
 
-        $accessToken = CandidateTokenFactory::mintCandidateToken($participant);
+        if ($raceLost) {
+            return $this->consumed($request);
+        }
 
         // No `Set-Cookie` — G-32/T-TOK-008.
         return response()->json(['access_token' => $accessToken], 200);

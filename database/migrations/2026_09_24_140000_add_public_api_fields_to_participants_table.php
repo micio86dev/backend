@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Database\Migrations\Concerns\ChecksColumnNullability;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
@@ -60,13 +61,36 @@ use Illuminate\Support\Str;
  * `session_token_jti` — the `jti` of the CURRENT, unconsumed session token
  * (SPEC.md §3.5), nullable. Minting a new token overwrites this column
  * (revoking whatever `jti` it held), and the embed exchange clears it back
- * to `null` on consumption. Never queried by anything other than the exact
- * `jti` a presented session token carries — no index beyond the implicit
- * one PostgreSQL never needs here (equality lookups on a low-cardinality,
- * per-row column gain nothing from a dedicated index).
+ * to `null` on consumption. No index: the column IS high-cardinality (a
+ * fresh ULID per mint, never repeated), but nothing ever looks a row UP by
+ * `jti` — every real lookup (`SessionTokenController::store()`, `Embed\
+ * ExchangeController::exchange()`) resolves the participant FIRST, by
+ * `organization_id` + `public_id` (both already indexed), and only THEN
+ * compares the presented token's `jti` against that one row's
+ * `session_token_jti` in PHP — an equality check on an already-loaded
+ * value, not a `WHERE session_token_jti = ?` query a dedicated index could
+ * ever serve (step 5 review follow-up, item 13 — the original docblock's
+ * "low-cardinality" reasoning was backwards).
+ *
+ * Deploy window (step 5 review follow-up, item 18, G-45): this migration's
+ * `public_id` NOT NULL step assumes every INSERT reaching `participants`
+ * from this point on already sets it — true for `App\Models\Concerns\
+ * HasPublicId`'s `creating` hook, which every code path in THIS release
+ * uses. A rolling deploy that runs this migration against instances still
+ * serving the PREVIOUS release (code that inserts a `participants` row
+ * without `HasPublicId`) fails those inserts closed at the database (a
+ * `NOT NULL` violation, `23502`) for the remainder of that window, rather
+ * than silently admitting a row this migration's own backfill will never
+ * revisit. This migration MUST run only after the new code is live on
+ * every instance that can insert into `participants` — never during, or
+ * ahead of, that rollout. No code change addresses this; it is an
+ * operational ordering constraint, recorded here because nothing else
+ * enforces it.
  */
 return new class extends Migration
 {
+    use ChecksColumnNullability;
+
     public $withinTransaction = false;
 
     public function up(): void
@@ -101,26 +125,104 @@ return new class extends Migration
             });
         }
 
-        if (! Schema::hasIndex('participants', 'participants_public_id_unique')) {
+        $this->addPublicIdUniqueIndex();
+
+        $this->addModeCheckConstraint();
+    }
+
+    /**
+     * `participants` is a hot path (step 5 review follow-up, item 17) — the
+     * default `ADD CONSTRAINT ... UNIQUE` Laravel's `unique()` blueprint
+     * method issues takes an `ACCESS EXCLUSIVE` lock (blocking every
+     * concurrent read AND write) for as long as it takes Postgres to build
+     * the index over the WHOLE table. `CREATE UNIQUE INDEX CONCURRENTLY`
+     * builds it without that lock, at the cost of needing its own,
+     * non-transactional DDL statement — Postgres refuses it outright
+     * (`CREATE INDEX CONCURRENTLY cannot run inside a transaction block`)
+     * whenever one is already open.
+     *
+     * `$withinTransaction = false` on this class means a REAL `php artisan
+     * migrate` run never opens one, so `CONCURRENTLY` always applies in
+     * production. `tests/Feature/Migration/PublicApiMigrationsRerunTest`
+     * re-invokes this same `up()` a SECOND time from inside
+     * `RefreshDatabase`'s own wrapping test transaction (`Feature/Migration`
+     * is configured that way in `tests/Pest.php`, load-bearing for those
+     * tests) — `DB::transactionLevel() > 0` there, and falls back to the
+     * plain blueprint form rather than erroring: the ONLY thing that matters
+     * inside a test's own short-lived, already-isolated transaction is that
+     * the index ends up existing, never lock duration.
+     */
+    private function addPublicIdUniqueIndex(): void
+    {
+        if (Schema::hasIndex('participants', 'participants_public_id_unique')) {
+            return;
+        }
+
+        if (DB::transactionLevel() > 0) {
             Schema::table('participants', function (Blueprint $table): void {
                 $table->unique('public_id', 'participants_public_id_unique');
             });
+
+            return;
         }
 
-        if (! $this->checkConstraintExists('participants_mode_check')) {
-            DB::statement(
-                "ALTER TABLE participants ADD CONSTRAINT participants_mode_check
-                 CHECK (mode IN ('live', 'test'))"
-            );
+        DB::statement(
+            'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS participants_public_id_unique ON participants (public_id)'
+        );
+    }
+
+    /**
+     * `ADD CONSTRAINT ... CHECK (...)` in its plain form takes an
+     * `ACCESS EXCLUSIVE` lock for as long as Postgres needs to verify the
+     * check against every EXISTING row. Adding it `NOT VALID` first skips
+     * that scan (the constraint is enforced for every new/updated row
+     * immediately, but existing rows are not yet checked), which makes the
+     * `ADD CONSTRAINT` step itself near-instant; the separate `VALIDATE
+     * CONSTRAINT` statement then scans the table for real but only needs a
+     * `SHARE UPDATE EXCLUSIVE` lock — concurrent reads AND writes proceed
+     * throughout (step 5 review follow-up, item 17). Unlike
+     * `addPublicIdUniqueIndex()`'s `CONCURRENTLY` index, BOTH statements
+     * here are ordinary transactional DDL — no `DB::transactionLevel()`
+     * branch is needed; this shape is safe inside the rerun test's wrapping
+     * transaction exactly as it is in a real, transaction-free migration
+     * run.
+     */
+    private function addModeCheckConstraint(): void
+    {
+        if ($this->checkConstraintExists('participants_mode_check')) {
+            return;
         }
+
+        DB::statement(
+            "ALTER TABLE participants ADD CONSTRAINT participants_mode_check
+             CHECK (mode IN ('live', 'test')) NOT VALID"
+        );
+
+        DB::statement('ALTER TABLE participants VALIDATE CONSTRAINT participants_mode_check');
     }
 
     public function down(): void
     {
         DB::statement('ALTER TABLE participants DROP CONSTRAINT IF EXISTS participants_mode_check');
 
+        // `dropUnique()` alone (the previous shape) assumes
+        // `participants_public_id_unique` is a CONSTRAINT-backed unique —
+        // true only when `addPublicIdUniqueIndex()` took its in-transaction
+        // fallback. Outside a transaction (the real, `$withinTransaction =
+        // false` migration path) it is a bare `CREATE UNIQUE INDEX
+        // CONCURRENTLY` index instead, and `ALTER TABLE ... DROP
+        // CONSTRAINT` on that fails (`SQLSTATE[42704]`) since no
+        // constraint by that name exists — while `DROP INDEX` on a
+        // constraint-backed one fails the OTHER way (`SQLSTATE[2BP01]`,
+        // "cannot drop index because constraint requires it"). Checked
+        // first so `down()` uses whichever form actually produced it.
+        if ($this->checkConstraintExists('participants_public_id_unique')) {
+            DB::statement('ALTER TABLE participants DROP CONSTRAINT participants_public_id_unique');
+        } else {
+            DB::statement('DROP INDEX IF EXISTS participants_public_id_unique');
+        }
+
         Schema::table('participants', function (Blueprint $table): void {
-            $table->dropUnique('participants_public_id_unique');
             $table->dropColumn(['public_id', 'metadata', 'exit_redirect_url', 'mode', 'session_token_jti']);
         });
     }
@@ -140,33 +242,29 @@ return new class extends Migration
     }
 
     /**
-     * `Schema::hasColumn()` only answers "does the column exist", not
-     * "is it NOT NULL" — needed here to decide whether the `->change()`
-     * step below has already run on a rerun.
-     */
-    private function columnIsNotNull(string $table, string $column): bool
-    {
-        foreach (Schema::getColumns($table) as $columnDefinition) {
-            if ($columnDefinition['name'] === $column) {
-                return ! $columnDefinition['nullable'];
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * No Laravel-native `Schema::hasCheckConstraint()` exists — queried
      * directly against `information_schema.table_constraints` so a rerun
      * does not attempt `ADD CONSTRAINT` on a name that already exists
      * (a hard Postgres error, unlike an idempotent `IF NOT EXISTS` DDL form
      * Postgres has no equivalent of for constraints).
+     *
+     * Filtered by `table_name` AND `table_schema` (step 5 review follow-up,
+     * item 12) — the original query matched on `constraint_name` alone,
+     * which is only unique WITHIN a schema+table, not across the whole
+     * database: a same-named constraint on an unrelated table (a different
+     * schema entirely, e.g. a `search_path` entry outside this
+     * connection's default, or simply another table that happens to reuse
+     * the name) would have made this method report `true` and skip the
+     * `ADD CONSTRAINT` here even though `participants` itself never got
+     * one. `current_schema()` — not a hardcoded `'public'` — matches
+     * whatever schema this connection actually targets.
      */
     private function checkConstraintExists(string $constraintName): bool
     {
         $rows = DB::select(
-            'SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = ?',
-            [$constraintName],
+            'SELECT 1 FROM information_schema.table_constraints
+             WHERE constraint_name = ? AND table_name = ? AND table_schema = current_schema()',
+            [$constraintName, 'participants'],
         );
 
         return $rows !== [];

@@ -16,6 +16,7 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\PublicApi\Serializers\InterviewSerializer;
+use App\Rules\PublicApi\Iso8601DateTime;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Expand;
 use App\Support\PublicApi\HostedInterviewUrlComposer;
@@ -23,6 +24,8 @@ use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -48,11 +51,46 @@ final class InterviewController extends Controller
 {
     private const EXPANDABLE = ['project'];
 
+    /**
+     * The BEAI Public API (`/v1`) `application/problem+json` body every
+     * `App\Support\PublicApi\Problem::make()` call produces (SPEC.md §3.2
+     * "Errors", `Problem`/`ErrorCode` schemas) — a PHPDoc type string, used
+     * on `#[Response(400, type: self::PROBLEM_SHAPE)]` below (step 5
+     * review follow-up, Part B item 6) rather than left to Scramble's own
+     * built-in exception inference, which only knows Laravel's generic
+     * `{message, errors}` validation-exception shape and would otherwise
+     * document `QueryValidationException` as a bare `422` with THAT
+     * shape — neither the actual status
+     * (`PublicApiExceptionRenderer` maps it to `400`, a query-parameter
+     * error per G-28) nor the actual body (`Problem::make()`'s own shape)
+     * this API ever sends.
+     */
+    private const PROBLEM_SHAPE = 'array{type: string, title: string, status: int, code: string, request_id: string, detail?: string, errors?: list<array{field: string, code: string, message?: string}>}';
+
     public function __construct(
         private readonly EnrolCandidate $enrolCandidate,
         private readonly HostedInterviewUrlComposer $hostedInterviewUrlComposer,
     ) {}
 
+    /**
+     * `interview` documented as the `PublicInterview` object it always is
+     * (step 5 review follow-up, Part B item 1) — `response()->json([...])`'s
+     * own inferred type only ever saw `InterviewResource::resolve()`'s
+     * loose `array<string, mixed>` return type, so the exported spec
+     * previously carried an untyped array here instead of a `$ref`.
+     * `#[Response(201, ...)]` (not a bare `@response` PHPDoc tag) — the
+     * PHPDoc form replaces Scramble's ENTIRE inferred response, collapsing
+     * the real `201` this method actually returns down to a default `200`;
+     * the attribute form names the status explicitly and overlays onto
+     * the response Scramble already inferred at it, leaving the other
+     * auto-inferred statuses (`404`, `409`, `422`) untouched. `metadata`'s
+     * accepted shape (Part B item 3) is corrected at its source —
+     * `App\Rules\PublicApi\Metadata::docs()` — rather than here, so
+     * `CreateInterviewRequest`'s own named schema carries the fix
+     * directly instead of an `allOf` overlay fighting the same property's
+     * wrong type inside it.
+     */
+    #[Response(201, type: 'array{interview: \App\Http\Resources\PublicApi\InterviewResource, session_token: string, expires_at: string, hosted_url: string}')]
     public function store(CreateInterviewRequest $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -96,6 +134,22 @@ final class InterviewController extends Controller
         ], 201);
     }
 
+    /**
+     * `data[]` documented as a list of `PublicInterview` objects, and
+     * `next_cursor` as the nullable string it genuinely is (step 5 review
+     * follow-up, Part B item 2) — `CursorPage::paginate()`'s own
+     * `next_cursor: string|null` PHPDoc did not survive being returned
+     * through `response()->json($rawPage)`, so the exported spec
+     * previously typed it as a non-nullable `string` and `data[]`'s items
+     * as untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item
+     * 6) replace the incorrect auto-inferred `422 {message, errors}` this
+     * method's own `QueryValidationException` throw produced — see
+     * `self::PROBLEM_SHAPE`'s own docblock.
+     *
+     * @response array{data: list<\App\Http\Resources\PublicApi\InterviewResource>, next_cursor: string|null, has_more: bool}
+     */
+    #[IgnoreResponse(422)]
+    #[Response(400, description: 'Malformed query parameter.', type: self::PROBLEM_SHAPE)]
     public function index(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -123,7 +177,19 @@ final class InterviewController extends Controller
             // rather than 400 — SPEC.md §3.2 treats an id filter like a
             // path parameter (mismatched prefix → no match), never a
             // format error on a list operation.
-            $internalId = $bareId === null ? null : Project::query()->wherePublicId($bareId)->value('id');
+            //
+            // withTrashed() (step 5 review follow-up, item 5): every OTHER
+            // read on this controller already resolves a participant's
+            // project `withTrashed()` (see `projectIncludingTrashed()`'s own
+            // docblock) — a project an admin later soft-deletes must not
+            // make interviews under it unfindable by THIS filter either,
+            // consistent with the same "the enrolment is the calling
+            // system's data" reasoning. Without it, `Project::query()`'s
+            // default `SoftDeletingScope` made a trashed project's public id
+            // resolve to no internal id at all, so the filter silently
+            // matched NOTHING instead of the participants that are
+            // genuinely there.
+            $internalId = $bareId === null ? null : Project::query()->withTrashed()->wherePublicId($bareId)->value('id');
             $query->where('project_id', is_int($internalId) ? $internalId : -1);
         }
 
@@ -137,14 +203,30 @@ final class InterviewController extends Controller
             $query->where('candidate_ref', $candidateRef);
         }
 
+        // Normalised to a CarbonImmutable before the comparison (step 5
+        // review follow-up, item 6) — never the raw query string. By the
+        // time this runs, `validateFilterFormats()` above has already
+        // confirmed the value matches `Iso8601DateTime`'s own strict
+        // format set, so `parse()` is not expected to fail here; it is
+        // still checked defensively rather than trusted blindly, matching
+        // this method's own "never Validator::validated()" discipline for
+        // filter VALUES.
         $createdAfter = $request->query('created_after');
         if (is_string($createdAfter) && $createdAfter !== '') {
-            $query->where('created_at', '>=', $createdAfter);
+            $parsedCreatedAfter = Iso8601DateTime::parse($createdAfter);
+
+            if ($parsedCreatedAfter !== null) {
+                $query->where('created_at', '>=', $parsedCreatedAfter);
+            }
         }
 
         $createdBefore = $request->query('created_before');
         if (is_string($createdBefore) && $createdBefore !== '') {
-            $query->where('created_at', '<', $createdBefore);
+            $parsedCreatedBefore = Iso8601DateTime::parse($createdBefore);
+
+            if ($parsedCreatedBefore !== null) {
+                $query->where('created_at', '<', $parsedCreatedBefore);
+            }
         }
 
         $metadata = self::stringMap($request->query('metadata')) ?? [];
@@ -159,18 +241,10 @@ final class InterviewController extends Controller
         // lazy-load one query per row. `?expand=project` needs the FULL
         // Project (plus the SAME nested relations ProjectController::index()
         // eager-loads for ProjectSerializer); the unexpanded case only ever
-        // reads `id`/`public_id`, so it stays column-restricted.
-        //
-        // `withTrashed()`-equivalent on EVERY branch (gga round 3 finding 1):
-        // a participant whose project was later soft-deleted must stay
-        // readable — see `InterviewSerializer::project()`'s own docblock and
-        // `self::projectIncludingTrashed()`'s own docblock for why this
-        // reaches it via `getQuery()->withoutGlobalScope()` rather than
-        // calling `withTrashed()` directly on the closure's relation
-        // argument.
-        $query->with($expandProject
-            ? ['project' => fn (Relation $relation): Builder => self::projectIncludingTrashed($relation)->with(['frameworkVersion', 'avatarTemplate', 'competencies'])]
-            : ['project' => fn (Relation $relation): Builder => self::projectIncludingTrashed($relation)->select(['id', 'public_id'])]);
+        // reads `id`/`public_id`, so it stays column-restricted. One shared
+        // method with `resolveParticipant()` (step 5 review follow-up,
+        // item 9) — see `self::projectEagerLoad()`'s own docblock.
+        $query->with(self::projectEagerLoad($expandProject));
 
         // Fetch the page's raw Participant models first (identity map),
         // batch-compute progress for the WHOLE page in one call — two
@@ -210,7 +284,18 @@ final class InterviewController extends Controller
             abort(404);
         }
 
-        return InterviewResource::make($participant, $expandProject)->response();
+        // progressForMany() for this ONE participant (step 5 review
+        // follow-up, item 9) — the SAME batched query `index()` runs for a
+        // whole page, called here with a single-element list, so there is
+        // exactly ONE code path computing progress, not a second
+        // `getInterview`-only implementation that could silently drift
+        // from it. See `InterviewSerializer::progress()`'s own docblock:
+        // it now delegates here too, so a caller that omits `$progress`
+        // (e.g. `store()`, a brand-new enrolment with nothing to report
+        // yet) still converges on this one implementation.
+        $progress = InterviewSerializer::progressForMany([$participant])[$participant->id] ?? [];
+
+        return InterviewResource::make($participant, $expandProject, $progress)->response();
     }
 
     private function resolveOrganization(): Organization
@@ -272,10 +357,26 @@ final class InterviewController extends Controller
         // exercises.
         return Participant::where('organization_id', $organization->id)
             ->wherePublicId($bareId)
-            ->with($expandProject
-                ? ['project' => fn (Relation $relation): Builder => self::projectIncludingTrashed($relation)->with(['frameworkVersion', 'avatarTemplate', 'competencies'])]
-                : ['project' => fn (Relation $relation): Builder => self::projectIncludingTrashed($relation)->select(['id', 'public_id'])])
+            ->with(self::projectEagerLoad($expandProject))
             ->first();
+    }
+
+    /**
+     * The `project` eager-load constraint `index()` and
+     * `resolveParticipant()` each built independently before (step 5
+     * review follow-up, item 9) — always `withTrashed()`-equivalent (gga
+     * round 3 finding 1, see `projectIncludingTrashed()`'s own docblock),
+     * with either the FULL nested relations `?expand=project` needs or the
+     * column-restricted `id`/`public_id`-only shape the unexpanded case
+     * reads.
+     *
+     * @return array{project: \Closure(Relation<*, *, *>): Builder<*>}
+     */
+    private static function projectEagerLoad(bool $expandProject): array
+    {
+        return ['project' => fn (Relation $relation): Builder => $expandProject
+            ? self::projectIncludingTrashed($relation)->with(['frameworkVersion', 'avatarTemplate', 'competencies'])
+            : self::projectIncludingTrashed($relation)->select(['id', 'public_id'])];
     }
 
     /**
@@ -308,8 +409,13 @@ final class InterviewController extends Controller
             'project_id' => ['sometimes', 'string'],
             'email' => ['sometimes', 'string', 'email'],
             'candidate_ref' => ['sometimes', 'string', 'max:255'],
-            'created_after' => ['sometimes', 'date'],
-            'created_before' => ['sometimes', 'date'],
+            // Strict ISO 8601 (step 5 review follow-up, item 6) — see
+            // `Iso8601DateTime`'s own docblock for why the plain `'date'`
+            // rule this replaces was too permissive (relative phrases, a
+            // bare date with no time, a date-time with no timezone all
+            // passed it).
+            'created_after' => ['sometimes', new Iso8601DateTime],
+            'created_before' => ['sometimes', new Iso8601DateTime],
             'metadata' => ['sometimes', 'array', 'max:3'],
             'metadata.*' => ['string'],
         ]);

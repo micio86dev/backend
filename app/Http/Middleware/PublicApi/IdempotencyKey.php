@@ -165,22 +165,47 @@ final class IdempotencyKey
 
         try {
             $raw = Cache::get($storeKey);
-            // gga round 4 finding 2: the STORED value is `IdempotencyRecordCodec::encode()`'s
-            // ciphertext (a string), never the plain record array — decoded
-            // here, back into the SAME shape this method used to read
-            // directly off the cache. `decode()` returning null (a
-            // corrupted/foreign-key/pre-codec entry) is treated exactly
-            // like a cache miss, never a 500.
-            $cached = is_string($raw) ? IdempotencyRecordCodec::decode($raw) : null;
         } catch (Throwable $e) {
             self::logCacheOutage($e);
 
             // Fail open — process the request without idempotency rather
-            // than 500 on a read failure.
-            $cached = null;
+            // than 500 on a read failure. A genuine cache OUTAGE (this
+            // catch) is deliberately NOT the same case as a present-but-
+            // undecodable record below (step 5 review follow-up, item 8):
+            // an outage means the store never answered at all, so there is
+            // no record to distrust — running the handler fresh is the
+            // same outcome an ordinary cache miss already has. A record
+            // that DID come back, but fails to decode, is different.
+            $raw = null;
         }
 
-        if ($cached !== null) {
+        if (is_string($raw)) {
+            // gga round 4 finding 2: the STORED value is
+            // `IdempotencyRecordCodec::encode()`'s ciphertext, never the
+            // plain record array — decoded here, back into the shape this
+            // method reads directly.
+            $cached = IdempotencyRecordCodec::decode($raw);
+
+            if ($cached === null) {
+                // A record EXISTS at this key (not a cache miss, not a
+                // read outage caught above) but cannot be trusted — a
+                // wrong/rotated APP_KEY or genuine corruption (step 5
+                // review follow-up, item 8). Falling through to `$next()`
+                // here, as this branch used to, would RE-EXECUTE the
+                // handler for a key that may already have produced a real,
+                // side-effecting response — silently duplicating whatever
+                // the original POST did. Refused instead: logged at ERROR
+                // (not the `logCacheOutage()` WARNING above — this is not
+                // a transient, fail-open-safe condition), and answered
+                // `500 internal_error` so the caller sees a real failure
+                // to retry against, never a silent duplicate.
+                Log::error('public-api: idempotency record undecodable — refusing rather than risk a duplicate side effect', [
+                    'scope' => $scope,
+                ]);
+
+                return Problem::make($request, 500, 'internal_error', 'Internal error');
+            }
+
             if (! hash_equals($cached['fingerprint'], $fingerprint)) {
                 return Problem::make($request, 409, 'idempotency_key_reused', 'Idempotency key reused with a different request body');
             }

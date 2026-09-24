@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Database\Migrations\Concerns\ChecksColumnNullability;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
@@ -62,6 +63,8 @@ use Illuminate\Support\Str;
  */
 return new class extends Migration
 {
+    use ChecksColumnNullability;
+
     public $withinTransaction = false;
 
     private const TABLES = ['organizations', 'projects'];
@@ -121,21 +124,5 @@ return new class extends Migration
                 ]);
             }
         });
-    }
-
-    /**
-     * `Schema::hasColumn()` only answers "does the column exist", not
-     * "is it NOT NULL" — needed here to decide whether the `->change()`
-     * step below has already run on a rerun.
-     */
-    private function columnIsNotNull(string $table, string $column): bool
-    {
-        foreach (Schema::getColumns($table) as $columnDefinition) {
-            if ($columnDefinition['name'] === $column) {
-                return ! $columnDefinition['nullable'];
-            }
-        }
-
-        return false;
     }
 };

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Concerns\HasValues;
+
 /**
  * BEAI organizational role code (CLAUDE.md binding domain constraint — the
  * fixed set of 5: ICO, FLL, MLL, BUL, SRX; public-api step 5, Part A item 5).
@@ -30,17 +32,11 @@ namespace App\Enums;
  */
 enum RoleCode: string
 {
+    use HasValues;
+
     case Ico = 'ICO';
     case Fll = 'FLL';
     case Mll = 'MLL';
     case Bul = 'BUL';
     case Srx = 'SRX';
-
-    /**
-     * @return list<string>
-     */
-    public static function values(): array
-    {
-        return array_map(fn (self $case): string => $case->value, self::cases());
-    }
 }

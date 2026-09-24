@@ -12,6 +12,7 @@ use App\Models\InterviewEvent;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\SessionTokenMinter;
 use App\Support\Sso\EntryLinkMinter;
 use Illuminate\Database\QueryException;
@@ -121,7 +122,7 @@ final class EnrolCandidate
             'email' => $normalizedEmail,
             'role_code' => $roleCode,
             'language' => $language,
-            'status' => 'in_attesa',
+            'status' => InterviewStatus::Pending->toStored(),
             'metadata' => $metadata,
             'exit_redirect_url' => $exitRedirectUrl,
             'mode' => $mode,
@@ -185,6 +186,17 @@ final class EnrolCandidate
         return new EnrolmentResult($participant, $sessionToken);
     }
 
+    /**
+     * Case-insensitive (step 5 review follow-up, item 7) — a hostname is
+     * not case-sensitive (RFC 3986 §3.2.2), but the strict `in_array(...,
+     * true)` comparison this replaced treated `HR.Acme.example` and
+     * `hr.acme.example` as two different hosts, refusing a caller whose
+     * URL merely capitalised a host `organizations.allowed_domains`
+     * already names. Both sides are lower-cased with `mb_strtolower()` —
+     * the SAME function `InterviewController::index()`'s own `?email=`
+     * filter and `EnrolCandidate::handle()`'s own email normalisation
+     * already use for the identical reason.
+     */
     private function hostIsAllowed(string $url, Organization $organization): bool
     {
         $host = parse_url($url, PHP_URL_HOST);
@@ -193,8 +205,11 @@ final class EnrolCandidate
             return false;
         }
 
-        $allowed = $organization->allowed_domains ?? [];
+        $allowed = array_map(
+            static fn (string $domain): string => mb_strtolower($domain),
+            $organization->allowed_domains ?? [],
+        );
 
-        return in_array($host, $allowed, true);
+        return in_array(mb_strtolower($host), $allowed, true);
     }
 }

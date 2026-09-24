@@ -47,3 +47,51 @@ test('the step 5 participants public-api-fields migration is idempotent on rerun
     );
     expect($constraintExists)->not->toBeEmpty();
 });
+
+test('the participants unique index and mode check are rebuilt with lock-minimising DDL when reapplied', function (): void {
+    // Drop just the index and the constraint this migration owns (columns
+    // stay put), then call up() again from inside this test's own wrapping
+    // transaction (Feature/Migration is RefreshDatabase-scoped — see
+    // tests/Pest.php) — the exact condition `addPublicIdUniqueIndex()`'s own
+    // docblock names as the one that must fall back to the plain blueprint
+    // form rather than `CREATE INDEX CONCURRENTLY`, which Postgres refuses
+    // outright inside an open transaction.
+    // DROP INDEX, not Schema::table()->dropUnique() — the index reaching
+    // this point may have been built by CREATE UNIQUE INDEX CONCURRENTLY
+    // (the bootstrap migration run, outside any transaction) rather than
+    // an ADD CONSTRAINT ... UNIQUE the blueprint form assumes, and
+    // dropUnique() only knows how to drop the latter.
+    DB::statement('DROP INDEX IF EXISTS participants_public_id_unique');
+    DB::statement('ALTER TABLE participants DROP CONSTRAINT participants_mode_check');
+
+    expect(DB::transactionLevel())->toBeGreaterThan(0);
+
+    $statements = [];
+    DB::listen(function ($query) use (&$statements): void {
+        $statements[] = $query->sql;
+    });
+
+    /** @var Migration $migration */
+    $migration = require database_path('migrations/2026_09_24_140000_add_public_api_fields_to_participants_table.php');
+    $migration->up();
+
+    expect(Schema::hasIndex('participants', 'participants_public_id_unique'))->toBeTrue();
+
+    $constraintExists = DB::select(
+        "SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'participants_mode_check'"
+    );
+    expect($constraintExists)->not->toBeEmpty();
+
+    // Inside a transaction, CONCURRENTLY is never attempted — Postgres would
+    // have refused it and this test would have errored, not merely failed
+    // an assertion.
+    expect(collect($statements)->contains(fn (string $sql): bool => str_contains(strtoupper($sql), 'CONCURRENTLY')))
+        ->toBeFalse();
+
+    // The CHECK constraint is added NOT VALID, then validated separately —
+    // both statements are ordinary transactional DDL, unlike the index.
+    expect(collect($statements)->contains(fn (string $sql): bool => str_contains(strtoupper($sql), 'NOT VALID')))
+        ->toBeTrue();
+    expect(collect($statements)->contains(fn (string $sql): bool => str_contains(strtoupper($sql), 'VALIDATE CONSTRAINT')))
+        ->toBeTrue();
+});
