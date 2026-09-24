@@ -3183,6 +3183,7 @@
         "/embed/exchange": {
             "get": {
                 "operationId": "exchange.exchange",
+                "summary": "`?token=` documented as REQUIRED (step 5 review follow-up, Part B\nitem 5) \u2014 Scramble's own inference read\n`$request->query('token', '')`'s literal default and rendered the\nparameter as optional with a `\"\"` default, which is accurate about\nthis METHOD'S defensive handling of a missing value (never a 500)\nbut not about the CONTRACT: SPEC.md \u00a73.5 names `token` as the one\nparameter this operation accepts, and a caller who omits it always\ngets `401 token_invalid`, never a meaningful 200 \u2014 the same\n\"required in the contract, defended in code\" distinction\n`CreateInterviewRequest`'s own required fields already draw",
                 "tags": [
                     "Exchange"
                 ],
@@ -3190,9 +3191,10 @@
                     {
                         "name": "token",
                         "in": "query",
+                        "required": true,
+                        "description": "The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.",
                         "schema": {
-                            "type": "string",
-                            "default": ""
+                            "type": "string"
                         }
                     }
                 ],
@@ -3205,7 +3207,7 @@
                                     "type": "object",
                                     "properties": {
                                         "access_token": {
-                                            "type": "string"
+                                            "type": "null"
                                         }
                                     },
                                     "required": [
@@ -3746,6 +3748,7 @@
         "/v1/interviews": {
             "post": {
                 "operationId": "public-api.interviews.store",
+                "summary": "`interview` documented as the `PublicInterview` object it always is\n(step 5 review follow-up, Part B item 1) \u2014 `response()->json([...])`'s\nown inferred type only ever saw `InterviewResource::resolve()`'s\nloose `array<string, mixed>` return type, so the exported spec\npreviously carried an untyped array here instead of a `$ref`.\n`#[Response(201, ...)]` (not a bare `@response` PHPDoc tag) \u2014 the\nPHPDoc form replaces Scramble's ENTIRE inferred response, collapsing\nthe real `201` this method actually returns down to a default `200`;\nthe attribute form names the status explicitly and overlays onto\nthe response Scramble already inferred at it, leaving the other\nauto-inferred statuses (`404`, `409`, `422`) untouched. `metadata`'s\naccepted shape (Part B item 3) is corrected at its source \u2014\n`App\\Rules\\PublicApi\\Metadata::docs()` \u2014 rather than here, so\n`CreateInterviewRequest`'s own named schema carries the fix\ndirectly instead of an `allOf` overlay fighting the same property's\nwrong type inside it",
                 "tags": [
                     "Interview"
                 ],
@@ -3768,8 +3771,7 @@
                                     "type": "object",
                                     "properties": {
                                         "interview": {
-                                            "type": "array",
-                                            "items": {}
+                                            "$ref": "#/components/schemas/PublicInterview"
                                         },
                                         "session_token": {
                                             "type": "string"
@@ -3890,6 +3892,7 @@
             },
             "get": {
                 "operationId": "public-api.interviews.index",
+                "summary": "`data[]` documented as a list of `PublicInterview` objects, and\n`next_cursor` as the nullable string it genuinely is (step 5 review\nfollow-up, Part B item 2) \u2014 `CursorPage::paginate()`'s own\n`next_cursor: string|null` PHPDoc did not survive being returned\nthrough `response()->json($rawPage)`, so the exported spec\npreviously typed it as a non-nullable `string` and `data[]`'s items\nas untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item\n6) replace the incorrect auto-inferred `422 {message, errors}` this\nmethod's own `QueryValidationException` throw produced \u2014 see\n`self::PROBLEM_SHAPE`'s own docblock",
                 "tags": [
                     "Interview"
                 ],
@@ -3925,6 +3928,7 @@
                     {
                         "name": "created_after",
                         "in": "query",
+                        "description": "Normalised to a CarbonImmutable before the comparison (step 5\n review follow-up, item 6) \u2014 never the raw query string. By the\n time this runs, `validateFilterFormats()` above has already\n confirmed the value matches `Iso8601DateTime`'s own strict\n format set, so `parse()` is not expected to fail here; it is\n still checked defensively rather than trusted blindly, matching\n this method's own \"never Validator::validated()\" discipline for\n filter VALUES.",
                         "schema": {
                             "type": "string"
                         }
@@ -3954,10 +3958,15 @@
                                     "properties": {
                                         "data": {
                                             "type": "array",
-                                            "items": {}
+                                            "items": {
+                                                "$ref": "#/components/schemas/PublicInterview"
+                                            }
                                         },
                                         "next_cursor": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "has_more": {
                                             "type": "boolean"
@@ -3972,8 +3981,63 @@
                             }
                         }
                     },
-                    "422": {
-                        "$ref": "#/components/responses/QueryValidationException"
+                    "400": {
+                        "description": "Malformed query parameter.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3996,11 +4060,11 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`InterviewResource`",
+                        "description": "`PublicInterview`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/InterviewResource"
+                                    "$ref": "#/components/schemas/PublicInterview"
                                 }
                             }
                         }
@@ -4585,11 +4649,11 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`OrganizationResource`",
+                        "description": "`PublicOrganization`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/OrganizationResource"
+                                    "$ref": "#/components/schemas/PublicOrganization"
                                 }
                             }
                         }
@@ -4619,7 +4683,7 @@
                                             "type": "object",
                                             "properties": {
                                                 "data": {
-                                                    "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
+                                                    "$ref": "#/components/schemas/OrganizationResource"
                                                 }
                                             },
                                             "required": [
@@ -4668,14 +4732,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.Admin.OrganizationResource`",
+                        "description": "`OrganizationResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
+                                            "$ref": "#/components/schemas/OrganizationResource"
                                         }
                                     },
                                     "required": [
@@ -4726,14 +4790,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.Admin.OrganizationResource`",
+                        "description": "`OrganizationResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
+                                            "$ref": "#/components/schemas/OrganizationResource"
                                         }
                                     },
                                     "required": [
@@ -4763,14 +4827,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.Admin.OrganizationResource`",
+                        "description": "`OrganizationResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
+                                            "$ref": "#/components/schemas/OrganizationResource"
                                         }
                                     },
                                     "required": [
@@ -6355,6 +6419,7 @@
         "/v1/projects": {
             "get": {
                 "operationId": "public-api.projects.index",
+                "description": "`data[]` documented as a list of `PublicProject` objects and\n`next_cursor` as nullable (step 5 review follow-up, Part B item 2) \u2014\nsame fix, same reasoning, as `InterviewController::index()`'s own\ndocblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)\nreplace the incorrect auto-inferred `422` this method's own\n`QueryValidationException` throw produced.",
                 "summary": "SPEC.md \u00a73.2 \"Filtering on list endpoints: `status`, ...\". `role_code`\nand `assessment_type` are Public-API-specific additions this\noperation's own contract entry lists (`openapi.yaml` `listProjects`\nparameters). An unrecognised value for any of the three answers `400\nvalidation_failed` via `QueryValidationException` (G-28) \u2014 a\nmalformed QUERY PARAMETER, never `422`",
                 "tags": [
                     "Project"
@@ -6369,10 +6434,15 @@
                                     "properties": {
                                         "data": {
                                             "type": "array",
-                                            "items": {}
+                                            "items": {
+                                                "$ref": "#/components/schemas/PublicProject"
+                                            }
                                         },
                                         "next_cursor": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "has_more": {
                                             "type": "boolean"
@@ -6387,8 +6457,63 @@
                             }
                         }
                     },
-                    "422": {
-                        "$ref": "#/components/responses/QueryValidationException"
+                    "400": {
+                        "description": "Malformed query parameter.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -6412,11 +6537,11 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`ProjectResource`",
+                        "description": "`PublicProject`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ProjectResource"
+                                    "$ref": "#/components/schemas/PublicProject"
                                 }
                             }
                         }
@@ -6437,7 +6562,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Array of `App.Http.Resources.ProjectResource`",
+                        "description": "Array of `ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6446,7 +6571,7 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
+                                                "$ref": "#/components/schemas/ProjectResource"
                                             }
                                         }
                                     },
@@ -6484,14 +6609,14 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "`App.Http.Resources.ProjectResource`",
+                        "description": "`ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
+                                            "$ref": "#/components/schemas/ProjectResource"
                                         }
                                     },
                                     "required": [
@@ -6533,14 +6658,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ProjectResource`",
+                        "description": "`ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
+                                            "$ref": "#/components/schemas/ProjectResource"
                                         }
                                     },
                                     "required": [
@@ -6589,14 +6714,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ProjectResource`",
+                        "description": "`ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
+                                            "$ref": "#/components/schemas/ProjectResource"
                                         }
                                     },
                                     "required": [
@@ -9320,75 +9445,6 @@
                 ],
                 "title": "ApiKeyMode"
             },
-            "App.Http.Resources.Admin.OrganizationResource": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "integer"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "slug": {
-                        "type": "string"
-                    },
-                    "primary_color": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "logo_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "default_webhook_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "default_webhook_events": {
-                        "type": [
-                            "array",
-                            "null"
-                        ],
-                        "items": {
-                            "type": "string"
-                        }
-                    },
-                    "has_default_webhook_secret": {
-                        "type": "boolean"
-                    },
-                    "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "updated_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    }
-                },
-                "required": [
-                    "id",
-                    "name",
-                    "slug",
-                    "primary_color",
-                    "logo_url",
-                    "default_webhook_url",
-                    "default_webhook_events",
-                    "has_default_webhook_secret",
-                    "created_at",
-                    "updated_at"
-                ],
-                "title": "App.Http.Resources.Admin.OrganizationResource"
-            },
             "App.Http.Resources.ParticipantResource": {
                 "type": "object",
                 "properties": {
@@ -9552,243 +9608,6 @@
                     "project"
                 ],
                 "title": "App.Http.Resources.ParticipantResource"
-            },
-            "App.Http.Resources.ProjectResource": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "integer"
-                    },
-                    "organization_id": {
-                        "type": "integer"
-                    },
-                    "framework_version_id": {
-                        "type": "integer"
-                    },
-                    "slug": {
-                        "type": "string"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "assessment_type": {
-                        "type": "string",
-                        "enum": [
-                            "standard",
-                            "potential"
-                        ]
-                    },
-                    "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "language": {
-                        "type": "string"
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": [
-                            "draft",
-                            "active",
-                            "archived"
-                        ]
-                    },
-                    "pause_every_n_competencies": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
-                    },
-                    "nudge_min_chars": {
-                        "type": [
-                            "integer",
-                            "null"
-                        ]
-                    },
-                    "exit_redirect_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "error_redirect_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "avatar_template_id": {
-                        "type": "integer"
-                    },
-                    "avatar_template": {
-                        "type": [
-                            "object",
-                            "null"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "integer"
-                            },
-                            "name": {
-                                "type": "string"
-                            },
-                            "provider": {
-                                "type": "string"
-                            },
-                            "llm_model": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            }
-                        },
-                        "required": [
-                            "id",
-                            "name",
-                            "provider",
-                            "llm_model"
-                        ]
-                    },
-                    "webhook_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "webhook_events": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        }
-                    },
-                    "has_webhook_secret": {
-                        "type": "boolean"
-                    },
-                    "deadline_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "goes_live_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "updated_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "pin_context": {
-                        "type": [
-                            "object",
-                            "null"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "integer"
-                            },
-                            "version": {
-                                "type": "string"
-                            },
-                            "label": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            },
-                            "is_locked": {
-                                "type": "boolean"
-                            }
-                        },
-                        "required": [
-                            "id",
-                            "version",
-                            "label",
-                            "is_locked"
-                        ]
-                    },
-                    "competencies": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "integer"
-                                },
-                                "code": {
-                                    "type": "string"
-                                },
-                                "type": {
-                                    "type": "string"
-                                },
-                                "position": {
-                                    "type": "integer"
-                                }
-                            },
-                            "required": [
-                                "id",
-                                "code",
-                                "type",
-                                "position"
-                            ]
-                        }
-                    },
-                    "can": {
-                        "type": "object",
-                        "properties": {
-                            "update": {
-                                "type": "boolean"
-                            },
-                            "delete": {
-                                "type": "boolean"
-                            }
-                        },
-                        "required": [
-                            "update",
-                            "delete"
-                        ]
-                    }
-                },
-                "required": [
-                    "id",
-                    "organization_id",
-                    "framework_version_id",
-                    "slug",
-                    "name",
-                    "assessment_type",
-                    "role_code",
-                    "language",
-                    "status",
-                    "pause_every_n_competencies",
-                    "nudge_min_chars",
-                    "exit_redirect_url",
-                    "error_redirect_url",
-                    "avatar_template_id",
-                    "avatar_template",
-                    "webhook_url",
-                    "webhook_events",
-                    "has_webhook_secret",
-                    "deadline_at",
-                    "goes_live_at",
-                    "created_at",
-                    "updated_at",
-                    "pin_context",
-                    "competencies",
-                    "can"
-                ],
-                "title": "App.Http.Resources.ProjectResource"
             },
             "AvatarTemplateResource": {
                 "type": "object",
@@ -10218,9 +10037,13 @@
                     },
                     "metadata": {
                         "type": [
-                            "string",
+                            "object",
                             "null"
-                        ]
+                        ],
+                        "description": "Free-form key/value pairs (\u2264 20 keys, key \u2264 40 chars, value \u2264 500 chars).",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
                     },
                     "exit_redirect_url": {
                         "type": [
@@ -10561,245 +10384,6 @@
                 ],
                 "title": "FrameworkVersionResource"
             },
-            "InterviewResource": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string"
-                    },
-                    "project_id": {
-                        "type": "string"
-                    },
-                    "candidate_ref": {
-                        "type": "string"
-                    },
-                    "email": {
-                        "type": "string"
-                    },
-                    "display_name": {
-                        "type": "string"
-                    },
-                    "role_code": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "language": {
-                        "type": "string"
-                    },
-                    "status": {
-                        "type": "string"
-                    },
-                    "livemode": {
-                        "type": "boolean"
-                    },
-                    "metadata": {
-                        "type": "array",
-                        "items": {}
-                    },
-                    "exit_redirect_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "hosted_url": {
-                        "type": "null"
-                    },
-                    "progress": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "competency_code": {
-                                    "anyOf": [
-                                        {
-                                            "type": "string"
-                                        },
-                                        {
-                                            "type": "string",
-                                            "enum": [
-                                                ""
-                                            ]
-                                        }
-                                    ]
-                                },
-                                "answers": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "question_index": {
-                                                "type": "integer"
-                                            },
-                                            "answered_at": {
-                                                "type": "string"
-                                            }
-                                        },
-                                        "required": [
-                                            "question_index",
-                                            "answered_at"
-                                        ]
-                                    }
-                                }
-                            },
-                            "required": [
-                                "competency_code",
-                                "answers"
-                            ]
-                        }
-                    },
-                    "started_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "completed_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "transcript_ready": {
-                        "type": "boolean"
-                    },
-                    "scoring_ready": {
-                        "type": "boolean"
-                    },
-                    "recording_ready": {
-                        "type": "boolean",
-                        "description": "G-01 (binding): video recordings are backoffice-only, never\nexposed via the public API \u2014 audio readiness is not yet wired\nin step 5 (no recording pipeline read here), so this is\nalways false until a later step adds it."
-                    },
-                    "created_at": {
-                        "type": "string"
-                    },
-                    "updated_at": {
-                        "type": "string"
-                    },
-                    "project": {
-                        "type": "object",
-                        "properties": {
-                            "id": {
-                                "type": "string"
-                            },
-                            "name": {
-                                "type": "string"
-                            },
-                            "slug": {
-                                "type": "string"
-                            },
-                            "role_code": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            },
-                            "assessment_type": {
-                                "type": "string"
-                            },
-                            "language": {
-                                "type": "string"
-                            },
-                            "status": {
-                                "type": "string"
-                            },
-                            "framework_version": {
-                                "type": "object",
-                                "properties": {
-                                    "version": {
-                                        "type": "string",
-                                        "description": "`framework_version_id` is NOT NULL, but the relation\naccessor's static type is still nullable (an unloaded\nrelation renders null rather than fatal, the same\ndiscipline `Project::avatarTemplate()`'s own docblock\ndocuments) \u2014 an empty string/null pair is the honest\nanswer when the caller forgot to eager-load it, never a\nfatal error on a read-only endpoint."
-                                    },
-                                    "label": {
-                                        "type": [
-                                            "string",
-                                            "null"
-                                        ]
-                                    }
-                                },
-                                "required": [
-                                    "version",
-                                    "label"
-                                ]
-                            },
-                            "competencies": {
-                                "type": "array",
-                                "items": {}
-                            },
-                            "pause_every_n_competencies": {
-                                "type": [
-                                    "integer",
-                                    "null"
-                                ]
-                            },
-                            "nudge_min_chars": {
-                                "type": [
-                                    "integer",
-                                    "null"
-                                ]
-                            },
-                            "exit_redirect_url": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            },
-                            "avatar_display_name": {
-                                "type": "string"
-                            },
-                            "created_at": {
-                                "type": "string"
-                            },
-                            "updated_at": {
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "id",
-                            "name",
-                            "slug",
-                            "role_code",
-                            "assessment_type",
-                            "language",
-                            "status",
-                            "framework_version",
-                            "competencies",
-                            "pause_every_n_competencies",
-                            "nudge_min_chars",
-                            "exit_redirect_url",
-                            "avatar_display_name",
-                            "created_at",
-                            "updated_at"
-                        ]
-                    }
-                },
-                "required": [
-                    "id",
-                    "project_id",
-                    "candidate_ref",
-                    "email",
-                    "display_name",
-                    "role_code",
-                    "language",
-                    "status",
-                    "livemode",
-                    "metadata",
-                    "exit_redirect_url",
-                    "hosted_url",
-                    "progress",
-                    "started_at",
-                    "completed_at",
-                    "transcript_ready",
-                    "scoring_ready",
-                    "recording_ready",
-                    "created_at",
-                    "updated_at",
-                    "project"
-                ],
-                "title": "InterviewResource"
-            },
             "LlmCredentialResource": {
                 "type": "object",
                 "properties": {
@@ -10970,29 +10554,68 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "integer"
                     },
                     "name": {
                         "type": "string"
                     },
-                    "mode": {
-                        "type": "string",
-                        "description": "\"mode (of the key)\" \u2014 SPEC.md \u00a73.3 \u2014 the AUTHENTICATED KEY's\nmode, never an organization column (there isn't one): the\nsame organization answers `live` through a live key and\n`test` through a test key."
+                    "slug": {
+                        "type": "string"
                     },
-                    "allowed_domains": {
-                        "type": "array",
-                        "items": {}
+                    "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "logo_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "default_webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "default_webhook_events": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "has_default_webhook_secret": {
+                        "type": "boolean"
                     },
                     "created_at": {
-                        "type": "string"
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
                     "id",
                     "name",
-                    "mode",
-                    "allowed_domains",
-                    "created_at"
+                    "slug",
+                    "primary_color",
+                    "logo_url",
+                    "default_webhook_url",
+                    "default_webhook_events",
+                    "has_default_webhook_secret",
+                    "created_at",
+                    "updated_at"
                 ],
                 "title": "OrganizationResource"
             },
@@ -11472,6 +11095,512 @@
                 "type": "object",
                 "properties": {
                     "id": {
+                        "type": "integer"
+                    },
+                    "organization_id": {
+                        "type": "integer"
+                    },
+                    "framework_version_id": {
+                        "type": "integer"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "assessment_type": {
+                        "type": "string",
+                        "enum": [
+                            "standard",
+                            "potential"
+                        ]
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "active",
+                            "archived"
+                        ]
+                    },
+                    "pause_every_n_competencies": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "nudge_min_chars": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "exit_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "error_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "avatar_template_id": {
+                        "type": "integer"
+                    },
+                    "avatar_template": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "provider": {
+                                "type": "string"
+                            },
+                            "llm_model": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "provider",
+                            "llm_model"
+                        ]
+                    },
+                    "webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "webhook_events": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "has_webhook_secret": {
+                        "type": "boolean"
+                    },
+                    "deadline_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "goes_live_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "pin_context": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "version": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "is_locked": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "version",
+                            "label",
+                            "is_locked"
+                        ]
+                    },
+                    "competencies": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "code": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "position": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "code",
+                                "type",
+                                "position"
+                            ]
+                        }
+                    },
+                    "can": {
+                        "type": "object",
+                        "properties": {
+                            "update": {
+                                "type": "boolean"
+                            },
+                            "delete": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "update",
+                            "delete"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "organization_id",
+                    "framework_version_id",
+                    "slug",
+                    "name",
+                    "assessment_type",
+                    "role_code",
+                    "language",
+                    "status",
+                    "pause_every_n_competencies",
+                    "nudge_min_chars",
+                    "exit_redirect_url",
+                    "error_redirect_url",
+                    "avatar_template_id",
+                    "avatar_template",
+                    "webhook_url",
+                    "webhook_events",
+                    "has_webhook_secret",
+                    "deadline_at",
+                    "goes_live_at",
+                    "created_at",
+                    "updated_at",
+                    "pin_context",
+                    "competencies",
+                    "can"
+                ],
+                "title": "ProjectResource"
+            },
+            "PublicInterview": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "project_id": {
+                        "type": "string"
+                    },
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "livemode": {
+                        "type": "boolean"
+                    },
+                    "metadata": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "exit_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "hosted_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "progress": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "competency_code": {
+                                            "type": "string"
+                                        },
+                                        "answers": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "question_index": {
+                                                        "type": "integer"
+                                                    },
+                                                    "answered_at": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "question_index",
+                                                    "answered_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "competency_code",
+                                        "answers"
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "completed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "transcript_ready": {
+                        "type": "boolean"
+                    },
+                    "scoring_ready": {
+                        "type": "boolean"
+                    },
+                    "recording_ready": {
+                        "type": "boolean",
+                        "description": "G-01 (binding): video recordings are backoffice-only, never\nexposed via the public API \u2014 audio readiness is not yet wired\nin step 5 (no recording pipeline read here), so this is\nalways false until a later step adds it."
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "type": "string"
+                    },
+                    "project": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "slug": {
+                                "type": "string"
+                            },
+                            "role_code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "assessment_type": {
+                                "type": "string"
+                            },
+                            "language": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "framework_version": {
+                                "type": "object",
+                                "properties": {
+                                    "version": {
+                                        "type": "string",
+                                        "description": "`framework_version_id` is NOT NULL, but the relation\naccessor's static type is still nullable (an unloaded\nrelation renders null rather than fatal, the same\ndiscipline `Project::avatarTemplate()`'s own docblock\ndocuments) \u2014 an empty string/null pair is the honest\nanswer when the caller forgot to eager-load it, never a\nfatal error on a read-only endpoint."
+                                    },
+                                    "label": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "version",
+                                    "label"
+                                ]
+                            },
+                            "competencies": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "pause_every_n_competencies": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "nudge_min_chars": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ]
+                            },
+                            "exit_redirect_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "avatar_display_name": {
+                                "type": "string"
+                            },
+                            "created_at": {
+                                "type": "string"
+                            },
+                            "updated_at": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "slug",
+                            "role_code",
+                            "assessment_type",
+                            "language",
+                            "status",
+                            "framework_version",
+                            "competencies",
+                            "pause_every_n_competencies",
+                            "nudge_min_chars",
+                            "exit_redirect_url",
+                            "avatar_display_name",
+                            "created_at",
+                            "updated_at"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "project_id",
+                    "candidate_ref",
+                    "email",
+                    "display_name",
+                    "role_code",
+                    "language",
+                    "status",
+                    "livemode",
+                    "metadata",
+                    "exit_redirect_url",
+                    "hosted_url",
+                    "progress",
+                    "started_at",
+                    "completed_at",
+                    "transcript_ready",
+                    "scoring_ready",
+                    "recording_ready",
+                    "created_at",
+                    "updated_at",
+                    "project"
+                ],
+                "title": "PublicInterview"
+            },
+            "PublicOrganization": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "\"mode (of the key)\" \u2014 SPEC.md \u00a73.3 \u2014 the AUTHENTICATED KEY's\nmode, never an organization column (there isn't one): the\nsame organization answers `live` through a live key and\n`test` through a test key."
+                    },
+                    "allowed_domains": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "created_at": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "mode",
+                    "allowed_domains",
+                    "created_at"
+                ],
+                "title": "PublicOrganization"
+            },
+            "PublicProject": {
+                "type": "object",
+                "properties": {
+                    "id": {
                         "type": "string"
                     },
                     "name": {
@@ -11563,7 +11692,7 @@
                     "created_at",
                     "updated_at"
                 ],
-                "title": "ProjectResource"
+                "title": "PublicProject"
             },
             "ResetPasswordRequest": {
                 "type": "object",
@@ -13080,36 +13209,6 @@
                             },
                             "required": [
                                 "message"
-                            ]
-                        }
-                    }
-                }
-            },
-            "QueryValidationException": {
-                "description": "Validation error",
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "message": {
-                                    "type": "string",
-                                    "description": "Errors overview."
-                                },
-                                "errors": {
-                                    "type": "object",
-                                    "description": "A detailed description of each field that failed validation.",
-                                    "additionalProperties": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            },
-                            "required": [
-                                "message",
-                                "errors"
                             ]
                         }
                     }
