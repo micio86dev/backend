@@ -62,6 +62,25 @@ class DeliverWebhookJob implements ShouldQueue
 
     public function __construct(
         private readonly int $deliveryId,
+        /**
+         * gga pre-commit follow-up (step 7, finding 1): added ONLY for
+         * `App\Http\Controllers\PublicApi\WebhookDeliveryController::
+         * redeliver()`, default `0` for every other caller (unchanged
+         * behaviour — `$this->attempts()` alone, exactly as before).
+         *
+         * `$this->attempts()` is Laravel's OWN per-DISPATCH counter — it
+         * always starts at `1` for a brand-new `dispatch()` call, with no
+         * knowledge of a row's prior lifetime attempts. Redelivering a
+         * `dead` row at `attempt_count=5` used to overwrite it straight to
+         * `1` (`'attempt_count' => $this->attempts()`), silently granting
+         * a full new `max_attempts` retry budget on top of the one the row
+         * already exhausted. Redeliver now passes the row's PRE-redeliver
+         * `attempt_count` through here, and `handle()` adds it to
+         * `$this->attempts()` so the stored count — and therefore the
+         * `recordRetryable()` exhaustion check against `max_attempts` — both
+         * continue the delivery's real lifetime total instead of resetting.
+         */
+        private readonly int $attemptCountOffset = 0,
     ) {}
 
     /**
@@ -80,7 +99,7 @@ class DeliverWebhookJob implements ShouldQueue
      */
     public function tries(): int
     {
-        return (int) config('webhooks.delivery.max_attempts');
+        return config()->integer('webhooks.delivery.max_attempts');
     }
 
     /**
@@ -115,7 +134,7 @@ class DeliverWebhookJob implements ShouldQueue
         $project = Project::withoutGlobalScopes()->find($delivery->project_id);
         $secret = $project?->webhook_secret;
 
-        $attemptCount = $this->attempts();
+        $attemptCount = $this->attempts() + $this->attemptCountOffset;
 
         if ($secret === null || $delivery->target_url === null) {
             // Defensive: should never happen for a row the recorder marked 'pending'
@@ -138,14 +157,14 @@ class DeliverWebhookJob implements ShouldQueue
         $hex = $signer->sign($timestamp, $rawBody, $secret);
 
         try {
-            $response = Http::timeout((int) config('webhooks.http.timeout_seconds'))
-                ->connectTimeout((int) config('webhooks.http.connect_timeout_seconds'))
+            $response = Http::timeout(config()->integer('webhooks.http.timeout_seconds'))
+                ->connectTimeout(config()->integer('webhooks.http.connect_timeout_seconds'))
                 ->withHeaders([
                     'X-BEAI-Signature' => $signer->header($hex),
                     'X-BEAI-Timestamp' => (string) $timestamp,
                     'X-BEAI-Event' => $delivery->event_type->value,
                     'X-BEAI-Delivery-Id' => $delivery->delivery_id,
-                    'User-Agent' => (string) config('webhooks.http.user_agent'),
+                    'User-Agent' => config()->string('webhooks.http.user_agent'),
                 ])
                 ->withBody($rawBody, 'application/json')
                 ->post($delivery->target_url);
@@ -160,7 +179,7 @@ class DeliverWebhookJob implements ShouldQueue
         }
 
         $lastError = $errorBody !== null
-            ? $redactor->redactAndTruncate($errorBody, $secret, (int) config('webhooks.errors.max_last_error_chars'))
+            ? $redactor->redactAndTruncate($errorBody, $secret, config()->integer('webhooks.errors.max_last_error_chars'))
             : null;
 
         $this->recordOutcome($delivery, $outcome, $attemptCount, $responseStatus, $lastError);
@@ -233,7 +252,7 @@ class DeliverWebhookJob implements ShouldQueue
             // runFor() closure and alongside the existing log line — so the
             // listener never inherits an ambient organization it is required to
             // re-derive for itself.
-            WebhookDeliveryDead::dispatch($delivery->getKey());
+            WebhookDeliveryDead::dispatch($delivery->id);
 
             return;
         }
@@ -322,6 +341,6 @@ class DeliverWebhookJob implements ShouldQueue
         // exclusive per row — but emitting from only one of them would leave a
         // silent hole exactly where an unhandled exception killed the job, i.e.
         // the case an operator most needs to hear about.
-        WebhookDeliveryDead::dispatch($delivery->getKey());
+        WebhookDeliveryDead::dispatch($delivery->id);
     }
 }

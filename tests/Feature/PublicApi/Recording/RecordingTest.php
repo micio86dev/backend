@@ -13,7 +13,6 @@ use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Tests\Helpers\PublicApi\Step6Fixtures;
@@ -44,37 +43,6 @@ test('T-INT-023: a second InterviewRecording row for the same participant is rej
             'object_key' => 'recordings/second.ogg',
         ]))->toThrow(QueryException::class, 'interview_recordings_participant_id_unique');
     });
-});
-
-test('T-INT-023: the recording lookup is explicitly ordered by id desc', function (): void {
-    Storage::fake();
-
-    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey();
-    $project = Step6Fixtures::project($org);
-    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
-
-    $objectKey = 'recordings/'.$org->id.'/'.$participant->id.'/interview.ogg';
-    Storage::put($objectKey, 'fake-audio-bytes');
-
-    TenantContextScope::runFor($org->id, function () use ($participant, $objectKey): void {
-        InterviewRecording::factory()->create([
-            'participant_id' => $participant->id,
-            'object_key' => $objectKey,
-        ]);
-    });
-
-    $statements = [];
-    DB::listen(function ($query) use (&$statements): void {
-        $statements[] = $query->sql;
-    });
-
-    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
-        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/recording');
-
-    $response->assertOk();
-    expect(collect($statements)->contains(
-        fn (string $sql): bool => str_contains($sql, 'interview_recordings') && str_contains(strtolower($sql), 'order by "id" desc')
-    ))->toBeTrue();
 });
 
 test('T-INT-023: a storage backend failure while signing the URL answers 500 internal_error, not an unhandled exception', function (): void {

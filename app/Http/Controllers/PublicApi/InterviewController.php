@@ -24,6 +24,7 @@ use App\Rules\PublicApi\Iso8601DateTime;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Expand;
 use App\Support\PublicApi\HostedInterviewUrlComposer;
+use App\Support\PublicApi\IncludeTrashed;
 use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicApiJson;
@@ -34,7 +35,6 @@ use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -334,22 +334,27 @@ final class InterviewController extends Controller
         return InterviewResource::make($participant, $expandProject, $progress, $recordingReady)->response();
     }
 
+    // `@response` documented explicitly via `#[Response(200, ...)]` below
+    // (step 6 review follow-up, finding 14; step 7 review follow-up,
+    // rewritten as an attribute rather than a bare `@response` PHPDoc tag)
+    // — `PublicApiJson::response(TranscriptSerializer::toArray(...))` did
+    // not survive Scramble's own inference as a typed schema, and the
+    // exported spec previously carried a bare, untyped `object` for this
+    // endpoint's `200`. The type string mirrors `TranscriptSerializer::
+    // toArray()`'s own `@return` array-shape docblock verbatim, the same
+    // "one shape, never a second, independently-typed copy" discipline
+    // `index()`'s own `@response` tag above already applies. Moved out of
+    // the docblock (step 7 review follow-up, Part A item 2): the PHPDoc
+    // form's prose was exported verbatim as this operation's public
+    // `description`, leaking internal review narration to API consumers —
+    // an attribute's `description:` argument is the caller-facing text
+    // Scramble actually publishes for a specific response.
     /**
      * `GET /v1/interviews/{id}/transcript` — SPEC.md §3.3, gate: status
      * `under_evaluation` or `completed`, else `409 transcript_not_ready`
      * (`error` included — G-15).
-     *
-     * `@response` documented explicitly (step 6 review follow-up, finding
-     * 14) — `PublicApiJson::response(TranscriptSerializer::toArray(...))`
-     * did not survive Scramble's own inference as a typed schema, and the
-     * exported spec previously carried a bare, untyped `object` for this
-     * endpoint's `200`. Mirrors `TranscriptSerializer::toArray()`'s own
-     * `@return` array-shape docblock verbatim, the same "one shape, never
-     * a second, independently-typed copy" discipline `index()`'s own
-     * `@response` tag above already applies.
-     *
-     * @response array{interview_id: string, language: string, turns: list<array{index: int, speaker: string, text: string, competency_code: string, question_index: int, ts: string}>}
      */
+    #[Response(200, description: 'The full transcript, turn by turn, in chronological order. Each turn carries its own derived question_index.', type: 'array{interview_id: string, language: string, turns: list<array{index: int, speaker: string, text: string, competency_code: string, question_index: int, ts: string}>}')]
     #[Response(409, description: 'Transcript not ready.', type: Problem::PROBLEM_SHAPE)]
     public function transcript(Request $request, string $interview): JsonResponse
     {
@@ -369,19 +374,19 @@ final class InterviewController extends Controller
         return PublicApiJson::response(TranscriptSerializer::toArray($participant));
     }
 
+    // `@response` documented explicitly via `#[Response(200, ...)]` below,
+    // for the same reason `transcript()`'s own comment states (step 6
+    // review follow-up, finding 14; step 7 review follow-up, moved out of
+    // the docblock for the same reason) — this method wraps
+    // `AnswersSerializer::toArray()`'s own `@return` list shape in the
+    // `{interview_id, answers}` envelope SPEC.md §3.3 describes; the
+    // exported spec previously carried a bare, untyped `object` for this
+    // endpoint's `200`.
     /**
      * `GET /v1/interviews/{id}/answers` — SPEC.md §3.3, same read gate as
      * the transcript.
-     *
-     * `@response` documented explicitly for the same reason `transcript()`'s
-     * own docblock states (step 6 review follow-up, finding 14) — this
-     * method wraps `AnswersSerializer::toArray()`'s own `@return` list
-     * shape in the `{interview_id, answers}` envelope SPEC.md §3.3
-     * describes; the exported spec previously carried a bare, untyped
-     * `object` for this endpoint's `200`.
-     *
-     * @response array{interview_id: string, answers: list<array{competency_code: string, question_index: int, question_text: string, answer_text: string, started_at_seconds: float|null, answer_duration_seconds: float|null}>}
      */
+    #[Response(200, description: 'The transcript grouped into one entry per question: question and answer text, and timing derived from turn timestamps.', type: 'array{interview_id: string, answers: list<array{competency_code: string, question_index: int, question_text: string, answer_text: string, started_at_seconds: float|null, answer_duration_seconds: float|null}>}')]
     #[Response(409, description: 'Answers not ready.', type: Problem::PROBLEM_SHAPE)]
     public function answers(Request $request, string $interview): JsonResponse
     {
@@ -404,19 +409,19 @@ final class InterviewController extends Controller
         ]);
     }
 
+    // `@response` documented explicitly via `#[Response(200, ...)]` below
+    // — found alongside `transcript()`/`answers()` carrying the identical
+    // bare-`object` `200` export defect (step 6 review follow-up, finding
+    // 14 named the first two; this one exhibits the same root cause and is
+    // fixed for the same reason, not left half-done; step 7 review
+    // follow-up moved all three out of the docblock for the same reason).
+    // The type string mirrors `ScoringSerializer::toArray()`'s own
+    // `@return` array-shape docblock verbatim.
     /**
      * `GET /v1/interviews/{id}/scoring` — SPEC.md §3.3, gate: status
      * `completed` only, else `409 scoring_not_ready`.
-     *
-     * `@response` documented explicitly — found alongside `transcript()`/
-     * `answers()` carrying the identical bare-`object` `200` export defect
-     * (step 6 review follow-up, finding 14 named the first two; this one
-     * exhibits the same root cause and is fixed for the same reason, not
-     * left half-done). Mirrors `ScoringSerializer::toArray()`'s own
-     * `@return` array-shape docblock verbatim.
-     *
-     * @response array{interview_id: string, status: string, competencies: array<string, array{score: float|null, reliability: float, behaviors: list<array{indicator: string, score: int, explanation: string, excerpts: list<string>, unassessable_reason: string|null}>, unscorable_reason: string|null}>, framework_version: string, model_version: string, prompt_version: string, evaluated_at: string}
      */
+    #[Response(200, description: 'The BARS competency scoring: per-competency score and reliability, the three anchor-scored behaviors, and the scoring run\'s framework/model/prompt version triplet.', type: 'array{interview_id: string, status: string, competencies: array<string, array{score: float|null, reliability: float, behaviors: list<array{indicator: string, score: int, explanation: string, excerpts: list<string>, unassessable_reason: string|null}>, unscorable_reason: string|null}>, framework_version: string, model_version: string, prompt_version: string, evaluated_at: string}')]
     #[Response(409, description: 'Scoring not ready.', type: Problem::PROBLEM_SHAPE)]
     public function scoring(Request $request, string $interview): JsonResponse
     {
@@ -593,26 +598,19 @@ final class InterviewController extends Controller
     }
 
     /**
-     * `$relation` is typed bare `Relation` (not `BelongsTo`) deliberately:
-     * Larastan's `RelationForwardsCallsExtension` (which resolves a
-     * model-specific macro like `withTrashed()` on a relation instance) only
-     * works when the relation's generic `TRelatedModel` is CONCRETELY known
-     * — which an inline `with([...])` eager-load constraint closure's own
-     * parameter never is (PHPStan infers it as the wildcard `Relation<*, *,
-     * *>` the base `with()` signature declares, regardless of which
-     * relation name the closure is keyed under). `getQuery()` and
-     * `withoutGlobalScope()` are both ORDINARILY declared methods on
-     * `Relation`/`Illuminate\Database\Eloquent\Builder` — never macros — so
-     * reaching the exact same effect `withTrashed()` has (dropping
-     * `SoftDeletingScope`) through them needs no generic resolution at all
-     * (gga round 3 finding 1).
+     * Delegates to `App\Support\PublicApi\IncludeTrashed::forRelation()`
+     * (gga pre-commit follow-up, step 7 finding 2) — extracted there once
+     * `WebhookDeliveryController` needed the identical mechanics for its
+     * own `project` eager-load, rather than a second ad hoc copy of this
+     * method's own reasoning. See that class's own docblock for the full
+     * "why `Relation`, not `BelongsTo`" rationale (gga round 3 finding 1).
      *
      * @param  Relation<*, *, *>  $relation
      * @return Builder<*>
      */
     private static function projectIncludingTrashed(Relation $relation): Builder
     {
-        return $relation->getQuery()->withoutGlobalScope(SoftDeletingScope::class);
+        return IncludeTrashed::forRelation($relation);
     }
 
     private function validateFilterFormats(Request $request): void

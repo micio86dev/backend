@@ -55,6 +55,7 @@ use App\Http\Controllers\PublicApi\OrganizationController as PublicApiOrganizati
 use App\Http\Controllers\PublicApi\ProjectController as PublicApiProjectController;
 use App\Http\Controllers\PublicApi\RecordingController as PublicApiRecordingController;
 use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTokenController;
+use App\Http\Controllers\PublicApi\WebhookDeliveryController as PublicApiWebhookDeliveryController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
@@ -197,6 +198,24 @@ Route::prefix('v1')
             Route::get('/interviews/{interview}/recording', [PublicApiRecordingController::class, 'show'])
                 ->name('interviews.recording')
                 ->middleware(SubstituteBindings::class);
+        });
+
+        // public-api step 7: webhook delivery log + redeliver (SPEC.md
+        // §3.6). `redeliver` carries `idempotent` (G-15's own precedent:
+        // `openapi.yaml`'s `idempotencyKey` parameter is documented on
+        // this operation, same as `POST /interviews`) — a caller retrying
+        // an uncertain redeliver request must not silently re-queue the
+        // job a second time.
+        Route::middleware('scope:webhooks:read')->group(function (): void {
+            Route::get('/webhooks/deliveries', [PublicApiWebhookDeliveryController::class, 'index'])
+                ->name('webhooks.deliveries.index')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        Route::middleware('scope:webhooks:write')->group(function (): void {
+            Route::post('/webhooks/deliveries/{id}/redeliver', [PublicApiWebhookDeliveryController::class, 'redeliver'])
+                ->name('webhooks.deliveries.redeliver')
+                ->middleware(['idempotent', SubstituteBindings::class]);
         });
     });
 

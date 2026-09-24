@@ -9,6 +9,7 @@ declare(strict_types=1);
  */
 
 use App\Enums\ApiKeyMode;
+use App\Enums\WebhookDeliveryStatus;
 use App\Http\Resources\Admin\EvaluationResource as AdminEvaluationResource;
 use App\Http\Resources\Admin\OrganizationResource as AdminOrganizationResource;
 use App\Http\Resources\Admin\ParticipantDetailResource as AdminParticipantDetailResource;
@@ -25,6 +26,7 @@ use App\Models\InterviewRecording;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\WebhookDelivery;
 use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\OrganizationSerializer;
 use App\PublicApi\Serializers\ProjectSerializer;
@@ -34,6 +36,7 @@ use App\Services\Admin\AdminEvaluationSerializer;
 use App\Services\Admin\AdminTranscript;
 use App\Services\ApiKeyGenerator;
 use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\WebhookDeliveryId;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Storage;
 use Tests\Helpers\PublicApi\ExposureCatalogue;
@@ -440,6 +443,37 @@ function assertNoForbiddenPattern(string|false $body): void
 
     expect($offenders)->toBe([], 'Forbidden values found: '.json_encode($offenders));
 }
+
+test('T-EXPOSE-002: GET /v1/webhooks/deliveries and POST .../redeliver never contain a beai_live_/beai_test_/tavus/heygen value, even with a matching payload', function (): void {
+    // `payload`/`dedupe_key`/`skip_reason`/`last_error` are excluded
+    // entirely (SPEC.md §3.6) — this fixture deliberately plants the
+    // forbidden pattern INSIDE the excluded `payload` column to prove it
+    // never leaks through, the same "plant it where it would leak from if
+    // this were broken" discipline the Project fixtures above use for
+    // `avatar_template.config`. `target_url` is left a benign, non-
+    // matching value — it IS an exposed field (SPEC.md §3.6's own
+    // exposed-fields list), so a `tavus.example`-style URL there would be
+    // a legitimate value coincidentally matching the grep, not a leak.
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['webhooks:read', 'webhooks:write']);
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    $delivery = TenantContextScope::runFor($org->id, fn () => WebhookDelivery::factory()->forParticipant($participant)->create([
+        'status' => WebhookDeliveryStatus::Dead,
+        'target_url' => 'https://client.example.com/inbound-webhook',
+        'payload' => ['note' => 'heygen_persona_9', 'key' => 'beai_live_shouldneverleak'],
+        'last_error' => 'contacted tavus.example and it rejected the beai_test_abc123 key',
+    ]));
+
+    $list = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/webhooks/deliveries');
+    $list->assertOk();
+    assertNoForbiddenPattern($list->getContent());
+
+    $redeliver = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/webhooks/deliveries/'.WebhookDeliveryId::encode($delivery).'/redeliver');
+    $redeliver->assertStatus(202);
+    assertNoForbiddenPattern($redeliver->getContent());
+});
 
 /**
  * @param  list<string>  $offenders

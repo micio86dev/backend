@@ -37,10 +37,23 @@ use Illuminate\Support\Carbon;
  * rather than silently resolved): `started_at_seconds` is the delta of the
  * PRIMARY QUESTION's own utterance timestamp from `participant.started_at`
  * — when this Q&A round began, defined and orderable even for a question
- * the candidate never answered. `answer_duration_seconds` spans only the
- * CANDIDATE's own turns in the bucket (last candidate `ts` minus first),
- * `null` when the candidate never answered — it measures how long the
- * candidate took to respond, not how long the avatar spoke.
+ * the candidate never answered. `answer_duration_seconds` measures how long
+ * the candidate took to respond, not how long the avatar spoke, and is the
+ * SUM of each contiguous run of candidate turns actually routed to this
+ * question's bucket (a run's own last-minus-first span), `null` when the
+ * candidate never answered.
+ *
+ * Step 7 review follow-up: a bucket previously tracked a single running
+ * `firstCandidateTs`/`lastCandidateTs` pair across its ENTIRE lifetime.
+ * Redirecting candidate speech after a re-ask (an EARLIER question resumed
+ * after a later one was already opened — see the "bucket selection" test)
+ * back into that earlier bucket then pushed its `lastCandidateTs` past
+ * whatever time was spent answering the LATER question in between, so a
+ * single last-minus-first subtraction silently counted that unrelated gap
+ * as part of the re-asked question's own answer duration. Tracking a LIST
+ * of runs — one per contiguous stretch of turns actually routed to this
+ * bucket — and summing each run's own span keeps a resumed question's
+ * duration to the time actually spent answering it.
  */
 final class AnswersSerializer
 {
@@ -85,7 +98,13 @@ final class AnswersSerializer
          * tracking this as `list<Shape>` (a dynamic-key write loses that
          * precision) all the way through to the `array_map()` below.
          *
-         * @var list<array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}>
+         * `runs` is a list of contiguous candidate-turn spans (see this
+         * class's own docblock, step 7 review follow-up) — appended to
+         * only when candidate speech resumes in THIS bucket after having
+         * been routed elsewhere (or on the very first turn), never merged
+         * across a gap spent on a different bucket.
+         *
+         * @var list<array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, runs: list<array{first: CarbonImmutable, last: CarbonImmutable}>}>
          */
         $buckets = [];
 
@@ -107,6 +126,14 @@ final class AnswersSerializer
         // not a special case per turn kind.
         $currentPosition = null;
 
+        // The bucket position the PREVIOUS candidate turn was routed to —
+        // step 7 review follow-up. Used only to detect when candidate
+        // speech RESUMES in a bucket after having been routed elsewhere
+        // (a re-ask) versus simply continuing the same bucket's current
+        // run, so `appendCandidateTurn()` knows whether to open a new run
+        // or extend the current one. `null` before the first candidate turn.
+        $lastRoutedPosition = null;
+
         foreach (SessionTurnReplay::forSession($session) as $entry) {
             /** @var Utterance $utterance */
             $utterance = $entry['utterance'];
@@ -119,8 +146,7 @@ final class AnswersSerializer
                         'questionText' => $primaries[$questionIndex] ?? $utterance->text,
                         'questionTs' => $utterance->ts,
                         'answerParts' => [],
-                        'firstCandidateTs' => null,
-                        'lastCandidateTs' => null,
+                        'runs' => [],
                     ];
                     $bucketPositionByQuestionIndex[$questionIndex] = count($buckets) - 1;
                 }
@@ -136,7 +162,9 @@ final class AnswersSerializer
                 continue;
             }
 
-            $buckets[$currentPosition] = self::appendCandidateTurn($buckets[$currentPosition], $utterance);
+            $isNewRun = $lastRoutedPosition !== $currentPosition;
+            $buckets[$currentPosition] = self::appendCandidateTurn($buckets[$currentPosition], $utterance, $isNewRun);
+            $lastRoutedPosition = $currentPosition;
         }
 
         return array_map(
@@ -146,20 +174,27 @@ final class AnswersSerializer
     }
 
     /**
-     * @param  array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}  $bucket
-     * @return array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}
+     * @param  array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, runs: list<array{first: CarbonImmutable, last: CarbonImmutable}>}  $bucket
+     * @return array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, runs: list<array{first: CarbonImmutable, last: CarbonImmutable}>}
      */
-    private static function appendCandidateTurn(array $bucket, Utterance $utterance): array
+    private static function appendCandidateTurn(array $bucket, Utterance $utterance, bool $isNewRun): array
     {
         $bucket['answerParts'][] = $utterance->text;
-        $bucket['firstCandidateTs'] ??= $utterance->ts;
-        $bucket['lastCandidateTs'] = $utterance->ts;
+
+        if ($isNewRun || $bucket['runs'] === []) {
+            $bucket['runs'][] = ['first' => $utterance->ts, 'last' => $utterance->ts];
+
+            return $bucket;
+        }
+
+        $lastRunIndex = count($bucket['runs']) - 1;
+        $bucket['runs'][$lastRunIndex]['last'] = $utterance->ts;
 
         return $bucket;
     }
 
     /**
-     * @param  array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}  $current
+     * @param  array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, runs: list<array{first: CarbonImmutable, last: CarbonImmutable}>}  $current
      * @return array{competency_code: string, question_index: int, question_text: string, answer_text: string, started_at_seconds: float|null, answer_duration_seconds: float|null}
      */
     private static function finalizeAnswer(InterviewSession $session, array $current, Participant $participant): array
@@ -174,9 +209,12 @@ final class AnswersSerializer
             'started_at_seconds' => $startedAt === null
                 ? null
                 : self::secondsBetween($current['questionTs'], $startedAt),
-            'answer_duration_seconds' => $current['firstCandidateTs'] === null || $current['lastCandidateTs'] === null
+            'answer_duration_seconds' => $current['runs'] === []
                 ? null
-                : self::secondsBetween($current['lastCandidateTs'], $current['firstCandidateTs']),
+                : array_sum(array_map(
+                    fn (array $run): float => self::secondsBetween($run['last'], $run['first']),
+                    $current['runs'],
+                )),
         ];
     }
 

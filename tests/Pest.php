@@ -735,6 +735,17 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PublicApi/Recording');
 
+// Feature/PublicApi/Webhooks — public-api step 7's
+// `GET /v1/webhooks/deliveries` / `POST .../redeliver` (T-WHD-*) — creates
+// real Organization/ApiClient/Project/Participant/WebhookDelivery rows via
+// factories, same reasoning as every other PublicApi feature dir above.
+// Missing this registration was caught by `WebhookDeliveriesMigrationTest`'s
+// own row-count assertion turning up 17 instead of 1 — every row this
+// directory's tests ever created was never rolled back and kept
+// accumulating across the whole suite run.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Webhooks');
+
 // Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
 // exercises the legacy-rows cache/observer against real ApiClient rows.
 // ApiModeTest (no DB) is unaffected — extend()/use() are harmless for a

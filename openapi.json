@@ -4081,7 +4081,6 @@
         "/v1/interviews/{interview}/transcript": {
             "get": {
                 "operationId": "public-api.interviews.transcript",
-                "description": "`@response` documented explicitly (step 6 review follow-up, finding\n14) \u2014 `PublicApiJson::response(TranscriptSerializer::toArray(...))`\ndid not survive Scramble's own inference as a typed schema, and the\nexported spec previously carried a bare, untyped `object` for this\nendpoint's `200`. Mirrors `TranscriptSerializer::toArray()`'s own\n`@return` array-shape docblock verbatim, the same \"one shape, never\n     * a second, independently-typed copy\" discipline `index()`'s own\n`@response` tag above already applies.",
                 "summary": "`GET /v1/interviews/{id}/transcript` \u2014 SPEC.md \u00a73.3, gate: status\n`under_evaluation` or `completed`, else `409 transcript_not_ready`\n(`error` included \u2014 G-15)",
                 "tags": [
                     "Interview"
@@ -4098,7 +4097,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The full transcript, turn by turn, in chronological order. Each turn carries its own derived question_index.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4221,7 +4220,6 @@
         "/v1/interviews/{interview}/answers": {
             "get": {
                 "operationId": "public-api.interviews.answers",
-                "description": "`@response` documented explicitly for the same reason `transcript()`'s\nown docblock states (step 6 review follow-up, finding 14) \u2014 this\nmethod wraps `AnswersSerializer::toArray()`'s own `@return` list\nshape in the `{interview_id, answers}` envelope SPEC.md \u00a73.3\ndescribes; the exported spec previously carried a bare, untyped\n`object` for this endpoint's `200`.",
                 "summary": "`GET /v1/interviews/{id}/answers` \u2014 SPEC.md \u00a73.3, same read gate as\nthe transcript",
                 "tags": [
                     "Interview"
@@ -4238,7 +4236,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The transcript grouped into one entry per question: question and answer text, and timing derived from turn timestamps.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -4363,7 +4361,6 @@
         "/v1/interviews/{interview}/scoring": {
             "get": {
                 "operationId": "public-api.interviews.scoring",
-                "description": "`@response` documented explicitly \u2014 found alongside `transcript()`/\n`answers()` carrying the identical bare-`object` `200` export defect\n(step 6 review follow-up, finding 14 named the first two; this one\nexhibits the same root cause and is fixed for the same reason, not\nleft half-done). Mirrors `ScoringSerializer::toArray()`'s own\n`@return` array-shape docblock verbatim.",
                 "summary": "`GET /v1/interviews/{id}/scoring` \u2014 SPEC.md \u00a73.3, gate: status\n`completed` only, else `409 scoring_not_ready`",
                 "tags": [
                     "Interview"
@@ -4380,7 +4377,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The BARS competency scoring: per-competency score and reliability, the three anchor-scored behaviors, and the scoring run's framework/model/prompt version triplet.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -10109,6 +10106,380 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/webhooks/deliveries": {
+            "get": {
+                "operationId": "public-api.webhooks.deliveries.index",
+                "summary": "`GET /v1/webhooks/deliveries` \u2014 SPEC.md \u00a73.6 \"Delivery log\"",
+                "tags": [
+                    "WebhookDelivery"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "event_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "interview_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of webhook delivery attempts for the caller's organization, newest first.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "event_type": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "interview_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "project_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "candidate_ref": {
+                                                        "type": "string"
+                                                    },
+                                                    "target_url": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "attempt_count": {
+                                                        "type": "integer"
+                                                    },
+                                                    "max_attempts": {
+                                                        "type": "integer"
+                                                    },
+                                                    "payload_version": {
+                                                        "type": "string"
+                                                    },
+                                                    "last_response_status": {
+                                                        "type": [
+                                                            "integer",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "last_attempt_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "next_attempt_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "delivered_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "event_type",
+                                                    "status",
+                                                    "interview_id",
+                                                    "project_id",
+                                                    "candidate_ref",
+                                                    "target_url",
+                                                    "attempt_count",
+                                                    "max_attempts",
+                                                    "payload_version",
+                                                    "last_response_status",
+                                                    "last_attempt_at",
+                                                    "next_attempt_at",
+                                                    "delivered_at",
+                                                    "created_at"
+                                                ]
+                                            }
+                                        },
+                                        "next_cursor": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "has_more": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "next_cursor",
+                                        "has_more"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed query parameter.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/webhooks/deliveries/{id}/redeliver": {
+            "post": {
+                "operationId": "public-api.webhooks.deliveries.redeliver",
+                "summary": "`POST /v1/webhooks/deliveries/{id}/redeliver` \u2014 re-queues one\ndelivery for immediate re-send. Allowed only from a terminal\n`delivered`/`failed_permanent`/`dead` state",
+                "tags": [
+                    "WebhookDelivery"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Re-queued for immediate re-delivery with the frozen payload bytes and a fresh signature timestamp.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "event_type": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "interview_id": {
+                                            "type": "string"
+                                        },
+                                        "project_id": {
+                                            "type": "string"
+                                        },
+                                        "candidate_ref": {
+                                            "type": "string"
+                                        },
+                                        "target_url": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "attempt_count": {
+                                            "type": "integer"
+                                        },
+                                        "max_attempts": {
+                                            "type": "integer"
+                                        },
+                                        "payload_version": {
+                                            "type": "string"
+                                        },
+                                        "last_response_status": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "last_attempt_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "next_attempt_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "delivered_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "created_at": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "event_type",
+                                        "status",
+                                        "interview_id",
+                                        "project_id",
+                                        "candidate_ref",
+                                        "target_url",
+                                        "attempt_count",
+                                        "max_attempts",
+                                        "payload_version",
+                                        "last_response_status",
+                                        "last_attempt_at",
+                                        "next_attempt_at",
+                                        "delivered_at",
+                                        "created_at"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The delivery is not in a terminal state (code=invalid_state).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
                     }
                 }
             }
