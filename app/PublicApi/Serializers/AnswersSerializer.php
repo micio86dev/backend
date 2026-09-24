@@ -73,46 +73,89 @@ final class AnswersSerializer
     private static function answersForSession(InterviewSession $session, Participant $participant): array
     {
         $primaries = $session->primary_questions ?? [];
-        $answers = [];
 
-        /** @var array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}|null $current */
-        $current = null;
+        /**
+         * A LIST, in FIRST-OPENED order (a primary only ever advances the
+         * pointer once, in strictly ascending order — see TurnClassifier's
+         * own docblock — so buckets are always appended, never inserted
+         * out of order). `$bucketPositionByQuestionIndex` below maps the
+         * G-37 `question_index` each bucket was opened for to its position
+         * here — kept as a SEPARATE plain int-to-int map, rather than
+         * keying this list by `question_index` directly, so PHPStan keeps
+         * tracking this as `list<Shape>` (a dynamic-key write loses that
+         * precision) all the way through to the `array_map()` below.
+         *
+         * @var list<array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}>
+         */
+        $buckets = [];
+
+        /** @var array<int, int> maps a G-37 question_index to its position in $buckets */
+        $bucketPositionByQuestionIndex = [];
+
+        // The POSITION in $buckets that candidate speech is currently being
+        // routed to — step 6 review follow-up, finding 6. NOT the same
+        // thing as "the bucket most recently opened": a verbatim re-ask of
+        // an EARLIER primary (`SessionTurnReplay` resolves it, via
+        // `reAskedIndex()`, to that earlier index — never a new one, and
+        // `advances_primary` stays false for it) must redirect subsequent
+        // candidate turns back to THAT earlier bucket, not leave them
+        // appending to whichever primary most recently advanced the
+        // pointer. A follow-up avatar turn resolves to the SAME index the
+        // current bucket already has, so redirecting on every avatar
+        // primary-classified turn (not only an advancing one) is a no-op
+        // for a follow-up and the actual fix for a re-ask — one rule,
+        // not a special case per turn kind.
+        $currentPosition = null;
 
         foreach (SessionTurnReplay::forSession($session) as $entry) {
             /** @var Utterance $utterance */
             $utterance = $entry['utterance'];
+            $questionIndex = $entry['question_index'];
 
-            if ($entry['advances_primary']) {
-                if ($current !== null) {
-                    $answers[] = self::finalizeAnswer($session, $current, $participant);
+            if ($utterance->speaker === 'avatar') {
+                if ($entry['advances_primary']) {
+                    $buckets[] = [
+                        'questionIndex' => $questionIndex,
+                        'questionText' => $primaries[$questionIndex] ?? $utterance->text,
+                        'questionTs' => $utterance->ts,
+                        'answerParts' => [],
+                        'firstCandidateTs' => null,
+                        'lastCandidateTs' => null,
+                    ];
+                    $bucketPositionByQuestionIndex[$questionIndex] = count($buckets) - 1;
                 }
 
-                $current = [
-                    'questionIndex' => $entry['question_index'],
-                    'questionText' => $primaries[$entry['question_index']] ?? $utterance->text,
-                    'questionTs' => $utterance->ts,
-                    'answerParts' => [],
-                    'firstCandidateTs' => null,
-                    'lastCandidateTs' => null,
-                ];
+                if (isset($bucketPositionByQuestionIndex[$questionIndex])) {
+                    $currentPosition = $bucketPositionByQuestionIndex[$questionIndex];
+                }
 
                 continue;
             }
 
-            if ($current === null || $utterance->speaker !== 'candidate') {
+            if ($currentPosition === null || $utterance->speaker !== 'candidate') {
                 continue;
             }
 
-            $current['answerParts'][] = $utterance->text;
-            $current['firstCandidateTs'] ??= $utterance->ts;
-            $current['lastCandidateTs'] = $utterance->ts;
+            $buckets[$currentPosition] = self::appendCandidateTurn($buckets[$currentPosition], $utterance);
         }
 
-        if ($current !== null) {
-            $answers[] = self::finalizeAnswer($session, $current, $participant);
-        }
+        return array_map(
+            fn (array $bucket): array => self::finalizeAnswer($session, $bucket, $participant),
+            $buckets,
+        );
+    }
 
-        return $answers;
+    /**
+     * @param  array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}  $bucket
+     * @return array{questionIndex: int, questionText: string, questionTs: CarbonImmutable, answerParts: list<string>, firstCandidateTs: CarbonImmutable|null, lastCandidateTs: CarbonImmutable|null}
+     */
+    private static function appendCandidateTurn(array $bucket, Utterance $utterance): array
+    {
+        $bucket['answerParts'][] = $utterance->text;
+        $bucket['firstCandidateTs'] ??= $utterance->ts;
+        $bucket['lastCandidateTs'] = $utterance->ts;
+
+        return $bucket;
     }
 
     /**

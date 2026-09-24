@@ -85,6 +85,18 @@ final class Step6Fixtures
                 ?? Competency::factory()->create(['code' => $competencyCode]);
             $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
 
+            // ONE frozen instant (step 6 review follow-up, finding 10) —
+            // `participant.started_at` and the utterance base time
+            // (`$t0`) are both computed as explicit offsets from THIS
+            // single `now()` call, never from two separate unfrozen
+            // `now()` calls. Two separate calls can straddle a second
+            // boundary between them, which shifts the derived
+            // `started_at_seconds`/`answer_duration_seconds` deltas
+            // `AnswersTest`'s exact-value assertions (`60.0`, `150.0`)
+            // depend on by however many seconds elapsed between the two
+            // calls — flaky by construction, not merely in theory.
+            $now = now();
+
             $participant = new Participant;
             $participant->forceFill([
                 'organization_id' => $org->id,
@@ -94,7 +106,7 @@ final class Step6Fixtures
                 'email' => uniqid('fixture-').'@example.test',
                 'status' => $status,
                 'language' => 'en',
-                'started_at' => now()->subMinutes(10),
+                'started_at' => $now->copy()->subMinutes(10),
             ]);
             $participant->save();
             $participant = $participant->fresh();
@@ -113,11 +125,11 @@ final class Step6Fixtures
                 'provider' => 'fake',
                 'status' => 'completed',
                 'primary_questions' => $primaryQuestions,
-                'started_at' => now()->subMinutes(9),
-                'ended_at' => now()->subMinutes(1),
+                'started_at' => $now->copy()->subMinutes(9),
+                'ended_at' => $now->copy()->subMinutes(1),
             ]);
 
-            $t0 = now()->subMinutes(9);
+            $t0 = $now->copy()->subMinutes(9);
 
             $turns = [
                 ['avatar', $primaryQuestions[0], 0],

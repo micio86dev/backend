@@ -338,6 +338,17 @@ final class InterviewController extends Controller
      * `GET /v1/interviews/{id}/transcript` — SPEC.md §3.3, gate: status
      * `under_evaluation` or `completed`, else `409 transcript_not_ready`
      * (`error` included — G-15).
+     *
+     * `@response` documented explicitly (step 6 review follow-up, finding
+     * 14) — `PublicApiJson::response(TranscriptSerializer::toArray(...))`
+     * did not survive Scramble's own inference as a typed schema, and the
+     * exported spec previously carried a bare, untyped `object` for this
+     * endpoint's `200`. Mirrors `TranscriptSerializer::toArray()`'s own
+     * `@return` array-shape docblock verbatim, the same "one shape, never
+     * a second, independently-typed copy" discipline `index()`'s own
+     * `@response` tag above already applies.
+     *
+     * @response array{interview_id: string, language: string, turns: list<array{index: int, speaker: string, text: string, competency_code: string, question_index: int, ts: string}>}
      */
     #[Response(409, description: 'Transcript not ready.', type: Problem::PROBLEM_SHAPE)]
     public function transcript(Request $request, string $interview): JsonResponse
@@ -361,6 +372,15 @@ final class InterviewController extends Controller
     /**
      * `GET /v1/interviews/{id}/answers` — SPEC.md §3.3, same read gate as
      * the transcript.
+     *
+     * `@response` documented explicitly for the same reason `transcript()`'s
+     * own docblock states (step 6 review follow-up, finding 14) — this
+     * method wraps `AnswersSerializer::toArray()`'s own `@return` list
+     * shape in the `{interview_id, answers}` envelope SPEC.md §3.3
+     * describes; the exported spec previously carried a bare, untyped
+     * `object` for this endpoint's `200`.
+     *
+     * @response array{interview_id: string, answers: list<array{competency_code: string, question_index: int, question_text: string, answer_text: string, started_at_seconds: float|null, answer_duration_seconds: float|null}>}
      */
     #[Response(409, description: 'Answers not ready.', type: Problem::PROBLEM_SHAPE)]
     public function answers(Request $request, string $interview): JsonResponse
@@ -387,6 +407,15 @@ final class InterviewController extends Controller
     /**
      * `GET /v1/interviews/{id}/scoring` — SPEC.md §3.3, gate: status
      * `completed` only, else `409 scoring_not_ready`.
+     *
+     * `@response` documented explicitly — found alongside `transcript()`/
+     * `answers()` carrying the identical bare-`object` `200` export defect
+     * (step 6 review follow-up, finding 14 named the first two; this one
+     * exhibits the same root cause and is fixed for the same reason, not
+     * left half-done). Mirrors `ScoringSerializer::toArray()`'s own
+     * `@return` array-shape docblock verbatim.
+     *
+     * @response array{interview_id: string, status: string, competencies: array<string, array{score: float|null, reliability: float, behaviors: list<array{indicator: string, score: int, explanation: string, excerpts: list<string>, unassessable_reason: string|null}>, unscorable_reason: string|null}>, framework_version: string, model_version: string, prompt_version: string, evaluated_at: string}
      */
     #[Response(409, description: 'Scoring not ready.', type: Problem::PROBLEM_SHAPE)]
     public function scoring(Request $request, string $interview): JsonResponse
@@ -414,10 +443,22 @@ final class InterviewController extends Controller
      * is what every real row already carries — see that model's own
      * docblock; no participant special-cases its absence.
      *
+     * `cursor`/`limit` documented explicitly (step 6 review follow-up,
+     * finding 14) — `CursorPage::paginateAscending()` reads both directly
+     * off `$request` from INSIDE `App\Support\PublicApi\CursorPage`, one
+     * call frame away from this method's own body, which is why
+     * Scramble's own static-analysis auto-detection (which scans a
+     * controller method's own body for `$request->query()`/`$request->
+     * integer()` calls) never picked them up — the exported spec
+     * previously documented only the `interview` path parameter for this
+     * operation.
+     *
      * @response array{data: list<array{id: string, type: string, occurred_at: string, data: array<string, mixed>|null}>, next_cursor: string|null, has_more: bool}
      */
     #[IgnoreResponse(422)]
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
+    #[QueryParameter('cursor', description: 'Opaque pagination cursor from a previous page\'s next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.', type: 'string')]
+    #[QueryParameter('limit', description: 'Page size, 1-100 (default 25). Out of range answers 400 validation_failed.', type: 'integer')]
     public function events(Request $request, string $interview): JsonResponse
     {
         $organization = $this->resolveOrganization();

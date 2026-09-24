@@ -82,6 +82,17 @@ final class Iso8601DateTime implements ValidationRule
         '!Y-m-d\TH:i:s.uP',
         '!Y-m-d\TH:i:s\Z',
         '!Y-m-d\TH:i:s.u\Z',
+        // Colon-less numeric offset (`O`, e.g. `+0100`) — step 6 review
+        // follow-up, finding 4. Not part of SPEC.md §3.2's own two
+        // producer shapes, but a genuinely valid ISO 8601 offset form this
+        // rule previously rejected outright (`P` requires the colon).
+        // Tried AFTER the `P` shapes, never before: `createFromFormat()`
+        // with `O` parses a colon-bearing offset leniently too, so if this
+        // were tried first, a colon offset would round-trip through `O`'s
+        // colon-less `format()` output and be rejected as a byte-for-byte
+        // mismatch — `P` must get first refusal on anything it can parse.
+        '!Y-m-d\TH:i:sO',
+        '!Y-m-d\TH:i:s.uO',
     ];
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -135,8 +146,17 @@ final class Iso8601DateTime implements ValidationRule
             // 4) normalises a short fraction on `$value`'s side FIRST, so a
             // genuinely valid 1-5-digit input compares equal to `format()`'s
             // always-six-digit output instead of being rejected alongside
-            // an actual rollover.
-            if ($parsed->format(ltrim($format, '!')) !== self::padFraction($value, $format)) {
+            // an actual rollover. `self::normalizeNegativeZeroOffset()`
+            // (step 6 review follow-up, finding 4) is applied to `$value`'s
+            // side FIRST for the identical reason `padFraction()` is: a
+            // genuinely valid `-00:00`/`-0000` offset — the SAME instant as
+            // `+00:00`/`+0000`, merely spelled with the sign PHP's own
+            // `format()` never emits back — round-tripped to the positive
+            // form and was rejected as if it had rolled over, exactly like
+            // an actual rollover would be. Only the LITERAL zero offset is
+            // touched; a genuine non-zero offset (`-01:00`) is untouched
+            // and still compared byte for byte.
+            if ($parsed->format(ltrim($format, '!')) !== self::normalizeNegativeZeroOffset(self::padFraction($value, $format))) {
                 continue;
             }
 
@@ -167,6 +187,26 @@ final class Iso8601DateTime implements ValidationRule
             fn (array $matches): string => '.'.str_pad($matches[1], 6, '0'),
             $value,
             limit: 1,
+        ) ?? $value;
+    }
+
+    /**
+     * Rewrites a trailing `-00:00`/`-0000` (negative-zero offset — the same
+     * instant as `+00:00`/`+0000`, offset magnitude zero having no
+     * direction) to its positive form, so it compares equal to
+     * `format()`'s output, which PHP always emits with a `+` sign for a
+     * zero offset regardless of how the input spelled it. Anchored to the
+     * end of the string and matched on the LITERAL `00:00`/`0000` digits
+     * only — a genuine non-zero negative offset (`-01:00`) never matches
+     * and is left untouched, since that is a real, different offset PHP's
+     * own `format()` round-trips unchanged.
+     */
+    private static function normalizeNegativeZeroOffset(string $value): string
+    {
+        return preg_replace_callback(
+            '/-00:?00$/',
+            fn (array $matches): string => str_contains($matches[0], ':') ? '+00:00' : '+0000',
+            $value,
         ) ?? $value;
     }
 }

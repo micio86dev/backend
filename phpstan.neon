@@ -15,3 +15,8 @@ parameters:
         # outside the scanned paths.
         - database/migrations/2026_09_24_130000_add_public_id_to_organizations_and_projects_tables.php
         - database/migrations/2026_09_24_140000_add_public_api_fields_to_participants_table.php
+        # Standalone repair migration (step 6 review follow-up, finding 2)
+        # — named individually for the SAME reason as the two migrations
+        # above: without it, CI's project-level run never statically
+        # analyses this real production file at all.
+        - database/migrations/2026_09_24_150100_repair_invalid_participants_public_id_index.php

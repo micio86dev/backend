@@ -29,6 +29,21 @@ test('T-INT-025: a foreign organization\'s key never finds another org\'s interv
     $project = Step6Fixtures::project($ownerOrg);
     $participant = Step6Fixtures::participantWithTranscript($ownerOrg, $project, $status);
 
+    // Step 6 review follow-up, finding 11: the `recording` sub-resource
+    // case was previously VACUOUS — with no `InterviewRecording` row at
+    // all, the OWNER org's own legitimate key would ALSO get
+    // `404 recording_not_ready`, so the foreign-org key's 404 proved
+    // nothing about cross-tenant isolation specifically. A real row for
+    // the OWNER's participant makes this a genuine test: if isolation
+    // were broken, the foreign-org request below would find and return
+    // it (200), not 404.
+    if ($path === 'recording') {
+        TenantContextScope::runFor($ownerOrg->id, fn () => InterviewRecording::factory()->create([
+            'participant_id' => $participant->id,
+            'object_key' => 'recordings/'.$ownerOrg->id.'/'.$participant->id.'/interview.ogg',
+        ]));
+    }
+
     ['key' => $foreignKey] = Step6Fixtures::orgWithScopedKey();
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$foreignKey])

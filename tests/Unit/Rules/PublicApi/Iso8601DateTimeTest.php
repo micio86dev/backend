@@ -34,6 +34,11 @@ test('parse() accepts a genuine end-of-month date on the Z form', function (): v
 });
 
 test('parse() resolves a trailing Z as UTC, not the ambient default timezone', function (): void {
+    // Captured, not hardcoded — restoring a literal 'UTC' would silently
+    // clobber whatever zone was actually active before this test mutated
+    // it, on any environment/suite ordering where that is not already
+    // 'UTC'.
+    $originalTimezone = date_default_timezone_get();
     date_default_timezone_set('America/New_York');
 
     try {
@@ -43,7 +48,7 @@ test('parse() resolves a trailing Z as UTC, not the ambient default timezone', f
         expect($parsed->getTimezone()->getName())->toBe('UTC');
         expect($parsed->toIso8601String())->toBe('2026-01-01T00:00:00+00:00');
     } finally {
-        date_default_timezone_set('UTC');
+        date_default_timezone_set($originalTimezone);
     }
 });
 
@@ -98,4 +103,46 @@ test('parse() still accepts the full six-digit microsecond form', function (): v
 
 test('parse() still rejects a rolled-over date carrying fractional seconds (2026-02-31.123Z)', function (): void {
     expect(Iso8601DateTime::parse('2026-02-31T00:00:00.123Z'))->toBeNull();
+});
+
+// ─── step 6 review follow-up, finding 4: negative-zero and colon-less offsets ──
+
+test('parse() accepts a negative-zero offset (-00:00) as equivalent to +00:00 (same instant)', function (): void {
+    $parsed = Iso8601DateTime::parse('2026-01-01T00:00:00-00:00');
+
+    expect($parsed)->not->toBeNull();
+    expect($parsed->utc()->toIso8601String())->toBe('2026-01-01T00:00:00+00:00');
+});
+
+test('parse() accepts a colon-less numeric offset (+0100)', function (): void {
+    $parsed = Iso8601DateTime::parse('2026-01-01T00:00:00+0100');
+
+    expect($parsed)->not->toBeNull();
+    expect($parsed->utc()->toIso8601String())->toBe('2025-12-31T23:00:00+00:00');
+});
+
+test('parse() accepts a colon-less negative-zero offset (-0000) as equivalent to +0000', function (): void {
+    $parsed = Iso8601DateTime::parse('2026-01-01T00:00:00-0000');
+
+    expect($parsed)->not->toBeNull();
+    expect($parsed->utc()->toIso8601String())->toBe('2026-01-01T00:00:00+00:00');
+});
+
+test('parse() accepts a colon-less numeric offset with fractional seconds (.123+0200)', function (): void {
+    $parsed = Iso8601DateTime::parse('2026-01-01T00:00:00.123+0200');
+
+    expect($parsed)->not->toBeNull();
+    expect($parsed->micro)->toBe(123000);
+    expect($parsed->utc()->toIso8601String())->toBe('2025-12-31T22:00:00+00:00');
+});
+
+test('parse() still rejects a rolled-over date on the colon-less offset form (2026-04-31+0200)', function (): void {
+    expect(Iso8601DateTime::parse('2026-04-31T00:00:00+0200'))->toBeNull();
+});
+
+test('parse() still rejects a genuine non-zero offset that does not round-trip byte for byte', function (): void {
+    // A real, non-zero offset is never normalized — only the "-00:00 means
+    // the same instant as +00:00" case is. Confirms the equivalence fix
+    // does not widen into accepting arbitrary offset drift.
+    expect(Iso8601DateTime::parse('2026-01-01T00:00:00+99:99'))->toBeNull();
 });

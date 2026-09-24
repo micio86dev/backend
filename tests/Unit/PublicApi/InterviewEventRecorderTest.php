@@ -16,6 +16,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Support\PublicApi\InterviewEventRecorder;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 function ierParticipant(Organization $org): Participant
@@ -88,4 +89,33 @@ test('a write failure is logged and swallowed — never thrown into the caller',
             && $context['organization_id'] === $bogusOrgId
             && $context['type'] === 'session_started'
         );
+});
+
+test('a write failure inside record() does not abort the caller\'s own outer transaction', function (): void {
+    Log::spy();
+
+    $org = Organization::factory()->create();
+    $participant = ierParticipant($org);
+
+    // record()'s own DB::transaction() issues a SAVEPOINT here (the outer
+    // DB::transaction() below is already open) and, on the forced FK
+    // failure, ROLLBACK TO SAVEPOINT rather than leaving the connection
+    // ABORTED (Postgres 25P02). Proven by issuing a SECOND statement on the
+    // SAME connection, inside the SAME outer transaction, right after the
+    // failure: an aborted connection would fail THAT statement too, not
+    // merely the one that triggered the failure.
+    DB::transaction(function () use ($org, $participant): void {
+        InterviewEventRecorder::sessionStarted(999999999, $participant->id);
+        InterviewEventRecorder::sessionEnded($org->id, $participant->id);
+    });
+
+    $types = TenantContextScope::runFor(
+        $org->id,
+        fn () => InterviewEvent::where('participant_id', $participant->id)->orderBy('id')->pluck('type')->all(),
+    );
+
+    // Only the SECOND call's event exists — the outer transaction committed
+    // cleanly, and the failed write recorded nothing (swallowed, not
+    // partially applied).
+    expect($types)->toBe(['session_ended']);
 });

@@ -4081,6 +4081,7 @@
         "/v1/interviews/{interview}/transcript": {
             "get": {
                 "operationId": "public-api.interviews.transcript",
+                "description": "`@response` documented explicitly (step 6 review follow-up, finding\n14) \u2014 `PublicApiJson::response(TranscriptSerializer::toArray(...))`\ndid not survive Scramble's own inference as a typed schema, and the\nexported spec previously carried a bare, untyped `object` for this\nendpoint's `200`. Mirrors `TranscriptSerializer::toArray()`'s own\n`@return` array-shape docblock verbatim, the same \"one shape, never\n     * a second, independently-typed copy\" discipline `index()`'s own\n`@response` tag above already applies.",
                 "summary": "`GET /v1/interviews/{id}/transcript` \u2014 SPEC.md \u00a73.3, gate: status\n`under_evaluation` or `completed`, else `409 transcript_not_ready`\n(`error` included \u2014 G-15)",
                 "tags": [
                     "Interview"
@@ -4101,7 +4102,54 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object"
+                                    "type": "object",
+                                    "properties": {
+                                        "interview_id": {
+                                            "type": "string"
+                                        },
+                                        "language": {
+                                            "type": "string"
+                                        },
+                                        "turns": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "index": {
+                                                        "type": "integer"
+                                                    },
+                                                    "speaker": {
+                                                        "type": "string"
+                                                    },
+                                                    "text": {
+                                                        "type": "string"
+                                                    },
+                                                    "competency_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "question_index": {
+                                                        "type": "integer"
+                                                    },
+                                                    "ts": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "index",
+                                                    "speaker",
+                                                    "text",
+                                                    "competency_code",
+                                                    "question_index",
+                                                    "ts"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "interview_id",
+                                        "language",
+                                        "turns"
+                                    ]
                                 }
                             }
                         }
@@ -4173,6 +4221,7 @@
         "/v1/interviews/{interview}/answers": {
             "get": {
                 "operationId": "public-api.interviews.answers",
+                "description": "`@response` documented explicitly for the same reason `transcript()`'s\nown docblock states (step 6 review follow-up, finding 14) \u2014 this\nmethod wraps `AnswersSerializer::toArray()`'s own `@return` list\nshape in the `{interview_id, answers}` envelope SPEC.md \u00a73.3\ndescribes; the exported spec previously carried a bare, untyped\n`object` for this endpoint's `200`.",
                 "summary": "`GET /v1/interviews/{id}/answers` \u2014 SPEC.md \u00a73.3, same read gate as\nthe transcript",
                 "tags": [
                     "Interview"
@@ -4193,7 +4242,56 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object"
+                                    "type": "object",
+                                    "properties": {
+                                        "interview_id": {
+                                            "type": "string"
+                                        },
+                                        "answers": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "competency_code": {
+                                                        "type": "string"
+                                                    },
+                                                    "question_index": {
+                                                        "type": "integer"
+                                                    },
+                                                    "question_text": {
+                                                        "type": "string"
+                                                    },
+                                                    "answer_text": {
+                                                        "type": "string"
+                                                    },
+                                                    "started_at_seconds": {
+                                                        "type": [
+                                                            "number",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "answer_duration_seconds": {
+                                                        "type": [
+                                                            "number",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "competency_code",
+                                                    "question_index",
+                                                    "question_text",
+                                                    "answer_text",
+                                                    "started_at_seconds",
+                                                    "answer_duration_seconds"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "interview_id",
+                                        "answers"
+                                    ]
                                 }
                             }
                         }
@@ -4265,6 +4363,7 @@
         "/v1/interviews/{interview}/scoring": {
             "get": {
                 "operationId": "public-api.interviews.scoring",
+                "description": "`@response` documented explicitly \u2014 found alongside `transcript()`/\n`answers()` carrying the identical bare-`object` `200` export defect\n(step 6 review follow-up, finding 14 named the first two; this one\nexhibits the same root cause and is fixed for the same reason, not\nleft half-done). Mirrors `ScoringSerializer::toArray()`'s own\n`@return` array-shape docblock verbatim.",
                 "summary": "`GET /v1/interviews/{id}/scoring` \u2014 SPEC.md \u00a73.3, gate: status\n`completed` only, else `409 scoring_not_ready`",
                 "tags": [
                     "Interview"
@@ -4285,7 +4384,101 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "object"
+                                    "type": "object",
+                                    "properties": {
+                                        "interview_id": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "competencies": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "score": {
+                                                        "type": [
+                                                            "number",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "reliability": {
+                                                        "type": "number"
+                                                    },
+                                                    "behaviors": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "indicator": {
+                                                                    "type": "string"
+                                                                },
+                                                                "score": {
+                                                                    "type": "integer"
+                                                                },
+                                                                "explanation": {
+                                                                    "type": "string"
+                                                                },
+                                                                "excerpts": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "unassessable_reason": {
+                                                                    "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "indicator",
+                                                                "score",
+                                                                "explanation",
+                                                                "excerpts",
+                                                                "unassessable_reason"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "unscorable_reason": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "score",
+                                                    "reliability",
+                                                    "behaviors",
+                                                    "unscorable_reason"
+                                                ]
+                                            }
+                                        },
+                                        "framework_version": {
+                                            "type": "string"
+                                        },
+                                        "model_version": {
+                                            "type": "string"
+                                        },
+                                        "prompt_version": {
+                                            "type": "string"
+                                        },
+                                        "evaluated_at": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "interview_id",
+                                        "status",
+                                        "competencies",
+                                        "framework_version",
+                                        "model_version",
+                                        "prompt_version",
+                                        "evaluated_at"
+                                    ]
                                 }
                             }
                         }
@@ -4357,6 +4550,7 @@
         "/v1/interviews/{interview}/events": {
             "get": {
                 "operationId": "public-api.interviews.events",
+                "description": "`cursor`/`limit` documented explicitly (step 6 review follow-up,\nfinding 14) \u2014 `CursorPage::paginateAscending()` reads both directly\noff `$request` from INSIDE `App\\Support\\PublicApi\\CursorPage`, one\ncall frame away from this method's own body, which is why\nScramble's own static-analysis auto-detection (which scans a\ncontroller method's own body for `$request->query()`/`$request->\ninteger()` calls) never picked them up \u2014 the exported spec\npreviously documented only the `interview` path parameter for this\noperation.",
                 "summary": "`GET /v1/interviews/{id}/events` \u2014 SPEC.md \u00a73.3, `App\\Support\\\nPublicApi\\CursorPage` in its ASCENDING form (G-12: the one documented\nexception to `created_at desc`). `InterviewEvent.public_id` (`evt_`)\nis what every real row already carries \u2014 see that model's own\ndocblock; no participant special-cases its absence",
                 "tags": [
                     "Interview"
@@ -4368,6 +4562,22 @@
                         "required": true,
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "Opaque pagination cursor from a previous page's next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Page size, 1-100 (default 25). Out of range answers 400 validation_failed.",
+                        "schema": {
+                            "type": "integer"
                         }
                     }
                 ],
@@ -7751,7 +7961,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "JSON_PRESERVE_ZERO_FRACTION (gga finding 2), via the shared\nPublicApiJson::response() \u2014 `duration_seconds` is stored/cast as\na plain `int` today (never a whole-number float PHP's own\njson_encode() would otherwise truncate), so this call carries no\nOBSERVABLE effect for this field right now, but keeps this\nendpoint on the same uniform, future-proof responder every other\n`/v1` action uses rather than being the one call site someone\nhas to remember to special-case later.",
+                        "description": "A ready recording: a signed audio URL, its format, duration and size.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7788,6 +7998,64 @@
                                         "format",
                                         "duration_seconds",
                                         "size_bytes"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "The signed URL could not be generated (code=internal_error).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
                                     ]
                                 }
                             }

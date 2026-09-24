@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Database\Migrations\Concerns\ChecksColumnNullability;
+use App\Support\Database\Migrations\Concerns\RepairsInvalidUniqueIndex;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
@@ -90,6 +91,7 @@ use Illuminate\Support\Str;
 return new class extends Migration
 {
     use ChecksColumnNullability;
+    use RepairsInvalidUniqueIndex;
 
     public $withinTransaction = false;
 
@@ -164,75 +166,24 @@ return new class extends Migration
      * Checked here, ahead of the `hasIndex()` early return, so an invalid
      * index is dropped and the method falls through to rebuild it exactly as
      * if it had never existed.
+     *
+     * The invalid-index check-and-rebuild itself is
+     * `RepairsInvalidUniqueIndex::repairInvalidUniqueIndex()` (step 6 review
+     * follow-up, finding 2) — extracted so
+     * `2026_09_24_150100_repair_invalid_participants_public_id_index` can
+     * reuse it as a standalone, separately-runnable repair for an
+     * environment that already ran THIS migration's `up()` before that
+     * handling existed.
      */
     private function addPublicIdUniqueIndex(): void
     {
-        if (Schema::hasIndex('participants', 'participants_public_id_unique') && ! $this->publicIdUniqueIndexIsInvalid()) {
+        $this->repairInvalidUniqueIndex('participants', 'public_id', 'participants_public_id_unique');
+
+        if (Schema::hasIndex('participants', 'participants_public_id_unique')) {
             return;
         }
 
-        if ($this->publicIdUniqueIndexIsInvalid()) {
-            $this->dropPublicIdUniqueIndex();
-        }
-
-        if (DB::transactionLevel() > 0) {
-            Schema::table('participants', function (Blueprint $table): void {
-                $table->unique('public_id', 'participants_public_id_unique');
-            });
-
-            return;
-        }
-
-        DB::statement(
-            'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS participants_public_id_unique ON participants (public_id)'
-        );
-    }
-
-    /**
-     * Queried directly against `pg_index` — Laravel's `Schema` facade has no
-     * `hasValidIndex()` equivalent, and `Schema::hasIndex()` only ever
-     * checks catalogue PRESENCE by name, never Postgres's own validity flag.
-     * `to_regclass()` (not a bare cast, which THROWS on a name that does not
-     * exist yet — e.g. the very first run, before this index has ever been
-     * created) resolves to `NULL` for an unknown relation, which
-     * short-circuits this query to no rows, the same as "not invalid" (there
-     * is nothing yet for `addPublicIdUniqueIndex()`'s own `hasIndex()` check
-     * to have found either).
-     */
-    private function publicIdUniqueIndexIsInvalid(): bool
-    {
-        $row = DB::selectOne(
-            "SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('participants_public_id_unique')"
-        );
-
-        // `DB::selectOne()` is declared `@return mixed` — narrowed here
-        // (PHPStan `--level=max`'s explicit-mixed checking) with
-        // `is_object()` + `isset()` rather than an `@var`/`assert()`
-        // override, so both branches are genuinely provable from the
-        // variable's own runtime shape.
-        if (! is_object($row) || ! isset($row->indisvalid)) {
-            return false;
-        }
-
-        return ! (bool) $row->indisvalid;
-    }
-
-    /**
-     * Drops the invalid `participants_public_id_unique` index/constraint
-     * whichever shape it is currently backed by — the SAME two-shape
-     * ambiguity `down()` already resolves for the identical reason (see that
-     * method's own comment): a `CREATE UNIQUE INDEX CONCURRENTLY` build
-     * leaves a bare index, while the in-transaction test fallback leaves a
-     * CONSTRAINT-backed one, and dropping the wrong statement form for
-     * either fails.
-     */
-    private function dropPublicIdUniqueIndex(): void
-    {
-        if ($this->checkConstraintExists('participants_public_id_unique')) {
-            DB::statement('ALTER TABLE participants DROP CONSTRAINT participants_public_id_unique');
-        } else {
-            DB::statement('DROP INDEX IF EXISTS participants_public_id_unique');
-        }
+        $this->rebuildUniqueIndex('participants', 'public_id', 'participants_public_id_unique');
     }
 
     /**
@@ -253,7 +204,7 @@ return new class extends Migration
      */
     private function addModeCheckConstraint(): void
     {
-        if ($this->checkConstraintExists('participants_mode_check')) {
+        if ($this->tableConstraintExists('participants', 'participants_mode_check')) {
             return;
         }
 
@@ -280,7 +231,7 @@ return new class extends Migration
         // constraint-backed one fails the OTHER way (`SQLSTATE[2BP01]`,
         // "cannot drop index because constraint requires it"). Checked
         // first so `down()` uses whichever form actually produced it.
-        if ($this->checkConstraintExists('participants_public_id_unique')) {
+        if ($this->tableConstraintExists('participants', 'participants_public_id_unique')) {
             DB::statement('ALTER TABLE participants DROP CONSTRAINT participants_public_id_unique');
         } else {
             DB::statement('DROP INDEX IF EXISTS participants_public_id_unique');
@@ -303,34 +254,5 @@ return new class extends Migration
                 ]);
             }
         });
-    }
-
-    /**
-     * No Laravel-native `Schema::hasCheckConstraint()` exists — queried
-     * directly against `information_schema.table_constraints` so a rerun
-     * does not attempt `ADD CONSTRAINT` on a name that already exists
-     * (a hard Postgres error, unlike an idempotent `IF NOT EXISTS` DDL form
-     * Postgres has no equivalent of for constraints).
-     *
-     * Filtered by `table_name` AND `table_schema` (step 5 review follow-up,
-     * item 12) — the original query matched on `constraint_name` alone,
-     * which is only unique WITHIN a schema+table, not across the whole
-     * database: a same-named constraint on an unrelated table (a different
-     * schema entirely, e.g. a `search_path` entry outside this
-     * connection's default, or simply another table that happens to reuse
-     * the name) would have made this method report `true` and skip the
-     * `ADD CONSTRAINT` here even though `participants` itself never got
-     * one. `current_schema()` — not a hardcoded `'public'` — matches
-     * whatever schema this connection actually targets.
-     */
-    private function checkConstraintExists(string $constraintName): bool
-    {
-        $rows = DB::select(
-            'SELECT 1 FROM information_schema.table_constraints
-             WHERE constraint_name = ? AND table_name = ? AND table_schema = current_schema()',
-            [$constraintName, 'participants'],
-        );
-
-        return $rows !== [];
     }
 };

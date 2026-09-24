@@ -90,6 +90,65 @@ test('T-INT-024: SettleParticipantCompletion records under_evaluation and transc
     expect($types)->toBe(['under_evaluation', 'transcript_ready']);
 });
 
+test('T-INT-024: a second settleIfFinished() call after the CAS win records no duplicate under_evaluation', function (): void {
+    // The CAS win is single-winner (`where('status', 'in_corso')` matches
+    // zero rows once the participant is already `in_valutazione`) — this
+    // proves that guard is also what keeps InterviewEventRecorder from
+    // double-firing `under_evaluation`/`transcript_ready`, by calling the
+    // SAME method twice for the SAME participant (a retried scheduler tick,
+    // or a second path reaching the same settle point).
+    Queue::fake();
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+
+    $participant = TenantContextScope::runFor($org->id, function () use ($org, $project) {
+        $competency = Competency::query()->where('code', 'COL')->first()
+            ?? Competency::factory()->create(['code' => 'COL']);
+        $project->competencies()->syncWithoutDetaching([$competency->id => ['position' => 0]]);
+
+        $p = new Participant;
+        $p->forceFill([
+            'organization_id' => $org->id,
+            'project_id' => $project->id,
+            'candidate_ref' => 'settle-dup-'.uniqid(),
+            'display_name' => 'Settle Dup Fixture',
+            'email' => uniqid('settle-dup-').'@example.test',
+            'status' => 'in_corso',
+            'language' => 'en',
+        ]);
+        $p->save();
+
+        InterviewSession::create([
+            'participant_id' => $p->id,
+            'project_id' => $project->id,
+            'question_index' => 0,
+            'competency_code' => 'COL',
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'fake',
+            'status' => 'completed',
+            'ended_reason' => 'completed',
+        ]);
+
+        return $p->fresh();
+    });
+
+    TenantContextScope::runFor($org->id, function () use ($participant, $project): void {
+        $settler = app(SettleParticipantCompletion::class);
+        $settler->settleIfFinished($participant->id, $project->id);
+        // Second call: the participant is already in_valutazione, so the
+        // CAS UPDATE matches zero rows and this must be a pure no-op.
+        $settler->settleIfFinished($participant->id, $project->id);
+    });
+
+    $types = TenantContextScope::runFor(
+        $org->id,
+        fn () => InterviewEvent::where('participant_id', $participant->id)->orderBy('id')->pluck('type')->all(),
+    );
+
+    expect($types)->toBe(['under_evaluation', 'transcript_ready']);
+});
+
 test('T-INT-024: ScoreEvaluationJob records completed and scoring_ready on the terminal transition', function (): void {
     ['org' => $org] = Step6Fixtures::orgWithScopedKey();
     $project = Step6Fixtures::project($org);
@@ -110,15 +169,21 @@ test('T-INT-024: GET /v1/interviews/{id}/events lists oldest first, with cursor 
 
     // Five events, each stamped with a distinct occurred_at a second apart —
     // inserted in REVERSE order, so an insertion-order read (created_at)
-    // would fail this test while an occurred_at read passes it.
+    // would fail this test while an occurred_at read passes it. Offsets are
+    // computed from ONE frozen `$t0` (step 6 review follow-up, finding 12)
+    // — a separate `now()` call per loop iteration can drift across a
+    // second boundary between iterations, letting two consecutive events
+    // collide (or invert) at whole-second precision and pass this
+    // ordering assertion for the wrong reason.
     $types = ['session_started', 'question_asked', 'answer_recorded', 'session_ended', 'under_evaluation'];
+    $t0 = now()->subMinutes(5);
 
-    TenantContextScope::runFor($org->id, function () use ($participant, $types): void {
+    TenantContextScope::runFor($org->id, function () use ($participant, $types, $t0): void {
         foreach (array_reverse($types) as $i => $type) {
             InterviewEvent::create([
                 'participant_id' => $participant->id,
                 'type' => $type,
-                'occurred_at' => now()->subMinutes(5)->addSeconds((count($types) - 1 - $i)),
+                'occurred_at' => $t0->copy()->addSeconds(count($types) - 1 - $i),
                 'data' => null,
             ]);
         }

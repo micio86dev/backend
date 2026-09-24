@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\PublicApi\Serializers;
 
+use App\Enums\EvaluationStatus;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use App\Models\IndicatorScore;
@@ -85,6 +86,25 @@ final class ScoringSerializer
             ));
         }
 
+        // Same "announce, never paper over" discipline as the
+        // `frameworkVersion` guard above: `evaluated_at` is documented as
+        // NOT NULL by the time `status` is `completed` (the only status
+        // this endpoint's gate ever reads — see this class's own docblock),
+        // because `ScoreEvaluationJob::resolveEvaluationTerminalState()`
+        // sets it in the SAME write as the terminal status. A completed
+        // evaluation with a null `evaluated_at` is that invariant broken,
+        // not a normal path — `(string) null?->toIso8601String()` used to
+        // paper over it by silently coercing the null to `""`, an empty
+        // string this endpoint's own contract declares non-nullable
+        // (step 6 review follow-up, finding 7).
+        if ($evaluation->status === EvaluationStatus::Completed && $evaluation->evaluated_at === null) {
+            throw new RuntimeException(sprintf(
+                'ScoringSerializer: evaluation %d is completed but evaluated_at is null. '
+                .'Refusing to serialize scoring provenance without it.',
+                $evaluation->id,
+            ));
+        }
+
         $orderedResults = $this->adminSerializer->orderedCompetencyResults($evaluation, $participant);
 
         $competencies = [];
@@ -99,11 +119,7 @@ final class ScoringSerializer
             'framework_version' => $frameworkVersion->version,
             'model_version' => $evaluation->model_version,
             'prompt_version' => $evaluation->prompt_version,
-            // NOT NULL by the time status is `completed` (the only status
-            // this endpoint's gate ever reads — see this class's own
-            // docblock): `ScoreEvaluationJob::resolveEvaluationTerminalState()`
-            // sets `evaluated_at` in the SAME write as the terminal status.
-            'evaluated_at' => (string) $evaluation->evaluated_at?->toIso8601String(),
+            'evaluated_at' => $evaluation->evaluated_at?->toIso8601String() ?? '',
         ];
     }
 
