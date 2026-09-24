@@ -79,9 +79,8 @@ function schedulingProject(Organization $org, array $attrs = []): Project
 function schedulingM2mClient(Organization $org, array $abilities = ['participants:read']): array
 {
     $rawKey = ApiKeyGenerator::generate();
-    $client = ApiClient::factory()->create([
+    $client = ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'is_active' => true,
         'abilities' => $abilities,
     ]);

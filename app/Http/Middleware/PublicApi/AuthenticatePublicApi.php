@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware\PublicApi;
 
+use App\Enums\ApiKeyMode;
 use App\Support\PublicApi\ApiKeyResolver;
 use App\Support\PublicApi\Problem;
 use Closure;
@@ -55,13 +56,15 @@ final class AuthenticatePublicApi
             return $this->unauthorized($request);
         }
 
-        $client = ApiKeyResolver::resolve($raw);
+        // Review follow-up (finding 1): allowTestMode=true — this IS the
+        // surface SPEC.md §3.7 test mode targets.
+        $client = ApiKeyResolver::resolve($raw, allowTestMode: true);
 
         if ($client === null) {
             return $this->unauthorized($request);
         }
 
-        if ($request->headers->has('Origin') && $client->mode === 'live') {
+        if ($request->headers->has('Origin') && $client->mode === ApiKeyMode::Live) {
             return Problem::make(
                 $request,
                 401,

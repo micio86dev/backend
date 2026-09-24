@@ -225,6 +225,50 @@ test('ContractValidator: an absent OPTIONAL const property passes, wrong value f
  * check must still find and enforce `event`'s const, merged in from the
  * `allOf` branch.
  */
+test('ContractValidator enforces a const declared inside a top-level allOf branch (webhook event shape)', function (): void {
+    $contractPath = writeInlineContract(<<<'YAML'
+    openapi: 3.1.0
+    info: { title: MiniAllOf, version: '1.0' }
+    components:
+      schemas:
+        Envelope:
+          type: object
+          required: [event]
+          properties:
+            event: { type: string }
+    paths:
+      /webhook:
+        post:
+          responses:
+            '200':
+              description: ok
+              content:
+                application/json:
+                  schema:
+                    allOf:
+                      - $ref: '#/components/schemas/Envelope'
+                      - type: object
+                        properties:
+                          event: { const: progress }
+    YAML);
+
+    config(['public_api.contract_path' => $contractPath]);
+
+    $matching = TestResponse::fromBaseResponse(
+        (new JsonResponse(['event' => 'progress'], 200))->header('Content-Type', 'application/json')
+    );
+
+    expect(fn () => ContractValidator::validate($matching, 'POST', '/webhook'))
+        ->not->toThrow(ValidationFailed::class);
+
+    $mismatched = TestResponse::fromBaseResponse(
+        (new JsonResponse(['event' => 'evaluation'], 200))->header('Content-Type', 'application/json')
+    );
+
+    expect(fn () => ContractValidator::validate($mismatched, 'POST', '/webhook'))
+        ->toThrow(ValidationFailed::class);
+});
+
 /**
  * Review follow-up on step 1 (`ContractValidator.php` ~L232-239): `allOf` is
  * an INTERSECTION. A later branch redeclaring `kind` WITHOUT `const` (just
@@ -311,48 +355,4 @@ test('ContractValidator::assertDeclaredConstProperties throws when the operation
 
     expect(fn () => $method->invoke(null, $address, $psr7Response))
         ->toThrow(ValidationFailed::class, "operation declares no 'responses' block");
-});
-
-test('ContractValidator enforces a const declared inside a top-level allOf branch (webhook event shape)', function (): void {
-    $contractPath = writeInlineContract(<<<'YAML'
-    openapi: 3.1.0
-    info: { title: MiniAllOf, version: '1.0' }
-    components:
-      schemas:
-        Envelope:
-          type: object
-          required: [event]
-          properties:
-            event: { type: string }
-    paths:
-      /webhook:
-        post:
-          responses:
-            '200':
-              description: ok
-              content:
-                application/json:
-                  schema:
-                    allOf:
-                      - $ref: '#/components/schemas/Envelope'
-                      - type: object
-                        properties:
-                          event: { const: progress }
-    YAML);
-
-    config(['public_api.contract_path' => $contractPath]);
-
-    $matching = TestResponse::fromBaseResponse(
-        (new JsonResponse(['event' => 'progress'], 200))->header('Content-Type', 'application/json')
-    );
-
-    expect(fn () => ContractValidator::validate($matching, 'POST', '/webhook'))
-        ->not->toThrow(ValidationFailed::class);
-
-    $mismatched = TestResponse::fromBaseResponse(
-        (new JsonResponse(['event' => 'evaluation'], 200))->header('Content-Type', 'application/json')
-    );
-
-    expect(fn () => ContractValidator::validate($mismatched, 'POST', '/webhook'))
-        ->toThrow(ValidationFailed::class);
 });

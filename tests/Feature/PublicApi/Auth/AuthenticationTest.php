@@ -70,6 +70,13 @@ beforeEach(function (): void {
         Route::get('/_probe/projects/{project}', function (Project $project) {
             return response()->json(['id' => $project->id]);
         });
+
+        // Review follow-up (finding 6): a route-model-bound {project} behind
+        // a scope requirement — proves RequireScope runs BEFORE
+        // SubstituteBindings even when the bound id does not exist.
+        Route::get('/_probe/projects/{project}/scoped', function (Project $project) {
+            return response()->json(['id' => $project->id]);
+        })->middleware('scope:projects:read');
     });
 });
 
@@ -157,6 +164,41 @@ test('T-AUTH-003: wrong prefix, malformed, and unknown keys all → 401 invalid_
     expect($bodies['wrong-prefix']['code'])->toBe('invalid_api_key');
 });
 
+// ─── Review follow-up (finding 5): the early-return branches of
+// AuthenticatePublicApi::handle() — no header, a non-Bearer scheme, and an
+// empty token after "Bearer " — had no direct coverage. Every one of them
+// must 401 with the SAME invalid_api_key problem+json body carrying
+// WWW-Authenticate: Bearer. ────────────────────────────────────────────────
+
+test('no Authorization header at all → 401 invalid_api_key with WWW-Authenticate: Bearer', function (): void {
+    $response = $this->getJson('/api/v1/_probe');
+
+    $response->assertStatus(401)
+        ->assertJsonPath('code', 'invalid_api_key')
+        ->assertHeader('WWW-Authenticate', 'Bearer');
+    $this->assertProblemMatchesContract($response, 401);
+});
+
+test('a non-Bearer scheme (Basic) → 401 invalid_api_key with WWW-Authenticate: Bearer', function (): void {
+    $response = $this->withHeaders(['Authorization' => 'Basic '.base64_encode('user:pass')])
+        ->getJson('/api/v1/_probe');
+
+    $response->assertStatus(401)
+        ->assertJsonPath('code', 'invalid_api_key')
+        ->assertHeader('WWW-Authenticate', 'Bearer');
+    $this->assertProblemMatchesContract($response, 401);
+});
+
+test('"Bearer " with an empty token → 401 invalid_api_key with WWW-Authenticate: Bearer', function (): void {
+    $response = $this->withHeaders(['Authorization' => 'Bearer '])
+        ->getJson('/api/v1/_probe');
+
+    $response->assertStatus(401)
+        ->assertJsonPath('code', 'invalid_api_key')
+        ->assertHeader('WWW-Authenticate', 'Bearer');
+    $this->assertProblemMatchesContract($response, 401);
+});
+
 // ─── T-AUTH-004: key in query ─────────────────────────────────────────────────
 
 test('T-AUTH-004: api_key in the query string → 400 api_key_in_query, even with a valid bearer header', function (): void {
@@ -238,6 +280,30 @@ test('T-AUTH-006: a Project-counting probe returns each organization\'s own coun
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyA])
         ->getJson('/api/v1/_probe/projects/'.$projectOfB->id)
         ->assertNotFound();
+});
+
+// ─── Review follow-up (finding 6): scope check runs BEFORE route-model
+// binding ───────────────────────────────────────────────────────────────────
+
+test('a key lacking the scope, on a NON-EXISTENT bound {project}, still gets 403 — proving RequireScope runs before SubstituteBindings', function (): void {
+    $org = Organization::factory()->create();
+
+    $rawKeyWithoutScope = ApiKeyGenerator::generate();
+    ApiClient::factory()->withRawKey($rawKeyWithoutScope)->create([
+        'organization_id' => $org->id,
+        'abilities' => ['interviews:read'], // deliberately missing projects:read
+    ]);
+
+    // 999999999 resolves to no row at all — if SubstituteBindings ran FIRST,
+    // this would 404 before RequireScope ever got a chance to run, revealing
+    // (via the 404-vs-403 split) that the middleware ordering was wrong.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyWithoutScope])
+        ->getJson('/api/v1/_probe/projects/999999999/scoped');
+
+    $response->assertStatus(403)
+        ->assertJsonPath('code', 'insufficient_scope')
+        ->assertJsonPath('detail', 'Requires projects:read');
+    $this->assertProblemMatchesContract($response, 403);
 });
 
 // ─── T-AUTH-007: mode + browser-origin defense ────────────────────────────────

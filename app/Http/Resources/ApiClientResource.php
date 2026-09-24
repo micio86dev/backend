@@ -57,7 +57,7 @@ class ApiClientResource extends JsonResource
             // (public-api step 2). Null for a pre-migration row: its raw key
             // is unrecoverable, so there is nothing to show.
             'key_prefix' => $client->key_prefix,
-            'mode' => $client->mode,
+            'mode' => $client->mode->value,
             // array_values(): `abilities` casts to a PHP array, not a
             // guaranteed list — reindexing here is what actually backs the
             // `list<string>` contract above, not just satisfying the checker.

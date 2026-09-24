@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\ApiKeyMode;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -22,8 +23,12 @@ use Illuminate\Support\Facades\Schema;
  * every pre-migration row to `live`: they were all issued before test mode
  * existed, so `live` is the true value, not a guess. The CHECK constraint
  * mirrors the `avatar_templates.provider` precedent (D8) — cheaper than a
- * Postgres enum type to extend later, and the application's own
- * `ApiKeyGenerator` mode union is the real source of truth either way.
+ * Postgres enum type to extend later. Both the default and the constraint's
+ * allowed values are DERIVED from `App\Enums\ApiKeyMode::cases()` below
+ * rather than repeating the 'live'/'test' literals a third time — that enum
+ * is the real single source of truth (review follow-up, public-api step 2
+ * finding 3). Safe to edit in place: this migration has not been applied in
+ * any shared environment yet.
  */
 return new class extends Migration
 {
@@ -31,14 +36,19 @@ return new class extends Migration
     {
         Schema::table('api_clients', function (Blueprint $table): void {
             $table->string('key_prefix', 20)->nullable()->after('key_hash');
-            $table->string('mode', 4)->default('live')->after('key_prefix');
+            $table->string('mode', 4)->default(ApiKeyMode::Live->value)->after('key_prefix');
 
             $table->index('key_prefix');
         });
 
+        $allowedModes = implode(', ', array_map(
+            fn (ApiKeyMode $mode): string => "'{$mode->value}'",
+            ApiKeyMode::cases(),
+        ));
+
         DB::statement(
             "ALTER TABLE api_clients ADD CONSTRAINT api_clients_mode_check
-             CHECK (mode IN ('live', 'test'))"
+             CHECK (mode IN ({$allowedModes}))"
         );
     }
 

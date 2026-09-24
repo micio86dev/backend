@@ -64,7 +64,7 @@ final class PublicApiTenantContext
         $this->resolver->setBypass(false);
         $this->resolver->setOrgId($orgId);
         $this->registrar->setPermissionsTeamId($orgId);
-        $this->apiMode->set($client->mode);
+        $this->apiMode->set($client->mode->value);
 
         return $next($request);
     }

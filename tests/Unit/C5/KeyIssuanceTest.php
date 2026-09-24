@@ -77,3 +77,19 @@ test('modeOf() recognises beai_live_/beai_test_ markers and returns null for any
     expect(ApiKeyGenerator::modeOf('not-a-beai-key'))->toBeNull();
     expect(ApiKeyGenerator::modeOf(''))->toBeNull();
 });
+
+// ─── Review follow-up (finding 4): prefixOf() must never silently fall back
+// to the live marker for a key it cannot identify — that used to happen
+// because prefixOf() re-derived the marker with its own ternary instead of
+// trusting modeOf()/fromMarker(). A malformed key has no marker to compute a
+// prefix from, so the only honest answer is to refuse. ───────────────────────
+
+test('prefixOf() throws InvalidArgumentException for a malformed/unrecognised key', function (): void {
+    expect(fn () => ApiKeyGenerator::prefixOf('not-a-beai-key-at-all'))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+test('prefixOf() throws InvalidArgumentException for an empty key', function (): void {
+    expect(fn () => ApiKeyGenerator::prefixOf(''))
+        ->toThrow(InvalidArgumentException::class);
+});

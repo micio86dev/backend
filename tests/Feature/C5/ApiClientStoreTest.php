@@ -154,7 +154,7 @@ test('POST with no mode defaults to live and stamps key_prefix beai_live_', func
         ->assertJsonPath('data.mode', 'live');
 
     $client = ApiClient::find($response->json('data.id'));
-    expect($client->mode)->toBe('live');
+    expect($client->mode->value)->toBe('live');
     expect($client->key_prefix)->toStartWith('beai_live_');
 });
 
@@ -174,7 +174,7 @@ test('POST with mode=test stamps mode and a beai_test_ key_prefix, and the raw k
     expect($response->json('api_key'))->toStartWith('beai_test_');
 
     $client = ApiClient::find($response->json('data.id'));
-    expect($client->mode)->toBe('test');
+    expect($client->mode->value)->toBe('test');
     expect($client->key_prefix)->toStartWith('beai_test_');
 });
 

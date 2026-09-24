@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\ApiKeyMode;
+use InvalidArgumentException;
 use Random\RandomException;
 
 /**
  * Generates and hashes opaque M2M / public-API keys (C5, public-api step 2).
  *
  * Format: beai_{mode}_ + bin2hex(random_bytes(48))
- *   - prefix:  'beai_live_' / 'beai_test_' (10 chars)
+ *   - prefix:  'beai_live_' / 'beai_test_' (10 chars) — `App\Enums\ApiKeyMode::marker()`
  *   - suffix:  96 hex chars = 384-bit entropy
  *
  * SPEC.md §3.1 documents `beai_live_<32 random url-safe chars>` as the key
@@ -24,10 +26,6 @@ use Random\RandomException;
  */
 final class ApiKeyGenerator
 {
-    private const PREFIX_LIVE = 'beai_live_';
-
-    private const PREFIX_TEST = 'beai_test_';
-
     /**
      * How many characters of the random part `prefixOf()` keeps visible.
      */
@@ -60,14 +58,27 @@ final class ApiKeyGenerator
      * `beai_<mode>_` marker plus the first 8 chars of the random part.
      *
      * For identification only (e.g. "which key is this, in the backoffice
-     * list") — never used to authenticate a request by itself. Returns the
-     * key's own marker as given, WITHOUT re-deriving it from `modeOf()`: a
-     * malformed key has no marker to compute a prefix from in the first
-     * place, so callers are expected to check `modeOf() !== null` first.
+     * list") — never used to authenticate a request by itself.
+     *
+     * Review follow-up (finding 4): a malformed key has no marker to compute
+     * a prefix from, so this THROWS rather than silently defaulting to the
+     * live marker — the previous ternary treated "not test" as "must be
+     * live", which is wrong for a key that is neither. Callers that only
+     * want to test recognition should call `ApiKeyMode::fromMarker()` /
+     * `modeOf()` first, as `App\Support\PublicApi\ApiKeyResolver` already does.
+     *
+     * @throws InvalidArgumentException when `$rawKey` carries no recognised
+     *                                  `beai_live_`/`beai_test_` marker.
      */
     public static function prefixOf(string $rawKey): string
     {
-        $marker = str_starts_with($rawKey, self::PREFIX_TEST) ? self::PREFIX_TEST : self::PREFIX_LIVE;
+        $mode = ApiKeyMode::fromMarker($rawKey);
+
+        if ($mode === null) {
+            throw new InvalidArgumentException('Cannot compute a key_prefix for a key with no recognised beai_live_/beai_test_ marker.');
+        }
+
+        $marker = $mode->marker();
         $random = substr($rawKey, strlen($marker));
 
         return $marker.substr($random, 0, self::VISIBLE_RANDOM_CHARS);
@@ -84,22 +95,22 @@ final class ApiKeyGenerator
      */
     public static function modeOf(string $rawKey): ?string
     {
-        if (str_starts_with($rawKey, self::PREFIX_LIVE)) {
-            return 'live';
-        }
-
-        if (str_starts_with($rawKey, self::PREFIX_TEST)) {
-            return 'test';
-        }
-
-        return null;
+        return ApiKeyMode::fromMarker($rawKey)?->value;
     }
 
     /**
-     * @param  'live'|'test'  $mode
+     * `$mode` is plain `string`, deliberately UNDOCUMENTED as `'live'|'test'`
+     * here even though `generate()` above documents its own `$mode` that way:
+     * `generate()`'s own type is the (unenforced) documented contract, not a
+     * static guarantee — a caller can still pass any string at runtime, which
+     * is exactly what the `tryFrom() ?? Live` fallback below defends against.
+     * Narrowing this parameter's docblock to `'live'|'test'` made PHPStan
+     * infer `tryFrom()` as never-null and flag the fallback as dead code,
+     * which would have been true only if the narrower type were an actual
+     * static guarantee.
      */
     private static function markerFor(string $mode): string
     {
-        return $mode === 'test' ? self::PREFIX_TEST : self::PREFIX_LIVE;
+        return (ApiKeyMode::tryFrom($mode) ?? ApiKeyMode::Live)->marker();
     }
 }

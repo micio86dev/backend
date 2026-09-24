@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\M2m;
 
+use App\Enums\ApiKeyMode;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ApiClientResource;
 use App\Models\ApiClient;
@@ -15,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\Rule;
 
 /**
  * ApiClientController (C5 — M2M API Authentication).
@@ -74,8 +76,10 @@ final class ApiClientController extends Controller
             // public-api step 2 (SPEC.md §3.7 test mode): optional, defaults
             // to 'live' — every client issued before this field existed IS a
             // live client, so defaulting new ones the same way keeps one
-            // behaviour rather than a silent split.
-            'mode' => ['nullable', 'string', 'in:live,test'],
+            // behaviour rather than a silent split. Rule::enum() validates
+            // against App\Enums\ApiKeyMode's own backed values — the single
+            // source of truth for the mode literal (review follow-up finding 3).
+            'mode' => ['nullable', 'string', Rule::enum(ApiKeyMode::class)],
         ]);
 
         // Validate abilities against the canonical set
@@ -119,7 +123,7 @@ final class ApiClientController extends Controller
                 'name' => $client->name,
                 'abilities' => $client->abilities,
                 'expires_at' => $client->expires_at?->toIso8601String(),
-                'mode' => $client->mode,
+                'mode' => $client->mode->value,
                 'key_prefix' => $client->key_prefix,
             ],
         );

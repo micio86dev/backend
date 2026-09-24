@@ -36,9 +36,8 @@ test('client with required ability → 200', function (): void {
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'abilities' => ['evaluations:read', 'participants:read'],
     ]);
 
@@ -51,9 +50,8 @@ test('client without required ability → 403', function (): void {
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'abilities' => ['participants:read'],  // no evaluations:read
     ]);
 
@@ -66,9 +64,8 @@ test('whoami route requires no ability — client with empty abilities gets 200'
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'abilities' => [],  // no abilities at all
     ]);
 

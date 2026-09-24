@@ -83,7 +83,8 @@ class ApiClientFactory extends Factory
     /**
      * A client with no `key_prefix` — the shape of a row created before this
      * migration, whose raw key is unrecoverable. Used by the legacy-fallback
-     * coverage in `AuthenticatePublicApiTest`/`GuardResolutionTest`.
+     * coverage in `tests/Feature/PublicApi/Auth/AuthenticationTest.php` and
+     * `GuardResolutionTest`.
      */
     public function preMigrationRow(): static
     {

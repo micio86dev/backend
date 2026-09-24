@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\PublicApi;
 
+use App\Enums\ApiKeyMode;
+
 /**
  * Request-scoped `live`/`test` mode holder for the BEAI Public API (`/v1`).
  *
@@ -21,12 +23,11 @@ namespace App\Support\PublicApi;
  */
 final class ApiMode
 {
-    /** @var 'live'|'test' */
-    private string $mode = 'live';
+    private ApiKeyMode $mode = ApiKeyMode::Live;
 
     public function set(string $mode): void
     {
-        $this->mode = $mode === 'test' ? 'test' : 'live';
+        $this->mode = ApiKeyMode::tryFrom($mode) ?? ApiKeyMode::Live;
     }
 
     /**
@@ -34,11 +35,11 @@ final class ApiMode
      */
     public function get(): string
     {
-        return $this->mode;
+        return $this->mode->value;
     }
 
     public function isTest(): bool
     {
-        return $this->mode === 'test';
+        return $this->mode === ApiKeyMode::Test;
     }
 }

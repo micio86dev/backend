@@ -76,9 +76,8 @@ function seOperatorToken(Organization $org): string
 function seM2mKey(Organization $org, array $abilities): string
 {
     $rawKey = ApiKeyGenerator::generate();
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'is_active' => true,
         'abilities' => $abilities,
     ]);

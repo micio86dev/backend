@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ApiKeyMode;
 use Database\Factories\ApiClientFactory;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
@@ -40,7 +41,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $key_hash
  * @property string|null $key_prefix
- * @property 'live'|'test' $mode
+ * @property ApiKeyMode $mode
  * @property string[]|null $abilities
  * @property bool $is_active
  * @property Carbon|null $expires_at
@@ -89,6 +90,7 @@ class ApiClient extends Model implements AuthenticatableContract
         return [
             'abilities' => 'array',
             'is_active' => 'boolean',
+            'mode' => ApiKeyMode::class,
             'expires_at' => 'datetime',
             'last_used_at' => 'datetime',
         ];

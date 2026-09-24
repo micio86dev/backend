@@ -81,15 +81,14 @@
                                         "format": "date-time"
                                     },
                                     "mode": {
-                                        "type": [
-                                            "string",
-                                            "null"
-                                        ],
-                                        "description": "public-api step 2 (SPEC.md \u00a73.7 test mode): optional, defaults\nto 'live' \u2014 every client issued before this field existed IS a\nlive client, so defaulting new ones the same way keeps one\nbehaviour rather than a silent split.",
-                                        "enum": [
-                                            "live",
-                                            "test",
-                                            null
+                                        "anyOf": [
+                                            {
+                                                "description": "public-api step 2 (SPEC.md \u00a73.7 test mode): optional, defaults\nto 'live' \u2014 every client issued before this field existed IS a\nlive client, so defaulting new ones the same way keeps one\nbehaviour rather than a silent split. Rule::enum() validates\nagainst App\\Enums\\ApiKeyMode's own backed values \u2014 the single\nsource of truth for the mode literal (review follow-up finding 3).",
+                                                "$ref": "#/components/schemas/ApiKeyMode"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
                                         ]
                                     }
                                 },
@@ -8722,6 +8721,15 @@
                     "created_at"
                 ],
                 "title": "ApiClientResource"
+            },
+            "ApiKeyMode": {
+                "type": "string",
+                "description": "`live`/`test` mode of a BEAI M2M / public-API key (C5, public-api step 2 \u2014 SPEC.md \u00a73.7 \"Test mode\"). Review follow-up on step 2: the marker string (`beai_live_`/`beai_test_`), the DB column value (`live`/`test`) and the mode literal used across `App\\Services\\ApiKeyGenerator`, `App\\Support\\PublicApi\\ApiMode`, `App\\Http\\Middleware\\PublicApi\\AuthenticatePublicApi`, `App\\Http\\Controllers\\M2m\\ApiClientController` and `App\\Models\\ApiClient` used to be five independent string literals that happened to agree. This enum is the single source of truth all of them now read from.\n",
+                "enum": [
+                    "live",
+                    "test"
+                ],
+                "title": "ApiKeyMode"
             },
             "App.Http.Resources.ParticipantResource": {
                 "type": "object",

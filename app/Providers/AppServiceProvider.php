@@ -228,12 +228,14 @@ class AppServiceProvider extends ServiceProvider
         //   2. Delegate resolution — hash/prefix lookup, denylist check,
         //      throttled last_used_at update — to App\Support\PublicApi\
         //      ApiKeyResolver (public-api step 2), SHARED with the new `/v1`
-        //      AuthenticatePublicApi middleware. Behaviour here is
-        //      UNCHANGED: every pre-existing key still resolves through the
-        //      resolver's legacy hash-only fallback (see that class's
-        //      docblock), so this guard's own test suite
-        //      (tests/Feature/C5/GuardResolutionTest.php etc.) stays green
-        //      untouched.
+        //      AuthenticatePublicApi middleware. Every pre-existing (live)
+        //      key still resolves through the resolver's legacy hash-only
+        //      fallback (see that class's docblock), so this guard's own
+        //      test suite (tests/Feature/C5/GuardResolutionTest.php etc.)
+        //      stays green untouched. Review follow-up (finding 1): passes
+        //      allowTestMode: false — a `beai_test_` key, which exists only
+        //      for the public `/v1` surface (SPEC.md §3.7), must never
+        //      authenticate here and reach live tenant data.
         //   3. Return ApiClient or null (null → 401 by the Authenticate middleware).
         Auth::viaRequest('api-m2m', function (Request $request): ?ApiClient {
             $header = $request->header('Authorization', '');
@@ -246,7 +248,9 @@ class AppServiceProvider extends ServiceProvider
                 return null;
             }
 
-            return ApiKeyResolver::resolve($raw);
+            // Review follow-up (finding 1): allowTestMode=false — this
+            // internal surface must never authenticate a beai_test_ key.
+            return ApiKeyResolver::resolve($raw, allowTestMode: false);
         });
 
         // C6 — Register the api-candidate RequestGuard.
