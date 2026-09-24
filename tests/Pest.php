@@ -552,6 +552,26 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Config/AuditConfigTest.php');
 
+// Unit/Config/PublicApiConfigTest.php (public-api step 1) — needs TestCase
+// so config()/base_path() resolve against the booted app. No DB needed: pure
+// config-invariant assertions pinning the shipped `config/public_api.php`
+// defaults, same shape as AuditConfigTest.php immediately above.
+pest()->extend(TestCase::class)
+    ->in('Unit/Config/PublicApiConfigTest.php');
+
+// ─── tests/Contract (public-api step 1) ────────────────────────────────────
+//
+// NOT under tests/Feature: this directory holds the ContractValidator helper
+// plus tests that validate HTTP responses against the vendored OpenAPI
+// contract (public-api/openapi.yaml, SPEC.md §0 "Contract governance").
+// Needs TestCase so config('public_api.contract_path') resolves against the
+// booted app. DB-free. Also registered as its own <testsuite> in
+// phpunit.xml — tests/Unit, tests/Feature and tests/Arch are the only
+// directories `php artisan test`/`--coverage` discover with no path
+// argument, and CI runs both with none.
+pest()->extend(TestCase::class)
+    ->in('Contract');
+
 // Unit/Support/Observability/AuditRunCostEstimatorTest.php (scoring-audit-jev
 // P3a.12) — needs TestCase so config() resolves against the booted app, same
 // shape as Unit/Support/Http above. ResponseFingerprintTest.php in this same

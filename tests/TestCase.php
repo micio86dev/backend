@@ -4,9 +4,38 @@ namespace Tests;
 
 use App\Testing\FakeLLMProvider;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Testing\TestResponse;
+use League\OpenAPIValidation\PSR7\Exception\ValidationFailed;
+use Tests\Contract\ContractValidator;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * Assert an HTTP response matches the vendored BEAI Public API contract
+     * (`public-api/openapi.yaml`, SPEC.md §0 "Contract governance").
+     *
+     * `$path` is the CONTRACT path only — no server prefix (`/v1`) and no
+     * Laravel route prefix (`/api/v1`), e.g. `/health` for a request actually
+     * made against `/api/v1/health`. Delegates to `Tests\Contract\ContractValidator`,
+     * converting its `ValidationFailed` into an ordinary PHPUnit assertion
+     * failure so a mismatch reports like any other failed expectation.
+     */
+    protected function assertMatchesContract(TestResponse $response, string $method, string $path): void
+    {
+        try {
+            ContractValidator::validate($response, $method, $path);
+        } catch (ValidationFailed $exception) {
+            static::fail(sprintf(
+                "Response for [%s %s] does not match the BEAI Public API contract (public-api/openapi.yaml):\n%s",
+                strtoupper($method),
+                $path,
+                $exception->getMessage()
+            ));
+        }
+
+        static::assertTrue(true, 'assertMatchesContract: response matches the contract.');
+    }
+
     /**
      * Configure the FakeLLMProvider to replay a specific VCR cassette (D36).
      *

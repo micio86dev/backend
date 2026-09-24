@@ -48,6 +48,7 @@ use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
+use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
@@ -66,6 +67,21 @@ Route::get('/health', HealthController::class);
 // counts/booleans/ages ONLY, never a candidate/tenant identifier. Doubles
 // as the worker HEALTHCHECK (wrapper PR5).
 Route::get('/health/queue', QueueHealthController::class);
+
+// ─── BEAI Public API (/v1) ────────────────────────────────────────────────
+//
+// docs/specs/public-api/SPEC.md §0 "Contract governance": the public API
+// lives here, versioned at `/v1` (so `/api/v1/...` on this route file's own
+// `/api` prefix). Everything under this group is governed by the vendored
+// contract `public-api/openapi.yaml` — no field ships here without an entry
+// in it, and CI asserts the Scramble-exported spec stays equivalent
+// (step 11, T-CONTRACT-001). This is a SEPARATE, versioned surface from the
+// existing backoffice-facing routes above; organization API-key auth and
+// tenancy (SPEC.md §3.1) land in step 2 — `/health` is the only unauthenticated
+// operation the contract declares (SPEC.md §5.2).
+Route::prefix('v1')->name('public-api.')->group(function (): void {
+    Route::get('/health', PublicApiHealthController::class)->name('health');
+});
 
 // ─── Auth routes (C2, refresh flow hardened by backoffice-session-refresh-hardening D8) ──
 // POST /api/auth/login is public (no auth middleware).

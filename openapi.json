@@ -3504,6 +3504,37 @@
                 }
             }
         },
+        "/v1/health": {
+            "get": {
+                "operationId": "public-api.health",
+                "description": "Machine-readable status payloads are exempt from the i18n mandate (D31,\nwrapper CLAUDE.md \"Machine-facing responses are not localized\").",
+                "summary": "Return the literal, non-localized `{\"status\":\"ok\"}` body the contract requires",
+                "tags": [
+                    "Health"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "ok"
+                                        }
+                                    },
+                                    "required": [
+                                        "status"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/candidate/interview/integrity": {
             "post": {
                 "operationId": "integrity.store",
