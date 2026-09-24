@@ -125,6 +125,79 @@ final class CursorPage
         ];
     }
 
+    /**
+     * The SAME cursor mechanics as `paginate()` — signed `($column, id)`
+     * position, `?limit=`/`?cursor=` validation, the `{data, next_cursor,
+     * has_more}` envelope — with the comparison REVERSED: oldest first
+     * (`$column asc, id asc`, `WHERE ($column, id) > cursor`). A SEPARATE
+     * method rather than a parameter on `paginate()` (public-api step 6,
+     * G-12): `GET /v1/interviews/{id}/events` is "the one documented
+     * exception" to this API's `created_at desc` convention (SPEC.md
+     * §3.2/§3.3) — every other list endpoint must never accept an
+     * `ascending` flag by accident, and a boolean parameter on the shared
+     * method is exactly the kind of one-caller escape hatch that risks
+     * leaking to a second one later.
+     *
+     * `$column` (default `created_at`, matching `paginate()`'s own fixed
+     * choice): `InterviewEvent`'s own ordering column is `occurred_at` —
+     * its LOGICAL timestamp, which the events table's own migration
+     * documents as possibly PREDATING `created_at` for a queued writer —
+     * never the physical insert time `paginate()` everywhere else orders
+     * by. Parameterized rather than hardcoded to `occurred_at` so this
+     * method stays correct for any future ascending list that genuinely
+     * does want `created_at`.
+     *
+     * Cursor STABILITY under inserts is identical in both directions: a row
+     * inserted after the caller fetched page 1 never shifts page 2, because
+     * both directions fix the boundary at an absolute `($column, id)`
+     * position, never an OFFSET.
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query  UNORDERED — this method applies its own `$column asc, id asc` order and must own it entirely.
+     * @return array{data: list<mixed>, next_cursor: string|null, has_more: bool}
+     *
+     * @throws QueryValidationException when `?limit=` is present and out of `[1, 100]` or non-integer.
+     * @throws InvalidCursorException when `?cursor=` is present and unsigned, mistampered, or malformed.
+     */
+    public static function paginateAscending(Builder $query, Request $request, callable $mapItem, string $column = 'created_at'): array
+    {
+        $limit = self::resolveLimit($request);
+        $cursor = self::decodeCursor($request->query('cursor'));
+
+        $scoped = (clone $query)->reorder()->orderBy($column)->orderBy('id');
+
+        if ($cursor !== null) {
+            [$boundary, $id] = $cursor;
+            $bound = $boundary->format(self::DB_BINDING_FORMAT);
+
+            $scoped->where(function (Builder $outer) use ($column, $bound, $id): void {
+                $outer->where($column, '>', $bound)
+                    ->orWhere(function (Builder $inner) use ($column, $bound, $id): void {
+                        $inner->where($column, '=', $bound)->where('id', '>', $id);
+                    });
+            });
+        }
+
+        $rows = $scoped->limit($limit + 1)->get();
+
+        $hasMore = $rows->count() > $limit;
+        $page = $rows->take($limit);
+
+        $nextCursor = null;
+        $last = $page->last();
+
+        if ($hasMore && $last !== null) {
+            $nextCursor = self::encodeCursor($last, $column);
+        }
+
+        return [
+            'data' => array_values(array_map($mapItem, $page->all())),
+            'next_cursor' => $nextCursor,
+            'has_more' => $hasMore,
+        ];
+    }
+
     private static function resolveLimit(Request $request): int
     {
         $raw = $request->query('limit');
@@ -221,11 +294,17 @@ final class CursorPage
      * placed in a `(created_at, id)` cursor at all; it is a configuration
      * error in the caller's query/model, not something to paper over.
      *
+     * `$column` (default `created_at`, unchanged for every existing caller
+     * of `paginate()`): `paginateAscending()` passes its own ordering
+     * column through here so the cursor is built from the SAME column the
+     * query is actually ordered and filtered by — see that method's own
+     * docblock for why that column may differ from `created_at`.
+     *
      * @throws LogicException naming the model class and the unusable column.
      */
-    private static function encodeCursor(Model $model): string
+    private static function encodeCursor(Model $model, string $column = 'created_at'): string
     {
-        $createdAt = $model->getAttribute('created_at');
+        $createdAt = $model->getAttribute($column);
 
         // Step 3 review follow-up: a model casting the column
         // `immutable_datetime` (Evaluation::evaluated_at,
@@ -239,8 +318,9 @@ final class CursorPage
             $createdAt instanceof CarbonInterface => $createdAt,
             is_string($createdAt) => Carbon::parse($createdAt),
             default => throw new LogicException(sprintf(
-                '%s: cannot build a pagination cursor — created_at is null or not a usable timestamp.',
+                '%s: cannot build a pagination cursor — %s is null or not a usable timestamp.',
                 $model::class,
+                $column,
             )),
         };
 

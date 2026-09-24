@@ -7,6 +7,7 @@ namespace App\Rules\PublicApi;
 use Carbon\CarbonImmutable;
 use Carbon\Exceptions\InvalidFormatException;
 use Closure;
+use DateTimeZone;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
@@ -24,21 +25,63 @@ use Illuminate\Contracts\Validation\ValidationRule;
  * with `Z`" plus the numeric-offset form every other ISO 8601 producer
  * (including this API's own JSON responses' `toISOString()`) may emit:
  * with or without fractional seconds, `Z` or a numeric `±HH:MM` offset.
- * `DateTimeImmutable::createFromFormat()` — not `strtotime()` — is what
- * makes this strict: it returns `false` (not a best-effort guess) for
- * ANY input that does not match one of these four shapes exactly,
- * relative phrases included.
+ * `CarbonImmutable::createFromFormat()` — not `strtotime()` — is what makes
+ * this strict: unlike `strtotime()`'s best-effort guessing, it THROWS
+ * `InvalidFormatException` (caught and treated as "try the next shape" by
+ * `parse()` below) for ANY input that does not match one of these four
+ * shapes exactly, relative phrases included.
+ *
+ * Every format is `!`-RESET (step 6 review follow-up, Part A item 3): a
+ * leading `!` makes `createFromFormat()` start every unspecified date/time
+ * component at the Unix epoch instead of silently filling it in from the
+ * CURRENT system time — defensive against a future format in `FORMATS`
+ * that does not fully specify every component (none of today's four leaves
+ * a gap, since each names year through seconds, but the guarantee should
+ * not depend on that staying true by accident).
+ *
+ * A trailing `Z` is parsed as UTC EXPLICITLY, via `self::UTC` as
+ * `createFromFormat()`'s third (`$timezone`) argument, never the ambient
+ * default timezone — `\Z` in a FORMAT string is a literal character (the
+ * exact same escaping `\T` uses for the date/time separator), not a real
+ * timezone token, so without an explicit third argument the parsed instant
+ * silently took on `date_default_timezone_get()`'s zone instead of UTC.
+ * The offset-form shapes (`P`) are unaffected either way — PHP resolves a
+ * conflict between the format's own `P`/`O`/`T`/`e` token and the passed
+ * `$timezone` argument in the FORMAT's favour, so passing `self::UTC`
+ * uniformly for every shape is safe.
+ *
+ * A ROLLED-OVER calendar date (`2026-02-31`) is REJECTED, not silently
+ * normalized to `2026-03-03` — `createFromFormat()` alone does not
+ * validate calendar range (PHP's C implementation resolves an
+ * out-of-range day/month by arithmetic overflow, the same as `strtotime()`
+ * would). `parse()` below round-trips the successfully-parsed value back
+ * through the SAME format string and compares it, byte for byte, against
+ * the original input: a rollover changes the digits `format()` produces,
+ * so the round-trip fails to match and the value is rejected.
+ *
+ * The round-trip comparison RIGHT-PADS `$value`'s own fractional digits to
+ * six before comparing (gga finding 4) — `.u` accepts 1-6 digits on INPUT
+ * (`createFromFormat()` is lenient there) but `format()` always EMITS
+ * exactly six, zero-padded. Without the padding, a genuinely valid
+ * 1-5-digit fraction (`.1Z`, or JavaScript's own three-digit millisecond
+ * `toISOString()` output, `.123Z`) round-tripped to `.100000Z`/`.123000Z`
+ * — byte-for-byte different from the original input — and was rejected as
+ * if it had rolled over, exactly like a genuine rollover would be. Applied
+ * ONLY to the two `.u`-bearing formats; the other two have no fractional
+ * component to pad.
  */
 final class Iso8601DateTime implements ValidationRule
 {
+    private const UTC = 'UTC';
+
     /**
      * @var list<string>
      */
     private const FORMATS = [
-        'Y-m-d\TH:i:sP',
-        'Y-m-d\TH:i:s.uP',
-        'Y-m-d\TH:i:s\Z',
-        'Y-m-d\TH:i:s.u\Z',
+        '!Y-m-d\TH:i:sP',
+        '!Y-m-d\TH:i:s.uP',
+        '!Y-m-d\TH:i:s\Z',
+        '!Y-m-d\TH:i:s.u\Z',
     ];
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -69,16 +112,61 @@ final class Iso8601DateTime implements ValidationRule
             // discipline `App\Support\PublicApi\CursorPage::decodeCursor()`
             // already applies to the identical Carbon behaviour.
             try {
-                $parsed = CarbonImmutable::createFromFormat($format, $value);
+                $parsed = CarbonImmutable::createFromFormat($format, $value, new DateTimeZone(self::UTC));
             } catch (InvalidFormatException) {
                 continue;
             }
 
-            if ($parsed instanceof CarbonImmutable) {
-                return $parsed;
+            if (! $parsed instanceof CarbonImmutable) {
+                continue;
             }
+
+            // Round-trip rejection of a rolled-over calendar date (step 6
+            // review follow-up, Part A item 3): `createFromFormat()` itself
+            // does not validate calendar range — "2026-02-31" silently
+            // overflows into "2026-03-03" rather than failing. Re-formatting
+            // the parsed value through the SAME format string (the leading
+            // `!` stripped, which is meaningless to `format()`) and
+            // comparing it byte for byte against the original input catches
+            // exactly that: a rollover changes the digits, so the two
+            // strings differ and this candidate format is rejected — the
+            // loop moves on to try the next shape, exactly as a genuine
+            // parse mismatch does above. `self::padFraction()` (gga finding
+            // 4) normalises a short fraction on `$value`'s side FIRST, so a
+            // genuinely valid 1-5-digit input compares equal to `format()`'s
+            // always-six-digit output instead of being rejected alongside
+            // an actual rollover.
+            if ($parsed->format(ltrim($format, '!')) !== self::padFraction($value, $format)) {
+                continue;
+            }
+
+            return $parsed;
         }
 
         return null;
+    }
+
+    /**
+     * Right-pads `$value`'s fractional-seconds digits to six, ONLY for a
+     * `.u`-bearing `$format` — see `parse()`'s own docblock for why. No-op
+     * for the two formats without a fractional component, and safe to call
+     * even when `$value` does not actually contain a `.` (the regex simply
+     * does not match, and `$value` is returned unchanged) — `parse()` only
+     * reaches this AFTER `createFromFormat()` already accepted `$value`
+     * against `$format`, so a `.u` format here always means a fraction was
+     * genuinely present.
+     */
+    private static function padFraction(string $value, string $format): string
+    {
+        if (! str_contains($format, '.u')) {
+            return $value;
+        }
+
+        return preg_replace_callback(
+            '/\.(\d{1,6})/',
+            fn (array $matches): string => '.'.str_pad($matches[1], 6, '0'),
+            $value,
+            limit: 1,
+        ) ?? $value;
     }
 }

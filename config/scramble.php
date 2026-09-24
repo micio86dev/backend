@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Scramble\InterviewHostedUrlNullableExtension;
 use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
 
 return [
@@ -158,7 +159,12 @@ return [
         RestrictedDocsAccess::class,
     ],
 
-    'extensions' => [],
+    'extensions' => [
+        // Step 6 review follow-up, Part A item 4 — documents `Interview.
+        // hosted_url` as `string|null` (it is genuinely always `null` at
+        // runtime) without a runtime hack. See that class's own docblock.
+        InterviewHostedUrlNullableExtension::class,
+    ],
 
     /*
      * Automatically document API security (OpenAPI `security` / `securitySchemes`) based on route

@@ -203,7 +203,29 @@ final class IdempotencyKey
                     'scope' => $scope,
                 ]);
 
-                return Problem::make($request, 500, 'internal_error', 'Internal error');
+                // Step 6 review follow-up, item 1: an undecodable record
+                // must not be STICKY. Left in place, this branch would 500
+                // this exact key/body pair forever — a wrong/rotated
+                // APP_KEY or a corrupted cache entry never self-heals, and
+                // the caller has no way to distinguish "this request is
+                // permanently broken" from "retry me". Evicted BEFORE
+                // answering, so a retry with the SAME key re-executes the
+                // handler fresh (an ordinary cache miss) instead of hitting
+                // the same undecodable record again. Guarded the same way
+                // every other cache write in this class is — an eviction
+                // failure must never turn this already-decided 500 into a
+                // worse outage, and the record's own TTL is the fallback
+                // when eviction itself cannot be trusted.
+                try {
+                    Cache::forget($storeKey);
+                } catch (Throwable $e) {
+                    self::logCacheOutage($e);
+                }
+
+                return Problem::make(
+                    $request, 500, 'internal_error', 'Internal error',
+                    detail: 'The stored idempotency record could not be read. The key has been cleared and the request can be retried once.',
+                );
             }
 
             if (! hash_equals($cached['fingerprint'], $fingerprint)) {

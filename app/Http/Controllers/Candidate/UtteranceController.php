@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InterviewSession;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
+use App\Support\PublicApi\InterviewEventRecorder;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -88,12 +89,32 @@ class UtteranceController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $request->validate([
             'session_id' => ['required', 'integer'],
             'speaker' => ['required', 'string', 'in:candidate,avatar'],
             'text' => ['required', 'string'],
             'ts' => ['required', 'date'],
         ]);
+
+        // `Request::validate()` itself returns a bare, unindexed `array`
+        // (step 6 review follow-up) — PHPStan cannot narrow it to this
+        // method's own `array{session_id: int, speaker: string, text:
+        // string, ts: string}` shape, which every consumer below
+        // (`resolveOwnedSession()`, `TurnClassifier::classify()`,
+        // `insertUtteranceAtomically()`, `recordUtteranceEvent()`) needs.
+        // Read directly from `$request->input()` with explicit narrowing
+        // instead — the SAME "never trust a validated array's inferred
+        // type, narrow explicitly" discipline `App\Http\Controllers\
+        // PublicApi\InterviewController::stringMap()` already applies; the
+        // validation rules above already guarantee these are genuinely
+        // present and correctly typed, so this is a type PROOF, not a
+        // second round of business validation.
+        $validated = [
+            'session_id' => $request->integer('session_id'),
+            'speaker' => $request->string('speaker')->toString(),
+            'text' => $request->string('text')->toString(),
+            'ts' => $request->string('ts')->toString(),
+        ];
 
         // resolveOwnedSession: enforces participant_id + org isolation → 404 if not owned.
         // MUST be invoked FIRST, before any DB mutation (design WARNING-4).
@@ -136,8 +157,18 @@ class UtteranceController extends Controller
         // distinct, RETRIABLE 503 — never the generic `utterance_insert_failed`
         // 500, which would tell a client to give up on a turn that a
         // heartbeat later would likely have accepted.
+        // Captured by reference from inside the transaction closure below
+        // (public-api step 6, G-38) — `question_asked`/`answer_recorded` are
+        // recorded AFTER this method's own transaction commits, deliberately
+        // OUTSIDE the `SELECT ... FOR UPDATE` lock: Z16 (this class's own
+        // docblock) requires the locked critical section to stay exactly
+        // the lock, the classify() count and the INSERT — never widened by
+        // anything else, and `InterviewEventRecorder` is best-effort
+        // observability, not part of that atomicity boundary.
+        $turnKind = null;
+
         try {
-            $rowsInserted = DB::transaction(function () use ($session, $orgId, $validated): int {
+            $rowsInserted = DB::transaction(function () use ($session, $orgId, $validated, &$turnKind): int {
                 // `SET LOCAL` does not accept a bound parameter in Postgres
                 // (it is not a value position the extended query protocol
                 // supports) — safe to inline directly, since the value is
@@ -177,7 +208,45 @@ class UtteranceController extends Controller
             );
         }
 
+        $this->recordUtteranceEvent($session, $validated, $turnKind);
+
         return response()->json(null, Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * `question_asked` (an avatar turn classified `primary` — a `follow_up`
+     * turn records nothing new here, per G-38's own list) / `answer_recorded`
+     * (a candidate turn) — public-api step 6, recorded AFTER the atomic
+     * insert above has committed (never inside its lock — see `store()`'s
+     * own comment).
+     *
+     * `question_index` is the G-37 ordinal: the 0-based position of the
+     * primary question within this competency, re-derived from the
+     * FRESHLY-persisted `matchedCount()` (which now includes the turn this
+     * request just inserted) rather than trusted from a value computed
+     * before the insert. `max(0, ... - 1)`: `matchedCount()` counts primaries
+     * asked SO FAR, so the ordinal of the one just asked/answered is one
+     * less than that count; a candidate turn preceding any primary at all
+     * (should not happen in practice — the avatar always asks first) floors
+     * at `0` rather than going negative.
+     *
+     * @param  array{session_id: int, speaker: string, text: string, ts: string}  $validated
+     */
+    private function recordUtteranceEvent(InterviewSession $session, array $validated, ?string $turnKind): void
+    {
+        if ($validated['speaker'] === 'avatar' && $turnKind !== 'primary') {
+            return;
+        }
+
+        $questionIndex = max(0, $this->turnClassifier->matchedCount($session) - 1);
+
+        if ($validated['speaker'] === 'avatar') {
+            InterviewEventRecorder::questionAsked($session->organization_id, $session->participant_id, $session->competency_code, $questionIndex);
+
+            return;
+        }
+
+        InterviewEventRecorder::answerRecorded($session->organization_id, $session->participant_id, $session->competency_code, $questionIndex);
     }
 
     /**

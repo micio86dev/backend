@@ -25,6 +25,24 @@ use Illuminate\Support\Str;
 final class Problem
 {
     /**
+     * The `application/problem+json` body shape every `self::make()` call
+     * produces — a PHPDoc array-shape TYPE STRING (not a real PHP type),
+     * for `#[Dedoc\Scramble\Attributes\Response(status, type: self::
+     * PROBLEM_SHAPE)]`/`Problem::PROBLEM_SHAPE` on a controller method's
+     * own attribute (step 6 review follow-up, Part A item 6). Public and
+     * on THIS class specifically because a PHP attribute argument must be
+     * a compile-time constant expression — `Fqcn::CONST` qualifies, from
+     * ANY class, not only `self`/a parent — so every `/v1` controller that
+     * needs to document a `Problem::make()`-shaped error response can
+     * reference the ONE constant here instead of each re-declaring its own
+     * copy (`InterviewController`/`ProjectController` previously did,
+     * verbatim, because at the time neither had a shared ancestor this
+     * could live on without widening either class's own responsibility —
+     * `Problem` already is that shared thing, no widening needed).
+     */
+    public const PROBLEM_SHAPE = 'array{type: string, title: string, status: int, code: string, request_id: string, detail?: string, errors?: list<array{field: string, code: string, message?: string}>}';
+
+    /**
      * `token_invalid`/`token_consumed` (public-api step 5, G-32) are NOT
      * `/v1` `ErrorCode` enum members — `App\Http\Controllers\Embed\
      * ExchangeController` lives outside `/v1` entirely (SPEC.md §3.5, a

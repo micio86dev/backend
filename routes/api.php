@@ -53,6 +53,7 @@ use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController
 use App\Http\Controllers\PublicApi\InterviewController as PublicApiInterviewController;
 use App\Http\Controllers\PublicApi\OrganizationController as PublicApiOrganizationController;
 use App\Http\Controllers\PublicApi\ProjectController as PublicApiProjectController;
+use App\Http\Controllers\PublicApi\RecordingController as PublicApiRecordingController;
 use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTokenController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
@@ -172,6 +173,29 @@ Route::prefix('v1')
                 ->middleware(SubstituteBindings::class);
             Route::get('/interviews/{interview}', [PublicApiInterviewController::class, 'show'])
                 ->name('interviews.show')
+                ->middleware(SubstituteBindings::class);
+
+            // public-api step 6: transcript/answers/scoring/events
+            // (SPEC.md §3.3). Declared under the SAME `interviews:read`
+            // scope group as `index`/`show` above — `recording` below needs
+            // its OWN `recordings:read` scope instead, per the contract.
+            Route::get('/interviews/{interview}/transcript', [PublicApiInterviewController::class, 'transcript'])
+                ->name('interviews.transcript')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}/answers', [PublicApiInterviewController::class, 'answers'])
+                ->name('interviews.answers')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}/scoring', [PublicApiInterviewController::class, 'scoring'])
+                ->name('interviews.scoring')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}/events', [PublicApiInterviewController::class, 'events'])
+                ->name('interviews.events')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        Route::middleware('scope:recordings:read')->group(function (): void {
+            Route::get('/interviews/{interview}/recording', [PublicApiRecordingController::class, 'show'])
+                ->name('interviews.recording')
                 ->middleware(SubstituteBindings::class);
         });
     });

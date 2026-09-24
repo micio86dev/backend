@@ -10,6 +10,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Utterance;
 use App\Support\Interview\CompetencyTally;
+use App\Support\PublicApi\InterviewEventRecorder;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -81,13 +82,17 @@ final class SettleParticipantCompletion
         // from the caller, so the invariant is local to this query.
         $orgId = Project::whereKey($projectId)->value('organization_id');
 
-        if ($orgId === null) {
-            // The filter is correct and stays. What must not be silent is the
-            // case where it cannot be resolved: `Project` soft-deletes and runs
-            // through the tenant scope, so a null here makes the update match
-            // zero rows, `$won !== 1`, and the participant stays `in_corso`
-            // with no scoring, no webhook and no notification — verbatim the
-            // stranding this method exists to end, reached by another route.
+        // `is_int()`, not `!== null` (step 6 review — `organization_id` is
+        // read via `value()`, declared `mixed`; narrowed here so the
+        // `InterviewEventRecorder` calls below receive a genuine `int`,
+        // never a value PHPStan's `--level=max` explicit-mixed check would
+        // still call unproven). The filter is correct and stays regardless:
+        // `Project` soft-deletes and runs through the tenant scope, so an
+        // unresolved value here makes the update match zero rows,
+        // `$won !== 1`, and the participant stays `in_corso` with no
+        // scoring, no webhook and no notification — verbatim the stranding
+        // this method exists to end, reached by another route.
+        if (! is_int($orgId)) {
             Log::error('settle: cannot settle completion — project did not resolve', [
                 'participant_id' => $participantId,
                 'project_id' => $projectId,
@@ -102,6 +107,16 @@ final class SettleParticipantCompletion
             ->update(['status' => 'in_valutazione']);
 
         if ($won === 1) {
+            // public-api step 6, G-38: `under_evaluation` + `transcript_ready`
+            // fire together at the exact CAS win this comparison guards —
+            // the same "single-winner" guarantee that makes calling this
+            // method from anywhere safe also makes it the one place these
+            // two events are recorded, never a second call site that could
+            // double-fire them for a participant a different path already
+            // settled.
+            InterviewEventRecorder::underEvaluation($orgId, $participantId);
+            InterviewEventRecorder::transcriptReady($orgId, $participantId);
+
             // afterCommit() attaches to the caller's transaction when there is one
             // (/end) and dispatches immediately when there is not (the two /start
             // call sites, which hold no transaction).
@@ -137,7 +152,8 @@ final class SettleParticipantCompletion
     {
         $orgId = Project::whereKey($projectId)->value('organization_id');
 
-        if ($orgId === null) {
+        // is_int(), not !== null — see settleIfFinished()'s own comment.
+        if (! is_int($orgId)) {
             Log::error('settle: cannot settle abandoned participant — project did not resolve', [
                 'participant_id' => $participantId,
                 'project_id' => $projectId,
@@ -169,7 +185,17 @@ final class SettleParticipantCompletion
         }
 
         if ($next === 'in_valutazione') {
+            InterviewEventRecorder::underEvaluation($orgId, $participantId);
+            InterviewEventRecorder::transcriptReady($orgId, $participantId);
+
             FinalizeInterview::dispatch($participantId)->afterCommit();
+        } else {
+            // public-api step 6, G-38: the reaper's "nobody is coming back,
+            // and there is nothing to score" outcome — the SAME `error`
+            // event type `ScoreEvaluationJob`'s own terminal-failure path
+            // records, from a different seam that reaches the identical
+            // `errore` status.
+            InterviewEventRecorder::error($orgId, $participantId);
         }
 
         return $next;

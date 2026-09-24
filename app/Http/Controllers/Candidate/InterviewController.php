@@ -39,6 +39,7 @@ use App\Support\Interview\SessionLiveClock;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
 use App\Support\Project\ProjectInterviewability;
+use App\Support\PublicApi\InterviewEventRecorder;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -692,6 +693,14 @@ class InterviewController extends Controller
                 $locked->ended_reason = $endedReason;
                 $locked->save();
 
+                // public-api step 6, G-38: `session_ended` — one per
+                // competency-session `/end` (this method's own scope, every
+                // successful call reaching past the FIX-3 idempotency guard
+                // above). `$locked->organization_id` — InterviewSession IS a
+                // TenantModel, already the row this transaction holds
+                // locked, so no extra query.
+                InterviewEventRecorder::sessionEnded($locked->organization_id, $pid);
+
                 // (interview-session-started-at, D4) Close the open period
                 // alongside the status write, inside the same lock — a
                 // no-op on the FIX-3 idempotency guard's second /end call,
@@ -1259,12 +1268,24 @@ class InterviewController extends Controller
                 // completion CAS requires status='in_corso' to reach
                 // in_valutazione. Guarded so an already in_corso participant
                 // (the normal 2nd+ competency path) triggers no redundant write.
-                if ($participant->status !== 'in_corso') {
+                // public-api step 6, G-38: `session_started` fires exactly
+                // once per participant — the TRUE entrance into `in_corso`,
+                // never a redundant 2nd+ competency write. Captured as a
+                // boolean BEFORE the reassignment below (never re-read
+                // `$participant->status` after save(), which would always
+                // read back 'in_corso' and fire on every competency).
+                $enteringInCorso = $participant->status !== 'in_corso';
+
+                if ($enteringInCorso) {
                     $participant->status = 'in_corso';
                 }
 
                 if ($participant->isDirty()) {
                     $participant->save();
+                }
+
+                if ($enteringInCorso) {
+                    InterviewEventRecorder::sessionStarted($participant->organization_id, $participant->id);
                 }
             });
         } catch (\Throwable $e) {

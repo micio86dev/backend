@@ -151,11 +151,28 @@ return new class extends Migration
      * plain blueprint form rather than erroring: the ONLY thing that matters
      * inside a test's own short-lived, already-isolated transaction is that
      * the index ends up existing, never lock duration.
+     *
+     * `Schema::hasIndex()` reports an index as present purely by NAME — it
+     * has no idea Postgres itself considers this one broken (step 6 review
+     * follow-up, Part A item 2). A `CREATE UNIQUE INDEX CONCURRENTLY` that
+     * failed partway (the migration process killed mid-build, or a
+     * conflicting row discovered during the concurrent scan) leaves EXACTLY
+     * this shape: the index exists, by that name, but Postgres marks
+     * `pg_index.indisvalid = false` and it enforces nothing — the column is
+     * silently NOT unique from that point on, and every future rerun of this
+     * migration would keep reporting "done" (`hasIndex()` says so) forever.
+     * Checked here, ahead of the `hasIndex()` early return, so an invalid
+     * index is dropped and the method falls through to rebuild it exactly as
+     * if it had never existed.
      */
     private function addPublicIdUniqueIndex(): void
     {
-        if (Schema::hasIndex('participants', 'participants_public_id_unique')) {
+        if (Schema::hasIndex('participants', 'participants_public_id_unique') && ! $this->publicIdUniqueIndexIsInvalid()) {
             return;
+        }
+
+        if ($this->publicIdUniqueIndexIsInvalid()) {
+            $this->dropPublicIdUniqueIndex();
         }
 
         if (DB::transactionLevel() > 0) {
@@ -169,6 +186,53 @@ return new class extends Migration
         DB::statement(
             'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS participants_public_id_unique ON participants (public_id)'
         );
+    }
+
+    /**
+     * Queried directly against `pg_index` — Laravel's `Schema` facade has no
+     * `hasValidIndex()` equivalent, and `Schema::hasIndex()` only ever
+     * checks catalogue PRESENCE by name, never Postgres's own validity flag.
+     * `to_regclass()` (not a bare cast, which THROWS on a name that does not
+     * exist yet — e.g. the very first run, before this index has ever been
+     * created) resolves to `NULL` for an unknown relation, which
+     * short-circuits this query to no rows, the same as "not invalid" (there
+     * is nothing yet for `addPublicIdUniqueIndex()`'s own `hasIndex()` check
+     * to have found either).
+     */
+    private function publicIdUniqueIndexIsInvalid(): bool
+    {
+        $row = DB::selectOne(
+            "SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('participants_public_id_unique')"
+        );
+
+        // `DB::selectOne()` is declared `@return mixed` — narrowed here
+        // (PHPStan `--level=max`'s explicit-mixed checking) with
+        // `is_object()` + `isset()` rather than an `@var`/`assert()`
+        // override, so both branches are genuinely provable from the
+        // variable's own runtime shape.
+        if (! is_object($row) || ! isset($row->indisvalid)) {
+            return false;
+        }
+
+        return ! (bool) $row->indisvalid;
+    }
+
+    /**
+     * Drops the invalid `participants_public_id_unique` index/constraint
+     * whichever shape it is currently backed by — the SAME two-shape
+     * ambiguity `down()` already resolves for the identical reason (see that
+     * method's own comment): a `CREATE UNIQUE INDEX CONCURRENTLY` build
+     * leaves a bare index, while the in-transaction test fallback leaves a
+     * CONSTRAINT-backed one, and dropping the wrong statement form for
+     * either fails.
+     */
+    private function dropPublicIdUniqueIndex(): void
+    {
+        if ($this->checkConstraintExists('participants_public_id_unique')) {
+            DB::statement('ALTER TABLE participants DROP CONSTRAINT participants_public_id_unique');
+        } else {
+            DB::statement('DROP INDEX IF EXISTS participants_public_id_unique');
+        }
     }
 
     /**

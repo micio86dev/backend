@@ -135,16 +135,4 @@ return [
      * "The only expiry in the API"). Empty/unset = 15.
      */
     'session_token_ttl_minutes' => (int) (env('PUBLIC_API_SESSION_TOKEN_TTL_MINUTES') ?: 15),
-
-    /*
-     * `App\PublicApi\Serializers\InterviewSerializer::hostedUrl()`'s
-     * override (step 5 review follow-up, Part B item 4). `Interview.
-     * hosted_url` is `null` on every real read for the reason that
-     * serializer's own docblock gives — this key exists only so
-     * `openapi.yaml`'s `string|null` declaration for that field
-     * corresponds to a REACHABLE, non-dead code path rather than a bare
-     * `return null;` no caller could ever branch on. No environment
-     * (including production) sets it; leave it unset.
-     */
-    'interview_hosted_url_override' => env('PUBLIC_API_INTERVIEW_HOSTED_URL_OVERRIDE') ?: null,
 ];

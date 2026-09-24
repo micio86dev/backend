@@ -9,11 +9,13 @@ use App\Models\InterviewEvent;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
 use App\Support\PublicApi\SessionTokenMinter;
 use App\Support\Tenancy\TenantContextScope;
 use Dedoc\Scramble\Attributes\QueryParameter;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -67,8 +69,26 @@ final class ExchangeController extends Controller
      * gets `401 token_invalid`, never a meaningful 200 — the same
      * "required in the contract, defended in code" distinction
      * `CreateInterviewRequest`'s own required fields already draw.
+     *
+     * `#[Response(200, type: 'array{access_token: string}')]` (step 6
+     * review follow-up, Part A item 5) — `$accessToken` starts its life
+     * assigned a literal `null` below (so it has a value for the
+     * `$raceLost` early-return branch, which never reads it), and is only
+     * ever reassigned inside the `DB::transaction()` closure it is passed
+     * into BY REFERENCE. Scramble's static inference does not follow a
+     * by-reference mutation through a closure call boundary, so without
+     * this attribute it read only the INITIAL `null` assignment and
+     * exported this operation's `200` body as `{access_token: null}` —
+     * true about the variable's DECLARED starting value, never about what
+     * a real response actually contains: every code path that reaches
+     * `response()->json(['access_token' => $accessToken], 200)` below has
+     * already returned early (`$this->invalid()`/`$this->consumed()`) for
+     * every case where a candidate JWT was NOT minted, so `$accessToken`
+     * is always the `string` `CandidateTokenFactory::mintCandidateToken()`
+     * returns by the time this line runs.
      */
     #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
+    #[Response(200, type: 'array{access_token: string}')]
     public function exchange(Request $request): JsonResponse
     {
         $raw = $request->query('token', '');
@@ -142,7 +162,12 @@ final class ExchangeController extends Controller
             $consumed = Participant::where('id', $participant->id)
                 ->where('organization_id', $organization->id)
                 ->where('session_token_jti', $verified->jti)
-                ->where('status', 'in_attesa')
+                // InterviewStatus::Pending->toStored() (step 6 review
+                // follow-up, Part A item 7), never the 'in_attesa' literal
+                // — the ONE place this stored value's spelling is allowed
+                // to originate, matching every other stored-status
+                // comparison in this codebase's public-api surface.
+                ->where('status', InterviewStatus::Pending->toStored())
                 ->update(['session_token_jti' => null]);
 
             if ($consumed === 0) {
