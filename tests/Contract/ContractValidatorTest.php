@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Illuminate\Http\JsonResponse;
 use Illuminate\Testing\TestResponse;
 use League\OpenAPIValidation\PSR7\Exception\ValidationFailed;
+use League\OpenAPIValidation\PSR7\OperationAddress;
+use Nyholm\Psr7\Response;
 use Tests\Contract\ContractValidator;
 
 /**
@@ -223,6 +225,94 @@ test('ContractValidator: an absent OPTIONAL const property passes, wrong value f
  * check must still find and enforce `event`'s const, merged in from the
  * `allOf` branch.
  */
+/**
+ * Review follow-up on step 1 (`ContractValidator.php` ~L232-239): `allOf` is
+ * an INTERSECTION. A later branch redeclaring `kind` WITHOUT `const` (just
+ * repeating `type: string`, the way a narrowing branch legitimately might)
+ * must not erase the `const` an EARLIER branch already declared for it — both
+ * branches' constraints hold at once, so the response must still satisfy the
+ * first branch's `const: audio`. Before the fix this test is RED: the
+ * `unset()` on the no-const redeclaration threw away the earlier constraint
+ * and `kind: video` validated clean.
+ */
+test('ContractValidator keeps an earlier allOf branch\'s const when a later branch redeclares the property without one', function (): void {
+    $contractPath = writeInlineContract(<<<'YAML'
+    openapi: 3.1.0
+    info: { title: MiniIntersection, version: '1.0' }
+    paths:
+      /recording:
+        get:
+          responses:
+            '200':
+              description: ok
+              content:
+                application/json:
+                  schema:
+                    allOf:
+                      - type: object
+                        required: [kind]
+                        properties:
+                          kind: { type: string, const: audio }
+                      - type: object
+                        properties:
+                          kind: { type: string }
+    YAML);
+
+    config(['public_api.contract_path' => $contractPath]);
+
+    $matching = TestResponse::fromBaseResponse(
+        (new JsonResponse(['kind' => 'audio'], 200))->header('Content-Type', 'application/json')
+    );
+
+    expect(fn () => ContractValidator::validate($matching, 'GET', '/recording'))
+        ->not->toThrow(ValidationFailed::class);
+
+    $mismatched = TestResponse::fromBaseResponse(
+        (new JsonResponse(['kind' => 'video'], 200))->header('Content-Type', 'application/json')
+    );
+
+    expect(fn () => ContractValidator::validate($mismatched, 'GET', '/recording'))
+        ->toThrow(ValidationFailed::class);
+});
+
+/**
+ * Review follow-up on step 1: the untested branch at `ContractValidator.php`
+ * ~L137-150 — an operation whose `responses` block is entirely absent (a
+ * contract-parsing inconsistency the base validator's own status-code match
+ * would normally rule out first). Exercised via `ReflectionMethod` directly
+ * against `assertDeclaredConstProperties()`, bypassing `validate()`'s base
+ * `responseValidator()->validate()` call: that base call resolves the
+ * response spec through `$operation->responses->getResponse(...)`, which
+ * throws a plain PHP `Error` (method call on `null`) rather than
+ * `ValidationFailed` when `responses` is absent — so black-box `validate()`
+ * cannot reach this branch at all, and this is the only way to cover it.
+ */
+test('ContractValidator::assertDeclaredConstProperties throws when the operation declares no responses block', function (): void {
+    $contractPath = writeInlineContract(<<<'YAML'
+    openapi: 3.1.0
+    info: { title: MiniNoResponses, version: '1.0' }
+    paths:
+      /no-responses:
+        get:
+          summary: deliberately missing the 'responses' key
+    YAML);
+
+    config(['public_api.contract_path' => $contractPath]);
+
+    $response = TestResponse::fromBaseResponse(
+        (new JsonResponse(['status' => 'ok'], 200))->header('Content-Type', 'application/json')
+    );
+
+    $address = new OperationAddress('/no-responses', 'get');
+    $psr7Response = new Response(200, $response->headers->all(), (string) $response->getContent());
+
+    $method = new ReflectionMethod(ContractValidator::class, 'assertDeclaredConstProperties');
+    $method->setAccessible(true);
+
+    expect(fn () => $method->invoke(null, $address, $psr7Response))
+        ->toThrow(ValidationFailed::class, "operation declares no 'responses' block");
+});
+
 test('ContractValidator enforces a const declared inside a top-level allOf branch (webhook event shape)', function (): void {
     $contractPath = writeInlineContract(<<<'YAML'
     openapi: 3.1.0

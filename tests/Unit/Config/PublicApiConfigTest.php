@@ -138,6 +138,15 @@ test('base_url: falls back to http://localhost + /api/v1 when APP_URL is also em
     expect($config['base_url'])->toBe('http://localhost/api/v1');
 });
 
+test('base_url: a trailing slash on APP_URL is stripped before appending /api/v1', function (): void {
+    $config = loadPublicApiConfig([
+        'PUBLIC_API_URL' => null,
+        'APP_URL' => 'https://x/',
+    ]);
+
+    expect($config['base_url'])->toBe('https://x/api/v1');
+});
+
 test('base_url: an explicit PUBLIC_API_URL is used verbatim', function (): void {
     $config = loadPublicApiConfig(['PUBLIC_API_URL' => 'https://api.beai.example/v1']);
 

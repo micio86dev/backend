@@ -141,6 +141,54 @@ test('operator POST → 403', function (): void {
     ])->assertForbidden();
 });
 
+test('POST with no mode defaults to live and stamps key_prefix beai_live_', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = storeAdminUser($org);
+
+    $response = $this->withToken($token)->postJson('/api/m2m/clients', [
+        'name' => 'Default Mode Client',
+        'abilities' => ['participants:read'],
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('data.mode', 'live');
+
+    $client = ApiClient::find($response->json('data.id'));
+    expect($client->mode)->toBe('live');
+    expect($client->key_prefix)->toStartWith('beai_live_');
+});
+
+test('POST with mode=test stamps mode and a beai_test_ key_prefix, and the raw key carries the marker', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = storeAdminUser($org);
+
+    $response = $this->withToken($token)->postJson('/api/m2m/clients', [
+        'name' => 'Test Mode Client',
+        'abilities' => ['participants:read'],
+        'mode' => 'test',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('data.mode', 'test');
+
+    expect($response->json('api_key'))->toStartWith('beai_test_');
+
+    $client = ApiClient::find($response->json('data.id'));
+    expect($client->mode)->toBe('test');
+    expect($client->key_prefix)->toStartWith('beai_test_');
+});
+
+test('POST with an invalid mode → 422', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = storeAdminUser($org);
+
+    $this->withToken($token)->postJson('/api/m2m/clients', [
+        'name' => 'Bad Mode Client',
+        'abilities' => ['participants:read'],
+        'mode' => 'sandbox',
+    ])->assertUnprocessable();
+});
+
 test('unauthenticated POST → 401', function (): void {
     $this->postJson('/api/m2m/clients', [
         'name' => 'No Auth Client',

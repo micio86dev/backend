@@ -24,5 +24,20 @@ return [
         'progress:read',
         'projects:read',
         'sso_link:generate',
+
+        // Public API (`/v1`) scopes — SPEC.md §3.1. Reuses this same
+        // canonical set and the existing `abilities` jsonb column as the
+        // scope store: `projects:read` above is shared verbatim between the
+        // internal M2M surface and `/v1`, and `App\Http\Middleware\PublicApi\
+        // RequireScope` checks these through the same `ApiClient::can()`
+        // helper as `CheckAbility` does for the rest.
+        'interviews:write',
+        'interviews:read',
+        'recordings:read',
+        'exports:write',
+        'exports:read',
+        'usage:read',
+        'webhooks:read',
+        'webhooks:write',
     ],
 ];

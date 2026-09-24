@@ -12,6 +12,8 @@ use League\OpenAPIValidation\PSR7\Exception\ValidationFailed;
 use League\OpenAPIValidation\PSR7\OperationAddress;
 use League\OpenAPIValidation\PSR7\ResponseValidator;
 use League\OpenAPIValidation\PSR7\ValidatorBuilder;
+use League\OpenAPIValidation\Schema\Exception\SchemaMismatch;
+use League\OpenAPIValidation\Schema\SchemaValidator;
 use Nyholm\Psr7\Response as Psr7Response;
 use Psr\Http\Message\ResponseInterface;
 
@@ -48,11 +50,15 @@ use Psr\Http\Message\ResponseInterface;
  * — either declared directly in `properties` (`/health.status`), OR
  * contributed by a TOP-LEVEL `allOf` branch that is an inline object schema
  * or a `$ref` to one (the two webhook envelope `event` fields, and
- * `RecordingResource.kind`), merged in `allOf` order so a later branch's
- * redeclaration of a property wins over an earlier one — exactly how
- * `ProgressWebhookPayload`/`EvaluationWebhookPayload` narrow
- * `WebhookEnvelope`'s plain `event: { $ref: WebhookEventType }` into their
- * own `event: { const: ... }`. It does NOT attempt a general JSON Schema
+ * `RecordingResource.kind`), merged in `allOf` INTERSECTION semantics: a
+ * later branch that declares its OWN `const` for the same property overrides
+ * an earlier one — exactly how `ProgressWebhookPayload`/
+ * `EvaluationWebhookPayload` narrow `WebhookEnvelope`'s plain
+ * `event: { $ref: WebhookEventType }` into their own `event: { const: ... }`
+ * — but a later branch merely REDECLARING the property with no `const` of
+ * its own (e.g. just repeating `type: string`) leaves an earlier branch's
+ * `const` in force, since `allOf` requires every branch's constraints to
+ * hold simultaneously. It does NOT attempt a general JSON Schema
  * 2020-12 `const`/nested-schema implementation: a `const` declared inside a
  * NESTED `properties`/`items` schema (i.e. anything deeper than the
  * response body's own top-level properties and top-level `allOf` branches)
@@ -88,6 +94,67 @@ final class ContractValidator
 
         self::responseValidator()->validate($address, $psr7Response);
         self::assertDeclaredConstProperties($address, $psr7Response);
+    }
+
+    /**
+     * Validates a response's body against `components.schemas.Problem`
+     * ALONE — not a full operation match — plus the `application/problem+json`
+     * content type, the status code, and the `X-Request-Id` header. For a
+     * TEST-ONLY probe route (public-api step 2's auth middleware tests):
+     * that route has no entry in `openapi.yaml`, so `validate()` above (which
+     * requires a real `paths.<path>.<method>` operation) cannot be used —
+     * schema-level validation is the only piece of the contract a probe
+     * route CAN honestly be checked against.
+     *
+     * @param  TestResponse<\Symfony\Component\HttpFoundation\Response>  $response
+     *
+     * @throws ValidationFailed when the status/content-type/header
+     *                          expectations are not met, or the body does not match the `Problem` schema.
+     */
+    public static function assertProblemSchema(TestResponse $response, int $status): void
+    {
+        if ($response->getStatusCode() !== $status) {
+            throw new ValidationFailed(sprintf(
+                'Expected status %d, got %d.',
+                $status,
+                $response->getStatusCode()
+            ));
+        }
+
+        $contentType = strtok((string) $response->headers->get('Content-Type'), ';') ?: '';
+
+        if ($contentType !== 'application/problem+json') {
+            throw new ValidationFailed(sprintf(
+                "Expected Content-Type 'application/problem+json', got '%s'.",
+                $response->headers->get('Content-Type') ?? '(none)'
+            ));
+        }
+
+        if (! $response->headers->has('X-Request-Id') || $response->headers->get('X-Request-Id') === '') {
+            throw new ValidationFailed('Response is missing a non-empty X-Request-Id header.');
+        }
+
+        $components = self::responseValidator()->getSchema()->components;
+        $problemSchema = $components !== null ? ($components->schemas['Problem'] ?? null) : null;
+
+        if ($problemSchema instanceof Reference) {
+            $problemSchema = $problemSchema->resolve();
+        }
+
+        if (! $problemSchema instanceof Schema) {
+            throw new ValidationFailed('Contract has no components.schemas.Problem to validate against.');
+        }
+
+        /** @var mixed $body */
+        $body = json_decode((string) $response->getContent(), true);
+
+        try {
+            (new SchemaValidator)->validate($body, $problemSchema);
+        } catch (SchemaMismatch $exception) {
+            throw new ValidationFailed(
+                'Response body does not match the Problem schema: '.$exception->getMessage()
+            );
+        }
     }
 
     private static function responseValidator(): ResponseValidator
@@ -231,12 +298,19 @@ final class ContractValidator
 
                 if ($const !== null) {
                     $constProperties[$name] = $const;
-                } else {
-                    // A later `allOf` branch (or the base schema itself)
-                    // redeclaring the same property WITHOUT `const` widens
-                    // it back — it no longer carries the constraint.
-                    unset($constProperties[$name]);
                 }
+
+                // `allOf` is an INTERSECTION, not a last-wins merge: a later
+                // branch redeclaring the same property WITHOUT `const` (e.g.
+                // just repeating its `type`) does NOT widen an earlier
+                // branch's `const` away — every branch's constraints must
+                // still hold simultaneously. So a redeclaration with no
+                // `const` of its own leaves whatever this loop already
+                // recorded for `$name` untouched (no `unset()` here). Only a
+                // LATER branch that declares its OWN `const` overwrites the
+                // earlier one, which is the one case where "later wins" is
+                // actually correct — see the class docblock's "Known gap"
+                // section for the `ProgressWebhookPayload` example.
             }
         }
 

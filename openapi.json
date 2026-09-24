@@ -79,6 +79,18 @@
                                             "null"
                                         ],
                                         "format": "date-time"
+                                    },
+                                    "mode": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "public-api step 2 (SPEC.md \u00a73.7 test mode): optional, defaults\nto 'live' \u2014 every client issued before this field existed IS a\nlive client, so defaulting new ones the same way keeps one\nbehaviour rather than a silent split.",
+                                        "enum": [
+                                            "live",
+                                            "test",
+                                            null
+                                        ]
                                     }
                                 },
                                 "required": [
@@ -8648,6 +8660,19 @@
                     "name": {
                         "type": "string"
                     },
+                    "key_prefix": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "live",
+                            "test"
+                        ]
+                    },
                     "abilities": {
                         "type": "array",
                         "items": {
@@ -8687,6 +8712,8 @@
                 "required": [
                     "id",
                     "name",
+                    "key_prefix",
+                    "mode",
                     "abilities",
                     "is_active",
                     "state",

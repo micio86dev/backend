@@ -53,3 +53,27 @@ test('hash output is a 64-char lowercase hex string (SHA-256)', function (): voi
     expect(strlen($hash))->toBe(64);
     expect(ctype_xdigit($hash))->toBeTrue();
 });
+
+test('generate("test") produces a beai_test_ prefixed key with the same entropy', function (): void {
+    $raw = ApiKeyGenerator::generate('test');
+    $suffix = substr($raw, strlen('beai_test_'));
+
+    expect($raw)->toStartWith('beai_test_');
+    expect(strlen($suffix))->toBe(96);
+    expect(ctype_xdigit($suffix))->toBeTrue();
+});
+
+test('prefixOf() returns the marker plus the first 8 chars of the random part', function (): void {
+    $liveKey = 'beai_live_'.str_repeat('a', 96);
+    $testKey = 'beai_test_'.str_repeat('b', 96);
+
+    expect(ApiKeyGenerator::prefixOf($liveKey))->toBe('beai_live_aaaaaaaa');
+    expect(ApiKeyGenerator::prefixOf($testKey))->toBe('beai_test_bbbbbbbb');
+});
+
+test('modeOf() recognises beai_live_/beai_test_ markers and returns null for anything else', function (): void {
+    expect(ApiKeyGenerator::modeOf(ApiKeyGenerator::generate('live')))->toBe('live');
+    expect(ApiKeyGenerator::modeOf(ApiKeyGenerator::generate('test')))->toBe('test');
+    expect(ApiKeyGenerator::modeOf('not-a-beai-key'))->toBeNull();
+    expect(ApiKeyGenerator::modeOf(''))->toBeNull();
+});

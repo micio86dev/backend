@@ -28,11 +28,12 @@ use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
 use App\Services\Scoring\ThresholdValidityPredicate;
 use App\Support\Auth\RedisConfigEvictionPolicyProbe;
+use App\Support\PublicApi\ApiKeyResolver;
+use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
@@ -86,6 +87,12 @@ class AppServiceProvider extends ServiceProvider
         // default; tests bind a fake via $this->app->instance() (LLMProvider
         // pattern) rather than mocking the final concrete implementation.
         $this->app->bind(RedisEvictionPolicyProbe::class, RedisConfigEvictionPolicyProbe::class);
+
+        // public-api step 2 — request-scoped, mirroring TenantResolver's own
+        // registration exactly (scoped(), not singleton(): Octane-safe, and
+        // reset per request rather than leaking between requests sharing a
+        // worker).
+        $this->app->scoped(ApiMode::class);
     }
 
     /**
@@ -218,11 +225,16 @@ class AppServiceProvider extends ServiceProvider
         //
         // Guard closure:
         //   1. Extract Bearer token from Authorization header.
-        //   2. SHA-256 hash → raw ApiClient lookup via unique key_hash index (active scope).
-        //   3. Redis client_revoked:{id} denylist check — exception-guarded (fail-safe
-        //      = DB re-query on outage, NEVER fail-open).
-        //   4. Throttled last_used_at update (best-effort, exception-guarded).
-        //   5. Return ApiClient or null (null → 401 by the Authenticate middleware).
+        //   2. Delegate resolution — hash/prefix lookup, denylist check,
+        //      throttled last_used_at update — to App\Support\PublicApi\
+        //      ApiKeyResolver (public-api step 2), SHARED with the new `/v1`
+        //      AuthenticatePublicApi middleware. Behaviour here is
+        //      UNCHANGED: every pre-existing key still resolves through the
+        //      resolver's legacy hash-only fallback (see that class's
+        //      docblock), so this guard's own test suite
+        //      (tests/Feature/C5/GuardResolutionTest.php etc.) stays green
+        //      untouched.
+        //   3. Return ApiClient or null (null → 401 by the Authenticate middleware).
         Auth::viaRequest('api-m2m', function (Request $request): ?ApiClient {
             $header = $request->header('Authorization', '');
             if (! str_starts_with((string) $header, 'Bearer ')) {
@@ -234,44 +246,7 @@ class AppServiceProvider extends ServiceProvider
                 return null;
             }
 
-            $hash = hash('sha256', $raw);
-
-            // Raw unscoped lookup — ApiClient is NOT a TenantModel; TenantResolver is
-            // not stamped yet at this point (TenantContextM2m runs after the guard).
-            $client = ApiClient::active()->where('key_hash', $hash)->first();
-
-            if ($client === null) {
-                return null;
-            }
-
-            // Redis denylist check: client_revoked:{id}
-            // Fail-safe: on Redis outage, fall back to a FRESH DB active() re-query.
-            // NEVER fail-open — is_active is the durable authoritative revocation flag.
-            try {
-                $denylistKey = 'client_revoked:'.$client->id;
-                if (Cache::has($denylistKey)) {
-                    return null;
-                }
-            } catch (\Throwable) {
-                // Redis is down — re-query DB with full active() scope (fresh read,
-                // not the in-memory model which could be stale).
-                $client = ApiClient::active()->where('key_hash', $hash)->first();
-                if ($client === null) {
-                    return null;
-                }
-            }
-
-            // Throttled last_used_at update — best-effort, non-fatal.
-            // Write only if null or older than 5 minutes to avoid per-request writes.
-            try {
-                if ($client->last_used_at === null || $client->last_used_at->lt(now()->subMinutes(5))) {
-                    $client->updateQuietly(['last_used_at' => now()]);
-                }
-            } catch (\Throwable) {
-                // Non-fatal — telemetry write failure must never reject an authenticated request.
-            }
-
-            return $client;
+            return ApiKeyResolver::resolve($raw);
         });
 
         // C6 — Register the api-candidate RequestGuard.

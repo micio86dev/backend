@@ -12,6 +12,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
 use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
+use App\Http\Middleware\PublicApi\RequireScope;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\SecurityHeaders;
@@ -182,6 +183,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'ability' => CheckAbility::class,
             'refresh.csrf' => RequireRefreshCsrfHeader::class,
+            // public-api step 2: the `/v1` counterpart of `ability` — e.g.
+            // Route::middleware('scope:interviews:read').
+            'scope' => RequireScope::class,
         ]);
 
         // C5: Insert CheckAbility IMMEDIATELY BEFORE SubstituteBindings in the priority list.
@@ -190,6 +194,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // enumeration oracle. prependToPriorityList inserts without replacing the full list.
         // ⚠️  NOT appendToPriorityList — that would place CheckAbility AFTER SubstituteBindings.
         $middleware->prependToPriorityList(SubstituteBindings::class, CheckAbility::class);
+
+        // public-api step 2: same 404-vs-403 oracle, same fix — RequireScope
+        // MUST run before SubstituteBindings resolves a route-bound model.
+        $middleware->prependToPriorityList(SubstituteBindings::class, RequireScope::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

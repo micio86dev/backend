@@ -674,6 +674,13 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Admin');
 
+// Feature/PublicApi/Auth — RefreshDatabase: public-api step 2 auth/scopes/
+// tenancy-guard tests create real Organization/ApiClient/Project rows via
+// factories. `Feature/PublicApi/HealthEndpointTest.php` sits directly under
+// `Feature/PublicApi/` (DB-free, no factory) and does not need this.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Auth');
+
 // Unit/Actions/Scheduling — needs TestCase + RefreshDatabase (interview-scheduling
 // PR-E: RescheduleParticipantTest calls the action directly against real
 // Participant/Project factory rows, bypassing the HTTP layer entirely).

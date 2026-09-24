@@ -52,6 +52,9 @@ use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
+use App\Http\Middleware\PublicApi\AuthenticatePublicApi;
+use App\Http\Middleware\PublicApi\PublicApiTenantContext;
+use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\TenantContext;
@@ -82,6 +85,42 @@ Route::get('/health/queue', QueueHealthController::class);
 Route::prefix('v1')->name('public-api.')->group(function (): void {
     Route::get('/health', PublicApiHealthController::class)->name('health');
 });
+
+// ─── BEAI Public API (/v1) — authenticated surface (public-api step 2) ───────
+//
+// SPEC.md §3.1: `Authorization: Bearer <api_key>` — a SEPARATE credential
+// system from the human `auth:api` JWT and, at the ROUTE level, from the
+// internal `auth:api-m2m` M2M surface below (`/api/m2m/*`) even though both
+// ultimately resolve the SAME ApiClient model and guard
+// (App\Support\PublicApi\ApiKeyResolver is shared — see its docblock).
+//
+// withoutMiddleware([TenantContext, RejectStaleCredentials]): identical
+// isolation to the M2M/candidate/SSO route groups above — both are appended
+// to the whole `api` group in bootstrap/app.php and both read
+// $request->user() on the DEFAULT 'api' guard, which would resolve against
+// whatever bearer key is present here and 500 rather than pass through.
+//
+// Inline middleware stack (explicit, ordered, per SPEC.md §3.1/§3.2):
+//   1. RejectApiKeyInQuery   — `?api_key=` → 400, before any auth check
+//   2. AuthenticatePublicApi — resolves ApiClient via bearer key; sets api-m2m guard
+//   3. PublicApiTenantContext — stamps TenantResolver + ApiMode from client
+//   4. SubstituteBindings    — route-model-binding (LAST, per C4 convention)
+//
+// No business routes yet — step 4 adds the first one (`GET /v1/organization`).
+// This group exists now so the auth/tenancy/scope stack is wired and
+// testable (tests/Feature/PublicApi/Auth) ahead of any route needing it.
+Route::prefix('v1')
+    ->name('public-api.')
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware([
+        RejectApiKeyInQuery::class,
+        AuthenticatePublicApi::class,
+        PublicApiTenantContext::class,
+        SubstituteBindings::class,
+    ])
+    ->group(function (): void {
+        //
+    });
 
 // ─── Auth routes (C2, refresh flow hardened by backoffice-session-refresh-hardening D8) ──
 // POST /api/auth/login is public (no auth middleware).

@@ -54,7 +54,10 @@ return [
      * `https://interview.beai.example/i/{token}`"). No default: null until
      * the interview host is chosen (only the unrelated `CANDIDATE_APP_URL`,
      * entry-link origin for the SSO ingress, is defined today — a different
-     * surface, see config/interview.php).
+     * surface, see config/interview.php). Unlike `base_url` above, this key
+     * NEVER falls back to another env var (not `APP_URL`, not
+     * `CANDIDATE_APP_URL`) — every deployment that needs this surface MUST
+     * set `INTERVIEW_URL` explicitly.
      */
     'interview_url' => env('INTERVIEW_URL') ?: null,
 

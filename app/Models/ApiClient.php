@@ -25,6 +25,10 @@ use Illuminate\Support\Carbon;
  *   would throw BadMethodCallException.
  * - key_hash MUST NOT be in $fillable — set only by ApiClientController::store().
  * - key_hash MUST be in $hidden — never serialized to JSON responses.
+ * - key_prefix MUST NOT be in $fillable — set only via forceFill() alongside
+ *   key_hash (public-api step 2), for the same reason: it is derived from the
+ *   raw key at issuance time, never client input.
+ * - mode MAY be mass-assigned (validated `in:live,test` at the controller).
  * - abilities is cast to array — stored as jsonb, flat lowercase-canonical strings.
  * - NOT a TenantModel — the guard queries raw/unscoped because TenantResolver is
  *   not stamped yet at guard-resolution time.
@@ -35,6 +39,8 @@ use Illuminate\Support\Carbon;
  * @property int $organization_id
  * @property string $name
  * @property string $key_hash
+ * @property string|null $key_prefix
+ * @property 'live'|'test' $mode
  * @property string[]|null $abilities
  * @property bool $is_active
  * @property Carbon|null $expires_at
@@ -49,7 +55,8 @@ class ApiClient extends Model implements AuthenticatableContract
 
     /**
      * Mass-assignable attributes.
-     * key_hash is intentionally excluded — set only by trusted service code.
+     * key_hash/key_prefix are intentionally excluded — set only by trusted
+     * service code via forceFill() (ApiClientController::store()).
      *
      * @var list<string>
      */
@@ -58,6 +65,7 @@ class ApiClient extends Model implements AuthenticatableContract
         'name',
         'abilities',
         'is_active',
+        'mode',
         'expires_at',
         'last_used_at',
     ];

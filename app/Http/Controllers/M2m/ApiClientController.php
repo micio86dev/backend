@@ -71,6 +71,11 @@ final class ApiClientController extends Controller
             'abilities' => ['required', 'array'],
             'abilities.*' => ['required', 'string'],
             'expires_at' => ['nullable', 'date', 'after:now'],
+            // public-api step 2 (SPEC.md §3.7 test mode): optional, defaults
+            // to 'live' — every client issued before this field existed IS a
+            // live client, so defaulting new ones the same way keeps one
+            // behaviour rather than a silent split.
+            'mode' => ['nullable', 'string', 'in:live,test'],
         ]);
 
         // Validate abilities against the canonical set
@@ -81,25 +86,31 @@ final class ApiClientController extends Controller
             ], 422);
         }
 
-        $rawKey = ApiKeyGenerator::generate();
+        $mode = $validated['mode'] ?? 'live';
+        $rawKey = ApiKeyGenerator::generate($mode);
         $hash = ApiKeyGenerator::hash($rawKey);
 
-        // key_hash is NOT in $fillable (security invariant: cannot be mass-assigned).
-        // Use forceFill to set it once at creation — this is the only place it is ever written.
+        // key_hash/key_prefix are NOT in $fillable (security invariant: cannot
+        // be mass-assigned). Use forceFill to set them once at creation — this
+        // is the only place either is ever written.
         $client = new ApiClient;
         $client->forceFill([
             'organization_id' => $orgId,
             'name' => $validated['name'],
             'abilities' => $validated['abilities'],
             'expires_at' => $validated['expires_at'] ?? null,
+            'mode' => $mode,
             'key_hash' => $hash,
+            'key_prefix' => ApiKeyGenerator::prefixOf($rawKey),
         ]);
         $client->save();
 
         // The raw key and its hash are both absent from the payload below:
         // AuditRecorder redacts key_hash by name, and $rawKey is never handed
         // to it in the first place. An audit trail that captures credentials is
-        // a breach with good intentions.
+        // a breach with good intentions. key_prefix/mode are NOT secrets — the
+        // prefix is deliberately visible (ApiClientResource exposes it too)
+        // and mode is a plain classification, so both are safe audit context.
         app(AuditRecorder::class)->record(
             action: 'api_client.created',
             subjectType: 'api_client',
@@ -108,6 +119,8 @@ final class ApiClientController extends Controller
                 'name' => $client->name,
                 'abilities' => $client->abilities,
                 'expires_at' => $client->expires_at?->toIso8601String(),
+                'mode' => $client->mode,
+                'key_prefix' => $client->key_prefix,
             ],
         );
 
