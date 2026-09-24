@@ -13,21 +13,21 @@ use Illuminate\Support\Str;
  * Public API (`/v1`) — SPEC.md §3.2 "Errors" and `public-api/openapi.yaml`'s
  * `Problem`/`ErrorCode` schemas.
  *
- * Deliberately minimal: this is the step-2 shape (auth-path errors only, no
- * `errors[]` validation-detail array — that lands with step 3's request
- * validation layer) and the request-id it stamps is a SELF-CONTAINED
- * fallback, not the full request-id middleware SPEC.md §3.2 promises
- * ("clients may send their own; it is echoed and logged") — that middleware
- * is also step 3. Reading `public_api.request_id` from the request
- * ATTRIBUTE bag (not a header) is what lets that later middleware seed one
- * value this class then reuses instead of generating a second, disagreeing
- * id for the same request.
+ * The request-id it stamps reuses `public_api.request_id` whenever
+ * `App\Http\Middleware\PublicApi\AssignRequestId` (public-api step 3) has
+ * already run — which it always does for every real `/v1` route, since it is
+ * first in both middleware stacks (`routes/api.php`) — so the header this
+ * class sets and the body's `request_id` field are always the SAME value as
+ * the one on `X-Request-Id`. The `Str::ulid()` fallback below only fires for
+ * a genuinely middleware-free caller (a unit test constructing a bare
+ * `Request`), never for a real HTTP response.
  */
 final class Problem
 {
     /**
-     * @param  'invalid_api_key'|'api_key_in_query'|'browser_origin_forbidden'|'insufficient_scope'  $code
-     * @param  array<string, string>  $extraHeaders  merged onto the response — e.g. `WWW-Authenticate` on a 401.
+     * @param  'invalid_api_key'|'api_key_in_query'|'browser_origin_forbidden'|'insufficient_scope'|'not_found'|'validation_failed'|'invalid_cursor'|'invalid_expand'|'invalid_state'|'duplicate_enrolment'|'project_not_active'|'idempotency_key_reused'|'idempotency_in_progress'|'redirect_url_not_allowed'|'metadata_limit_exceeded'|'not_ready'|'transcript_not_ready'|'scoring_not_ready'|'recording_not_ready'|'export_in_progress'|'rate_limited'|'internal_error'  $code
+     * @param  array<string, string>  $extraHeaders  merged onto the response — e.g. `WWW-Authenticate` on a 401, `Retry-After` on a 429.
+     * @param  list<array{field: string, code: string, message?: string}>|null  $errors  the contract's `Problem.errors[]` validation-detail array (step 3) — omitted from the body entirely when null, per `components.schemas.Problem` (`errors` is not in `required`).
      */
     public static function make(
         Request $request,
@@ -36,13 +36,16 @@ final class Problem
         string $title,
         ?string $detail = null,
         array $extraHeaders = [],
+        ?array $errors = null,
     ): JsonResponse {
         $requestId = self::requestId($request);
 
-        $base = rtrim(
-            (string) (config('public_api.developers_url') ?: 'https://developers.beai.example'),
-            '/'
-        );
+        $configuredDevelopersUrl = config('public_api.developers_url');
+        $developersUrl = is_string($configuredDevelopersUrl) && $configuredDevelopersUrl !== ''
+            ? $configuredDevelopersUrl
+            : 'https://developers.beai.example';
+
+        $base = rtrim($developersUrl, '/');
 
         $body = [
             'type' => $base.'/errors/'.$code,
@@ -54,6 +57,10 @@ final class Problem
 
         if ($detail !== null) {
             $body['detail'] = $detail;
+        }
+
+        if ($errors !== null) {
+            $body['errors'] = $errors;
         }
 
         $response = response()

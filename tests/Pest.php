@@ -681,6 +681,21 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PublicApi/Auth');
 
+// Feature/PublicApi/Conventions — RefreshDatabase: public-api step 3
+// (pagination/rate-limit/idempotency/expand/request-id) tests create real
+// Organization/ApiClient rows via factories, same reasoning as
+// Feature/PublicApi/Auth above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Conventions');
+
+// Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
+// exercises the legacy-rows cache/observer against real ApiClient rows.
+// ApiModeTest (no DB) is unaffected — extend()/use() are harmless for a
+// DB-free test.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/PublicApi');
+
 // Unit/Actions/Scheduling — needs TestCase + RefreshDatabase (interview-scheduling
 // PR-E: RescheduleParticipantTest calls the action directly against real
 // Participant/Project factory rows, bypassing the HTTP layer entirely).

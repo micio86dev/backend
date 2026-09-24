@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\ApiKeyMode;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -23,12 +22,26 @@ use Illuminate\Support\Facades\Schema;
  * every pre-migration row to `live`: they were all issued before test mode
  * existed, so `live` is the true value, not a guess. The CHECK constraint
  * mirrors the `avatar_templates.provider` precedent (D8) — cheaper than a
- * Postgres enum type to extend later. Both the default and the constraint's
- * allowed values are DERIVED from `App\Enums\ApiKeyMode::cases()` below
- * rather than repeating the 'live'/'test' literals a third time — that enum
- * is the real single source of truth (review follow-up, public-api step 2
- * finding 3). Safe to edit in place: this migration has not been applied in
- * any shared environment yet.
+ * Postgres enum type to extend later.
+ *
+ * Review follow-up (public-api step 3, Part A finding 1): the default and
+ * the CHECK constraint below are LITERAL `'live'`/`'test'`, not derived from
+ * `App\Enums\ApiKeyMode::cases()` as the first version of this migration
+ * did. A migration is a FROZEN snapshot of the schema at the moment it ran —
+ * once applied anywhere, its `up()` must never change meaning again, even if
+ * the enum it once referenced later gains a case. Deriving from the live
+ * enum silently changes what an already-applied migration WOULD have done
+ * if re-run, which is exactly backwards for a migration. `App\Enums\
+ * ApiKeyMode::cases()` remains the single source of truth for every piece of
+ * code that runs AFTER this migration (the model cast, the resolver, the
+ * generator); this file is the one place that must keep repeating the two
+ * literals it captured. `tests/Unit/C5/ApiKeyModeTest.php` asserts
+ * `ApiKeyMode::cases()` values equal `['live', 'test']` precisely so a THIRD
+ * case being added is caught immediately, as a prompt to write a NEW
+ * migration extending the constraint — never to edit this one in place.
+ * Safe to edit in place today only in the narrow sense that this migration
+ * has not been applied in any shared environment yet; once it has, this file
+ * is frozen exactly like every other migration.
  */
 return new class extends Migration
 {
@@ -36,19 +49,14 @@ return new class extends Migration
     {
         Schema::table('api_clients', function (Blueprint $table): void {
             $table->string('key_prefix', 20)->nullable()->after('key_hash');
-            $table->string('mode', 4)->default(ApiKeyMode::Live->value)->after('key_prefix');
+            $table->string('mode', 4)->default('live')->after('key_prefix');
 
             $table->index('key_prefix');
         });
 
-        $allowedModes = implode(', ', array_map(
-            fn (ApiKeyMode $mode): string => "'{$mode->value}'",
-            ApiKeyMode::cases(),
-        ));
-
         DB::statement(
             "ALTER TABLE api_clients ADD CONSTRAINT api_clients_mode_check
-             CHECK (mode IN ({$allowedModes}))"
+             CHECK (mode IN ('live', 'test'))"
         );
     }
 

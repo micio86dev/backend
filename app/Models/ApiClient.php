@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ApiKeyMode;
+use App\Support\PublicApi\ApiKeyResolver;
 use Database\Factories\ApiClientFactory;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
@@ -94,6 +95,21 @@ class ApiClient extends Model implements AuthenticatableContract
             'expires_at' => 'datetime',
             'last_used_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Review follow-up (public-api step 3, Part A finding 4): every newly
+     * created row invalidates `ApiKeyResolver`'s `legacyRowsExist()` cache —
+     * see that method's own docblock and `App\Support\PublicApi\
+     * ApiKeyResolver::forgetLegacyRowsCache()` for why this fires
+     * unconditionally rather than only for a legacy-shaped (`key_prefix`
+     * null) row.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (self $client): void {
+            ApiKeyResolver::forgetLegacyRowsCache();
+        });
     }
 
     // -------------------------------------------------------------------------

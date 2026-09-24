@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Contracts\AuditJudge;
 use App\Contracts\LLMProvider;
 use App\Contracts\RedisEvictionPolicyProbe;
+use App\Http\Middleware\PublicApi\RateLimitPublicApi;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
@@ -32,10 +33,12 @@ use App\Support\PublicApi\ApiKeyResolver;
 use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -337,6 +340,31 @@ class AppServiceProvider extends ServiceProvider
                 app(PermissionRegistrar::class)->forgetCachedPermissions();
             });
         }
+
+        // public-api step 3: the `public-api` named rate limiter — SPEC.md
+        // §3.2 "Rate limiting: per organization, token bucket". This
+        // declarative registration is the single source of truth for the
+        // bucket DEFINITION (key + limit); `App\Http\Middleware\PublicApi\
+        // RateLimitPublicApi` reads the SAME `keyFor()`/`maxAttemptsFor()` it
+        // calls here rather than re-deriving either independently — see that
+        // class's own docblock for why the middleware talks to the
+        // underlying `Illuminate\Cache\RateLimiter` counter directly instead
+        // of through the `throttle:public-api` alias (contract-mandated
+        // header names/shape Laravel's built-in middleware does not
+        // produce). `Limit::none()` for a request with no resolved client is
+        // unreachable in the real `/v1` stack (`AuthenticatePublicApi`
+        // always runs first) but keeps this callback total.
+        RateLimiter::for('public-api', function (Request $request) {
+            /** @var ApiClient|null $client */
+            $client = $request->attributes->get('public_api.client');
+
+            if (! $client instanceof ApiClient) {
+                return Limit::none();
+            }
+
+            return Limit::perMinute(RateLimitPublicApi::maxAttemptsFor($client))
+                ->by(RateLimitPublicApi::keyFor($client));
+        });
     }
 
     /**

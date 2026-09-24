@@ -52,8 +52,10 @@ use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
+use App\Http\Middleware\PublicApi\AssignRequestId;
 use App\Http\Middleware\PublicApi\AuthenticatePublicApi;
 use App\Http\Middleware\PublicApi\PublicApiTenantContext;
+use App\Http\Middleware\PublicApi\RateLimitPublicApi;
 use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
@@ -82,9 +84,12 @@ Route::get('/health/queue', QueueHealthController::class);
 // existing backoffice-facing routes above; organization API-key auth and
 // tenancy (SPEC.md §3.1) land in step 2 — `/health` is the only unauthenticated
 // operation the contract declares (SPEC.md §5.2).
-Route::prefix('v1')->name('public-api.')->group(function (): void {
-    Route::get('/health', PublicApiHealthController::class)->name('health');
-});
+Route::prefix('v1')
+    ->name('public-api.')
+    ->middleware([AssignRequestId::class])
+    ->group(function (): void {
+        Route::get('/health', PublicApiHealthController::class)->name('health');
+    });
 
 // ─── BEAI Public API (/v1) — authenticated surface (public-api step 2) ───────
 //
@@ -100,22 +105,27 @@ Route::prefix('v1')->name('public-api.')->group(function (): void {
 // $request->user() on the DEFAULT 'api' guard, which would resolve against
 // whatever bearer key is present here and 500 rather than pass through.
 //
-// Inline middleware stack (explicit, ordered, per SPEC.md §3.1/§3.2):
-//   1. RejectApiKeyInQuery   — `?api_key=` → 400, before any auth check
-//   2. AuthenticatePublicApi — resolves ApiClient via bearer key; sets api-m2m guard
-//   3. PublicApiTenantContext — stamps TenantResolver + ApiMode from client
-//   4. SubstituteBindings    — route-model-binding (LAST, per C4 convention)
+// Inline middleware stack (explicit, ordered, per SPEC.md §3.1/§3.2 — public-api step 3):
+//   1. AssignRequestId       — stamps public_api.request_id; echoed on every response
+//   2. RejectApiKeyInQuery   — `?api_key=` → 400, before any auth check
+//   3. AuthenticatePublicApi — resolves ApiClient via bearer key; sets api-m2m guard
+//   4. PublicApiTenantContext — stamps TenantResolver + ApiMode from client
+//   5. RateLimitPublicApi    — per-org/mode token bucket (needs org from step 4)
+//   6. SubstituteBindings    — route-model-binding (LAST, per C4 convention)
 //
 // No business routes yet — step 4 adds the first one (`GET /v1/organization`).
-// This group exists now so the auth/tenancy/scope stack is wired and
-// testable (tests/Feature/PublicApi/Auth) ahead of any route needing it.
+// This group exists now so the auth/tenancy/scope/conventions stack is wired
+// and testable (tests/Feature/PublicApi/Auth, tests/Feature/PublicApi/Conventions)
+// ahead of any route needing it.
 Route::prefix('v1')
     ->name('public-api.')
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
     ->middleware([
+        AssignRequestId::class,
         RejectApiKeyInQuery::class,
         AuthenticatePublicApi::class,
         PublicApiTenantContext::class,
+        RateLimitPublicApi::class,
         SubstituteBindings::class,
     ])
     ->group(function (): void {

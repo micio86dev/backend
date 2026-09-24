@@ -48,7 +48,25 @@ final class ApiKeyResolver
 {
     private const LEGACY_ROWS_CACHE_KEY = 'api_clients.legacy_rows_exist';
 
-    private const LEGACY_ROWS_CACHE_TTL_SECONDS = 300;
+    /**
+     * Review follow-up (public-api step 3, Part A finding 4): lowered from
+     * 300s. A NEGATIVE cached answer ("no legacy rows exist") can go stale
+     * during a rolling deploy: OLD code (pre-migration, never sets
+     * `key_prefix`) can still be creating rows on one replica while NEW code
+     * on another replica has already cached `false`. `ApiClient::booted()`'s
+     * `created` hook (below, via `forgetLegacyRowsCache()`) closes that
+     * window immediately for THIS process's cache entry the moment a new
+     * row is inserted — but a `Cache::forget()` on one process/replica does
+     * not invalidate another replica's copy of the SAME cache key when the
+     * store is per-process (`CACHE_STORE=array`, local `file`). A SHARED
+     * store (Redis, `database`) sees the forget everywhere; this TTL is the
+     * remaining bound for the unshared case: at most 60s, and only for a key
+     * minted by pre-migration code during that same deploy window — never a
+     * wrong auth DECISION (a stale `true` only ever costs one extra,
+     * harmless fallback query; see the `catch` below for the stale-`false`
+     * direction, which this TTL bounds).
+     */
+    private const LEGACY_ROWS_CACHE_TTL_SECONDS = 60;
 
     /**
      * @param  bool  $allowTestMode  Review follow-up (finding 1): whether the
@@ -158,6 +176,30 @@ final class ApiKeyResolver
             );
         } catch (\Throwable) {
             return true;
+        }
+    }
+
+    /**
+     * Review follow-up (public-api step 3, Part A finding 4): invalidates
+     * the `legacyRowsExist()` cache entry the moment ANY `ApiClient` row is
+     * created — called from `App\Models\ApiClient::booted()`'s `created`
+     * hook, not only for rows that turn out to be legacy-shaped. Checking
+     * `key_prefix === null` first would save a cache write for the common
+     * case (new code, new row, `key_prefix` set) but buys nothing: the
+     * whole point is to never trust a stale `false` for even one extra
+     * request, and an unconditional forget costs one cheap cache write per
+     * client creation — a rare, admin-driven action, not a hot path.
+     * Exception-guarded like every other cache touch in this class: a cache
+     * outage here must never fail the client-creation request it is
+     * attached to.
+     */
+    public static function forgetLegacyRowsCache(): void
+    {
+        try {
+            Cache::forget(self::LEGACY_ROWS_CACHE_KEY);
+        } catch (\Throwable) {
+            // Non-fatal — worst case is the TTL-bounded stale window
+            // documented on LEGACY_ROWS_CACHE_TTL_SECONDS above.
         }
     }
 }

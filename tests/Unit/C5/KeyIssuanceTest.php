@@ -14,6 +14,7 @@ declare(strict_types=1);
  * REQ-2
  */
 
+use App\Enums\ApiKeyMode;
 use App\Services\ApiKeyGenerator;
 
 test('generated key has beai_live_ prefix', function (): void {
@@ -54,8 +55,8 @@ test('hash output is a 64-char lowercase hex string (SHA-256)', function (): voi
     expect(ctype_xdigit($hash))->toBeTrue();
 });
 
-test('generate("test") produces a beai_test_ prefixed key with the same entropy', function (): void {
-    $raw = ApiKeyGenerator::generate('test');
+test('generate(ApiKeyMode::Test) produces a beai_test_ prefixed key with the same entropy', function (): void {
+    $raw = ApiKeyGenerator::generate(ApiKeyMode::Test);
     $suffix = substr($raw, strlen('beai_test_'));
 
     expect($raw)->toStartWith('beai_test_');
@@ -71,11 +72,15 @@ test('prefixOf() returns the marker plus the first 8 chars of the random part', 
     expect(ApiKeyGenerator::prefixOf($testKey))->toBe('beai_test_bbbbbbbb');
 });
 
-test('modeOf() recognises beai_live_/beai_test_ markers and returns null for anything else', function (): void {
-    expect(ApiKeyGenerator::modeOf(ApiKeyGenerator::generate('live')))->toBe('live');
-    expect(ApiKeyGenerator::modeOf(ApiKeyGenerator::generate('test')))->toBe('test');
-    expect(ApiKeyGenerator::modeOf('not-a-beai-key'))->toBeNull();
-    expect(ApiKeyGenerator::modeOf(''))->toBeNull();
+// Review follow-up (public-api step 3, Part A finding 3): ApiKeyGenerator::
+// modeOf() is removed — App\Enums\ApiKeyMode::fromMarker() is now the one
+// place that maps a raw key back to its mode (its own recognition/null
+// coverage lives in tests/Unit/C5/ApiKeyModeTest.php). This asserts the two
+// classes still agree end to end: a key this generator actually produced
+// round-trips through fromMarker() to the mode it was generated with.
+test('a key generated for a given mode round-trips through ApiKeyMode::fromMarker() to that same mode', function (): void {
+    expect(ApiKeyMode::fromMarker(ApiKeyGenerator::generate(ApiKeyMode::Live)))->toBe(ApiKeyMode::Live);
+    expect(ApiKeyMode::fromMarker(ApiKeyGenerator::generate(ApiKeyMode::Test)))->toBe(ApiKeyMode::Test);
 });
 
 // ─── Review follow-up (finding 4): prefixOf() must never silently fall back

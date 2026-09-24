@@ -23,6 +23,7 @@ declare(strict_types=1);
  * (schema-level only — these probe paths are not real contract operations).
  */
 
+use App\Enums\ApiKeyMode;
 use App\Http\Middleware\PublicApi\AuthenticatePublicApi;
 use App\Http\Middleware\PublicApi\PublicApiTenantContext;
 use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
@@ -84,7 +85,7 @@ beforeEach(function (): void {
 
 test('T-AUTH-001: valid live key → 200 on the probe, tenant stamped', function (): void {
     $org = Organization::factory()->create();
-    $rawKey = ApiKeyGenerator::generate('live');
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
 
     $client = ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
@@ -311,10 +312,10 @@ test('a key lacking the scope, on a NON-EXISTENT bound {project}, still gets 403
 test('T-AUTH-007: a beai_test_ key stamps ApiMode test, a live key stamps live', function (): void {
     $org = Organization::factory()->create();
 
-    $liveKey = ApiKeyGenerator::generate('live');
+    $liveKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
     ApiClient::factory()->withRawKey($liveKey)->create(['organization_id' => $org->id, 'mode' => 'live']);
 
-    $testKey = ApiKeyGenerator::generate('test');
+    $testKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
     ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id, 'mode' => 'test']);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])
@@ -330,7 +331,7 @@ test('T-AUTH-007: a beai_test_ key stamps ApiMode test, a live key stamps live',
 
 test('T-AUTH-007: a live key with an Origin header → 401 browser_origin_forbidden', function (): void {
     $org = Organization::factory()->create();
-    $liveKey = ApiKeyGenerator::generate('live');
+    $liveKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
     ApiClient::factory()->withRawKey($liveKey)->create(['organization_id' => $org->id, 'mode' => 'live']);
 
     $response = $this->withHeaders([
@@ -344,7 +345,7 @@ test('T-AUTH-007: a live key with an Origin header → 401 browser_origin_forbid
 
 test('T-AUTH-007: a test key with an Origin header is allowed', function (): void {
     $org = Organization::factory()->create();
-    $testKey = ApiKeyGenerator::generate('test');
+    $testKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
     ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id, 'mode' => 'test']);
 
     $this->withHeaders([

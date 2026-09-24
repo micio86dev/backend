@@ -29,3 +29,18 @@ test('fromMarker() returns null for a malformed or unrecognised key', function (
     expect(ApiKeyMode::fromMarker('not-a-beai-key'))->toBeNull();
     expect(ApiKeyMode::fromMarker(''))->toBeNull();
 });
+
+// ─── Review follow-up (public-api step 3, Part A finding 1): the
+// `add_public_api_fields_to_api_clients_table` migration now hardcodes the
+// literal `'live'`/`'test'` default and CHECK constraint — a migration is a
+// frozen snapshot and must never re-derive its own past behaviour from a
+// enum that can gain cases later. This guard is what makes that safe: if a
+// THIRD case is ever added to ApiKeyMode, this test fails immediately,
+// naming the exact literal set that migration (and any other already-applied
+// migration referencing these two values) captured. ──────────────────────────
+
+test('ApiKeyMode::cases() values are exactly [live, test] — the set the mode column migration hardcodes', function (): void {
+    $values = array_map(fn (ApiKeyMode $case): string => $case->value, ApiKeyMode::cases());
+
+    expect($values)->toBe(['live', 'test']);
+});

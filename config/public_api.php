@@ -67,4 +67,32 @@ return [
      * reason as `developers_url` above.
      */
     'embed_cdn_url' => env('EMBED_CDN_URL') ?: null,
+
+    /*
+     * Public API (`/v1`) rate limits (public-api step 3 — SPEC.md §3.2
+     * "Rate limiting: per organization, token bucket. Defaults `live` 600
+     * req/min, `test` 120 req/min"). Requests per minute, per organization
+     * per key mode. `App\Http\Middleware\PublicApi\RateLimitPublicApi`
+     * reads these ONLY when the organization has no per-org override
+     * (`organizations.public_api_rate_limit_live`/`_test` — both nullable,
+     * configurable in the backoffice).
+     */
+    'rate_limit' => [
+        'live' => (int) (env('PUBLIC_API_RATE_LIMIT_LIVE') ?: 600),
+        'test' => (int) (env('PUBLIC_API_RATE_LIMIT_TEST') ?: 120),
+    ],
+
+    /*
+     * Public API (`/v1`) idempotency (public-api step 3 — SPEC.md §3.2
+     * "Idempotency"). `App\Http\Middleware\PublicApi\IdempotencyKey` reads
+     * these three. `lock_wait_seconds` is the ONE value tests override
+     * (`config(['public_api.idempotency.lock_wait_seconds' => …])`) so a
+     * concurrent-request test does not have to sleep the SPEC-mandated 5s
+     * for real — the other two rarely need overriding at all.
+     */
+    'idempotency' => [
+        'record_ttl_seconds' => (int) (env('PUBLIC_API_IDEMPOTENCY_RECORD_TTL_SECONDS') ?: 86400),
+        'lock_ttl_seconds' => (int) (env('PUBLIC_API_IDEMPOTENCY_LOCK_TTL_SECONDS') ?: 30),
+        'lock_wait_seconds' => (int) (env('PUBLIC_API_IDEMPOTENCY_LOCK_WAIT_SECONDS') ?: 5),
+    ],
 ];

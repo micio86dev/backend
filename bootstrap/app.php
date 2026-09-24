@@ -12,6 +12,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
 use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
+use App\Http\Middleware\PublicApi\IdempotencyKey;
 use App\Http\Middleware\PublicApi\RequireScope;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
@@ -19,6 +20,7 @@ use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocaleFromRequest;
 use App\Http\Middleware\TenantContext;
 use App\Models\RefreshToken;
+use App\Support\PublicApi\PublicApiExceptionRenderer;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -186,6 +188,10 @@ return Application::configure(basePath: dirname(__DIR__))
             // public-api step 2: the `/v1` counterpart of `ability` — e.g.
             // Route::middleware('scope:interviews:read').
             'scope' => RequireScope::class,
+            // public-api step 3: opt-in per-route Idempotency-Key support —
+            // e.g. Route::middleware('idempotent') on a POST endpoint that
+            // documents `idempotencyKey` in openapi.yaml.
+            'idempotent' => IdempotencyKey::class,
         ]);
 
         // C5: Insert CheckAbility IMMEDIATELY BEFORE SubstituteBindings in the priority list.
@@ -255,4 +261,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (EntryLinkUrlNotConfigured $e, Request $request) {
             return $e->render($request);
         });
+
+        // public-api step 3: every uncaught exception on `/v1` renders as
+        // `application/problem+json` (SPEC.md §3.2) — see
+        // App\Support\PublicApi\PublicApiExceptionRenderer's own docblock for
+        // the full status/code mapping and its documented judgement calls
+        // (G-27). Registered with the widest possible type hint
+        // (`Throwable`) so it is reached for every exception type;
+        // `render()` itself returns null for anything outside `api/v1/*`,
+        // deferring to every renderer above for the existing `/api/*`
+        // (backoffice) surface, which this callback never touches.
+        $exceptions->render(fn (Throwable $e, Request $request) => PublicApiExceptionRenderer::render($e, $request));
     })->create();

@@ -16,6 +16,7 @@ declare(strict_types=1);
  * REQ-3, REQ-10
  */
 
+use App\Enums\ApiKeyMode;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Models\User;
@@ -111,7 +112,7 @@ test('JWT string on auth:api-m2m route → 401 (guard non-interchangeability)', 
 
 test('a test-mode key → 401 on the internal auth:api-m2m guard', function (): void {
     $org = Organization::factory()->create();
-    $rawKey = ApiKeyGenerator::generate('test');
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
 
     ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
@@ -125,7 +126,7 @@ test('a test-mode key → 401 on the internal auth:api-m2m guard', function (): 
 
 test('a live-mode key still → 200 on the internal auth:api-m2m guard', function (): void {
     $org = Organization::factory()->create();
-    $rawKey = ApiKeyGenerator::generate('live');
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
 
     ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
@@ -150,7 +151,7 @@ test('a well-formed but invalid live key issues exactly one query when no legacy
     // covered by the assertion below staying at exactly one query).
     Cache::put('api_clients.legacy_rows_exist', false, 300);
 
-    $wellFormedInvalidKey = ApiKeyGenerator::generate('live');
+    $wellFormedInvalidKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
 
     DB::enableQueryLog();
 

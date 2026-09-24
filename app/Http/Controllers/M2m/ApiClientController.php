@@ -90,7 +90,7 @@ final class ApiClientController extends Controller
             ], 422);
         }
 
-        $mode = $validated['mode'] ?? 'live';
+        $mode = ApiKeyMode::from($validated['mode'] ?? ApiKeyMode::Live->value);
         $rawKey = ApiKeyGenerator::generate($mode);
         $hash = ApiKeyGenerator::hash($rawKey);
 

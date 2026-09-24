@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $default_webhook_secret
  * @property string|null $logo_path
  * @property string|null $primary_color
+ * @property int|null $public_api_rate_limit_live
+ * @property int|null $public_api_rate_limit_test
  */
 class Organization extends Model
 {
@@ -45,6 +47,11 @@ class Organization extends Model
         // so a stored URL would bake one environment's host into the row.
         'logo_path',
         'primary_color',
+        // Public API (`/v1`) rate-limit overrides (public-api step 3, SPEC.md
+        // §3.2) — both null-by-default; see the migration's own docblock for
+        // why they stay null rather than carrying a literal default.
+        'public_api_rate_limit_live',
+        'public_api_rate_limit_test',
     ];
 
     /**

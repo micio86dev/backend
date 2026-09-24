@@ -22,6 +22,18 @@ use Random\RandomException;
  * Only SHA-256 of the raw key is persisted. The raw key is returned once in
  * the 201 response and must never be logged, stored, or serialized elsewhere.
  *
+ * Review follow-up (public-api step 3, Part A finding 3): `generate()` takes
+ * `ApiKeyMode` directly — no more `string` round trip through a private
+ * `markerFor()` that had to silently fall back to `Live` for an unrecognised
+ * string, purely to stay total over an input type wider than any real
+ * caller ever passed. `modeOf()` is removed for the same reason `markerFor()`
+ * is: `App\Enums\ApiKeyMode::fromMarker()` is the one place that maps a raw
+ * key back to its mode, and having a second static method that only wrapped
+ * it (`ApiKeyGenerator::modeOf($k) === ApiKeyMode::fromMarker($k)?->value`)
+ * was exactly the kind of "two things that happen to agree" this enum's own
+ * docblock already warns against — every caller now reads `ApiKeyMode::
+ * fromMarker()` directly.
+ *
  * REQ-2 / design §Key generation
  */
 final class ApiKeyGenerator
@@ -34,13 +46,11 @@ final class ApiKeyGenerator
     /**
      * Generate a new raw API key for the given mode.
      *
-     * @param  'live'|'test'  $mode
-     *
      * @throws RandomException if the CSPRNG fails
      */
-    public static function generate(string $mode = 'live'): string
+    public static function generate(ApiKeyMode $mode = ApiKeyMode::Live): string
     {
-        return self::markerFor($mode).bin2hex(random_bytes(48));
+        return $mode->marker().bin2hex(random_bytes(48));
     }
 
     /**
@@ -64,8 +74,8 @@ final class ApiKeyGenerator
      * a prefix from, so this THROWS rather than silently defaulting to the
      * live marker — the previous ternary treated "not test" as "must be
      * live", which is wrong for a key that is neither. Callers that only
-     * want to test recognition should call `ApiKeyMode::fromMarker()` /
-     * `modeOf()` first, as `App\Support\PublicApi\ApiKeyResolver` already does.
+     * want to test recognition should call `ApiKeyMode::fromMarker()` first,
+     * as `App\Support\PublicApi\ApiKeyResolver` already does.
      *
      * @throws InvalidArgumentException when `$rawKey` carries no recognised
      *                                  `beai_live_`/`beai_test_` marker.
@@ -82,35 +92,5 @@ final class ApiKeyGenerator
         $random = substr($rawKey, strlen($marker));
 
         return $marker.substr($random, 0, self::VISIBLE_RANDOM_CHARS);
-    }
-
-    /**
-     * The mode a raw key encodes, or null when the key does not carry a
-     * recognised `beai_live_`/`beai_test_` marker (malformed / unknown key —
-     * `App\Support\PublicApi\ApiKeyResolver` falls back to a legacy hash-only
-     * lookup in that case, never a prefix lookup against a prefix that was
-     * never computed from anything real).
-     *
-     * @return 'live'|'test'|null
-     */
-    public static function modeOf(string $rawKey): ?string
-    {
-        return ApiKeyMode::fromMarker($rawKey)?->value;
-    }
-
-    /**
-     * `$mode` is plain `string`, deliberately UNDOCUMENTED as `'live'|'test'`
-     * here even though `generate()` above documents its own `$mode` that way:
-     * `generate()`'s own type is the (unenforced) documented contract, not a
-     * static guarantee — a caller can still pass any string at runtime, which
-     * is exactly what the `tryFrom() ?? Live` fallback below defends against.
-     * Narrowing this parameter's docblock to `'live'|'test'` made PHPStan
-     * infer `tryFrom()` as never-null and flag the fallback as dead code,
-     * which would have been true only if the narrower type were an actual
-     * static guarantee.
-     */
-    private static function markerFor(string $mode): string
-    {
-        return (ApiKeyMode::tryFrom($mode) ?? ApiKeyMode::Live)->marker();
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\ApiKeyMode;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
@@ -63,12 +64,12 @@ class ApiClientFactory extends Factory
      */
     public function withRawKey(string $rawKey): static
     {
-        $mode = ApiKeyGenerator::modeOf($rawKey);
+        $mode = ApiKeyMode::fromMarker($rawKey);
 
         return $this->state([
             'key_hash' => ApiKeyGenerator::hash($rawKey),
             'key_prefix' => $mode !== null ? ApiKeyGenerator::prefixOf($rawKey) : null,
-            'mode' => $mode ?? 'live',
+            'mode' => ($mode ?? ApiKeyMode::Live)->value,
         ]);
     }
 

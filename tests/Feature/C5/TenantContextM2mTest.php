@@ -21,6 +21,7 @@ declare(strict_types=1);
  * REQ-4, REQ-T1 / design §TenantContextM2m
  */
 
+use App\Enums\ApiKeyMode;
 use App\Http\Middleware\TenantContext;
 use App\Http\Middleware\TenantContextM2m;
 use App\Models\ApiClient;
@@ -101,7 +102,7 @@ test('org always from client record — request body org_id is ignored', functio
 
 test('a test-mode key never reaches TenantContextM2m — 401 before any resolver state is stamped', function (): void {
     $org = Organization::factory()->create();
-    $rawKey = ApiKeyGenerator::generate('test');
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
 
     ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
