@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPublicId;
+use App\Support\PublicApi\PubliclyIdentifiable;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +13,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
+ * @property string $public_id BARE 26-char ULID (public-api step 4, G-05) —
+ *                             never exposed directly; always through `App\Support\PublicApi\
+ *                             PublicId::encode()`, which prepends `org_`.
  * @property string $name
  * @property string $slug
  * @property string|null $default_webhook_url
@@ -20,11 +25,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $primary_color
  * @property int|null $public_api_rate_limit_live
  * @property int|null $public_api_rate_limit_test
+ * @property list<string>|null $allowed_domains Domains allowed to embed
+ *                                              interviews and receive exit redirects (public-api step 4). `null`
+ *                                              means none configured — the public serializer renders `[]`, never
+ *                                              `null`. NOT accepted by `UpdateOrganizationRequest` yet; step 11 adds
+ *                                              the backoffice editor.
  */
-class Organization extends Model
+class Organization extends Model implements PubliclyIdentifiable
 {
     /** @use HasFactory<OrganizationFactory> */
     use HasFactory;
+
+    use HasPublicId;
 
     /**
      * @var list<string>
@@ -52,6 +64,12 @@ class Organization extends Model
         // why they stay null rather than carrying a literal default.
         'public_api_rate_limit_live',
         'public_api_rate_limit_test',
+        // Public API (`/v1`) allowed embed/redirect domains (public-api step
+        // 4). Fillable for factories/seeders/direct writes; NOT accepted by
+        // `UpdateOrganizationRequest` — that FormRequest's own docblock notes
+        // step 11 adds the editor. `public_id` is deliberately absent from
+        // this list — see `App\Models\Concerns\HasPublicId`.
+        'allowed_domains',
     ];
 
     /**
@@ -71,7 +89,13 @@ class Organization extends Model
             // encrypted at rest; also in $hidden to prevent serialization exposure.
             'default_webhook_secret' => 'encrypted',
             'default_webhook_events' => 'array',
+            'allowed_domains' => 'array',
         ];
+    }
+
+    public static function publicIdPrefix(): string
+    {
+        return 'org_';
     }
 
     /**

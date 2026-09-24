@@ -688,6 +688,25 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PublicApi/Conventions');
 
+// Feature/PublicApi/Projects/, Exposure/ — public-api step 4
+// (`GET /v1/projects(/{id})`, T-EXPOSE-001/002) tests create real
+// Organization/ApiClient/Project/Competency/AvatarTemplate rows via
+// factories, same reasoning as Feature/PublicApi/Auth above.
+// `FeatureDirectoriesRegisteredArchTest`'s own glob (`Feature/**/*.php`, one
+// level deep via PHP's non-recursive `glob()`) does not reach either
+// directory (two levels deep) to catch a missing registration on its own —
+// registered explicitly rather than relying on that gap.
+// `Feature/PublicApi/OrganizationTest.php` sits directly under
+// `Feature/PublicApi/` (like `HealthEndpointTest.php`, which stays DB-free
+// on purpose — see the comment above `Feature/PublicApi/Auth`), so it
+// declares `uses(RefreshDatabase::class)` in the file itself instead of a
+// blanket `Feature/PublicApi` entry here.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Projects');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Exposure');
+
 // Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
 // exercises the legacy-rows cache/observer against real ApiClient rows.
 // ApiModeTest (no DB) is unaffected — extend()/use() are harmless for a

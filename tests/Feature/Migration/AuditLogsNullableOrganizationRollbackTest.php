@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 const AUDIT_LOGS_NULLABLE_ROLLBACK_MIGRATION_BOUNDARY = '2026_09_16_120000_make_audit_logs_organization_nullable';
 
@@ -32,9 +33,14 @@ function auditLogsNullableRollbackStepsToRollBack(): int
 }
 
 test('down() refuses to roll back when a platform audit row exists, deleting nothing', function (): void {
+    // public_id (public-api step 4, G-05) is NOT NULL on organizations — a
+    // raw insert supplies a bare ULID directly, bypassing
+    // App\Models\Concerns\HasPublicId (this is a plain DB::table() write,
+    // not an Eloquent one).
     $orgId = DB::table('organizations')->insertGetId([
         'name' => 'Audit Rollback Org',
         'slug' => 'audit-rollback-org-'.uniqid('', true),
+        'public_id' => (string) Str::ulid(),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -80,6 +86,7 @@ test('down() still rolls back cleanly when no platform row exists', function ():
     $orgId = DB::table('organizations')->insertGetId([
         'name' => 'Audit Rollback Org Clean',
         'slug' => 'audit-rollback-org-clean-'.uniqid('', true),
+        'public_id' => (string) Str::ulid(),
         'created_at' => now(),
         'updated_at' => now(),
     ]);

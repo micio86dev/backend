@@ -49,6 +49,8 @@ use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
 use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController;
+use App\Http\Controllers\PublicApi\OrganizationController as PublicApiOrganizationController;
+use App\Http\Controllers\PublicApi\ProjectController as PublicApiProjectController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
@@ -113,10 +115,32 @@ Route::prefix('v1')
 //   5. RateLimitPublicApi    — per-org/mode token bucket (needs org from step 4)
 //   6. SubstituteBindings    — route-model-binding (LAST, per C4 convention)
 //
-// No business routes yet — step 4 adds the first one (`GET /v1/organization`).
-// This group exists now so the auth/tenancy/scope/conventions stack is wired
-// and testable (tests/Feature/PublicApi/Auth, tests/Feature/PublicApi/Conventions)
-// ahead of any route needing it.
+// public-api step 4: first business routes. `GET /organization` needs no
+// extra scope beyond authentication (SPEC.md §3.3 "any"); `GET /projects`
+// and `GET /projects/{project}` require `projects:read`.
+//
+// `SubstituteBindings` is applied PER-ROUTE below, never in this outer
+// array, and `scope:projects:read` is always given BEFORE it. Step 4 review
+// finding: `RequireScope` is in `bootstrap/app.php`'s global middleware
+// PRIORITY list (forced to run immediately before `SubstituteBindings`,
+// wherever that lands). When `SubstituteBindings` was part of THIS outer
+// array — i.e. GIVEN before `scope:projects:read` on the nested group added
+// below it — `Illuminate\Routing\SortedMiddleware` had to violate that
+// given order to satisfy the priority constraint, and it did so by pulling
+// `RequireScope` all the way to the FRONT of the pipeline — running it
+// BEFORE `AuthenticatePublicApi` even resolved a client. `RequireScope` then
+// silently fell through to `Auth::guard('api-m2m')`'s own lazy `viaRequest`
+// resolution (`AppServiceProvider::boot()`, `allowTestMode: false`) instead
+// of `AuthenticatePublicApi`'s intended one, and — because a `RequestGuard`
+// caches its resolved user for the lifetime of the guard instance — a LATER
+// request through the SAME guard object (e.g. two different API clients
+// hit in sequence, as `T-AUTH-005`/`T-AUTH-009` do) could silently
+// authenticate as the FIRST request's client. Giving `scope:` before
+// `SubstituteBindings` in every route's own given array removes the need
+// for any reordering at all, so `AuthenticatePublicApi` keeps running
+// first, exactly where `route:list -v`'s displayed (pre-sort) order always
+// claimed it did — `route:list` was not lying, it just was not showing the
+// order actually dispatched.
 Route::prefix('v1')
     ->name('public-api.')
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
@@ -126,10 +150,20 @@ Route::prefix('v1')
         AuthenticatePublicApi::class,
         PublicApiTenantContext::class,
         RateLimitPublicApi::class,
-        SubstituteBindings::class,
     ])
     ->group(function (): void {
-        //
+        Route::get('/organization', [PublicApiOrganizationController::class, 'show'])
+            ->name('organization.show')
+            ->middleware(SubstituteBindings::class);
+
+        Route::middleware('scope:projects:read')->group(function (): void {
+            Route::get('/projects', [PublicApiProjectController::class, 'index'])
+                ->name('projects.index')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/projects/{project}', [PublicApiProjectController::class, 'show'])
+                ->name('projects.show')
+                ->middleware(SubstituteBindings::class);
+        });
     });
 
 // ─── Auth routes (C2, refresh flow hardened by backoffice-session-refresh-hardening D8) ──

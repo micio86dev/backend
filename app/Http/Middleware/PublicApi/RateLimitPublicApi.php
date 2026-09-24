@@ -141,7 +141,7 @@ final class RateLimitPublicApi
             return $this->rateLimitedResponse($request, $key, $max);
         }
 
-        return $this->withHeaders($next($request), $key, $max);
+        return $this->withHeaders($next($request), $key, $max, $hits);
     }
 
     /**
@@ -241,23 +241,26 @@ final class RateLimitPublicApi
         ]);
     }
 
-    private function withHeaders(Response $response, string $key, int $max): Response
+    /**
+     * Step 3 Part A follow-up 2 (review follow-up 1 superseded): `$hits` is
+     * the exact value `handle()`'s own `hit()` call already returned for
+     * THIS request — the same atomic increment that gated the 429 decision
+     * above — never a separate `attempts()` read taken afterward. A second,
+     * independent cache round trip can observe a DIFFERENT count than the
+     * one `hit()` just returned (another request's concurrent `hit()`
+     * landing in between), so deriving `RateLimit-Remaining` from anything
+     * other than `hit()`'s own return value can under- or over-report how
+     * much of the bucket this exact request actually consumed. `hit()`
+     * itself already normalises to `int` internally
+     * (`Illuminate\Cache\RateLimiter::hit()` casts its own `increment()`
+     * read), so the numeric-string-from-Redis concern the old `attempts()`
+     * read guarded against does not apply to `$hits`.
+     */
+    private function withHeaders(Response $response, string $key, int $max, int $hits): Response
     {
-        try {
-            // RateLimiter::attempts() is genuinely declared @return mixed
-            // upstream (it proxies whatever the cache store's get() returns)
-            // — a Redis-backed store returns a numeric STRING here (every
-            // value round-trips through Redis as a string; increment()/add()
-            // are called `withoutSerializationOrCompression()`), which
-            // `is_int()` never matches. Review follow-up 1: narrowed with
-            // `is_numeric()` + an explicit `(int)` cast, so a Redis "3"
-            // still reports `RateLimit-Remaining: {max - 3}` instead of
-            // silently falling back to 0 (which over-reports the full limit
-            // as remaining, right up to the 429).
-            $attempts = $this->limiter->attempts($key);
-            $attempts = is_numeric($attempts) ? (int) $attempts : 0;
+        $remaining = max(0, $max - $hits);
 
-            $remaining = max(0, $max - $attempts);
+        try {
             $reset = $this->limiter->availableIn($key);
         } catch (Throwable $e) {
             self::logCacheOutage($e);

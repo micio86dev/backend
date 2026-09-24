@@ -59,7 +59,7 @@ function contractAdminToken(Organization $org): string
     return auth('api')->login($user);
 }
 
-test('GET /api/organization returns exactly what OrganizationResource declares', function (): void {
+test('GET /api/organization returns exactly what Admin\OrganizationResource declares', function (): void {
     $org = Organization::factory()->create();
     $token = contractAdminToken($org);
 
@@ -69,7 +69,13 @@ test('GET /api/organization returns exactly what OrganizationResource declares',
     $actual = array_keys($response->json('data'));
     sort($actual);
 
-    expect($actual)->toBe(specProperties('OrganizationResource'));
+    // public-api step 4 added App\Http\Resources\PublicApi\OrganizationResource
+    // — a second class also named (bare) "OrganizationResource". Scramble
+    // disambiguates same-basename schemas by fully qualifying them; the
+    // ADMIN class is the one under test here, so its schema name is now
+    // fully qualified rather than bare (the bare "OrganizationResource"
+    // name in openapi.json now names the PUBLIC one instead).
+    expect($actual)->toBe(specProperties('App.Http.Resources.Admin.OrganizationResource'));
 });
 
 test('GET /api/projects/{id} returns exactly what ProjectResource declares', function (): void {
@@ -83,7 +89,11 @@ test('GET /api/projects/{id} returns exactly what ProjectResource declares', fun
     $actual = array_keys($response->json('data'));
     sort($actual);
 
-    expect($actual)->toBe(specProperties('ProjectResource'));
+    // Same disambiguation as the Admin\OrganizationResource test above —
+    // App\Http\Resources\PublicApi\ProjectResource (public-api step 4) now
+    // shares the bare "ProjectResource" basename with this ADMIN class, so
+    // Scramble fully-qualifies the admin one in openapi.json.
+    expect($actual)->toBe(specProperties('App.Http.Resources.ProjectResource'));
 });
 
 test('GET /api/auth/me returns exactly the envelope the spec declares', function (): void {

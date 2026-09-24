@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Exceptions\ImmutableProjectException;
+use App\Models\Concerns\HasPublicId;
+use App\Support\PublicApi\PubliclyIdentifiable;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +30,9 @@ use Illuminate\Support\Carbon;
  *   - updating: throws ImmutableProjectException on forbidden lifecycle transitions
  *
  * @property int $id
+ * @property string $public_id BARE 26-char ULID (public-api step 4, G-05) —
+ *                             never exposed directly; always through `App\Support\PublicApi\
+ *                             PublicId::encode()`, which prepends `prj_`.
  * @property int $organization_id
  * @property int $framework_version_id
  * @property string $slug
@@ -65,12 +70,18 @@ use Illuminate\Support\Carbon;
  *           organization's active one applies)" until the column went NOT NULL
  *           and was backfilled; the fallback it described no longer exists.
  */
-class Project extends TenantModel
+class Project extends TenantModel implements PubliclyIdentifiable
 {
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
 
+    use HasPublicId;
     use SoftDeletes;
+
+    public static function publicIdPrefix(): string
+    {
+        return 'prj_';
+    }
 
     /**
      * organization_id intentionally absent — stamped by TenantScoped.creating.

@@ -131,29 +131,28 @@ test('T-CONV-007: with no org override, the platform default limit applies', fun
 
 // ─── Step 3 review follow-ups (items 1-4) ──────────────────────────────────
 
-test('review follow-up 1: RateLimit-Remaining is computed correctly when the cache store returns attempts as a numeric string (Redis behaviour)', function (): void {
+test('step 3 Part A follow-up 2: RateLimit-Remaining is derived from hit()\'s own return value, immune to a stale/frozen attempts() read', function (): void {
     $org = Organization::factory()->create(['public_api_rate_limit_live' => 10]);
     $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
     ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
 
-    // A REAL cache repository underneath (hit()/availableIn() must keep
-    // working) whose attempts() is forced to return a numeric STRING —
-    // exactly what Illuminate\Cache\RateLimiter::attempts() gets back from
-    // a Redis-backed store, since increment()/add() are called with
-    // withoutSerializationOrCompression() and Redis itself has no native
-    // integer type.
-    $fakeLimiter = new class(app('cache.store')) extends RateLimiter
-    {
-        public function attempts($key)
-        {
-            return '3';
-        }
-    };
-    app()->instance(RateLimiter::class, $fakeLimiter);
+    // Every attempts()/get() read on the counter key is frozen at 0 —
+    // exactly the observable shape of a concurrent request's hit() the
+    // caller's own attempts() has not yet observed (StaleReadArrayStore's
+    // own docblock). hit() itself (increment()) still keeps a real,
+    // independent running count. A fix that derives RateLimit-Remaining
+    // from hit()'s own return value — never a separate attempts() read —
+    // reports the CORRECT remaining count on every request despite the
+    // frozen reads; the old implementation would have reported the full
+    // limit (10) as remaining every time.
+    $staleRepository = new Repository(new StaleReadArrayStore(0));
+    app()->instance(RateLimiter::class, new RateLimiter($staleRepository));
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+    $r1 = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+    $r1->assertOk()->assertHeader('RateLimit-Remaining', '9');
 
-    $response->assertOk()->assertHeader('RateLimit-Remaining', '7');
+    $r2 = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+    $r2->assertOk()->assertHeader('RateLimit-Remaining', '8');
 });
 
 test('review follow-up 2: a rate-limiter cache outage fails open — the request proceeds without RateLimit-* headers, never a 500', function (): void {

@@ -17,7 +17,9 @@ declare(strict_types=1);
  */
 
 use App\Support\PublicApi\CursorPage;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 function ncEncodeCursor(Model $model): string
 {
@@ -71,6 +73,19 @@ test('review follow-up 11: a model with a usable created_at and a scalar id enco
     $model = ncFakeModel();
     $model->setAttribute('id', 7);
     $model->setAttribute('created_at', now());
+
+    $cursor = ncEncodeCursor($model);
+
+    expect($cursor)->toBeString();
+    expect($cursor === '')->toBeFalse();
+});
+
+test('step 3 Part A follow-up 1: a model whose created_at is a CarbonImmutable (immutable_datetime cast, e.g. Evaluation::evaluated_at) encodes successfully', function (): void {
+    $model = ncFakeModel();
+    $model->setAttribute('id', 9);
+    $model->setAttribute('created_at', Carbon::now()->toImmutable());
+
+    expect($model->getAttribute('created_at'))->toBeInstanceOf(CarbonImmutable::class);
 
     $cursor = ncEncodeCursor($model);
 

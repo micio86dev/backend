@@ -4181,6 +4181,29 @@
                 }
             }
         },
+        "/v1/organization": {
+            "get": {
+                "operationId": "public-api.organization.show",
+                "tags": [
+                    "Organization"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OrganizationResource"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                }
+            }
+        },
         "/organization": {
             "get": {
                 "operationId": "organization.show",
@@ -4200,7 +4223,7 @@
                                             "type": "object",
                                             "properties": {
                                                 "data": {
-                                                    "$ref": "#/components/schemas/OrganizationResource"
+                                                    "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
                                                 }
                                             },
                                             "required": [
@@ -4249,14 +4272,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`OrganizationResource`",
+                        "description": "`App.Http.Resources.Admin.OrganizationResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/OrganizationResource"
+                                            "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
                                         }
                                     },
                                     "required": [
@@ -4307,14 +4330,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`OrganizationResource`",
+                        "description": "`App.Http.Resources.Admin.OrganizationResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/OrganizationResource"
+                                            "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
                                         }
                                     },
                                     "required": [
@@ -4344,14 +4367,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`OrganizationResource`",
+                        "description": "`App.Http.Resources.Admin.OrganizationResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/OrganizationResource"
+                                            "$ref": "#/components/schemas/App.Http.Resources.Admin.OrganizationResource"
                                         }
                                     },
                                     "required": [
@@ -5933,6 +5956,81 @@
                 }
             }
         },
+        "/v1/projects": {
+            "get": {
+                "operationId": "public-api.projects.index",
+                "summary": "SPEC.md \u00a73.2 \"Filtering on list endpoints: `status`, ...\". `role_code`\nand `assessment_type` are Public-API-specific additions this\noperation's own contract entry lists (`openapi.yaml` `listProjects`\nparameters). An unrecognised value for any of the three answers `400\nvalidation_failed` via `QueryValidationException` (G-28) \u2014 a\nmalformed QUERY PARAMETER, never `422`",
+                "tags": [
+                    "Project"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "next_cursor": {
+                                            "type": "string"
+                                        },
+                                        "has_more": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "next_cursor",
+                                        "has_more"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/QueryValidationException"
+                    }
+                }
+            }
+        },
+        "/v1/projects/{project}": {
+            "get": {
+                "operationId": "public-api.projects.show",
+                "summary": "`$project` is the RAW path segment (`prj_...`), resolved manually\nrather than through implicit Eloquent route-model binding: the\nexisting admin `Route::apiResource('projects', ProjectController::class)`\nalready binds the SAME `{project}` route parameter name to an\ninteger id, and a second, public-id-based binding registered on the\nsame parameter name would either collide with it or require touching\n`App\\Models\\Project::resolveRouteBinding()` globally \u2014 which the\nadmin surface must never see (it keeps using integer ids). Resolving\nby hand here keeps the two surfaces fully independent, and\n`PublicId::decode()` returning `null` on ANY malformed/mismatched-\nprefix input, funnelled into the exact same \"no row\" 404 branch as a\nsyntactically valid but unknown id, is what guarantees a mismatched\nprefix answers `404 not_found`, never `400` (SPEC.md \u00a73.2)",
+                "tags": [
+                    "Project"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`ProjectResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProjectResource"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                }
+            }
+        },
         "/projects": {
             "get": {
                 "operationId": "projects.index",
@@ -5943,7 +6041,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Array of `ProjectResource`",
+                        "description": "Array of `App.Http.Resources.ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -5952,7 +6050,7 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/components/schemas/ProjectResource"
+                                                "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
                                             }
                                         }
                                     },
@@ -5990,14 +6088,14 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "`ProjectResource`",
+                        "description": "`App.Http.Resources.ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/ProjectResource"
+                                            "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
                                         }
                                     },
                                     "required": [
@@ -6039,14 +6137,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`ProjectResource`",
+                        "description": "`App.Http.Resources.ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/ProjectResource"
+                                            "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
                                         }
                                     },
                                     "required": [
@@ -6095,14 +6193,14 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`ProjectResource`",
+                        "description": "`App.Http.Resources.ProjectResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/ProjectResource"
+                                            "$ref": "#/components/schemas/App.Http.Resources.ProjectResource"
                                         }
                                     },
                                     "required": [
@@ -8731,6 +8829,75 @@
                 ],
                 "title": "ApiKeyMode"
             },
+            "App.Http.Resources.Admin.OrganizationResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "logo_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "default_webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "default_webhook_events": {
+                        "type": [
+                            "array",
+                            "null"
+                        ],
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "has_default_webhook_secret": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "primary_color",
+                    "logo_url",
+                    "default_webhook_url",
+                    "default_webhook_events",
+                    "has_default_webhook_secret",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "App.Http.Resources.Admin.OrganizationResource"
+            },
             "App.Http.Resources.ParticipantResource": {
                 "type": "object",
                 "properties": {
@@ -8894,6 +9061,243 @@
                     "project"
                 ],
                 "title": "App.Http.Resources.ParticipantResource"
+            },
+            "App.Http.Resources.ProjectResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "organization_id": {
+                        "type": "integer"
+                    },
+                    "framework_version_id": {
+                        "type": "integer"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "assessment_type": {
+                        "type": "string",
+                        "enum": [
+                            "standard",
+                            "potential"
+                        ]
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "active",
+                            "archived"
+                        ]
+                    },
+                    "pause_every_n_competencies": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "nudge_min_chars": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "exit_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "error_redirect_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "avatar_template_id": {
+                        "type": "integer"
+                    },
+                    "avatar_template": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "provider": {
+                                "type": "string"
+                            },
+                            "llm_model": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "provider",
+                            "llm_model"
+                        ]
+                    },
+                    "webhook_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "webhook_events": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "has_webhook_secret": {
+                        "type": "boolean"
+                    },
+                    "deadline_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "goes_live_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "pin_context": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "version": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "is_locked": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "version",
+                            "label",
+                            "is_locked"
+                        ]
+                    },
+                    "competencies": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "code": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "position": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "code",
+                                "type",
+                                "position"
+                            ]
+                        }
+                    },
+                    "can": {
+                        "type": "object",
+                        "properties": {
+                            "update": {
+                                "type": "boolean"
+                            },
+                            "delete": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "update",
+                            "delete"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "organization_id",
+                    "framework_version_id",
+                    "slug",
+                    "name",
+                    "assessment_type",
+                    "role_code",
+                    "language",
+                    "status",
+                    "pause_every_n_competencies",
+                    "nudge_min_chars",
+                    "exit_redirect_url",
+                    "error_redirect_url",
+                    "avatar_template_id",
+                    "avatar_template",
+                    "webhook_url",
+                    "webhook_events",
+                    "has_webhook_secret",
+                    "deadline_at",
+                    "goes_live_at",
+                    "created_at",
+                    "updated_at",
+                    "pin_context",
+                    "competencies",
+                    "can"
+                ],
+                "title": "App.Http.Resources.ProjectResource"
             },
             "AvatarTemplateResource": {
                 "type": "object",
@@ -9775,68 +10179,29 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
+                        "type": "string"
                     },
                     "name": {
                         "type": "string"
                     },
-                    "slug": {
-                        "type": "string"
+                    "mode": {
+                        "type": "string",
+                        "description": "\"mode (of the key)\" \u2014 SPEC.md \u00a73.3 \u2014 the AUTHENTICATED KEY's\nmode, never an organization column (there isn't one): the\nsame organization answers `live` through a live key and\n`test` through a test key."
                     },
-                    "primary_color": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "logo_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "default_webhook_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "default_webhook_events": {
-                        "type": [
-                            "array",
-                            "null"
-                        ],
-                        "items": {
-                            "type": "string"
-                        }
-                    },
-                    "has_default_webhook_secret": {
-                        "type": "boolean"
+                    "allowed_domains": {
+                        "type": "array",
+                        "items": {}
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "updated_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
                     "id",
                     "name",
-                    "slug",
-                    "primary_color",
-                    "logo_url",
-                    "default_webhook_url",
-                    "default_webhook_events",
-                    "has_default_webhook_secret",
-                    "created_at",
-                    "updated_at"
+                    "mode",
+                    "allowed_domains",
+                    "created_at"
                 ],
                 "title": "OrganizationResource"
             },
@@ -10316,26 +10681,13 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "integer"
-                    },
-                    "organization_id": {
-                        "type": "integer"
-                    },
-                    "framework_version_id": {
-                        "type": "integer"
-                    },
-                    "slug": {
                         "type": "string"
                     },
                     "name": {
                         "type": "string"
                     },
-                    "assessment_type": {
-                        "type": "string",
-                        "enum": [
-                            "standard",
-                            "potential"
-                        ]
+                    "slug": {
+                        "type": "string"
                     },
                     "role_code": {
                         "type": [
@@ -10343,16 +10695,37 @@
                             "null"
                         ]
                     },
+                    "assessment_type": {
+                        "type": "string"
+                    },
                     "language": {
                         "type": "string"
                     },
                     "status": {
-                        "type": "string",
-                        "enum": [
-                            "draft",
-                            "active",
-                            "archived"
+                        "type": "string"
+                    },
+                    "framework_version": {
+                        "type": "object",
+                        "properties": {
+                            "version": {
+                                "type": "string",
+                                "description": "`framework_version_id` is NOT NULL, but the relation\naccessor's static type is still nullable (an unloaded\nrelation renders null rather than fatal, the same\ndiscipline `Project::avatarTemplate()`'s own docblock\ndocuments) \u2014 an empty string/null pair is the honest\nanswer when the caller forgot to eager-load it, never a\nfatal error on a read-only endpoint."
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "version",
+                            "label"
                         ]
+                    },
+                    "competencies": {
+                        "type": "array",
+                        "items": {}
                     },
                     "pause_every_n_competencies": {
                         "type": [
@@ -10372,180 +10745,32 @@
                             "null"
                         ]
                     },
-                    "error_redirect_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "avatar_template_id": {
-                        "type": "integer"
-                    },
-                    "avatar_template": {
-                        "type": [
-                            "object",
-                            "null"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "integer"
-                            },
-                            "name": {
-                                "type": "string"
-                            },
-                            "provider": {
-                                "type": "string"
-                            },
-                            "llm_model": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            }
-                        },
-                        "required": [
-                            "id",
-                            "name",
-                            "provider",
-                            "llm_model"
-                        ]
-                    },
-                    "webhook_url": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "webhook_events": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        }
-                    },
-                    "has_webhook_secret": {
-                        "type": "boolean"
-                    },
-                    "deadline_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "goes_live_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                    "avatar_display_name": {
+                        "type": "string"
                     },
                     "created_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
+                        "type": "string"
                     },
                     "updated_at": {
-                        "type": [
-                            "string",
-                            "null"
-                        ]
-                    },
-                    "pin_context": {
-                        "type": [
-                            "object",
-                            "null"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "integer"
-                            },
-                            "version": {
-                                "type": "string"
-                            },
-                            "label": {
-                                "type": [
-                                    "string",
-                                    "null"
-                                ]
-                            },
-                            "is_locked": {
-                                "type": "boolean"
-                            }
-                        },
-                        "required": [
-                            "id",
-                            "version",
-                            "label",
-                            "is_locked"
-                        ]
-                    },
-                    "competencies": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "integer"
-                                },
-                                "code": {
-                                    "type": "string"
-                                },
-                                "type": {
-                                    "type": "string"
-                                },
-                                "position": {
-                                    "type": "integer"
-                                }
-                            },
-                            "required": [
-                                "id",
-                                "code",
-                                "type",
-                                "position"
-                            ]
-                        }
-                    },
-                    "can": {
-                        "type": "object",
-                        "properties": {
-                            "update": {
-                                "type": "boolean"
-                            },
-                            "delete": {
-                                "type": "boolean"
-                            }
-                        },
-                        "required": [
-                            "update",
-                            "delete"
-                        ]
+                        "type": "string"
                     }
                 },
                 "required": [
                     "id",
-                    "organization_id",
-                    "framework_version_id",
-                    "slug",
                     "name",
-                    "assessment_type",
+                    "slug",
                     "role_code",
+                    "assessment_type",
                     "language",
                     "status",
+                    "framework_version",
+                    "competencies",
                     "pause_every_n_competencies",
                     "nudge_min_chars",
                     "exit_redirect_url",
-                    "error_redirect_url",
-                    "avatar_template_id",
-                    "avatar_template",
-                    "webhook_url",
-                    "webhook_events",
-                    "has_webhook_secret",
-                    "deadline_at",
-                    "goes_live_at",
+                    "avatar_display_name",
                     "created_at",
-                    "updated_at",
-                    "pin_context",
-                    "competencies",
-                    "can"
+                    "updated_at"
                 ],
                 "title": "ProjectResource"
             },
@@ -11629,7 +11854,7 @@
             },
             "UpdateOrganizationRequest": {
                 "type": "object",
-                "description": "UpdateOrganizationRequest (backoffice-missing-pages D2/D3).\n\nValidates PATCH /api/organization. Accepts `name` and the three\n`default_webhook_*` fields; `slug` is deliberately NOT a rule here \u2014 it is\na tenancy identifier, never editable, and the controller only ever writes\n`$request->safe()->only([...])`, so a `slug` key in the body is silently\ndropped rather than validated-then-rejected.",
+                "description": "UpdateOrganizationRequest (backoffice-missing-pages D2/D3).\n\nValidates PATCH /api/organization. Accepts `name` and the three\n`default_webhook_*` fields; `slug` is deliberately NOT a rule here \u2014 it is\na tenancy identifier, never editable, and the controller only ever writes\n`$request->safe()->only([...])`, so a `slug` key in the body is silently\ndropped rather than validated-then-rejected.\n\n`allowed_domains` (public-api step 4) is likewise absent here on purpose\n\u2014 step 11 adds its backoffice editor; until then it is read-only,\nexposed on `GET /v1/organization` but writable through no endpoint at\nall.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -12050,6 +12275,55 @@
             }
         },
         "responses": {
+            "ModelNotFoundException": {
+                "description": "Not found",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Error overview."
+                                }
+                            },
+                            "required": [
+                                "message"
+                            ]
+                        }
+                    }
+                }
+            },
+            "QueryValidationException": {
+                "description": "Validation error",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Errors overview."
+                                },
+                                "errors": {
+                                    "type": "object",
+                                    "description": "A detailed description of each field that failed validation.",
+                                    "additionalProperties": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "required": [
+                                "message",
+                                "errors"
+                            ]
+                        }
+                    }
+                }
+            },
             "ValidationException": {
                 "description": "Validation error",
                 "content": {
@@ -12101,25 +12375,6 @@
             },
             "AuthorizationException": {
                 "description": "Authorization error",
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "message": {
-                                    "type": "string",
-                                    "description": "Error overview."
-                                }
-                            },
-                            "required": [
-                                "message"
-                            ]
-                        }
-                    }
-                }
-            },
-            "ModelNotFoundException": {
-                "description": "Not found",
                 "content": {
                     "application/json": {
                         "schema": {

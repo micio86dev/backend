@@ -128,6 +128,19 @@ final class IdempotencyKey
      * the FIRST client's response instead of running its own. Public so a
      * test can hold the SAME lock externally to exercise the concurrent
      * (`idempotency_in_progress`) branch deterministically.
+     *
+     * Step 3 Part A follow-up 3: folding the client id into the scope
+     * changed the computed scope — and therefore the cache key
+     * (`idempotency:{scope}`) — for EVERY previously-stored replay record,
+     * since the hashed input now includes a segment (`{client_id}`) it did
+     * not before. This is a one-time key rollover, not a migration: no
+     * environment has this code deployed yet, records are disposable cache
+     * state with a bounded TTL (`record_ttl_seconds`, default 24h) and no
+     * durable persistence, so the only practical effect — once deployed —
+     * is that any in-flight replay record computed under the OLD scope
+     * simply expires unread, and a client's next request within its own
+     * 24h window recomputes fresh rather than replaying. No data
+     * migration or backfill is required.
      */
     public static function scopeFor(ApiClient $client, Request $request, string $rawKey): string
     {

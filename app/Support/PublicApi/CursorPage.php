@@ -6,6 +6,7 @@ namespace App\Support\PublicApi;
 
 use App\Exceptions\PublicApi\InvalidCursorException;
 use App\Exceptions\PublicApi\QueryValidationException;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -67,7 +68,20 @@ final class CursorPage
      * though it is exactly what every caller here needs and PHP itself
      * allows at runtime.
      *
-     * @param  Builder<Model>  $query  UNORDERED — this method applies its own `created_at desc, id desc` order and must own it entirely.
+     * `@template TModel of Model` + `Builder<TModel>` (public-api step 4,
+     * first real caller checked at `phpstan --level=max`): PHPStan's
+     * `Builder<TModel>` template is NOT covariant, so a plain, non-generic
+     * `Builder<Model>` parameter would reject every real caller's
+     * `Builder<Project>`/`Builder<ApiClient>` outright — this method binds
+     * `TModel` to whatever concrete model the caller's own query already
+     * carries instead, which is both sound (this method only ever reads
+     * `created_at`/the primary key, columns every `Model` has) and correct
+     * (the caller's own `Builder<TModel>` return type is preserved, not
+     * widened to `Builder<Model>`).
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query  UNORDERED — this method applies its own `created_at desc, id desc` order and must own it entirely.
      * @return array{data: list<mixed>, next_cursor: string|null, has_more: bool}
      *
      * @throws QueryValidationException when `?limit=` is present and out of `[1, 100]` or non-integer (G-28: renders 400, not 422 — a QUERY parameter, not a request body).
@@ -213,8 +227,16 @@ final class CursorPage
     {
         $createdAt = $model->getAttribute('created_at');
 
+        // Step 3 review follow-up: a model casting the column
+        // `immutable_datetime` (Evaluation::evaluated_at,
+        // FrameworkCatalogRevision::published_at, and several `created_at`
+        // columns across the codebase) hands back a `CarbonImmutable`, not
+        // `Illuminate\Support\Carbon` — both implement `Carbon\CarbonInterface`
+        // (copy()/utc()/format() below only need that interface), so the
+        // instanceof check widens to it rather than rejecting a perfectly
+        // usable timestamp because of which concrete Carbon subclass cast it.
         $carbon = match (true) {
-            $createdAt instanceof Carbon => $createdAt,
+            $createdAt instanceof CarbonInterface => $createdAt,
             is_string($createdAt) => Carbon::parse($createdAt),
             default => throw new LogicException(sprintf(
                 '%s: cannot build a pagination cursor — created_at is null or not a usable timestamp.',

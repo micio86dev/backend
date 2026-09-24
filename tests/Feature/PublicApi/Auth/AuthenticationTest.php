@@ -4,23 +4,28 @@ declare(strict_types=1);
 
 /**
  * BEAI Public API (`/v1`) auth middleware + scopes + tenancy guard
- * (public-api step 2) — SPEC.md §3.1 "Authentication", §3.2 "Errors", §8 Q1.
+ * (public-api step 2, repointed to real operations in step 4 — G-23) —
+ * SPEC.md §3.1 "Authentication", §3.2 "Errors", §8 Q1.
  *
- * T-AUTH-001..009 plus a tenancy-isolation case and a legacy-row case.
+ * T-AUTH-001..005/007 now exercise the real `GET /v1/organization` and
+ * `GET /v1/projects(/{id})` operations added in step 4, validated with
+ * `assertMatchesContract()`/`assertProblemMatchesContract()` — this file's
+ * own original docblock already called this out: "step 4 adds `GET
+ * /v1/organization`, which will replace `/api/v1/_probe` as the auth-path
+ * exemplar".
  *
- * Test-only probe routes, registered here rather than reusing a real
- * endpoint — none exists yet (step 4 adds `GET /v1/organization`, which will
- * replace `/api/v1/_probe` as the auth-path exemplar). Every probe carries
- * the EXACT `/v1` middleware stack `routes/api.php` registers for the real
- * group: RejectApiKeyInQuery → AuthenticatePublicApi → PublicApiTenantContext
- * → SubstituteBindings, mirroring the pattern
- * `tests/Feature/C5/GuardResolutionTest.php` and
- * `tests/Feature/C5/TenantContextM2mTest.php` already use for the internal
- * M2M guard/middleware.
- *
- * Bodies from `App\Support\PublicApi\Problem` are asserted against the
- * contract's `Problem` schema via `assertProblemMatchesContract()`
- * (schema-level only — these probe paths are not real contract operations).
+ * A probe route survives for exactly two cases a real `/v1` operation
+ * cannot cover:
+ *   - T-AUTH-009 needs a response body naming the resolved `client_id` to
+ *     prove two DIFFERENT clients sharing a `key_prefix` (same organization)
+ *     resolve to the correct one — `GET /v1/organization` returns the same
+ *     organization body for both and cannot disambiguate them.
+ *   - The legacy pre-migration-row case below also reads `client_id` for
+ *     the same reason.
+ * Every other probe route this file used to register
+ * (`/_probe/scoped`, `/_probe/projects`, `/_probe/projects/{project}`,
+ * `/_probe/projects/{project}/scoped`) is gone: `GET /v1/projects` and
+ * `GET /v1/projects/{id}` now cover exactly what they existed to prove.
  */
 
 use App\Enums\ApiKeyMode;
@@ -28,13 +33,13 @@ use App\Http\Middleware\PublicApi\AuthenticatePublicApi;
 use App\Http\Middleware\PublicApi\PublicApiTenantContext;
 use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Models\ApiClient;
+use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\ApiKeyGenerator;
-use App\Support\PublicApi\ApiMode;
+use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
-use App\Support\Tenancy\TenantResolver;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -52,51 +57,25 @@ beforeEach(function (): void {
             /** @var ApiClient $client */
             $client = auth('api-m2m')->user();
 
-            return response()->json([
-                'ok' => true,
-                'client_id' => $client->id,
-                'org_id' => app(TenantResolver::class)->getOrgId(),
-                'mode' => app(ApiMode::class)->get(),
-            ]);
+            return response()->json(['ok' => true, 'client_id' => $client->id]);
         });
-
-        Route::get('/_probe/scoped', function () {
-            return response()->json(['ok' => true]);
-        })->middleware('scope:interviews:read');
-
-        Route::get('/_probe/projects', function () {
-            return response()->json(['count' => Project::count()]);
-        });
-
-        Route::get('/_probe/projects/{project}', function (Project $project) {
-            return response()->json(['id' => $project->id]);
-        });
-
-        // Review follow-up (finding 6): a route-model-bound {project} behind
-        // a scope requirement — proves RequireScope runs BEFORE
-        // SubstituteBindings even when the bound id does not exist.
-        Route::get('/_probe/projects/{project}/scoped', function (Project $project) {
-            return response()->json(['id' => $project->id]);
-        })->middleware('scope:projects:read');
     });
 });
 
 // ─── T-AUTH-001: valid key ────────────────────────────────────────────────────
 
-test('T-AUTH-001: valid live key → 200 on the probe, tenant stamped', function (): void {
-    $org = Organization::factory()->create();
+test('T-AUTH-001: valid live key → 200 on GET /v1/organization, tenant stamped', function (): void {
+    $org = Organization::factory()->create(['name' => 'Acme']);
     $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id, 'abilities' => []]);
 
-    $client = ApiClient::factory()->withRawKey($rawKey)->create([
-        'organization_id' => $org->id,
-    ]);
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/organization');
 
-    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
-        ->getJson('/api/v1/_probe')
-        ->assertOk()
-        ->assertJsonPath('client_id', $client->id)
-        ->assertJsonPath('org_id', $org->id)
+    $response->assertOk()
+        ->assertJsonPath('id', PublicId::encode($org->fresh()))
+        ->assertJsonPath('name', 'Acme')
         ->assertJsonPath('mode', 'live');
+    $this->assertMatchesContract($response, 'GET', '/organization');
 });
 
 // ─── T-AUTH-002: revoked / expired ────────────────────────────────────────────
@@ -110,7 +89,7 @@ test('T-AUTH-002: a revoked key → 401 invalid_api_key, problem+json valid', fu
     ]);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
-        ->getJson('/api/v1/_probe');
+        ->getJson('/api/v1/organization');
 
     $response->assertStatus(401)->assertJsonPath('code', 'invalid_api_key');
     $this->assertProblemMatchesContract($response, 401);
@@ -125,7 +104,7 @@ test('T-AUTH-002: an expired key → 401 invalid_api_key, problem+json valid', f
     ]);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
-        ->getJson('/api/v1/_probe');
+        ->getJson('/api/v1/organization');
 
     $response->assertStatus(401)->assertJsonPath('code', 'invalid_api_key');
     $this->assertProblemMatchesContract($response, 401);
@@ -149,7 +128,7 @@ test('T-AUTH-003: wrong prefix, malformed, and unknown keys all → 401 invalid_
 
     foreach (['wrong-prefix' => $wrongPrefix, 'malformed' => $malformed, 'unknown' => $unknown] as $label => $candidate) {
         $response = $this->withHeaders(['Authorization' => 'Bearer '.$candidate])
-            ->getJson('/api/v1/_probe');
+            ->getJson('/api/v1/organization');
 
         $response->assertStatus(401);
         $this->assertProblemMatchesContract($response, 401);
@@ -167,9 +146,10 @@ test('T-AUTH-003: wrong prefix, malformed, and unknown keys all → 401 invalid_
 
 // ─── Review follow-up (finding 5): the early-return branches of
 // AuthenticatePublicApi::handle() — no header, a non-Bearer scheme, and an
-// empty token after "Bearer " — had no direct coverage. Every one of them
-// must 401 with the SAME invalid_api_key problem+json body carrying
-// WWW-Authenticate: Bearer. ────────────────────────────────────────────────
+// empty token after "Bearer " — had no direct coverage. Kept on the probe
+// route: these prove a middleware-level behaviour independent of any
+// specific operation, and the probe's minimal body keeps that independence
+// explicit. ────────────────────────────────────────────────────────────────
 
 test('no Authorization header at all → 401 invalid_api_key with WWW-Authenticate: Bearer', function (): void {
     $response = $this->getJson('/api/v1/_probe');
@@ -208,7 +188,7 @@ test('T-AUTH-004: api_key in the query string → 400 api_key_in_query, even wit
     ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
-        ->getJson('/api/v1/_probe?api_key='.$rawKey);
+        ->getJson('/api/v1/organization?api_key='.$rawKey);
 
     $response->assertStatus(400)->assertJsonPath('code', 'api_key_in_query');
     $this->assertProblemMatchesContract($response, 400);
@@ -226,85 +206,62 @@ test('T-AUTH-005: missing scope → 403 insufficient_scope naming the scope; pre
     ]);
 
     $withoutScope = $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyWithoutScope])
-        ->getJson('/api/v1/_probe/scoped');
+        ->getJson('/api/v1/projects');
 
     $withoutScope->assertStatus(403)
         ->assertJsonPath('code', 'insufficient_scope')
-        ->assertJsonPath('detail', 'Requires interviews:read');
+        ->assertJsonPath('detail', 'Requires projects:read');
     $this->assertProblemMatchesContract($withoutScope, 403);
 
     $rawKeyWithScope = ApiKeyGenerator::generate();
     ApiClient::factory()->withRawKey($rawKeyWithScope)->create([
         'organization_id' => $org->id,
-        'abilities' => ['interviews:read'],
+        'abilities' => ['projects:read'],
     ]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyWithScope])
-        ->getJson('/api/v1/_probe/scoped')
+        ->getJson('/api/v1/projects')
         ->assertOk();
 });
 
 // ─── T-AUTH-006: tenancy isolation ─────────────────────────────────────────────
 
-test('T-AUTH-006: a Project-counting probe returns each organization\'s own count only, and a cross-org {project} 404s', function (): void {
+test('T-AUTH-006: GET /v1/projects returns each organization\'s own rows only, and a cross-org GET /v1/projects/{id} 404s', function (): void {
     $orgA = Organization::factory()->create();
     $orgB = Organization::factory()->create();
 
     $rawKeyA = ApiKeyGenerator::generate();
-    ApiClient::factory()->withRawKey($rawKeyA)->create(['organization_id' => $orgA->id]);
+    ApiClient::factory()->withRawKey($rawKeyA)->create(['organization_id' => $orgA->id, 'abilities' => ['projects:read']]);
 
     $rawKeyB = ApiKeyGenerator::generate();
-    ApiClient::factory()->withRawKey($rawKeyB)->create(['organization_id' => $orgB->id]);
+    ApiClient::factory()->withRawKey($rawKeyB)->create(['organization_id' => $orgB->id, 'abilities' => ['projects:read']]);
 
-    // Project::factory() nests a FrameworkVersion factory, itself
-    // TenantScoped — outside an HTTP request (this is a plain PHP setup
-    // step, not a request through PublicApiTenantContext) TenantResolver has
-    // no ambient org, so tenant context is established explicitly, exactly
-    // as tests/Feature/C4/ProjectWebhookSecretPresenceTest.php does.
-    TenantContextScope::runFor($orgA->id, fn () => Project::factory()->count(2)->create(['organization_id' => $orgA->id]));
-    TenantContextScope::runFor($orgB->id, fn () => Project::factory()->count(5)->create(['organization_id' => $orgB->id]));
+    TenantContextScope::runFor($orgA->id, function () use ($orgA): void {
+        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada', 'provider' => 'heygen', 'config' => []]);
+        Project::factory()->count(2)->create(['organization_id' => $orgA->id, 'avatar_template_id' => $avatarTemplate->id]);
+    });
+    TenantContextScope::runFor($orgB->id, function () use ($orgB): void {
+        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada', 'provider' => 'heygen', 'config' => []]);
+        Project::factory()->count(5)->create(['organization_id' => $orgB->id, 'avatar_template_id' => $avatarTemplate->id]);
+    });
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyA])
-        ->getJson('/api/v1/_probe/projects')
+        ->getJson('/api/v1/projects')
         ->assertOk()
-        ->assertJsonPath('count', 2);
+        ->assertJsonCount(2, 'data');
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyB])
-        ->getJson('/api/v1/_probe/projects')
+        ->getJson('/api/v1/projects')
         ->assertOk()
-        ->assertJsonPath('count', 5);
+        ->assertJsonCount(5, 'data');
 
-    $projectOfB = Project::where('organization_id', $orgB->id)->first();
+    $projectOfB = TenantContextScope::runFor($orgB->id, fn () => Project::where('organization_id', $orgB->id)->first());
 
     // Key A must never resolve a Project belonging to org B — 404, not 403,
     // so cross-org existence is never revealed (SPEC.md §3.2 NotFound).
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyA])
-        ->getJson('/api/v1/_probe/projects/'.$projectOfB->id)
+        ->getJson('/api/v1/projects/'.PublicId::encode($projectOfB))
         ->assertNotFound();
-});
-
-// ─── Review follow-up (finding 6): scope check runs BEFORE route-model
-// binding ───────────────────────────────────────────────────────────────────
-
-test('a key lacking the scope, on a NON-EXISTENT bound {project}, still gets 403 — proving RequireScope runs before SubstituteBindings', function (): void {
-    $org = Organization::factory()->create();
-
-    $rawKeyWithoutScope = ApiKeyGenerator::generate();
-    ApiClient::factory()->withRawKey($rawKeyWithoutScope)->create([
-        'organization_id' => $org->id,
-        'abilities' => ['interviews:read'], // deliberately missing projects:read
-    ]);
-
-    // 999999999 resolves to no row at all — if SubstituteBindings ran FIRST,
-    // this would 404 before RequireScope ever got a chance to run, revealing
-    // (via the 404-vs-403 split) that the middleware ordering was wrong.
-    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyWithoutScope])
-        ->getJson('/api/v1/_probe/projects/999999999/scoped');
-
-    $response->assertStatus(403)
-        ->assertJsonPath('code', 'insufficient_scope')
-        ->assertJsonPath('detail', 'Requires projects:read');
-    $this->assertProblemMatchesContract($response, 403);
 });
 
 // ─── T-AUTH-007: mode + browser-origin defense ────────────────────────────────
@@ -313,18 +270,18 @@ test('T-AUTH-007: a beai_test_ key stamps ApiMode test, a live key stamps live',
     $org = Organization::factory()->create();
 
     $liveKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
-    ApiClient::factory()->withRawKey($liveKey)->create(['organization_id' => $org->id, 'mode' => 'live']);
+    ApiClient::factory()->withRawKey($liveKey)->create(['organization_id' => $org->id, 'mode' => 'live', 'abilities' => []]);
 
     $testKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
-    ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id, 'mode' => 'test']);
+    ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id, 'mode' => 'test', 'abilities' => []]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])
-        ->getJson('/api/v1/_probe')
+        ->getJson('/api/v1/organization')
         ->assertOk()
         ->assertJsonPath('mode', 'live');
 
     $this->withHeaders(['Authorization' => 'Bearer '.$testKey])
-        ->getJson('/api/v1/_probe')
+        ->getJson('/api/v1/organization')
         ->assertOk()
         ->assertJsonPath('mode', 'test');
 });
@@ -337,7 +294,7 @@ test('T-AUTH-007: a live key with an Origin header → 401 browser_origin_forbid
     $response = $this->withHeaders([
         'Authorization' => 'Bearer '.$liveKey,
         'Origin' => 'https://evil.example',
-    ])->getJson('/api/v1/_probe');
+    ])->getJson('/api/v1/organization');
 
     $response->assertStatus(401)->assertJsonPath('code', 'browser_origin_forbidden');
     $this->assertProblemMatchesContract($response, 401);
@@ -346,12 +303,12 @@ test('T-AUTH-007: a live key with an Origin header → 401 browser_origin_forbid
 test('T-AUTH-007: a test key with an Origin header is allowed', function (): void {
     $org = Organization::factory()->create();
     $testKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
-    ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id, 'mode' => 'test']);
+    ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id, 'mode' => 'test', 'abilities' => []]);
 
     $this->withHeaders([
         'Authorization' => 'Bearer '.$testKey,
         'Origin' => 'https://developer.example',
-    ])->getJson('/api/v1/_probe')
+    ])->getJson('/api/v1/organization')
         ->assertOk()
         ->assertJsonPath('mode', 'test');
 });
