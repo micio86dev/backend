@@ -13,6 +13,7 @@ use App\Http\Middleware\PublicApi\IdempotencyKey;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
+use App\Models\InterviewRecording;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -376,7 +377,7 @@ test('GET /v1/interviews?expand=project also serializes a soft-deleted project o
 
 // ─── step 5 review follow-up, Part B item 4: Interview.hosted_url is string|null ──
 
-test('GET /v1/interviews/{id} hosted_url is null by default', function (): void {
+test('GET /v1/interviews/{id} hosted_url is always null on a read (step 6 review follow-up, Part A item 4: no runtime override exists any more — the string|null type is documented, not reached)', function (): void {
     ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
     $project = rdCreateProject($org);
 
@@ -388,22 +389,6 @@ test('GET /v1/interviews/{id} hosted_url is null by default', function (): void 
         ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
 
     $response->assertOk()->assertJsonPath('hosted_url', null);
-});
-
-test('GET /v1/interviews/{id} hosted_url reflects public_api.interview_hosted_url_override when configured', function (): void {
-    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
-    $project = rdCreateProject($org);
-
-    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
-        'organization_id' => $org->id,
-    ])->refresh());
-
-    config(['public_api.interview_hosted_url_override' => 'https://override.example/i/token']);
-
-    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
-        ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
-
-    $response->assertOk()->assertJsonPath('hosted_url', 'https://override.example/i/token');
 });
 
 // ─── step 5 review follow-up, item 9: one code path computes progress ───────
@@ -460,6 +445,42 @@ test('GET /v1/interviews and GET /v1/interviews/{id} report IDENTICAL progress f
 
     expect($listProgress)->not->toBeEmpty();
     expect($showProgress)->toBe($listProgress);
+});
+
+// ─── gga review, step 6 follow-up, finding 5: recording_ready reflects a real interview_recordings row ──
+
+test('recording_ready is true only for the participant with an interview_recordings row, in both list and detail', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    [$withRecording, $withoutRecording] = TenantContextScope::runFor($org->id, function () use ($org, $project) {
+        $withRecording = Participant::factory()->forProject($project)->create(['organization_id' => $org->id])->refresh();
+        $withoutRecording = Participant::factory()->forProject($project)->create(['organization_id' => $org->id])->refresh();
+
+        InterviewRecording::factory()->create([
+            'participant_id' => $withRecording->id,
+            'object_key' => 'recordings/'.$org->id.'/'.$withRecording->id.'/interview.ogg',
+        ]);
+
+        return [$withRecording, $withoutRecording];
+    });
+
+    $list = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/interviews');
+    $list->assertOk();
+
+    $byId = collect($list->json('data'))->keyBy('id');
+    expect($byId[PublicId::encode($withRecording)]['recording_ready'])->toBeTrue();
+    expect($byId[PublicId::encode($withoutRecording)]['recording_ready'])->toBeFalse();
+
+    $showWith = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($withRecording));
+    $showWith->assertOk();
+    expect($showWith->json('recording_ready'))->toBeTrue();
+
+    $showWithout = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($withoutRecording));
+    $showWithout->assertOk();
+    expect($showWithout->json('recording_ready'))->toBeFalse();
 });
 
 // ─── step 5 review follow-up, item 6: strict ISO 8601 created_after/created_before ──
@@ -522,6 +543,48 @@ test('GET /v1/interviews?created_after= accepts strict ISO 8601 (Z and numeric-o
     $response->assertOk();
     expect($response->json('data'))->toHaveCount(1);
     expect($response->json('data.0.id'))->toBe(PublicId::encode($newer));
+});
+
+// ─── step 6 review follow-up, Part A item 3: rollover rejection + UTC conversion ──
+
+test('GET /v1/interviews?created_after= rejects a rolled-over calendar date (2026-02-31) with 400, never silently normalized to March', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+
+    // PHP's createFromFormat() does not validate calendar range by default —
+    // "2026-02-31" silently rolls over to "2026-03-03" instead of failing.
+    // A calling system filing a report against the wrong month because a
+    // typo'd date silently rolled over is worse than a loud 400.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?created_after='.urlencode('2026-02-31T00:00:00Z'));
+
+    $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
+});
+
+test('GET /v1/interviews?created_after= with a numeric offset filters using the UTC-converted instant, not the local wall-clock value', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+
+    // 2026-01-02T00:00:00+02:00 === 2026-01-01T22:00:00Z. A participant
+    // created exactly at that UTC instant must be included (>=); one
+    // created one second earlier must not — proving the filter compares
+    // against the UTC-converted instant, not the "2026-01-02T00:00:00"
+    // local wall-clock value the offset is attached to.
+    $included = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'created_at' => '2026-01-01T22:00:00Z',
+    ]));
+
+    TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'created_at' => '2026-01-01T21:59:59Z',
+    ]));
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews?created_after='.urlencode('2026-01-02T00:00:00+02:00'));
+
+    $response->assertOk();
+    expect($response->json('data'))->toHaveCount(1);
+    expect($response->json('data.0.id'))->toBe(PublicId::encode($included));
 });
 
 test('GET /v1/interviews?project_id= still matches a soft-deleted project (step 5 review follow-up, item 5)', function (): void {

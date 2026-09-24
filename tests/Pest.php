@@ -559,6 +559,12 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Config/PublicApiConfigTest.php');
 
+// Unit/Rules/PublicApi (public-api step 6 review follow-up, Part A item 3)
+// — Iso8601DateTimeTest uses the `Validator` facade, which needs the booted
+// app's container; the rule itself and Carbon are otherwise DB-free.
+pest()->extend(TestCase::class)
+    ->in('Unit/Rules/PublicApi');
+
 // ─── tests/Contract (public-api step 1) ────────────────────────────────────
 //
 // NOT under tests/Feature: this directory holds the ContractValidator helper
@@ -721,6 +727,13 @@ pest()->use(RefreshDatabase::class)
 // RefreshDatabase for the same reason as every other PublicApi feature dir.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Embed');
+
+// Feature/PublicApi/Recording — public-api step 6's
+// `GET /v1/interviews/{id}/recording` (T-INT-022/023) — creates real
+// Organization/ApiClient/Project/Participant/InterviewRecording rows via
+// factories, same reasoning as every other PublicApi feature dir above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Recording');
 
 // Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
 // exercises the legacy-rows cache/observer against real ApiClient rows.

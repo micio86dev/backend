@@ -130,6 +130,58 @@ final class ExposureCatalogue
                 'files.evaluation_raw.ref',
                 'files.evaluation_raw.url',
             ],
+
+            // Transcript (public-api step 6) — admin `Admin\TranscriptResource`
+            // (wrapping `AdminTranscriptSerializer::serialize()`'s
+            // `is_partial`/`sessions[]` shape) against `App\PublicApi\
+            // Serializers\TranscriptSerializer`. `speaker`/`text`/`ts` and
+            // `competency_code`/`question_index` are shared field NAMES but
+            // sit at a DIFFERENT nesting depth on each side (admin nests
+            // utterances two levels under `sessions[]`; public keeps one
+            // flat `turns[]` list) — different PATHS, so both sides list
+            // them in full rather than cancelling out.
+            'Transcript' => [
+                'is_partial',
+                'sessions[].session_id',
+                'sessions[].competency_code',
+                'sessions[].question_index',
+                'sessions[].utterances[].speaker',
+                'sessions[].utterances[].text',
+                'sessions[].utterances[].ts',
+            ],
+
+            // Scoring (public-api step 6) — admin `Admin\EvaluationResource`
+            // (`AdminEvaluationSerializer::serialize()`'s competency map,
+            // keyed by code, PLUS its `meta.scoring`/`meta.audit` siblings
+            // added via `with()`) against `App\PublicApi\Serializers\
+            // ScoringSerializer`. The public shape wraps the SAME
+            // per-competency fields one level deeper, under `competencies.
+            // {CODE}`, so every leaf differs by path even where the field
+            // NAME is identical (mirrors this catalogue's own `Interview`
+            // entry's `timeline.*` vs bare precedent). `behaviors[].audit`
+            // and `meta.audit`/`meta.scoring.*` (SPEC.md §3.4's exclusion
+            // list: post-hoc audit verdicts and internal version plumbing
+            // are backoffice-only) are admin-only; the public triplet
+            // (`framework_version`/`model_version`/`prompt_version`) and
+            // `evaluated_at`/`status`/`interview_id` sit at the response's
+            // OWN top level, never under `meta`.
+            'Scoring' => [
+                'COL.score',
+                'COL.reliability',
+                'COL.unscorable_reason',
+                'COL.behaviors[].indicator',
+                'COL.behaviors[].score',
+                'COL.behaviors[].explanation',
+                'COL.behaviors[].excerpts',
+                'COL.behaviors[].unassessable_reason',
+                'COL.behaviors[].audit.status',
+                'COL.behaviors[].audit.support_probability',
+                'COL.behaviors[].audit.outcome_reason',
+                'meta.audit',
+                'meta.scoring.framework_version',
+                'meta.scoring.model_version',
+                'meta.scoring.prompt_version',
+            ],
         ];
     }
 
@@ -168,6 +220,45 @@ final class ExposureCatalogue
                 'recording_ready',
                 // Neither admin resource exposes `updated_at` at all.
                 'updated_at',
+            ],
+
+            // Transcript (public-api step 6) — see the matching comment in
+            // exclusions() above.
+            'Transcript' => [
+                'interview_id',
+                'language',
+                'turns[].index',
+                'turns[].speaker',
+                'turns[].text',
+                'turns[].competency_code',
+                'turns[].question_index',
+                'turns[].ts',
+            ],
+
+            // Scoring (public-api step 6) — see the matching comment in
+            // exclusions() above. Hardcodes the `COL` competency code
+            // (matching `Tests\Helpers\PublicApi\Step6Fixtures::
+            // buildCompletedScoredParticipant()`'s own fixture) — unlike every other
+            // entry here, Scoring's public/admin shapes are BOTH keyed by a
+            // dynamic competency code rather than a fixed field name, so a
+            // pure field-path catalogue is structurally impossible; the test
+            // that uses this entry must build its fixture against the SAME
+            // code.
+            'Scoring' => [
+                'interview_id',
+                'status',
+                'framework_version',
+                'model_version',
+                'prompt_version',
+                'evaluated_at',
+                'competencies.COL.score',
+                'competencies.COL.reliability',
+                'competencies.COL.unscorable_reason',
+                'competencies.COL.behaviors[].indicator',
+                'competencies.COL.behaviors[].score',
+                'competencies.COL.behaviors[].explanation',
+                'competencies.COL.behaviors[].excerpts',
+                'competencies.COL.behaviors[].unassessable_reason',
             ],
         ];
     }

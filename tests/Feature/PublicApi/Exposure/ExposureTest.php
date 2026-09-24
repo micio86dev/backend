@@ -9,25 +9,35 @@ declare(strict_types=1);
  */
 
 use App\Enums\ApiKeyMode;
+use App\Http\Resources\Admin\EvaluationResource as AdminEvaluationResource;
 use App\Http\Resources\Admin\OrganizationResource as AdminOrganizationResource;
 use App\Http\Resources\Admin\ParticipantDetailResource as AdminParticipantDetailResource;
 use App\Http\Resources\Admin\ParticipantResource as AdminParticipantResource;
+use App\Http\Resources\Admin\TranscriptResource as AdminTranscriptResource;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Http\Resources\ProjectResource as AdminProjectResource;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\FrameworkVersion;
+use App\Models\InterviewEvent;
+use App\Models\InterviewRecording;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\OrganizationSerializer;
 use App\PublicApi\Serializers\ProjectSerializer;
+use App\PublicApi\Serializers\ScoringSerializer;
+use App\PublicApi\Serializers\TranscriptSerializer;
+use App\Services\Admin\AdminEvaluationSerializer;
+use App\Services\Admin\AdminTranscript;
 use App\Services\ApiKeyGenerator;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Support\Facades\Storage;
 use Tests\Helpers\PublicApi\ExposureCatalogue;
+use Tests\Helpers\PublicApi\Step6Fixtures;
 
 // ─── T-EXPOSE-001: field-diff test ───────────────────────────────────────────
 
@@ -160,6 +170,74 @@ test('T-EXPOSE-001: Interview — admin (list ∪ detail) minus public equals ex
     });
 });
 
+test('T-EXPOSE-001: Transcript — admin minus public equals exactly the frozen exclusion list, public minus admin equals exactly the frozen addition list', function (): void {
+    $dto = new AdminTranscript(
+        isPartial: false,
+        sessions: [[
+            'session_id' => 1,
+            'competency_code' => 'COL',
+            'question_index' => 0,
+            'utterances' => [['speaker' => 'avatar', 'text' => 'hi', 'ts' => '2026-01-01T00:00:00Z']],
+        ]],
+    );
+    $adminKeys = ExposureCatalogue::flattenKeys((new AdminTranscriptResource($dto))->toArray(request()));
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    $publicKeys = TenantContextScope::runFor(
+        $org->id,
+        fn () => ExposureCatalogue::flattenKeys(TranscriptSerializer::toArray($participant)),
+    );
+
+    $exclusions = array_values(array_diff($adminKeys, $publicKeys));
+    $additions = array_values(array_diff($publicKeys, $adminKeys));
+
+    sort($exclusions);
+    sort($additions);
+    $expectedExclusions = ExposureCatalogue::exclusions()['Transcript'];
+    $expectedAdditions = ExposureCatalogue::additions()['Transcript'];
+    sort($expectedExclusions);
+    sort($expectedAdditions);
+
+    expect($exclusions)->toBe($expectedExclusions);
+    expect($additions)->toBe($expectedAdditions);
+});
+
+test('T-EXPOSE-001: Scoring — admin (evaluation ∪ meta) minus public equals exactly the frozen exclusion list, public minus admin equals exactly the frozen addition list', function (): void {
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::buildCompletedScoredParticipant($org, $project);
+
+    $adminSerializer = new AdminEvaluationSerializer;
+    $adminData = TenantContextScope::runFor($org->id, fn () => $adminSerializer->serialize($participant));
+    $adminMeta = TenantContextScope::runFor($org->id, fn () => $adminSerializer->meta($participant));
+    $adminAuditMeta = TenantContextScope::runFor($org->id, fn () => $adminSerializer->auditMeta($participant));
+
+    $adminResource = new AdminEvaluationResource($adminData, $adminMeta, $adminAuditMeta);
+    $adminFull = array_merge($adminResource->toArray(request()), $adminResource->with(request()));
+    $adminKeys = ExposureCatalogue::flattenKeys($adminFull);
+
+    $publicKeys = TenantContextScope::runFor(
+        $org->id,
+        fn () => ExposureCatalogue::flattenKeys((new ScoringSerializer)->toArray($participant)),
+    );
+
+    $exclusions = array_values(array_diff($adminKeys, $publicKeys));
+    $additions = array_values(array_diff($publicKeys, $adminKeys));
+
+    sort($exclusions);
+    sort($additions);
+    $expectedExclusions = ExposureCatalogue::exclusions()['Scoring'];
+    $expectedAdditions = ExposureCatalogue::additions()['Scoring'];
+    sort($expectedExclusions);
+    sort($expectedAdditions);
+
+    expect($exclusions)->toBe($expectedExclusions);
+    expect($additions)->toBe($expectedAdditions);
+});
+
 // ─── T-EXPOSE-002: no secret-shaped value ever leaks ────────────────────────
 
 test('T-EXPOSE-002: GET /v1/organization never contains a beai_live_/beai_test_/tavus/heygen value, even with a webhook secret configured', function (): void {
@@ -275,6 +353,71 @@ test('T-EXPOSE-002: POST/GET /v1/interviews never contain a beai_live_/beai_test
         ->getJson('/api/v1/interviews');
     $list->assertOk();
     assertNoForbiddenPattern($list->getContent());
+});
+
+test('T-EXPOSE-002: GET /v1/interviews/{id}/transcript and /answers never contain a beai_live_/beai_test_/tavus/heygen value', function (): void {
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    $transcript = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/transcript');
+    $transcript->assertOk();
+    assertNoForbiddenPattern($transcript->getContent());
+
+    $answers = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/answers');
+    $answers->assertOk();
+    assertNoForbiddenPattern($answers->getContent());
+});
+
+test('T-EXPOSE-002: GET /v1/interviews/{id}/scoring never contains a beai_live_/beai_test_/tavus/heygen value', function (): void {
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::buildCompletedScoredParticipant($org, $project);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/scoring');
+    $response->assertOk();
+    assertNoForbiddenPattern($response->getContent());
+});
+
+test('T-EXPOSE-002: GET /v1/interviews/{id}/recording never contains a beai_live_/beai_test_/tavus/heygen value', function (): void {
+    Storage::fake();
+
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    $objectKey = 'recordings/'.$org->id.'/'.$participant->id.'/interview.ogg';
+    Storage::put($objectKey, 'fake-audio-bytes');
+
+    TenantContextScope::runFor($org->id, fn () => InterviewRecording::factory()->create([
+        'participant_id' => $participant->id,
+        'object_key' => $objectKey,
+    ]));
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/recording');
+    $response->assertOk();
+    assertNoForbiddenPattern($response->getContent());
+});
+
+test('T-EXPOSE-002: GET /v1/interviews/{id}/events never contains a beai_live_/beai_test_/tavus/heygen value', function (): void {
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey();
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    TenantContextScope::runFor($org->id, fn () => InterviewEvent::create([
+        'participant_id' => $participant->id,
+        'type' => 'session_started',
+        'occurred_at' => now(),
+    ]));
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant).'/events');
+    $response->assertOk();
+    assertNoForbiddenPattern($response->getContent());
 });
 
 /**

@@ -95,3 +95,29 @@ test('the participants unique index and mode check are rebuilt with lock-minimis
     expect(collect($statements)->contains(fn (string $sql): bool => str_contains(strtoupper($sql), 'VALIDATE CONSTRAINT')))
         ->toBeTrue();
 });
+
+test('step 6, Part A item 2: an INVALID participants_public_id_unique index (a failed CONCURRENTLY build) is dropped and rebuilt, not left in place', function (): void {
+    // Schema::hasIndex() reports an index as present purely by NAME — it has
+    // no idea Postgres itself considers this one broken. A CREATE UNIQUE
+    // INDEX CONCURRENTLY that failed partway (e.g. the migration process was
+    // killed) leaves EXACTLY this shape: the index exists, by that name, but
+    // pg_index.indisvalid is false and it enforces nothing.
+    DB::statement('UPDATE pg_index SET indisvalid = false WHERE indexrelid = \'participants_public_id_unique\'::regclass');
+
+    $invalidBefore = DB::selectOne(
+        "SELECT indisvalid FROM pg_index WHERE indexrelid = 'participants_public_id_unique'::regclass"
+    );
+    expect($invalidBefore)->not->toBeNull();
+    expect((bool) $invalidBefore->indisvalid)->toBeFalse();
+    expect(Schema::hasIndex('participants', 'participants_public_id_unique'))->toBeTrue();
+
+    /** @var Migration $migration */
+    $migration = require database_path('migrations/2026_09_24_140000_add_public_api_fields_to_participants_table.php');
+    $migration->up();
+
+    $validAfter = DB::selectOne(
+        "SELECT indisvalid FROM pg_index WHERE indexrelid = 'participants_public_id_unique'::regclass"
+    );
+    expect($validAfter)->not->toBeNull();
+    expect((bool) $validAfter->indisvalid)->toBeTrue();
+});

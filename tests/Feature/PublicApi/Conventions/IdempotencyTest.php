@@ -263,6 +263,41 @@ test('step 5 review follow-up, item 8: an undecodable idempotency record → 500
     expect(Cache::get('idempotent_probe_calls'))->toBe($before);
 });
 
+test('step 6 review follow-up, Part A item 1: an undecodable idempotency record is evicted, never sticky — the first retry gets 500 with a retry hint and the record is gone, the second retry executes the handler', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    $syntheticRequest = Request::create('/api/v1/_probe/idempotent', 'POST', content: json_encode(['a' => 1]));
+    $scope = IdempotencyKey::scopeFor($client, $syntheticRequest, 'corrupted-key-2');
+    $storeKey = 'idempotency:'.$scope;
+
+    Cache::put($storeKey, 'not-a-valid-encrypted-payload', 86400);
+
+    $before = Cache::get('idempotent_probe_calls');
+
+    $firstRetry = $this->withHeaders([
+        'Authorization' => 'Bearer '.$rawKey,
+        'Idempotency-Key' => 'corrupted-key-2',
+    ])->postJson('/api/v1/_probe/idempotent', ['a' => 1]);
+
+    $firstRetry->assertStatus(500)->assertJsonPath('code', 'internal_error');
+    expect($firstRetry->json('detail'))->toContain('retried');
+    expect(Cache::get('idempotent_probe_calls'))->toBe($before);
+
+    // Evicted — the SAME key/body no longer finds the undecodable record.
+    expect(Cache::get($storeKey))->toBeNull();
+
+    $secondRetry = $this->withHeaders([
+        'Authorization' => 'Bearer '.$rawKey,
+        'Idempotency-Key' => 'corrupted-key-2',
+    ])->postJson('/api/v1/_probe/idempotent', ['a' => 1]);
+
+    $secondRetry->assertCreated();
+    expect($secondRetry->headers->get('Idempotent-Replayed'))->toBeNull();
+    expect(Cache::get('idempotent_probe_calls'))->toBe(($before ?? 0) + 1);
+});
+
 test('review follow-up 7c: a cache-write outage after a successful handler still returns the real response, no 500', function (): void {
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
