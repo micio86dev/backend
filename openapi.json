@@ -3311,6 +3311,95 @@
                 }
             }
         },
+        "/embed/frame-policy": {
+            "get": {
+                "operationId": "exchange.framePolicy",
+                "description": "PUBLIC, deliberately NOT `exchange()` reused: `exchange()` atomically\nCONSUMES the session token (the compare-and-clear UPDATE against\n`session_token_jti`) \u2014 calling it from `frontend`'s per-request Nitro\nCSP middleware, ahead of the candidate's OWN later `/embed/exchange`\ncall, would burn the single-use token before the candidate ever\nreaches it, or race it into a `410` the candidate never caused. This\naction reads only the token's OWN claims and the organization they\nresolve to \u2014 no participant lookup, no write, callable any number of\ntimes without affecting the token's single-use state.\n\nSame `401 token_invalid` shape as `exchange()` for a malformed,\nexpired, mis-signed, wrong-audience, or unresolvable-organization\ntoken \u2014 the caller (the CSP middleware) treats ANY non-200 as \"cannot\n     * resolve a policy\", which is the trigger for its own fail-safe\n`frame-ancestors 'none'` default (never \"no restriction\").",
+                "summary": "`GET /api/embed/frame-policy?token=<session_token>` \u2014 read-only\n`allowed_domains` lookup for the embed page's `Content-Security-Policy:\nframe-ancestors` header (public-api step 10, SPEC.md \u00a74.4)",
+                "tags": [
+                    "Exchange"
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": true,
+                        "description": "The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "allowed_domains": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "allowed_domains"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string",
+                                            "const": "Invalid session token"
+                                        },
+                                        "status": {
+                                            "type": "integer",
+                                            "const": 401
+                                        },
+                                        "code": {
+                                            "type": "string",
+                                            "const": "token_invalid"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "null"
+                                        },
+                                        "errors": {
+                                            "type": "null"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id",
+                                        "detail",
+                                        "errors"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/exports": {
             "post": {
                 "operationId": "public-api.exports.store",
@@ -3430,7 +3519,7 @@
                         }
                     },
                     "429": {
-                        "description": "An export is already in progress for this organization (code=export_in_progress).",
+                        "description": "An export is already in progress for this organization and mode (code=export_in_progress).",
                         "content": {
                             "application/json": {
                                 "schema": {
