@@ -78,6 +78,20 @@ made in this codebase, not because it is good practice in the abstract.
 - **Do not weaken the raw-SQL atomicity at the SSO seam.** It is deliberate TOCTOU safety;
   duplicates are absorbed by the dedupe index instead.
 
+## Public API data exposure — permanent rule
+
+**No new public or export field ships without a `T-EXPOSE-001` entry.** Any
+field added to a public serializer (`app/PublicApi/Serializers/*`), an export
+format, or a webhook payload must be classified in
+`tests/Helpers/PublicApi/ExposureCatalogue.php` — as an addition (genuinely
+public) or as an exclusion (admin-only) — in the SAME change, and
+`tests/Feature/PublicApi/Exposure/ExposureTest.php` must pass. Likewise any
+new admin resource field must be classified there, or the test fails. Never
+edit the catalogue to silence the test without a reviewed decision, and never
+compute it from the live surface (that makes the test tautological).
+`T-EXPOSE-002` still holds: no `beai_live_`/`beai_test_` key material and no
+provider name (`tavus`, `heygen`) in any public response.
+
 ## Tests
 
 - **A test that has never been seen to fail is not evidence.** For any guard, assertion or
