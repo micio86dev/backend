@@ -15,6 +15,12 @@ declare(strict_types=1);
 
 use Dedoc\Scramble\Generator;
 use Dedoc\Scramble\Scramble;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
+
+// Generating the document introspects request classes whose rules() can open a
+// draft catalogue revision; without this the draft outlives the test and breaks
+// every later test that seeds the baseline (framework_catalog_revisions_one_draft).
+uses(DatabaseTransactions::class);
 
 test('Part A item 4: Interview.hosted_url is exported as string|null, never the literal null, via InterviewHostedUrlNullableExtension', function (): void {
     $config = Scramble::getGeneratorConfig('default');
