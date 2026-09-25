@@ -3311,6 +3311,338 @@
                 }
             }
         },
+        "/v1/exports": {
+            "post": {
+                "operationId": "public-api.exports.store",
+                "tags": [
+                    "Export"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateExportRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Export job accepted.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "scope": {
+                                            "type": "string"
+                                        },
+                                        "format": {
+                                            "type": "string"
+                                        },
+                                        "livemode": {
+                                            "type": "boolean"
+                                        },
+                                        "from": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "to": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "record_count": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "download_url": {
+                                            "type": "null"
+                                        },
+                                        "download_expires_at": {
+                                            "type": "string"
+                                        },
+                                        "size_bytes": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "checksum_sha256": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "failure_reason": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "created_at": {
+                                            "type": "string"
+                                        },
+                                        "completed_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "status",
+                                        "scope",
+                                        "format",
+                                        "livemode",
+                                        "from",
+                                        "to",
+                                        "record_count",
+                                        "download_url",
+                                        "download_expires_at",
+                                        "size_bytes",
+                                        "checksum_sha256",
+                                        "failure_reason",
+                                        "created_at",
+                                        "completed_at"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "An export is already in progress for this organization (code=export_in_progress).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            },
+            "get": {
+                "operationId": "public-api.exports.index",
+                "tags": [
+                    "Export"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of this organization's export jobs, newest first.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {}
+                                        },
+                                        "next_cursor": {
+                                            "type": "string"
+                                        },
+                                        "has_more": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "next_cursor",
+                                        "has_more"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/QueryValidationException"
+                    }
+                }
+            }
+        },
+        "/v1/exports/{id}": {
+            "get": {
+                "operationId": "public-api.exports.show",
+                "tags": [
+                    "Export"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The export job, with a fresh signed download URL when ready.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "scope": {
+                                            "type": "string"
+                                        },
+                                        "format": {
+                                            "type": "string"
+                                        },
+                                        "livemode": {
+                                            "type": "boolean"
+                                        },
+                                        "from": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "to": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "record_count": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "download_url": {
+                                            "type": "string"
+                                        },
+                                        "download_expires_at": {
+                                            "type": "string"
+                                        },
+                                        "size_bytes": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        },
+                                        "checksum_sha256": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "failure_reason": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "created_at": {
+                                            "type": "string"
+                                        },
+                                        "completed_at": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "status",
+                                        "scope",
+                                        "format",
+                                        "livemode",
+                                        "from",
+                                        "to",
+                                        "record_count",
+                                        "download_url",
+                                        "download_expires_at",
+                                        "size_bytes",
+                                        "checksum_sha256",
+                                        "failure_reason",
+                                        "created_at",
+                                        "completed_at"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    }
+                }
+            }
+        },
         "/auth/forgot-password": {
             "post": {
                 "operationId": "auth.forgotPassword",
@@ -9786,6 +10118,126 @@
                 }
             }
         },
+        "/v1/usage": {
+            "get": {
+                "operationId": "public-api.usage.show",
+                "tags": [
+                    "Usage"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Usage summary for the requested window.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "type": "string"
+                                        },
+                                        "livemode": {
+                                            "type": "boolean"
+                                        },
+                                        "interviews": {
+                                            "type": "object",
+                                            "properties": {
+                                                "pending": {
+                                                    "type": "integer"
+                                                },
+                                                "in_progress": {
+                                                    "type": "integer"
+                                                },
+                                                "under_evaluation": {
+                                                    "type": "integer"
+                                                },
+                                                "completed": {
+                                                    "type": "integer"
+                                                },
+                                                "error": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "pending",
+                                                "in_progress",
+                                                "under_evaluation",
+                                                "completed",
+                                                "error"
+                                            ]
+                                        },
+                                        "evaluations": {
+                                            "type": "object",
+                                            "properties": {
+                                                "completed": {
+                                                    "type": "integer"
+                                                },
+                                                "pending": {
+                                                    "type": "string",
+                                                    "description": "'processing' folded into 'pending' \u2014 see class doc, point 2."
+                                                }
+                                            },
+                                            "required": [
+                                                "completed",
+                                                "pending"
+                                            ]
+                                        },
+                                        "completion_rate": {
+                                            "type": "number"
+                                        },
+                                        "llm_tokens": {
+                                            "type": "object",
+                                            "properties": {
+                                                "input": {
+                                                    "type": "integer"
+                                                },
+                                                "output": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "input",
+                                                "output"
+                                            ]
+                                        },
+                                        "cost_usd": {
+                                            "type": "number"
+                                        },
+                                        "currency": {
+                                            "type": "string",
+                                            "const": "USD"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "livemode",
+                                        "interviews",
+                                        "evaluations",
+                                        "completion_rate",
+                                        "llm_tokens",
+                                        "cost_usd",
+                                        "currency"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Malformed query parameter, or from is after to (code=validation_failed).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "operationId": "user.index",
@@ -11172,6 +11624,52 @@
                     "bars_available"
                 ],
                 "title": "CompetencyResource"
+            },
+            "CreateExportRequest": {
+                "type": "object",
+                "description": "`POST /v1/exports` request validation (public-api step 8, SPEC.md \u00a73.3\n\"Exports\", `openapi.yaml`'s `CreateExportRequest` schema).\n\nFORMAT only \u2014 the \"one active export per organization\" concurrency gate\nneeds the resolved `Organization` and lives in\n`App\\Http\\Controllers\\PublicApi\\ExportController::store()`, mirroring\n`CreateInterviewRequest`'s own division of labour.\n\n`authorize()` returns `true` unconditionally \u2014 scope enforcement\n(`scope:exports:write`) is `App\\Http\\Middleware\\PublicApi\\RequireScope`'s\njob, applied per-route in `routes/api.php`.",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "all",
+                            "interviews"
+                        ]
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": [
+                            "jsonl",
+                            "csv"
+                        ]
+                    },
+                    "from": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "to": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "include_transcripts": {
+                        "type": "boolean"
+                    },
+                    "include_scoring": {
+                        "type": "boolean"
+                    },
+                    "include_audio": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "scope",
+                    "format"
+                ],
+                "title": "CreateExportRequest"
             },
             "CreateInterviewRequest": {
                 "type": "object",
@@ -14387,6 +14885,36 @@
                             },
                             "required": [
                                 "message"
+                            ]
+                        }
+                    }
+                }
+            },
+            "QueryValidationException": {
+                "description": "Validation error",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string",
+                                    "description": "Errors overview."
+                                },
+                                "errors": {
+                                    "type": "object",
+                                    "description": "A detailed description of each field that failed validation.",
+                                    "additionalProperties": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "required": [
+                                "message",
+                                "errors"
                             ]
                         }
                     }

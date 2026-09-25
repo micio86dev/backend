@@ -49,12 +49,14 @@ use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
+use App\Http\Controllers\PublicApi\ExportController as PublicApiExportController;
 use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController;
 use App\Http\Controllers\PublicApi\InterviewController as PublicApiInterviewController;
 use App\Http\Controllers\PublicApi\OrganizationController as PublicApiOrganizationController;
 use App\Http\Controllers\PublicApi\ProjectController as PublicApiProjectController;
 use App\Http\Controllers\PublicApi\RecordingController as PublicApiRecordingController;
 use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTokenController;
+use App\Http\Controllers\PublicApi\UsageController as PublicApiUsageController;
 use App\Http\Controllers\PublicApi\WebhookDeliveryController as PublicApiWebhookDeliveryController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
@@ -216,6 +218,30 @@ Route::prefix('v1')
             Route::post('/webhooks/deliveries/{id}/redeliver', [PublicApiWebhookDeliveryController::class, 'redeliver'])
                 ->name('webhooks.deliveries.redeliver')
                 ->middleware(['idempotent', SubstituteBindings::class]);
+        });
+
+        // public-api step 8: usage (SPEC.md §3.3/§3.4).
+        Route::middleware('scope:usage:read')->group(function (): void {
+            Route::get('/usage', [PublicApiUsageController::class, 'show'])
+                ->name('usage.show')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        // public-api step 8: exports (SPEC.md §3.3 "Exports"). `store` carries
+        // `idempotent`, same precedent as `POST /interviews`/`redeliver` above.
+        Route::middleware('scope:exports:write')->group(function (): void {
+            Route::post('/exports', [PublicApiExportController::class, 'store'])
+                ->name('exports.store')
+                ->middleware(['idempotent', SubstituteBindings::class]);
+        });
+
+        Route::middleware('scope:exports:read')->group(function (): void {
+            Route::get('/exports', [PublicApiExportController::class, 'index'])
+                ->name('exports.index')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/exports/{id}', [PublicApiExportController::class, 'show'])
+                ->name('exports.show')
+                ->middleware(SubstituteBindings::class);
         });
     });
 

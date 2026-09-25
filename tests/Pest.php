@@ -746,6 +746,20 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/PublicApi/Webhooks');
 
+// Feature/PublicApi/Usage — public-api step 8's `GET /v1/usage` (T-USAGE-*)
+// — creates real Organization/ApiClient/Project/Participant/Evaluation/
+// AiRequest rows via factories and fixtures, same reasoning as every other
+// PublicApi feature dir above (see the Webhooks entry's own comment for
+// what omitting this registration silently does: nothing here is rolled
+// back and every row keeps accumulating across the whole suite run).
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Usage');
+
+// Feature/PublicApi/Exports — public-api step 8's `POST/GET /v1/exports`
+// (T-EXP-*) — same reasoning as Feature/PublicApi/Usage above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Exports');
+
 // Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
 // exercises the legacy-rows cache/observer against real ApiClient rows.
 // ApiModeTest (no DB) is unaffected — extend()/use() are harmless for a
