@@ -124,8 +124,12 @@ final class SettleParticipantCompletion
 
             // afterCommit() attaches to the caller's transaction when there is one
             // (/end) and dispatches immediately when there is not (the two /start
-            // call sites, which hold no transaction).
-            FinalizeInterview::dispatch($participantId)->afterCommit();
+            // call sites, which hold no transaction). $orgId (pre-commit gate,
+            // public-api step 9, round 2 finding 1): the SAME value this
+            // method's own CAS write above already used as a predicate —
+            // never re-read from a Participant row inside FinalizeInterview,
+            // which would make its own downstream org filter circular.
+            FinalizeInterview::dispatch($participantId, $orgId)->afterCommit();
         }
     }
 
@@ -193,7 +197,8 @@ final class SettleParticipantCompletion
             InterviewEventRecorder::underEvaluation($orgId, $participantId);
             InterviewEventRecorder::transcriptReady($orgId, $participantId);
 
-            FinalizeInterview::dispatch($participantId)->afterCommit();
+            // $orgId — see settleIfFinished()'s own identical comment above.
+            FinalizeInterview::dispatch($participantId, $orgId)->afterCommit();
         } else {
             // public-api step 6, G-38: the reaper's "nobody is coming back,
             // and there is nothing to score" outcome — the SAME `error`

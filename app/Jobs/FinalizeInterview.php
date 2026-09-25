@@ -74,6 +74,7 @@ class FinalizeInterview implements ShouldQueue
 
     public function __construct(
         private readonly int $participantId,
+        private readonly int $organizationId,
     ) {}
 
     /**
@@ -86,11 +87,20 @@ class FinalizeInterview implements ShouldQueue
      */
     public function handle(): void
     {
-        // Layer 1 — re-check participant status
-        $participant = Participant::find($this->participantId);
+        // Layer 1 — re-check participant status. org-filtered (pre-commit
+        // gate, public-api step 9, round 2 finding 1): $this->organizationId
+        // comes from the CALLER's own independently-resolved value —
+        // SettleParticipantCompletion's $orgId, read from the Project row
+        // and already used as a predicate on that same class's own CAS
+        // write — never re-derived from this unscoped read, which would
+        // make the filter circular.
+        $participant = Participant::where('organization_id', $this->organizationId)->find($this->participantId);
 
         if ($participant === null) {
-            Log::warning('FinalizeInterview: participant not found', ['participant_id' => $this->participantId]);
+            Log::warning('FinalizeInterview: participant not found', [
+                'participant_id' => $this->participantId,
+                'organization_id' => $this->organizationId,
+            ]);
 
             return;
         }
@@ -131,6 +141,11 @@ class FinalizeInterview implements ShouldQueue
 
         // C9 PR3: dispatch the scoring pipeline via ScoringRequested event.
         // DispatchScoringJob listener picks this up and enqueues ScoreEvaluationJob.
-        event(new ScoringRequested($this->participantId));
+        // organizationId (pre-commit gate, public-api step 9, round 2 finding
+        // 1/2): $this->organizationId, never $participant->organization_id
+        // — the CALLER's own independently-resolved value, so the listener's
+        // downstream filter is a real guard, not one closing a loop back to
+        // the very read it exists to guard.
+        event(new ScoringRequested($this->participantId, $this->organizationId));
     }
 }

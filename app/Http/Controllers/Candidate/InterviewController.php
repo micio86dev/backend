@@ -9,6 +9,7 @@ use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
 use App\DTOs\Conversation\SpokenOpening;
+use App\Enums\ApiKeyMode;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
@@ -16,6 +17,7 @@ use App\Exceptions\ProviderException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
+use App\Jobs\PublicApi\RunMockInterviewJob;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\InterviewSession;
@@ -28,6 +30,7 @@ use App\Services\Conversation\OpeningTextComposer;
 use App\Services\Conversation\SystemPromptComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
+use App\Services\Provider\MockProvider;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
@@ -396,9 +399,17 @@ class InterviewController extends Controller
 
         $pinnedProvider = AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
 
-        $providerName = $pinnedProvider
-            ?? $project->provider_override
-            ?? config('interview.provider', 'heygen');
+        // SPEC.md §3.7 "Test mode" — a beai_test_… enrolment ALWAYS runs the
+        // mock avatar provider, taking priority over the pinned-template /
+        // provider_override / config chain below it, never the reverse
+        // (T-TEST-006): this branch only ever fires for
+        // `$participant->mode === ApiKeyMode::Test`, so a live-mode
+        // interview can never reach `resolveProvider('mock')` through this
+        // assignment, whatever the project's avatar template or override
+        // holds.
+        $providerName = $participant->mode === ApiKeyMode::Test
+            ? 'mock'
+            : ($pinnedProvider ?? $project->provider_override ?? config('interview.provider', 'heygen'));
 
         // (D2/D3) A re-offered competency is reset to `pending` and its previous
         // attempt's transcript discarded BEFORE the session is resumed, so the
@@ -1287,6 +1298,23 @@ class InterviewController extends Controller
                 if ($enteringInCorso) {
                     InterviewEventRecorder::sessionStarted($participant->organization_id, $participant->id);
                 }
+
+                // SPEC.md §3.7 "Test mode" (public-api step 9) — a
+                // mock-provider session triggers the WHOLE scripted
+                // interview lifecycle from this one /start() call: unlike a
+                // real HeyGen/Tavus interview, the candidate app never
+                // drives a test-mode interview competency-by-competency.
+                // Dispatched from INSIDE this transaction, ->afterCommit()
+                // (same idiom as `FinalizeInterview::dispatch(...)
+                // ->afterCommit()` in SettleParticipantCompletion), so the
+                // job never observes this session's row before the write
+                // that created it is visible. RunMockInterviewJob's own
+                // idempotency guards make a redundant dispatch — a retried
+                // /start(), or one called again after the mock interview
+                // already finished — a safe no-op.
+                if ($participant->mode === ApiKeyMode::Test) {
+                    RunMockInterviewJob::dispatch($participant->organization_id, $participant->id)->afterCommit();
+                }
             });
         } catch (\Throwable $e) {
             // (4d) DB failure after provider success → teardown in-memory token (WARNING-6)
@@ -2016,6 +2044,13 @@ class InterviewController extends Controller
     {
         return match ($providerName) {
             'tavus' => app(TavusProvider::class),
+            // SPEC.md §3.7 "Test mode" (public-api step 9) — see
+            // MockProvider's own docblock for why this is the ACTUAL
+            // routing point (start()'s $providerName assignment above is
+            // what forces this arm for a test-mode participant), and
+            // InterviewServiceProvider's contextual binding is the
+            // secondary, defense-in-depth one.
+            'mock' => app(MockProvider::class),
             default => app(HeygenProvider::class),
         };
     }

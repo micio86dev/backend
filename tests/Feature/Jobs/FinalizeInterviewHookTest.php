@@ -51,7 +51,7 @@ test('FinalizeInterview emits ScoringRequested and dispatches ScoreEvaluationJob
     $participant = $participant->fresh();
 
     // Run the FinalizeInterview job
-    $finalizeJob = new FinalizeInterview($participant->id);
+    $finalizeJob = new FinalizeInterview($participant->id, $org->id);
     $finalizeJob->handle();
 
     // ScoringRequested event must be emitted
@@ -84,7 +84,7 @@ test('FinalizeInterview dispatches ScoreEvaluationJob via listener when events a
     $participant = $participant->fresh();
 
     // Run the FinalizeInterview job WITHOUT Event::fake so the listener fires
-    $finalizeJob = new FinalizeInterview($participant->id);
+    $finalizeJob = new FinalizeInterview($participant->id, $org->id);
     $finalizeJob->handle();
 
     // ScoreEvaluationJob should be dispatched exactly once via DispatchScoringJob listener
