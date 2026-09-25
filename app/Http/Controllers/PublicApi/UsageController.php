@@ -15,6 +15,7 @@ use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\UsageAggregator;
 use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,6 +40,8 @@ final class UsageController extends Controller
 {
     #[Response(200, description: 'Usage summary for the requested window.')]
     #[Response(400, description: 'Malformed query parameter, or from is after to (code=validation_failed).', type: Problem::PROBLEM_SHAPE)]
+    #[QueryParameter('from', description: 'Start of the reporting window. Strict ISO 8601 date-time. Defaults to the start of the current month (UTC). from > to answers 400 validation_failed.', type: 'string')]
+    #[QueryParameter('to', description: 'End of the reporting window. Strict ISO 8601 date-time. Defaults to now (UTC).', type: 'string')]
     public function show(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();

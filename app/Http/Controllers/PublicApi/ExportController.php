@@ -22,6 +22,8 @@ use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
+use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -144,7 +146,11 @@ final class ExportController extends Controller
         return PublicApiJson::response(ExportSerializer::toArray($export), 202);
     }
 
+    #[IgnoreResponse(422)]
+    #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
     #[Response(200, description: 'A page of this organization\'s export jobs, newest first.', type: 'array{data: list<'.self::EXPORT_SHAPE.'>, next_cursor: string|null, has_more: bool}')]
+    #[QueryParameter('cursor', description: 'Opaque pagination cursor from a previous page\'s next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.', type: 'string')]
+    #[QueryParameter('limit', description: 'Page size, 1-100 (default 25). Out of range answers 400 validation_failed.', type: 'integer')]
     public function index(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();

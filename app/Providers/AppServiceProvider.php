@@ -33,6 +33,7 @@ use App\Support\PublicApi\ApiKeyResolver;
 use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
+use Dedoc\Scramble\Scramble;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -104,6 +105,14 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->forcePublicRootUrl();
+
+        // Public API contract document (T-CONTRACT-001): `/v1` only, exported to
+        // `openapi.v1.json`, compared against docs/specs/public-api/openapi.yaml.
+        // The default document keeps documenting the whole `/api` surface.
+        Scramble::registerApi('v1', [
+            'api_path' => 'api/v1',
+            'export_path' => 'openapi.v1.json',
+        ]);
 
         // C4 — Register ProjectPolicy for Gate-based authorization.
         /**

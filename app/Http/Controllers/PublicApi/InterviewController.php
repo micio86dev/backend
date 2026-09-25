@@ -173,6 +173,9 @@ final class InterviewController extends Controller
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
     #[QueryParameter('created_after', description: 'Inclusive lower bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.', type: 'string')]
     #[QueryParameter('created_before', description: 'Exclusive upper bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.', type: 'string')]
+    #[QueryParameter('cursor', description: 'Opaque pagination cursor from a previous page\'s next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.', type: 'string')]
+    #[QueryParameter('limit', description: 'Page size, 1-100 (default 25). Out of range answers 400 validation_failed.', type: 'integer')]
+    #[QueryParameter('expand', description: 'Comma-separated related resources to inline. Supported: project.', type: 'string')]
     public function index(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -318,6 +321,7 @@ final class InterviewController extends Controller
         return response()->json($rawPage);
     }
 
+    #[QueryParameter('expand', description: 'Comma-separated related resources to inline. Supported: project.', type: 'string')]
     public function show(Request $request, string $interview): JsonResponse
     {
         $organization = $this->resolveOrganization();

@@ -3586,6 +3586,24 @@
                 "tags": [
                     "Export"
                 ],
+                "parameters": [
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "Opaque pagination cursor from a previous page's next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Page size, 1-100 (default 25). Out of range answers 400 validation_failed.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "A page of this organization's export jobs, newest first.",
@@ -3710,8 +3728,63 @@
                             }
                         }
                     },
-                    "422": {
-                        "$ref": "#/components/responses/QueryValidationException"
+                    "400": {
+                        "description": "Malformed query parameter.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -4478,6 +4551,30 @@
                         "schema": {
                             "type": "string"
                         }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "Opaque pagination cursor from a previous page's next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Page size, 1-100 (default 25). Out of range answers 400 validation_failed.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "expand",
+                        "in": "query",
+                        "description": "Comma-separated related resources to inline. Supported: project.",
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 ],
                 "responses": {
@@ -4585,6 +4682,14 @@
                         "name": "interview",
                         "in": "path",
                         "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "expand",
+                        "in": "query",
+                        "description": "Comma-separated related resources to inline. Supported: project.",
                         "schema": {
                             "type": "string"
                         }
@@ -7577,6 +7682,48 @@
                 "tags": [
                     "Project"
                 ],
+                "parameters": [
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "Opaque pagination cursor from a previous page's next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Page size, 1-100 (default 25). Out of range answers 400 validation_failed.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "Filter by project status.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "role_code",
+                        "in": "query",
+                        "description": "Filter by role code (ICO, FLL, MLL, BUL, SRX).",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "assessment_type",
+                        "in": "query",
+                        "description": "Filter by assessment type (standard or potential).",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "",
@@ -10321,6 +10468,24 @@
                 "tags": [
                     "Usage"
                 ],
+                "parameters": [
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "description": "Start of the reporting window. Strict ISO 8601 date-time. Defaults to the start of the current month (UTC). from > to answers 400 validation_failed.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "description": "End of the reporting window. Strict ISO 8601 date-time. Defaults to now (UTC).",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Usage summary for the requested window.",
@@ -10834,6 +10999,22 @@
                         "in": "query",
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "description": "Opaque pagination cursor from a previous page's next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Page size, 1-100 (default 25). Out of range answers 400 validation_failed.",
+                        "schema": {
+                            "type": "integer"
                         }
                     }
                 ],
@@ -15130,36 +15311,6 @@
                             },
                             "required": [
                                 "message"
-                            ]
-                        }
-                    }
-                }
-            },
-            "QueryValidationException": {
-                "description": "Validation error",
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "message": {
-                                    "type": "string",
-                                    "description": "Errors overview."
-                                },
-                                "errors": {
-                                    "type": "object",
-                                    "description": "A detailed description of each field that failed validation.",
-                                    "additionalProperties": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            },
-                            "required": [
-                                "message",
-                                "errors"
                             ]
                         }
                     }

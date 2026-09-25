@@ -21,6 +21,7 @@ use App\Support\PublicApi\PublicId;
 use App\Support\PublicApi\WebhookDeliveryId;
 use App\Support\Tenancy\TenantResolver;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -95,6 +96,8 @@ final class WebhookDeliveryController extends Controller
     #[IgnoreResponse(422)]
     #[Response(200, description: 'A page of webhook delivery attempts for the caller\'s organization, newest first.', type: 'array{data: list<array{id: string, event_type: string, status: string, interview_id: string, project_id: string, candidate_ref: string, target_url: string|null, attempt_count: int, max_attempts: int, payload_version: string, last_response_status: int|null, last_attempt_at: string|null, next_attempt_at: string|null, delivered_at: string|null, created_at: string}>, next_cursor: string|null, has_more: bool}')]
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
+    #[QueryParameter('cursor', description: 'Opaque pagination cursor from a previous page\'s next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.', type: 'string')]
+    #[QueryParameter('limit', description: 'Page size, 1-100 (default 25). Out of range answers 400 validation_failed.', type: 'integer')]
     public function index(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();

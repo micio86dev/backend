@@ -15,6 +15,7 @@ use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,6 +61,11 @@ final class ProjectController extends Controller
      */
     #[IgnoreResponse(422)]
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
+    #[QueryParameter('cursor', description: 'Opaque pagination cursor from a previous page\'s next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.', type: 'string')]
+    #[QueryParameter('limit', description: 'Page size, 1-100 (default 25). Out of range answers 400 validation_failed.', type: 'integer')]
+    #[QueryParameter('status', description: 'Filter by project status.', type: 'string')]
+    #[QueryParameter('role_code', description: 'Filter by role code (ICO, FLL, MLL, BUL, SRX).', type: 'string')]
+    #[QueryParameter('assessment_type', description: 'Filter by assessment type (standard or potential).', type: 'string')]
     public function index(Request $request): JsonResponse
     {
         $this->validateFilters($request);
