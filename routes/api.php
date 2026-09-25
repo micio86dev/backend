@@ -770,6 +770,20 @@ Route::get('/embed/exchange', [EmbedExchangeController::class, 'exchange'])
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
     ->middleware('throttle:embed-exchange');
 
+// ─── BEAI Public API frame-policy lookup (PUBLIC) (public-api step 10) ───────
+// Read-only counterpart to `/embed/exchange` immediately above — same public,
+// unauthenticated, TenantContext-free posture, same `embed-exchange` throttle
+// (same `?token=` guessing-surface shape), but NEVER consumes the session
+// token (see `ExchangeController::framePolicy()`'s own docblock for why it is
+// not simply `exchange()` reused). Called by `frontend`'s per-request Nitro
+// CSP middleware to resolve the organization's `allowed_domains` for
+// `/embed/{token}`'s `Content-Security-Policy: frame-ancestors` header
+// (SPEC.md §4.4), ahead of — and independently of — the candidate's own later
+// `/embed/exchange` call.
+Route::get('/embed/frame-policy', [EmbedExchangeController::class, 'framePolicy'])
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware('throttle:embed-exchange');
+
 // ─── Candidate Routes (C6) ───────────────────────────────────────────────────
 // Protected by auth:api-candidate → TenantContextCandidate → SubstituteBindings.
 // withoutMiddleware(TenantContext::class) strips the globally-appended human

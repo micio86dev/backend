@@ -215,6 +215,67 @@ final class ExchangeController extends Controller
         return response()->json(['access_token' => $accessToken], 200);
     }
 
+    /**
+     * `GET /api/embed/frame-policy?token=<session_token>` — read-only
+     * `allowed_domains` lookup for the embed page's `Content-Security-Policy:
+     * frame-ancestors` header (public-api step 10, SPEC.md §4.4).
+     *
+     * PUBLIC, deliberately NOT `exchange()` reused: `exchange()` atomically
+     * CONSUMES the session token (the compare-and-clear UPDATE against
+     * `session_token_jti`) — calling it from `frontend`'s per-request Nitro
+     * CSP middleware, ahead of the candidate's OWN later `/embed/exchange`
+     * call, would burn the single-use token before the candidate ever
+     * reaches it, or race it into a `410` the candidate never caused. This
+     * action reads only the token's OWN claims and the organization they
+     * resolve to — no participant lookup, no write, callable any number of
+     * times without affecting the token's single-use state.
+     *
+     * Same `401 token_invalid` shape as `exchange()` for a malformed,
+     * expired, mis-signed, wrong-audience, or unresolvable-organization
+     * token — the caller (the CSP middleware) treats ANY non-200 as "cannot
+     * resolve a policy", which is the trigger for its own fail-safe
+     * `frame-ancestors 'none'` default (never "no restriction").
+     */
+    #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
+    #[Response(200, type: 'array{allowed_domains: list<string>}')]
+    public function framePolicy(Request $request): JsonResponse
+    {
+        $raw = $request->query('token', '');
+
+        if (! is_string($raw) || $raw === '') {
+            return $this->invalid($request);
+        }
+
+        $organization = $this->resolveOrganization($raw);
+
+        if ($organization === null) {
+            return $this->invalid($request);
+        }
+
+        return response()->json(['allowed_domains' => $organization->allowed_domains ?? []], 200);
+    }
+
+    /**
+     * Parses `$raw` and resolves the organization its `org` claim names —
+     * the READ-ONLY half of `exchange()`'s own token handling (verification
+     * plus organization lookup), shared by both actions. Never touches a
+     * participant or any write; `null` on ANY failure (malformed/expired/
+     * mis-signed/wrong-audience token, or an `org` claim that does not
+     * decode to a real organization).
+     */
+    private function resolveOrganization(string $raw): ?Organization
+    {
+        $verified = $this->sessionTokenMinter->parse($raw);
+
+        if ($verified === null || $verified->isExpired()) {
+            return null;
+        }
+
+        $orgBareId = PublicId::decode($verified->organizationPublicId, Organization::publicIdPrefix());
+
+        return $orgBareId === null ? null : Organization::query()->wherePublicId($orgBareId)->first();
+    }
+
     private function invalid(Request $request): JsonResponse
     {
         return Problem::make($request, 401, 'token_invalid', 'Invalid session token');
