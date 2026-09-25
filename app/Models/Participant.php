@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ApiKeyMode;
 use App\Enums\ParticipantSchedulingStatus;
 use App\Exceptions\ParticipantTransitionException;
+use App\Models\Concerns\HasPublicId;
+use App\Support\PublicApi\PubliclyIdentifiable;
 use Database\Factories\ParticipantFactory;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -42,6 +46,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * REQ: Participant Model and Schema, Participant Model Lifecycle Guard
  *
  * @property int $id
+ * @property string $public_id BEAI Public API (`/v1`) external id, bare ULID — public-api step 5, G-05.
  * @property int $organization_id
  * @property int $project_id
  * @property string $candidate_ref
@@ -50,6 +55,10 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property string|null $role_code
  * @property string|null $language
  * @property 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore' $status
+ * @property array<string, string>|null $metadata Public API step 5 — client-owned free-form key/value pairs.
+ * @property string|null $exit_redirect_url Public API step 5 — per-enrolment override of the project's own.
+ * @property ApiKeyMode $mode Public API step 5 — live/test, stamped from the enrolling key.
+ * @property string|null $session_token_jti Public API step 5 — jti of the current unconsumed session token.
  * @property Carbon|null $started_at
  * @property Carbon|null $completed_at
  * @property Carbon|null $scheduled_at
@@ -57,10 +66,10 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
-class Participant extends Model implements AuthenticatableContract, JWTSubject
+class Participant extends Model implements AuthenticatableContract, JWTSubject, PubliclyIdentifiable
 {
     /** @use HasFactory<ParticipantFactory> */
-    use Authenticatable, HasFactory;
+    use Authenticatable, HasFactory, HasPublicId;
 
     /**
      * Mass-assignable attributes.
@@ -103,7 +112,14 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
             'completed_at' => 'datetime',
             'scheduled_at' => 'datetime',
             'scheduling_status' => ParticipantSchedulingStatus::class,
+            'metadata' => 'array',
+            'mode' => ApiKeyMode::class,
         ];
+    }
+
+    public static function publicIdPrefix(): string
+    {
+        return 'int_';
     }
 
     /**
@@ -155,7 +171,13 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
                 return;
             }
 
-            $from = $participant->getOriginal('status');
+            // getOriginal() is declared mixed — status is always a string
+            // column, but narrowed explicitly here (public-api step 5
+            // phpstan --level=max follow-up, this file being touched for
+            // HasPublicId) rather than trusted, since it is both an array
+            // key and interpolated into the exception message below.
+            $fromRaw = $participant->getOriginal('status');
+            $from = is_string($fromRaw) ? $fromRaw : '';
             $to = $participant->status;
 
             $allowed = self::$allowedTransitions[$from] ?? [];
@@ -215,5 +237,16 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * The timeline events recorded for this enrolment (public-api step 5,
+     * G-34) — `GET /v1/interviews/{id}/events`.
+     *
+     * @return HasMany<InterviewEvent, $this>
+     */
+    public function interviewEvents(): HasMany
+    {
+        return $this->hasMany(InterviewEvent::class);
     }
 }

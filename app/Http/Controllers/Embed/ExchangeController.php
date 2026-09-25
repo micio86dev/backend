@@ -1,0 +1,288 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Embed;
+
+use App\Http\Controllers\Controller;
+use App\Models\InterviewEvent;
+use App\Models\Organization;
+use App\Models\Participant;
+use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\PublicApi\InterviewStatus;
+use App\Support\PublicApi\Problem;
+use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\SessionTokenMinter;
+use App\Support\Tenancy\TenantContextScope;
+use Dedoc\Scramble\Attributes\QueryParameter;
+use Dedoc\Scramble\Attributes\Response;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * `GET /api/embed/exchange?token=<session_token>` — BEAI Public API session-
+ * token exchange (public-api step 5, SPEC.md §3.5, G-32).
+ *
+ * PUBLIC endpoint, outside `/v1` — no API key, no `TenantContext`. G-32's
+ * choice: reuses the EXISTING candidate JWT (`App\Support\Jwt\
+ * CandidateTokenFactory::mintCandidateToken()`, the SAME credential the SSO
+ * link flow already mints and `useCandidateSession` already stores) rather
+ * than the `httpOnly` cookie SPEC.md §3.5 originally described — the
+ * candidate app already runs entirely on that bearer JWT, and a cookie
+ * would be a SECOND credential path inheriting G-11's third-party-cookie
+ * failure mode for no benefit. The cookie-flag test becomes "no cookie is
+ * set" (`T-TOK-008`).
+ *
+ * Not part of the `/v1` `ErrorCode` enum (reported as a G-item — this
+ * endpoint's error codes, `token_invalid`/`token_consumed`, are outside the
+ * `/v1` contract surface entirely, since this route is not under `/v1`):
+ * `401 token_invalid` — malformed, mis-signed, wrong-audience, or expired
+ * token; an `org` claim that does not decode to a real organization; a `sub`
+ * that resolves to no participant WITHIN that organization (gga finding 1 —
+ * both the participant lookup and the consume UPDATE below are scoped to the
+ * token's own `org` claim, never an unscoped `public_id` match, even though
+ * `public_id` is globally unique). `410 token_consumed` — a `jti` that does
+ * not match the participant's CURRENT `session_token_jti` (already consumed,
+ * or superseded by a later mint), or an interview no longer `pending` at the
+ * moment the consume UPDATE actually runs (folded into that statement's own
+ * `WHERE`, not a separate earlier read — see `exchange()`'s own comment).
+ *
+ * Consuming a token does NOT change `participants.status` (G-11/§3.5):
+ * `in_progress` begins only when the first interview session actually
+ * starts, a decision this controller has no part in.
+ */
+final class ExchangeController extends Controller
+{
+    public function __construct(
+        private readonly SessionTokenMinter $sessionTokenMinter,
+    ) {}
+
+    /**
+     * `?token=` documented as REQUIRED (step 5 review follow-up, Part B
+     * item 5) — Scramble's own inference read
+     * `$request->query('token', '')`'s literal default and rendered the
+     * parameter as optional with a `""` default, which is accurate about
+     * this METHOD'S defensive handling of a missing value (never a 500)
+     * but not about the CONTRACT: SPEC.md §3.5 names `token` as the one
+     * parameter this operation accepts, and a caller who omits it always
+     * gets `401 token_invalid`, never a meaningful 200 — the same
+     * "required in the contract, defended in code" distinction
+     * `CreateInterviewRequest`'s own required fields already draw.
+     *
+     * `#[Response(200, type: 'array{access_token: string}')]` (step 6
+     * review follow-up, Part A item 5) — `$accessToken` starts its life
+     * assigned a literal `null` below (so it has a value for the
+     * `$raceLost` early-return branch, which never reads it), and is only
+     * ever reassigned inside the `DB::transaction()` closure it is passed
+     * into BY REFERENCE. Scramble's static inference does not follow a
+     * by-reference mutation through a closure call boundary, so without
+     * this attribute it read only the INITIAL `null` assignment and
+     * exported this operation's `200` body as `{access_token: null}` —
+     * true about the variable's DECLARED starting value, never about what
+     * a real response actually contains: every code path that reaches
+     * `response()->json(['access_token' => $accessToken], 200)` below has
+     * already returned early (`$this->invalid()`/`$this->consumed()`) for
+     * every case where a candidate JWT was NOT minted, so `$accessToken`
+     * is always the `string` `CandidateTokenFactory::mintCandidateToken()`
+     * returns by the time this line runs.
+     */
+    #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
+    #[Response(200, type: 'array{access_token: string}')]
+    public function exchange(Request $request): JsonResponse
+    {
+        $raw = $request->query('token', '');
+
+        if (! is_string($raw) || $raw === '') {
+            return $this->invalid($request);
+        }
+
+        $verified = $this->sessionTokenMinter->parse($raw);
+
+        if ($verified === null || $verified->isExpired()) {
+            return $this->invalid($request);
+        }
+
+        // Tenancy (gga finding 1): resolve the organization the TOKEN itself
+        // claims, then scope BOTH the participant lookup and the consume
+        // UPDATE below to it. `public_id` values are globally unique, so an
+        // unscoped lookup could never accidentally RESOLVE another
+        // organization's row — but a token whose `org` claim does not match
+        // the participant's real organization is evidence of tampering or a
+        // stale/forged claim, and must be refused exactly like any other
+        // malformed token (`401 token_invalid`), not treated as a `410` on
+        // a row this query then silently finds anyway.
+        $orgBareId = PublicId::decode($verified->organizationPublicId, Organization::publicIdPrefix());
+        $organization = $orgBareId === null ? null : Organization::query()->wherePublicId($orgBareId)->first();
+
+        if ($organization === null) {
+            return $this->invalid($request);
+        }
+
+        $bareId = PublicId::decode($verified->subject, Participant::publicIdPrefix());
+        $participant = $bareId === null
+            ? null
+            : Participant::where('organization_id', $organization->id)->wherePublicId($bareId)->first();
+
+        if ($participant === null) {
+            return $this->invalid($request);
+        }
+
+        if ($participant->session_token_jti !== $verified->jti) {
+            return $this->consumed($request);
+        }
+
+        // Compare-and-clear, the InterviewEvent insert and the candidate JWT
+        // mint all run inside ONE transaction (step 5 review follow-up,
+        // item 1): a mint failure (`CandidateTokenFactory::mintCandidateToken()`
+        // reaches tymon, which can throw) AFTER the compare-and-clear had
+        // already succeeded used to leave the token PERMANENTLY burned
+        // (`session_token_jti` cleared, an event recorded) with no candidate
+        // JWT ever handed out — the caller has no token left to retry with,
+        // and no way to recover the interview. Wrapping every write in this
+        // transaction means a mint failure now rolls the compare-and-clear
+        // AND the event insert back together: the token is still set,
+        // `status` is untouched, and the caller sees a real 500 to retry
+        // against, instead of a silently unrecoverable interview.
+        $accessToken = null;
+        $raceLost = false;
+
+        DB::transaction(function () use ($participant, $organization, $verified, &$accessToken, &$raceLost): void {
+            // Atomic compare-and-clear: only succeeds while `organization_id`,
+            // `session_token_jti` AND `status` STILL match what was just
+            // read — folding the lifecycle check into this SAME statement
+            // (gga finding 1) closes the window a separate "is it still
+            // pending?" read would leave open: a status transition landing
+            // between that read and this write could otherwise hand out a
+            // candidate JWT for an interview that is no longer `pending`. A
+            // concurrent second exchange of the SAME token loses this race
+            // too, for the identical reason (SPEC.md §3.5 "single-use") —
+            // both cases answer `410 token_consumed` rather than a
+            // second/late candidate JWT.
+            $consumed = Participant::where('id', $participant->id)
+                ->where('organization_id', $organization->id)
+                ->where('session_token_jti', $verified->jti)
+                // InterviewStatus::Pending->toStored() (step 6 review
+                // follow-up, Part A item 7), never the 'in_attesa' literal
+                // — the ONE place this stored value's spelling is allowed
+                // to originate, matching every other stored-status
+                // comparison in this codebase's public-api surface.
+                ->where('status', InterviewStatus::Pending->toStored())
+                ->update(['session_token_jti' => null]);
+
+            if ($consumed === 0) {
+                // Not a failure to roll back — 0 rows changed, so there is
+                // nothing this transaction needs to undo. Flagged for the
+                // caller below rather than returned from here directly: a
+                // `return` inside this closure only exits the closure, not
+                // `exchange()` itself.
+                $raceLost = true;
+
+                return;
+            }
+
+            // InterviewEvent IS a TenantModel — this controller runs on the
+            // PUBLIC, unauthenticated embed-exchange route with no ambient
+            // TenantContext (no TenantContext/PublicApiTenantContext
+            // middleware reaches it — see this class's own docblock), so
+            // its `creating` stamp would otherwise throw
+            // `MissingTenantContextException`. The SAME pattern every
+            // console command and queued job in this codebase already uses
+            // to write a TenantModel row outside an HTTP request's own
+            // tenant-scoped middleware.
+            TenantContextScope::runFor($participant->organization_id, function () use ($participant): void {
+                InterviewEvent::create([
+                    'participant_id' => $participant->id,
+                    'type' => 'token_consumed',
+                    'occurred_at' => now(),
+                ]);
+            });
+
+            // Left to throw and propagate: `DB::transaction()` rolls back
+            // and rethrows on ANY exception from its callback, which is
+            // exactly the "mint failure burns nothing" guarantee this
+            // transaction exists for. Never caught here — a caller-visible
+            // 500 is the correct, honest outcome for a genuinely failed
+            // mint, not a silently swallowed one.
+            $accessToken = CandidateTokenFactory::mintCandidateToken($participant);
+        });
+
+        if ($raceLost) {
+            return $this->consumed($request);
+        }
+
+        // No `Set-Cookie` — G-32/T-TOK-008.
+        return response()->json(['access_token' => $accessToken], 200);
+    }
+
+    /**
+     * `GET /api/embed/frame-policy?token=<session_token>` — read-only
+     * `allowed_domains` lookup for the embed page's `Content-Security-Policy:
+     * frame-ancestors` header (public-api step 10, SPEC.md §4.4).
+     *
+     * PUBLIC, deliberately NOT `exchange()` reused: `exchange()` atomically
+     * CONSUMES the session token (the compare-and-clear UPDATE against
+     * `session_token_jti`) — calling it from `frontend`'s per-request Nitro
+     * CSP middleware, ahead of the candidate's OWN later `/embed/exchange`
+     * call, would burn the single-use token before the candidate ever
+     * reaches it, or race it into a `410` the candidate never caused. This
+     * action reads only the token's OWN claims and the organization they
+     * resolve to — no participant lookup, no write, callable any number of
+     * times without affecting the token's single-use state.
+     *
+     * Same `401 token_invalid` shape as `exchange()` for a malformed,
+     * expired, mis-signed, wrong-audience, or unresolvable-organization
+     * token — the caller (the CSP middleware) treats ANY non-200 as "cannot
+     * resolve a policy", which is the trigger for its own fail-safe
+     * `frame-ancestors 'none'` default (never "no restriction").
+     */
+    #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
+    #[Response(200, type: 'array{allowed_domains: list<string>}')]
+    public function framePolicy(Request $request): JsonResponse
+    {
+        $raw = $request->query('token', '');
+
+        if (! is_string($raw) || $raw === '') {
+            return $this->invalid($request);
+        }
+
+        $organization = $this->resolveOrganization($raw);
+
+        if ($organization === null) {
+            return $this->invalid($request);
+        }
+
+        return response()->json(['allowed_domains' => $organization->allowed_domains ?? []], 200);
+    }
+
+    /**
+     * Parses `$raw` and resolves the organization its `org` claim names —
+     * the READ-ONLY half of `exchange()`'s own token handling (verification
+     * plus organization lookup), shared by both actions. Never touches a
+     * participant or any write; `null` on ANY failure (malformed/expired/
+     * mis-signed/wrong-audience token, or an `org` claim that does not
+     * decode to a real organization).
+     */
+    private function resolveOrganization(string $raw): ?Organization
+    {
+        $verified = $this->sessionTokenMinter->parse($raw);
+
+        if ($verified === null || $verified->isExpired()) {
+            return null;
+        }
+
+        $orgBareId = PublicId::decode($verified->organizationPublicId, Organization::publicIdPrefix());
+
+        return $orgBareId === null ? null : Organization::query()->wherePublicId($orgBareId)->first();
+    }
+
+    private function invalid(Request $request): JsonResponse
+    {
+        return Problem::make($request, 401, 'token_invalid', 'Invalid session token');
+    }
+
+    private function consumed(Request $request): JsonResponse
+    {
+        return Problem::make($request, 410, 'token_consumed', 'Session token already consumed');
+    }
+}

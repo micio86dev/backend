@@ -18,6 +18,7 @@ declare(strict_types=1);
  * REQ: POST /utterance — best-effort live transcript ingestion (C7a)
  */
 
+use App\Models\InterviewEvent;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -167,6 +168,10 @@ test('POST /utterance with completed session → 409 Conflict; no row persisted 
     // No new row must be persisted
     $countAfter = Utterance::where('interview_session_id', $session->id)->count();
     expect($countAfter)->toBe($countBefore);
+
+    // The atomic guard rejected the turn (0 rows inserted), so no
+    // `answer_recorded` event must be recorded for it either.
+    expect(InterviewEvent::where('participant_id', $participant->id)->where('type', 'answer_recorded')->count())->toBe(0);
 });
 
 test('POST /utterance with timeout session → 409 Conflict; no row persisted', function (): void {
@@ -290,4 +295,8 @@ test('POST /utterance TOCTOU: session status completed atomically means 409 not 
     // The atomic WHERE status='in_corso' condition fails → 409
     $response->assertStatus(409);
     expect(Utterance::where('interview_session_id', $session->id)->count())->toBe(0);
+
+    // 0 rows inserted → no `answer_recorded` event either (the guard's
+    // rejection is not observable as a phantom event on the timeline).
+    expect(InterviewEvent::where('participant_id', $participant->id)->where('type', 'answer_recorded')->count())->toBe(0);
 });

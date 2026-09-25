@@ -22,9 +22,8 @@ test('whoami reflects client organization_id, not a forged org from request', fu
     $orgB = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $orgA->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'abilities' => ['participants:read'],
     ]);
 
@@ -49,9 +48,8 @@ test('resolver org_id comes from client record, not request input', function ():
     $orgA = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $orgA->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])

@@ -10,6 +10,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Utterance;
 use App\Support\Interview\CompetencyTally;
+use App\Support\PublicApi\InterviewEventRecorder;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -79,15 +80,24 @@ final class SettleParticipantCompletion
         // is an argument about three call sites, and the next call site added
         // is the one that breaks it. Read from the project rather than trusted
         // from the caller, so the invariant is local to this query.
-        $orgId = Project::whereKey($projectId)->value('organization_id');
+        // `narrowOrganizationId()`, not a bare `is_int()` (step 6 review —
+        // `organization_id` is read via `value()`, declared `mixed`;
+        // narrowed here so the `InterviewEventRecorder` calls below receive
+        // a genuine `int`, never a value PHPStan's `--level=max`
+        // explicit-mixed check would still call unproven). Also accepts a
+        // numeric-string organization id (step 6 review follow-up, finding
+        // 5) — some driver/config combinations return an integer column as
+        // a PHP string, and a bare `is_int()` rejected that as if the
+        // project had not resolved at all, silently stranding the
+        // participant in `in_corso`. The filter is correct and stays
+        // regardless: `Project` soft-deletes and runs through the tenant
+        // scope, so an unresolved value here makes the update match zero
+        // rows, `$won !== 1`, and the participant stays `in_corso` with no
+        // scoring, no webhook and no notification — verbatim the stranding
+        // this method exists to end, reached by another route.
+        $orgId = $this->narrowOrganizationId(Project::whereKey($projectId)->value('organization_id'));
 
         if ($orgId === null) {
-            // The filter is correct and stays. What must not be silent is the
-            // case where it cannot be resolved: `Project` soft-deletes and runs
-            // through the tenant scope, so a null here makes the update match
-            // zero rows, `$won !== 1`, and the participant stays `in_corso`
-            // with no scoring, no webhook and no notification — verbatim the
-            // stranding this method exists to end, reached by another route.
             Log::error('settle: cannot settle completion — project did not resolve', [
                 'participant_id' => $participantId,
                 'project_id' => $projectId,
@@ -102,10 +112,24 @@ final class SettleParticipantCompletion
             ->update(['status' => 'in_valutazione']);
 
         if ($won === 1) {
+            // public-api step 6, G-38: `under_evaluation` + `transcript_ready`
+            // fire together at the exact CAS win this comparison guards —
+            // the same "single-winner" guarantee that makes calling this
+            // method from anywhere safe also makes it the one place these
+            // two events are recorded, never a second call site that could
+            // double-fire them for a participant a different path already
+            // settled.
+            InterviewEventRecorder::underEvaluation($orgId, $participantId);
+            InterviewEventRecorder::transcriptReady($orgId, $participantId);
+
             // afterCommit() attaches to the caller's transaction when there is one
             // (/end) and dispatches immediately when there is not (the two /start
-            // call sites, which hold no transaction).
-            FinalizeInterview::dispatch($participantId)->afterCommit();
+            // call sites, which hold no transaction). $orgId (pre-commit gate,
+            // public-api step 9, round 2 finding 1): the SAME value this
+            // method's own CAS write above already used as a predicate —
+            // never re-read from a Participant row inside FinalizeInterview,
+            // which would make its own downstream org filter circular.
+            FinalizeInterview::dispatch($participantId, $orgId)->afterCommit();
         }
     }
 
@@ -135,7 +159,8 @@ final class SettleParticipantCompletion
      */
     public function settleAbandoned(int $participantId, int $projectId): ?string
     {
-        $orgId = Project::whereKey($projectId)->value('organization_id');
+        // narrowOrganizationId() — see settleIfFinished()'s own comment.
+        $orgId = $this->narrowOrganizationId(Project::whereKey($projectId)->value('organization_id'));
 
         if ($orgId === null) {
             Log::error('settle: cannot settle abandoned participant — project did not resolve', [
@@ -169,9 +194,48 @@ final class SettleParticipantCompletion
         }
 
         if ($next === 'in_valutazione') {
-            FinalizeInterview::dispatch($participantId)->afterCommit();
+            InterviewEventRecorder::underEvaluation($orgId, $participantId);
+            InterviewEventRecorder::transcriptReady($orgId, $participantId);
+
+            // $orgId — see settleIfFinished()'s own identical comment above.
+            FinalizeInterview::dispatch($participantId, $orgId)->afterCommit();
+        } else {
+            // public-api step 6, G-38: the reaper's "nobody is coming back,
+            // and there is nothing to score" outcome — the SAME `error`
+            // event type `ScoreEvaluationJob`'s own terminal-failure path
+            // records, from a different seam that reaches the identical
+            // `errore` status.
+            InterviewEventRecorder::error($orgId, $participantId);
         }
 
         return $next;
+    }
+
+    /**
+     * Narrows `Project::value('organization_id')`'s `mixed` return to a
+     * genuine, positive organization id (step 6 review follow-up, finding
+     * 5) — accepting either a native `int` or a numeric string a
+     * driver/config combination may return integer columns as (some
+     * `pdo_pgsql` configurations do not stringify-fetch consistently
+     * across environments). `ctype_digit()`, not `is_numeric()` — the
+     * latter also accepts a leading `+`/`-`, a decimal point, exponent
+     * notation (`"1e3"`) and leading/trailing whitespace, none of which is
+     * a valid organization id shape; `ctype_digit()` restricts this to an
+     * unsigned run of decimal digits only. Cast THEN validated `> 0`: a
+     * real database id is never `0` or negative, and this rejects both a
+     * genuinely malformed value and the (impossible in practice, but not
+     * provable from the type alone) case of a stray `"0"`/negative string.
+     */
+    private function narrowOrganizationId(mixed $orgId): ?int
+    {
+        if (is_int($orgId)) {
+            $candidate = $orgId;
+        } elseif (is_string($orgId) && $orgId !== '' && ctype_digit($orgId)) {
+            $candidate = (int) $orgId;
+        } else {
+            return null;
+        }
+
+        return $candidate > 0 ? $candidate : null;
     }
 }

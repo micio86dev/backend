@@ -21,7 +21,20 @@ final class ScoringRequested
 {
     use Dispatchable, SerializesModels;
 
+    /**
+     * `organizationId` (pre-commit gate, public-api step 9, findings 1/2 and
+     * their round-2 correction): `Participant` carries no global scope, so
+     * `DispatchScoringJob`'s own `find($event->participantId)` had no org
+     * filter at all. `FinalizeInterview` now carries its OWN
+     * `$organizationId` constructor argument — sourced from
+     * `SettleParticipantCompletion`'s independently-resolved `$orgId` (read
+     * from the `Project` row, never from an unscoped `Participant` read) —
+     * and threads that same value here, so this event's `organizationId`
+     * traces back to a genuinely independent source, not a value read off
+     * the very row the filter exists to guard.
+     */
     public function __construct(
         public readonly int $participantId,
+        public readonly int $organizationId,
     ) {}
 }

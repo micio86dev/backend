@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Webhooks;
 
+use App\Enums\ApiKeyMode;
 use App\Enums\WebhookEventType;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
@@ -44,7 +45,16 @@ final class EvaluationPayloadAssembler
     public function assembleForEvaluation(int $evaluationId, string $deliveryId): array
     {
         $evaluation = Evaluation::withoutGlobalScopes()->findOrFail($evaluationId);
-        $participant = Participant::findOrFail($evaluation->participant_id);
+        // Org-scoped (pre-commit gate, round 4, finding 3): `Participant` is
+        // a PLAIN model (class doc), never auto-scoped by a global scope —
+        // an unscoped `findOrFail()` here would happily resolve a
+        // participant belonging to a DIFFERENT organization than this
+        // Evaluation's own `organization_id` if the two ever disagreed
+        // (corrupt data, a future bug elsewhere), silently rendering that
+        // other organization's candidate data into this webhook payload.
+        // `$evaluation->organization_id` is already loaded on the row
+        // above — no extra query needed to close this.
+        $participant = Participant::where('organization_id', $evaluation->organization_id)->findOrFail($evaluation->participant_id);
         $project = Project::withoutGlobalScopes()->findOrFail($participant->project_id);
 
         return $this->envelope($deliveryId, $participant, $project, [
@@ -60,11 +70,20 @@ final class EvaluationPayloadAssembler
      * 'processing' before the job failed), else the terminal participant state
      * (design.md D7). `text` is always empty — there is no scored data to report.
      *
+     * `$organizationId` (pre-commit gate, round 4, finding 3): threaded through from
+     * the caller, which already knows the participant's own organization — see
+     * `App\Listeners\SendEvaluationWebhook::handleFailed()`.
+     *
      * @return array<string, mixed>
      */
-    public function assembleForFailedParticipant(int $participantId, string $deliveryId): array
+    public function assembleForFailedParticipant(int $participantId, int $organizationId, string $deliveryId): array
     {
-        $participant = Participant::findOrFail($participantId);
+        // Org-scoped (pre-commit gate, round 4, finding 3) — see
+        // assembleForEvaluation()'s own identical comment. No Evaluation
+        // row is guaranteed to exist on this path, so the caller threads
+        // `$organizationId` through explicitly rather than this method
+        // deriving it itself.
+        $participant = Participant::where('organization_id', $organizationId)->findOrFail($participantId);
         $project = Project::withoutGlobalScopes()->findOrFail($participant->project_id);
         $evaluation = Evaluation::withoutGlobalScopes()->where('participant_id', $participantId)->first();
 
@@ -88,6 +107,9 @@ final class EvaluationPayloadAssembler
             'event' => WebhookEventType::Evaluation->value,
             'delivery_id' => $deliveryId,
             'occurred_at' => now()->utc()->toIso8601String(),
+            // SPEC.md §3.7 — same reasoning as
+            // `ProgressPayloadAssembler`'s own identical field.
+            'livemode' => $participant->mode === ApiKeyMode::Live,
             'candidate_ref' => $participant->candidate_ref,
             'project' => [
                 'id' => $project->id,

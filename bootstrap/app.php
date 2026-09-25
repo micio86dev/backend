@@ -12,12 +12,20 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
 use App\Exceptions\Users\UserGuardException;
 use App\Http\Middleware\CheckAbility;
+use App\Http\Middleware\PublicApi\AssignRequestId;
+use App\Http\Middleware\PublicApi\AuthenticatePublicApi;
+use App\Http\Middleware\PublicApi\IdempotencyKey;
+use App\Http\Middleware\PublicApi\PublicApiTenantContext;
+use App\Http\Middleware\PublicApi\RateLimitPublicApi;
+use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
+use App\Http\Middleware\PublicApi\RequireScope;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocaleFromRequest;
 use App\Http\Middleware\TenantContext;
 use App\Models\RefreshToken;
+use App\Support\PublicApi\PublicApiExceptionRenderer;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -182,6 +190,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'ability' => CheckAbility::class,
             'refresh.csrf' => RequireRefreshCsrfHeader::class,
+            // public-api step 2: the `/v1` counterpart of `ability` — e.g.
+            // Route::middleware('scope:interviews:read').
+            'scope' => RequireScope::class,
+            // public-api step 3: opt-in per-route Idempotency-Key support —
+            // e.g. Route::middleware('idempotent') on a POST endpoint that
+            // documents `idempotencyKey` in openapi.yaml.
+            'idempotent' => IdempotencyKey::class,
         ]);
 
         // C5: Insert CheckAbility IMMEDIATELY BEFORE SubstituteBindings in the priority list.
@@ -190,6 +205,45 @@ return Application::configure(basePath: dirname(__DIR__))
         // enumeration oracle. prependToPriorityList inserts without replacing the full list.
         // ⚠️  NOT appendToPriorityList — that would place CheckAbility AFTER SubstituteBindings.
         $middleware->prependToPriorityList(SubstituteBindings::class, CheckAbility::class);
+
+        // public-api step 2: same 404-vs-403 oracle, same fix — RequireScope
+        // MUST run before SubstituteBindings resolves a route-bound model.
+        $middleware->prependToPriorityList(SubstituteBindings::class, RequireScope::class);
+
+        // public-api step 4 (review finding): `SortedMiddleware` does not
+        // treat "priority-listed" as "reorder relative to everything given"
+        // — it reorders EVERY middleware present in the priority list to
+        // sit together, in priority order, ahead of every middleware that
+        // is NOT in the priority list, regardless of the GIVEN array's own
+        // order. `RequireScope` (above) and `SubstituteBindings` (a Laravel
+        // default priority entry) are the only two `/v1` middleware in that
+        // list — so on any route combining them with the rest of the `/v1`
+        // stack (`AssignRequestId`, `RejectApiKeyInQuery`,
+        // `AuthenticatePublicApi`, `PublicApiTenantContext`,
+        // `RateLimitPublicApi`, none of which are priority-listed), those
+        // five were silently pulled to run AFTER `RequireScope` — i.e.
+        // `RequireScope` ran BEFORE `AuthenticatePublicApi` ever resolved a
+        // client, "successfully" reading whatever `Auth::guard('api-m2m')`
+        // returned from its OWN lazy `viaRequest` fallback
+        // (`allowTestMode: false`) instead — silently WRONG for a real
+        // `/v1` request (a `beai_test_` key would be rejected by the wrong
+        // rule) and, because `Illuminate\Auth\RequestGuard` caches its
+        // resolved user for the guard instance's lifetime, capable of
+        // authenticating a LATER request in the same PHP process as an
+        // EARLIER request's client. Only discovered here because step 4 is
+        // the first step to combine `scope:` with real `/v1` business
+        // routes — `T-AUTH-005`'s original probe-route version never
+        // exercised the real `routes/api.php` registration at all.
+        //
+        // Fix: put the entire `/v1` authenticated stack in the SAME
+        // priority chain, in its intended order, so nothing in it is
+        // "unlisted" any more and `SortedMiddleware` has nothing left to
+        // silently reshuffle.
+        $middleware->prependToPriorityList(RequireScope::class, RateLimitPublicApi::class);
+        $middleware->prependToPriorityList(RateLimitPublicApi::class, PublicApiTenantContext::class);
+        $middleware->prependToPriorityList(PublicApiTenantContext::class, AuthenticatePublicApi::class);
+        $middleware->prependToPriorityList(AuthenticatePublicApi::class, RejectApiKeyInQuery::class);
+        $middleware->prependToPriorityList(RejectApiKeyInQuery::class, AssignRequestId::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
@@ -247,4 +301,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (EntryLinkUrlNotConfigured $e, Request $request) {
             return $e->render($request);
         });
+
+        // public-api step 3: every uncaught exception on `/v1` renders as
+        // `application/problem+json` (SPEC.md §3.2) — see
+        // App\Support\PublicApi\PublicApiExceptionRenderer's own docblock for
+        // the full status/code mapping and its documented judgement calls
+        // (G-27). Registered with the widest possible type hint
+        // (`Throwable`) so it is reached for every exception type;
+        // `render()` itself returns null for anything outside `api/v1/*`,
+        // deferring to every renderer above for the existing `/api/*`
+        // (backoffice) surface, which this callback never touches.
+        $exceptions->render(fn (Throwable $e, Request $request) => PublicApiExceptionRenderer::render($e, $request));
     })->create();

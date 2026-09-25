@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Contracts\AuditJudge;
 use App\Contracts\LLMProvider;
 use App\Contracts\RedisEvictionPolicyProbe;
+use App\Http\Middleware\PublicApi\RateLimitPublicApi;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
@@ -28,13 +29,19 @@ use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
 use App\Services\Scoring\ThresholdValidityPredicate;
 use App\Support\Auth\RedisConfigEvictionPolicyProbe;
+use App\Support\PublicApi\ApiKeyResolver;
+use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecuritySchemes\HttpSecurityScheme;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -86,6 +93,12 @@ class AppServiceProvider extends ServiceProvider
         // default; tests bind a fake via $this->app->instance() (LLMProvider
         // pattern) rather than mocking the final concrete implementation.
         $this->app->bind(RedisEvictionPolicyProbe::class, RedisConfigEvictionPolicyProbe::class);
+
+        // public-api step 2 — request-scoped, mirroring TenantResolver's own
+        // registration exactly (scoped(), not singleton(): Octane-safe, and
+        // reset per request rather than leaking between requests sharing a
+        // worker).
+        $this->app->scoped(ApiMode::class);
     }
 
     /**
@@ -94,6 +107,29 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->forcePublicRootUrl();
+
+        // Public API contract document (T-CONTRACT-001): `/v1` only, exported to
+        // `openapi.v1.json`, compared against docs/specs/public-api/openapi.yaml.
+        // The default document keeps documenting the whole `/api` surface.
+        Scramble::registerApi('v1', [
+            'api_path' => 'api/v1',
+            'export_path' => 'openapi.v1.json',
+            // The reference's own server (`openapi.yaml` servers[0]); the host is a
+            // placeholder until the public API host is decided (G-03, G-56).
+            'servers' => ['' => config('public_api.spec_server_url')],
+        ])->withDocumentTransformers(function (OpenApi $document): void {
+            // Mirror the reference: every operation takes the `apiKey` bearer
+            // credential except `/health`, which overrides it with `security: []`.
+            $document->secure((new HttpSecurityScheme('bearer', 'beai_live_… | beai_test_…'))->as('apiKey'));
+
+            foreach ($document->paths as $path) {
+                if (ltrim($path->path, '/') === 'health') {
+                    foreach ($path->operations as $operation) {
+                        $operation->security = [];
+                    }
+                }
+            }
+        });
 
         // C4 — Register ProjectPolicy for Gate-based authorization.
         /**
@@ -218,11 +254,18 @@ class AppServiceProvider extends ServiceProvider
         //
         // Guard closure:
         //   1. Extract Bearer token from Authorization header.
-        //   2. SHA-256 hash → raw ApiClient lookup via unique key_hash index (active scope).
-        //   3. Redis client_revoked:{id} denylist check — exception-guarded (fail-safe
-        //      = DB re-query on outage, NEVER fail-open).
-        //   4. Throttled last_used_at update (best-effort, exception-guarded).
-        //   5. Return ApiClient or null (null → 401 by the Authenticate middleware).
+        //   2. Delegate resolution — hash/prefix lookup, denylist check,
+        //      throttled last_used_at update — to App\Support\PublicApi\
+        //      ApiKeyResolver (public-api step 2), SHARED with the new `/v1`
+        //      AuthenticatePublicApi middleware. Every pre-existing (live)
+        //      key still resolves through the resolver's legacy hash-only
+        //      fallback (see that class's docblock), so this guard's own
+        //      test suite (tests/Feature/C5/GuardResolutionTest.php etc.)
+        //      stays green untouched. Review follow-up (finding 1): passes
+        //      allowTestMode: false — a `beai_test_` key, which exists only
+        //      for the public `/v1` surface (SPEC.md §3.7), must never
+        //      authenticate here and reach live tenant data.
+        //   3. Return ApiClient or null (null → 401 by the Authenticate middleware).
         Auth::viaRequest('api-m2m', function (Request $request): ?ApiClient {
             $header = $request->header('Authorization', '');
             if (! str_starts_with((string) $header, 'Bearer ')) {
@@ -234,44 +277,9 @@ class AppServiceProvider extends ServiceProvider
                 return null;
             }
 
-            $hash = hash('sha256', $raw);
-
-            // Raw unscoped lookup — ApiClient is NOT a TenantModel; TenantResolver is
-            // not stamped yet at this point (TenantContextM2m runs after the guard).
-            $client = ApiClient::active()->where('key_hash', $hash)->first();
-
-            if ($client === null) {
-                return null;
-            }
-
-            // Redis denylist check: client_revoked:{id}
-            // Fail-safe: on Redis outage, fall back to a FRESH DB active() re-query.
-            // NEVER fail-open — is_active is the durable authoritative revocation flag.
-            try {
-                $denylistKey = 'client_revoked:'.$client->id;
-                if (Cache::has($denylistKey)) {
-                    return null;
-                }
-            } catch (\Throwable) {
-                // Redis is down — re-query DB with full active() scope (fresh read,
-                // not the in-memory model which could be stale).
-                $client = ApiClient::active()->where('key_hash', $hash)->first();
-                if ($client === null) {
-                    return null;
-                }
-            }
-
-            // Throttled last_used_at update — best-effort, non-fatal.
-            // Write only if null or older than 5 minutes to avoid per-request writes.
-            try {
-                if ($client->last_used_at === null || $client->last_used_at->lt(now()->subMinutes(5))) {
-                    $client->updateQuietly(['last_used_at' => now()]);
-                }
-            } catch (\Throwable) {
-                // Non-fatal — telemetry write failure must never reject an authenticated request.
-            }
-
-            return $client;
+            // Review follow-up (finding 1): allowTestMode=false — this
+            // internal surface must never authenticate a beai_test_ key.
+            return ApiKeyResolver::resolve($raw, allowTestMode: false);
         });
 
         // C6 — Register the api-candidate RequestGuard.
@@ -329,8 +337,15 @@ class AppServiceProvider extends ServiceProvider
         // spatie/laravel-translatable ^6.x does not publish a config file; the
         // Translatable singleton is configured programmatically here.
         // Values are read from config/translatable.php for traceability.
+        //
+        // `config()` returns `mixed` — narrowed here (step 5 review follow-up,
+        // PHPStan level-max on this touched file) rather than trusted as a
+        // string, matching `forcePublicRootUrl()`'s own discipline below for
+        // the identical reason.
+        $fallbackLocale = config('translatable.fallback_locale', 'en');
+
         Translatable::fallback(
-            fallbackLocale: config('translatable.fallback_locale', 'en'),
+            fallbackLocale: is_string($fallbackLocale) ? $fallbackLocale : 'en',
             fallbackAny: (bool) config('translatable.fallback_any', true),
         );
 
@@ -358,6 +373,69 @@ class AppServiceProvider extends ServiceProvider
                 app(PermissionRegistrar::class)->forgetCachedPermissions();
             });
         }
+
+        // public-api step 3: the `public-api` named rate limiter — SPEC.md
+        // §3.2 "Rate limiting: per organization, token bucket". G-30
+        // (documented judgement call, step 3 review follow-up 5): despite
+        // that wording, this is a FIXED-WINDOW counter, not a token bucket
+        // — `Illuminate\Cache\RateLimiter` has no other mode. A fixed
+        // window can let a client push up to `2 * max` requests through a
+        // short span straddling a window boundary (`max` at the end of one
+        // window, `max` more at the start of the next); a true token
+        // bucket would not. That cross-window burst is an accepted
+        // deviation from the spec's literal wording — see
+        // `RateLimitPublicApi`'s own docblock for the full reasoning and
+        // for the WITHIN-window atomicity guarantee this class does hold
+        // (a single window can never itself exceed `max`).
+        //
+        // This declarative registration is the single source of truth for
+        // the bucket DEFINITION (key + limit) AND the live bucket
+        // `RateLimitPublicApi` resolves through `$limiter->limiter(
+        // 'public-api')` rather than calling `keyFor()`/`maxAttemptsFor()`
+        // directly — see that class's own docblock for why the middleware
+        // still talks to the underlying `Illuminate\Cache\RateLimiter`
+        // counter directly instead of through the `throttle:public-api`
+        // alias (contract-mandated header names/shape Laravel's built-in
+        // middleware does not produce). `Limit::none()` for a request with
+        // no resolved client is unreachable in the real `/v1` stack
+        // (`AuthenticatePublicApi` always runs first) but keeps this
+        // callback total.
+        RateLimiter::for('public-api', function (Request $request) {
+            /** @var ApiClient|null $client */
+            $client = $request->attributes->get('public_api.client');
+
+            if (! $client instanceof ApiClient) {
+                return Limit::none();
+            }
+
+            return Limit::perMinute(RateLimitPublicApi::maxAttemptsFor($client))
+                ->by(RateLimitPublicApi::keyFor($client));
+        });
+
+        // `embed-exchange` — GET /api/embed/exchange (public-api step 5,
+        // SPEC.md §3.5, G-32). A NAMED limiter (step 5 review follow-up,
+        // item 2), not the numeric `throttle:30,1` this route used before:
+        // Laravel's numeric form resolves its bucket key through
+        // `ThrottleRequests::resolveRequestSignature()`, which ALWAYS calls
+        // `$request->user()` on the application's DEFAULT guard first —
+        // regardless of whether this route runs any auth middleware at
+        // all. That guard is tymon's JWTGuard, whose own token parser
+        // chain reads a `token` QUERY/INPUT parameter by the SAME name
+        // this endpoint's own `?token=` contract parameter uses
+        // (`Tymon\JWTAuth\Http\Parser\QueryString`/`InputSource`, tymon's
+        // own default chain) — an array-shaped `?token[]=` value (never
+        // valid here, but never rejected before this middleware runs
+        // either) reached `explode('.', $array)` inside tymon's token
+        // validator and 500'd, before `ExchangeController::exchange()`
+        // ever got a chance to answer its own `401 token_invalid`. A named
+        // limiter's callback owns the bucket key OUTRIGHT (`->by()` below)
+        // and Laravel never calls `resolveRequestSignature()`/`$request->
+        // user()` for it — keyed on IP, matching this route's own
+        // docblock reasoning (a brute-force-guessing surface against
+        // `?token=`, not a per-account one).
+        RateLimiter::for('embed-exchange', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip() ?? 'unknown');
+        });
     }
 
     /**
@@ -383,7 +461,13 @@ class AppServiceProvider extends ServiceProvider
      */
     private function forcePublicRootUrl(): void
     {
-        $appUrl = (string) config('app.url');
+        // `config()` returns `mixed` — narrowed here rather than blindly
+        // `(string)`-cast (step 5 review follow-up, PHPStan level-max on
+        // this touched file: a blind cast on a non-scalar config value
+        // produces a PHP warning and an unhelpful string like "Array" at
+        // runtime, not a clean empty-string fallback).
+        $configuredAppUrl = config('app.url');
+        $appUrl = is_string($configuredAppUrl) ? $configuredAppUrl : '';
 
         if ($appUrl === '' || filter_var($appUrl, FILTER_VALIDATE_URL) === false) {
             return;

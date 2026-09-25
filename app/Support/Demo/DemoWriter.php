@@ -1087,7 +1087,10 @@ final class DemoWriter
                 }
 
                 $eventType = WebhookEventType::Progress;
-                $payload = $this->progressPayloadAssembler->assemble($participant->id, (string) Str::uuid());
+                // $project->organization_id (pre-commit gate, round 4,
+                // finding 3): already resolved above, threaded through so
+                // the assembler's own Participant read is org-scoped.
+                $payload = $this->progressPayloadAssembler->assemble($participant->id, $project->organization_id, (string) Str::uuid());
             }
 
             $existing = WebhookDelivery::where('project_id', $project->id)

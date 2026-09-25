@@ -23,9 +23,8 @@ test('valid key → 200 with client_id, organization_id, abilities', function ()
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    $client = ApiClient::factory()->create([
+    $client = ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'abilities' => ['participants:read', 'projects:read'],
         'is_active' => true,
     ]);
@@ -47,9 +46,8 @@ test('expired key → 401', function (): void {
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'is_active' => true,
         'expires_at' => now()->subHour(),
     ]);
@@ -63,9 +61,8 @@ test('api_key is absent from whoami response', function (): void {
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
@@ -79,9 +76,8 @@ test('key_hash is absent from whoami response', function (): void {
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])

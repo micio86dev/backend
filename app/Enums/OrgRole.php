@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Concerns\HasValues;
+
 /**
  * Authorization role allow-list (backoffice-missing-pages D4).
  *
@@ -21,15 +23,9 @@ namespace App\Enums;
  */
 enum OrgRole: string
 {
+    use HasValues;
+
     case Admin = 'admin';
     case Operator = 'operator';
     case Viewer = 'viewer';
-
-    /**
-     * @return list<string>
-     */
-    public static function values(): array
-    {
-        return array_map(fn (self $case): string => $case->value, self::cases());
-    }
 }

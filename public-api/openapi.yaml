@@ -1,0 +1,1200 @@
+openapi: 3.1.0
+info:
+  title: BEAI Public API
+  version: "1.0.0"
+  summary: Enrol candidates in AI voice interviews and retrieve all organization data.
+  description: |
+    Server-to-server API. Authenticate with an organization API key (`Authorization: Bearer beai_live_…`).
+    API keys must never be used from browsers. Configuration (projects, avatars, LLM, webhook endpoints)
+    is managed in the BEAI backoffice; this API is read-only for configuration.
+
+    **Contract governance.** This file is the design reference every `/v1` integration test validates
+    against. Step 11 exports the Scramble-generated specification filtered to `/v1`, and CI asserts the
+    two are equivalent (`T-CONTRACT-001`). Neither may change without the other.
+  x-api-version-date: "2026-09-01"
+  contact: { name: BEAI Developer Support, url: https://developers.beai.example }
+servers:
+  - url: https://api.beai.example/v1
+security:
+  - apiKey: []
+tags:
+  - name: Organization
+    description: The organization that owns the API key.
+  - name: Projects
+    description: Assessment campaigns (read-only; configured in the backoffice).
+  - name: Interviews
+    description: Participant enrolments in a project and everything they produce.
+  - name: Usage
+    description: Usage aggregates as shown on the backoffice dashboard.
+  - name: Exports
+    description: Asynchronous bulk exports.
+  - name: Webhooks
+    description: Delivery log of the `progress` and `evaluation` webhooks.
+  - name: Health
+    description: Unauthenticated liveness.
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      security: []
+      operationId: getHealth
+      description: Unauthenticated liveness check for client monitors. Not rate limited per organization and carries no data.
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties: { status: { type: string, const: ok } }
+
+  /organization:
+    get:
+      tags: [Organization]
+      operationId: getOrganization
+      description: Returns the organization that owns the API key, including allowed embed/redirect domains.
+      responses:
+        "200":
+          description: Organization owning the API key.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      description: Lists the organization's projects (public-safe fields only). Requires `projects:read`.
+      parameters:
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/cursor" }
+        - { name: status, in: query, description: Filter by project status., schema: { $ref: "#/components/schemas/ProjectStatus" } }
+        - { name: role_code, in: query, description: Filter by organizational role., schema: { $ref: "#/components/schemas/RoleCode" } }
+        - { name: assessment_type, in: query, description: Filter by assessment type., schema: { $ref: "#/components/schemas/AssessmentType" } }
+      responses:
+        "200":
+          description: Paginated projects.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: "#/components/schemas/Project" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /projects/{id}:
+    get:
+      tags: [Projects]
+      operationId: getProject
+      description: Returns one project with its ordered competency set. Requires `projects:read`.
+      parameters: [ { $ref: "#/components/parameters/projectId" } ]
+      responses:
+        "200":
+          description: Project.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /interviews:
+    post:
+      tags: [Interviews]
+      operationId: createInterview
+      description: |
+        Enrols a candidate in a project (creates the participant enrolment in status `pending`).
+        Returns the interview, the hosted URL and a single-use session token for the embed SDK.
+        `(project, email)` and `(project, candidate_ref)` are each unique: a second enrolment answers
+        `409 duplicate_enrolment`. The project must be `active`, else `422 project_not_active`. Requires `interviews:write`.
+        An `Idempotency-Key` replay returns the original body, whose `session_token` may by then be
+        expired or consumed; mint a new one via `createSessionToken` while the interview is `pending`.
+      parameters: [ { $ref: "#/components/parameters/idempotencyKey" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateInterviewRequest" } } }
+      responses:
+        "201":
+          description: Interview created. Includes the hosted URL and a single-use session token (15 min TTL).
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+            Idempotent-Replayed: { $ref: "#/components/headers/Idempotent-Replayed" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/CreateInterviewResponse" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      tags: [Interviews]
+      operationId: listInterviews
+      description: |
+        Lists interviews with cursor pagination and filters. `email` and `candidate_ref` replace a
+        candidate lookup: they match enrolments of **this organization only**. Requires `interviews:read`.
+      parameters:
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/cursor" }
+        - { name: status, in: query, description: Filter by lifecycle status., schema: { $ref: "#/components/schemas/InterviewStatus" } }
+        - { name: project_id, in: query, description: Filter by project., schema: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" } }
+        - { name: email, in: query, description: "Exact, case-insensitive match on the candidate email.", schema: { type: string, format: email } }
+        - { name: candidate_ref, in: query, description: Exact match on the calling system's opaque candidate identifier., schema: { type: string, maxLength: 255 } }
+        - { name: created_after, in: query, description: Inclusive lower bound on `created_at`., schema: { type: string, format: date-time } }
+        - { name: created_before, in: query, description: Exclusive upper bound on `created_at`., schema: { type: string, format: date-time } }
+        - name: metadata
+          in: query
+          description: Exact-match filters on metadata, e.g. `metadata[ats_application_id]=A-4471`. Max 3 keys.
+          style: deepObject
+          explode: true
+          schema: { type: object, additionalProperties: { type: string }, maxProperties: 3 }
+        - { $ref: "#/components/parameters/expand" }
+      responses:
+        "200":
+          description: Paginated interviews.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: "#/components/schemas/Interview" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}:
+    get:
+      tags: [Interviews]
+      operationId: getInterview
+      description: Returns one interview with status, timings, per-competency progress and readiness flags. Requires `interviews:read`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" }, { $ref: "#/components/parameters/expand" } ]
+      responses:
+        "200":
+          description: Interview.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Interview" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}/session-tokens:
+    post:
+      tags: [Interviews]
+      operationId: createSessionToken
+      description: |
+        Mints a new single-use session token and revokes any unconsumed previous one.
+        Allowed only while the interview is `pending`; any other status answers `409 invalid_state`.
+        Requires `interviews:write`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" } ]
+      responses:
+        "201":
+          description: Token minted.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+            Idempotent-Replayed: { $ref: "#/components/headers/Idempotent-Replayed" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/SessionToken" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}/transcript:
+    get:
+      tags: [Interviews]
+      operationId: getTranscript
+      description: |
+        Returns the full turn-by-turn transcript. Read gate: status `under_evaluation` or `completed`;
+        otherwise `409 transcript_not_ready`. Requires `interviews:read`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" } ]
+      responses:
+        "200":
+          description: Transcript.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Transcript" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotReady" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}/answers:
+    get:
+      tags: [Interviews]
+      operationId: getAnswers
+      description: |
+        Convenience view of the transcript grouped by competency and question. Carries no scores.
+        Same read gate as the transcript (`409 transcript_not_ready`). Requires `interviews:read`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" } ]
+      responses:
+        "200":
+          description: Answers grouped by competency and question.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [interview_id, answers]
+                properties:
+                  interview_id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
+                  answers: { type: array, items: { $ref: "#/components/schemas/Answer" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotReady" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}/scoring:
+    get:
+      tags: [Interviews]
+      operationId: getScoring
+      description: |
+        Returns the BARS evaluation. Read gate: status `completed` only; otherwise
+        `409 scoring_not_ready`. Requires `interviews:read`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" } ]
+      responses:
+        "200":
+          description: Scoring.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Scoring" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotReady" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}/recording:
+    get:
+      tags: [Interviews]
+      operationId: getRecording
+      description: Audio recording only. Video is not available through the API. Requires `recordings:read`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" } ]
+      responses:
+        "200":
+          description: Signed audio URL.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recording" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Not found, or recording not ready (`code=recording_not_ready`).
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+          content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /interviews/{id}/events:
+    get:
+      tags: [Interviews]
+      operationId: listInterviewEvents
+      description: |
+        Returns the interview timeline **oldest first** — the one documented exception to the
+        `created_at desc` ordering of every other list (G-12). Requires `interviews:read`.
+      parameters: [ { $ref: "#/components/parameters/interviewId" }, { $ref: "#/components/parameters/limit" }, { $ref: "#/components/parameters/cursor" } ]
+      responses:
+        "200":
+          description: Timeline, oldest first.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: "#/components/schemas/InterviewEvent" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /usage:
+    get:
+      tags: [Usage]
+      operationId: getUsage
+      description: Returns the usage aggregates the backoffice dashboard shows, for the period (defaults to the current month). Requires `usage:read`.
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time }, description: Defaults to start of current month (UTC). }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Defaults to now. }
+      responses:
+        "200":
+          description: Usage summary.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Usage" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /exports:
+    post:
+      tags: [Exports]
+      operationId: createExport
+      description: Starts an asynchronous bulk export of organization data. Poll the export until `ready`. Requires `exports:write`.
+      parameters: [ { $ref: "#/components/parameters/idempotencyKey" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateExportRequest" } } }
+      responses:
+        "202":
+          description: Export job accepted.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+            Idempotent-Replayed: { $ref: "#/components/headers/Idempotent-Replayed" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Export" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429":
+          description: Rate limited, or an export is already in progress (`code=export_in_progress`).
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            Retry-After: { $ref: "#/components/headers/Retry-After" }
+          content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    get:
+      tags: [Exports]
+      operationId: listExports
+      description: Lists export jobs. Requires `exports:read`.
+      parameters: [ { $ref: "#/components/parameters/limit" }, { $ref: "#/components/parameters/cursor" } ]
+      responses:
+        "200":
+          description: Paginated exports.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: "#/components/schemas/Export" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /exports/{id}:
+    get:
+      tags: [Exports]
+      operationId: getExport
+      description: Returns an export job and, when ready, a signed download URL. Requires `exports:read`.
+      parameters: [ { $ref: "#/components/parameters/exportId" } ]
+      responses:
+        "200":
+          description: Export.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Export" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /webhooks/deliveries:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookDeliveries
+      description: |
+        Lists rows of the existing `webhook_deliveries` log (the `progress` and `evaluation` webhooks).
+        Endpoint configuration stays in the backoffice. Requires `webhooks:read`.
+      parameters:
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/cursor" }
+        - { name: status, in: query, description: Filter by delivery status., schema: { $ref: "#/components/schemas/WebhookDeliveryStatus" } }
+        - { name: event_type, in: query, description: Filter by event type., schema: { $ref: "#/components/schemas/WebhookEventType" } }
+        - { name: interview_id, in: query, description: Filter by interview., schema: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" } }
+      responses:
+        "200":
+          description: Paginated deliveries.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /webhooks/deliveries/{id}/redeliver:
+    post:
+      tags: [Webhooks]
+      operationId: redeliverWebhook
+      description: |
+        Re-queues one delivery for immediate re-send with the frozen payload bytes, the same
+        `delivery_id` and a fresh signature timestamp. Allowed from `delivered`, `failed_permanent`
+        and `dead`; `pending` and `skipped` answer `409 invalid_state`. Requires `webhooks:write`.
+      parameters: [ { $ref: "#/components/parameters/webhookDeliveryId" }, { $ref: "#/components/parameters/idempotencyKey" } ]
+      responses:
+        "202":
+          description: Re-queued.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+            RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+            RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+            RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+            Idempotent-Replayed: { $ref: "#/components/headers/Idempotent-Replayed" }
+          content: { application/json: { schema: { $ref: "#/components/schemas/WebhookDelivery" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+webhooks:
+  progress:
+    post:
+      summary: Candidate progress
+      operationId: onProgress
+      description: |
+        Sent on enrolment and after every recorded answer. Existing C10 wire format, reused verbatim.
+        Verify `X-BEAI-Signature` as `v1=<hex HMAC-SHA256(secret, "<X-BEAI-Timestamp>.<raw_body>")>`;
+        reject when `|now - X-BEAI-Timestamp| > 300`. Ordering is not guaranteed; deduplicate on `delivery_id`.
+      parameters:
+        - { $ref: "#/components/parameters/webhookSignature" }
+        - { $ref: "#/components/parameters/webhookTimestamp" }
+        - { $ref: "#/components/parameters/webhookEvent" }
+        - { $ref: "#/components/parameters/webhookDeliveryIdHeader" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProgressWebhookPayload" } } }
+      responses:
+        "200": { description: Acknowledged. Any 2xx is accepted. }
+        default: { description: Any non-2xx status triggers retries. }
+  evaluation:
+    post:
+      summary: Evaluation completed
+      operationId: onEvaluation
+      description: |
+        Sent when the asynchronous scoring job ends. Existing C10 wire format, reused verbatim.
+        Same signature and deduplication rules as `progress`.
+      parameters:
+        - { $ref: "#/components/parameters/webhookSignature" }
+        - { $ref: "#/components/parameters/webhookTimestamp" }
+        - { $ref: "#/components/parameters/webhookEvent" }
+        - { $ref: "#/components/parameters/webhookDeliveryIdHeader" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EvaluationWebhookPayload" } } }
+      responses:
+        "200": { description: Acknowledged. Any 2xx is accepted. }
+        default: { description: Any non-2xx status triggers retries. }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: "beai_live_… | beai_test_…"
+
+  headers:
+    X-Request-Id:
+      description: Request identifier. Echoes the client's own value when sent; logged server side.
+      schema: { type: string }
+    RateLimit-Limit:
+      description: Requests allowed per window for this organization and key mode.
+      schema: { type: integer }
+    RateLimit-Remaining:
+      description: Requests left in the current window.
+      schema: { type: integer }
+    RateLimit-Reset:
+      description: Seconds until the window resets.
+      schema: { type: integer }
+    Retry-After:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+    Idempotent-Replayed:
+      description: "`true` when the response is a replay of an earlier request with the same `Idempotency-Key`."
+      schema: { type: boolean }
+
+  parameters:
+    limit: { name: limit, in: query, description: Page size., schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+    cursor: { name: cursor, in: query, description: Opaque cursor from `next_cursor`., schema: { type: string } }
+    expand:
+      name: expand
+      in: query
+      description: Comma-separated sub-resources to inline. Only `project` is expandable.
+      schema: { type: string, enum: [project] }
+    idempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Replays the original response for 24 h. A concurrent duplicate answers `409 idempotency_in_progress`.
+      schema: { type: string, maxLength: 255 }
+    interviewId: { name: id, in: path, required: true, description: Interview id., schema: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" } }
+    projectId: { name: id, in: path, required: true, description: Project id., schema: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" } }
+    exportId: { name: id, in: path, required: true, description: Export id., schema: { type: string, pattern: "^exp_[0-9A-HJKMNP-TV-Z]{26}$" } }
+    webhookDeliveryId:
+      name: id
+      in: path
+      required: true
+      description: Webhook delivery id — the existing `delivery_id` UUID prefixed with `whd_`.
+      schema: { type: string, pattern: "^whd_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    webhookSignature:
+      name: X-BEAI-Signature
+      in: header
+      required: true
+      description: "`v1=<lowercase hex HMAC-SHA256(secret, \"<X-BEAI-Timestamp>.<raw_body>\")>`."
+      schema: { type: string, pattern: "^v1=[0-9a-f]{64}$" }
+    webhookTimestamp:
+      name: X-BEAI-Timestamp
+      in: header
+      required: true
+      description: Unix seconds at signing time.
+      schema: { type: string, pattern: "^[0-9]+$" }
+    webhookEvent:
+      name: X-BEAI-Event
+      in: header
+      required: true
+      description: Event type.
+      schema: { $ref: "#/components/schemas/WebhookEventType" }
+    webhookDeliveryIdHeader:
+      name: X-BEAI-Delivery-Id
+      in: header
+      required: true
+      description: Delivery UUID, stable across retries and redeliveries. Deduplicate on it.
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Bad request.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    Unauthorized:
+      description: Missing/invalid/revoked API key.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    Forbidden:
+      description: Insufficient scope.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    NotFound:
+      description: Not found (also returned for resources of other organizations and for mismatched id prefixes).
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    Conflict:
+      description: "`invalid_state`, `duplicate_enrolment`, `idempotency_key_reused` or `idempotency_in_progress`."
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    NotReady:
+      description: Lifecycle read gate not reached (`transcript_not_ready` or `scoring_not_ready`).
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    ValidationError:
+      description: Validation failed.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    RateLimited:
+      description: Rate limited.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/X-Request-Id" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+        RateLimit-Limit: { $ref: "#/components/headers/RateLimit-Limit" }
+        RateLimit-Remaining: { $ref: "#/components/headers/RateLimit-Remaining" }
+        RateLimit-Reset: { $ref: "#/components/headers/RateLimit-Reset" }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code, request_id]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        detail: { type: string }
+        request_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code]
+            properties: { field: { type: string }, code: { type: string }, message: { type: string } }
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_api_key
+        - api_key_in_query
+        - browser_origin_forbidden
+        - insufficient_scope
+        - not_found
+        - validation_failed
+        - invalid_cursor
+        - invalid_expand
+        - invalid_state
+        - duplicate_enrolment
+        - project_not_active
+        - idempotency_key_reused
+        - idempotency_in_progress
+        - redirect_url_not_allowed
+        - metadata_limit_exceeded
+        - not_ready
+        - transcript_not_ready
+        - scoring_not_ready
+        - recording_not_ready
+        - export_in_progress
+        - rate_limited
+        - internal_error
+
+    Page:
+      type: object
+      required: [data, next_cursor, has_more]
+      properties:
+        data: { type: array, items: {} }
+        next_cursor: { type: [string, "null"] }
+        has_more: { type: boolean }
+
+    Metadata:
+      type: object
+      description: Client-owned key/value pairs. Max 20 keys, key ≤ 40 chars, value ≤ 500 chars.
+      maxProperties: 20
+      propertyNames: { maxLength: 40 }
+      additionalProperties: { type: string, maxLength: 500 }
+
+    RoleCode:
+      type: string
+      description: BEAI organizational role (a domain concept, not an authorization role).
+      enum: [ICO, FLL, MLL, BUL, SRX]
+    AssessmentType:
+      type: string
+      description: Immutable after go-live. `potential` assesses only MTG and/or LAT.
+      enum: [standard, potential]
+    CompetencyCode:
+      type: string
+      description: 18 standard competencies plus MTG/LAT for `potential`.
+      enum: [PRS, STG, INN, JDG, DRV, CSF, SLF, OPX, TMG, INS, COM, COL, INF, NET, RES, LRN, ITG, INC, MTG, LAT]
+    Language:
+      type: string
+      description: ISO 639-1 language code. `it` and `en` are mandatory; others per the platform catalogue.
+      pattern: "^[a-z]{2}$"
+      examples: [it]
+
+    Organization:
+      type: object
+      required: [id, name, mode, allowed_domains, created_at]
+      properties:
+        id: { type: string, pattern: "^org_[0-9A-HJKMNP-TV-Z]{26}$" }
+        name: { type: string }
+        mode: { type: string, enum: [live, test], description: Mode of the API key used. }
+        default_language: { $ref: "#/components/schemas/Language" }
+        allowed_domains: { type: array, items: { type: string }, description: Domains allowed to embed interviews and to receive exit redirects. }
+        created_at: { type: string, format: date-time }
+
+    ProjectStatus:
+      type: string
+      description: Only `active` projects accept new enrolments.
+      enum: [draft, active, archived]
+    Project:
+      type: object
+      description: |
+        An assessment campaign. Read-only; configured in the backoffice. Provider, model, prompts,
+        credentials and webhook configuration are never exposed.
+      required: [id, name, slug, role_code, assessment_type, language, status, framework_version, competencies, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" }
+        name: { type: string }
+        slug: { type: string }
+        role_code: { oneOf: [ { $ref: "#/components/schemas/RoleCode" }, { type: "null" } ], description: "`null` for `potential` projects, which assess MTG/LAT and belong to no role." }
+        assessment_type: { $ref: "#/components/schemas/AssessmentType" }
+        language: { $ref: "#/components/schemas/Language" }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        framework_version:
+          type: object
+          description: The framework catalogue version pinned at project creation (never retargeted).
+          required: [version]
+          properties:
+            version: { type: string }
+            label: { type: [string, "null"] }
+        competencies:
+          type: array
+          description: The project's competency set, in interview order.
+          items:
+            type: object
+            required: [code, name, type]
+            properties:
+              code: { $ref: "#/components/schemas/CompetencyCode" }
+              name: { type: string, description: In the project language. }
+              type: { $ref: "#/components/schemas/AssessmentType" }
+        pause_every_n_competencies: { type: [integer, "null"], minimum: 1, description: "`null` = no pause." }
+        nudge_min_chars: { type: [integer, "null"], minimum: 0, description: Minimum answer length before the avatar asks the candidate to elaborate. }
+        exit_redirect_url: { type: [string, "null"], format: uri, description: Default post-interview redirect for enrolments of this project. }
+        avatar_display_name: { type: [string, "null"], description: Name of the avatar template only. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    InterviewStatus:
+      type: string
+      description: |
+        The binding candidate lifecycle, exposed in English. Mapping to stored values:
+        `pending`=`in_attesa`, `in_progress`=`in_corso`, `under_evaluation`=`in_valutazione`,
+        `completed`=`completato`, `error`=`errore`. No other value exists.
+      enum: [pending, in_progress, under_evaluation, completed, error]
+
+    CompetencyProgress:
+      type: object
+      required: [competency_code, answers]
+      properties:
+        competency_code: { $ref: "#/components/schemas/CompetencyCode" }
+        answers:
+          type: array
+          items:
+            type: object
+            required: [question_index, answered_at]
+            properties:
+              question_index: { type: integer, minimum: 0 }
+              answered_at: { type: string, format: date-time }
+
+    Interview:
+      type: object
+      description: A participant enrolment — one candidate in one project.
+      required: [id, project_id, candidate_ref, email, display_name, language, status, livemode, metadata, progress, transcript_ready, scoring_ready, recording_ready, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
+        project_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" }
+        project: { $ref: "#/components/schemas/Project", description: Present when expanded. }
+        candidate_ref: { type: string, maxLength: 255, description: "The calling system's opaque candidate identifier, stored and echoed unchanged (webhooks included)." }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        role_code: { oneOf: [ { $ref: "#/components/schemas/RoleCode" }, { type: "null" } ], description: "`null` for `potential` assessments." }
+        language: { $ref: "#/components/schemas/Language" }
+        status: { $ref: "#/components/schemas/InterviewStatus" }
+        livemode: { type: boolean }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+        exit_redirect_url: { type: [string, "null"], format: uri, description: Per-enrolment override; `null` means the project's value applies. }
+        hosted_url: { type: [string, "null"], format: uri, description: Null once the interview is no longer `pending`. }
+        progress:
+          type: array
+          description: Every project competency, with the answers recorded so far (empty lists before the interview starts).
+          items: { $ref: "#/components/schemas/CompetencyProgress" }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+        transcript_ready: { type: boolean, description: "`true` when status is `under_evaluation` or `completed`." }
+        scoring_ready: { type: boolean, description: "`true` when status is `completed`." }
+        recording_ready: { type: boolean, description: Audio recording availability. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateInterviewRequest:
+      type: object
+      required: [project_id, candidate]
+      properties:
+        project_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" }
+        candidate:
+          type: object
+          required: [candidate_ref, email, display_name]
+          properties:
+            candidate_ref: { type: string, minLength: 1, maxLength: 255, description: Opaque identifier from the calling system. }
+            email: { type: string, format: email, description: Mandatory. Unique per project. }
+            display_name: { type: string, minLength: 1, maxLength: 255, description: Shown in the UI and used in the interview context. }
+            language: { $ref: "#/components/schemas/Language", description: Defaults to the project's language. }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+        exit_redirect_url:
+          type: string
+          format: uri
+          description: Optional override of the project's exit redirect. HTTPS, host in `organization.allowed_domains`, else `422 redirect_url_not_allowed`.
+
+    SessionToken:
+      type: object
+      required: [session_token, expires_at, hosted_url]
+      properties:
+        session_token: { type: string, description: Single-use JWT for the embed SDK or hosted page. Never expose it before the candidate is ready to start. }
+        expires_at: { type: string, format: date-time, description: Token expiry (15 min). The only expiry in the API. }
+        hosted_url: { type: string, format: uri }
+
+    CreateInterviewResponse:
+      allOf:
+        - $ref: "#/components/schemas/SessionToken"
+        - type: object
+          required: [interview]
+          properties:
+            interview: { $ref: "#/components/schemas/Interview" }
+
+    Transcript:
+      type: object
+      required: [interview_id, language, turns]
+      properties:
+        interview_id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
+        language: { $ref: "#/components/schemas/Language" }
+        turns:
+          type: array
+          description: Ordered by competency session, then by utterance time.
+          items:
+            type: object
+            required: [index, speaker, text, competency_code, question_index, ts]
+            properties:
+              index: { type: integer, minimum: 0 }
+              speaker: { type: string, enum: [avatar, candidate] }
+              text: { type: string }
+              competency_code: { $ref: "#/components/schemas/CompetencyCode" }
+              question_index: { type: integer, minimum: 0 }
+              ts: { type: string, format: date-time }
+
+    Answer:
+      type: object
+      description: One candidate answer, derived from the transcript. Carries no score.
+      required: [competency_code, question_index, question_text, answer_text]
+      properties:
+        competency_code: { $ref: "#/components/schemas/CompetencyCode" }
+        question_index: { type: integer, minimum: 0 }
+        question_text: { type: string }
+        answer_text: { type: string }
+        started_at_seconds: { type: [number, "null"], description: Offset from interview start. }
+        answer_duration_seconds: { type: [number, "null"] }
+
+    IndicatorScore:
+      type: integer
+      description: "`5`, `3`, `1` are the authored BARS anchors; `4` and `2` are residual levels; `-1` = unassessable (excluded from the competency mean)."
+      enum: [1, 2, 3, 4, 5, -1]
+    Behavior:
+      type: object
+      required: [indicator, score, explanation, excerpts, unassessable_reason]
+      properties:
+        indicator: { type: string, description: BARS indicator text. }
+        score: { $ref: "#/components/schemas/IndicatorScore" }
+        explanation: { type: string }
+        excerpts: { type: array, items: { type: string }, description: Verbatim substrings of the transcript. }
+        unassessable_reason: { type: [string, "null"], description: Set only when `score` is `-1`. }
+    CompetencyScore:
+      type: object
+      required: [score, reliability, behaviors, unscorable_reason]
+      properties:
+        score: { type: [number, "null"], description: Mean of the assessed indicator scores (`-1` excluded); `null` when no indicator was assessable. }
+        reliability: { type: number, minimum: 0, maximum: 1, description: "`assessed / total` indicators. No bands." }
+        behaviors:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: "#/components/schemas/Behavior" }
+        unscorable_reason: { type: [string, "null"] }
+    Scoring:
+      type: object
+      description: The binding BARS evaluation. No overall score, no scale, no recommendation.
+      required: [interview_id, status, competencies, framework_version, model_version, prompt_version, evaluated_at]
+      properties:
+        interview_id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
+        status: { type: string, enum: [completed, pending], description: "`pending` = coverage below the 90 % threshold; still a definitive read of the data available." }
+        competencies:
+          type: object
+          description: Keyed by competency code, in project order.
+          propertyNames: { $ref: "#/components/schemas/CompetencyCode" }
+          additionalProperties: { $ref: "#/components/schemas/CompetencyScore" }
+        framework_version: { type: string }
+        model_version: { type: string }
+        prompt_version: { type: string }
+        evaluated_at: { type: string, format: date-time }
+
+    Recording:
+      type: object
+      required: [interview_id, url, expires_at, format, duration_seconds]
+      properties:
+        interview_id: { type: string }
+        kind: { type: string, const: audio }
+        url: { type: string, format: uri, description: "Signed URL, valid ~10 minutes, bound to this organization." }
+        expires_at: { type: string, format: date-time }
+        format: { type: string, examples: [audio/ogg] }
+        duration_seconds: { type: number }
+        size_bytes: { type: integer }
+
+    InterviewEvent:
+      type: object
+      required: [id, type, occurred_at]
+      properties:
+        id: { type: string, pattern: "^evt_[0-9A-HJKMNP-TV-Z]{26}$" }
+        type:
+          type: string
+          enum: [created, invited, token_consumed, consent_granted, session_started, question_asked, answer_recorded, session_ended, under_evaluation, completed, error, transcript_ready, scoring_ready, recording_ready]
+        occurred_at: { type: string, format: date-time }
+        data: { type: object, additionalProperties: true, description: "Small, event-specific payload (e.g. `competency_code`, `question_index`). Never PII or transcript text." }
+
+    Usage:
+      type: object
+      description: The figures the backoffice dashboard shows. Live and test data are never mixed.
+      required: [from, to, livemode, interviews, evaluations, completion_rate, llm_tokens, cost_usd, currency]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        livemode: { type: boolean }
+        interviews:
+          type: object
+          required: [pending, in_progress, under_evaluation, completed, error]
+          properties:
+            pending: { type: integer }
+            in_progress: { type: integer }
+            under_evaluation: { type: integer }
+            completed: { type: integer }
+            error: { type: integer }
+        evaluations:
+          type: object
+          required: [completed, pending]
+          properties:
+            completed: { type: integer }
+            pending: { type: integer }
+        completion_rate: { type: number, minimum: 0, maximum: 1 }
+        llm_tokens:
+          type: object
+          required: [input, output]
+          properties:
+            input: { type: integer }
+            output: { type: integer }
+        cost_usd: { type: number, description: Total estimated spend only; no per-provider split. }
+        currency: { type: string, examples: [USD] }
+
+    CreateExportRequest:
+      type: object
+      required: [scope, format]
+      properties:
+        scope: { type: string, enum: [all, interviews] }
+        format: { type: string, enum: [jsonl, csv] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        include_transcripts: { type: boolean, default: true }
+        include_scoring: { type: boolean, default: true }
+        include_audio: { type: boolean, default: false, description: Bundles audio files into the archive. Video is never included. }
+
+    Export:
+      type: object
+      required: [id, status, scope, format, livemode, created_at]
+      properties:
+        id: { type: string, pattern: "^exp_[0-9A-HJKMNP-TV-Z]{26}$" }
+        status: { type: string, enum: [queued, processing, ready, failed, expired], description: "`expired` refers to the export archive's download window, not to an interview." }
+        scope: { type: string }
+        format: { type: string }
+        livemode: { type: boolean }
+        from: { type: [string, "null"], format: date-time }
+        to: { type: [string, "null"], format: date-time }
+        record_count: { type: [integer, "null"] }
+        download_url: { type: [string, "null"], format: uri, description: "Signed, valid 1 hour from `ready`. Re-fetch the export to get a fresh URL." }
+        download_expires_at: { type: [string, "null"], format: date-time }
+        size_bytes: { type: [integer, "null"] }
+        checksum_sha256: { type: [string, "null"] }
+        failure_reason: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    WebhookEventType:
+      type: string
+      description: The two notification events, progress and evaluation.
+      enum: [progress, evaluation]
+    WebhookDeliveryStatus:
+      type: string
+      description: Delivery lifecycle of one webhook attempt series.
+      enum: [pending, delivered, failed_permanent, dead, skipped]
+
+    WebhookProject:
+      type: object
+      required: [id, slug, public_id]
+      properties:
+        id: { type: integer, description: "The project numeric identifier as carried by the progress and evaluation payloads." }
+        slug: { type: string }
+        public_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$", description: Additive in step 7. Correlates with `/v1/projects`. }
+    WebhookEnvelope:
+      type: object
+      required: [version, event, delivery_id, occurred_at, livemode, candidate_ref, project]
+      properties:
+        version: { type: string, description: "Payload schema version, currently `1.0`." }
+        event: { $ref: "#/components/schemas/WebhookEventType" }
+        delivery_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        livemode: { type: boolean, description: Additive in step 9. `false` for test-mode deliveries. }
+        candidate_ref: { type: string, description: "The opaque candidate identifier, unchanged." }
+        project: { $ref: "#/components/schemas/WebhookProject" }
+    ProgressWebhookPayload:
+      allOf:
+        - $ref: "#/components/schemas/WebhookEnvelope"
+        - type: object
+          required: [data]
+          properties:
+            event: { const: progress }
+            data:
+              type: object
+              required: [competencies]
+              properties:
+                competencies:
+                  type: array
+                  description: Every project competency, in project order; empty `answers` before the first recorded answer.
+                  items:
+                    type: object
+                    required: [code, status, answers]
+                    properties:
+                      code: { $ref: "#/components/schemas/CompetencyCode" }
+                      status:
+                        type: string
+                        description: Interview-session status for that competency; `pending` when no session exists yet.
+                        enum: [pending, in_corso, completed, timeout, skipped, error]
+                      answers:
+                        type: array
+                        items:
+                          type: object
+                          required: [question_index, answered_at]
+                          properties:
+                            question_index: { type: integer, minimum: 0 }
+                            answered_at: { type: string, format: date-time }
+    WebhookCompetencyScore:
+      type: object
+      description: Same as `CompetencyScore`, except `reliability` is the rendered percentage string and optional reason keys are omitted when null.
+      required: [score, reliability, behaviors]
+      properties:
+        score: { type: [number, "null"] }
+        reliability: { type: string, pattern: "^[0-9]{1,3}%$", examples: ["100%"] }
+        behaviors:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: object
+            required: [indicator, score, explanation, excerpts]
+            properties:
+              indicator: { type: string }
+              score: { $ref: "#/components/schemas/IndicatorScore" }
+              explanation: { type: string }
+              excerpts: { type: array, items: { type: string } }
+              unassessable_reason: { type: string }
+        unscorable_reason: { type: string }
+    WebhookFile:
+      type: object
+      required: [type, ref, url]
+      properties:
+        type: { type: string }
+        ref: { type: string }
+        url: { type: string, format: uri, description: "Backoffice-authenticated download. Public API clients use `/v1/interviews/{id}/transcript` and `/scoring` instead." }
+    EvaluationWebhookPayload:
+      allOf:
+        - $ref: "#/components/schemas/WebhookEnvelope"
+        - type: object
+          required: [data]
+          properties:
+            event: { const: evaluation }
+            data:
+              type: object
+              required: [status, text, files]
+              properties:
+                status:
+                  type: string
+                  description: |
+                    `completed` or `pending` for a scored evaluation. On a catastrophic scoring failure the
+                    event is still sent with an empty `text`, and `status` carries the evaluation's last
+                    state (`processing`) or the participant's terminal state (`errore`); treat any value
+                    other than `completed`/`pending` as a failure.
+                  enum: [completed, pending, processing, errore]
+                text:
+                  type: object
+                  description: The binding evaluation `text` block, keyed by competency code in project order.
+                  propertyNames: { $ref: "#/components/schemas/CompetencyCode" }
+                  additionalProperties: { $ref: "#/components/schemas/WebhookCompetencyScore" }
+                files:
+                  type: object
+                  description: Open and extensible map of asset references.
+                  required: [transcript]
+                  properties:
+                    transcript: { $ref: "#/components/schemas/WebhookFile" }
+                    evaluation_raw: { $ref: "#/components/schemas/WebhookFile" }
+                  additionalProperties: { $ref: "#/components/schemas/WebhookFile" }
+
+    WebhookDelivery:
+      type: object
+      description: One delivery attempt series. The payload, dedupe key, skip reason and receiver error text are not exposed.
+      required: [id, event_type, status, interview_id, project_id, candidate_ref, attempt_count, max_attempts, payload_version, created_at]
+      properties:
+        id: { type: string, pattern: "^whd_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", description: "`whd_` + the `delivery_id` sent as `X-BEAI-Delivery-Id`." }
+        event_type: { $ref: "#/components/schemas/WebhookEventType" }
+        status: { $ref: "#/components/schemas/WebhookDeliveryStatus" }
+        interview_id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
+        project_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" }
+        candidate_ref: { type: string }
+        target_url: { type: [string, "null"], format: uri }
+        attempt_count: { type: integer }
+        max_attempts: { type: integer }
+        payload_version: { type: string }
+        last_response_status: { type: [integer, "null"] }
+        last_attempt_at: { type: [string, "null"], format: date-time }
+        next_attempt_at: { type: [string, "null"], format: date-time }
+        delivered_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }

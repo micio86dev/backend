@@ -56,13 +56,13 @@ final class NonCompliantScheduleBootstrapFixture
 
             // VIOLATION — job(): a scheduled job class, the ordinary way to
             // implement something like C13's GDPR purge sweep.
-            $schedule->job(new FinalizeInterview(1))->dailyAt('04:00');
+            $schedule->job(new FinalizeInterview(1, 1))->dailyAt('04:00');
 
             // VIOLATION — exec(): a scheduled shell command.
             $schedule->exec('php artisan inspire')->dailyAt('04:10');
 
             // COMPLIANT — job() with onOneServer().
-            $schedule->job(new FinalizeInterview(2))->dailyAt('04:20')->onOneServer();
+            $schedule->job(new FinalizeInterview(2, 1))->dailyAt('04:20')->onOneServer();
         });
     }
 }

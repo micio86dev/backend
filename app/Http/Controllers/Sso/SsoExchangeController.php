@@ -15,6 +15,7 @@ use App\Support\Project\ProjectInterviewability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tymon\JWTAuth\JWTAuth;
 
 /**
@@ -288,11 +289,19 @@ final class SsoExchangeController extends Controller
         // placeholder can never reach a real person, and it is greppable.
         $email = (string) ($payload->get('email') ?? $candidateRef.'@invalid.beai.local');
 
+        // `public_id` (public-api step 5, G-05): this raw statement bypasses
+        // Eloquent entirely, so `App\Models\Concerns\HasPublicId`'s
+        // `creating` hook never runs for the INSERT branch — the column is
+        // NOT NULL, so a value MUST be supplied here explicitly on insert.
+        // `ON CONFLICT ... DO UPDATE`'s SET clause deliberately does NOT
+        // touch `public_id`: an existing row keeps the id it already has,
+        // exactly like every other identity column this same clause already
+        // excludes (organization_id, project_id, candidate_ref).
         DB::statement("
             INSERT INTO participants
-                (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, created_at, updated_at)
+                (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, public_id, created_at, updated_at)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?)
+                (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?, ?)
             ON CONFLICT (project_id, candidate_ref)
             DO UPDATE SET
                 display_name = EXCLUDED.display_name,
@@ -309,6 +318,7 @@ final class SsoExchangeController extends Controller
             $email,
             $roleCode,
             $lang,
+            (string) Str::ulid(),
             $now,
             $now,
         ]);

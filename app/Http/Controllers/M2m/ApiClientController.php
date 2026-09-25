@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\M2m;
 
+use App\Enums\ApiKeyMode;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ApiClientResource;
 use App\Models\ApiClient;
@@ -15,6 +16,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\Rule;
 
 /**
  * ApiClientController (C5 — M2M API Authentication).
@@ -71,6 +73,13 @@ final class ApiClientController extends Controller
             'abilities' => ['required', 'array'],
             'abilities.*' => ['required', 'string'],
             'expires_at' => ['nullable', 'date', 'after:now'],
+            // public-api step 2 (SPEC.md §3.7 test mode): optional, defaults
+            // to 'live' — every client issued before this field existed IS a
+            // live client, so defaulting new ones the same way keeps one
+            // behaviour rather than a silent split. Rule::enum() validates
+            // against App\Enums\ApiKeyMode's own backed values — the single
+            // source of truth for the mode literal (review follow-up finding 3).
+            'mode' => ['nullable', 'string', Rule::enum(ApiKeyMode::class)],
         ]);
 
         // Validate abilities against the canonical set
@@ -81,25 +90,31 @@ final class ApiClientController extends Controller
             ], 422);
         }
 
-        $rawKey = ApiKeyGenerator::generate();
+        $mode = ApiKeyMode::from($validated['mode'] ?? ApiKeyMode::Live->value);
+        $rawKey = ApiKeyGenerator::generate($mode);
         $hash = ApiKeyGenerator::hash($rawKey);
 
-        // key_hash is NOT in $fillable (security invariant: cannot be mass-assigned).
-        // Use forceFill to set it once at creation — this is the only place it is ever written.
+        // key_hash/key_prefix are NOT in $fillable (security invariant: cannot
+        // be mass-assigned). Use forceFill to set them once at creation — this
+        // is the only place either is ever written.
         $client = new ApiClient;
         $client->forceFill([
             'organization_id' => $orgId,
             'name' => $validated['name'],
             'abilities' => $validated['abilities'],
             'expires_at' => $validated['expires_at'] ?? null,
+            'mode' => $mode,
             'key_hash' => $hash,
+            'key_prefix' => ApiKeyGenerator::prefixOf($rawKey),
         ]);
         $client->save();
 
         // The raw key and its hash are both absent from the payload below:
         // AuditRecorder redacts key_hash by name, and $rawKey is never handed
         // to it in the first place. An audit trail that captures credentials is
-        // a breach with good intentions.
+        // a breach with good intentions. key_prefix/mode are NOT secrets — the
+        // prefix is deliberately visible (ApiClientResource exposes it too)
+        // and mode is a plain classification, so both are safe audit context.
         app(AuditRecorder::class)->record(
             action: 'api_client.created',
             subjectType: 'api_client',
@@ -108,6 +123,8 @@ final class ApiClientController extends Controller
                 'name' => $client->name,
                 'abilities' => $client->abilities,
                 'expires_at' => $client->expires_at?->toIso8601String(),
+                'mode' => $client->mode->value,
+                'key_prefix' => $client->key_prefix,
             ],
         );
 

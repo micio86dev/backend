@@ -21,6 +21,7 @@ declare(strict_types=1);
  * REQ-4, REQ-T1 / design §TenantContextM2m
  */
 
+use App\Enums\ApiKeyMode;
 use App\Http\Middleware\TenantContext;
 use App\Http\Middleware\TenantContextM2m;
 use App\Models\ApiClient;
@@ -54,9 +55,8 @@ test('valid client → resolver orgId is set to client organization_id', functio
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
@@ -69,9 +69,8 @@ test('valid client → bypass is false (setBypass(false) clears stale bypass)', 
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
@@ -85,9 +84,8 @@ test('org always from client record — request body org_id is ignored', functio
     $orgB = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $orgA->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
     ]);
 
     // Attempt to pass org B via query param — must be ignored
@@ -97,13 +95,38 @@ test('org always from client record — request body org_id is ignored', functio
         ->assertJsonPath('org_id', $orgA->id);
 });
 
+// ─── Review follow-up (finding 1): TenantContextM2m must never even RUN for
+// a test-mode key — `auth:api-m2m` (via ApiKeyResolver::resolve(..., false))
+// already rejects it, so the resolver here stays completely untouched
+// (org_id null, bypass unset). ──────────────────────────────────────────────
+
+test('a test-mode key never reaches TenantContextM2m — 401 before any resolver state is stamped', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
+
+    ApiClient::factory()->withRawKey($rawKey)->create([
+        'organization_id' => $org->id,
+        'mode' => 'test',
+    ]);
+
+    $resolver = app(TenantResolver::class);
+    expect($resolver->getOrgId())->toBeNull();
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/test-m2m-context')
+        ->assertUnauthorized();
+
+    // TenantContextM2m never ran — the resolver is exactly as untouched as
+    // it was before the request.
+    expect($resolver->getOrgId())->toBeNull();
+});
+
 test('second org also resolves correctly (different client, different org)', function (): void {
     $orgB = Organization::factory()->create();
     $rawKeyB = ApiKeyGenerator::generate();
 
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKeyB)->create([
         'organization_id' => $orgB->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKeyB),
     ]);
 
     $this->withHeaders(['Authorization' => 'Bearer '.$rawKeyB])

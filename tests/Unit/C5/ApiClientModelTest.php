@@ -18,6 +18,7 @@ declare(strict_types=1);
  * REQ-1, REQ-3, REQ-6
  */
 
+use App\Enums\ApiKeyMode;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use Illuminate\Auth\Authenticatable;
@@ -105,4 +106,30 @@ test('ApiClient does NOT use HasRoles trait', function (): void {
     $traits = class_uses_recursive(ApiClient::class);
 
     expect($traits)->not->toContain(HasRoles::class);
+});
+
+// ─── Review follow-up (finding 3): mode casts to the ApiKeyMode enum ─────────
+
+test('mode is cast to the ApiKeyMode enum', function (): void {
+    $client = new ApiClient;
+    $casts = $client->getCasts();
+
+    expect($casts)->toHaveKey('mode');
+    expect($casts['mode'])->toBe(ApiKeyMode::class);
+});
+
+test('a raw "live"/"test" attribute value casts to the ApiKeyMode enum on read', function (): void {
+    // setRawAttributes(), not factory()->create(): Unit/C5 intentionally has
+    // no RefreshDatabase (see the note above the `Unit/C5` block in
+    // tests/Pest.php — "model-creation tests are in Feature/C5 to avoid
+    // RefreshDatabase conflicts"), so this simulates a row already loaded
+    // from the DB instead of persisting one.
+    $liveClient = new ApiClient;
+    $liveClient->setRawAttributes(['mode' => 'live'], true);
+
+    $testClient = new ApiClient;
+    $testClient->setRawAttributes(['mode' => 'test'], true);
+
+    expect($liveClient->mode)->toBe(ApiKeyMode::Live);
+    expect($testClient->mode)->toBe(ApiKeyMode::Test);
 });

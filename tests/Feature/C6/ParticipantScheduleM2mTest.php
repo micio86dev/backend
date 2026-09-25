@@ -49,9 +49,8 @@ use Spatie\Permission\PermissionRegistrar;
 function pschedM2mClient(Organization $org, array $abilities): array
 {
     $rawKey = ApiKeyGenerator::generate();
-    $client = ApiClient::factory()->create([
+    $client = ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'is_active' => true,
         'abilities' => $abilities,
     ]);

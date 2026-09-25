@@ -47,6 +47,7 @@ use App\Services\Scoring\TranscriptAssembler;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Observability\AiRequestCostEstimator;
 use App\Support\Observability\ResponseFingerprint;
+use App\Support\PublicApi\InterviewEventRecorder;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -556,6 +557,9 @@ class ScoreEvaluationJob implements ShouldQueue
             if ($participant->status === 'in_valutazione') {
                 $participant->status = 'errore';
                 $participant->save();
+
+                // public-api step 6, G-38.
+                InterviewEventRecorder::error($participant->organization_id, $participant->id);
             }
 
             // Do NOT emit EvaluationCompleted — invariant error, no valid Evaluation.
@@ -587,6 +591,12 @@ class ScoreEvaluationJob implements ShouldQueue
             Log::info('ScoreEvaluationJob: participant transitioned to completato', [
                 'participant_id' => $participant->id,
             ]);
+
+            // public-api step 6, G-38: `completed` fires only on the REAL
+            // in_valutazione → completato transition — never in the race-
+            // guard branch below, where the participant is already `errore`
+            // and never becomes `completato` at all.
+            InterviewEventRecorder::completed($participant->organization_id, $participant->id);
         } else {
             // Race guard: participant is already errore (concurrent failed() ran).
             // DO NOT attempt errore → completato (forbidden by C7a lifecycle map).
@@ -596,6 +606,13 @@ class ScoreEvaluationJob implements ShouldQueue
                 'current_status' => $participant->status,
             ]);
         }
+
+        // public-api step 6, G-38: `scoring_ready` fires unconditionally
+        // alongside `EvaluationCompleted` below — the evaluation itself
+        // reached a terminal state (`completed`/`pending`) either way, even
+        // when the race guard above skipped the participant's own lifecycle
+        // transition.
+        InterviewEventRecorder::scoringReady($participant->organization_id, $participant->id);
 
         // ── Emit EvaluationCompleted unconditionally (D9) ─────────────────
         // Fired for both completed and pending. Also fired when race guard skipped lifecycle.
@@ -1050,9 +1067,14 @@ class ScoreEvaluationJob implements ShouldQueue
         $orgId = $participant?->organization_id;
 
         if ($participant !== null && $orgId !== null && $orgId >= 1) {
-            TenantContextScope::runFor($orgId, function () use ($participant): void {
+            TenantContextScope::runFor($orgId, function () use ($participant, $orgId): void {
                 $this->transitionParticipantToErrore($participant);
-                event(new EvaluationFailed($this->participantId));
+                // $orgId (pre-commit gate, round 5, finding 2): threaded onto the
+                // event itself — this IS the trusted derivation
+                // App\Listeners\SendEvaluationWebhook::handleFailed() needs to
+                // org-scope its own Participant read, independent of that
+                // listener's own (unscoped) lookup by participantId alone.
+                event(new EvaluationFailed($this->participantId, $orgId));
             });
 
             return;
@@ -1066,7 +1088,8 @@ class ScoreEvaluationJob implements ShouldQueue
             $this->transitionParticipantToErrore($participant);
         }
 
-        // (b) ALWAYS emit EvaluationFailed, regardless of transition outcome or context derivability.
+        // (b) ALWAYS emit EvaluationFailed, regardless of transition outcome or context
+        // derivability. No trustworthy organizationId exists on this branch — left null.
         event(new EvaluationFailed($this->participantId));
     }
 
@@ -1077,12 +1100,18 @@ class ScoreEvaluationJob implements ShouldQueue
      * Evaluation row exists, so the calling system must be told the evaluation
      * will never arrive. Emitting EvaluationFailed is what makes the outcome
      * observable instead of a silent, permanently-resumable no-op.
+     *
+     * Runs exclusively from inside handle()'s own `TenantContextScope::runFor($orgId,
+     * …)` boundary (established at Step 2/3, above), so `$participant->organization_id`
+     * here IS that same already-validated `$orgId` — not a fresh untrusted read — and is
+     * threaded onto EvaluationFailed for the identical reason failed() now does
+     * (pre-commit gate, round 5, finding 2).
      */
     private function endParticipantUnresolvable(Participant $participant): void
     {
         $participant->refresh();
         $this->transitionParticipantToErrore($participant);
-        event(new EvaluationFailed($this->participantId));
+        event(new EvaluationFailed($this->participantId, $participant->organization_id));
     }
 
     /**
@@ -1108,6 +1137,12 @@ class ScoreEvaluationJob implements ShouldQueue
                 Log::info('ScoreEvaluationJob: participant transitioned to errore', [
                     'participant_id' => $this->participantId,
                 ]);
+
+                // public-api step 6, G-38: the ONE shared transition both
+                // `failed()` and `endParticipantUnresolvable()` route
+                // through — recording it here, once, covers both seams
+                // rather than each call site recording its own.
+                InterviewEventRecorder::error($participant->organization_id, $participant->id);
             } catch (\Throwable $transitionException) {
                 Log::error('ScoreEvaluationJob: failed to transition participant to errore', [
                     'participant_id' => $this->participantId,

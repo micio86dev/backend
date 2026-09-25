@@ -71,7 +71,7 @@ test('FinalizeInterview job is idempotent: participant already completato → no
         $logMessages[] = (string) ($message->message ?? json_encode($message));
     });
 
-    $job = new FinalizeInterview($participant->id);
+    $job = new FinalizeInterview($participant->id, $org->id);
     $job->handle();
 
     // No-op: the participant is already completato
@@ -99,7 +99,7 @@ test('FinalizeInterview job: first execution acquires lock and emits C9 trigger'
         $logMessages[] = ($message->message ?? '').$context;
     });
 
-    $job = new FinalizeInterview($pid);
+    $job = new FinalizeInterview($pid, $org->id);
     $job->handle();
 
     // Lock should now be acquired
@@ -125,7 +125,7 @@ test('FinalizeInterview job: second execution with lock held → no-op (FIX-4 de
         $logMessages[] = ($message->message ?? '');
     });
 
-    $job = new FinalizeInterview($pid);
+    $job = new FinalizeInterview($pid, $org->id);
     $job->handle();
 
     // C9 trigger must NOT be emitted again
@@ -140,7 +140,7 @@ test('FinalizeInterview dispatched ->afterCommit(): Queue::fake records dispatch
     $participant = finalizeParticipant($org, 'in_valutazione');
 
     // Dispatch with afterCommit — Queue::fake bypasses transaction awareness
-    FinalizeInterview::dispatch($participant->id)->afterCommit();
+    FinalizeInterview::dispatch($participant->id, $org->id)->afterCommit();
 
     Queue::assertPushed(FinalizeInterview::class, 1);
 });
@@ -153,7 +153,7 @@ test('FinalizeInterview job: participant not found → graceful no-op (no except
         $logMessages[] = ($message->message ?? '');
     });
 
-    $job = new FinalizeInterview(99999);
+    $job = new FinalizeInterview(99999, 999999);
     $job->handle(); // Must not throw
 
     // Should log a warning about participant not found

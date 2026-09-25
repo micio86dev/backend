@@ -552,6 +552,32 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class)
     ->in('Unit/Config/AuditConfigTest.php');
 
+// Unit/Config/PublicApiConfigTest.php (public-api step 1) — needs TestCase
+// so config()/base_path() resolve against the booted app. No DB needed: pure
+// config-invariant assertions pinning the shipped `config/public_api.php`
+// defaults, same shape as AuditConfigTest.php immediately above.
+pest()->extend(TestCase::class)
+    ->in('Unit/Config/PublicApiConfigTest.php');
+
+// Unit/Rules/PublicApi (public-api step 6 review follow-up, Part A item 3)
+// — Iso8601DateTimeTest uses the `Validator` facade, which needs the booted
+// app's container; the rule itself and Carbon are otherwise DB-free.
+pest()->extend(TestCase::class)
+    ->in('Unit/Rules/PublicApi');
+
+// ─── tests/Contract (public-api step 1) ────────────────────────────────────
+//
+// NOT under tests/Feature: this directory holds the ContractValidator helper
+// plus tests that validate HTTP responses against the vendored OpenAPI
+// contract (public-api/openapi.yaml, SPEC.md §0 "Contract governance").
+// Needs TestCase so config('public_api.contract_path') resolves against the
+// booted app. DB-free. Also registered as its own <testsuite> in
+// phpunit.xml — tests/Unit, tests/Feature and tests/Arch are the only
+// directories `php artisan test`/`--coverage` discover with no path
+// argument, and CI runs both with none.
+pest()->extend(TestCase::class)
+    ->in('Contract');
+
 // Unit/Support/Observability/AuditRunCostEstimatorTest.php (scoring-audit-jev
 // P3a.12) — needs TestCase so config() resolves against the booted app, same
 // shape as Unit/Support/Http above. ResponseFingerprintTest.php in this same
@@ -653,6 +679,94 @@ pest()->use(RefreshDatabase::class)
 // registered nowhere, so its rows survived every run.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Admin');
+
+// Feature/PublicApi/Auth — RefreshDatabase: public-api step 2 auth/scopes/
+// tenancy-guard tests create real Organization/ApiClient/Project rows via
+// factories. `Feature/PublicApi/HealthEndpointTest.php` sits directly under
+// `Feature/PublicApi/` (DB-free, no factory) and does not need this.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Auth');
+
+// Feature/PublicApi/Conventions — RefreshDatabase: public-api step 3
+// (pagination/rate-limit/idempotency/expand/request-id) tests create real
+// Organization/ApiClient rows via factories, same reasoning as
+// Feature/PublicApi/Auth above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Conventions');
+
+// Feature/PublicApi/Projects/, Exposure/ — public-api step 4
+// (`GET /v1/projects(/{id})`, T-EXPOSE-001/002) tests create real
+// Organization/ApiClient/Project/Competency/AvatarTemplate rows via
+// factories, same reasoning as Feature/PublicApi/Auth above.
+// `FeatureDirectoriesRegisteredArchTest`'s own glob (`Feature/**/*.php`, one
+// level deep via PHP's non-recursive `glob()`) does not reach either
+// directory (two levels deep) to catch a missing registration on its own —
+// registered explicitly rather than relying on that gap.
+// `Feature/PublicApi/OrganizationTest.php` sits directly under
+// `Feature/PublicApi/` (like `HealthEndpointTest.php`, which stays DB-free
+// on purpose — see the comment above `Feature/PublicApi/Auth`), so it
+// declares `uses(RefreshDatabase::class)` in the file itself instead of a
+// blanket `Feature/PublicApi` entry here.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Projects');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Exposure');
+
+// Feature/PublicApi/Interviews/, SessionTokens/ — public-api step 5
+// (`POST/GET /v1/interviews(/{id})`, `POST /v1/interviews/{id}/session-tokens`)
+// tests create real Organization/ApiClient/Project/Participant rows via
+// factories — same reasoning as Feature/PublicApi/Projects above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Interviews');
+
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/SessionTokens');
+
+// Feature/Embed — public-api step 5's `GET /api/embed/exchange` (G-32).
+// RefreshDatabase for the same reason as every other PublicApi feature dir.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Embed');
+
+// Feature/PublicApi/Recording — public-api step 6's
+// `GET /v1/interviews/{id}/recording` (T-INT-022/023) — creates real
+// Organization/ApiClient/Project/Participant/InterviewRecording rows via
+// factories, same reasoning as every other PublicApi feature dir above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Recording');
+
+// Feature/PublicApi/Webhooks — public-api step 7's
+// `GET /v1/webhooks/deliveries` / `POST .../redeliver` (T-WHD-*) — creates
+// real Organization/ApiClient/Project/Participant/WebhookDelivery rows via
+// factories, same reasoning as every other PublicApi feature dir above.
+// Missing this registration was caught by `WebhookDeliveriesMigrationTest`'s
+// own row-count assertion turning up 17 instead of 1 — every row this
+// directory's tests ever created was never rolled back and kept
+// accumulating across the whole suite run.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Webhooks');
+
+// Feature/PublicApi/Usage — public-api step 8's `GET /v1/usage` (T-USAGE-*)
+// — creates real Organization/ApiClient/Project/Participant/Evaluation/
+// AiRequest rows via factories and fixtures, same reasoning as every other
+// PublicApi feature dir above (see the Webhooks entry's own comment for
+// what omitting this registration silently does: nothing here is rolled
+// back and every row keeps accumulating across the whole suite run).
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Usage');
+
+// Feature/PublicApi/Exports — public-api step 8's `POST/GET /v1/exports`
+// (T-EXP-*) — same reasoning as Feature/PublicApi/Usage above.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/PublicApi/Exports');
+
+// Unit/PublicApi — needs TestCase + RefreshDatabase: ApiKeyResolverTest
+// exercises the legacy-rows cache/observer against real ApiClient rows.
+// ApiModeTest (no DB) is unaffected — extend()/use() are harmless for a
+// DB-free test.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/PublicApi');
 
 // Unit/Actions/Scheduling — needs TestCase + RefreshDatabase (interview-scheduling
 // PR-E: RescheduleParticipantTest calls the action directly against real
