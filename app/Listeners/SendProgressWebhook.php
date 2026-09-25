@@ -9,6 +9,7 @@ use App\Enums\WebhookEventType;
 use App\Events\CompetencySessionEnded;
 use App\Events\ParticipantCreated;
 use App\Jobs\DeliverWebhookJob;
+use App\Models\Project;
 use App\Models\WebhookDelivery;
 use App\Services\Webhooks\ProgressPayloadAssembler;
 use App\Services\Webhooks\WebhookDeliveryRecorder;
@@ -54,12 +55,14 @@ class SendProgressWebhook
 
     private function handleCreated(ParticipantCreated $event): void
     {
+        $organizationId = $this->resolveOrganizationId($event->projectId);
+
         $delivery = $this->recorder->record(
             $event->projectId,
             $event->participantId,
             WebhookEventType::Progress,
             'participant-created:'.$event->participantId,
-            fn (string $deliveryId): array => $this->assembler->assemble($event->participantId, $deliveryId)
+            fn (string $deliveryId): array => $this->assembler->assemble($event->participantId, $organizationId, $deliveryId)
         );
 
         $this->dispatchIfPending($delivery);
@@ -67,15 +70,36 @@ class SendProgressWebhook
 
     private function handleCompetencyEnded(CompetencySessionEnded $event): void
     {
+        $organizationId = $this->resolveOrganizationId($event->projectId);
+
         $delivery = $this->recorder->record(
             $event->projectId,
             $event->participantId,
             WebhookEventType::Progress,
             'competency-ended:'.$event->participantId.':'.$event->competencyCode,
-            fn (string $deliveryId): array => $this->assembler->assemble($event->participantId, $deliveryId)
+            fn (string $deliveryId): array => $this->assembler->assemble($event->participantId, $organizationId, $deliveryId)
         );
 
         $this->dispatchIfPending($delivery);
+    }
+
+    /**
+     * Resolves the organization id `ProgressPayloadAssembler::assemble()` needs to
+     * org-scope its own `Participant` read (pre-commit gate, round 4, finding 3).
+     * Neither `ParticipantCreated` nor `CompetencySessionEnded` carries an
+     * organization id directly — only `projectId` — so it is derived from the SAME
+     * `Project` row `WebhookDeliveryRecorder::record()` itself already resolves,
+     * `withoutGlobalScopes()`'d for the identical reason that class's own docblock
+     * states: this listener runs with no reliable ambient tenant context.
+     */
+    private function resolveOrganizationId(int $projectId): int
+    {
+        // withoutGlobalScope('tenant') ONLY — never the plural withoutGlobalScopes(),
+        // per the convention SsoExchangeController documents and this file is
+        // allowlisted for (tests/Arch/C11/AdminTenancySafetyArchTest.php). Keeps
+        // SoftDeletingScope, so a soft-deleted project still 404s here rather than
+        // resolving.
+        return Project::withoutGlobalScope('tenant')->findOrFail($projectId)->organization_id;
     }
 
     private function dispatchIfPending(WebhookDelivery $delivery): void

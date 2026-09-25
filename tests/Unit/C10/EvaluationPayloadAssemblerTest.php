@@ -22,6 +22,7 @@ declare(strict_types=1);
  *   else the terminal participant state; always an empty text map.
  */
 
+use App\Enums\ApiKeyMode;
 use App\Enums\WebhookEventType;
 use App\Models\Competency;
 use App\Models\CompetencyResult;
@@ -33,6 +34,7 @@ use App\Models\Project;
 use App\Services\Scoring\ReliabilityRenderer;
 use App\Services\Webhooks\EvaluationPayloadAssembler;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 
 /**
@@ -87,6 +89,40 @@ test('envelope carries version, event=evaluation, delivery_id, occurred_at, cand
         ->and($payload['candidate_ref'])->toBe('candidate-ref-verbatim-9001')
         ->and($payload['project'])->toBe(['id' => $project->id, 'slug' => $project->slug])
         ->and($payload['occurred_at'])->not->toBeEmpty();
+});
+
+// ─── livemode (public-api step 9, SPEC.md §3.7) ───────────────────────────
+//
+// An evaluation webhook for a test-mode participant must carry
+// livemode:false, on both the completed-evaluation and the
+// catastrophic-failure envelope — the calling system's own mock/sandbox
+// integration relies on this field to tell a real delivery apart from one
+// produced by a test-mode /v1 interview.
+
+test('assembleForEvaluation: livemode is true for a live-mode participant', function (): void {
+    [, , , $evaluation] = c10EvaluationFixtures();
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+
+    expect($payload['livemode'])->toBeTrue();
+});
+
+test('assembleForEvaluation: livemode is false for a test-mode participant', function (): void {
+    [, , $participant, $evaluation] = c10EvaluationFixtures();
+    $participant->forceFill(['mode' => ApiKeyMode::Test])->save();
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+
+    expect($payload['livemode'])->toBeFalse();
+});
+
+test('assembleForFailedParticipant: livemode is false for a test-mode participant', function (): void {
+    [$org, , $participant] = c10EvaluationFixtures();
+    $participant->forceFill(['mode' => ApiKeyMode::Test])->save();
+
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForFailedParticipant($participant->id, $org->id, (string) Str::uuid());
+
+    expect($payload['livemode'])->toBeFalse();
 });
 
 test('reliability delegates to ReliabilityRenderer::render() — never re-derives the formula', function (): void {
@@ -315,10 +351,10 @@ test('deterministic ordering: competencies by project_competencies.position, beh
 });
 
 test('assembleForFailedParticipant renders status from the Evaluation row when one exists', function (): void {
-    [, , $participant, $evaluation] = c10EvaluationFixtures();
+    [$org, , $participant, $evaluation] = c10EvaluationFixtures();
     $evaluation->forceFill(['status' => 'pending'])->save();
 
-    $payload = app(EvaluationPayloadAssembler::class)->assembleForFailedParticipant($participant->id, (string) Str::uuid());
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForFailedParticipant($participant->id, $org->id, (string) Str::uuid());
 
     expect($payload['data']['status'])->toBe('pending')
         ->and($payload['data']['text'])->toBe([]);
@@ -333,7 +369,7 @@ test('assembleForFailedParticipant renders the terminal participant state when n
     $project = Project::factory()->create();
     $participant = Participant::factory()->forProject($project)->create(['status' => 'errore']);
 
-    $payload = app(EvaluationPayloadAssembler::class)->assembleForFailedParticipant($participant->id, (string) Str::uuid());
+    $payload = app(EvaluationPayloadAssembler::class)->assembleForFailedParticipant($participant->id, $org->id, (string) Str::uuid());
 
     expect($payload['data']['status'])->toBe('errore')
         ->and($payload['data']['text'])->toBe([])
@@ -345,3 +381,36 @@ test('assembleForFailedParticipant renders the terminal participant state when n
             ],
         ]);
 });
+
+// ─── Tenancy guard (pre-commit gate, round 4, finding 3) ───────────────────
+
+test('assembleForEvaluation refuses to render a participant belonging to a different organization than the Evaluation row', function (): void {
+    // A structurally inconsistent row (participant_id pointing at a DIFFERENT
+    // organization's participant than the Evaluation's own organization_id) —
+    // never produced by the real write paths, but the exact "theoretical
+    // cross-tenant read" this guard exists to close regardless of how it could
+    // arise (corrupt data, a future bug elsewhere).
+    $orgA = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($orgA->id);
+    $resolver->setBypass(false);
+    $projectA = Project::factory()->create();
+    $participantA = Participant::factory()->forProject($projectA)->create();
+
+    $orgB = Organization::factory()->create();
+    $resolver->setOrgId($orgB->id);
+    $evaluation = Evaluation::factory()->create([
+        'participant_id' => $participantA->id,
+        'status' => 'completed',
+        'evaluated_at' => now(),
+    ]);
+
+    app(EvaluationPayloadAssembler::class)->assembleForEvaluation($evaluation->id, (string) Str::uuid());
+})->throws(ModelNotFoundException::class);
+
+test('assembleForFailedParticipant refuses to render a participant that belongs to a different organization than the caller-supplied organizationId', function (): void {
+    [, , $participant] = c10EvaluationFixtures();
+    $otherOrg = Organization::factory()->create();
+
+    app(EvaluationPayloadAssembler::class)->assembleForFailedParticipant($participant->id, $otherOrg->id, (string) Str::uuid());
+})->throws(ModelNotFoundException::class);

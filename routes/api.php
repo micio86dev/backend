@@ -42,15 +42,30 @@ use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
+use App\Http\Controllers\Embed\ExchangeController as EmbedExchangeController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\M2m\AbilityCatalogController;
 use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
+use App\Http\Controllers\PublicApi\ExportController as PublicApiExportController;
+use App\Http\Controllers\PublicApi\HealthController as PublicApiHealthController;
+use App\Http\Controllers\PublicApi\InterviewController as PublicApiInterviewController;
+use App\Http\Controllers\PublicApi\OrganizationController as PublicApiOrganizationController;
+use App\Http\Controllers\PublicApi\ProjectController as PublicApiProjectController;
+use App\Http\Controllers\PublicApi\RecordingController as PublicApiRecordingController;
+use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTokenController;
+use App\Http\Controllers\PublicApi\UsageController as PublicApiUsageController;
+use App\Http\Controllers\PublicApi\WebhookDeliveryController as PublicApiWebhookDeliveryController;
 use App\Http\Controllers\QueueHealthController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
+use App\Http\Middleware\PublicApi\AssignRequestId;
+use App\Http\Middleware\PublicApi\AuthenticatePublicApi;
+use App\Http\Middleware\PublicApi\PublicApiTenantContext;
+use App\Http\Middleware\PublicApi\RateLimitPublicApi;
+use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Http\Middleware\RejectStaleCredentials;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\TenantContext;
@@ -66,6 +81,169 @@ Route::get('/health', HealthController::class);
 // counts/booleans/ages ONLY, never a candidate/tenant identifier. Doubles
 // as the worker HEALTHCHECK (wrapper PR5).
 Route::get('/health/queue', QueueHealthController::class);
+
+// ─── BEAI Public API (/v1) ────────────────────────────────────────────────
+//
+// docs/specs/public-api/SPEC.md §0 "Contract governance": the public API
+// lives here, versioned at `/v1` (so `/api/v1/...` on this route file's own
+// `/api` prefix). Everything under this group is governed by the vendored
+// contract `public-api/openapi.yaml` — no field ships here without an entry
+// in it, and CI asserts the Scramble-exported spec stays equivalent
+// (step 11, T-CONTRACT-001). This is a SEPARATE, versioned surface from the
+// existing backoffice-facing routes above; organization API-key auth and
+// tenancy (SPEC.md §3.1) land in step 2 — `/health` is the only unauthenticated
+// operation the contract declares (SPEC.md §5.2).
+Route::prefix('v1')
+    ->name('public-api.')
+    ->middleware([AssignRequestId::class])
+    ->group(function (): void {
+        Route::get('/health', PublicApiHealthController::class)->name('health');
+    });
+
+// ─── BEAI Public API (/v1) — authenticated surface (public-api step 2) ───────
+//
+// SPEC.md §3.1: `Authorization: Bearer <api_key>` — a SEPARATE credential
+// system from the human `auth:api` JWT and, at the ROUTE level, from the
+// internal `auth:api-m2m` M2M surface below (`/api/m2m/*`) even though both
+// ultimately resolve the SAME ApiClient model and guard
+// (App\Support\PublicApi\ApiKeyResolver is shared — see its docblock).
+//
+// withoutMiddleware([TenantContext, RejectStaleCredentials]): identical
+// isolation to the M2M/candidate/SSO route groups above — both are appended
+// to the whole `api` group in bootstrap/app.php and both read
+// $request->user() on the DEFAULT 'api' guard, which would resolve against
+// whatever bearer key is present here and 500 rather than pass through.
+//
+// Inline middleware stack (explicit, ordered, per SPEC.md §3.1/§3.2 — public-api step 3):
+//   1. AssignRequestId       — stamps public_api.request_id; echoed on every response
+//   2. RejectApiKeyInQuery   — `?api_key=` → 400, before any auth check
+//   3. AuthenticatePublicApi — resolves ApiClient via bearer key; sets api-m2m guard
+//   4. PublicApiTenantContext — stamps TenantResolver + ApiMode from client
+//   5. RateLimitPublicApi    — per-org/mode token bucket (needs org from step 4)
+//   6. SubstituteBindings    — route-model-binding (LAST, per C4 convention)
+//
+// public-api step 4: first business routes. `GET /organization` needs no
+// extra scope beyond authentication (SPEC.md §3.3 "any"); `GET /projects`
+// and `GET /projects/{project}` require `projects:read`.
+//
+// `SubstituteBindings` is applied PER-ROUTE below, never in this outer
+// array (a C4 convention — see `bootstrap/app.php`'s own comment above its
+// `prependToPriorityList()` calls for the FULL account of why `/v1`'s
+// entire authenticated stack — not just `SubstituteBindings` — is on that
+// priority list, and what broke before it was: G-35,
+// `docs/specs/public-api/DECISIONS-NEEDED.md`).
+Route::prefix('v1')
+    ->name('public-api.')
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware([
+        AssignRequestId::class,
+        RejectApiKeyInQuery::class,
+        AuthenticatePublicApi::class,
+        PublicApiTenantContext::class,
+        RateLimitPublicApi::class,
+    ])
+    ->group(function (): void {
+        Route::get('/organization', [PublicApiOrganizationController::class, 'show'])
+            ->name('organization.show')
+            ->middleware(SubstituteBindings::class);
+
+        Route::middleware('scope:projects:read')->group(function (): void {
+            Route::get('/projects', [PublicApiProjectController::class, 'index'])
+                ->name('projects.index')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/projects/{project}', [PublicApiProjectController::class, 'show'])
+                ->name('projects.show')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        // public-api step 5: `Interview` (SPEC.md §3.3). `scope:` is always
+        // given BEFORE `SubstituteBindings`, on every route, same convention
+        // as `/projects` above (G-35's own history is why this order is
+        // still given explicitly even though the priority list no longer
+        // strictly needs it to be).
+        Route::middleware('scope:interviews:write')->group(function (): void {
+            Route::post('/interviews', [PublicApiInterviewController::class, 'store'])
+                ->name('interviews.store')
+                ->middleware(['idempotent', SubstituteBindings::class]);
+            Route::post('/interviews/{interview}/session-tokens', [PublicApiSessionTokenController::class, 'store'])
+                ->name('interviews.session-tokens.store')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        Route::middleware('scope:interviews:read')->group(function (): void {
+            Route::get('/interviews', [PublicApiInterviewController::class, 'index'])
+                ->name('interviews.index')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}', [PublicApiInterviewController::class, 'show'])
+                ->name('interviews.show')
+                ->middleware(SubstituteBindings::class);
+
+            // public-api step 6: transcript/answers/scoring/events
+            // (SPEC.md §3.3). Declared under the SAME `interviews:read`
+            // scope group as `index`/`show` above — `recording` below needs
+            // its OWN `recordings:read` scope instead, per the contract.
+            Route::get('/interviews/{interview}/transcript', [PublicApiInterviewController::class, 'transcript'])
+                ->name('interviews.transcript')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}/answers', [PublicApiInterviewController::class, 'answers'])
+                ->name('interviews.answers')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}/scoring', [PublicApiInterviewController::class, 'scoring'])
+                ->name('interviews.scoring')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/interviews/{interview}/events', [PublicApiInterviewController::class, 'events'])
+                ->name('interviews.events')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        Route::middleware('scope:recordings:read')->group(function (): void {
+            Route::get('/interviews/{interview}/recording', [PublicApiRecordingController::class, 'show'])
+                ->name('interviews.recording')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        // public-api step 7: webhook delivery log + redeliver (SPEC.md
+        // §3.6). `redeliver` carries `idempotent` (G-15's own precedent:
+        // `openapi.yaml`'s `idempotencyKey` parameter is documented on
+        // this operation, same as `POST /interviews`) — a caller retrying
+        // an uncertain redeliver request must not silently re-queue the
+        // job a second time.
+        Route::middleware('scope:webhooks:read')->group(function (): void {
+            Route::get('/webhooks/deliveries', [PublicApiWebhookDeliveryController::class, 'index'])
+                ->name('webhooks.deliveries.index')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        Route::middleware('scope:webhooks:write')->group(function (): void {
+            Route::post('/webhooks/deliveries/{id}/redeliver', [PublicApiWebhookDeliveryController::class, 'redeliver'])
+                ->name('webhooks.deliveries.redeliver')
+                ->middleware(['idempotent', SubstituteBindings::class]);
+        });
+
+        // public-api step 8: usage (SPEC.md §3.3/§3.4).
+        Route::middleware('scope:usage:read')->group(function (): void {
+            Route::get('/usage', [PublicApiUsageController::class, 'show'])
+                ->name('usage.show')
+                ->middleware(SubstituteBindings::class);
+        });
+
+        // public-api step 8: exports (SPEC.md §3.3 "Exports"). `store` carries
+        // `idempotent`, same precedent as `POST /interviews`/`redeliver` above.
+        Route::middleware('scope:exports:write')->group(function (): void {
+            Route::post('/exports', [PublicApiExportController::class, 'store'])
+                ->name('exports.store')
+                ->middleware(['idempotent', SubstituteBindings::class]);
+        });
+
+        Route::middleware('scope:exports:read')->group(function (): void {
+            Route::get('/exports', [PublicApiExportController::class, 'index'])
+                ->name('exports.index')
+                ->middleware(SubstituteBindings::class);
+            Route::get('/exports/{id}', [PublicApiExportController::class, 'show'])
+                ->name('exports.show')
+                ->middleware(SubstituteBindings::class);
+        });
+    });
 
 // ─── Auth routes (C2, refresh flow hardened by backoffice-session-refresh-hardening D8) ──
 // POST /api/auth/login is public (no auth middleware).
@@ -573,6 +751,38 @@ Route::prefix('m2m')
 
 Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class]);
+
+// ─── BEAI Public API session-token exchange (PUBLIC) (public-api step 5) ─────
+// PUBLIC endpoint, OUTSIDE /v1 — no API key, no TenantContext (SPEC.md §3.5,
+// G-32). Same TenantContext/RejectStaleCredentials isolation as
+// `/sso/exchange` immediately above, and for the identical reason.
+// `throttle:embed-exchange` (step 5 review follow-up, item 2 — was the
+// numeric `throttle:30,1`; same 30/minute limit, registered as a NAMED
+// limiter in `AppServiceProvider::boot()` instead, whose own docblock has
+// the full reasoning: the numeric form's `$request->user()` call crashes
+// on an array-shaped `?token[]=` before this route's own 401 ever runs).
+// A session token is single-use, so this route is a brute-force-guessing
+// surface against `?token=` the same way a password-reset token endpoint
+// is — unlike `/sso/exchange`, which has no throttle today, this is a NEW
+// route this step adds and the task instruction is explicit about the
+// limit.
+Route::get('/embed/exchange', [EmbedExchangeController::class, 'exchange'])
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware('throttle:embed-exchange');
+
+// ─── BEAI Public API frame-policy lookup (PUBLIC) (public-api step 10) ───────
+// Read-only counterpart to `/embed/exchange` immediately above — same public,
+// unauthenticated, TenantContext-free posture, same `embed-exchange` throttle
+// (same `?token=` guessing-surface shape), but NEVER consumes the session
+// token (see `ExchangeController::framePolicy()`'s own docblock for why it is
+// not simply `exchange()` reused). Called by `frontend`'s per-request Nitro
+// CSP middleware to resolve the organization's `allowed_domains` for
+// `/embed/{token}`'s `Content-Security-Policy: frame-ancestors` header
+// (SPEC.md §4.4), ahead of — and independently of — the candidate's own later
+// `/embed/exchange` call.
+Route::get('/embed/frame-policy', [EmbedExchangeController::class, 'framePolicy'])
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware('throttle:embed-exchange');
 
 // ─── Candidate Routes (C6) ───────────────────────────────────────────────────
 // Protected by auth:api-candidate → TenantContextCandidate → SubstituteBindings.

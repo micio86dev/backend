@@ -249,14 +249,17 @@ test('qwsSchedulerOnOneServerViolations catches non-onOneServer ->job() and ->ex
     // All four entry points are recognised: the three non-compliant
     // registrations are reported, each identified by its own distinctive text.
     expect($violations)->toHaveCount(3)
-        ->and($reported)->toContain('queue:prune-failed')      // command() violation
-        ->and($reported)->toContain('FinalizeInterview(1)')    // job() violation
-        ->and($reported)->toContain('php artisan inspire');    // exec() violation
+        ->and($reported)->toContain('queue:prune-failed')        // command() violation
+        ->and($reported)->toContain('FinalizeInterview(1, 1)')   // job() violation
+        ->and($reported)->toContain('php artisan inspire');      // exec() violation
 
     // ...and the two COMPLIANT registrations are not: recognising more entry
     // points must not turn the guard into a false-positive generator.
-    expect($reported)->not->toContain('everyMinute')           // compliant call()
-        ->and($reported)->not->toContain('FinalizeInterview(2)'); // compliant job()
+    // FinalizeInterview(1, 1)/(2, 1) (public-api step 9 gate finding —
+    // FinalizeInterview gained a required $organizationId constructor
+    // argument): the fixture's own two-arg literals, not a magic number.
+    expect($reported)->not->toContain('everyMinute')             // compliant call()
+        ->and($reported)->not->toContain('FinalizeInterview(2, 1)'); // compliant job()
 })->group('arch');
 
 /**

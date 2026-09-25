@@ -59,7 +59,7 @@ function contractAdminToken(Organization $org): string
     return auth('api')->login($user);
 }
 
-test('GET /api/organization returns exactly what OrganizationResource declares', function (): void {
+test('GET /api/organization returns exactly what Admin\OrganizationResource declares', function (): void {
     $org = Organization::factory()->create();
     $token = contractAdminToken($org);
 
@@ -69,6 +69,13 @@ test('GET /api/organization returns exactly what OrganizationResource declares',
     $actual = array_keys($response->json('data'));
     sort($actual);
 
+    // public-api step 4 added App\Http\Resources\PublicApi\OrganizationResource
+    // — a second class also named (bare) "OrganizationResource", which
+    // used to make Scramble fully-qualify one of the two on a basename
+    // collision (whichever it processed second). Step 5 review follow-up,
+    // Part A: the PUBLIC class now carries an explicit
+    // `#[SchemaName('PublicOrganization')]`, so this ADMIN class keeps its
+    // plain "OrganizationResource" schema name unconditionally.
     expect($actual)->toBe(specProperties('OrganizationResource'));
 });
 
@@ -83,6 +90,12 @@ test('GET /api/projects/{id} returns exactly what ProjectResource declares', fun
     $actual = array_keys($response->json('data'));
     sort($actual);
 
+    // Same fix as the Admin\OrganizationResource test above —
+    // App\Http\Resources\PublicApi\ProjectResource (public-api step 4)
+    // shares the bare "ProjectResource" basename with this ADMIN class;
+    // the public one now carries `#[SchemaName('PublicProject')]` (step 5
+    // review follow-up, Part A), so this admin class keeps its plain
+    // "ProjectResource" schema name unconditionally.
     expect($actual)->toBe(specProperties('ProjectResource'));
 });
 

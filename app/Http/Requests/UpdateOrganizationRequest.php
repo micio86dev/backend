@@ -17,6 +17,11 @@ use Illuminate\Validation\Rule;
  * a tenancy identifier, never editable, and the controller only ever writes
  * `$request->safe()->only([...])`, so a `slug` key in the body is silently
  * dropped rather than validated-then-rejected.
+ *
+ * `allowed_domains` (public-api step 4) is likewise absent here on purpose
+ * — step 11 adds its backoffice editor; until then it is read-only,
+ * exposed on `GET /v1/organization` but writable through no endpoint at
+ * all.
  */
 class UpdateOrganizationRequest extends FormRequest
 {

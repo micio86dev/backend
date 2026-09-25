@@ -878,3 +878,44 @@ test('POST /start reports audio_only=false when the template says nothing about 
     $response->assertStatus(201);
     $response->assertJsonPath('audio_only', false);
 });
+
+// ─── gga finding 1/8 (public-api step 6): InterviewEventRecorder must not abort the caller's transaction ──
+
+test('POST /start still transitions the participant to in_corso even when the InterviewEvent write fails (Postgres transaction abort, not just a swallowed exception)', function (): void {
+    Http::fake(heygenSuccessResponse());
+    Queue::fake();
+
+    $org = startOrg();
+    [$project] = startProjectWithCompetencies($org);
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    // `InterviewEventRecorder::sessionStarted()` is the LAST statement in
+    // `handleIssuePending()`'s own `DB::transaction()` closure — nothing
+    // runs after it to surface an aborted connection as a 500. Instead,
+    // Postgres silently treats COMMIT on an aborted transaction as a
+    // ROLLBACK: without a savepoint, the response still reports 201, but
+    // NONE of the writes in that transaction (participant.status,
+    // participant.started_at, the InterviewSession row) were actually
+    // persisted — the exact "silently commits nothing" defect.
+    DB::statement('ALTER TABLE interview_events RENAME TO interview_events_hidden_for_test');
+
+    try {
+        $response = $this
+            ->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/candidate/interview/start');
+
+        $response->assertStatus(201);
+
+        $participant->refresh();
+        expect($participant->status)->toBe('in_corso');
+        expect($participant->started_at)->not->toBeNull();
+
+        $resolver = app(TenantResolver::class);
+        $resolver->setOrgId($org->id);
+        $resolver->setBypass(false);
+        expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(1);
+    } finally {
+        DB::statement('ALTER TABLE interview_events_hidden_for_test RENAME TO interview_events');
+    }
+});

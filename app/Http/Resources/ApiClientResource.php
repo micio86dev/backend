@@ -40,9 +40,9 @@ class ApiClientResource extends JsonResource
      * `@return` for PHPStan/IDE tooling, `@scramble-return` for the
      * generator. Declarative, touches zero runtime code.
      *
-     * @return array{id: int, name: string, abilities: list<string>, is_active: bool, state: 'active'|'expired'|'revoked', expires_at: string|null, last_used_at: string|null, created_at: string|null}
+     * @return array{id: int, name: string, key_prefix: string|null, mode: 'live'|'test', abilities: list<string>, is_active: bool, state: 'active'|'expired'|'revoked', expires_at: string|null, last_used_at: string|null, created_at: string|null}
      *
-     * @scramble-return array{id: int, name: string, abilities: list<string>, is_active: bool, state: 'active'|'expired'|'revoked', expires_at: string|null, last_used_at: string|null, created_at: string|null}
+     * @scramble-return array{id: int, name: string, key_prefix: string|null, mode: 'live'|'test', abilities: list<string>, is_active: bool, state: 'active'|'expired'|'revoked', expires_at: string|null, last_used_at: string|null, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -52,6 +52,12 @@ class ApiClientResource extends JsonResource
         return [
             'id' => $client->id,
             'name' => $client->name,
+            // Unlike key_hash, key_prefix is DELIBERATELY visible — it is the
+            // identifier an operator uses to tell two keys apart in a list
+            // (public-api step 2). Null for a pre-migration row: its raw key
+            // is unrecoverable, so there is nothing to show.
+            'key_prefix' => $client->key_prefix,
+            'mode' => $client->mode->value,
             // array_values(): `abilities` casts to a PHP array, not a
             // guaranteed list — reindexing here is what actually backs the
             // `list<string>` contract above, not just satisfying the checker.

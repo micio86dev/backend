@@ -82,6 +82,36 @@ test('ApiClientResource wire types pin the docblock against schema drift (D2)', 
     expect($array['abilities'])->toBeArray();
 });
 
+test('ApiClientResource exposes key_prefix and mode (public-api step 2)', function (): void {
+    $org = Organization::factory()->create();
+    $client = ApiClient::factory()->create([
+        'organization_id' => $org->id,
+        'key_prefix' => 'beai_live_aaaaaaaa',
+        'mode' => 'live',
+    ]);
+
+    $resource = new ApiClientResource($client);
+    $array = $resource->toArray(new Request);
+
+    expect($array)->toHaveKey('key_prefix');
+    expect($array['key_prefix'])->toBe('beai_live_aaaaaaaa');
+    expect($array)->toHaveKey('mode');
+    expect($array['mode'])->toBe('live');
+});
+
+test('ApiClientResource exposes a null key_prefix for a pre-migration row', function (): void {
+    $org = Organization::factory()->create();
+    $client = ApiClient::factory()->create([
+        'organization_id' => $org->id,
+        'key_prefix' => null,
+    ]);
+
+    $resource = new ApiClientResource($client);
+    $array = $resource->toArray(new Request);
+
+    expect($array['key_prefix'])->toBeNull();
+});
+
 test('ApiClientResource exposes expires_at and last_used_at (nullable)', function (): void {
     $org = Organization::factory()->create();
     $client = ApiClient::factory()->create([

@@ -64,9 +64,8 @@ function isolParticipant(Project $project, Organization $org, ?string $ref = nul
 function isolM2mKey(Organization $org, array $abilities = ['participants:read']): string
 {
     $rawKey = ApiKeyGenerator::generate();
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'is_active' => true,
         'abilities' => $abilities,
     ]);

@@ -27,6 +27,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\WebhookDelivery;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 /**
@@ -121,6 +122,38 @@ test('a forced exception inside the recorder is caught and never propagates back
 
     expect(WebhookDelivery::count())->toBe(0);
     Queue::assertNothingPushed();
+});
+
+test('a soft-deleted project is caught and logged, never propagates, and no delivery is recorded', function (): void {
+    // pre-commit gate round 7, finding R3-001 (review-reliability): resolveOrganizationId()
+    // was narrowed from withoutGlobalScopes() to withoutGlobalScope('tenant'), which keeps
+    // SoftDeletingScope active — a trashed project now 404s (ModelNotFoundException) here
+    // instead of still resolving. The listener's own handle() wraps both event branches in
+    // try/catch(Throwable), so this must be caught and logged, exactly like the "forced
+    // exception" test above, never left to reach the SSO exchange / `/end` request path.
+    Queue::fake();
+    Log::spy();
+
+    [, $project, $participant] = c10ProgressListenerFixtures();
+    $project->delete();
+
+    // review-reliability round-2 finding R3-002: prove the trashed row itself, not just the
+    // eventual outcome — a hard delete or a skipped listener would produce the same zero
+    // deliveries/nothing-pushed result without ever exercising the ModelNotFoundException path.
+    $this->assertSoftDeleted('projects', ['id' => $project->id]);
+
+    expect(fn () => event(new ParticipantCreated($participant->id, $project->id)))->not->toThrow(Throwable::class);
+
+    expect(WebhookDelivery::where('participant_id', $participant->id)->count())->toBe(0);
+    Queue::assertNothingPushed();
+
+    // review-reliability round-2 finding R3-001: prove the catch block's own logging side
+    // effect, not just the absence of a thrown exception.
+    Log::shouldHaveReceived('error')
+        ->once()
+        ->withArgs(fn (string $message, array $context): bool => $message === 'SendProgressWebhook: failed to record/dispatch delivery'
+            && $context['event'] === ParticipantCreated::class
+        );
 });
 
 test('skipped gate outcome (no_webhook_url) dispatches nothing', function (): void {

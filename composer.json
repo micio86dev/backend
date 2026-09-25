@@ -9,7 +9,7 @@
         "api"
     ],
     "license": "MIT",
-    "version": "0.57.1",
+    "version": "0.58.0",
     "require": {
         "php": "^8.5",
         "dedoc/scramble": "^0.13",
@@ -31,6 +31,7 @@
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",
+        "league/openapi-psr7-validator": "^0.24.0",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^4.0",

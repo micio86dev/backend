@@ -132,8 +132,14 @@ final class EntryLinkMinter
      * status = 'active'
      * AND (goes_live_at IS NULL OR goes_live_at <= now())
      * AND (deadline_at  IS NULL OR deadline_at  >  now())
+     *
+     * Public (public-api step 5): `App\Actions\PublicApi\EnrolCandidate`
+     * reuses this EXACT gate for `POST /v1/interviews` rather than
+     * duplicating the three-condition check — the same "single source of
+     * truth" discipline this class's own docblock already states for the
+     * mint decision as a whole.
      */
-    private function projectIsAccessible(Project $project): bool
+    public function projectIsAccessible(Project $project): bool
     {
         if ($project->status !== 'active') {
             return false;

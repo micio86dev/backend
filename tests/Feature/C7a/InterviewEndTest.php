@@ -548,3 +548,50 @@ test('POST /end CRITICAL-3 atomicity: session + count + CAS in one txn — last-
     // FinalizeInterview dispatched exactly once (CAS single-winner)
     Queue::assertPushed(FinalizeInterview::class, 1);
 });
+
+// ─── gga finding 1/8 (public-api step 6): InterviewEventRecorder must not abort the caller's transaction ──
+
+test('POST /end still answers 200 and ends the session even when the InterviewEvent write fails (Postgres transaction abort, not just a swallowed exception)', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/*/transcript*' => Http::response(['data' => ['transcript_data' => []]], 200),
+    ]);
+    Queue::fake();
+
+    $org = endOrg();
+    [$project, $comps] = endProjectWithCompetencies($org, 2);
+    $participant = endParticipant($org, $project, 'in_corso');
+    $session = endSession($org, $participant, $project, $comps[0]->code, 'in_corso');
+    $token = endBearer($participant);
+
+    // Forces the InterviewEvent INSERT inside InterviewEventRecorder::record()
+    // to fail with a genuine Postgres error (relation does not exist) —
+    // not a mock, so the resulting ABORTED TRANSACTION state is real.
+    // Without a savepoint, PHP's own try/catch around the INSERT swallows
+    // the exception but leaves the connection aborted: every statement
+    // this method runs AFTER the recorder call (liveClock->close(),
+    // recordLlmUsage, settleCompletionIfFinished(), buildDirective()) then
+    // fails with "current transaction is aborted", surfacing as a 500.
+    DB::statement('ALTER TABLE interview_events RENAME TO interview_events_hidden_for_test');
+
+    try {
+        $response = $this
+            ->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/candidate/interview/end', [
+                'session_id' => $session->id,
+                'ended_reason' => 'completed',
+            ]);
+
+        $response->assertStatus(200);
+
+        $session->refresh();
+        expect($session->status)->toBe('completed');
+        expect($session->ended_at)->not->toBeNull();
+
+        // Not the last question — participant stays in_corso, same as the
+        // non-failure-injected sibling test above.
+        $participant->refresh();
+        expect($participant->status)->toBe('in_corso');
+    } finally {
+        DB::statement('ALTER TABLE interview_events_hidden_for_test RENAME TO interview_events');
+    }
+});

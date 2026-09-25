@@ -15,6 +15,7 @@ declare(strict_types=1);
  * competency_code) — design.md D7/S-precedent (`…100002_create_interview_sessions_table.php:47,50,72`).
  */
 
+use App\Enums\ApiKeyMode;
 use App\Models\Competency;
 use App\Models\InterviewSession;
 use App\Models\Organization;
@@ -22,6 +23,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Services\Webhooks\ProgressPayloadAssembler;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 
 /**
@@ -76,10 +78,10 @@ function c10CreateSession(
 }
 
 test('envelope carries version, event=progress, delivery_id, occurred_at, candidate_ref verbatim, project{id,slug}', function (): void {
-    [, $project, $participant] = c10ProgressFixtures();
+    [$org, $project, $participant] = c10ProgressFixtures();
     $deliveryId = (string) Str::uuid();
 
-    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $deliveryId);
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, $deliveryId);
 
     expect($payload['version'])->toBe(config('webhooks.payload.version'))
         ->and($payload['event'])->toBe('progress')
@@ -88,11 +90,35 @@ test('envelope carries version, event=progress, delivery_id, occurred_at, candid
         ->and($payload['project'])->toBe(['id' => $project->id, 'slug' => $project->slug]);
 });
 
+// ─── livemode (public-api step 9, SPEC.md §3.7) ───────────────────────────
+//
+// A progress webhook for a test-mode participant must carry livemode:false
+// — the calling system's own mock/sandbox integration relies on this field
+// to tell a real delivery apart from one produced by a test-mode /v1
+// interview.
+
+test('livemode is true for a live-mode participant', function (): void {
+    [$org, , $participant] = c10ProgressFixtures();
+
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, (string) Str::uuid());
+
+    expect($payload['livemode'])->toBeTrue();
+});
+
+test('livemode is false for a test-mode participant', function (): void {
+    [$org, , $participant] = c10ProgressFixtures();
+    $participant->forceFill(['mode' => ApiKeyMode::Test])->save();
+
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, (string) Str::uuid());
+
+    expect($payload['livemode'])->toBeFalse();
+});
+
 test('new-candidate case: all project competencies present with empty answers', function (): void {
-    [, , $participant] = c10ProgressFixtures();
+    [$org, , $participant] = c10ProgressFixtures();
     // No interview_sessions created — a brand-new candidate.
 
-    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, (string) Str::uuid());
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, (string) Str::uuid());
     $competencies = $payload['data']['competencies'];
 
     expect(array_column($competencies, 'code'))->toBe(['PRS', 'COL']);
@@ -104,13 +130,13 @@ test('new-candidate case: all project competencies present with empty answers', 
 });
 
 test('advancement case: cumulative state across competencies', function (): void {
-    [, $project, $participant] = c10ProgressFixtures();
+    [$org, $project, $participant] = c10ProgressFixtures();
 
     $endedAt = now()->subMinutes(2);
     c10CreateSession($project, $participant, 'PRS', 0, 'completed', $endedAt);
     c10CreateSession($project, $participant, 'COL', 1, 'in_corso', null);
 
-    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, (string) Str::uuid());
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, (string) Str::uuid());
     $byCode = collect($payload['data']['competencies'])->keyBy('code');
 
     expect($byCode['PRS']['status'])->toBe('completed')
@@ -125,14 +151,23 @@ test('advancement case: cumulative state across competencies', function (): void
 });
 
 test('deterministic ordering follows project_competencies.position regardless of session creation order', function (): void {
-    [, $project, $participant] = c10ProgressFixtures();
+    [$org, $project, $participant] = c10ProgressFixtures();
 
     // Create the COL session first, PRS session second — insertion order reversed
     // relative to pivot position — to prove ordering is position-driven.
     c10CreateSession($project, $participant, 'COL', 1, 'completed', now());
     c10CreateSession($project, $participant, 'PRS', 0, 'completed', now());
 
-    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, (string) Str::uuid());
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, (string) Str::uuid());
 
     expect(array_column($payload['data']['competencies'], 'code'))->toBe(['PRS', 'COL']);
 });
+
+// ─── Tenancy guard (pre-commit gate, round 4, finding 3) ───────────────────
+
+test('assemble() refuses to render a participant that belongs to a different organization than the caller-supplied organizationId', function (): void {
+    [, , $participant] = c10ProgressFixtures();
+    $otherOrg = Organization::factory()->create();
+
+    (new ProgressPayloadAssembler)->assemble($participant->id, $otherOrg->id, (string) Str::uuid());
+})->throws(ModelNotFoundException::class);

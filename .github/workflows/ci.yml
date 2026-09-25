@@ -192,6 +192,19 @@ jobs:
       - name: Assert openapi.json produced
         run: test -f openapi.json && echo "openapi.json OK"
 
+      # ── /v1 contract document (T-CONTRACT-001) ─────────────────────────────
+      # Same freshness gate as openapi.json, for the /v1-only Scramble document
+      # that ContractEquivalenceTest compares against docs/specs/public-api/
+      # openapi.yaml (G-00: neither may change without the other).
+      - name: Generate /v1 OpenAPI spec
+        run: php artisan scramble:export --api=v1
+
+      - name: Assert committed openapi.v1.json matches a fresh export
+        run: git diff --exit-code openapi.v1.json
+
+      - name: Assert openapi.v1.json produced
+        run: test -f openapi.v1.json && echo "openapi.v1.json OK"
+
       # ── Assert OpenAPI version matches VERSION file ────────────────────────
       # This one alone was never enough: openapi.json's info.version is GENERATED
       # from VERSION, so it compared the file against itself and passed for every

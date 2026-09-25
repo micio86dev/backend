@@ -46,9 +46,8 @@ function matrixUser(Organization $org): User
 function matrixM2mKey(Organization $org, array $abilities = ['participants:read']): string
 {
     $rawKey = ApiKeyGenerator::generate();
-    ApiClient::factory()->create([
+    ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
-        'key_hash' => ApiKeyGenerator::hash($rawKey),
         'is_active' => true,
         'abilities' => $abilities,
     ]);
