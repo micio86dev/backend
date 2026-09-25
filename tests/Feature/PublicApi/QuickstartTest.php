@@ -153,7 +153,8 @@ test('the quickstart snippets run against a test-mode organization and reach com
     $docsDir = dirname(base_path()).'/docs';
     $quickstart = $docsDir.'/quickstart.md';
 
-    if (! is_dir($docsDir)) {
+    // A bare `docs/` next to api/ is not proof of the wrapper: the spec is the marker.
+    if (! is_file($docsDir.'/specs/public-api/SPEC.md')) {
         test()->markTestSkipped('The wrapper docs/ directory is unreachable: api is checked out on its own.');
     }
 
