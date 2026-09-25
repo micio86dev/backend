@@ -6,7 +6,12 @@
     },
     "servers": [
         {
-            "url": "http://localhost/api/v1"
+            "url": "https://api.beai.example/v1"
+        }
+    ],
+    "security": [
+        {
+            "apiKey": []
         }
     ],
     "paths": {
@@ -551,7 +556,8 @@
                             }
                         }
                     }
-                }
+                },
+                "security": []
             }
         },
         "/interviews": {
@@ -2592,6 +2598,13 @@
         }
     },
     "components": {
+        "securitySchemes": {
+            "apiKey": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "beai_live_\u2026 | beai_test_\u2026"
+            }
+        },
         "schemas": {
             "CreateExportRequest": {
                 "type": "object",

@@ -143,3 +143,51 @@ test('T-CONTRACT-001: 2xx response bodies expose the same properties, except the
 
     expect($divergences)->toBe(RECORDED_SUCCESS_BODY_DIVERGENCES);
 });
+
+/**
+ * @return array{contract: array<string, mixed>, export: array<string, mixed>}
+ */
+function contractDocuments(): array
+{
+    static $documents = null;
+
+    if ($documents === null) {
+        $documents = [
+            'contract' => Yaml::parseFile(config('public_api.contract_path')),
+            'export' => app(Generator::class)(Scramble::getGeneratorConfig('v1')),
+        ];
+    }
+
+    return $documents;
+}
+
+test('T-CONTRACT-001: the export declares the same security scheme and default security as the reference', function (): void {
+    ['contract' => $contract, 'export' => $export] = contractDocuments();
+
+    expect($export['components']['securitySchemes'])->toBe($contract['components']['securitySchemes'])
+        ->and($export['security'])->toBe($contract['security']);
+});
+
+test('T-CONTRACT-001: the export declares the same server as the reference', function (): void {
+    ['contract' => $contract, 'export' => $export] = contractDocuments();
+
+    expect($export['servers'])->toBe($contract['servers']);
+});
+
+test('T-CONTRACT-001: every operation carries the same per-operation security override as the reference', function (): void {
+    ['contract' => $contract, 'export' => $export] = contractDocuments();
+
+    $overrides = static function (array $document): array {
+        $result = [];
+        foreach ($document['paths'] as $path => $methods) {
+            foreach ($methods as $method => $operation) {
+                $result[strtoupper($method).' '.preg_replace('/\{[^}]+\}/', '{}', $path)] = $operation['security'] ?? null;
+            }
+        }
+        ksort($result);
+
+        return $result;
+    };
+
+    expect($overrides($export))->toBe($overrides($contract));
+});

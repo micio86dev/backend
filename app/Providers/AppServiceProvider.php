@@ -34,6 +34,8 @@ use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
 use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecuritySchemes\HttpSecurityScheme;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -112,7 +114,22 @@ class AppServiceProvider extends ServiceProvider
         Scramble::registerApi('v1', [
             'api_path' => 'api/v1',
             'export_path' => 'openapi.v1.json',
-        ]);
+            // The reference's own server (`openapi.yaml` servers[0]); the host is a
+            // placeholder until the public API host is decided (G-03, G-56).
+            'servers' => ['' => config('public_api.spec_server_url')],
+        ])->withDocumentTransformers(function (OpenApi $document): void {
+            // Mirror the reference: every operation takes the `apiKey` bearer
+            // credential except `/health`, which overrides it with `security: []`.
+            $document->secure((new HttpSecurityScheme('bearer', 'beai_live_… | beai_test_…'))->as('apiKey'));
+
+            foreach ($document->paths as $path) {
+                if (ltrim($path->path, '/') === 'health') {
+                    foreach ($path->operations as $operation) {
+                        $operation->security = [];
+                    }
+                }
+            }
+        });
 
         // C4 — Register ProjectPolicy for Gate-based authorization.
         /**

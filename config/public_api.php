@@ -42,6 +42,14 @@ return [
     'base_url' => env('PUBLIC_API_URL') ?: rtrim((string) (env('APP_URL') ?: 'http://localhost'), '/').'/api/v1',
 
     /*
+     * Server URL the exported `/v1` OpenAPI document (and therefore every
+     * generated SDK) declares — mirrors `openapi.yaml` `servers[0].url`. The host
+     * is a placeholder until the public API host is decided (G-03, G-56);
+     * overridable so a deployment can export its real one.
+     */
+    'spec_server_url' => env('PUBLIC_API_SPEC_SERVER_URL') ?: 'https://api.beai.example/v1',
+
+    /*
      * Base URL of the generated developer docs site (§6 "Developer area",
      * `developers.beai.example`). No default: unset (or blank) until
      * Q6/G-03 is resolved, and nothing in step 1 reads this for anything
