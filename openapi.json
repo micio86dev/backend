@@ -47,6 +47,226 @@
                 }
             }
         },
+        "/admin/organizations": {
+            "post": {
+                "operationId": "adminOrganization.store",
+                "summary": "POST /api/admin/organizations",
+                "tags": [
+                    "AdminOrganization"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreOrganizationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            },
+            "get": {
+                "operationId": "superadmin.organizations",
+                "description": "Reachable ONLY by a superadmin, so the cross-tenant read is the point\nrather than a leak \u2014 and it returns identity only. Nothing about\nwebhooks, credentials or settings crosses here: the switcher needs a\nname to put in a menu, and every other read stays behind the acting\norganization the caller then selects.\n\nThe shape is declared for Scramble, and not as documentation for its own\nsake: both Nuxt apps generate their typed client from this spec, so an\nundeclared `response()->json()` produced `data: string` and the switcher\nfailed to compile against its own API.",
+                "summary": "Every client, for the switcher",
+                "tags": [
+                    "Superadmin"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "name"
+                                                ]
+                                            }
+                                        },
+                                        "acting_organization_id": {
+                                            "type": [
+                                                "integer",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "acting_organization_id"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/organizations/{id}": {
+            "get": {
+                "operationId": "adminOrganization.show",
+                "summary": "GET /api/admin/organizations/{id}",
+                "tags": [
+                    "AdminOrganization"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "adminOrganization.update",
+                "summary": "PATCH /api/admin/organizations/{id}",
+                "tags": [
+                    "AdminOrganization"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateManagedOrganizationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`OrganizationResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/OrganizationResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    }
+                }
+            }
+        },
         "/m2m/clients": {
             "post": {
                 "operationId": "apiClient.store",
@@ -841,7 +1061,9 @@
                             "type": "string",
                             "enum": [
                                 "heygen",
-                                "tavus"
+                                "tavus",
+                                "cartesia",
+                                "elevenlabs"
                             ]
                         }
                     },
@@ -854,8 +1076,17 @@
                             "enum": [
                                 "voice",
                                 "avatar",
-                                "replica"
+                                "replica",
+                                "pal"
                             ]
+                        }
+                    },
+                    {
+                        "name": "italian_only",
+                        "in": "query",
+                        "description": "Keep only genuinely Italian voices (`italian` = native). The\nlist is already sorted Italian-first without it.",
+                        "schema": {
+                            "type": "boolean"
                         }
                     }
                 ],
@@ -868,46 +1099,22 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "status": {
-                                                            "type": "string",
-                                                            "const": "unavailable"
-                                                        },
-                                                        "items": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "string"
-                                                            },
-                                                            "minItems": 0,
-                                                            "maxItems": 0,
-                                                            "additionalItems": false
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "status",
-                                                        "items"
-                                                    ]
+                                            "type": "object",
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string"
                                                 },
-                                                {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "status": {
-                                                            "type": "string",
-                                                            "const": "ok"
-                                                        },
-                                                        "items": {
-                                                            "type": "array",
-                                                            "items": {}
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "status",
-                                                        "items"
-                                                    ]
+                                                "items": {
+                                                    "type": "array",
+                                                    "items": {}
+                                                },
+                                                "code": {
+                                                    "type": "string"
                                                 }
+                                            },
+                                            "required": [
+                                                "status",
+                                                "items"
                                             ]
                                         }
                                     },
@@ -10121,61 +10328,6 @@
                 }
             }
         },
-        "/admin/organizations": {
-            "get": {
-                "operationId": "superadmin.organizations",
-                "description": "Reachable ONLY by a superadmin, so the cross-tenant read is the point\nrather than a leak \u2014 and it returns identity only. Nothing about\nwebhooks, credentials or settings crosses here: the switcher needs a\nname to put in a menu, and every other read stays behind the acting\norganization the caller then selects.\n\nThe shape is declared for Scramble, and not as documentation for its own\nsake: both Nuxt apps generate their typed client from this spec, so an\nundeclared `response()->json()` produced `data: string` and the switcher\nfailed to compile against its own API.",
-                "summary": "Every client, for the switcher",
-                "tags": [
-                    "Superadmin"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "id": {
-                                                        "type": "integer"
-                                                    },
-                                                    "name": {
-                                                        "type": "string"
-                                                    }
-                                                },
-                                                "required": [
-                                                    "id",
-                                                    "name"
-                                                ]
-                                            }
-                                        },
-                                        "acting_organization_id": {
-                                            "type": [
-                                                "integer",
-                                                "null"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "data",
-                                        "acting_organization_id"
-                                    ]
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "$ref": "#/components/responses/AuthenticationException"
-                    }
-                }
-            }
-        },
         "/admin/clients": {
             "get": {
                 "operationId": "superadmin.clients",
@@ -14427,6 +14579,26 @@
                 ],
                 "title": "StoreDefaultQuestionRequest"
             },
+            "StoreOrganizationRequest": {
+                "type": "object",
+                "description": "Validates POST /api/admin/organizations (superadmin only).\n\nThe superadmin check lives here so authorization answers before validation,\nexactly as `StorePlatformUserRequest` does: otherwise a non-superadmin would\nget a 422 enumerating this endpoint's rules.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "slug": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "maxLength": 255
+                    }
+                },
+                "required": [
+                    "name",
+                    "slug"
+                ],
+                "title": "StoreOrganizationRequest"
+            },
             "StorePlatformUserRequest": {
                 "type": "object",
                 "description": "Validates POST /api/admin/platform-users (platform-user-management D2).\n\nThere is no `role` rule and no `organization_id` rule, and their absence is\nthe point rather than an omission: both are DECIDED by the surface, exactly\nas `/api/users` decides them for an organization's people. A field that is\nnever read cannot be crafted.",
@@ -14873,6 +15045,24 @@
                     }
                 },
                 "title": "UpdateDefaultQuestionRequest"
+            },
+            "UpdateManagedOrganizationRequest": {
+                "type": "object",
+                "description": "Validates PATCH /api/admin/organizations/{id} (superadmin only).\n\nOnly `name` and `primary_color` are writable here. `slug` is a tenancy\nidentifier and is never editable; the webhook defaults and the logo keep\ntheir own tenant-facing endpoints.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                },
+                "title": "UpdateManagedOrganizationRequest"
             },
             "UpdateOrganizationRequest": {
                 "type": "object",
