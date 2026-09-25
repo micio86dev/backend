@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Tenancy\ActingOrganization;
 use Illuminate\Support\Facades\Http;
 
@@ -39,6 +40,7 @@ beforeEach(function (): void {
         'interview.tavus.api_key' => 'k2',
         'services.cartesia.api_key' => 'k3',
         'services.elevenlabs.api_key' => 'k4',
+        'interview.preflight.verify_references' => true,
     ]);
 });
 
@@ -104,6 +106,7 @@ test('a provider outage never blocks a save', function (): void {
 test('a Tavus template with an unknown face is refused', function (): void {
     Http::fake([
         'tavusapi.com/v2/faces*' => Http::response(['data' => [['face_id' => 'f_ok', 'face_name' => 'F', 'status' => 'completed']], 'total_count' => 1], 200),
+        'tavusapi.com/v2/pals*' => Http::response(['data' => [['pal_id' => 'p1', 'pal_name' => 'Interviewer']], 'total_count' => 1], 200),
     ]);
     $org = Organization::factory()->create();
 
@@ -118,6 +121,7 @@ test('a Tavus template with an unknown face is refused', function (): void {
 test('Tavus TTS engine and external voice must be paired, and the voice must exist at the vendor', function (): void {
     Http::fake([
         'tavusapi.com/v2/faces*' => Http::response(['data' => [['face_id' => 'f_ok', 'face_name' => 'F', 'status' => 'completed']], 'total_count' => 1], 200),
+        'tavusapi.com/v2/pals*' => Http::response(['data' => [['pal_id' => 'p1', 'pal_name' => 'Interviewer']], 'total_count' => 1], 200),
         'api.cartesia.ai/voices*' => Http::response(['data' => [['id' => 'c_ok', 'name' => 'Giulia', 'language' => 'it']], 'has_more' => false], 200),
     ]);
     $org = Organization::factory()->create();
@@ -158,4 +162,26 @@ test('updating a template config is validated the same way', function (): void {
 
     $response->assertUnprocessable();
     expect($response->json('errors'))->toBe(['config.avatarId' => ['avatar_not_found']]);
+});
+
+test('a voice id stored as the Tavus palId is refused — the cause of the 500 provider_error', function (): void {
+    Http::fake([
+        'tavusapi.com/v2/faces*' => Http::response(['data' => [['face_id' => 'f_ok', 'face_name' => 'F', 'status' => 'completed']], 'total_count' => 1], 200),
+        'tavusapi.com/v2/pals*' => Http::response(['data' => [['pal_id' => 'p1', 'pal_name' => 'Interviewer']], 'total_count' => 1], 200),
+    ]);
+    $org = Organization::factory()->create();
+
+    $response = $this->withToken(refPlatformToken($org))->postJson('/api/avatar-templates', [
+        'name' => 'T', 'provider' => 'tavus', 'config' => ['faceId' => 'f_ok', 'palId' => 'v_some_voice_id'],
+    ]);
+
+    $response->assertUnprocessable();
+    expect($response->json('errors'))->toBe(['config.palId' => ['pal_not_found']]);
+});
+
+test('the Tavus palId picker draws from the PAL catalogue, not the voice catalogue', function (): void {
+    $fields = collect(ProviderFieldSpecs::for('tavus'))->keyBy('key');
+
+    expect($fields['palId']->catalogueResource)->toBe('pal')
+        ->and($fields['faceId']->catalogueResource)->toBe('replica');
 });

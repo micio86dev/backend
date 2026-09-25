@@ -31,6 +31,7 @@ use App\Services\Conversation\SystemPromptComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\MockProvider;
+use App\Services\Provider\ProviderPreflight;
 use App\Services\Provider\ProviderSessionService;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
@@ -81,6 +82,7 @@ class InterviewController extends Controller
         private readonly ProjectInterviewability $projectInterviewability,
         private readonly TurnClassifier $turnClassifier,
         private readonly AvatarSilenceDetector $avatarSilence,
+        private readonly ProviderPreflight $preflight,
     ) {}
 
     // =========================================================================
@@ -162,6 +164,21 @@ class InterviewController extends Controller
         // narrows it, and project_id is a non-nullable FK.)
         if ($project->assessment_type !== 'standard') {
             return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Pre-flight, BEFORE any state changes or provider call: a template the
+        // provider would refuse (unknown avatar/voice/persona, missing key, an
+        // engine with no voice) is answered here as a 422 with machine codes
+        // instead of reaching the candidate as a 500 `provider_error` after a
+        // rejected provider call. Nothing has been written yet, so the
+        // candidate can simply retry once the operator has fixed the template.
+        $preflightErrors = $this->preflight->check($this->providerNameFor($participant, $project), $project->id);
+
+        if ($preflightErrors !== []) {
+            return response()->json(
+                ['error' => 'interview_configuration_invalid', 'reasons' => $preflightErrors],
+                Response::HTTP_UNPROCESSABLE_ENTITY,
+            );
         }
 
         // D5/D6 (framework-catalogue-authoring PR6) — the predicate gates
@@ -397,8 +414,6 @@ class InterviewController extends Controller
         // real fallback — `value()` returns null for a row that has since been
         // deleted, and the two configured defaults take over there.
 
-        $pinnedProvider = AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
-
         // SPEC.md §3.7 "Test mode" — a beai_test_… enrolment ALWAYS runs the
         // mock avatar provider, taking priority over the pinned-template /
         // provider_override / config chain below it, never the reverse
@@ -407,9 +422,7 @@ class InterviewController extends Controller
         // interview can never reach `resolveProvider('mock')` through this
         // assignment, whatever the project's avatar template or override
         // holds.
-        $providerName = $participant->mode === ApiKeyMode::Test
-            ? 'mock'
-            : ($pinnedProvider ?? $project->provider_override ?? config('interview.provider', 'heygen'));
+        $providerName = $this->providerNameFor($participant, $project);
 
         // (D2/D3) A re-offered competency is reset to `pending` and its previous
         // attempt's transcript discarded BEFORE the session is resumed, so the
@@ -1641,6 +1654,28 @@ class InterviewController extends Controller
                 ...SafeDbContext::for($e),
             ]);
         }
+    }
+
+    /**
+     * The provider this participant's interview runs on.
+     *
+     * Precedence, most specific first: a template the PROJECT pinned wins,
+     * because pinning a template is already a statement about which provider
+     * the project runs on and it would be incoherent for the two to disagree.
+     * Then the explicit `provider_override`, then the env default. A test-mode
+     * enrolment always runs the mock provider. Read as a single column rather
+     * than hydrating the related model; `value()` is null for a template that
+     * has since been deleted, and the two configured defaults take over there.
+     */
+    private function providerNameFor(Participant $participant, Project $project): string
+    {
+        if ($participant->mode === ApiKeyMode::Test) {
+            return 'mock';
+        }
+
+        $pinnedProvider = AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
+
+        return $pinnedProvider ?? $project->provider_override ?? config('interview.provider', 'heygen');
     }
 
     /**

@@ -27,7 +27,7 @@ namespace App\Support\AvatarTemplates;
  * within the catalogue's 24h cache window is not refused.
  *
  * Codes (per config key):
- *  - `avatar_not_found`, `voice_not_found`   — id absent from the provider.
+ *  - `avatar_not_found`, `voice_not_found`, `pal_not_found` — id absent from the provider.
  *  - `tts_engine_required`                   — external voice id with no third-party engine.
  *  - `tts_voice_required`                    — third-party engine with no voice id.
  *  - `tts_voice_not_found`                   — voice id absent from that vendor's catalogue.
@@ -46,6 +46,12 @@ final class TemplateReferenceValidator
      */
     public static function validate(string $provider, array $config): array
     {
+        // The shared kill switch (`interview.preflight.verify_references`): the
+        // only check here that depends on a provider's inventory being right.
+        if (! config('interview.preflight.verify_references', true)) {
+            return [];
+        }
+
         return match ($provider) {
             'heygen' => array_values(array_filter([
                 self::exists('heygen', 'avatar', $config['avatarId'] ?? null, 'avatarId', 'avatar_not_found'),
@@ -67,6 +73,13 @@ final class TemplateReferenceValidator
         $face = self::exists('tavus', 'replica', $config['faceId'] ?? null, 'faceId', 'avatar_not_found');
         if ($face !== null) {
             $errors[] = $face;
+        }
+
+        // The persona. A voice or face id stored here is refused by Tavus at
+        // conversation creation, which used to reach the candidate as a 500.
+        $pal = self::exists('tavus', 'pal', $config['palId'] ?? null, 'palId', 'pal_not_found');
+        if ($pal !== null) {
+            $errors[] = $pal;
         }
 
         $engine = is_string($config['ttsEngine'] ?? null) ? $config['ttsEngine'] : null;

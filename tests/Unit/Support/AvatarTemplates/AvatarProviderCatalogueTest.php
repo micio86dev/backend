@@ -352,3 +352,20 @@ test('HeyGen voices include private (third-party bound) voices', function (): vo
     expect(array_column($items, 'id'))->toBe(['hv9', 'hv1']);
     Http::assertSent(fn ($r): bool => str_contains($r->url(), 'voice_type=private'));
 });
+
+test('Tavus PALs list only id and name — never the system prompt or layers', function (): void {
+    Http::fake([
+        'tavusapi.com/v2/pals*' => Http::response([
+            'data' => [[
+                'pal_id' => 'p1', 'pal_name' => 'Interviewer', 'default_face_id' => 'f1',
+                'system_prompt' => 'CONFIDENTIAL PROMPT', 'layers' => ['llm' => ['api_key' => 'SECRET_LAYER_KEY']],
+            ]],
+            'total_count' => 1,
+        ], 200),
+    ]);
+
+    $result = AvatarProviderCatalogue::fetch('tavus', 'pal');
+
+    expect($result)->toBe(['status' => 'ok', 'items' => [catalogueItem('tavus', 'p1', 'Interviewer')]]);
+    expect(json_encode($result))->not->toContain('CONFIDENTIAL')->not->toContain('SECRET_LAYER_KEY');
+});

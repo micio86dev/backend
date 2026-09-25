@@ -37,7 +37,7 @@ final class AvatarTemplateController extends Controller
     /**
      * Which `resource` values are valid for each provider (avatar-template-
      * catalogue PR1, delta spec: "resource (voice | avatar for heygen;
-     * voice | replica for tavus)"). Coupled deliberately — `replica` is a
+     * voice | replica | pal for tavus)"). Coupled deliberately — `replica` is a
      * real resource value, just not for `heygen`, so validating provider and
      * resource independently would accept a combination that has nothing to
      * fetch.
@@ -46,7 +46,7 @@ final class AvatarTemplateController extends Controller
      */
     private const CATALOGUE_RESOURCES = [
         'heygen' => ['voice', 'avatar'],
-        'tavus' => ['voice', 'replica'],
+        'tavus' => ['voice', 'replica', 'pal'],
         // Voice-only TTS vendors: not avatar providers, so no template can
         // have them as `provider` (PROVIDERS above stays heygen|tavus).
         'cartesia' => ['voice'],
@@ -154,7 +154,7 @@ final class AvatarTemplateController extends Controller
             // the documented endpoint unreachable and poisoning the generated TS client
             // with `provider: ""` (avatar-template-catalogue, caught by native review).
             'provider' => ['required', 'string', 'in:heygen,tavus,cartesia,elevenlabs'],
-            'resource' => ['required', 'string', 'in:voice,avatar,replica'],
+            'resource' => ['required', 'string', 'in:voice,avatar,replica,pal'],
             // Keep only genuinely Italian voices (`italian` = native). The
             // list is already sorted Italian-first without it.
             'italian_only' => ['sometimes', 'boolean'],

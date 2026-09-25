@@ -155,6 +155,7 @@ final class AvatarProviderCatalogue
         $items = match ("{$provider}:{$resource}") {
             'tavus:voice' => self::tavusVoices(),
             'tavus:replica' => self::tavusReplicas(),
+            'tavus:pal' => self::tavusPals(),
             'heygen:voice' => self::heygenVoices(),
             'heygen:avatar' => self::heygenAvatars(),
             'cartesia:voice' => self::cartesiaVoices(),
@@ -216,6 +217,26 @@ final class AvatarProviderCatalogue
             // `completed` only: a face still training or errored cannot start a
             // conversation, and offering it makes the interview fail later.
             array_values(array_filter($rows, static fn (array $row): bool => ($row['status'] ?? 'completed') === 'completed')),
+        );
+    }
+
+    /**
+     * `GET /v2/pals` returns `{data: [{pal_id, pal_name, default_face_id,
+     * system_prompt, layers, ...}], total_count}`; paginated like the others
+     * (`limit` default 10). Only the id and name are kept: a PAL carries its
+     * system prompt and layer configuration, none of which a picker may see.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function tavusPals(): array
+    {
+        return array_map(
+            fn (array $row): array => self::entry(
+                provider: 'tavus',
+                id: self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null),
+                label: self::stringOrEmpty($row['pal_name'] ?? $row['persona_name'] ?? null),
+            ),
+            self::tavusPaged('/pals', []),
         );
     }
 
