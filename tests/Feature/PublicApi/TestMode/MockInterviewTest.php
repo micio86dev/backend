@@ -481,7 +481,16 @@ test('the lock is released after an early business no-op, so a fixed re-dispatch
     // absent lock key alone does not prove a re-dispatch actually FINISHES
     // — fix the underlying condition (attach the competency this project
     // was missing) and re-run the SAME job to prove it.
-    $role = Role::factory()->create(['code' => $project->role_code]);
+    // review-reliability round-6 finding R3-001: find-or-create, not a bare
+    // factory create() — this test's own $project carries no prior Role of
+    // its own role_code today, but a bare create() would fail on any future
+    // setup change that did add one, for a reason unrelated to what this
+    // test actually verifies. Factory::firstOrCreate() only fills the
+    // attributes named in the query, leaving RoleFactory's own name/
+    // responsibilities defaults unset (NOT NULL columns) — an explicit
+    // find-then-factory-create avoids that.
+    $role = Role::where('code', $project->role_code)->first()
+        ?? Role::factory()->create(['code' => $project->role_code]);
     $competency = Competency::factory()->create();
     DB::table('project_competencies')->insert([
         'project_id' => $project->id,
@@ -508,6 +517,11 @@ test('the lock is released after an early business no-op, so a fixed re-dispatch
         'position' => 0,
     ]);
 
+    // review-reliability round-6 finding R3-002: calling handle() directly
+    // is a faithful re-dispatch simulation because RunMockInterviewJob has
+    // no middleware() method — the Layer 0 lock is acquired entirely
+    // INSIDE handle(), never via WithoutOverlapping or similar job
+    // middleware a real queue worker would apply before handle() runs.
     (new RunMockInterviewJob($org->id, $participant->id))
         ->handle(app(SettleParticipantCompletion::class), app(SessionLiveClock::class));
 
