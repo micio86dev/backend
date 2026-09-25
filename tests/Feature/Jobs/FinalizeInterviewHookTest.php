@@ -16,15 +16,44 @@ declare(strict_types=1);
 use App\Events\ScoringRequested;
 use App\Jobs\FinalizeInterview;
 use App\Jobs\ScoreEvaluationJob;
+use App\Listeners\DispatchScoringJob;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
+
+/**
+ * @return array{0: Organization, 1: Participant}
+ */
+function finalizeHookParticipant(string $status = 'in_valutazione'): array
+{
+    $org = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $project = Project::factory()->create(['status' => 'active']);
+
+    $participant = new Participant;
+    $participant->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'finalize-hook-org-'.uniqid(),
+        'display_name' => 'FinalizeInterview Org Filter Test',
+        'email' => uniqid('cand-').'@example.test',
+        'status' => $status,
+    ]);
+    $participant->save();
+
+    return [$org, $participant->fresh()];
+}
 
 test('FinalizeInterview emits ScoringRequested and dispatches ScoreEvaluationJob once', function (): void {
     Queue::fake();
@@ -97,4 +126,47 @@ test('FinalizeInterview dispatches ScoreEvaluationJob via listener when events a
 
         return $prop->getValue($job) === $participant->id;
     });
+});
+
+// review-reliability round-3 finding R3-org-filter-untested: an existing
+// participant looked up under the WRONG organization must behave exactly
+// like a not-found participant — never leak across the tenant boundary.
+
+test('FinalizeInterview treats a participant looked up under the wrong organization as not found', function (): void {
+    [, $participant] = finalizeHookParticipant('in_valutazione');
+    $wrongOrg = Organization::factory()->create();
+
+    Log::spy();
+
+    $job = new FinalizeInterview($participant->id, $wrongOrg->id);
+    $job->handle();
+
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->withArgs(fn (string $message, array $context): bool => $message === 'FinalizeInterview: participant not found'
+            && $context['participant_id'] === $participant->id
+            && $context['organization_id'] === $wrongOrg->id
+        );
+});
+
+test('DispatchScoringJob refuses (never dispatches ScoreEvaluationJob for) a wrong-organization lookup', function (): void {
+    // review-reliability round-4 finding 2: G-53's original "fail open,
+    // accepted trade-off" decision is REVERSED here. ScoreEvaluationJob
+    // resolves its own Participant via withoutGlobalScopes() — fully
+    // unscoped by design — so falling through to
+    // ScoreEvaluationJob::dispatch() on an org-mismatch would let it score
+    // (and, for a test-mode participant, BILL) that row anyway, completely
+    // bypassing the org check this guard exists to enforce. Cost of failing
+    // closed is near-zero: ScoringRequested only ever fires from
+    // FinalizeInterview, which already confirmed this exact
+    // (participantId, organizationId) pair resolves before firing it, so a
+    // mismatch here can only mean a genuine anomaly, never the normal path.
+    [, $participant] = finalizeHookParticipant('in_valutazione');
+    $wrongOrg = Organization::factory()->create();
+
+    Queue::fake();
+
+    (new DispatchScoringJob)->handle(new ScoringRequested($participant->id, $wrongOrg->id));
+
+    Queue::assertNotPushed(ScoreEvaluationJob::class);
 });

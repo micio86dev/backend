@@ -72,6 +72,21 @@ class FinalizeInterview implements ShouldQueue
      */
     public int $timeout = 60;
 
+    /**
+     * `$organizationId` is required, never nullable (pre-commit gate,
+     * public-api step 9, round 4 finding 1 — reverts round 3's nullable
+     * compatibility fallback, which fell back to an UNFILTERED
+     * `Participant::find()` and reintroduced the exact tenancy violation
+     * round 2 closed). A payload serialized before this deploy carries only
+     * `participantId` and fails to unserialize this typed property — the
+     * queue worker marks the job FAILED after `$tries`, a visible,
+     * operator-actionable failure (the participant stays observably stuck
+     * at `in_valutazione`, recoverable), which is the honest trade-off
+     * against a silent, unscoped read. Deploying a change to this job's
+     * constructor requires draining the queue of any already-enqueued
+     * `FinalizeInterview` payload first, same operational discipline as any
+     * other breaking job-payload change.
+     */
     public function __construct(
         private readonly int $participantId,
         private readonly int $organizationId,
@@ -89,7 +104,7 @@ class FinalizeInterview implements ShouldQueue
     {
         // Layer 1 — re-check participant status. org-filtered (pre-commit
         // gate, public-api step 9, round 2 finding 1): $this->organizationId
-        // comes from the CALLER's own independently-resolved value —
+        // is the CALLER's own independently-resolved value —
         // SettleParticipantCompletion's $orgId, read from the Project row
         // and already used as a predicate on that same class's own CAS
         // write — never re-derived from this unscoped read, which would

@@ -30,6 +30,7 @@ declare(strict_types=1);
  */
 
 use App\Enums\ApiKeyMode;
+use App\Jobs\PublicApi\RunMockInterviewJob;
 use App\Models\AvatarTemplate;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
@@ -53,6 +54,7 @@ use App\Support\PublicApi\UsageAggregator;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
@@ -387,4 +389,82 @@ test('a live-mode interview is never routed to MockProvider', function (): void 
     test()->actingAs($participant, 'api-candidate');
     expect(app(ProviderSessionService::class))->toBeInstanceOf(HeygenProvider::class)
         ->not->toBeInstanceOf(MockProvider::class);
+});
+
+// ─── Robustness (review-resilience/review-reliability round 3) ────────────
+//
+// R4-mockjob-check-then-act / R3-mock-job-nonatomic-idempotency: the
+// controller dispatches a NEW RunMockInterviewJob on every test-mode
+// /start(), so a genuinely concurrent second run must never duplicate the
+// job's own scripted work — proven here by pre-seeding the lock the job
+// itself acquires, the same observable effect a real second in-flight run
+// would have.
+
+test('a concurrent RunMockInterviewJob run is a safe no-op when the lock is already held', function (): void {
+    $org = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($org, 1);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+
+    Cache::put('mock-interview:'.$participant->id, true, 300);
+
+    Http::fake();
+
+    test()->withHeaders(['Authorization' => 'Bearer '.mockModeBearer($participant)])
+        ->postJson('/api/candidate/interview/start')
+        ->assertCreated();
+
+    // The controller's own /start() write still happens — it runs BEFORE
+    // the job is dispatched. Only the job's own scripted work is skipped:
+    // the one session /start() opened never gets a transcript, and the
+    // interview never advances past it.
+    $participant->refresh();
+    expect($participant->status)->toBe('in_corso');
+
+    $session = InterviewSession::where('participant_id', $participant->id)->sole();
+    expect($session->status)->toBe('in_corso')
+        ->and($session->utterances()->count())->toBe(0);
+
+    expect(Evaluation::where('participant_id', $participant->id)->exists())->toBeFalse();
+});
+
+// R4-mockjob-no-recovery: a mid-run exception (object-storage error, DB
+// error) after settleIfFinished() already moved the participant to
+// in_valutazione must not strand it forever — DispatchScoringJob never
+// dispatches the real ScoreEvaluationJob for a test-mode participant, so
+// nothing else would ever retry scoring it.
+
+test('RunMockInterviewJob::failed() flips a stranded in_valutazione participant to errore', function (): void {
+    $org = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($org, 1);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+
+    // Participant::$allowedTransitions has no in_attesa -> in_valutazione
+    // edge — walk the real chain, same as the guard requires everywhere else.
+    $participant->status = 'in_corso';
+    $participant->save();
+    $participant->status = 'in_valutazione';
+    $participant->save();
+
+    (new RunMockInterviewJob($org->id, $participant->id))->failed(new RuntimeException('simulated storage failure'));
+
+    $participant->refresh();
+    expect($participant->status)->toBe('errore');
+});
+
+test('RunMockInterviewJob::failed() is a no-op for an already-terminal participant', function (): void {
+    $org = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($org, 1);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+
+    $participant->status = 'in_corso';
+    $participant->save();
+    $participant->status = 'in_valutazione';
+    $participant->save();
+    $participant->status = 'completato';
+    $participant->save();
+
+    (new RunMockInterviewJob($org->id, $participant->id))->failed(new RuntimeException('simulated failure after completion'));
+
+    $participant->refresh();
+    expect($participant->status)->toBe('completato');
 });

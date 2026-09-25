@@ -25,9 +25,12 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * RunMockInterviewJob — SPEC.md §3.7 "Test mode" (public-api step 9).
@@ -77,24 +80,44 @@ use Illuminate\Support\Str;
  * event that job fires so `App\Listeners\SendEvaluationWebhook` picks it up
  * with no special-casing.
  *
- * Idempotency (design note: "the (unlikely but possible) case start() is
- * called twice for the same test-mode participant... keep this
- * appropriately simpler [than `GenerateExportJob`'s crash-recovery reclaim]
- * — there is no real race here, only a same-request double-dispatch risk"):
- * a terminal participant status (`completato`/`errore`) makes the WHOLE job
- * a no-op; an already-ended `InterviewSession` competency is skipped inside
- * the loop; an already-created `Evaluation` row skips the scoring/recording
- * fabrication step AND the `EvaluationCompleted` refire (pre-commit gate,
- * public-api step 9, finding 4 — a re-run that gets past layer 1 must never
- * re-send the evaluation webhook for an evaluation it did not itself just
- * create). No Redis lock, no attempt-count reclaim — this job makes zero
- * external HTTP calls and completes well under the ≤ 30 s budget on every
- * run, whether inline under `QUEUE_CONNECTION=sync` (CI/test) or on a real
- * queue worker in production, so a crashed-mid-run worker is not a scenario
- * this slice needs to defend against; the double-dispatch race the guards
- * above DO defend against (a retried `/start()`, or a second competency's
- * own `handleIssuePending()` dispatching a second job while the first is
- * still running) is real under either queue driver.
+ * Idempotency (pre-commit gate, public-api step 9, round 3 — R4/R3
+ * "check-then-act" findings: the round-1 design note's "no real race" claim
+ * was wrong. The controller dispatches a NEW job on EVERY test-mode
+ * `/start()` call, not only the first; on a real multi-worker queue, two
+ * overlapping runs could both see no `InterviewSession`/`Evaluation` row and
+ * both create one, double-firing `EvaluationCompleted` and the evaluation
+ * webhook with it):
+ *
+ *   Layer 0 — a `Cache::add()` NX lock, `'mock-interview:{participantId}'`,
+ *     TTL `self::LOCK_TTL_SECONDS`, acquired in `handle()` BEFORE any read —
+ *     the same single-winner idiom `FinalizeInterview`'s own `'finalize:
+ *     {pid}'` lock already uses in this codebase. A second concurrent (or
+ *     merely re-dispatched) run that finds the lock held no-ops immediately;
+ *     it never reaches the check-then-act reads below, so they no longer
+ *     need to be atomic themselves.
+ *   Layer 1 — a terminal participant status (`completato`/`errore`) makes
+ *     the WHOLE job a no-op (covers a run that starts AFTER the lock's own
+ *     holder already finished and the TTL has since expired).
+ *   Layer 2 — an already-ended `InterviewSession` competency is skipped
+ *     inside the loop (a partial re-run resumes where it left off).
+ *   Layer 3 — an already-created `Evaluation` row skips the
+ *     scoring/recording fabrication step AND the `EvaluationCompleted`
+ *     refire (round-1 finding 4).
+ *
+ * This job makes zero external HTTP calls and completes well under the
+ * ≤ 30 s budget on every run, whether inline under `QUEUE_CONNECTION=sync`
+ * (CI/test) or on a real queue worker in production. `failed()` (round-3
+ * finding, R4-mockjob-no-recovery) still exists for the residual case a
+ * lock does not cover — `fabricateScoring()` is itself one atomic
+ * `DB::transaction()` (round 4, finding 3), so a DB error inside it rolls
+ * back cleanly rather than leaving a partial `Evaluation`, but a mid-run
+ * exception ELSEWHERE (a `Storage::put()` I/O error in
+ * `writeRecordingFixture()`, or anything between a successful
+ * `fabricateScoring()` and the `completato` write) after
+ * `settleIfFinished()` already moved the participant to `in_valutazione`
+ * would still strand it without `failed()`, since `DispatchScoringJob`
+ * never dispatches the real `ScoreEvaluationJob` for a test-mode
+ * participant and nothing else would ever retry scoring it.
  *
  * REQ: SPEC.md §3.7 "Test mode" (public-api step 9), T-TEST-001..006
  */
@@ -127,6 +150,14 @@ class RunMockInterviewJob implements ShouldQueue
 
     private const RECORDING_DURATION_SECONDS = 3;
 
+    /**
+     * NX lock TTL — see class docblock's Layer 0. Comfortably above the
+     * ≤ 30 s spec budget (a stalled run still holds the lock well past its
+     * own natural completion time) without leaving a genuinely dead run's
+     * participant locked out of a retry indefinitely.
+     */
+    private const LOCK_TTL_SECONDS = 300;
+
     public int $tries = 1;
 
     public int $timeout = 30;
@@ -138,6 +169,25 @@ class RunMockInterviewJob implements ShouldQueue
 
     public function handle(SettleParticipantCompletion $settleCompletion, SessionLiveClock $liveClock): void
     {
+        // Layer 0 — see class docblock. Acquired FIRST, before any read, so
+        // a losing concurrent run never reaches the check-then-act idempotency
+        // layers below at all.
+        $lockKey = self::lockKey($this->participantId);
+        $acquired = Cache::add($lockKey, true, self::LOCK_TTL_SECONDS);
+        // Not released on success: the lock's job is to keep two concurrent
+        // runs from BOTH acting, not to gate future re-dispatch — the terminal
+        // idempotency layers below still make a POST-completion re-run,
+        // arriving after the TTL expires, a safe no-op.
+
+        if (! $acquired) {
+            Log::info('RunMockInterviewJob: no-op — another run already holds the lock', [
+                'participant_id' => $this->participantId,
+                'lock_key' => $lockKey,
+            ]);
+
+            return;
+        }
+
         // org-filtered (pre-commit gate, public-api step 9, finding 1) — see
         // class docblock.
         $participant = Participant::where('organization_id', $this->organizationId)->find($this->participantId);
@@ -183,6 +233,48 @@ class RunMockInterviewJob implements ShouldQueue
         });
     }
 
+    /**
+     * Unrecoverable failure (pre-commit gate, public-api step 9, round 3
+     * finding R4-mockjob-no-recovery) — with `$tries = 1`, a mid-run
+     * exception (an object-storage error in `writeRecordingFixture()`, or
+     * anything between `fabricateScoring()`'s own atomic transaction
+     * committing and the `completato` write — round 4, finding 3) leaves
+     * this participant stuck at whatever status the loop last wrote, most
+     * dangerously `in_valutazione`: `DispatchScoringJob` never dispatches
+     * the real, paid `ScoreEvaluationJob` for a test-mode participant
+     * (SPEC.md §3.7 "never billed"), so nothing else would ever retry or
+     * complete it. `in_attesa`/`in_corso`/`in_valutazione` → `errore` are
+     * all legal
+     * transitions (`Participant::$allowedTransitions`), so this is safe to
+     * call regardless of exactly where the loop failed.
+     */
+    public function failed(Throwable $e): void
+    {
+        Log::error('RunMockInterviewJob: job exhausted, participant may be stranded', [
+            'participant_id' => $this->participantId,
+            'organization_id' => $this->organizationId,
+            'error' => $e->getMessage(),
+        ]);
+
+        $participant = Participant::where('organization_id', $this->organizationId)->find($this->participantId);
+
+        if ($participant === null || in_array($participant->status, ['completato', 'errore'], true)) {
+            return;
+        }
+
+        TenantContextScope::runFor($this->organizationId, function () use ($participant): void {
+            $participant->status = 'errore';
+            $participant->save();
+
+            InterviewEventRecorder::error($this->organizationId, $participant->id);
+        });
+    }
+
+    private static function lockKey(int $participantId): string
+    {
+        return 'mock-interview:'.$participantId;
+    }
+
     private function runScriptedInterview(Participant $participant, SettleParticipantCompletion $settleCompletion, SessionLiveClock $liveClock): void
     {
         $orgId = $participant->organization_id;
@@ -210,9 +302,6 @@ class RunMockInterviewJob implements ShouldQueue
             return;
         }
 
-        /** @var array<string, string> $answerByCompetency competency_code => scripted candidate answer text */
-        $answerByCompetency = [];
-
         foreach ($competencies as $competency) {
             $code = (string) $competency->code;
 
@@ -226,15 +315,12 @@ class RunMockInterviewJob implements ShouldQueue
             // ended, since the controller only ever dispatches this job
             // right after issuing a fresh pending/in_corso session.
             if ($session !== null && in_array($session->status, ['completed', 'timeout', 'skipped'], true)) {
-                $answerByCompetency[$code] = self::SCRIPTED_ANSWER;
-
                 continue;
             }
 
             $session = $this->startCompetencySession($participant, $project, $competency, $session, $orgId, $liveClock);
 
             $this->writeScriptedTranscript($session);
-            $answerByCompetency[$code] = self::SCRIPTED_ANSWER;
 
             // close() BEFORE the completed write (pre-commit gate,
             // public-api step 9, finding 3): every real `in_corso` exit
@@ -242,8 +328,8 @@ class RunMockInterviewJob implements ShouldQueue
             // this job marks `completed` without doing so would leave one
             // `interview_session_live_periods` row open forever, breaking
             // the D5 "at most one open period" invariant. `'end'` matches
-            // the real `/end` path's own reason string for an ordinary
-            // completion (InterviewController.php:720).
+            // the real `Candidate\InterviewController::end()`'s own reason
+            // string for an ordinary completion.
             $liveClock->close($session, 'end');
 
             $session->status = 'completed';
@@ -273,7 +359,7 @@ class RunMockInterviewJob implements ShouldQueue
 
         // Idempotency layer 3: scoring already fabricated by an earlier run.
         $existingEvaluation = Evaluation::where('participant_id', $participant->id)->first();
-        $evaluation = $existingEvaluation ?? $this->fabricateScoring($participant, $project, $competencies, $answerByCompetency);
+        $evaluation = $existingEvaluation ?? $this->fabricateScoring($participant, $project, $competencies);
 
         if (InterviewRecording::where('participant_id', $participant->id)->doesntExist()) {
             $this->writeRecordingFixture($participant);
@@ -391,49 +477,66 @@ class RunMockInterviewJob implements ShouldQueue
     }
 
     /**
+     * DB::transaction() (pre-commit gate, public-api step 9, round 4
+     * finding 3): the whole Evaluation/CompetencyResult/IndicatorScore
+     * fabrication is ONE atomic unit — without it, a DB error partway
+     * through (e.g. on the 2nd competency's rows) would leave a `completed`
+     * Evaluation with only some competencies scored, permanently, since
+     * this method never runs a second time for a participant that already
+     * has an Evaluation row (idempotency layer 3). Mirrors
+     * `App\Jobs\ScoreEvaluationJob`'s own identical discipline for its real
+     * scoring persistence.
+     *
      * @param  Collection<int, Competency>  $competencies
-     * @param  array<string, string>  $answerByCompetency
      */
-    private function fabricateScoring(Participant $participant, Project $project, Collection $competencies, array $answerByCompetency): Evaluation
+    private function fabricateScoring(Participant $participant, Project $project, Collection $competencies): Evaluation
     {
-        $evaluation = Evaluation::create([
-            'participant_id' => $participant->id,
-            'status' => EvaluationStatus::Completed->value,
-            'framework_version_id' => $project->framework_version_id,
-            'model_version' => (string) config('scoring.model_version'),
-            'prompt_version' => (string) config('scoring.prompt_version'),
-            'evaluated_at' => now(),
-            'retry_attempt' => false,
-        ]);
-
-        foreach ($competencies as $competency) {
-            $code = (string) $competency->code;
-            $answer = $answerByCompetency[$code] ?? self::SCRIPTED_ANSWER;
-            $excerpts = $this->splitIntoVerbatimExcerpts($answer);
-
-            $competencyResult = CompetencyResult::create([
-                'evaluation_id' => $evaluation->id,
-                'competency_code' => $code,
-                'score' => array_sum(self::SCORES) / count(self::SCORES),
-                'reliability' => 1.0,
-                'valid' => true,
-                'unscorable_reason' => null,
+        /** @param  Collection<int, Competency>  $competencies */
+        return DB::transaction(function () use ($participant, $project, $competencies): Evaluation {
+            $evaluation = Evaluation::create([
+                'participant_id' => $participant->id,
+                'status' => EvaluationStatus::Completed->value,
+                'framework_version_id' => $project->framework_version_id,
+                'model_version' => (string) config('scoring.model_version'),
+                'prompt_version' => (string) config('scoring.prompt_version'),
+                'evaluated_at' => now(),
+                'retry_attempt' => false,
             ]);
 
-            foreach (self::SCORES as $position => $score) {
-                IndicatorScore::create([
-                    'competency_result_id' => $competencyResult->id,
-                    'position' => $position,
-                    'indicator_text' => sprintf('Mock indicator %d for %s', $position + 1, $code),
-                    'score' => $score,
-                    'explanation' => 'SPEC.md §3.7 test-mode fabricated score.',
-                    'excerpts' => [$excerpts[$position] ?? $answer],
-                    'unassessable_reason' => null,
-                ]);
-            }
-        }
+            // review-readability round-3 finding R2-dead-answer-map: every
+            // competency gets the SAME scripted answer (the mock path is
+            // uniform by design, never per-competency NLG) — the constant
+            // used directly here, rather than through a map that always
+            // resolved to it anyway.
+            $excerpts = $this->splitIntoVerbatimExcerpts(self::SCRIPTED_ANSWER);
 
-        return $evaluation;
+            foreach ($competencies as $competency) {
+                $code = (string) $competency->code;
+
+                $competencyResult = CompetencyResult::create([
+                    'evaluation_id' => $evaluation->id,
+                    'competency_code' => $code,
+                    'score' => array_sum(self::SCORES) / count(self::SCORES),
+                    'reliability' => 1.0,
+                    'valid' => true,
+                    'unscorable_reason' => null,
+                ]);
+
+                foreach (self::SCORES as $position => $score) {
+                    IndicatorScore::create([
+                        'competency_result_id' => $competencyResult->id,
+                        'position' => $position,
+                        'indicator_text' => sprintf('Mock indicator %d for %s', $position + 1, $code),
+                        'score' => $score,
+                        'explanation' => 'SPEC.md §3.7 test-mode fabricated score.',
+                        'excerpts' => [$excerpts[$position]],
+                        'unassessable_reason' => null,
+                    ]);
+                }
+            }
+
+            return $evaluation;
+        });
     }
 
     /**
