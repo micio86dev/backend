@@ -476,6 +476,44 @@ test('the lock is released after an early business no-op, so a fixed re-dispatch
     $participant->refresh();
     expect($participant->status)->toBe('in_attesa');
     expect(Cache::has('mock-interview:'.$participant->id))->toBeFalse();
+
+    // review-reliability round-5 finding R3-noop-test-title-overclaims: the
+    // absent lock key alone does not prove a re-dispatch actually FINISHES
+    // — fix the underlying condition (attach the competency this project
+    // was missing) and re-run the SAME job to prove it.
+    $role = Role::factory()->create(['code' => $project->role_code]);
+    $competency = Competency::factory()->create();
+    DB::table('project_competencies')->insert([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'position' => 0,
+    ]);
+
+    $indicator = new BarsIndicator;
+    $indicator->forceFill([
+        'role_id' => $role->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'no-op fixture indicator'],
+        'anchor_5' => ['en' => 'Excellent'],
+        'anchor_3' => ['en' => 'Adequate'],
+        'anchor_1' => ['en' => 'Insufficient'],
+        'position' => 0,
+    ]);
+    $indicator->save();
+
+    ProjectQuestion::create([
+        'project_id' => $project->id,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'no-op fixture question'],
+        'position' => 0,
+    ]);
+
+    (new RunMockInterviewJob($org->id, $participant->id))
+        ->handle(app(SettleParticipantCompletion::class), app(SessionLiveClock::class));
+
+    $participant->refresh();
+    expect($participant->status)->toBe('completato');
+    expect(Evaluation::where('participant_id', $participant->id)->exists())->toBeTrue();
 });
 
 // R4-mockjob-no-recovery: a mid-run exception (object-storage error, DB
@@ -572,4 +610,10 @@ test('a mid-transaction failure in fabricateScoring() rolls back completely, lea
     expect(Evaluation::where('participant_id', $participant->id)->exists())->toBeFalse()
         ->and(CompetencyResult::count())->toBe(0)
         ->and(IndicatorScore::count())->toBe(0);
+
+    // review-reliability round-5 finding R3-exception-lock-release-unasserted:
+    // this is the ONE test that actually drives the finally block's
+    // exception-unwind path — the success and early-no-op paths each have
+    // their own dedicated release assertion, but neither exercises this one.
+    expect(Cache::has('mock-interview:'.$participant->id))->toBeFalse();
 });
