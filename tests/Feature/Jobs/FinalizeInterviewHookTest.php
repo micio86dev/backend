@@ -165,8 +165,33 @@ test('DispatchScoringJob refuses (never dispatches ScoreEvaluationJob for) a wro
     $wrongOrg = Organization::factory()->create();
 
     Queue::fake();
+    Log::spy();
 
     (new DispatchScoringJob)->handle(new ScoringRequested($participant->id, $wrongOrg->id));
 
     Queue::assertNotPushed(ScoreEvaluationJob::class);
+
+    // review-reliability round-4 finding R3-dispatch-refusal-log-unasserted:
+    // the refusal must be operator-visible, not just observable via a
+    // missing side effect.
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->withArgs(fn (string $message, array $context): bool => $message === 'DispatchScoringJob: refusing — participant not found under the expected organization'
+            && $context['participant_id'] === $participant->id
+            && $context['organization_id'] === $wrongOrg->id
+        );
+});
+
+test('DispatchScoringJob still dispatches ScoreEvaluationJob for the correct (same-organization) live-mode lookup', function (): void {
+    // review-reliability round-4 finding R3-dispatch-refusal-log-unasserted:
+    // the null-guard restructure (round 4) must not have broken the
+    // ordinary happy path — a live-mode participant under its OWN
+    // organization still reaches ScoreEvaluationJob::dispatch().
+    [$org, $participant] = finalizeHookParticipant('in_valutazione');
+
+    Queue::fake();
+
+    (new DispatchScoringJob)->handle(new ScoringRequested($participant->id, $org->id));
+
+    Queue::assertPushed(ScoreEvaluationJob::class, 1);
 });

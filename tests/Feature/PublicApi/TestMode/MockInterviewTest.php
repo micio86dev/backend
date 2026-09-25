@@ -29,6 +29,7 @@ declare(strict_types=1);
  * into one shared global namespace for a full suite run.
  */
 
+use App\Actions\Interview\SettleParticipantCompletion;
 use App\Enums\ApiKeyMode;
 use App\Jobs\PublicApi\RunMockInterviewJob;
 use App\Models\AvatarTemplate;
@@ -49,6 +50,7 @@ use App\Models\WebhookDelivery;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\MockProvider;
 use App\Services\Provider\ProviderSessionService;
+use App\Support\Interview\SessionLiveClock;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\PublicApi\UsageAggregator;
 use App\Support\Tenancy\TenantResolver;
@@ -427,6 +429,55 @@ test('a concurrent RunMockInterviewJob run is a safe no-op when the lock is alre
     expect(Evaluation::where('participant_id', $participant->id)->exists())->toBeFalse();
 });
 
+// R3-lock-never-released: the lock must not outlive the run that acquired
+// it — only a genuinely OVERLAPPING run should ever find it held.
+
+test('the lock is released once a successful run completes, so a later re-dispatch runs again safely', function (): void {
+    $org = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($org, 1);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+
+    Http::fake();
+
+    test()->withHeaders(['Authorization' => 'Bearer '.mockModeBearer($participant)])
+        ->postJson('/api/candidate/interview/start')
+        ->assertCreated();
+
+    $participant->refresh();
+    expect($participant->status)->toBe('completato');
+    expect(Cache::has('mock-interview:'.$participant->id))->toBeFalse();
+
+    // A genuine re-dispatch after completion is not blocked by a stale
+    // lock — it reaches (and safely no-ops through) idempotency layer 1.
+    (new RunMockInterviewJob($org->id, $participant->id))
+        ->handle(app(SettleParticipantCompletion::class), app(SessionLiveClock::class));
+
+    $participant->refresh();
+    expect($participant->status)->toBe('completato');
+    expect(Evaluation::where('participant_id', $participant->id)->count())->toBe(1);
+});
+
+test('the lock is released after an early business no-op, so a fixed re-dispatch can still finish the interview', function (): void {
+    $org = mockModeOrg();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    // No mockModeProjectWithCompetencies() call — zero competencies
+    // attached, forcing runScriptedInterview()'s early "nothing to mock"
+    // exit, well before any lifecycle work happens.
+    $project = Project::factory()->create(['status' => 'active']);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+
+    (new RunMockInterviewJob($org->id, $participant->id))
+        ->handle(app(SettleParticipantCompletion::class), app(SessionLiveClock::class));
+
+    $participant->refresh();
+    expect($participant->status)->toBe('in_attesa');
+    expect(Cache::has('mock-interview:'.$participant->id))->toBeFalse();
+});
+
 // R4-mockjob-no-recovery: a mid-run exception (object-storage error, DB
 // error) after settleIfFinished() already moved the participant to
 // in_valutazione must not strand it forever — DispatchScoringJob never
@@ -467,4 +518,58 @@ test('RunMockInterviewJob::failed() is a no-op for an already-terminal participa
 
     $participant->refresh();
     expect($participant->status)->toBe('completato');
+});
+
+// R3-transaction-atomicity-untested: fabricateScoring() is one
+// DB::transaction() (round 4 finding 3) — prove the rollback, not just
+// assert the wrapping exists.
+
+test('a mid-transaction failure in fabricateScoring() rolls back completely, leaving no partial rows', function (): void {
+    $org = mockModeOrg();
+    [$project, $competencies] = mockModeProjectWithCompetencies($org, 2);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+
+    // Walk directly to the state runScriptedInterview()'s loop skips past
+    // (both competencies already ended) so the only thing left to run is
+    // fabricateScoring() itself — never going through the job's own
+    // scripted loop, so nothing else in this test can trip the failure.
+    foreach ($competencies as $competency) {
+        InterviewSession::create([
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => 0,
+            'competency_code' => $competency->code,
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'mock',
+            'status' => 'completed',
+            'ended_reason' => 'completed',
+            'started_at' => now(),
+            'ended_at' => now(),
+        ]);
+    }
+    $participant->status = 'in_corso';
+    $participant->save();
+    $participant->status = 'in_valutazione';
+    $participant->save();
+
+    $seen = 0;
+    CompetencyResult::creating(function () use (&$seen): void {
+        $seen++;
+
+        if ($seen === 2) {
+            throw new RuntimeException('simulated DB failure on the second competency');
+        }
+    });
+
+    $job = new RunMockInterviewJob($org->id, $participant->id);
+
+    // Direct handle() call, never through HTTP — the exception must reach
+    // this test uncaught, not be absorbed by the framework's HTTP
+    // exception handler.
+    expect(fn () => $job->handle(app(SettleParticipantCompletion::class), app(SessionLiveClock::class)))
+        ->toThrow(RuntimeException::class);
+
+    expect(Evaluation::where('participant_id', $participant->id)->exists())->toBeFalse()
+        ->and(CompetencyResult::count())->toBe(0)
+        ->and(IndicatorScore::count())->toBe(0);
 });

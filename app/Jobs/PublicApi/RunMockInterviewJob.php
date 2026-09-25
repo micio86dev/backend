@@ -94,10 +94,16 @@ use Throwable;
  *     {pid}'` lock already uses in this codebase. A second concurrent (or
  *     merely re-dispatched) run that finds the lock held no-ops immediately;
  *     it never reaches the check-then-act reads below, so they no longer
- *     need to be atomic themselves.
+ *     need to be atomic themselves. Released in a `finally` block the
+ *     MOMENT this run reaches any decision (pre-commit gate, round 4,
+ *     finding R3-lock-never-released — the FIRST version left it held for
+ *     the full TTL even after an early business no-op, silently dropping
+ *     any legitimate re-dispatch arriving inside that window): the TTL is a
+ *     backstop for a dead worker process only, never the intended release
+ *     path.
  *   Layer 1 — a terminal participant status (`completato`/`errore`) makes
- *     the WHOLE job a no-op (covers a run that starts AFTER the lock's own
- *     holder already finished and the TTL has since expired).
+ *     the WHOLE job a no-op (covers a re-dispatch arriving after an earlier
+ *     run already completed and released the lock).
  *   Layer 2 — an already-ended `InterviewSession` competency is skipped
  *     inside the loop (a partial re-run resumes where it left off).
  *   Layer 3 — an already-created `Evaluation` row skips the
@@ -174,10 +180,6 @@ class RunMockInterviewJob implements ShouldQueue
         // layers below at all.
         $lockKey = self::lockKey($this->participantId);
         $acquired = Cache::add($lockKey, true, self::LOCK_TTL_SECONDS);
-        // Not released on success: the lock's job is to keep two concurrent
-        // runs from BOTH acting, not to gate future re-dispatch — the terminal
-        // idempotency layers below still make a POST-completion re-run,
-        // arriving after the TTL expires, a safe no-op.
 
         if (! $acquired) {
             Log::info('RunMockInterviewJob: no-op — another run already holds the lock', [
@@ -188,49 +190,62 @@ class RunMockInterviewJob implements ShouldQueue
             return;
         }
 
-        // org-filtered (pre-commit gate, public-api step 9, finding 1) — see
-        // class docblock.
-        $participant = Participant::where('organization_id', $this->organizationId)->find($this->participantId);
+        // Released as soon as THIS run reaches any decision (pre-commit
+        // gate, public-api step 9, round 4 finding R3-lock-never-released):
+        // the lock's ONLY job is to keep two genuinely OVERLAPPING runs from
+        // both acting — it must never also gate a re-dispatch that arrives
+        // AFTER this run already finished, for any reason (an early business
+        // no-op, a completed run, or an exception unwinding through this
+        // `finally` before Laravel's queue handling invokes `failed()`). The
+        // TTL survives only as a backstop if the WORKER PROCESS ITSELF dies
+        // before this `finally` runs — never as the normal release path.
+        try {
+            // org-filtered (pre-commit gate, public-api step 9, finding 1) — see
+            // class docblock.
+            $participant = Participant::where('organization_id', $this->organizationId)->find($this->participantId);
 
-        if ($participant === null) {
-            Log::warning('RunMockInterviewJob: participant not found', [
-                'organization_id' => $this->organizationId,
-                'participant_id' => $this->participantId,
-            ]);
+            if ($participant === null) {
+                Log::warning('RunMockInterviewJob: participant not found', [
+                    'organization_id' => $this->organizationId,
+                    'participant_id' => $this->participantId,
+                ]);
 
-            return;
+                return;
+            }
+
+            // Defensive — this job must NEVER touch a live participant (SPEC.md
+            // §3.7's whole "never billed" guarantee rests on mock scoring being
+            // fabricated ONLY for a beai_test_… enrolment). Unreachable through
+            // the real dispatch site (`InterviewController::handleIssuePending()`
+            // only dispatches this job when `$participant->mode === ApiKeyMode::
+            // Test` already gated the provider name to 'mock'), kept as a
+            // fail-closed guard against any future dispatch site that forgets to
+            // check mode first.
+            if ($participant->mode !== ApiKeyMode::Test) {
+                Log::error('RunMockInterviewJob: refusing to run against a live-mode participant', [
+                    'participant_id' => $this->participantId,
+                ]);
+
+                return;
+            }
+
+            // Idempotency layer 1: a terminal participant is already finished —
+            // see class docblock.
+            if (in_array($participant->status, ['completato', 'errore'], true)) {
+                Log::info('RunMockInterviewJob: no-op — participant already terminal', [
+                    'participant_id' => $this->participantId,
+                    'status' => $participant->status,
+                ]);
+
+                return;
+            }
+
+            TenantContextScope::runFor($participant->organization_id, function () use ($participant, $settleCompletion, $liveClock): void {
+                $this->runScriptedInterview($participant, $settleCompletion, $liveClock);
+            });
+        } finally {
+            Cache::forget($lockKey);
         }
-
-        // Defensive — this job must NEVER touch a live participant (SPEC.md
-        // §3.7's whole "never billed" guarantee rests on mock scoring being
-        // fabricated ONLY for a beai_test_… enrolment). Unreachable through
-        // the real dispatch site (`InterviewController::handleIssuePending()`
-        // only dispatches this job when `$participant->mode === ApiKeyMode::
-        // Test` already gated the provider name to 'mock'), kept as a
-        // fail-closed guard against any future dispatch site that forgets to
-        // check mode first.
-        if ($participant->mode !== ApiKeyMode::Test) {
-            Log::error('RunMockInterviewJob: refusing to run against a live-mode participant', [
-                'participant_id' => $this->participantId,
-            ]);
-
-            return;
-        }
-
-        // Idempotency layer 1: a terminal participant is already finished —
-        // see class docblock.
-        if (in_array($participant->status, ['completato', 'errore'], true)) {
-            Log::info('RunMockInterviewJob: no-op — participant already terminal', [
-                'participant_id' => $this->participantId,
-                'status' => $participant->status,
-            ]);
-
-            return;
-        }
-
-        TenantContextScope::runFor($participant->organization_id, function () use ($participant, $settleCompletion, $liveClock): void {
-            $this->runScriptedInterview($participant, $settleCompletion, $liveClock);
-        });
     }
 
     /**
@@ -529,7 +544,16 @@ class RunMockInterviewJob implements ShouldQueue
                         'indicator_text' => sprintf('Mock indicator %d for %s', $position + 1, $code),
                         'score' => $score,
                         'explanation' => 'SPEC.md §3.7 test-mode fabricated score.',
-                        'excerpts' => [$excerpts[$position]],
+                        // ?? self::SCRIPTED_ANSWER (pre-commit gate, round
+                        // 4, finding R3-excerpt-fallback-removed): $excerpts
+                        // is deterministic for the FIXED SCRIPTED_ANSWER
+                        // constant today (verified by every other test that
+                        // reaches this method), but nothing structurally
+                        // stops a future edit to SCRIPTED_ANSWER from
+                        // splitting into fewer than count(SCORES) pieces —
+                        // this keeps that an out-of-range fallback, never an
+                        // undefined-index warning inside the DB transaction.
+                        'excerpts' => [$excerpts[$position] ?? self::SCRIPTED_ANSWER],
                         'unassessable_reason' => null,
                     ]);
                 }
