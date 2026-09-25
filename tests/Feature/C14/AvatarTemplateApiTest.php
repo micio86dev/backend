@@ -471,3 +471,11 @@ test('the picker list does NOT open the full resource to a non-admin', function 
             ->assertForbidden();
     }
 });
+
+test('voice-only providers are not selectable as a template provider', function (): void {
+    $org = Organization::factory()->create();
+
+    $this->withToken(templateActor($org, 'platform'))
+        ->postJson('/api/avatar-templates', ['name' => 'X', 'provider' => 'cartesia', 'config' => []])
+        ->assertUnprocessable();
+});

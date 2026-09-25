@@ -24,6 +24,28 @@ use App\Support\AvatarTemplates\AvatarProviderCatalogue;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * The one item shape, with every key present.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function catalogueItem(string $provider, string $id, string $name, array $overrides = []): array
+{
+    return array_merge([
+        'id' => $id,
+        'provider' => $provider,
+        'label' => $name,
+        'name' => $name,
+        'language' => null,
+        'locale' => null,
+        'accent' => null,
+        'italian' => null,
+        'preview_image_url' => null,
+        'preview_audio_url' => null,
+    ], $overrides);
+}
+
 beforeEach(function (): void {
     config([
         'interview.tavus.api_key' => 'SUPER_SECRET_TAVUS_KEY_12345',
@@ -49,8 +71,8 @@ test('Tavus voices normalize with language always null — Tavus has no language
     expect($result)->toBe([
         'status' => 'ok',
         'items' => [
-            ['id' => 'v1', 'label' => 'Alessandra', 'language' => null, 'preview_image_url' => null, 'preview_audio_url' => null],
-            ['id' => 'v2', 'label' => 'Marco', 'language' => null, 'preview_image_url' => null, 'preview_audio_url' => null],
+            catalogueItem('tavus', 'v1', 'Alessandra'),
+            catalogueItem('tavus', 'v2', 'Marco'),
         ],
     ]);
 });
@@ -77,13 +99,10 @@ test('Tavus replicas normalize preview_image_url/preview_audio_url from thumbnai
 
     expect($result)->toBe([
         'status' => 'ok',
-        'items' => [[
-            'id' => 'r1',
-            'label' => 'Face One',
-            'language' => null,
+        'items' => [catalogueItem('tavus', 'r1', 'Face One', [
             'preview_image_url' => 'https://cdn.replica.tavus.io/r1/thumb.jpg',
             'preview_audio_url' => 'https://cdn.replica.tavus.io/r1/thumb.mp4',
-        ]],
+        ])],
     ]);
 });
 
@@ -111,8 +130,9 @@ test('HeyGen voices normalize with language populated verbatim from the provider
     expect($result)->toBe([
         'status' => 'ok',
         'items' => [
-            ['id' => 'hv1', 'label' => 'Alessandra - IA', 'language' => 'en', 'preview_image_url' => null, 'preview_audio_url' => null],
-            ['id' => 'hv2', 'label' => 'Marco', 'language' => 'it', 'preview_image_url' => null, 'preview_audio_url' => null],
+            // Provider-tagged Italian voices sort first.
+            catalogueItem('heygen', 'hv2', 'Marco', ['language' => 'it', 'locale' => 'it', 'italian' => 'native']),
+            catalogueItem('heygen', 'hv1', 'Alessandra - IA', ['language' => 'en', 'locale' => 'en']),
         ],
     ]);
 });
@@ -137,13 +157,9 @@ test('HeyGen avatars normalize preview_image_url from preview_url', function ():
 
     expect($result)->toBe([
         'status' => 'ok',
-        'items' => [[
-            'id' => 'ha1',
-            'label' => 'Studio Avatar',
-            'language' => null,
+        'items' => [catalogueItem('heygen', 'ha1', 'Studio Avatar', [
             'preview_image_url' => 'https://cdn.liveavatar.com/ha1.png',
-            'preview_audio_url' => null,
-        ]],
+        ])],
     ]);
 });
 

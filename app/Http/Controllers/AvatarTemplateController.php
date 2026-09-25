@@ -46,6 +46,10 @@ final class AvatarTemplateController extends Controller
     private const CATALOGUE_RESOURCES = [
         'heygen' => ['voice', 'avatar'],
         'tavus' => ['voice', 'replica'],
+        // Voice-only TTS vendors: not avatar providers, so no template can
+        // have them as `provider` (PROVIDERS above stays heygen|tavus).
+        'cartesia' => ['voice'],
+        'elevenlabs' => ['voice'],
     ];
 
     public function index(): AnonymousResourceCollection
@@ -148,8 +152,11 @@ final class AvatarTemplateController extends Controller
             // emitting an empty-string-only enum for `provider` in openapi.json, making
             // the documented endpoint unreachable and poisoning the generated TS client
             // with `provider: ""` (avatar-template-catalogue, caught by native review).
-            'provider' => ['required', 'string', 'in:heygen,tavus'],
+            'provider' => ['required', 'string', 'in:heygen,tavus,cartesia,elevenlabs'],
             'resource' => ['required', 'string', 'in:voice,avatar,replica'],
+            // Keep only genuinely Italian voices (`italian` = native). The
+            // list is already sorted Italian-first without it.
+            'italian_only' => ['sometimes', 'boolean'],
         ]);
 
         $provider = $validated['provider'];
@@ -161,7 +168,16 @@ final class AvatarTemplateController extends Controller
             ]);
         }
 
-        return response()->json(['data' => AvatarProviderCatalogue::fetch($provider, $resource)]);
+        $catalogue = AvatarProviderCatalogue::fetch($provider, $resource);
+
+        if ($request->boolean('italian_only')) {
+            $catalogue['items'] = array_values(array_filter(
+                $catalogue['items'],
+                static fn (array $item): bool => ($item['italian'] ?? null) === 'native',
+            ));
+        }
+
+        return response()->json(['data' => $catalogue]);
     }
 
     public function show(int $id): AvatarTemplateResource

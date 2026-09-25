@@ -136,3 +136,45 @@ test('no provider API key ever reaches the response body', function (): void {
     $response->assertOk();
     expect($response->getContent())->not->toContain('SUPER_SECRET_HEYGEN_KEY_999');
 });
+
+// ─── Voice-only providers (Cartesia, ElevenLabs) ────────────────────────────
+
+test('an admin lists Cartesia voices, Italian first, and can filter to native Italian only', function (): void {
+    $org = Organization::factory()->create();
+    config(['services.cartesia.api_key' => 'TEST_CARTESIA_KEY']);
+
+    Http::fake([
+        'api.cartesia.ai/voices*' => Http::response([
+            'data' => [
+                ['id' => 'c-en', 'name' => 'Zed', 'language' => 'en'],
+                ['id' => 'c-it', 'name' => 'Giulia', 'language' => 'it'],
+            ],
+            'has_more' => false,
+        ], 200),
+    ]);
+
+    $token = catalogueActor($org, 'admin');
+
+    $this->withToken($token)
+        ->getJson('/api/avatar-templates/catalogue?provider=cartesia&resource=voice')
+        ->assertOk()
+        ->assertJsonPath('data.status', 'ok')
+        ->assertJsonPath('data.items.0.id', 'c-it')
+        ->assertJsonPath('data.items.0.provider', 'cartesia')
+        ->assertJsonPath('data.items.0.italian', 'native')
+        ->assertJsonCount(2, 'data.items');
+
+    $this->withToken($token)
+        ->getJson('/api/avatar-templates/catalogue?provider=cartesia&resource=voice&italian_only=1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data.items')
+        ->assertJsonPath('data.items.0.id', 'c-it');
+});
+
+test('a voice-only provider has no avatar resource', function (): void {
+    $org = Organization::factory()->create();
+
+    $this->withToken(catalogueActor($org, 'admin'))
+        ->getJson('/api/avatar-templates/catalogue?provider=elevenlabs&resource=avatar')
+        ->assertUnprocessable();
+});
