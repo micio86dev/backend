@@ -103,7 +103,7 @@ test('a resource that exists but belongs to the OTHER provider is a 422', functi
 
 // ─── Provider failure degrades, never a 500 ────────────────────────────────
 
-test('a provider failure degrades to 200 with an unavailable status, never a 500', function (): void {
+test('a provider failure degrades to 200 with a provider_error state and a safe code, never a 500', function (): void {
     $org = Organization::factory()->create();
     config(['interview.tavus.api_key' => 'TEST_TAVUS_KEY']);
 
@@ -114,7 +114,8 @@ test('a provider failure degrades to 200 with an unavailable status, never a 500
     $this->withToken(catalogueActor($org, 'admin'))
         ->getJson('/api/avatar-templates/catalogue?provider=tavus&resource=voice')
         ->assertOk()
-        ->assertJsonPath('data.status', 'unavailable')
+        ->assertJsonPath('data.status', 'provider_error')
+        ->assertJsonPath('data.code', 'provider_unavailable')
         ->assertJsonPath('data.items', []);
 });
 

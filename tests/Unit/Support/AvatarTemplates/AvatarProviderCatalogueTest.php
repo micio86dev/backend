@@ -43,6 +43,7 @@ function catalogueItem(string $provider, string $id, string $name, array $overri
         'italian' => null,
         'preview_image_url' => null,
         'preview_audio_url' => null,
+        'preview_video_url' => null,
     ], $overrides);
 }
 
@@ -79,19 +80,21 @@ test('Tavus voices normalize with language always null — Tavus has no language
 
 // ─── 1.2 — Tavus replicas: preview fields sourced from the thumbnail pair ──
 
-test('Tavus replicas normalize preview_image_url/preview_audio_url from thumbnail_image_url/thumbnail_video_url', function (): void {
+test('Tavus faces (the former replicas) normalize the thumbnail video into preview_video_url and skip untrained faces', function (): void {
     Http::fake([
-        'tavusapi.com/v2/replicas*' => Http::response([
-            'data' => [[
-                'replica_id' => 'r1',
-                'replica_name' => 'Face One',
-                'replica_type' => 'system',
-                'tags' => [],
-                'thumbnail_image_url' => 'https://cdn.replica.tavus.io/r1/thumb.jpg',
-                'thumbnail_video_url' => 'https://cdn.replica.tavus.io/r1/thumb.mp4',
-                'default_voice_id' => 'v1',
-            ]],
-            'total_count' => 1,
+        'tavusapi.com/v2/faces*' => Http::response([
+            'data' => [
+                [
+                    'face_id' => 'r1',
+                    'face_name' => 'Face One',
+                    'status' => 'completed',
+                    'thumbnail_video_url' => 'https://cdn.replica.tavus.io/r1/thumb.mp4',
+                    'default_voice_id' => 'v1',
+                ],
+                ['face_id' => 'r2', 'face_name' => 'Still Training', 'status' => 'started'],
+                ['face_id' => 'r3', 'face_name' => 'Broken', 'status' => 'error'],
+            ],
+            'total_count' => 3,
         ], 200),
     ]);
 
@@ -100,8 +103,7 @@ test('Tavus replicas normalize preview_image_url/preview_audio_url from thumbnai
     expect($result)->toBe([
         'status' => 'ok',
         'items' => [catalogueItem('tavus', 'r1', 'Face One', [
-            'preview_image_url' => 'https://cdn.replica.tavus.io/r1/thumb.jpg',
-            'preview_audio_url' => 'https://cdn.replica.tavus.io/r1/thumb.mp4',
+            'preview_video_url' => 'https://cdn.replica.tavus.io/r1/thumb.mp4',
         ])],
     ]);
 });
@@ -194,14 +196,14 @@ test('the cache is scoped per (provider, resource) — a different pair still fe
 
 // ─── 1.8 — a provider failure degrades, and is never cached ───────────────
 
-test('a provider HTTP failure does not throw, returns the unavailable shape, and is not cached — the next call retries', function (): void {
+test('a provider HTTP failure does not throw, returns a provider_error state, and is not cached — the next call retries', function (): void {
     Http::fake([
         'tavusapi.com/v2/voices*' => Http::response(['message' => 'internal error'], 500),
     ]);
 
     $result = AvatarProviderCatalogue::fetch('tavus', 'voice');
 
-    expect($result)->toBe(['status' => 'unavailable', 'items' => []]);
+    expect($result)->toBe(['status' => 'provider_error', 'items' => [], 'code' => 'provider_unavailable']);
     Http::assertSentCount(1);
 
     // Right after the failure: a second call retries the provider rather
@@ -211,14 +213,14 @@ test('a provider HTTP failure does not throw, returns the unavailable shape, and
     Http::assertSentCount(2);
 });
 
-test('a provider connection failure (timeout) also degrades to the unavailable shape without throwing', function (): void {
+test('a provider connection failure (timeout) also degrades to a provider_error state without throwing', function (): void {
     Http::fake(function (): never {
         throw new ConnectionException('Connection timed out');
     });
 
     $result = AvatarProviderCatalogue::fetch('heygen', 'voice');
 
-    expect($result)->toBe(['status' => 'unavailable', 'items' => []]);
+    expect($result)->toBe(['status' => 'provider_error', 'items' => [], 'code' => 'provider_unreachable']);
 });
 
 // ─── 1.10 — no API key ever reaches the response, success or failure ──────
@@ -245,4 +247,108 @@ test('no response from fetch(), on success or failure, contains the configured A
     $success = AvatarProviderCatalogue::fetch('heygen', 'voice');
 
     expect(json_encode($success))->not->toContain('SUPER_SECRET_HEYGEN_KEY_67890');
+});
+
+// ─── States, pagination, HeyGen public + own avatars ─────────────────────
+
+test('an empty answer is its own state, and is not cached', function (): void {
+    Http::fake(['tavusapi.com/v2/voices*' => Http::response(['data' => [], 'total_count' => 0], 200)]);
+
+    expect(AvatarProviderCatalogue::fetch('tavus', 'voice'))->toBe(['status' => 'empty', 'items' => []]);
+
+    AvatarProviderCatalogue::fetch('tavus', 'voice');
+    Http::assertSentCount(2);
+});
+
+test('provider failures map to distinct safe codes', function (int $status, string $code): void {
+    Http::fake(['tavusapi.com/v2/voices*' => Http::response(['message' => 'SUPER_SECRET_TAVUS_KEY_12345'], $status)]);
+
+    $result = AvatarProviderCatalogue::fetch('tavus', 'voice');
+
+    expect($result)->toBe(['status' => 'provider_error', 'items' => [], 'code' => $code]);
+    expect(json_encode($result))->not->toContain('SUPER_SECRET');
+})->with([
+    [401, 'provider_unauthorized'],
+    [403, 'provider_unauthorized'],
+    [429, 'provider_rate_limited'],
+    [503, 'provider_unavailable'],
+    [404, 'provider_rejected'],
+]);
+
+test('a missing platform key is reported as such without calling the provider', function (): void {
+    config(['interview.heygen.api_key' => '']);
+    Http::fake();
+
+    expect(AvatarProviderCatalogue::fetch('heygen', 'avatar'))
+        ->toBe(['status' => 'provider_error', 'items' => [], 'code' => 'provider_key_missing']);
+    Http::assertNothingSent();
+});
+
+test('Tavus voices are paginated past the provider default of ten', function (): void {
+    $page1 = array_map(fn (int $i): array => ['voice_id' => "a{$i}", 'voice_name' => "A{$i}", 'status' => 'completed'], range(1, 100));
+
+    Http::fake([
+        'tavusapi.com/v2/voices*' => Http::sequence()
+            ->push(['data' => $page1, 'total_count' => 101], 200)
+            ->push(['data' => [['voice_id' => 'b1', 'voice_name' => 'B1', 'status' => 'completed']], 'total_count' => 101], 200),
+    ]);
+
+    expect(AvatarProviderCatalogue::fetch('tavus', 'voice')['items'])->toHaveCount(101);
+    Http::assertSent(fn ($r): bool => str_contains($r->url(), 'limit=100') && str_contains($r->url(), 'source=all'));
+});
+
+test('HeyGen avatars merge the public catalogue with the account\'s own, drop expired ones and dedupe', function (): void {
+    Http::fake([
+        'api.liveavatar.com/v1/avatars/public*' => Http::response(['code' => 100, 'data' => ['count' => 3, 'next' => null, 'results' => [
+            ['id' => 'p1', 'name' => 'Public One', 'status' => 'ACTIVE', 'is_expired' => false, 'preview_url' => 'https://cdn.example/p1.png'],
+            ['id' => 'p2', 'name' => 'Expired', 'status' => 'ACTIVE', 'is_expired' => true],
+            ['id' => 'p3', 'name' => 'Failed', 'status' => 'FAILED', 'is_expired' => false],
+        ]]], 200),
+        'api.liveavatar.com/v1/avatars*' => Http::response(['code' => 100, 'data' => ['count' => 2, 'next' => null, 'results' => [
+            ['id' => 'u1', 'name' => 'Mine', 'status' => 'ACTIVE', 'is_expired' => false, 'preview_url' => 'https://cdn.example/u1.png'],
+            ['id' => 'p1', 'name' => 'Public One', 'status' => 'ACTIVE', 'is_expired' => false],
+        ]]], 200),
+    ]);
+
+    $result = AvatarProviderCatalogue::fetch('heygen', 'avatar');
+
+    expect($result['status'])->toBe('ok');
+    expect(array_column($result['items'], 'id'))->toBe(['p1', 'u1']);
+    expect($result['items'][0]['preview_image_url'])->toBe('https://cdn.example/p1.png');
+    Http::assertSent(fn ($r): bool => str_contains($r->url(), '/avatars/public') && str_contains($r->url(), 'page_size=100'));
+});
+
+test('HeyGen still lists public avatars when the account\'s own list is refused', function (): void {
+    Http::fake([
+        'api.liveavatar.com/v1/avatars/public*' => Http::response(['code' => 100, 'data' => ['count' => 1, 'next' => null, 'results' => [
+            ['id' => 'p1', 'name' => 'Public One', 'status' => 'ACTIVE'],
+        ]]], 200),
+        'api.liveavatar.com/v1/avatars*' => Http::response(['message' => 'nope'], 403),
+    ]);
+
+    expect(AvatarProviderCatalogue::fetch('heygen', 'avatar')['items'])->toHaveCount(1);
+});
+
+test('HeyGen pagination follows next until it is empty', function (): void {
+    Http::fake([
+        'api.liveavatar.com/v1/avatars/public*' => Http::sequence()
+            ->push(['data' => ['next' => 'https://api.liveavatar.com/v1/avatars/public?page=2', 'results' => [['id' => 'p1', 'name' => 'A']]]], 200)
+            ->push(['data' => ['next' => null, 'results' => [['id' => 'p2', 'name' => 'B']]]], 200),
+        'api.liveavatar.com/v1/avatars*' => Http::response(['data' => ['results' => []]], 200),
+    ]);
+
+    expect(array_column(AvatarProviderCatalogue::fetch('heygen', 'avatar')['items'], 'id'))->toBe(['p1', 'p2']);
+});
+
+test('HeyGen voices include private (third-party bound) voices', function (): void {
+    Http::fake([
+        'api.liveavatar.com/v1/voices*' => Http::sequence()
+            ->push(['data' => ['next' => null, 'results' => [['id' => 'hv1', 'name' => 'Pub', 'language' => 'en']]]], 200)
+            ->push(['data' => ['next' => null, 'results' => [['id' => 'hv9', 'name' => 'Mine', 'language' => 'it']]]], 200),
+    ]);
+
+    $items = AvatarProviderCatalogue::fetch('heygen', 'voice')['items'];
+
+    expect(array_column($items, 'id'))->toBe(['hv9', 'hv1']);
+    Http::assertSent(fn ($r): bool => str_contains($r->url(), 'voice_type=private'));
 });

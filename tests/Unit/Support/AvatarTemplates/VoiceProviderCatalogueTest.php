@@ -137,11 +137,11 @@ test('ElevenLabs pagination follows next_page_token', function (): void {
     Http::assertSent(fn ($r): bool => str_contains($r->url(), 'next_page_token=tok'));
 });
 
-test('a missing key degrades to unavailable without calling the vendor', function (string $provider): void {
+test('a missing key is a provider_error without calling the vendor', function (string $provider): void {
     config(['services.cartesia.api_key' => '', 'services.elevenlabs.api_key' => null]);
     Http::fake();
 
-    expect(AvatarProviderCatalogue::fetch($provider, 'voice'))->toBe(['status' => 'unavailable', 'items' => []]);
+    expect(AvatarProviderCatalogue::fetch($provider, 'voice'))->toBe(['status' => 'provider_error', 'items' => [], 'code' => 'provider_key_missing']);
     Http::assertNothingSent();
 })->with(['cartesia', 'elevenlabs']);
 
@@ -150,5 +150,5 @@ test('a vendor failure never leaks the key', function (string $provider): void {
 
     $result = AvatarProviderCatalogue::fetch($provider, 'voice');
 
-    expect($result)->toBe(['status' => 'unavailable', 'items' => []]);
+    expect($result)->toBe(['status' => 'provider_error', 'items' => [], 'code' => 'provider_unauthorized']);
 })->with(['cartesia', 'elevenlabs']);

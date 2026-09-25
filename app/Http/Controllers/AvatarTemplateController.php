@@ -14,6 +14,7 @@ use App\Support\AvatarTemplates\AvatarProviderCatalogue;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TavusPalSync;
+use App\Support\AvatarTemplates\TemplateReferenceValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -489,6 +490,12 @@ final class AvatarTemplateController extends Controller
     private function assertConfigValid(string $provider, array $config): void
     {
         $errors = ConfigValidator::validate($provider, $config);
+
+        // References are checked only once the shape is sound: a missing or
+        // mistyped id would otherwise be reported twice.
+        if ($errors === []) {
+            $errors = TemplateReferenceValidator::validate($provider, $config);
+        }
 
         if ($errors === []) {
             return;
