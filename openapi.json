@@ -3369,10 +3369,16 @@
                                             ]
                                         },
                                         "download_url": {
-                                            "type": "null"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "download_expires_at": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "size_bytes": {
                                             "type": [
@@ -3501,10 +3507,106 @@
                                     "properties": {
                                         "data": {
                                             "type": "array",
-                                            "items": {}
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "scope": {
+                                                        "type": "string"
+                                                    },
+                                                    "format": {
+                                                        "type": "string"
+                                                    },
+                                                    "livemode": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "from": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "to": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "record_count": {
+                                                        "type": [
+                                                            "integer",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "download_url": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "download_expires_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "size_bytes": {
+                                                        "type": [
+                                                            "integer",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "checksum_sha256": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "failure_reason": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "completed_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "status",
+                                                    "scope",
+                                                    "format",
+                                                    "livemode",
+                                                    "from",
+                                                    "to",
+                                                    "record_count",
+                                                    "download_url",
+                                                    "download_expires_at",
+                                                    "size_bytes",
+                                                    "checksum_sha256",
+                                                    "failure_reason",
+                                                    "created_at",
+                                                    "completed_at"
+                                                ]
+                                            }
                                         },
                                         "next_cursor": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "has_more": {
                                             "type": "boolean"
@@ -3583,10 +3685,16 @@
                                             ]
                                         },
                                         "download_url": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "download_expires_at": {
-                                            "type": "string"
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
                                         },
                                         "size_bytes": {
                                             "type": [
@@ -10230,7 +10338,55 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "string"
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        },
+                                        "code": {
+                                            "type": "string"
+                                        },
+                                        "request_id": {
+                                            "type": "string"
+                                        },
+                                        "detail": {
+                                            "type": "string"
+                                        },
+                                        "errors": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "type": "string"
+                                                    },
+                                                    "code": {
+                                                        "type": "string"
+                                                    },
+                                                    "message": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "field",
+                                                    "code"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "title",
+                                        "status",
+                                        "code",
+                                        "request_id"
+                                    ]
                                 }
                             }
                         }

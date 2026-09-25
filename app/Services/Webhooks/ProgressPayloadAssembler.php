@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Webhooks;
 
+use App\Enums\ApiKeyMode;
 use App\Enums\WebhookEventType;
 use App\Models\Participant;
 use App\Models\Project;
@@ -26,22 +27,36 @@ use Illuminate\Support\Facades\DB;
  * session that is `in_corso` has not yet produced an "answer" in the payload sense —
  * competency completion is the domain-meaningful boundary, design.md D2).
  *
- * All reads use `withoutGlobalScopes()` / a raw query builder over `project_id` — this
- * class is designed to run from a queued job or a synchronous HTTP-request listener
- * with no reliable ambient tenant context (design.md D4); the caller is responsible
- * for resolving a tenant-safe $participantId.
+ * Reads use `withoutGlobalScope('tenant')` / a raw query builder over `project_id` —
+ * this class is designed to run from a queued job or a synchronous HTTP-request
+ * listener with no reliable ambient tenant context (design.md D4). `assemble()` itself
+ * scopes the `Participant` read by the caller-supplied `$organizationId` (pre-commit
+ * gate, round 4, finding 3) — never trusted implicitly from `$participantId` alone.
  *
  * REQ: Payload assembly — progress event (C10 D7)
  */
 final class ProgressPayloadAssembler
 {
     /**
+     * `$organizationId` (pre-commit gate, round 4, finding 3): threaded through from
+     * the caller, which resolves it from the SAME project the event already names —
+     * see `App\Listeners\SendProgressWebhook::resolveOrganizationId()`. `Participant`
+     * is a PLAIN model (class doc), never auto-scoped by a global scope; an unscoped
+     * `findOrFail()` here would happily resolve a participant belonging to a
+     * DIFFERENT organization than the caller's own, silently rendering that other
+     * organization's candidate data into this webhook payload.
+     *
      * @return array<string, mixed>
      */
-    public function assemble(int $participantId, string $deliveryId): array
+    public function assemble(int $participantId, int $organizationId, string $deliveryId): array
     {
-        $participant = Participant::findOrFail($participantId);
-        $project = Project::withoutGlobalScopes()->findOrFail($participant->project_id);
+        $participant = Participant::where('organization_id', $organizationId)->findOrFail($participantId);
+        // withoutGlobalScope('tenant') ONLY, never the plural no-args form
+        // (pre-commit gate round 7, finding 1): $participant is already
+        // org-scoped above, so this only ever reaches that same
+        // organization's project regardless; the singular form keeps
+        // SoftDeletingScope so a soft-deleted project still 404s.
+        $project = Project::withoutGlobalScope('tenant')->findOrFail($participant->project_id);
 
         $rows = DB::table('project_competencies')
             ->join('framework_competencies', 'project_competencies.competency_id', '=', 'framework_competencies.id')
@@ -81,6 +96,10 @@ final class ProgressPayloadAssembler
             'event' => WebhookEventType::Progress->value,
             'delivery_id' => $deliveryId,
             'occurred_at' => now()->utc()->toIso8601String(),
+            // SPEC.md §3.7: a test-mode /v1 interview's webhooks must be
+            // tellable apart from a real delivery — `false` for a
+            // `beai_test_`-key-created participant, `true` otherwise.
+            'livemode' => $participant->mode === ApiKeyMode::Live,
             'candidate_ref' => $participant->candidate_ref,
             'project' => [
                 'id' => $project->id,

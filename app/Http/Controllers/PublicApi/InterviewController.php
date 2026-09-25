@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\PublicApi;
 
 use App\Actions\PublicApi\EnrolCandidate;
+use App\Enums\ApiKeyMode;
 use App\Exceptions\PublicApi\EnrolmentRefusalReason;
 use App\Exceptions\PublicApi\EnrolmentRefused;
 use App\Exceptions\PublicApi\QueryValidationException;
@@ -21,6 +22,7 @@ use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\ScoringSerializer;
 use App\PublicApi\Serializers\TranscriptSerializer;
 use App\Rules\PublicApi\Iso8601DateTime;
+use App\Support\PublicApi\ApiMode;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Expand;
 use App\Support\PublicApi\HostedInterviewUrlComposer;
@@ -184,7 +186,16 @@ final class InterviewController extends Controller
         // per-key) — mirrors `ProjectController::index()`'s own convention.
         $this->validateFilterFormats($request);
 
-        $query = Participant::query()->where('organization_id', $organization->id);
+        // mode-scoped (G-51): a beai_test_ key must never list a live
+        // interview, and vice versa — SPEC.md §3.7's "must never read or
+        // write live data" applied here the same way
+        // `ExportController`/`UsageController` already scope every other
+        // /v1 read by the requesting key's own mode.
+        $mode = app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live;
+
+        $query = Participant::query()
+            ->where('organization_id', $organization->id)
+            ->where('mode', $mode);
 
         $status = $request->query('status');
         if (is_string($status) && $status !== '') {
@@ -568,12 +579,21 @@ final class InterviewController extends Controller
             return null;
         }
 
+        // mode-scoped (G-51): the single choke point `show()`, `transcript()`,
+        // `answers()`, `scoring()` and `events()` all resolve their
+        // participant through — a beai_test_ key requesting a LIVE
+        // interview id (or vice versa) must answer 404, never leak that
+        // the row exists under the other mode. Same reasoning as
+        // `index()`'s own mode filter above.
+        $mode = app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live;
+
         // Same "always eager-load project, withTrashed()" discipline as
         // index() (gga findings 1 and 4) — a single row here, so the cost
         // is trivial either way, but `InterviewSerializer::project()`'s
         // eager-loaded branch stays the one path every `/v1` read actually
         // exercises.
         return Participant::where('organization_id', $organization->id)
+            ->where('mode', $mode)
             ->wherePublicId($bareId)
             ->with(self::projectEagerLoad($expandProject))
             ->first();

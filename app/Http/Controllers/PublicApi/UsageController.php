@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Rules\PublicApi\Iso8601DateTime;
 use App\Support\PublicApi\ApiMode;
+use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\UsageAggregator;
 use App\Support\Tenancy\TenantResolver;
@@ -27,9 +28,9 @@ use Illuminate\Validation\Validator as ValidatorInstance;
  *
  * `Organization` is resolved explicitly from `App\Support\Tenancy\
  * TenantResolver`, mirroring every other `/v1` controller's own docblock
- * (`Participant`/`WebhookDelivery` are plain models, not `TenantModel`) —
- * `Evaluation`/`AiRequest`/`InterviewSessionLlmUsage` on the other hand ARE
- * `TenantModel`s and are therefore already org-scoped by the ambient
+ * (`Participant` is a plain model, not `TenantModel`) — `Evaluation`/
+ * `AiRequest`/`InterviewSessionLlmUsage`/`WebhookDelivery` on the other hand
+ * ARE `TenantModel`s and are therefore already org-scoped by the ambient
  * `TenantContext` global scope `App\Http\Middleware\PublicApi\
  * PublicApiTenantContext` stamps (`DashboardController`'s own docblock notes
  * the identical reasoning for the admin surface).
@@ -37,7 +38,7 @@ use Illuminate\Validation\Validator as ValidatorInstance;
 final class UsageController extends Controller
 {
     #[Response(200, description: 'Usage summary for the requested window.')]
-    #[Response(400, description: 'Malformed query parameter, or from is after to (code=validation_failed).')]
+    #[Response(400, description: 'Malformed query parameter, or from is after to (code=validation_failed).', type: Problem::PROBLEM_SHAPE)]
     public function show(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -86,8 +87,22 @@ final class UsageController extends Controller
         if (is_string($raw) && $raw !== '') {
             $parsed = Iso8601DateTime::parse($raw);
 
+            // ->utc() (pre-commit gate, round 4, finding 2): a numeric-
+            // offset value (e.g. `+02:00`) parses into a CarbonImmutable
+            // whose OWN timezone carries that offset, not UTC. Binding it
+            // as-is lets the query builder (`UsageAggregator`'s own
+            // `whereBetween()`) format the WALL-CLOCK digits in that
+            // offset into the SQL parameter, which Postgres then reads back
+            // in the connection's session timezone — silently comparing
+            // against the wrong instant. Same fix, same reasoning as
+            // `InterviewController::index()`'s own identical `->utc()` call
+            // on `created_after`/`created_before`. Converting HERE (not
+            // just at the query-binding site) also makes the echoed
+            // `from`/`to` response fields reflect the UTC-converted
+            // instant, since `show()` reuses this same return value for
+            // both.
             if ($parsed !== null) {
-                return $parsed;
+                return $parsed->utc();
             }
         }
 
@@ -104,8 +119,9 @@ final class UsageController extends Controller
         if (is_string($raw) && $raw !== '') {
             $parsed = Iso8601DateTime::parse($raw);
 
+            // ->utc() — see resolveFrom()'s own identical comment.
             if ($parsed !== null) {
-                return $parsed;
+                return $parsed->utc();
             }
         }
 
@@ -119,6 +135,15 @@ final class UsageController extends Controller
      * `InterviewController::validateFilterFormats()`'s own
      * `QueryValidationException` discipline (G-28: a malformed/inconsistent
      * QUERY PARAMETER is `400`, never `422`).
+     *
+     * Validated on the EFFECTIVE (post-default) pair, never on the raw
+     * request input alone: `resolveFrom()`/`resolveTo()` are the exact
+     * methods `show()` itself uses to compute the window it actually
+     * queries, so this ordering check and the real read always agree. A
+     * one-sided request (only `from`, or only `to`) still has an effective
+     * `to`/`from` — `now()` or "start of the current UTC month",
+     * respectively — and an inverted EFFECTIVE window must still answer
+     * `400`, not silently query backwards and return an all-zero `200`.
      */
     private function validateFilters(Request $request): void
     {
@@ -128,17 +153,10 @@ final class UsageController extends Controller
         ]);
 
         $validator->after(function (ValidatorInstance $validator) use ($request): void {
-            $from = $request->query('from');
-            $to = $request->query('to');
+            $fromParsed = $this->resolveFrom($request);
+            $toParsed = $this->resolveTo($request);
 
-            if (! is_string($from) || ! is_string($to)) {
-                return;
-            }
-
-            $fromParsed = Iso8601DateTime::parse($from);
-            $toParsed = Iso8601DateTime::parse($to);
-
-            if ($fromParsed !== null && $toParsed !== null && $fromParsed->greaterThan($toParsed)) {
+            if ($fromParsed->greaterThan($toParsed)) {
                 $validator->errors()->add('to', 'The to must not be before from.');
             }
         });

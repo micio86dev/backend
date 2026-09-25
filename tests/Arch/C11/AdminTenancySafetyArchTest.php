@@ -91,7 +91,7 @@ function phpFilesUnder(string $directory): array
  *
  * @var array<string, string>
  */
-$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm'];
+$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Listeners'];
 
 /**
  * Matches an actual invocation (`::` or `->`) rather than a bare string, so
@@ -207,6 +207,22 @@ $tenantScopeStripAllowlist = [
         .'writes only llm_sync_status bookkeeping on rows it resolved by credential id. '
         .'(Moved here from HeygenLlmRegistrar, which held the same sweep behind a '
         .'provider = heygen filter that stranded every Tavus template.)',
+    'Listeners/SendProgressWebhook.php' => 'resolveOrganizationId() resolves the Project a '
+        .'ParticipantCreated/CompetencySessionEnded event names, and neither event carries an '
+        .'organization id directly. The listener runs synchronously in the SSO exchange and '
+        .'/end request paths, which — like SsoExchangeController above — establish no reliable '
+        .'ambient tenant context of their own. Uses withoutGlobalScope(\'tenant\') ONLY, the '
+        .'same singular form SsoExchangeController documents and this file was fixed to match '
+        .'(pre-commit gate round 6, finding 1) — never the plural no-args form — so '
+        .'SoftDeletingScope survives and a soft-deleted project still 404s here.',
+    'Listeners/SendEvaluationWebhook.php' => 'Both strips resolve an Evaluation by an id an '
+        .'event carries, with no ambient tenant context: this listener runs synchronously off '
+        .'ScoreEvaluationJob, not inside a request. handleCompleted() then re-derives '
+        .'Participant scoped by the evaluation\'s own organization_id before recording anything '
+        .'(pre-commit gate round 5, finding 1); handleFailed() scopes Participant by the '
+        .'org id ScoreEvaluationJob itself already derived. Both Evaluation reads use '
+        .'withoutGlobalScope(\'tenant\') ONLY, never the plural form, extended to this file '
+        .'when the guarded roots grew to include Listeners (pre-commit gate round 6).',
 ];
 
 /**

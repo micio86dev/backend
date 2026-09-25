@@ -36,8 +36,8 @@ use Throwable;
  * Public API (public-api step 8), SPEC.md §3.3 "Exports", `openapi.yaml`'s
  * `createExport`/`listExports`/`getExport` operations.
  *
- * `Export` IS a `TenantModel` (unlike `Participant`/`WebhookDelivery`'s own
- * split — see each model's own docblock) — every query here filters
+ * `Export` IS a `TenantModel`, like `WebhookDelivery` (unlike `Participant`,
+ * a plain model — see each model's own docblock) — every query here filters
  * `organization_id` EXPLICITLY anyway (D22: stated, never relied on
  * transitively), mirroring `WebhookDeliveryController`'s identical
  * discipline for the same reason.
@@ -50,8 +50,24 @@ final class ExportController extends Controller
      */
     private const DOWNLOAD_TTL_MINUTES = 60;
 
-    #[Response(202, description: 'Export job accepted.')]
-    #[Response(429, description: 'An export is already in progress for this organization (code=export_in_progress).', type: Problem::PROBLEM_SHAPE)]
+    /**
+     * Explicit `type:` on every 2xx `#[Response]` below (never left to
+     * Scramble's own static inference) — `download_url`/`download_expires_at`
+     * are always literally `null` at the call site inside `store()` (no
+     * download exists yet for a just-`queued` row) and are threaded through
+     * an array-destructured `downloadUrlFor()` call in `show()`/`index()`;
+     * both shapes defeat Scramble's static analyzer (it narrowed the first
+     * to a bare `"null"` literal type and the second to non-nullable
+     * `"string"`), producing a schema that disagreed with
+     * `ExportSerializer::toArray()`'s own accurate `string|null` PHPDoc and
+     * with the actual runtime response. Same fix, same reasoning
+     * `WebhookDeliveryController`'s own `#[Response]` attributes already
+     * apply for an identical nullable-field drift.
+     */
+    private const EXPORT_SHAPE = 'array{id: string, status: string, scope: string, format: string, livemode: bool, from: string|null, to: string|null, record_count: int|null, download_url: string|null, download_expires_at: string|null, size_bytes: int|null, checksum_sha256: string|null, failure_reason: string|null, created_at: string, completed_at: string|null}';
+
+    #[Response(202, description: 'Export job accepted.', type: self::EXPORT_SHAPE)]
+    #[Response(429, description: 'An export is already in progress for this organization and mode (code=export_in_progress).', type: Problem::PROBLEM_SHAPE)]
     public function store(CreateExportRequest $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -64,8 +80,20 @@ final class ExportController extends Controller
             'mode' => $mode,
             'scope' => ExportScope::from($request->string('scope')->toString()),
             'format' => ExportFormat::from($request->string('format')->toString()),
-            'from_at' => is_string($fromRaw) ? Iso8601DateTime::parse($fromRaw) : null,
-            'to_at' => is_string($toRaw) ? Iso8601DateTime::parse($toRaw) : null,
+            // ->utc() (pre-commit gate, round 4, finding 2): a numeric-
+            // offset value (e.g. `+02:00`) parses into a CarbonImmutable
+            // whose OWN timezone carries that offset, not UTC.
+            // Eloquent's `datetime` cast formats the Carbon instance in ITS
+            // OWN timezone when writing to the DB (`HasAttributes::
+            // fromDateTime()` never normalizes to UTC), so an unconverted
+            // value would persist its LOCAL wall-clock digits as if they
+            // were already UTC — silently shifting the stored instant by
+            // the offset, and `GenerateExportJob::buildContent()`'s own
+            // `from_at`/`to_at` window filter would then compare against
+            // the wrong instant too. Same fix, same reasoning as
+            // `InterviewController::index()`'s own identical `->utc()` call.
+            'from_at' => is_string($fromRaw) ? Iso8601DateTime::parse($fromRaw)?->utc() : null,
+            'to_at' => is_string($toRaw) ? Iso8601DateTime::parse($toRaw)?->utc() : null,
             'include_transcripts' => $request->boolean('include_transcripts', true),
             'include_scoring' => $request->boolean('include_scoring', true),
             'include_audio' => $request->boolean('include_audio', false),
@@ -84,10 +112,30 @@ final class ExportController extends Controller
             // transaction is aborted" under RefreshDatabase-wrapped tests
             // and under any real caller nested inside an outer transaction.
             $export = DB::transaction(fn (): Export => Export::create($attributes));
-        } catch (UniqueConstraintViolationException) {
+        } catch (UniqueConstraintViolationException $e) {
+            // Constraint-checked (pre-commit gate, round 5, finding 6): the ONLY
+            // unique index this INSERT can legitimately race on for the
+            // `export_in_progress` story is the partial index below
+            // (database/migrations/2026_09_24_160000_create_exports_table.php).
+            // `exports` also carries `exports_public_id_unique` — collapsing THAT
+            // (an unrelated, astronomically unlikely public_id collision) into the
+            // same 429 would misreport a genuinely different failure as "an export
+            // is already in progress". `$e->index` is populated by
+            // `Illuminate\Database\Connection::runQueryCallback()` for every
+            // Postgres unique-violation, so this is a real check, not a comment
+            // promising one. Anything else rethrows and is picked up by
+            // `PublicApiExceptionRenderer`'s own generic `default => 500
+            // internal_error` arm — the same "let it propagate" outcome
+            // `WebhookDeliveryRecorder::record()`'s sibling catch has no analogous
+            // narrowing for, because IT only ever races on ITS OWN single unique
+            // index.
+            if ($e->index !== 'exports_one_active_per_organization') {
+                throw $e;
+            }
+
             return Problem::make(
                 $request, 429, 'export_in_progress', 'Export in progress',
-                'Only one export can be in progress per organization at a time.',
+                'Only one export can be in progress per organization and mode at a time.',
             );
         }
 
@@ -96,7 +144,7 @@ final class ExportController extends Controller
         return PublicApiJson::response(ExportSerializer::toArray($export), 202);
     }
 
-    #[Response(200, description: 'A page of this organization\'s export jobs, newest first.')]
+    #[Response(200, description: 'A page of this organization\'s export jobs, newest first.', type: 'array{data: list<'.self::EXPORT_SHAPE.'>, next_cursor: string|null, has_more: bool}')]
     public function index(Request $request): JsonResponse
     {
         $organization = $this->resolveOrganization();
@@ -113,7 +161,7 @@ final class ExportController extends Controller
         return response()->json($page);
     }
 
-    #[Response(200, description: 'The export job, with a fresh signed download URL when ready.')]
+    #[Response(200, description: 'The export job, with a fresh signed download URL when ready.', type: self::EXPORT_SHAPE)]
     public function show(Request $request, string $id): JsonResponse
     {
         $organization = $this->resolveOrganization();

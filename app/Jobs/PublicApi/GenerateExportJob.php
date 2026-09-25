@@ -114,6 +114,67 @@ class GenerateExportJob implements ShouldQueue
             return;
         }
 
+        // Re-delivery/duplicate-dispatch guard (pre-commit gate, round 4,
+        // finding 1 — CRITICAL: the previous version of this guard could
+        // permanently strand an organization's export).
+        //
+        // `ready`/`failed`/`expired` are always a genuine duplicate — those
+        // are TERMINAL statuses (generation already reached a final state),
+        // so this invocation never has anything legitimate to do and must
+        // always no-op.
+        //
+        // `processing` is NOT always a duplicate, and treating it as one
+        // unconditionally (the old rule) is the bug: if a worker is killed
+        // mid-run (hits the 1200s `$timeout`), the row is left `processing`
+        // with no job left to act on it — `$tries=3` then makes Laravel
+        // itself REDELIVER the same job, but the old guard silently no-opped
+        // on that redelivery and returned SUCCESSFULLY, so `failed()` never
+        // ran and the row was stuck `processing` forever. `retry_after`
+        // (1500s, `config/queue.php`) is greater than the worker `$timeout`
+        // (1200s), so a SECOND delivery that finds the row still
+        // `processing` proves the FIRST attempt's lease has already
+        // expired by the time this one runs — there is no genuinely
+        // in-flight attempt left to race against.
+        //
+        // `$this->attempts() > 1` is exactly that signal (Laravel's own
+        // per-DISPATCH attempt counter — 1 on the very first delivery,
+        // incremented on every redelivery). A `processing` row on attempt 1
+        // means something else claimed it moments ago (this job's own
+        // `persist()` call below hasn't run yet on THIS attempt) — the
+        // genuinely rare concurrent-duplicate case, where no lease has had
+        // time to expire — and the conservative choice there is still to
+        // no-op rather than race a second regeneration against the first.
+        // A `processing` row on attempt N>1 means the PREVIOUS attempt
+        // died: reclaim it and regenerate, rather than fail it outright,
+        // because `buildContent()` is idempotent/replayable — it always
+        // builds `$content` fresh from the current DB state into one
+        // in-memory buffer, and the single `Storage::put()` at the end
+        // OVERWRITES the same object key (class doc, "Format is written
+        // whole") — so a reclaimed regeneration converges on the same
+        // correct result a healthy first attempt would have, with no
+        // partial/appended state to worry about. The job's own EXISTING
+        // try/catch below still converts a genuine generation failure to
+        // `failed` either way, so this never trades "stuck processing
+        // forever" for "silently wrong ready" — at worst it retries once
+        // more and then fails cleanly.
+        $isReclaimableProcessing = $export->status === ExportStatus::Processing && $this->attempts() > 1;
+
+        if ($export->status !== ExportStatus::Queued && ! $isReclaimableProcessing) {
+            Log::info('GenerateExportJob: skipped — export row is not queued (duplicate dispatch or re-delivery)', [
+                'export_id' => $export->id,
+                'status' => $export->status->value,
+            ]);
+
+            return;
+        }
+
+        if ($isReclaimableProcessing) {
+            Log::warning('GenerateExportJob: reclaiming a row left processing by a crashed prior attempt', [
+                'export_id' => $export->id,
+                'attempts' => $this->attempts(),
+            ]);
+        }
+
         $this->persist($export, function () use ($export): void {
             $export->forceFill(['status' => ExportStatus::Processing])->save();
         });
@@ -386,11 +447,21 @@ class GenerateExportJob implements ShouldQueue
      * gets the SAME leading-apostrophe guard right before it is written —
      * the one place both a raw scalar and a JSON-encoded blob's rendered
      * text both pass through.
+     *
+     * Booleans render as the literal strings `true`/`false` (pre-commit gate,
+     * round 5, finding 3) — checked BEFORE the generic `is_scalar()` branch,
+     * since `bool` is also scalar and `(string) false` casts to `''`,
+     * indistinguishable in the CSV from `null` or a column this row simply
+     * does not carry (see the union-of-keys reasoning above). `livemode`,
+     * `transcript_ready` and `scoring_ready` are exactly the fields this
+     * would silently corrupt.
      */
     private static function csvCell(mixed $value): string
     {
         if (is_array($value)) {
             $rendered = json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+        } elseif (is_bool($value)) {
+            $rendered = $value ? 'true' : 'false';
         } elseif (is_scalar($value)) {
             $rendered = (string) $value;
         } else {
@@ -401,9 +472,13 @@ class GenerateExportJob implements ShouldQueue
     }
 
     /**
-     * Prefixes a leading `=`, `+`, `-` or `@` with a `'` so a spreadsheet
-     * application renders the cell as literal text instead of evaluating
-     * it as a formula (gga finding 4).
+     * Prefixes a leading `=`, `+`, `-`, `@`, tab (`\t`) or carriage return
+     * (`\r`) with a `'` so a spreadsheet application renders the cell as
+     * literal text instead of evaluating it as a formula (gga finding 4;
+     * tab/carriage-return added per pre-commit gate round 4, finding 4 —
+     * OWASP's own CSV injection guidance also flags these two: some
+     * spreadsheet parsers still evaluate a formula that starts with
+     * leading whitespace before the `=`/`+`/`-`/`@`).
      */
     private static function escapeFormulaPrefix(string $value): string
     {
@@ -411,6 +486,8 @@ class GenerateExportJob implements ShouldQueue
             || str_starts_with($value, '+')
             || str_starts_with($value, '-')
             || str_starts_with($value, '@')
+            || str_starts_with($value, "\t")
+            || str_starts_with($value, "\r")
             ? "'".$value
             : $value;
     }

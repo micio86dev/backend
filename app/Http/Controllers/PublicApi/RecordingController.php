@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\PublicApi;
 
+use App\Enums\ApiKeyMode;
 use App\Http\Controllers\Controller;
 use App\Models\InterviewRecording;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Support\PublicApi\ApiMode;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\PublicId;
@@ -167,7 +169,14 @@ final class RecordingController extends Controller
             return null;
         }
 
+        // mode-scoped (G-51): a beai_test_ key must never fetch a LIVE
+        // interview's recording, and vice versa — same reasoning as
+        // `InterviewController::resolveParticipant()`'s own identical
+        // filter.
+        $mode = app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live;
+
         return Participant::where('organization_id', $organization->id)
+            ->where('mode', $mode)
             ->wherePublicId($bareId)
             ->first();
     }

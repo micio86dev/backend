@@ -16,7 +16,9 @@ use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -84,6 +86,34 @@ test('T-EXP-002: format csv is accepted and stored, distinct from jsonl', functi
     $response->assertStatus(202)->assertJsonPath('format', 'csv')->assertJsonPath('scope', 'all');
 });
 
+test('T-EXP-002b: from/to with a numeric offset are stored UTC-converted, never the raw local wall-clock value (pre-commit gate round 4, finding 2)', function (): void {
+    Queue::fake();
+
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+
+    // 2026-01-02T00:00:00+02:00 === 2026-01-01T22:00:00Z — same instant
+    // ReadInterviewsTest's own `created_after` offset regression test uses.
+    // Proves both the ECHOED response fields and the STORED `from_at`/
+    // `to_at` columns are the UTC-converted instant, never the raw
+    // offset-bearing value `Illuminate\Database\Grammar` would otherwise
+    // format without the timezone.
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/exports', [
+            'scope' => 'interviews',
+            'format' => 'jsonl',
+            'from' => '2026-01-02T00:00:00+02:00',
+            'to' => '2026-01-03T00:00:00+02:00',
+        ]);
+
+    $response->assertStatus(202);
+    expect($response->json('from'))->toBe('2026-01-01T22:00:00+00:00');
+    expect($response->json('to'))->toBe('2026-01-02T22:00:00+00:00');
+
+    $stored = TenantContextScope::runFor($org->id, fn () => Export::query()->first());
+    expect($stored->from_at->toIso8601String())->toBe('2026-01-01T22:00:00+00:00');
+    expect($stored->to_at->toIso8601String())->toBe('2026-01-02T22:00:00+00:00');
+});
+
 test('T-EXP-003: a second export while one is already queued/processing answers 429 export_in_progress', function (): void {
     Queue::fake();
 
@@ -111,6 +141,36 @@ test('T-EXP-003b: a ready export does not block a new one — only queued/proces
 
     $response->assertStatus(202);
     Queue::assertPushed(GenerateExportJob::class);
+});
+
+test('a UniqueConstraintViolationException on an UNRELATED constraint is never mapped to export_in_progress (pre-commit gate, round 5, finding 6)', function (): void {
+    Queue::fake();
+
+    ['key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+
+    // exports_public_id_unique — a genuinely different constraint than the
+    // one-active-export-per-organization partial index `store()` actually
+    // means to catch. Forced via a DB::transaction() facade double (the
+    // pre-existing Mockery::mock()/shouldReceive() discipline this file
+    // already uses for Storage) rather than a real collision, since
+    // public_id is a random ULID with no practical way to force one.
+    $unrelated = new UniqueConstraintViolationException(
+        'pgsql',
+        'insert into "exports" ...',
+        [],
+        new Exception('duplicate key value violates unique constraint "exports_public_id_unique"'),
+    );
+    $unrelated->setIndex('exports_public_id_unique');
+
+    DB::shouldReceive('transaction')->once()->andThrow($unrelated);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/exports', ['scope' => 'interviews', 'format' => 'jsonl']);
+
+    // Rethrown, never mapped to 429 — PublicApiExceptionRenderer's own generic
+    // `default => 500 internal_error` arm is what actually answers it.
+    $response->assertStatus(500)->assertJsonPath('code', 'internal_error');
+    Queue::assertNotPushed(GenerateExportJob::class);
 });
 
 test('T-EXP-004: status polls queued -> ready once the real job runs (sync queue), record_count matches the seeded interview', function (): void {
@@ -457,8 +517,9 @@ test('a test-mode key never sees a live-mode export in the list, and a live-mode
 
     // ->ready() (terminal status) — a plain factory ->create() would be
     // 'queued', and the partial unique index only allows ONE queued/
-    // processing export per ORGANIZATION (not per mode, see the migration's
-    // own docblock), so two default-state exports on the same org collide.
+    // processing export per ORGANIZATION PER MODE (see the migration's own
+    // docblock), so two default-state exports of the SAME mode on the same
+    // org would collide; ->ready() sidesteps that entirely for this test.
     $liveExport = TenantContextScope::runFor($org->id, fn () => Export::factory()->ready()->create(['mode' => ApiKeyMode::Live]));
     $testExport = TenantContextScope::runFor($org->id, fn () => Export::factory()->ready()->create(['mode' => ApiKeyMode::Test]));
 
@@ -488,6 +549,42 @@ test('a test-mode key gets 404 (never leaking existence) when directly requestin
     $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])
         ->getJson('/api/v1/exports/'.PublicId::encode($testExport))
         ->assertStatus(404);
+});
+
+test('a queued TEST export does not block a LIVE POST /v1/exports for the same organization, but a second TEST POST still blocks with 429', function (): void {
+    Queue::fake();
+
+    ['org' => $org, 'liveKey' => $liveKey, 'testKey' => $testKey] = exportModeKeyPair();
+
+    TenantContextScope::runFor($org->id, fn () => Export::factory()->create(['mode' => ApiKeyMode::Test]));
+
+    $liveResponse = $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])
+        ->postJson('/api/v1/exports', ['scope' => 'interviews', 'format' => 'jsonl']);
+    $liveResponse->assertStatus(202);
+
+    $testResponse = $this->withHeaders(['Authorization' => 'Bearer '.$testKey])
+        ->postJson('/api/v1/exports', ['scope' => 'interviews', 'format' => 'jsonl']);
+    $testResponse->assertStatus(429)->assertJsonPath('code', 'export_in_progress');
+
+    Queue::assertPushed(GenerateExportJob::class, 1);
+});
+
+test('a queued LIVE export does not block a TEST POST /v1/exports for the same organization, but a second LIVE POST still blocks with 429', function (): void {
+    Queue::fake();
+
+    ['org' => $org, 'liveKey' => $liveKey, 'testKey' => $testKey] = exportModeKeyPair();
+
+    TenantContextScope::runFor($org->id, fn () => Export::factory()->create(['mode' => ApiKeyMode::Live]));
+
+    $testResponse = $this->withHeaders(['Authorization' => 'Bearer '.$testKey])
+        ->postJson('/api/v1/exports', ['scope' => 'interviews', 'format' => 'jsonl']);
+    $testResponse->assertStatus(202);
+
+    $liveResponse = $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])
+        ->postJson('/api/v1/exports', ['scope' => 'interviews', 'format' => 'jsonl']);
+    $liveResponse->assertStatus(429)->assertJsonPath('code', 'export_in_progress');
+
+    Queue::assertPushed(GenerateExportJob::class, 1);
 });
 
 test('each mode\'s own exports are still visible to a same-mode key', function (): void {

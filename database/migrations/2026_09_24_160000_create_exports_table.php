@@ -31,14 +31,21 @@ use Illuminate\Support\Facades\Schema;
  * (which could differ if a live and a test key are both used against the
  * same organization over the export's lifetime).
  *
- * **One active export per organization at a time** (SPEC.md §3.3
- * `POST /exports`, `429 export_in_progress`) is enforced by a PARTIAL UNIQUE
- * INDEX, not merely a SELECT-then-INSERT check in the controller — the same
- * "make illegal states unrepresentable at the database level" discipline
- * `2026_07_17_200001_create_projects_table.php`'s own slug-uniqueness index
- * and `webhook_deliveries`' CHECK constraints already apply (S20 precedent).
- * A SELECT-then-INSERT race (two concurrent `POST /exports` both observing
- * zero in-flight rows) is closed by the same mechanism Postgres already
+ * **One active export per organization PER MODE at a time** (SPEC.md §3.3
+ * `POST /exports`, `429 export_in_progress`, combined with SPEC.md §3.7's
+ * mode isolation) is enforced by a PARTIAL UNIQUE INDEX keyed on
+ * `(organization_id, mode)`, not merely a SELECT-then-INSERT check in the
+ * controller — the same "make illegal states unrepresentable at the
+ * database level" discipline `2026_07_17_200001_create_projects_table.php`'s
+ * own slug-uniqueness index and `webhook_deliveries`' CHECK constraints
+ * already apply (S20 precedent). Keying on `organization_id` ALONE (an
+ * earlier cut of this migration) would let a queued/processing TEST export
+ * block a LIVE export for the same organization and vice versa — exactly
+ * the mode crosstalk `mode` itself exists to prevent everywhere else this
+ * table is read (`ExportController::index()`/`resolveExport()`,
+ * `GenerateExportJob::buildContent()`). A SELECT-then-INSERT race (two
+ * concurrent `POST /exports` both observing zero in-flight rows for the
+ * same organization+mode) is closed by the same mechanism Postgres already
  * gives every other unique index: the SECOND concurrent INSERT into this
  * index raises `23505`, which the controller catches and answers
  * `429 export_in_progress` for, exactly like `WebhookDeliveryController::
@@ -101,12 +108,12 @@ return new class extends Migration
         });
 
         // Partial unique index — "at most one queued/processing export per
-        // organization" at the database level, closing the concurrent-POST
-        // race a PHP-level SELECT-then-INSERT check alone cannot (see class
-        // doc above).
+        // organization PER MODE" at the database level, closing the
+        // concurrent-POST race a PHP-level SELECT-then-INSERT check alone
+        // cannot (see class doc above).
         DB::statement(
             "CREATE UNIQUE INDEX exports_one_active_per_organization
-             ON exports (organization_id)
+             ON exports (organization_id, mode)
              WHERE status IN ('queued', 'processing')"
         );
 

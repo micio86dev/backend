@@ -97,7 +97,9 @@ test('EvaluationFailed records a delivery from the terminal participant state', 
     [, , $participant] = c10ListenerFixtures();
     $participant->forceFill(['status' => 'errore'])->save();
 
-    event(new EvaluationFailed($participant->id));
+    // organizationId threaded through exactly the way ScoreEvaluationJob::failed()
+    // now does (pre-commit gate, round 5, finding 2) — the real trusted source.
+    event(new EvaluationFailed($participant->id, $participant->organization_id));
 
     $delivery = WebhookDelivery::first();
     expect($delivery)->not->toBeNull()
@@ -106,6 +108,101 @@ test('EvaluationFailed records a delivery from the terminal participant state', 
         ->and($delivery->payload['data']['text'])->toBe([]);
 
     Queue::assertPushed(DeliverWebhookJob::class);
+});
+
+// ─── Org-scoped reads (pre-commit gate, round 5, findings 1 and 2) ────────
+//
+// Both handleCompleted() and handleFailed() previously resolved their
+// Participant row UNSCOPED (or — for handleFailed() — org-scoped against an
+// organization_id that came from that SAME unscoped read, a circular check
+// that could never fail). Both fixtures below construct a genuine
+// evaluation/participant-organization mismatch via direct model
+// manipulation — proving the org-scoping actually rejects it instead of
+// merely looking like a guard.
+
+test('EvaluationCompleted whose Evaluation.organization_id disagrees with its participant\'s real organization does not deliver a webhook', function (): void {
+    Queue::fake();
+
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+
+    $resolver->setOrgId($orgB->id);
+    $resolver->setBypass(false);
+    $projectB = Project::factory()->create([
+        'webhook_url' => 'https://receiver.example.test/hook',
+        'webhook_secret' => 'whsec_listener_test_secret',
+        'webhook_events' => ['progress', 'evaluation'],
+    ]);
+    $participantOfOrgB = Participant::factory()->forProject($projectB)->create();
+
+    // Evaluation.organization_id is stamped from the ACTIVE resolver at
+    // creation time (EvaluationFactory's own docblock) — independent of
+    // participant_id, which still points at org B's participant. This is
+    // exactly the corrupt-data shape the finding describes: the two
+    // organization ids disagree.
+    $resolver->setOrgId($orgA->id);
+    $resolver->setBypass(false);
+    $evaluation = Evaluation::factory()->create([
+        'participant_id' => $participantOfOrgB->id,
+        'status' => 'completed',
+        'evaluated_at' => now(),
+    ]);
+    expect($evaluation->organization_id)->toBe($orgA->id);
+
+    event(new EvaluationCompleted($evaluation->id));
+
+    // Participant::where('organization_id', $evaluation->organization_id)
+    // ->findOrFail(...) must fail to resolve org B's participant under org
+    // A — caught by the listener's own outer try/catch, exactly like the
+    // existing "forced exception" test above.
+    expect(WebhookDelivery::count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+test('EvaluationFailed whose event organizationId disagrees with the participant\'s real organization does not deliver a webhook', function (): void {
+    Queue::fake();
+
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($orgB->id);
+    $resolver->setBypass(false);
+
+    $projectB = Project::factory()->create([
+        'webhook_url' => 'https://receiver.example.test/hook',
+        'webhook_secret' => 'whsec_listener_test_secret',
+        'webhook_events' => ['progress', 'evaluation'],
+    ]);
+    $participantOfOrgB = Participant::factory()->forProject($projectB)->create();
+
+    // The event's own organizationId claims org A — a source independent of
+    // (and disagreeing with) the participant row's real organization_id.
+    // Proves the check can actually fail, not just tautologically pass.
+    event(new EvaluationFailed($participantOfOrgB->id, $orgA->id));
+
+    // App\Listeners\NotifyOnScoringFailure is a SEPARATE auto-discovered
+    // EvaluationFailed listener (C12) — it dispatches SendOperatorNotificationJob
+    // unconditionally and is unrelated to this fix, so only DeliverWebhookJob is
+    // asserted here, not "nothing pushed at all".
+    expect(WebhookDelivery::count())->toBe(0);
+    Queue::assertNotPushed(DeliverWebhookJob::class);
+});
+
+test('EvaluationFailed with no organizationId (ScoreEvaluationJob could not derive one) does not deliver a webhook and does not throw past the listener', function (): void {
+    Queue::fake();
+
+    [, , $participant] = c10ListenerFixtures();
+    $participant->forceFill(['status' => 'errore'])->save();
+
+    // Mirrors ScoreEvaluationJob::failed()'s own genuine "cannot derive
+    // organization context" branch — no trustworthy org is threaded at all.
+    expect(fn () => event(new EvaluationFailed($participant->id)))->not->toThrow(Throwable::class);
+
+    expect(WebhookDelivery::count())->toBe(0);
+    Queue::assertNotPushed(DeliverWebhookJob::class);
 });
 
 test('a forced exception inside the recorder is caught and never propagates back to the caller', function (): void {

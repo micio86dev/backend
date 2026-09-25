@@ -44,7 +44,7 @@ test('the progress payload\'s first answers entry carries question_index 0, not 
             'ended_reason' => 'completed',
         ])->assertStatus(200);
 
-    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, (string) Str::uuid());
+    $payload = (new ProgressPayloadAssembler)->assemble($participant->id, $org->id, (string) Str::uuid());
     $first = collect($payload['data']['competencies'])->firstWhere('code', $competencies[0]->code);
 
     expect($first)->not->toBeNull();

@@ -114,11 +114,75 @@ test('T-USAGE-001b: an explicit valid from/to window is echoed back verbatim', f
     expect($response->json('to'))->toBe('2026-01-31T23:59:59+00:00');
 });
 
+test('T-USAGE-001c: from/to with a numeric offset filter using the UTC-converted instant, not the local wall-clock value (pre-commit gate round 4, finding 2)', function (): void {
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['usage:read']);
+    $project = Step6Fixtures::project($org);
+
+    // 2026-01-02T00:00:00+02:00 === 2026-01-01T22:00:00Z — the same instant
+    // ReadInterviewsTest's own `created_after` offset regression test uses.
+    // A participant created exactly at that UTC instant must be included
+    // (UsageAggregator's own whereBetween() is inclusive on both bounds);
+    // one created a second earlier must not — proving the filter compares
+    // against the UTC-converted instant, not the raw offset-bearing
+    // wall-clock value Illuminate\Database\Grammar would otherwise format
+    // without the timezone.
+    $included = Step6Fixtures::participantWithTranscript($org, $project, 'in_corso');
+    TenantContextScope::runFor($org->id, function () use ($included): void {
+        $included->forceFill(['created_at' => '2026-01-01T22:00:00Z'])->save();
+    });
+
+    $excluded = Step6Fixtures::participantWithTranscript($org, $project, 'in_corso');
+    TenantContextScope::runFor($org->id, function () use ($excluded): void {
+        $excluded->forceFill(['created_at' => '2026-01-01T21:59:59Z'])->save();
+    });
+
+    $query = http_build_query([
+        'from' => '2026-01-02T00:00:00+02:00',
+        'to' => '2026-01-03T00:00:00Z',
+    ]);
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/usage?'.$query);
+
+    $response->assertOk();
+    // The echoed `from` must also be the UTC-converted instant, never the
+    // raw offset-bearing input.
+    expect($response->json('from'))->toBe('2026-01-01T22:00:00+00:00');
+    expect($response->json('interviews.in_progress'))->toBe(1);
+});
+
 test('T-USAGE-002: from later than to answers 400 validation_failed', function (): void {
     ['key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['usage:read']);
 
     $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
         ->getJson('/api/v1/usage?from=2026-06-30T00:00:00Z&to=2026-06-01T00:00:00Z');
+
+    $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
+    $this->assertProblemMatchesContract($response, 400);
+});
+
+test('T-USAGE-002b: from alone, after the implicit default to (now), answers 400 validation_failed', function (): void {
+    ['key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['usage:read']);
+
+    // Only `from` is set, to a future date — the OLD check only ran when
+    // BOTH from/to were present in the request, so this left `to` defaulted
+    // to now() and silently returned 200 with an inverted, all-zero window
+    // instead of 400.
+    $futureFrom = now()->addYear()->toIso8601String();
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/usage?'.http_build_query(['from' => $futureFrom]));
+
+    $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
+    $this->assertProblemMatchesContract($response, 400);
+});
+
+test('T-USAGE-002c: to alone, before the implicit default from (start of current UTC month), answers 400 validation_failed', function (): void {
+    ['key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['usage:read']);
+
+    // Only `to` is set, to a date before the default `from` (start of the
+    // current UTC calendar month) — same one-sided gap as T-USAGE-002b, the
+    // other direction.
+    $pastTo = now('UTC')->subYear()->startOfYear()->toIso8601String();
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/usage?'.http_build_query(['to' => $pastTo]));
 
     $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
     $this->assertProblemMatchesContract($response, 400);
@@ -198,6 +262,35 @@ test('T-USAGE-004: a test-mode key never sees live-mode interviews in its own us
     expect($liveResponse->json('interviews.in_progress'))->toBe(1);
     expect($testResponse->json('livemode'))->toBeFalse();
     expect($testResponse->json('interviews.in_progress'))->toBe(1);
+});
+
+test('T-USAGE-004b: a live key\'s llm_tokens/cost_usd never include a test-mode participant\'s real scoring/conversation usage', function (): void {
+    // Unlike T-USAGE-004's plain in_corso fixtures, this exercises a
+    // FULLY SCORED test-mode participant — real AiRequest/
+    // InterviewSessionLlmUsage rows, exactly the figures public-api step
+    // 9's mock avatar provider will also produce for a completed
+    // test-mode interview. Confirms mode scoping holds for the
+    // cost/billing aggregates specifically, not merely interview counts
+    // (public-api step 9 deliverable 4).
+    ['org' => $org, 'key' => $liveKey] = Step6Fixtures::orgWithScopedKey(['usage:read']);
+    $project = Step6Fixtures::project($org);
+
+    $scored = Step6Fixtures::buildCompletedScoredParticipant($org, $project);
+    TenantContextScope::runFor($org->id, function () use ($scored): void {
+        $scored->forceFill(['mode' => ApiKeyMode::Test])->save();
+    });
+
+    $query = http_build_query(['from' => now()->subDay()->toIso8601String(), 'to' => now()->addDay()->toIso8601String()]);
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])->getJson('/api/v1/usage?'.$query);
+
+    $response->assertOk();
+    $body = $response->json();
+
+    expect($body['livemode'])->toBeTrue();
+    expect($body['interviews'])->toBe(['pending' => 0, 'in_progress' => 0, 'under_evaluation' => 0, 'completed' => 0, 'error' => 0]);
+    expect($body['evaluations'])->toBe(['completed' => 0, 'pending' => 0]);
+    expect($body['llm_tokens'])->toBe(['input' => 0, 'output' => 0]);
+    expect($body['cost_usd'])->toBe(0.0);
 });
 
 test('T-USAGE-005: participant/evaluation/session id scoping uses subqueries, never a materialized whereIn id list', function (): void {
