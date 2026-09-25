@@ -44,6 +44,8 @@ test('issue() mints a family+secret pair and writes a generation-0 row', functio
 });
 
 test('issue() stamps absolute_expires_at ~14 days out by default', function (): void {
+    $this->freezeTime();
+
     $user = User::factory()->create();
     $issue = $this->store->issue(userId: $user->id);
 
