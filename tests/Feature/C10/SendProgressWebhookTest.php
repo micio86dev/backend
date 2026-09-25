@@ -123,6 +123,24 @@ test('a forced exception inside the recorder is caught and never propagates back
     Queue::assertNothingPushed();
 });
 
+test('a soft-deleted project is caught and logged, never propagates, and no delivery is recorded', function (): void {
+    // pre-commit gate round 7, finding R3-001 (review-reliability): resolveOrganizationId()
+    // was narrowed from withoutGlobalScopes() to withoutGlobalScope('tenant'), which keeps
+    // SoftDeletingScope active — a trashed project now 404s (ModelNotFoundException) here
+    // instead of still resolving. The listener's own handle() wraps both event branches in
+    // try/catch(Throwable), so this must be caught and logged, exactly like the "forced
+    // exception" test above, never left to reach the SSO exchange / `/end` request path.
+    Queue::fake();
+
+    [, $project, $participant] = c10ProgressListenerFixtures();
+    $project->delete();
+
+    expect(fn () => event(new ParticipantCreated($participant->id, $project->id)))->not->toThrow(Throwable::class);
+
+    expect(WebhookDelivery::where('participant_id', $participant->id)->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
 test('skipped gate outcome (no_webhook_url) dispatches nothing', function (): void {
     Queue::fake();
 
