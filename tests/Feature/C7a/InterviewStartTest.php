@@ -919,3 +919,167 @@ test('POST /start still transitions the participant to in_corso even when the In
         DB::statement('ALTER TABLE interview_events_hidden_for_test RENAME TO interview_events');
     }
 });
+
+// ─── Pre-flight (provider configuration validated BEFORE any provider call) ──
+
+/**
+ * A project pinned to a template of `$provider` carrying `$config`, written
+ * straight to the row so that even a config the save endpoint would refuse
+ * (legacy data, an inventory that changed since) can be exercised.
+ *
+ * @param  array<string, mixed>  $config
+ * @return array{0: Organization, 1: Participant, 2: string, 3: AvatarTemplate}
+ */
+function preflightScenario(string $provider, array $config): array
+{
+    $org = startOrg();
+    [$project] = startProjectWithCompetencies($org, 1, $provider);
+
+    $template = AvatarTemplate::findOrFail($project->avatar_template_id);
+    $template->config = $config;
+    $template->save();
+
+    $participant = startParticipant($org, $project, 'in_attesa');
+
+    return [$org, $participant, startBearer($participant), $template];
+}
+
+function tavusInventoryFake(array $pals = ['p_ok'], array $faces = ['f_ok']): array
+{
+    return [
+        'tavusapi.com/v2/faces*' => Http::response(['data' => array_map(fn (string $id): array => ['face_id' => $id, 'face_name' => $id, 'status' => 'completed'], $faces), 'total_count' => count($faces)], 200),
+        'tavusapi.com/v2/pals*' => Http::response(['data' => array_map(fn (string $id): array => ['pal_id' => $id, 'pal_name' => $id], $pals), 'total_count' => count($pals)], 200),
+        'tavusapi.com/v2/conversations' => Http::response(['conversation_id' => 'c1', 'conversation_url' => 'https://tavus.daily.co/c1'], 200),
+    ];
+}
+
+test('pre-flight: a Tavus palId that is not a PAL is refused with 422 and NO provider call — the former 500 provider_error', function (): void {
+    config(['interview.preflight.verify_references' => true]);
+    Http::fake(tavusInventoryFake());
+    Queue::fake();
+
+    // A VOICE id in palId: what the old voice-backed picker stored.
+    [$org, $participant, $token] = preflightScenario('tavus', ['faceId' => 'f_ok', 'palId' => 'v_a_voice_id']);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start');
+
+    $response->assertStatus(422)
+        ->assertExactJson([
+            'error' => 'interview_configuration_invalid',
+            'reasons' => [['key' => 'palId', 'code' => 'pal_not_found']],
+        ]);
+
+    Http::assertNotSent(fn ($r): bool => str_contains($r->url(), '/v2/conversations'));
+
+    // Nothing was written: no session, the participant is untouched and can retry.
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(0);
+    expect($participant->fresh()->status)->toBe('in_attesa');
+});
+
+test('pre-flight: a valid Tavus configuration reaches the provider with the chosen face and persona', function (): void {
+    config(['interview.preflight.verify_references' => true]);
+    Http::fake(tavusInventoryFake());
+    Queue::fake();
+
+    [, , $token] = preflightScenario('tavus', ['faceId' => 'f_ok', 'palId' => 'p_ok']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')->assertStatus(201);
+
+    Http::assertSent(fn ($r): bool => str_ends_with($r->url(), '/v2/conversations')
+        && $r['replica_id'] === 'f_ok'
+        && $r['persona_id'] === 'p_ok');
+});
+
+test('pre-flight: refuses each invalid configuration with its own code', function (string $provider, array $config, array $reasons, array $settings): void {
+    config(['interview.preflight.verify_references' => true] + $settings);
+    Http::fake(tavusInventoryFake() + [
+        'api.liveavatar.com/v1/avatars*' => Http::response(['data' => ['next' => null, 'results' => [['id' => 'av_ok', 'name' => 'A', 'status' => 'ACTIVE']]]], 200),
+        'api.liveavatar.com/v1/voices*' => Http::response(['data' => ['next' => null, 'results' => [['id' => 'vo_ok', 'name' => 'V', 'language' => 'it']]]], 200),
+        'api.cartesia.ai/voices*' => Http::response(['data' => [['id' => 'c_ok', 'name' => 'C', 'language' => 'it']], 'has_more' => false], 200),
+    ]);
+    Queue::fake();
+
+    [, , $token] = preflightScenario($provider, $config);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'interview_configuration_invalid')
+        ->assertJsonPath('reasons', $reasons);
+})->with([
+    'tavus: unknown face' => ['tavus', ['faceId' => 'f_x', 'palId' => 'p_ok'], [['key' => 'faceId', 'code' => 'avatar_not_found']], []],
+    'tavus: engine without a voice' => ['tavus', ['faceId' => 'f_ok', 'palId' => 'p_ok', 'ttsEngine' => 'cartesia'], [['key' => 'ttsExternalVoiceId', 'code' => 'tts_voice_required']], ['services.cartesia.api_key' => 'k']],
+    'tavus: voice without an engine' => ['tavus', ['faceId' => 'f_ok', 'palId' => 'p_ok', 'ttsExternalVoiceId' => 'c_ok'], [['key' => 'ttsEngine', 'code' => 'tts_engine_required']], []],
+    'tavus: voice unknown at the vendor' => ['tavus', ['faceId' => 'f_ok', 'palId' => 'p_ok', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => 'c_x'], [['key' => 'ttsExternalVoiceId', 'code' => 'tts_voice_not_found']], ['services.cartesia.api_key' => 'k']],
+    'tavus: platform key missing' => ['tavus', ['faceId' => 'f_ok', 'palId' => 'p_ok'], [['key' => 'credentials', 'code' => 'provider_key_missing']], ['interview.tavus.api_key' => '']],
+    'heygen: unknown avatar' => ['heygen', ['avatarId' => 'av_x', 'voiceId' => 'vo_ok'], [['key' => 'avatarId', 'code' => 'avatar_not_found']], []],
+    'heygen: unknown voice' => ['heygen', ['avatarId' => 'av_ok', 'voiceId' => 'vo_x'], [['key' => 'voiceId', 'code' => 'voice_not_found']], []],
+    'heygen: platform key missing' => ['heygen', ['avatarId' => 'av_ok', 'voiceId' => 'vo_ok'], [['key' => 'credentials', 'code' => 'provider_key_missing']], ['interview.heygen.api_key' => '']],
+]);
+
+test('pre-flight: a valid HeyGen configuration passes to the provider', function (): void {
+    config(['interview.preflight.verify_references' => true]);
+    Http::fake([
+        'api.liveavatar.com/v1/avatars*' => Http::response(['data' => ['next' => null, 'results' => [['id' => 'av_ok', 'name' => 'A', 'status' => 'ACTIVE']]]], 200),
+        'api.liveavatar.com/v1/voices*' => Http::response(['data' => ['next' => null, 'results' => [['id' => 'vo_ok', 'name' => 'V', 'language' => 'it']]]], 200),
+    ] + heygenSuccessResponse());
+    Queue::fake();
+
+    [, , $token] = preflightScenario('heygen', ['avatarId' => 'av_ok', 'voiceId' => 'vo_ok']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')->assertStatus(201);
+
+    Http::assertSent(fn ($r): bool => str_contains($r->url(), '/sessions/token')
+        && $r['avatar_id'] === 'av_ok'
+        && $r['avatar_persona']['voice_id'] === 'vo_ok');
+});
+
+test('pre-flight: the kill switch skips reference verification', function (): void {
+    config(['interview.preflight.verify_references' => false]);
+    Http::fake(tavusInventoryFake());
+    Queue::fake();
+
+    [, , $token] = preflightScenario('tavus', ['faceId' => 'f_x', 'palId' => 'p_x']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')->assertStatus(201);
+});
+
+test('pre-flight: the kill switch never skips the credential check', function (): void {
+    config(['interview.preflight.verify_references' => false, 'interview.tavus.api_key' => '']);
+    Http::fake(tavusInventoryFake());
+    Queue::fake();
+
+    [, , $token] = preflightScenario('tavus', ['faceId' => 'f_x', 'palId' => 'p_x']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)->assertJsonPath('reasons.0.code', 'provider_key_missing');
+});
+
+test('pre-flight: a provider outage does not block the start (references fail open)', function (): void {
+    config(['interview.preflight.verify_references' => true]);
+    Http::fake([
+        'tavusapi.com/v2/faces*' => Http::response(['message' => 'down'], 503),
+        'tavusapi.com/v2/pals*' => Http::response(['message' => 'down'], 503),
+        'tavusapi.com/v2/conversations' => Http::response(['conversation_id' => 'c1', 'conversation_url' => 'https://tavus.daily.co/c1'], 200),
+    ]);
+    Queue::fake();
+
+    [, , $token] = preflightScenario('tavus', ['faceId' => 'f_ok', 'palId' => 'p_ok']);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')->assertStatus(201);
+});
+
+test('pre-flight responses carry no secret and no trace', function (): void {
+    config(['interview.preflight.verify_references' => true, 'interview.tavus.api_key' => 'MUST_NOT_LEAK_PREFLIGHT']);
+    Http::fake(tavusInventoryFake());
+    Queue::fake();
+
+    [, , $token] = preflightScenario('tavus', ['faceId' => 'f_x', 'palId' => 'p_x']);
+
+    $body = $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')->assertStatus(422)->getContent();
+
+    expect($body)->not->toContain('MUST_NOT_LEAK_PREFLIGHT')->not->toContain('trace')->not->toContain('exception');
+});

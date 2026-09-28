@@ -6,6 +6,7 @@ declare(strict_types=1);
 // breaking changes require a new /api/v2/ prefix, coordinated across consumers.
 // See docs/api-versioning.md for the full contract.
 
+use App\Http\Controllers\Api\AdminOrganizationController;
 use App\Http\Controllers\Api\Catalogue\BarsIndicatorController;
 use App\Http\Controllers\Api\Catalogue\CompetencyController as CatalogueCompetencyController;
 use App\Http\Controllers\Api\Catalogue\DefaultQuestionController;
@@ -373,6 +374,9 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // into the tenant layer to keep in step with the first.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('admin/organizations', [SuperadminController::class, 'organizations']);
+    Route::post('admin/organizations', [AdminOrganizationController::class, 'store']);
+    Route::get('admin/organizations/{id}', [AdminOrganizationController::class, 'show'])->whereNumber('id');
+    Route::patch('admin/organizations/{id}', [AdminOrganizationController::class, 'update'])->whereNumber('id');
     Route::get('admin/clients', [SuperadminController::class, 'clients']);
     Route::put('admin/acting-organization', [SuperadminController::class, 'setActingOrganization']);
 

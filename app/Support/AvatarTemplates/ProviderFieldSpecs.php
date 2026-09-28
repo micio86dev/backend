@@ -115,7 +115,11 @@ final class ProviderFieldSpecs
             // the comments in TemplatePayload already warn about.
             // Conversation-level: sent when the conversation is created.
             new FieldSpec('faceId', FieldType::Text, $l('faceId'), required: true, hintKey: $h('faceId'), catalogueResource: 'replica'),
-            new FieldSpec('palId', FieldType::Text, $l('palId'), required: true, hintKey: $h('palId'), catalogueResource: 'voice'),
+            // A PAL is a Tavus PERSONA, so its picker lists PALs. It used to list
+            // VOICES: an operator picked a voice, a voice id was stored as the
+            // palId and sent as `persona_id`, and Tavus refused every interview
+            // with a 4xx that reached the candidate as a 500 `provider_error`.
+            new FieldSpec('palId', FieldType::Text, $l('palId'), required: true, hintKey: $h('palId'), catalogueResource: 'pal'),
             new FieldSpec('audioOnly', FieldType::Checkbox, $l('audioOnly'), hintKey: $h('audioOnly')),
             new FieldSpec('maxCallDurationSec', FieldType::Number, $l('maxCallDurationSec'), min: 30, max: self::TAVUS_MAX_SECONDS, hintKey: $h('maxCallDurationSec')),
             new FieldSpec('participantAbsentTimeoutSec', FieldType::Number, $l('participantAbsentTimeoutSec'), min: 10, max: self::TAVUS_MAX_SECONDS, hintKey: $h('participantAbsentTimeoutSec')),

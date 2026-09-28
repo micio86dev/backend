@@ -11,6 +11,27 @@ use Tests\Contract\ContractValidator;
 abstract class TestCase extends BaseTestCase
 {
     /**
+     * Test defaults for the interview provider pre-flight.
+     *
+     * The platform keys are present, as in every real deployment, so suites
+     * that start interviews against a faked provider are not refused for a key
+     * the test never cared about. Reference verification (does the template's
+     * avatar/voice/persona exist at the provider) is OFF by default because it
+     * reads a provider's inventory over HTTP; the suites that exercise it turn
+     * it on explicitly and fake that inventory.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'interview.heygen.api_key' => 'test-heygen-key',
+            'interview.tavus.api_key' => 'test-tavus-key',
+            'interview.preflight.verify_references' => false,
+        ]);
+    }
+
+    /**
      * Assert an HTTP response matches the vendored BEAI Public API contract
      * (`public-api/openapi.yaml`, SPEC.md §0 "Contract governance").
      *

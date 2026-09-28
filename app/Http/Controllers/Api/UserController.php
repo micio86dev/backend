@@ -13,6 +13,7 @@ use App\Jobs\SendUserInvitationJob;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Auth\RefreshTokenStore;
+use App\Support\Tenancy\TenantResolver;
 use App\Support\Users\UserAdminReader;
 use App\Support\Users\UserGuards;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +50,7 @@ class UserController extends Controller
         private readonly UserAdminReader $reader,
         private readonly UserGuards $guards,
         private readonly RefreshTokenStore $refreshTokens,
+        private readonly TenantResolver $resolver,
     ) {}
 
     /**
@@ -76,7 +78,7 @@ class UserController extends Controller
 
         /** @var User $currentUser */
         $currentUser = $request->user();
-        $orgId = $this->requireOrgId($currentUser);
+        $orgId = $this->requireOrgId();
 
         $user = new User($request->safe()->only(['name', 'email', 'password']));
         $user->organization()->associate(Organization::findOrFail($orgId));
@@ -120,7 +122,7 @@ class UserController extends Controller
     {
         /** @var User $currentUser */
         $currentUser = $request->user();
-        $orgId = $this->requireOrgId($currentUser);
+        $orgId = $this->requireOrgId();
         $target = $this->reader->read($id);
 
         if ($request->has('role')) {
@@ -259,7 +261,7 @@ class UserController extends Controller
      * than a nullable value threaded through the rest of the method.
      */
     /**
-     * The caller's organization, or a legible refusal (platform-user-management D4).
+     * The organization governing this request, or a legible refusal (platform-user-management D4).
      *
      * 409 with a machine CODE, not 500. A superadmin viewing all clients
      * legitimately has no organization, and `Gate::before` grants them every
@@ -275,9 +277,13 @@ class UserController extends Controller
      * BEAI's own people are managed on `/api/admin/platform-users`, which is
      * the surface this scope actually wants.
      */
-    private function requireOrgId(User $user): int
+    private function requireOrgId(): int
     {
-        $orgId = $user->organization_id;
+        // The RESOLVER, never `$user->organization_id`: that column is null
+        // for a superadmin, whose governing organization is the ACTING one
+        // TenantContext already resolved (issue #6). Reading the resolver also
+        // keeps writes on the same org `UserAdminReader` filters reads by.
+        $orgId = $this->resolver->getOrgId();
 
         abort_if($orgId === null, Response::HTTP_CONFLICT, 'organization_context_required');
 

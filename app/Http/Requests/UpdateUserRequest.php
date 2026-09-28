@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Enums\OrgRole;
+use App\Support\Tenancy\TenantResolver;
 use App\Support\Users\UserAdminReader;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * UpdateUserRequest (backoffice-missing-pages D4).
@@ -27,6 +29,15 @@ class UpdateUserRequest extends FormRequest
         if ($userId === null) {
             return false;
         }
+
+        // A superadmin with no acting client has no organization to resolve the
+        // target against: say so (409, same code as the controller) rather than
+        // letting the reader's `organization_id IS NULL` answer a misleading 404.
+        abort_if(
+            app(TenantResolver::class)->getOrgId() === null,
+            Response::HTTP_CONFLICT,
+            'organization_context_required',
+        );
 
         try {
             $target = app(UserAdminReader::class)->read((int) $userId);
