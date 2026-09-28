@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.59.0"
+        "version": "0.59.1"
     },
     "servers": [
         {
@@ -2095,8 +2095,8 @@
                                                     "type": "integer"
                                                 },
                                                 "pending": {
-                                                    "type": "string",
-                                                    "description": "'processing' folded into 'pending' \u2014 see class doc, point 2."
+                                                    "type": "integer",
+                                                    "description": "'processing' folded into 'pending' \u2014 see class doc, point 2. The\nouter cast is not redundant: Scramble's static analyzer typed\nthis `+` expression's result as `string` in the exported\nOpenAPI schema (`pending` documented `int` everywhere in this\nfile, but shipped `string` to every SDK) despite both operands\nalready being cast \u2014 wrapping the whole sum is what actually\nfixed the export."
                                                 }
                                             },
                                             "required": [
