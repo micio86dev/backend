@@ -367,6 +367,11 @@ trait ValidatesProjectComposition
             'webhook_url.string' => 'webhook_url_invalid',
             'webhook_url.url' => 'webhook_url_invalid',
             'webhook_url.max' => 'webhook_url_too_long',
+            // App\Rules\SafeWebhookUrl (webhook-ssrf-guard) supplies this literal slug
+            // itself via $fail() — this entry exists only to satisfy "EVERY declared
+            // rule ... carries a code" (ProjectCrudTest.php), which keys by the
+            // lowercased class basename of any object rule found in rules().
+            'webhook_url.safewebhookurl' => 'webhook_url_unsafe',
             'avatar_template_id.required' => 'avatar_template_required',
             'avatar_template_id.integer' => 'avatar_template_invalid',
             'avatar_template_id.exists' => 'avatar_template_invalid',

@@ -28,6 +28,7 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\WebhookDelivery;
+use App\Services\Webhooks\OutboundHostGuard;
 use App\Services\Webhooks\RetryClassifier;
 use App\Services\Webhooks\SecretRedactor;
 use App\Services\Webhooks\WebhookDeliveryRecorder;
@@ -117,7 +118,12 @@ function c10JobAtAttempt(int $deliveryId, int $attempts): DeliverWebhookJob
 
 function c10InvokeHandle(DeliverWebhookJob $job): void
 {
-    $job->handle(app(WebhookSigner::class), app(SecretRedactor::class), app(RetryClassifier::class));
+    $job->handle(
+        app(WebhookSigner::class),
+        app(SecretRedactor::class),
+        app(RetryClassifier::class),
+        app(OutboundHostGuard::class),
+    );
 }
 
 test('non-retryable 4xx produces failed_permanent after attempt_count=1, no release call', function (): void {
@@ -432,6 +438,47 @@ test('handle() fails closed (failed_permanent) when the project webhook_secret i
     expect($delivery->status)->toBe(WebhookDeliveryStatus::FailedPermanent)
         ->and($delivery->attempt_count)->toBe(1)
         ->and($delivery->last_error)->toBe('webhook_url or webhook_secret missing at delivery time');
+});
+
+test('webhook-ssrf-guard: send-time re-check fails closed (failed_permanent) when target_url resolves to a disallowed address, no HTTP call made', function (): void {
+    [, , , $delivery] = c10PendingDelivery();
+
+    // Simulates the rebinding scenario design.md D3 defends against: the row was
+    // created with a target the input-time guard accepted, but by send time it
+    // resolves to a disallowed network address.
+    $delivery->forceFill(['target_url' => 'https://127.0.0.1/hook'])->save();
+
+    Http::fake();
+
+    c10InvokeHandle(c10JobAtAttempt($delivery->id, 1));
+
+    Http::assertNothingSent();
+
+    $delivery->refresh();
+    expect($delivery->status)->toBe(WebhookDeliveryStatus::FailedPermanent)
+        ->and($delivery->attempt_count)->toBe(1)
+        ->and($delivery->next_attempt_at)->toBeNull()
+        ->and($delivery->last_error)->toBe('target_url resolves to a disallowed network address');
+});
+
+test('webhook-ssrf-guard: redirects are never followed — a 3xx response is recorded as-is', function (): void {
+    [, , , $delivery] = c10PendingDelivery();
+
+    // A receiver bouncing the delivery toward a private address via a redirect must
+    // never actually be connected to — allow_redirects: false means Http::fake()
+    // itself proves this: if the job followed the redirect, Http::fake() would throw
+    // for the unmocked internal URL instead of returning this 302 response.
+    Http::fake([$delivery->target_url => Http::response('', 302, ['Location' => 'https://127.0.0.1/internal'])]);
+
+    c10InvokeHandle(c10JobAtAttempt($delivery->id, 1));
+
+    Http::assertSentCount(1);
+
+    $delivery->refresh();
+    // RetryClassifier's existing fallback bucket ("1xx / 3xx ... defensively
+    // retryable") applies unchanged — no RetryClassifier code was touched.
+    expect($delivery->status)->toBe(WebhookDeliveryStatus::Pending)
+        ->and($delivery->last_response_status)->toBe(302);
 });
 
 test('a connection/timeout error (no HTTP response at all) classifies as retryable and leaves the row pending', function (): void {
