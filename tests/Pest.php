@@ -775,6 +775,16 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Unit/Actions/Scheduling');
 
+// Unit/Actions/Interview — needs TestCase + RefreshDatabase (split-interview-
+// controller: ResolveInterviewDirectiveTest and BuildInterviewSessionResponseTest
+// call the extracted Actions directly against real Project/Participant/
+// InterviewSession factory rows — same rationale as Unit/Actions/Scheduling above.
+// Harmless for the pre-existing DB-free SettleParticipantCompletionTest in the
+// same directory, per that same precedent's own comment.
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Actions/Interview');
+
 // ─── projects.avatar_template_id is NOT NULL ──────────────────────────────────
 
 /**
