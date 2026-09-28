@@ -9,6 +9,7 @@ use App\Enums\WebhookDeliveryStatus;
 use App\Events\WebhookDeliveryDead;
 use App\Models\Project;
 use App\Models\WebhookDelivery;
+use App\Services\Webhooks\OutboundHostGuard;
 use App\Services\Webhooks\RetryClassifier;
 use App\Services\Webhooks\SecretRedactor;
 use App\Services\Webhooks\WebhookSigner;
@@ -113,8 +114,12 @@ class DeliverWebhookJob implements ShouldQueue
         return $backoff;
     }
 
-    public function handle(WebhookSigner $signer, SecretRedactor $redactor, RetryClassifier $classifier): void
-    {
+    public function handle(
+        WebhookSigner $signer,
+        SecretRedactor $redactor,
+        RetryClassifier $classifier,
+        OutboundHostGuard $hostGuard,
+    ): void {
         /** @var WebhookDelivery|null $delivery */
         $delivery = WebhookDelivery::withoutGlobalScopes()->find($this->deliveryId);
 
@@ -152,6 +157,23 @@ class DeliverWebhookJob implements ShouldQueue
             return;
         }
 
+        // webhook-ssrf-guard design.md D3: re-checked here, not just at submission
+        // time, so a target repointed to a disallowed address after the row was
+        // created (or a design.md-documented residual DNS-rebinding window) is still
+        // caught before any connection is attempted.
+        if ($hostGuard->isBlocked($delivery->target_url)) {
+            $this->persist($delivery, function () use ($delivery, $attemptCount): void {
+                $delivery->forceFill([
+                    'status' => WebhookDeliveryStatus::FailedPermanent,
+                    'attempt_count' => $attemptCount,
+                    'last_attempt_at' => now(),
+                    'last_error' => 'target_url resolves to a disallowed network address',
+                ])->save();
+            });
+
+            return;
+        }
+
         $timestamp = now()->getTimestamp();
         $rawBody = $signer->encode($delivery->payload);
         $hex = $signer->sign($timestamp, $rawBody, $secret);
@@ -159,6 +181,11 @@ class DeliverWebhookJob implements ShouldQueue
         try {
             $response = Http::timeout(config()->integer('webhooks.http.timeout_seconds'))
                 ->connectTimeout(config()->integer('webhooks.http.connect_timeout_seconds'))
+                // webhook-ssrf-guard design.md D3: a receiver returning a 3xx must
+                // never be followed — that would connect to a target this job never
+                // checked. RetryClassifier's existing 3xx fallback ("defensively
+                // retryable") handles the raw redirect status unchanged.
+                ->withOptions(['allow_redirects' => false])
                 ->withHeaders([
                     'X-BEAI-Signature' => $signer->header($hex),
                     'X-BEAI-Timestamp' => (string) $timestamp,

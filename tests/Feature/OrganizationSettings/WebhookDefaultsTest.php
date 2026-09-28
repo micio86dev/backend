@@ -97,3 +97,18 @@ test('changing the org default after a project was created leaves the project un
     $project = Project::find($projectId);
     expect($project->webhook_url)->toBe('https://org-default-x.example.test/hook');
 });
+
+test('a private/loopback/link-local default_webhook_url is refused (webhook-ssrf-guard)', function (string $unsafeUrl): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'admin');
+
+    $this->withToken($token)->patchJson('/api/organization', [
+        'default_webhook_url' => $unsafeUrl,
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['default_webhook_url' => 'webhook_url_unsafe']);
+})->with([
+    'loopback' => ['https://127.0.0.1/hook'],
+    'cloud metadata / link-local' => ['https://169.254.169.254/latest/meta-data'],
+    'non-https scheme' => ['http://example.test/hook'],
+]);
