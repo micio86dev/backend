@@ -8,6 +8,7 @@ use App\Enums\AssessmentType;
 use App\Enums\ProjectStatus;
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\Project;
+use App\Rules\SafeWebhookUrl;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -159,7 +160,7 @@ class UpdateProjectRequest extends FormRequest
             'nudge_min_chars' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
-            'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
+            'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048', new SafeWebhookUrl],
             // `sometimes` WITHOUT `nullable`: see `avatarTemplateRule()`.
             'avatar_template_id' => $this->avatarTemplateRule($orgId, 'sometimes'),
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],

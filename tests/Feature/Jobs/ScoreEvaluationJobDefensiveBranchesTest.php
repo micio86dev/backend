@@ -23,6 +23,7 @@ declare(strict_types=1);
  * REQ: ScoreEvaluationJob defensive branches (C9 D2/D3/D4/D9 — WARNING-2 debt closure)
  */
 
+use App\Actions\Scoring\ScoreCompetency;
 use App\Contracts\LLMProvider;
 use App\Enums\EvaluationStatus;
 use App\Enums\UnscorableReason;
@@ -453,14 +454,13 @@ test('(5) CW5: scoreCompetency UniqueConstraintViolationException → skipped gr
         ->where('competency_code', $competency->code)
         ->firstOrFail();
 
-    // Now invoke scoreCompetency directly via Reflection on the SAME evaluation/competency.
+    // Now invoke ScoreCompetency::score() directly on the SAME evaluation/competency
+    // (split-score-evaluation-job moved this out of ScoreEvaluationJob into
+    // App\Actions\Scoring\ScoreCompetency, public — no Reflection needed any more).
     // This bypasses the resume-skip check and drives the CW5 INSERT path, which will throw
     // UniqueConstraintViolationException → caught by the caller in runScoringPipeline.
 
-    $job = new ScoreEvaluationJob($participant->id);
-    $reflection = new ReflectionClass($job);
-    $scoreCompetencyMethod = $reflection->getMethod('scoreCompetency');
-    $scoreCompetencyMethod->setAccessible(true);
+    $scoreCompetency = new ScoreCompetency;
 
     // Resolve the dependencies as the job would
     $session = $setup['session'];
@@ -477,27 +477,28 @@ test('(5) CW5: scoreCompetency UniqueConstraintViolationException → skipped gr
     $reliabilityStrategy = app(ReliabilityStrategy::class);
     $validityPredicate = app(ValidityPredicate::class);
 
-    // scoreCompetency itself doesn't catch UniqueConstraintViolationException — it propagates it.
-    // The catch is in runScoringPipeline (the caller). We verify that scoreCompetency
-    // DOES throw UniqueConstraintViolationException when the CompetencyResult already exists.
+    // ScoreCompetency::score() itself doesn't catch UniqueConstraintViolationException
+    // — it propagates it. The catch is in ScoreEvaluationJob::runScoringPipeline() (the
+    // caller). We verify that score() DOES throw UniqueConstraintViolationException when
+    // the CompetencyResult already exists.
     // (CW5: the caller catches this and skips the competency gracefully.)
-    expect(static fn () => $scoreCompetencyMethod->invoke(
-        $job,
-        $eval,
-        $competency->code,
-        (int) $competency->id,
-        'en',
-        $indicators,
-        $session,
-        $transcriptAssembler,
-        $promptBuilder,
-        app(LLMProvider::class),
-        $evaluationParser,
-        $indicatorValidator,
-        $excerptValidator,
-        $meanCalculator,
-        $reliabilityStrategy,
-        $validityPredicate,
+    expect(static fn () => $scoreCompetency->score(
+        evaluation: $eval,
+        competencyCode: $competency->code,
+        competencyId: (int) $competency->id,
+        projectLocale: 'en',
+        indicators: $indicators,
+        session: $session,
+        transcriptAssembler: $transcriptAssembler,
+        promptBuilder: $promptBuilder,
+        llmProvider: app(LLMProvider::class),
+        evaluationParser: $evaluationParser,
+        indicatorValidator: $indicatorValidator,
+        excerptValidator: $excerptValidator,
+        meanCalculator: $meanCalculator,
+        reliabilityStrategy: $reliabilityStrategy,
+        validityPredicate: $validityPredicate,
+        participantId: $participant->id,
     ))->toThrow(UniqueConstraintViolationException::class);
 });
 
@@ -677,13 +678,15 @@ test('(8) persistUnscorable() catch: UniqueConstraintViolationException → logs
         'unscorable_reason' => 'role_no_bars',
     ]);
 
-    $job = new ScoreEvaluationJob($participant->id);
-    $reflection = new ReflectionClass($job);
+    // persistUnscorable() lives on App\Actions\Scoring\ScoreCompetency since
+    // split-score-evaluation-job, private there too — Reflection still needed.
+    $scoreCompetency = new ScoreCompetency;
+    $reflection = new ReflectionClass($scoreCompetency);
     $persistMethod = $reflection->getMethod('persistUnscorable');
     $persistMethod->setAccessible(true);
 
     // Second call with the same key → UniqueConstraintViolationException → caught silently.
-    expect(static fn () => $persistMethod->invoke($job, $eval, $comp->code, UnscorableReason::RoleNoBars))
+    expect(static fn () => $persistMethod->invoke($scoreCompetency, $eval, $comp->code, UnscorableReason::RoleNoBars))
         ->not->toThrow(Throwable::class,
             'persistUnscorable() must catch UniqueConstraintViolationException and NOT propagate it.'
         );

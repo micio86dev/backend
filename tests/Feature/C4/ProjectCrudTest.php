@@ -806,6 +806,12 @@ test('the project endpoints answer shape rules with codes, never prose', functio
         ['exit_redirect_url' => 123],
         ['error_redirect_url' => ['an', 'array']],
         ['webhook_url' => 123],
+        // webhook-ssrf-guard: a private/loopback/link-local target, and a
+        // non-https scheme, must both be refused before any project row is
+        // written with a value DeliverWebhookJob would later POST to.
+        ['webhook_url' => 'https://127.0.0.1/hook'],
+        ['webhook_url' => 'https://169.254.169.254/latest/meta-data'],
+        ['webhook_url' => 'http://example.test/hook'],
     ];
 
     // The name says "endpoints", plural. It called only POST, so

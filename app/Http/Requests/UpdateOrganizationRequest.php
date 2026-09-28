@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Models\Organization;
+use App\Rules\SafeWebhookUrl;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -42,7 +43,7 @@ class UpdateOrganizationRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'string', 'max:255'],
-            'default_webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
+            'default_webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048', new SafeWebhookUrl],
             'default_webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
             // Closed event-type set — mirrors UpdateProjectRequest.php:94's
             // config-driven Rule::in (never a hardcoded list, never env-overridable).
@@ -100,6 +101,10 @@ class UpdateOrganizationRequest extends FormRequest
             'name.max' => 'name_too_long',
             'default_webhook_url.url' => 'webhook_url_invalid',
             'default_webhook_url.max' => 'webhook_url_too_long',
+            // App\Rules\SafeWebhookUrl (webhook-ssrf-guard) supplies this literal slug
+            // itself via $fail() — mirrors ValidatesProjectComposition::messages()'s
+            // identical entry for the same rule on webhook_url.
+            'default_webhook_url.safewebhookurl' => 'webhook_url_unsafe',
             'default_webhook_secret.string' => 'webhook_secret_invalid',
             'default_webhook_secret.max' => 'webhook_secret_too_long',
             'default_webhook_events.array' => 'webhook_events_invalid',

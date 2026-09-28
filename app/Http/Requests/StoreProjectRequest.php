@@ -8,6 +8,7 @@ use App\Enums\AssessmentType;
 use App\Http\Requests\Concerns\ValidatesProjectComposition;
 use App\Models\FrameworkVersion;
 use App\Models\Project;
+use App\Rules\SafeWebhookUrl;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
@@ -115,7 +116,7 @@ class StoreProjectRequest extends FormRequest
             'nudge_min_chars' => ['nullable', 'integer', 'min:0', 'max:65535'],
             'exit_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
             'error_redirect_url' => ['nullable', 'string', 'url', 'max:2048'],
-            'webhook_url' => ['nullable', 'url', 'max:2048'],
+            'webhook_url' => ['nullable', 'url', 'max:2048', new SafeWebhookUrl],
             // REQUIRED, and org-scoped: see `avatarTemplateRule()` in the
             // trait for why, and for the soft-delete clause.
             'avatar_template_id' => $this->avatarTemplateRule($orgId, 'required'),

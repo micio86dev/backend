@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
+use App\Actions\Interview\BuildInterviewSessionResponse;
+use App\Actions\Interview\ResolveInterviewDirective;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
@@ -38,7 +40,6 @@ use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\AvatarSilenceDetector;
-use App\Support\Interview\CompetencyTally;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
@@ -50,7 +51,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -75,6 +75,8 @@ class InterviewController extends Controller
         private readonly SystemPromptComposer $composer,
         private readonly OpeningTextComposer $openingComposer,
         private readonly SettleParticipantCompletion $settleCompletion,
+        private readonly ResolveInterviewDirective $resolveDirective,
+        private readonly BuildInterviewSessionResponse $buildSessionResponse,
         private readonly SessionLiveClock $liveClock,
         private readonly InterviewSessionLlmSnapshot $llmSnapshot,
         private readonly RecordConversationLlmUsage $recordLlmUsage,
@@ -363,7 +365,7 @@ class InterviewController extends Controller
         // source the /start response advertises to the client, so the sentence
         // the avatar is told to say and the one the client watches for can
         // never drift apart.
-        [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($project->language);
+        [$endPhrase, $finalPhrase] = $this->buildSessionResponse->resolveCompletionPhrases($project->language);
         $isLastCompetency = $nextCompetency['competency_ordinal']
             >= $nextCompetency['total_competencies'];
         $advancePhrase = $isLastCompetency ? $finalPhrase : $endPhrase;
@@ -752,7 +754,7 @@ class InterviewController extends Controller
                 // and its own project lookup, so this is a second tally, not the
                 // one extra query an earlier version of this comment claimed.
                 // Worth it for the consistency, not for a saving it never made.
-                $directive = $this->buildDirective($pid, $projectId);
+                $directive = $this->resolveDirective->handle($pid, $projectId);
 
                 // C10 D5: set ONLY on the success path — every abort() above (:225,
                 // :231) throws past this point, so reaching it means the write
@@ -795,45 +797,6 @@ class InterviewController extends Controller
         }
 
         return response()->json($directive, Response::HTTP_OK);
-    }
-
-    /**
-     * What the client should do next (D7).
-     *
-     * Computed on the SERVER because the SA-04 pause cadence is TENANT
-     * CONFIGURATION (`projects.pause_every_n_competencies`; `null` = never pause).
-     * A browser must not re-derive tenant policy, the numbers are already in hand
-     * here, and client-side arithmetic is the documented cause of the defect this
-     * change removes — the page carried an empty competency list and concluded
-     * every interview was over after one question.
-     *
-     * `done` is evaluated FIRST so a pause is never due on the final competency:
-     * a candidate must not be shown a break screen for an interview that is over.
-     *
-     * A null project fails closed to "no pause" rather than guessing a cadence.
-     *
-     * @return array{ended_competencies: int, total_competencies: int, next_action: string}
-     */
-    private function buildDirective(int $participantId, int $projectId): array
-    {
-        $tally = new CompetencyTally;
-        $ended = $tally->ended($participantId, $projectId);
-        $total = $tally->total($projectId);
-
-        $pauseEvery = Project::whereKey($projectId)->value('pause_every_n_competencies');
-
-        $nextAction = match (true) {
-            $total > 0 && $ended >= $total => 'done',
-            $pauseEvery !== null && $pauseEvery > 0 && $ended % $pauseEvery === 0 => 'pause',
-            default => 'continue',
-        };
-
-        return [
-            // Machine-facing: literal in every locale (CLAUDE.md).
-            'ended_competencies' => $ended,
-            'total_competencies' => $total,
-            'next_action' => $nextAction,
-        ];
     }
 
     // =========================================================================
@@ -1224,7 +1187,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $freshToken, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
+        return $this->buildSessionResponse->handle($session, $freshToken, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
     }
 
     /**
@@ -1353,7 +1316,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSuccessResponse($session, $token, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
+        return $this->buildSessionResponse->handle($session, $token, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
     }
 
     /**
@@ -1803,154 +1766,6 @@ class InterviewController extends Controller
             // composer's boundary is `list<string>`, and `filter()` does not
             // promise a list through its signature.
             ->pipe(static fn (Collection $questions): array => array_values($questions->all()));
-    }
-
-    /**
-     * Whether this session's project runs voice-only.
-     *
-     * Resolved HERE, from the session, rather than threaded through the
-     * question-context DTO: `/start` answers on two paths (fresh issue and
-     * resume) and only one of them passes through the block that already reads
-     * the pinned template. Deriving it from the session is correct on both by
-     * construction, at the cost of one indexed lookup per competency start —
-     * which happens once per question, not per frame.
-     *
-     * FALSE, never null, when nothing is configured. An explicit boolean means
-     * a client branching on it cannot conflate "not configured" with "not
-     * audio-only", and cannot start hiding the avatar the day the key is
-     * renamed and the read silently returns undefined.
-     */
-    private function resolveAudioOnly(InterviewSession $session): bool
-    {
-        $templateId = Project::whereKey($session->project_id)->value('avatar_template_id');
-
-        if ($templateId === null) {
-            return false;
-        }
-
-        $config = AvatarTemplate::whereKey($templateId)->value('config');
-
-        if (! is_array($config)) {
-            return false;
-        }
-
-        return ($config['audioOnly'] ?? false) === true;
-    }
-
-    /**
-     * Build a 201 success response.
-     *
-     * SECURITY: NEVER include API key material. Only the ephemeral token/URL
-     * that the client needs to connect to the provider is included.
-     *
-     * question_context.end_phrase / final_phrase are the localized avatar
-     * completion-signal phrases (C7a follow-up — interview-frontend addendum),
-     * resolved for the PROJECT's language with a platform-default fallback.
-     * (avatar-language-follows-project, D7: they read `participant.language`
-     * until the code was brought into line with interview-session/spec.md, which
-     * already required the project's. The participant value arrives from
-     * unvalidated M2M input and could disagree with everything else the avatar
-     * was given.)
-     * The frontend (C7b) consumes them as the SOLE completion-signal source.
-     *
-     * C8 (M-3): prompt_version added to question_context for audit/traceability.
-     * Machine-facing field — returned literally in every locale (not localized).
-     *
-     * @param  string|null  $language  The PROJECT's language (BCP-ish locale, may be null).
-     * @param  string|null  $promptVersion  Composed prompt template version (C8) — the composed
-     *                                      prompt's version on every 201.
-     */
-    private function buildSuccessResponse(
-        InterviewSession $session,
-        ProviderToken $token,
-        ?string $language,
-        ?string $promptVersion = null,
-        ?int $competencyOrdinal = null,
-        ?int $totalCompetencies = null,
-    ): JsonResponse {
-        [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
-
-        return response()->json([
-            'session_id' => $session->id,
-            'provider' => $token->provider,
-            // Voice-only interviews, so the client knows not to mount a video
-            // element it will never receive a track for.
-            //
-            // The knob already existed and already reached the provider
-            // (`TemplatePayload` maps it to Tavus's `audio_only`); it simply
-            // never reached the BROWSER. The candidate app kept attaching the
-            // stream to a `<video>`, which painted an undecoded frame — green
-            // and black vertical banding where a face belongs.
-            //
-            // Carries no vendor identity, which is what makes it safe to hand
-            // a candidate: "this interview has no video" is a fact about the
-            // interview, not about who renders it.
-            'audio_only' => $this->resolveAudioOnly($session),
-            // HeyGen: token; Tavus: null
-            'provider_token' => $token->token,
-            // Tavus: conversation_url; HeyGen: null
-            'conversation_url' => $token->conversation_url,
-            'question_context' => [
-                'competency_code' => $session->competency_code,
-                'question_index' => $session->question_index,
-                // Machine-facing field names stay literal (snake_case); VALUES are localized.
-                'end_phrase' => $endPhrase,
-                'final_phrase' => $finalPhrase,
-                // C8 (M-3): prompt version for audit and traceability.
-                // Machine-facing: returned literally, never localized.
-                'prompt_version' => $promptVersion,
-                // D6: 1-based position in the project's competency order, and how
-                // many there are. Machine-facing — literal in every locale.
-                //
-                // `competency_ordinal` is NOT `question_index + 1` as an identity —
-                // it is a coincidence of well-formed data. `question_index` is
-                // PERSISTED on the session row, frozen at creation, and equals
-                // `position` (0-based) verbatim. `competency_ordinal` is DERIVED
-                // per request from the ordered list's own array index and is
-                // always dense (1..N), whatever `position` holds — it diverges
-                // from `question_index + 1` whenever positions are sparse or the
-                // project is reordered after a session already exists.
-                'competency_ordinal' => $competencyOrdinal,
-                'total_competencies' => $totalCompetencies,
-            ],
-        ], Response::HTTP_CREATED);
-    }
-
-    /**
-     * Resolve the localized avatar completion-signal phrases for a language.
-     *
-     * Institutional UX chrome (NOT tenant/BARS content): the same phrases for every
-     * project of a given language, stored in lang/{locale}/interview.php.
-     *
-     * Resolution rule (per interview-frontend delta spec):
-     *   1. Use the PROJECT's language when a phrase file exists for it.
-     *   2. Otherwise fall back to the platform default language
-     *      (config app.fallback_locale) — the fallback phrase is ALWAYS included
-     *      (an absent field is a contract violation).
-     *
-     * Lang::has() checks whether the key resolves for the exact locale (no implicit
-     * fallback), so a missing/unknown/null language deterministically falls back.
-     *
-     * @param  string|null  $language  The PROJECT's language.
-     * @return array{0: string, 1: string} [end_phrase, final_phrase]
-     */
-    private function resolveCompletionPhrases(?string $language): array
-    {
-        $fallback = (string) config('app.fallback_locale');
-
-        // `Lang::get()` resolves the fallback itself, so the locale goes
-        // straight through. The removed `Lang::has($key, $language)` guard
-        // claimed to check the EXACT locale; `Translator::has()`'s third
-        // argument defaults to true, so it answered true for locales with no
-        // file on disk — and `Lang::get()` fell back regardless, which made
-        // the guard unobservable. Same correction as OpeningTextComposer's.
-        $locale = $language ?? $fallback;
-
-        // Both keys resolve to scalar strings (leaf entries in lang/{locale}/interview.php).
-        $endPhrase = (string) Lang::get('interview.end_phrase', [], $locale);
-        $finalPhrase = (string) Lang::get('interview.final_phrase', [], $locale);
-
-        return [$endPhrase, $finalPhrase];
     }
 
     /**
