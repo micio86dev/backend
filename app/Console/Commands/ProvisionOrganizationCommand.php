@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Actions\Organizations\CreateOrganization;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
@@ -40,15 +40,6 @@ use Throwable;
  */
 class ProvisionOrganizationCommand extends Command
 {
-    /**
-     * The three authorization roles every organization gets. These are Spatie
-     * AUTHORIZATION roles — not the BEAI organizational roles (ICO/FLL/MLL/
-     * BUL/SRX), which are a domain concept owned by the framework catalogue.
-     *
-     * @var list<string>
-     */
-    private const ROLES = ['admin', 'operator', 'viewer'];
-
     protected $signature = 'beai:provision-organization
         {--name= : Organization display name (required)}
         {--slug= : URL-safe identifier; derived from the name when omitted}
@@ -156,22 +147,11 @@ class ProvisionOrganizationCommand extends Command
         string $password,
         string $locale,
     ): Organization {
-        $organization = Organization::create(['name' => $name, 'slug' => $slug]);
+        // Organization + its three roles, through the same action the
+        // superadmin endpoint uses so the two cannot drift.
+        $organization = app(CreateOrganization::class)->create($name, $slug);
 
         $registrar = app(PermissionRegistrar::class);
-        $registrar->forgetCachedPermissions();
-
-        foreach (self::ROLES as $roleName) {
-            // team_id passed EXPLICITLY. setPermissionsTeamId() governs Spatie's
-            // own Role::create() and the runtime checks — it does NOT reach
-            // Eloquent's firstOrCreate(), which builds the row from the
-            // attributes it is handed and nothing else. This exact mistake
-            // shipped once in RolesAndPermissionsSeeder: roles written with
-            // team_id = NULL, invisible to every teams-mode hasRole() check.
-            Role::firstOrCreate(
-                ['name' => $roleName, 'guard_name' => 'api', 'team_id' => $organization->id],
-            );
-        }
 
         // Set for assignRole() below, which DOES resolve the role through the
         // registrar. Both this and the explicit team_id above are required;
@@ -210,7 +190,7 @@ class ProvisionOrganizationCommand extends Command
         bool $passwordWasGenerated,
     ): void {
         $this->info("Organization provisioned: {$organization->name} (id={$organization->id}, slug={$organization->slug})");
-        $this->line('Roles created: '.implode(', ', self::ROLES).' (scoped to this organization)');
+        $this->line('Roles created: '.implode(', ', CreateOrganization::ROLES).' (scoped to this organization)');
         $this->line("Administrator: {$adminEmail}");
 
         if ($passwordWasGenerated) {

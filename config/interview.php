@@ -34,6 +34,23 @@ return [
     'provider' => env('INTERVIEW_PROVIDER', 'heygen'),
 
     /*
+    |--------------------------------------------------------------------------
+    | Start pre-flight
+    |--------------------------------------------------------------------------
+    |
+    | `verify_references`: confirm a template's avatar/voice/persona ids exist
+    | at the provider — when the template is SAVED and again before an
+    | interview starts (`TemplateReferenceValidator`, `ProviderPreflight`). A kill switch for the one check that depends on a
+    | third party's inventory being right: if a provider's catalogue is wrong
+    | or incomplete this blocks every interview, so it can be turned off with
+    | no deploy. Credentials and identity checks are not affected.
+    |
+    */
+    'preflight' => [
+        'verify_references' => (bool) env('INTERVIEW_PREFLIGHT_VERIFY_REFERENCES', true),
+    ],
+
+    /*
      * How long an interview session may sit with NO activity before the
      * scheduled sweep ends it (stale-interview-reaper D3).
      *

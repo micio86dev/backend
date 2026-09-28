@@ -26,6 +26,16 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    // Voice-only TTS vendors (avatar-template voice picker). Used SERVER-SIDE to
+    // list each vendor's voices; never returned to a client.
+    'cartesia' => [
+        'api_key' => env('CARTESIA_API_KEY'),
+    ],
+
+    'elevenlabs' => [
+        'api_key' => env('ELEVENLABS_API_KEY'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

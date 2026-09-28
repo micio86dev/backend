@@ -151,3 +151,24 @@ test('a missing palId is reported rather than attempted', function (): void {
     expect($result['message'])->toBe('pal_id_missing');
     Http::assertNothingSent();
 });
+
+test('the voice an operator picked from a voice catalogue reaches the PAL as engine + external voice id', function (): void {
+    Http::fake(['*' => Http::response([], 200)]);
+
+    // Template config -> TemplatePayload::tavusPalLayers -> PATCH /pals/{id}.
+    // `ttsExternalVoiceId` is the catalogue item's `id` (Cartesia/ElevenLabs).
+    $result = app(TavusPalSync::class)->sync(palTemplate([
+        'faceId' => 'r', 'palId' => 'p_voice',
+        'ttsEngine' => 'elevenlabs', 'ttsExternalVoiceId' => 'el_voice_123',
+    ]));
+
+    expect($result['status'])->toBe('synced');
+
+    Http::assertSent(function ($request): bool {
+        $tts = $request->data()[0]['value']['tts'] ?? [];
+
+        return str_contains($request->url(), '/pals/p_voice')
+            && $tts['tts_engine'] === 'elevenlabs'
+            && $tts['external_voice_id'] === 'el_voice_123';
+    });
+});

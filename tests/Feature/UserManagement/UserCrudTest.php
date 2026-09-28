@@ -312,3 +312,60 @@ test('omitting a field entirely is still allowed', function (): void {
 
     expect($target->fresh()->name)->toBe('Ada Byron');
 });
+
+/**
+ * Regression — superadmin acting as a client (issue #6).
+ *
+ * `requireOrgId()` read the CALLER's own `organization_id`, which is null for
+ * a superadmin, so PATCH /api/users/{id} answered 409 even while a client was
+ * selected in the navbar. The org that governs a request is the tenant
+ * RESOLVER's (own org for a member, acting org for a superadmin).
+ */
+test('a superadmin acting as a client updates a user of that client', function (): void {
+    $quint = Organization::factory()->create();
+    $target = User::factory()->create(['organization_id' => $quint->id]);
+    app(PermissionRegistrar::class)->setPermissionsTeamId($quint->id);
+    $target->assignRole(Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'api', 'team_id' => $quint->id]));
+    Role::firstOrCreate(['name' => 'operator', 'guard_name' => 'api', 'team_id' => $quint->id]);
+
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+    $token = auth('api')->login($superadmin);
+    $this->withToken($token)
+        ->putJson('/api/admin/acting-organization', ['organization_id' => $quint->id])
+        ->assertOk();
+
+    $this->withToken($token)->patchJson("/api/users/{$target->id}", [
+        'name' => 'Renamed By Superadmin',
+        'email' => 'renamed@example.test',
+        'role' => 'operator',
+    ])->assertOk()
+        ->assertJsonPath('data.name', 'Renamed By Superadmin')
+        ->assertJsonPath('data.role', 'operator');
+});
+
+test('a superadmin with no acting client is still refused on update', function (): void {
+    $org = Organization::factory()->create();
+    $target = User::factory()->create(['organization_id' => $org->id]);
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+    $token = auth('api')->login($superadmin);
+
+    $response = $this->withToken($token)->patchJson("/api/users/{$target->id}", ['name' => 'Nope']);
+
+    $response->assertStatus(409);
+    expect($response->json('message'))->toBe('organization_context_required');
+});
+
+test('a superadmin acting as one client cannot update a user of another client', function (): void {
+    $quint = Organization::factory()->create();
+    $other = Organization::factory()->create();
+    $foreign = User::factory()->create(['organization_id' => $other->id, 'name' => 'Untouched']);
+
+    $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
+    $token = auth('api')->login($superadmin);
+    $this->withToken($token)
+        ->putJson('/api/admin/acting-organization', ['organization_id' => $quint->id])
+        ->assertOk();
+
+    $this->withToken($token)->patchJson("/api/users/{$foreign->id}", ['name' => 'Hacked'])->assertNotFound();
+    expect($foreign->fresh()->name)->toBe('Untouched');
+});

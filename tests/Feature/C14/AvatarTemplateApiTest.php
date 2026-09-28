@@ -413,7 +413,9 @@ test('the four catalogue-backed fields name their resource type (avatar-template
     expect($heygen['avatarId']['catalogue_resource'])->toBe('avatar');
     expect($heygen['voiceId']['catalogue_resource'])->toBe('voice');
     expect($tavus['faceId']['catalogue_resource'])->toBe('replica');
-    expect($tavus['palId']['catalogue_resource'])->toBe('voice');
+    // A PAL is a persona: it used to point at the VOICE catalogue, so operators
+    // stored voice ids as palId and every Tavus interview failed (500).
+    expect($tavus['palId']['catalogue_resource'])->toBe('pal');
 });
 
 test('a field with no provider catalogue omits the key entirely, not null', function (): void {
@@ -470,4 +472,12 @@ test('the picker list does NOT open the full resource to a non-admin', function 
             ->getJson('/api/avatar-templates')
             ->assertForbidden();
     }
+});
+
+test('voice-only providers are not selectable as a template provider', function (): void {
+    $org = Organization::factory()->create();
+
+    $this->withToken(templateActor($org, 'platform'))
+        ->postJson('/api/avatar-templates', ['name' => 'X', 'provider' => 'cartesia', 'config' => []])
+        ->assertUnprocessable();
 });
