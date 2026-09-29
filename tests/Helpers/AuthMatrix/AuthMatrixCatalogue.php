@@ -239,7 +239,8 @@ final class AuthMatrixCatalogue
             'GET api/dashboard/metrics' => self::user('dashboard', self::orgScoped([self::A, self::O, self::V], bare: AuthMatrix::UNRESOLVED)),
 
             // ─── entry links (candidate invitation) ──────────────────────────
-            'POST api/entry-links' => self::user('entry-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::UNRESOLVED)),
+            // Bypass resolves the project across tenants, so a bare superadmin mints a link like anyone else.
+            'POST api/entry-links' => self::user('entry-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
 
             // ─── profile (the caller's own account: any authenticated user) ──
             'GET api/profile' => self::own('profile'),
@@ -361,21 +362,22 @@ final class AuthMatrixCatalogue
                     .'rules bind to the resolved org id, which is null; the target row is visible under bypass but '
                     .'the org-scoped rules are not). SETTLED by real requests in the matrix tests: '
                     .'POST /projects answers 422 (nothing to reference) and PATCH /projects/{project} answers 200 '
-                    .'(bypass reaches the row); both are now encoded. Still open: the entry-link mint.',
+                    .'(bypass reaches the row); POST /entry-links answers 201 (bypass resolves the project). All '
+                    .'three are now encoded, so this record is informational.',
                 'evidence' => [
                     'app/Http/Requests/StoreProjectRequest.php:77-88',
                     'app/Http/Requests/UpdateProjectRequest.php:124',
                     'app/Http/Controllers/Api/EntryLinkController.php:110',
                 ],
-                'cells' => [
-                    'POST api/entry-links' => $bare,
-                ],
+                'cells' => [],
             ],
             'KQ-4' => [
                 'summary' => 'GET /dashboard/metrics under a bare superadmin mixes scopes: participant counts use '
                     .'the explicit org filter (empty), while evaluations_by_status and the AI latency/token/cost '
                     .'totals use TenantModel queries that bypass the scope, so they aggregate EVERY tenant. The '
-                    .'same response describes two different populations.',
+                    .'same response describes two different populations. CONFIRMED by a real request: with one org-A '
+                    .'evaluation and AI request in the database, a bare superadmin gets participants_by_status [] '
+                    .'but evaluations_by_status {completed: 1} and input_tokens 777.',
                 'evidence' => [
                     'app/Http/Controllers/Api/DashboardController.php:107-113 (participants, org IS NULL)',
                     'app/Http/Controllers/Api/DashboardController.php:119,125,136-137,165 (Evaluation/AiRequest under bypass)',

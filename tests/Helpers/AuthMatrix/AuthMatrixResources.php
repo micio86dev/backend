@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\Helpers\AuthMatrix;
 
+use App\Enums\ParticipantSchedulingStatus;
 use App\Models\Competency;
+use App\Models\CompetencyResult;
+use App\Models\Evaluation;
 use App\Models\FrameworkVersion;
+use App\Models\IndicatorScore;
+use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
+use App\Models\Utterance;
 use App\Support\Tenancy\TenantContextScope;
 
 /**
@@ -35,6 +41,23 @@ final class AuthMatrixResources
                 'framework_version_id' => $fv->id,
                 'name' => "{$this->world->marker} project",
             ]);
+        });
+    }
+
+    /**
+     * The project made INTERVIEWABLE and open (`active`): the only kind an
+     * entry link may be minted for. Mutates the memoised project, so a case
+     * that needs the default `draft` one must not call it.
+     */
+    public function openProject(): Project
+    {
+        $this->question();
+
+        return TenantContextScope::runFor($this->world->orgA->id, function (): Project {
+            $project = $this->project();
+            $project->forceFill(['status' => 'active'])->save();
+
+            return $project;
         });
     }
 
@@ -95,13 +118,117 @@ final class AuthMatrixResources
         return $this->memo['question'];
     }
 
+    /**
+     * The participant every READ route targets: a finished (`completato`)
+     * candidate with a session and utterance, so the transcript, the
+     * evaluation and both downloads are past their lifecycle gates.
+     */
     public function participant(): Participant
     {
         return $this->memo['participant'] ??= TenantContextScope::runFor(
             $this->world->orgA->id,
-            fn (): Participant => Participant::factory()
-                ->forProject($this->project())
-                ->create(['display_name' => "{$this->world->marker} participant"]),
+            function (): Participant {
+                $participant = $this->newParticipant('completato', 'participant');
+                $this->newSession($participant, 'completed');
+                $this->newEvaluation($participant);
+
+                return $participant;
+            },
         );
+    }
+
+    /**
+     * A participant an operator may recover: `errore`, with one errored session.
+     */
+    public function erroredParticipant(): Participant
+    {
+        return $this->memo['errored'] ??= TenantContextScope::runFor(
+            $this->world->orgA->id,
+            function (): Participant {
+                $participant = $this->newParticipant('errore', 'errored participant');
+                $this->newSession($participant, 'error');
+
+                return $participant;
+            },
+        );
+    }
+
+    /**
+     * A participant with a pending scheduled start, which may be rescheduled or cancelled.
+     */
+    public function scheduledParticipant(): Participant
+    {
+        return $this->memo['scheduled'] ??= TenantContextScope::runFor(
+            $this->world->orgA->id,
+            function (): Participant {
+                $participant = $this->newParticipant('in_attesa', 'scheduled participant');
+                $participant->forceFill([
+                    'scheduled_at' => now('UTC')->addHours(3),
+                    'scheduling_status' => ParticipantSchedulingStatus::Pending,
+                ])->save();
+
+                return $participant->refresh();
+            },
+        );
+    }
+
+    public function session(): InterviewSession
+    {
+        $this->participant();
+
+        return $this->memo['session'];
+    }
+
+    public function evaluation(): Evaluation
+    {
+        $this->participant();
+
+        return $this->memo['evaluation'];
+    }
+
+    private function newParticipant(string $status, string $label): Participant
+    {
+        return Participant::factory()
+            ->forProject($this->project())
+            ->withStatus($status)
+            ->create(['display_name' => "{$this->world->marker} {$label}"]);
+    }
+
+    private function newSession(Participant $participant, string $status): InterviewSession
+    {
+        $project = $this->project();
+
+        $session = InterviewSession::create([
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => 0,
+            'competency_code' => 'COL',
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'fake',
+            'status' => $status,
+        ]);
+
+        Utterance::create([
+            'interview_session_id' => $session->id,
+            'speaker' => 'Candidate',
+            'text' => "{$this->world->marker} spoken words",
+            'ts' => '2024-01-01 10:00:00',
+        ]);
+
+        return $this->memo['session'] ??= $session;
+    }
+
+    private function newEvaluation(Participant $participant): Evaluation
+    {
+        $evaluation = Evaluation::factory()->completed()->create(['participant_id' => $participant->id]);
+        $result = CompetencyResult::factory()->create([
+            'evaluation_id' => $evaluation->id,
+            'competency_code' => 'COL',
+            'score' => 4.0,
+            'reliability' => 0.67,
+        ]);
+        IndicatorScore::factory()->create(['competency_result_id' => $result->id, 'position' => 0]);
+
+        return $this->memo['evaluation'] = $evaluation;
     }
 }

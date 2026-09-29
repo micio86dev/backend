@@ -9,6 +9,7 @@ use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use Closure;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 /**
@@ -34,7 +35,7 @@ use Illuminate\Support\Str;
 final class AuthMatrixFixtures
 {
     /**
-     * @return array<string, array{params?: Closure(AuthMatrixResources): array<string, string|int>, payload?: Closure(AuthMatrixWorld, Organization): array<string, mixed>}>
+     * @return array<string, array{params?: Closure(AuthMatrixResources): array<string, string|int>, payload?: Closure(AuthMatrixWorld, Organization): array<string, mixed>, before?: Closure(): void}>
      */
     private static function registry(): array
     {
@@ -69,7 +70,78 @@ final class AuthMatrixFixtures
                 'payload' => fn (): array => ['text' => ['en' => 'Edited by the matrix']],
             ],
             'DELETE api/projects/{project}/questions/{question}' => ['params' => self::question(...)],
+
+            // ─── participants (admin read API) ───────────────────────────────
+            'GET api/participants' => [],
+            'GET api/participants/{id}' => ['params' => self::participant(...)],
+            'GET api/participants/{id}/evaluation' => ['params' => self::participant(...)],
+            'GET api/participants/{id}/evaluation/download' => ['params' => self::participant(...)],
+            'GET api/participants/{id}/transcript' => ['params' => self::participant(...)],
+            'GET api/participants/{id}/transcript/download' => ['params' => self::participant(...)],
+            'GET api/participants/{participant}/sessions' => [
+                'params' => fn (AuthMatrixResources $r): array => ['participant' => $r->participant()->id],
+            ],
+            'POST api/participants/{id}/recover' => [
+                'params' => fn (AuthMatrixResources $r): array => ['id' => $r->erroredParticipant()->id],
+            ],
+            'PATCH api/participants/{id}/schedule' => [
+                'params' => self::scheduledParticipant(...),
+                'payload' => fn (): array => ['scheduled_at' => now('UTC')->addDays(2)->format('Y-m-d\TH:i:s\Z')],
+            ],
+            'DELETE api/participants/{id}/schedule' => ['params' => self::scheduledParticipant(...)],
+            // The audit kill switch answers 409 BEFORE authorization (KQ-I1), so the
+            // matrix runs with it ENABLED, and fakes the queue: an allowed call
+            // dispatches a job that would otherwise run inline (sync) against an LLM.
+            'POST api/participants/{id}/evaluation/audit' => [
+                'params' => self::participant(...),
+                'before' => function (): void {
+                    config(['scoring.audit.enabled' => true]);
+                    Queue::fake();
+                },
+            ],
+
+            // ─── interview sessions ──────────────────────────────────────────
+            'GET api/interview-sessions/{session}/review' => [
+                'params' => fn (AuthMatrixResources $r): array => ['session' => $r->session()->id],
+            ],
+
+            // ─── evaluations index / dashboard ───────────────────────────────
+            'GET api/evaluations' => [],
+            'GET api/evaluations/summary' => [],
+            'GET api/dashboard/activity' => [],
+            'GET api/dashboard/metrics' => [],
+
+            // ─── entry links ─────────────────────────────────────────────────
+            // `send_email` off: an allowed mint must not depend on a mailer.
+            'POST api/entry-links' => [
+                'before' => fn () => config(['interview.candidate_app_url' => 'https://interview.example.test']),
+                'payload' => function (AuthMatrixWorld $w): array {
+                    return [
+                        'project_id' => $w->resources()->openProject()->id,
+                        'candidate_ref' => 'matrix-'.Str::lower(Str::random(8)),
+                        'email' => Str::lower(Str::random(8)).'@matrix.test',
+                        'display_name' => 'Entry link candidate',
+                        'send_email' => false,
+                    ];
+                },
+            ],
         ];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private static function participant(AuthMatrixResources $r): array
+    {
+        return ['id' => $r->participant()->id];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private static function scheduledParticipant(AuthMatrixResources $r): array
+    {
+        return ['id' => $r->scheduledParticipant()->id];
     }
 
     /**
@@ -112,6 +184,19 @@ final class AuthMatrixFixtures
     public static function has(string $key): bool
     {
         return array_key_exists($key, self::registry());
+    }
+
+    /**
+     * Route-specific test-environment setup that must be in place before the
+     * request (and before the database is fingerprinted).
+     */
+    public static function prepare(string $key): void
+    {
+        $before = self::registry()[$key]['before'] ?? null;
+
+        if ($before !== null) {
+            $before();
+        }
     }
 
     /**

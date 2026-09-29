@@ -30,6 +30,7 @@ test('rejects a non-user credential with 401 and changes nothing', function (str
     $expected = AuthMatrixCatalogue::entries()[$key]['outcomes'][$actor];
     expect($expected)->toBe(AuthMatrix::UNAUTHENTICATED_401);
 
+    AuthMatrixFixtures::prepare($key);
     $world = AuthMatrixWorld::make();
     $credential = $world->actor($actor);
     $params = AuthMatrixFixtures::params($key, $world);

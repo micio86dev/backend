@@ -35,6 +35,7 @@ uses(RefreshDatabase::class);
 test('gets the catalogued outcome, and a denial changes nothing', function (string $key, string $actor): void {
     $expected = AuthMatrixCatalogue::entries()[$key]['outcomes'][$actor];
 
+    AuthMatrixFixtures::prepare($key);
     $world = AuthMatrixWorld::make();
     $credential = $world->actor($actor);
     $params = AuthMatrixFixtures::params($key, $world);
