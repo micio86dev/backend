@@ -72,6 +72,15 @@ final class AvatarProviderCatalogue
 
     private const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
 
+    /**
+     * Part of every cache key. BUMP IT whenever a catalogue item gains, loses
+     * or changes a key (the shape snapshot test fails as a reminder): entries
+     * live 24h, so a deploy that changes the shape would otherwise keep serving
+     * the old one — e.g. personas without `editable` read as "unknown".
+     * v2: Tavus persona items gained `editable`.
+     */
+    public const CACHE_VERSION = 2;
+
     private const PAGE_SIZE = 100;
 
     private const TIMEOUT_SECONDS = 15;
@@ -98,7 +107,7 @@ final class AvatarProviderCatalogue
      */
     public static function fetch(string $provider, string $resource, bool $fresh = false): array
     {
-        $cacheKey = "avatar-catalogue:{$provider}:{$resource}";
+        $cacheKey = self::cacheKey($provider, $resource);
 
         // `$fresh` skips the 24h cache for one call: a just-created avatar or
         // voice must not be refused for a day because the list predates it.
@@ -147,6 +156,12 @@ final class AvatarProviderCatalogue
         Cache::put($cacheKey, $result, now()->addDay());
 
         return $result;
+    }
+
+    /** The one place a catalogue cache key is built. */
+    public static function cacheKey(string $provider, string $resource): string
+    {
+        return 'avatar-catalogue:v'.self::CACHE_VERSION.":{$provider}:{$resource}";
     }
 
     /**

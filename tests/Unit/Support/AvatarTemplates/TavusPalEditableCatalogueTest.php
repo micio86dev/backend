@@ -107,3 +107,53 @@ test('non-persona resources carry no editable key', function (): void {
 
     expect(AvatarProviderCatalogue::fetch('tavus', 'voice')['items'][0])->not->toHaveKey('editable');
 });
+
+// ─── cache versioning ────────────────────────────────────────────────────
+
+test('an entry cached under the old unversioned key is never served', function (): void {
+    // What a pre-`editable` deploy left in the cache: no `editable` key.
+    Cache::put('avatar-catalogue:tavus:pal', ['status' => 'ok', 'items' => [['id' => 'p_user', 'name' => 'Stale']]], now()->addDay());
+    Http::fake([
+        '*persona_type=user*' => Http::response(palPage(['p_user']), 200),
+        '*persona_type=system*' => Http::response(palPage([]), 200),
+        'tavusapi.com/v2/pals*' => Http::response(palPage(['p_user']), 200),
+    ]);
+
+    $items = AvatarProviderCatalogue::fetch('tavus', 'pal')['items'];
+
+    expect($items[0]['name'])->toBe('Persona p_user')
+        ->and($items[0]['editable'])->toBeTrue()
+        ->and(Cache::has(AvatarProviderCatalogue::cacheKey('tavus', 'pal')))->toBeTrue();
+});
+
+test('the cache key carries the version, and a fresh fetch still bypasses it', function (): void {
+    expect(AvatarProviderCatalogue::cacheKey('tavus', 'pal'))
+        ->toBe('avatar-catalogue:v'.AvatarProviderCatalogue::CACHE_VERSION.':tavus:pal');
+
+    Cache::put(AvatarProviderCatalogue::cacheKey('tavus', 'pal'), ['status' => 'ok', 'items' => [['id' => 'old']]], now()->addDay());
+    Http::fake(['*' => Http::response(palPage(['p_new']), 200)]);
+
+    expect(AvatarProviderCatalogue::fetch('tavus', 'pal', fresh: true)['items'][0]['id'])->toBe('p_new');
+});
+
+test('the item key set per resource matches the snapshot tied to CACHE_VERSION', function (): void {
+    // Bump AvatarProviderCatalogue::CACHE_VERSION AND this snapshot together
+    // whenever an item gains or loses a key; a stale cached shape is otherwise
+    // served for 24h after the deploy.
+    $base = ['id', 'provider', 'label', 'name', 'language', 'locale', 'accent', 'italian', 'preview_image_url', 'preview_audio_url', 'preview_video_url'];
+    Http::fake([
+        '*persona_type=*' => Http::response(palPage([]), 200),
+        'tavusapi.com/v2/pals*' => Http::response(palPage(['p1']), 200),
+        'tavusapi.com/v2/voices*' => Http::response(['data' => [['voice_id' => 'v', 'voice_name' => 'V']], 'total_count' => 1], 200),
+    ]);
+
+    expect([
+        'version' => AvatarProviderCatalogue::CACHE_VERSION,
+        'pal' => array_keys(AvatarProviderCatalogue::fetch('tavus', 'pal')['items'][0]),
+        'voice' => array_keys(AvatarProviderCatalogue::fetch('tavus', 'voice')['items'][0]),
+    ])->toBe([
+        'version' => 2,
+        'pal' => [...$base, 'editable'],
+        'voice' => $base,
+    ]);
+});
