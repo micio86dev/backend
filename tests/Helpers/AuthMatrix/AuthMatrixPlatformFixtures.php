@@ -8,6 +8,7 @@ use App\Models\Organization;
 use Closure;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -252,6 +253,16 @@ final class AuthMatrixPlatformFixtures
                         'config' => $config(),
                     ]],
                 ],
+            ],
+            // A synthesised sample is a paid provider call: an allowed cell must neither reach the
+            // network nor write to the real disk.
+            'POST api/avatar-templates/voice-preview' => [
+                'before' => function (): void {
+                    Storage::fake();
+                    config(['services.cartesia.api_key' => 'TEST_CARTESIA_KEY']);
+                    Http::fake(['*' => Http::response("ID3\x03\x00\x00\x00\x00\x00\x00MATRIX", 200)]);
+                },
+                'payload' => fn (): array => ['provider' => 'cartesia', 'voice_id' => 'matrix-voice'],
             ],
             'GET api/avatar-templates/options' => [],
             'GET api/avatar-templates/{id}' => ['params' => $template],
