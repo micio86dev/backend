@@ -1830,7 +1830,7 @@
         "/avatar-templates/voice-preview": {
             "post": {
                 "operationId": "avatarVoicePreview",
-                "description": "Returns the RAW AUDIO bytes (`audio/mpeg`, `audio/wav` or `audio/ogg`),\nnot JSON. Failures are `{message: <code>}` with one of\n`voice_preview_unavailable` (422, Tavus stock voice), `voice_preview_provider_not_configured`\n(503), `voice_preview_voice_not_found` (404) and `voice_preview_provider_error` (502).",
+                "description": "Returns the RAW AUDIO bytes (`audio/mpeg`, `audio/wav` or `audio/ogg`),\nnot JSON. Failures are `{message: <code>}` with one of\n`voice_preview_unavailable` (422, Tavus stock voice), `voice_preview_provider_not_configured`\n(503), `voice_preview_voice_not_found` (404) and `voice_preview_provider_error` (502).\n`voice_preview_unavailable` also carries a `reason`: `tavus_stock_voice`,\n`pal_uses_tavus_voice`, `pal_azure_engine` or `pal_no_voice_configured`.\n\nFor `provider: tavus` send `pal_id` INSTEAD of `voice_id` to hear a persona's voice.",
                 "summary": "POST /api/avatar-templates/voice-preview",
                 "tags": [
                     "AvatarVoicePreview"
@@ -12107,7 +12107,12 @@
                     },
                     "voice_id": {
                         "type": "string",
+                        "description": "Exactly one of `voice_id` / `pal_id`; `pal_id` (a Tavus persona) only with `tavus`.",
                         "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                    },
+                    "pal_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,40}$"
                     },
                     "tts_engine": {
                         "type": [
@@ -12136,8 +12141,7 @@
                     }
                 },
                 "required": [
-                    "provider",
-                    "voice_id"
+                    "provider"
                 ],
                 "title": "AvatarVoicePreviewRequest"
             },

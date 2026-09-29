@@ -560,3 +560,20 @@ test('pal: nothing of the persona body reaches the response, the logs or the cac
         ->and($failed->status())->toBe(502)
         ->and($good->status())->toBe(200);
 });
+
+test('pal: a persona whose model changed is synthesised again, not served the old model audio', function (): void {
+    $token = voicePreviewSuperadmin();
+    Http::preventStrayRequests();
+    Http::fake([
+        'tavusapi.com/v2/pals/p1' => Http::sequence()
+            ->push(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'v', 'tts_model_name' => 'sonic-2']), 200)
+            ->push(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'v', 'tts_model_name' => 'sonic-3']), 200),
+        'api.cartesia.ai/tts/bytes' => Http::sequence()->push('OLD-MODEL-AUDIO', 200)->push('NEW-MODEL-AUDIO', 200),
+    ]);
+
+    $first = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1']);
+    Cache::flush();
+    $second = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1']);
+
+    expect($first->getContent())->toBe('OLD-MODEL-AUDIO')->and($second->getContent())->toBe('NEW-MODEL-AUDIO');
+});
