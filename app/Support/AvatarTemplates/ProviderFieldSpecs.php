@@ -59,6 +59,35 @@ final class ProviderFieldSpecs
      */
     public const TAVUS_MAX_SECONDS = 3600;
 
+    /**
+     * Tavus persona TTS models per engine (`layers.tts.tts_model_name`).
+     *
+     * @wire-source docs.tavus.io persona `tts` layer: Cartesia `sonic-3`
+     * (Italian-capable; `sonic-2` has no Italian), `sonic-3.5`, `sonic-3.6`;
+     * ElevenLabs `eleven_multilingual_v2`, `eleven_turbo_v2_5`,
+     * `eleven_flash_v2_5`. `azure` and `tavus-auto` take no model.
+     *
+     * @var array<string, list<string>>
+     */
+    public const TAVUS_TTS_MODELS = [
+        'cartesia' => ['sonic-3', 'sonic-3.5', 'sonic-3.6'],
+        'elevenlabs' => ['eleven_multilingual_v2', 'eleven_turbo_v2_5', 'eleven_flash_v2_5'],
+    ];
+
+    /**
+     * The model sent when the operator picked an engine but no model. The PAL
+     * PATCH replaces the WHOLE `/layers` node, so an omitted model falls back
+     * to Tavus's own default (observed: `sonic-3.5` on a persona BEAI never
+     * configured), which may not be the Italian-capable one. Each default is
+     * the first documented Italian-capable model of its engine.
+     *
+     * @var array<string, string>
+     */
+    public const TAVUS_TTS_DEFAULT_MODEL = [
+        'cartesia' => 'sonic-3',
+        'elevenlabs' => 'eleven_multilingual_v2',
+    ];
+
     /** @return list<FieldSpec> */
     public static function for(string $provider): array
     {
@@ -139,6 +168,10 @@ final class ProviderFieldSpecs
             new FieldSpec('llmTemperature', FieldType::Number, $l('llmTemperature'), min: 0, max: 2, step: 0.01, palPath: 'layers/llm/extra_body/temperature', hintKey: $h('llmTemperature')),
             new FieldSpec('llmSpeculativeInference', FieldType::Checkbox, $l('llmSpeculativeInference'), palPath: 'layers/llm/speculative_inference', hintKey: $h('llmSpeculativeInference')),
             new FieldSpec('ttsEngine', FieldType::Select, $l('ttsEngine'), options: ['tavus-auto', 'cartesia', 'elevenlabs', 'azure'], palPath: 'layers/tts/tts_engine', hintKey: $h('ttsEngine')),
+            // The option set depends on `ttsEngine`: `options` is the flat union
+            // and `optionsByValue` narrows it. `ConfigValidator` rejects a model
+            // that does not belong to the engine (`tts_model_engine_mismatch`).
+            new FieldSpec('ttsModelName', FieldType::Select, $l('ttsModelName'), options: array_merge(...array_values(self::TAVUS_TTS_MODELS)), palPath: 'layers/tts/tts_model_name', hintKey: $h('ttsModelName'), optionsDependOn: 'ttsEngine', optionsByValue: self::TAVUS_TTS_MODELS),
             new FieldSpec('ttsExternalVoiceId', FieldType::Text, $l('ttsExternalVoiceId'), palPath: 'layers/tts/external_voice_id', hintKey: $h('ttsExternalVoiceId')),
             new FieldSpec('turnTakingPatience', FieldType::Select, $l('turnTakingPatience'), options: ['low', 'medium', 'high'], palPath: 'layers/conversational_flow/turn_taking_patience', hintKey: $h('turnTakingPatience')),
             new FieldSpec('interruptibility', FieldType::Select, $l('interruptibility'), options: ['low', 'medium', 'high'], palPath: 'layers/conversational_flow/pal_interruptibility', hintKey: $h('interruptibility')),
