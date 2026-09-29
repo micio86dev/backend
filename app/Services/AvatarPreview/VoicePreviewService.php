@@ -133,8 +133,14 @@ final class VoicePreviewService
         $cacheKey = self::PAL_CACHE_PREFIX.$palId;
         $cached = Cache::get($cacheKey);
 
-        if (is_array($cached)) {
-            return $cached;
+        if (is_array($cached) && is_bool($cached['has_native_voice'] ?? null) && is_bool($cached['has_engine_field'] ?? null)) {
+            return [
+                'engine' => is_string($cached['engine'] ?? null) ? $cached['engine'] : null,
+                'external_voice_id' => is_string($cached['external_voice_id'] ?? null) ? $cached['external_voice_id'] : null,
+                'has_native_voice' => $cached['has_native_voice'],
+                'has_engine_field' => $cached['has_engine_field'],
+                'model' => is_string($cached['model'] ?? null) ? $cached['model'] : null,
+            ];
         }
 
         $key = $this->key('interview.tavus.api_key');
