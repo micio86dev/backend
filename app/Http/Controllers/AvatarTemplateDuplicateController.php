@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
 use App\Models\AvatarTemplate;
 use App\Support\AvatarTemplates\ConfigValidator;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -35,6 +36,7 @@ final class AvatarTemplateDuplicateController extends Controller
      * All-or-nothing. The source organization among the targets is a 422
      * (`source_organization_included`).
      */
+    #[ResponseDoc(201, type: 'array{data: list<array{organization_id: int, id: int, name: string}>}')]
     public function __invoke(Request $request, int $id): JsonResponse
     {
         $this->authorize('create', AvatarTemplate::class);
