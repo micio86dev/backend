@@ -39,6 +39,8 @@ final class AuthMatrixWorld
 
     private readonly AuthMatrixResources $resources;
 
+    private readonly AuthMatrixPlatformResources $platform;
+
     public function __construct(
         public readonly Organization $orgA,
         public readonly Organization $orgB,
@@ -46,6 +48,7 @@ final class AuthMatrixWorld
     ) {
         $this->marker = $marker;
         $this->resources = new AuthMatrixResources($this);
+        $this->platform = new AuthMatrixPlatformResources($this);
     }
 
     public static function make(): self
@@ -77,6 +80,14 @@ final class AuthMatrixWorld
     public function resources(): AuthMatrixResources
     {
         return $this->resources;
+    }
+
+    /**
+     * The platform-level and avatar-template targets (T5).
+     */
+    public function platform(): AuthMatrixPlatformResources
+    {
+        return $this->platform;
     }
 
     /**

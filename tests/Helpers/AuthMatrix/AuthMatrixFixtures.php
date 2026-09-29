@@ -41,6 +41,8 @@ final class AuthMatrixFixtures
     private static function registry(): array
     {
         return [
+            ...AuthMatrixPlatformFixtures::registry(),
+
             // ─── projects ────────────────────────────────────────────────────
             'GET api/projects' => [],
             'POST api/projects' => [

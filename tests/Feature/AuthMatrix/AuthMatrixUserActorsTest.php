@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Authorization matrix, T4 — the full actor matrix of the org-scoped jwt-user domains.
+ * Authorization matrix, T4/T5 — the full actor matrix of EVERY jwt-user route (org-scoped and platform).
  *
  * One REAL request per (route, actor), built from a valid fixture so the
  * outcome is the authorization decision and not a validation accident:
@@ -17,8 +17,10 @@ declare(strict_types=1);
  * suspected bugs listed in `AuthMatrixCatalogue::knownQuestions()`. The
  * request is still sent so the skip reason states what the code does TODAY.
  *
- * Domains covered are listed in `AuthMatrixDatasets::ORG_SCOPED_DOMAINS`; the
- * credential-rejection row lives in AuthMatrixCredentialRejectionTest.
+ * Every jwt-user route of the catalogue is covered (no domain filter): a route
+ * without a fixture fails the guard below instead of being probed with
+ * placeholder ids. The credential-rejection row lives in
+ * AuthMatrixCredentialRejectionTest.
  */
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -62,17 +64,17 @@ test('gets the catalogued outcome, and a denial changes nothing', function (stri
     AuthMatrixRunner::judge("{$key} :: {$actor}", $expected, $response, $before, $world->marker);
 })->with(AuthMatrixDatasets::userActors());
 
-test('every route of a covered domain has a fixture, and every fixture names a catalogued route', function (): void {
-    $covered = [];
+test('every jwt-user route has a fixture, and every fixture names a catalogued route', function (): void {
+    $jwtUserRoutes = [];
     foreach (AuthMatrixCatalogue::entries() as $key => $entry) {
-        if ($entry['auth'] === AuthMatrix::AUTH_JWT_USER && in_array($entry['domain'], AuthMatrixDatasets::ORG_SCOPED_DOMAINS, true)) {
-            $covered[] = $key;
+        if ($entry['auth'] === AuthMatrix::AUTH_JWT_USER) {
+            $jwtUserRoutes[] = $key;
         }
     }
 
-    $withoutFixture = array_values(array_filter($covered, static fn (string $key): bool => ! AuthMatrixFixtures::has($key)));
+    $withoutFixture = array_values(array_filter($jwtUserRoutes, static fn (string $key): bool => ! AuthMatrixFixtures::has($key)));
     $orphans = array_values(array_diff(AuthMatrixFixtures::keys(), array_keys(AuthMatrixCatalogue::entries())));
 
-    expect($withoutFixture)->toBe([], "Covered routes with no fixture (the request would be sent with placeholder ids and no payload):\n  - ".implode("\n  - ", $withoutFixture))
+    expect($withoutFixture)->toBe([], "jwt-user routes with no fixture (they would be probed with placeholder ids and no payload, so a 403 proves nothing):\n  - ".implode("\n  - ", $withoutFixture))
         ->and($orphans)->toBe([], "Fixtures for routes that are not in the catalogue:\n  - ".implode("\n  - ", $orphans));
 });

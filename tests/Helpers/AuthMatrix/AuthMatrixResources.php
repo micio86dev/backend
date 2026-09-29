@@ -33,6 +33,19 @@ final class AuthMatrixResources
 
     public function __construct(private readonly AuthMatrixWorld $world) {}
 
+    public function world(): AuthMatrixWorld
+    {
+        return $this->world;
+    }
+
+    /**
+     * The platform-level and avatar-template targets (T5).
+     */
+    public function platform(): AuthMatrixPlatformResources
+    {
+        return $this->world->platform();
+    }
+
     public function project(): Project
     {
         return $this->memo['project'] ??= TenantContextScope::runFor($this->world->orgA->id, function (): Project {

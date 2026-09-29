@@ -23,16 +23,6 @@ final class AuthMatrixDatasets
     ];
 
     /**
-     * Domains whose full actor matrix is exercised (T4). Every other jwt-user
-     * domain currently gets only the credential-rejection row: extending
-     * coverage is a matter of adding its name here AND the route's fixture in
-     * {@see AuthMatrixFixtures}, which the suite refuses to run without.
-     *
-     * @var list<string>
-     */
-    public const ORG_SCOPED_DOMAINS = ['projects', 'project-questions', 'participants', 'sessions', 'evaluations', 'dashboard', 'entry-links', 'users', 'organization', 'profile', 'auth'];
-
-    /**
      * Every jwt-user route x {no credential, candidate JWT, API key}.
      *
      * @return array<string, array{string, string}>
@@ -55,7 +45,7 @@ final class AuthMatrixDatasets
     }
 
     /**
-     * Every route of a fully covered domain x every user actor except the
+     * Every jwt-user route x every user actor except the
      * credential-rejection ones (those live in {@see self::rejectedCredentials()}).
      *
      * @return array<string, array{string, string}>
@@ -65,7 +55,7 @@ final class AuthMatrixDatasets
         $cases = [];
 
         foreach (AuthMatrixCatalogue::entries() as $key => $entry) {
-            if ($entry['auth'] !== AuthMatrix::AUTH_JWT_USER || ! in_array($entry['domain'], self::ORG_SCOPED_DOMAINS, true)) {
+            if ($entry['auth'] !== AuthMatrix::AUTH_JWT_USER) {
                 continue;
             }
 
