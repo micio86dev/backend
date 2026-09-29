@@ -240,6 +240,11 @@ final class AuthMatrixMachineWorld
     /**
      * An API client of `$org` and the raw key that authenticates as it.
      *
+     * `last_used_at` starts at "just now": authenticating a key stamps that
+     * column (throttled to once per five minutes, ApiKeyResolver), and the
+     * fingerprint that proves a refusal changed nothing must not mistake that
+     * telemetry for a side effect of the request.
+     *
      * @param  list<string>  $abilities
      * @param  array<string, mixed>  $overrides  ApiClient columns (`is_active`, `expires_at`, ...)
      * @return array{raw: string, client: ApiClient}
@@ -250,6 +255,7 @@ final class AuthMatrixMachineWorld
         $client = ApiClient::factory()->withRawKey($raw)->create([
             'organization_id' => $org->id,
             'abilities' => $abilities,
+            'last_used_at' => now(),
             ...$overrides,
         ]);
 

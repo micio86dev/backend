@@ -143,4 +143,40 @@ final class AuthMatrixMachineDatasets
             default => throw new \LogicException("No lifecycle expectation for {$key}."),
         };
     }
+
+    /**
+     * Every M2M route x every key that does not authenticate (or authenticates
+     * with nothing to its name).
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function m2mKeyStates(): array
+    {
+        return self::scenarios(AuthMatrix::AUTH_M2M, [...AuthMatrixMachineCredentials::UNUSABLE_KEYS, 'no_abilities']);
+    }
+
+    /**
+     * Every Public API route x every key that does not authenticate (or
+     * authenticates with nothing to its name).
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function publicApiKeyStates(): array
+    {
+        return self::scenarios(AuthMatrix::AUTH_PUBLIC_API_KEY, [...AuthMatrixMachineCredentials::UNUSABLE_KEYS, 'no_abilities']);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function m2mCrossOrg(): array
+    {
+        $cases = [];
+
+        foreach (AuthMatrixMachineFixtures::M2M_RESOURCE_ROUTES as $key) {
+            $cases[$key] = [$key];
+        }
+
+        return $cases;
+    }
 }
