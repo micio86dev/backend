@@ -165,11 +165,11 @@ final class AuthMatrixCatalogue
             // through Gate::before, i.e. by a superadmin. `options` alone is
             // open to all three roles.
             'GET api/avatar-templates' => self::user('avatar-templates', self::orgScoped([self::A])),
-            'POST api/avatar-templates' => self::user('avatar-templates', self::superadminWrite(bare: AuthMatrix::UNRESOLVED)),
+            'POST api/avatar-templates' => self::user('avatar-templates', self::superadminWrite(bare: AuthMatrix::CONFLICT)),
             'GET api/avatar-templates/catalogue' => self::user('avatar-templates', self::orgScoped([self::A])),
             'GET api/avatar-templates/export' => self::user('avatar-templates', self::superadminWrite()),
             'GET api/avatar-templates/field-specs' => self::user('avatar-templates', self::orgScoped([self::A])),
-            'POST api/avatar-templates/import' => self::user('avatar-templates', self::superadminWrite(bare: AuthMatrix::UNRESOLVED)),
+            'POST api/avatar-templates/import' => self::user('avatar-templates', self::superadminWrite(bare: AuthMatrix::CONFLICT)),
             'GET api/avatar-templates/options' => self::user('avatar-templates', self::orgScoped([self::A, self::O, self::V])),
             'GET api/avatar-templates/{id}' => self::user('avatar-templates', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND)),
             'PATCH api/avatar-templates/{id}' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
@@ -204,7 +204,7 @@ final class AuthMatrixCatalogue
 
             // ─── project questions (read = view, every write = `update` on the project) ──
             'GET api/projects/{project}/questions' => self::user('project-questions', self::orgScoped([self::A, self::O, self::V], cross: AuthMatrix::NOT_FOUND)),
-            'POST api/projects/{project}/questions' => self::user('project-questions', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::UNRESOLVED)),
+            'POST api/projects/{project}/questions' => self::user('project-questions', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
             'PUT api/projects/{project}/questions/order' => self::user('project-questions', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
             'PATCH api/projects/{project}/questions/{question}' => self::user('project-questions', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
             'DELETE api/projects/{project}/questions/{question}' => self::user('project-questions', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
@@ -321,21 +321,17 @@ final class AuthMatrixCatalogue
 
         return [
             'KQ-1' => [
-                'summary' => 'A superadmin with no acting client that creates a tenant-scoped row gets an uncaught '
-                    .'MissingTenantContextException, i.e. a 500. There is no exception renderer for it, while the '
-                    .'sibling surfaces (POST /users, POST /m2m/clients) were fixed to answer a legible 409.',
+                'summary' => 'RESOLVED. A superadmin with no acting client that created a tenant-scoped row got an '
+                    .'uncaught MissingTenantContextException, i.e. a 500. The three routes now opt into the '
+                    .'`org.context` middleware and answer the same legible 409 `organization_context_required` as '
+                    .'POST /users, before any write. TenantScoped stays fail-closed and is deliberately not mapped '
+                    .'to 409 globally, so a genuine missing context elsewhere still surfaces as a fault.',
                 'evidence' => [
-                    'app/Models/Concerns/TenantScoped.php:77',
-                    'app/Http/Controllers/AvatarTemplatePortabilityController.php:158-159',
-                    'app/Http/Controllers/AvatarTemplateController.php:216',
-                    'app/Http/Controllers/Api/ProjectQuestionController.php:111-118',
-                    'app/Http/Controllers/Api/UserController.php:288 (the fixed 409, for contrast)',
+                    'app/Http/Middleware/RequireOrganizationContext.php',
+                    'routes/api.php (POST avatar-templates, avatar-templates/import, projects/{project}/questions)',
+                    'tests/Feature/AuthMatrix/AuthMatrixKnownQuestionsTest.php (the regression guards)',
                 ],
-                'cells' => [
-                    'POST api/avatar-templates' => $bare,
-                    'POST api/avatar-templates/import' => $bare,
-                    'POST api/projects/{project}/questions' => $bare,
-                ],
+                'cells' => [],
             ],
             'KQ-2' => [
                 'summary' => 'A superadmin with no acting client on org-scoped routes gets a DIFFERENT status per '

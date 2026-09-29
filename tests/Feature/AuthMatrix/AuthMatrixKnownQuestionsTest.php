@@ -38,9 +38,10 @@ test('a bare superadmin authoring a question is refused legibly, never with a 50
     $before = AuthMatrixSnapshot::take();
     $response = AuthMatrixRunner::send($this, $key, $credential['token'], $params, $payload);
 
-    expect($response->getStatusCode())->toBeLessThan(500)
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->json('message'))->toBe('organization_context_required')
         ->and(AuthMatrixSnapshot::diff($before, AuthMatrixSnapshot::take()))->toBe([]);
-})->skip('KQ-1: MissingTenantContextException is uncaught, so this answers 500 (TenantScoped.php:77, ProjectQuestionController.php:111-118); POST /users answers a legible 409 for the same condition.');
+});
 
 test('a bare superadmin creating or importing an avatar template is refused legibly, never with a 500', function (string $key): void {
     $world = AuthMatrixWorld::make();
@@ -51,10 +52,10 @@ test('a bare superadmin creating or importing an avatar template is refused legi
     $before = AuthMatrixSnapshot::take();
     $response = AuthMatrixRunner::send($this, $key, $credential['token'], $params, $payload);
 
-    expect($response->getStatusCode())->toBeLessThan(500)
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->json('message'))->toBe('organization_context_required')
         ->and(AuthMatrixSnapshot::diff($before, AuthMatrixSnapshot::take()))->toBe([]);
-})->with(['POST api/avatar-templates', 'POST api/avatar-templates/import'])
-    ->skip('KQ-1: MissingTenantContextException is uncaught, so store answers 500 (AvatarTemplateController.php:216, TenantScoped.php:77) and import answers 500 (AvatarTemplatePortabilityController.php:158-159); POST /users answers a legible 409 for the same condition.');
+})->with(['POST api/avatar-templates', 'POST api/avatar-templates/import']);
 
 test('a bare superadmin reads ONE population from the dashboard metrics, not a mix of scopes', function (): void {
     $key = 'GET api/dashboard/metrics';
