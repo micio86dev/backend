@@ -111,6 +111,11 @@ final class AuthMatrixMachineFixtures
      */
     public static function prepare(string $key): void
     {
+        // The hosted interview URL a new enrolment or session token carries needs the candidate app's origin.
+        if (in_array($key, ['POST api/v1/interviews', 'POST api/v1/interviews/{interview}/session-tokens'], true)) {
+            config(['interview.candidate_app_url' => 'https://interview.example.test']);
+        }
+
         match ($key) {
             'POST api/v1/exports', 'POST api/v1/webhooks/deliveries/{id}/redeliver' => Queue::fake(),
             'GET api/v1/interviews/{interview}/recording' => Storage::fake(),

@@ -209,7 +209,7 @@ final class AuthMatrixMachineWorld
             $org->id,
             fn (): WebhookDelivery => WebhookDelivery::factory()
                 ->forParticipant($this->participant($org, 'completato', ApiKeyMode::Live, 'delivery'))
-                ->create(['status' => WebhookDeliveryStatus::Delivered, 'organization_id' => $org->id]),
+                ->create(['status' => WebhookDeliveryStatus::Delivered, 'delivered_at' => now(), 'organization_id' => $org->id]),
         );
     }
 

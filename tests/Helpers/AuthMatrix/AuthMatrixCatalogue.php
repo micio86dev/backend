@@ -387,6 +387,19 @@ final class AuthMatrixCatalogue
                     'GET api/dashboard/metrics' => $bare,
                 ],
             ],
+            'KQ-5' => [
+                'summary' => 'POST /v1/interviews/{interview}/session-tokens ignores the key mode: a beai_test_ key '
+                    .'mints a session token (and a hosted interview URL) for a LIVE participant of its organization, '
+                    .'and a live key for a test one. Every other /v1 read of an interview (show, transcript, answers, '
+                    .'scoring, events, recording) and exports/{id} filter on the key mode and answer 404, and the '
+                    .'session-token route also OVERWRITES session_token_jti on the row it should not see. CONFIRMED by '
+                    .'a real request (201 where 404 is expected).',
+                'evidence' => [
+                    'app/Http/Controllers/PublicApi/SessionTokenController.php:60-63 (no mode filter)',
+                    'app/Http/Controllers/PublicApi/InterviewController.php (resolveParticipant filters on mode)',
+                ],
+                'cells' => [],
+            ],
             'KQ-I1' => [
                 'summary' => 'Informational: POST /participants/{id}/evaluation/audit checks the scoring.audit.enabled '
                     .'kill switch BEFORE authorization, so while the audit is disabled ANY authenticated user '

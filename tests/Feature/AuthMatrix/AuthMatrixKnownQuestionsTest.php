@@ -13,11 +13,15 @@ declare(strict_types=1);
  * into the intended outcome.
  */
 
+use App\Enums\ApiKeyMode;
 use App\Models\AiRequest;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\AuthMatrix\AuthMatrix;
 use Tests\Helpers\AuthMatrix\AuthMatrixFixtures;
+use Tests\Helpers\AuthMatrix\AuthMatrixMachineCredentials;
+use Tests\Helpers\AuthMatrix\AuthMatrixMachineFixtures;
+use Tests\Helpers\AuthMatrix\AuthMatrixMachineWorld;
 use Tests\Helpers\AuthMatrix\AuthMatrixRunner;
 use Tests\Helpers\AuthMatrix\AuthMatrixSnapshot;
 use Tests\Helpers\AuthMatrix\AuthMatrixWorld;
@@ -96,3 +100,27 @@ test('a bare superadmin gets one consistent answer on every org-scoped write tha
     // POST /users and POST /m2m/clients already answer 409 for this condition.
     expect(array_unique($statuses))->toBe([409], 'Statuses: '.json_encode($statuses));
 })->skip('KQ-2: the same missing-acting-client condition answers 403, 404 and 404 depending on the route (UpdateOrganizationRequest.php:34-36, OrganizationLogoController.php:142,243, UserAdminReader).');
+
+test('a test-mode key cannot mint a session token for a live interview, nor a live key for a test one', function (string $keyMode, string $participantMode): void {
+    $key = 'POST api/v1/interviews/{interview}/session-tokens';
+    $m = AuthMatrixMachineWorld::make();
+    AuthMatrixMachineFixtures::prepare($key);
+
+    $request = AuthMatrixMachineFixtures::v1($key, $m, $m->world->orgA, ApiKeyMode::from($participantMode));
+    $credential = AuthMatrixMachineCredentials::for(
+        $keyMode === 'test' ? AuthMatrix::TEST_MODE_KEY : AuthMatrix::KEY_WITH_SCOPE,
+        'interviews:write',
+        AuthMatrixMachineFixtures::v1Scopes(),
+        $m,
+        $m->world->orgA,
+    );
+
+    $before = AuthMatrixSnapshot::take();
+    $response = AuthMatrixRunner::send($this, $key, $credential['token'], $request['params'], $request['payload']);
+
+    expect($response->getStatusCode())->toBe(404)
+        ->and(AuthMatrixSnapshot::diff($before, AuthMatrixSnapshot::take()))->toBe([]);
+})->with([
+    'test key, live interview' => ['test', 'live'],
+    'live key, test interview' => ['live', 'test'],
+])->skip('KQ-5: session-tokens resolves the participant without the key mode filter every sibling route applies, so it answers 201 (SessionTokenController.php:60-63).');

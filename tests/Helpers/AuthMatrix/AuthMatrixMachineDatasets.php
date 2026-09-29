@@ -179,4 +179,48 @@ final class AuthMatrixMachineDatasets
 
         return $cases;
     }
+
+    /**
+     * Public API routes that name a resource of the target tenant (URL id or
+     * body reference), so can be pointed at another tenant's.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function publicApiResourceRoutes(): array
+    {
+        $cases = [];
+
+        foreach (array_keys(AuthMatrixMachineFixtures::V1_SCOPES) as $key) {
+            if (str_contains($key, '{') || $key === 'POST api/v1/interviews') {
+                $cases[$key] = [$key];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Public API routes that name an interview or an export — the resources
+     * that live in ONE mode (live or test), so a key of the other mode must
+     * not reach them.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function publicApiModeBoundRoutes(): array
+    {
+        $cases = [];
+
+        foreach (array_keys(AuthMatrixMachineFixtures::V1_SCOPES) as $key) {
+            // `session-tokens` is the one interview route that does not filter on the mode: KQ-5.
+            if ($key === 'POST api/v1/interviews/{interview}/session-tokens') {
+                continue;
+            }
+
+            if (str_contains($key, '/interviews/{interview}') || $key === 'GET api/v1/exports/{id}') {
+                $cases[$key] = [$key];
+            }
+        }
+
+        return $cases;
+    }
 }
