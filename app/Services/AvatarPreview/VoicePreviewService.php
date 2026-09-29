@@ -7,6 +7,7 @@ namespace App\Services\AvatarPreview;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -37,6 +38,15 @@ final class VoicePreviewService
 
     private const HEYGEN_URL = 'https://api.liveavatar.com/v1/voices';
 
+    private const TAVUS_PALS_URL = 'https://tavusapi.com/v2/pals';
+
+    /** Versioned: bump when the cached tuple's shape changes. */
+    private const PAL_CACHE_PREFIX = 'voice-preview:pal:v1:';
+
+    private const PAL_CACHE_SECONDS = 300;
+
+    private const PAL_TIMEOUT_SECONDS = 10;
+
     /** Stands in for model and language where the vendor sample is generic. */
     private const GENERIC = 'generic';
 
@@ -48,22 +58,119 @@ final class VoicePreviewService
     public function preview(string $provider, string $voiceId, ?string $ttsEngine, string $language): array
     {
         $vendor = $this->resolveVendor($provider, $ttsEngine);
-        $model = $vendor === 'heygen' ? self::GENERIC : (string) config("avatar_preview.models.{$vendor}");
+
+        return $this->serve($vendor, $voiceId, $this->defaultModel($vendor), $language);
+    }
+
+    /**
+     * Previews the voice of a Tavus persona (PAL): the server reads the persona,
+     * keeps ONLY its `layers.tts` routing tuple, then synthesises like the
+     * voice path. Nothing else of the persona is read, cached, logged or returned.
+     *
+     * @return array{audio: string, content_type: string}
+     *
+     * @throws VoicePreviewException
+     */
+    public function previewPersona(string $palId, string $language): array
+    {
+        $tts = $this->personaTts($palId);
+        $engine = $tts['engine'];
+
+        if ($tts['external_voice_id'] !== null && in_array($engine, ['cartesia', 'elevenlabs'], true)) {
+            return $this->serve($engine, $tts['external_voice_id'], $tts['model'] ?? $this->defaultModel($engine), $language);
+        }
+
+        $reason = match (true) {
+            $engine === 'azure' => 'pal_azure_engine',
+            // An external engine with no voice, or a layer that names no engine and no voice at all.
+            in_array($engine, ['cartesia', 'elevenlabs'], true) && ! $tts['has_native_voice'] => 'pal_no_voice_configured',
+            ! $tts['has_engine_field'] && ! $tts['has_native_voice'] => 'pal_no_voice_configured',
+            default => 'pal_uses_tavus_voice',
+        };
+
+        throw new VoicePreviewException(VoicePreviewException::UNAVAILABLE, $reason);
+    }
+
+    /**
+     * @return array{audio: string, content_type: string}
+     */
+    private function serve(string $vendor, string $voiceId, ?string $model, string $language): array
+    {
         $lang = $vendor === 'heygen' ? self::GENERIC : $language;
 
         $disk = Storage::disk();
         $path = 'voice-previews/'.hash('sha256', implode('|', [
-            $vendor, $voiceId, $model, (string) config('avatar_preview.phrase_version'), $lang,
+            $vendor, $voiceId, $model ?? self::GENERIC, (string) config('avatar_preview.phrase_version'), $lang,
         ])).'.audio';
 
         $audio = $disk->exists($path) ? $disk->get($path) : null;
 
         if (! is_string($audio) || $audio === '') {
-            $audio = $this->generate($vendor, $voiceId, $language);
+            $audio = $this->generate($vendor, $voiceId, $model, $language);
             $disk->put($path, $audio);
         }
 
         return ['audio' => $audio, 'content_type' => $this->contentType($audio)];
+    }
+
+    private function defaultModel(string $vendor): ?string
+    {
+        $model = config("avatar_preview.models.{$vendor}");
+
+        return is_string($model) ? $model : null;
+    }
+
+    /**
+     * The persona's TTS routing tuple, cached ~5 minutes per persona. Only this
+     * tuple is kept: never the persona body, its prompt or any key.
+     *
+     * @return array{engine: ?string, external_voice_id: ?string, has_native_voice: bool, has_engine_field: bool, model: ?string}
+     *
+     * @throws VoicePreviewException
+     */
+    private function personaTts(string $palId): array
+    {
+        $cacheKey = self::PAL_CACHE_PREFIX.$palId;
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $key = $this->key('interview.tavus.api_key');
+
+        try {
+            $response = $this->request($key, 'x-api-key', self::PAL_TIMEOUT_SECONDS)->get(self::TAVUS_PALS_URL.'/'.$palId);
+        } catch (ConnectionException) {
+            Log::warning('VoicePreviewService: persona lookup unreachable');
+
+            throw new VoicePreviewException(VoicePreviewException::PROVIDER_ERROR);
+        }
+
+        if (! $response->successful()) {
+            Log::warning('VoicePreviewService: persona lookup refused', ['http_status' => $response->status()]);
+
+            throw new VoicePreviewException($response->status() === 404
+                ? VoicePreviewException::VOICE_NOT_FOUND
+                : VoicePreviewException::PROVIDER_ERROR);
+        }
+
+        $string = static fn (mixed $value, string $pattern): ?string => is_string($value) && preg_match($pattern, $value) === 1 ? $value : null;
+
+        $tts = $response->json('layers.tts');
+        $tts = is_array($tts) ? $tts : [];
+
+        $tuple = [
+            'engine' => $string($tts['tts_engine'] ?? null, '/^[a-z0-9-]{1,30}$/'),
+            'external_voice_id' => $string($tts['external_voice_id'] ?? null, '/^[A-Za-z0-9_-]{1,80}$/'),
+            'has_engine_field' => array_key_exists('tts_engine', $tts),
+            'has_native_voice' => is_string($tts['voice_id'] ?? null) && $tts['voice_id'] !== '',
+            'model' => $string($tts['tts_model_name'] ?? null, '/^[A-Za-z0-9_.-]{1,60}$/'),
+        ];
+
+        Cache::put($cacheKey, $tuple, self::PAL_CACHE_SECONDS);
+
+        return $tuple;
     }
 
     /**
@@ -74,7 +181,7 @@ final class VoicePreviewService
         $vendor = $provider === 'tavus' ? $ttsEngine : $provider;
 
         if (! in_array($vendor, ['cartesia', 'elevenlabs', 'heygen'], true)) {
-            throw new VoicePreviewException(VoicePreviewException::UNAVAILABLE);
+            throw new VoicePreviewException(VoicePreviewException::UNAVAILABLE, $provider === 'tavus' ? 'tavus_stock_voice' : null);
         }
 
         return $vendor;
@@ -83,7 +190,7 @@ final class VoicePreviewService
     /**
      * @throws VoicePreviewException
      */
-    private function generate(string $vendor, string $voiceId, string $language): string
+    private function generate(string $vendor, string $voiceId, ?string $model, string $language): string
     {
         $phrase = (string) config("avatar_preview.phrases.{$language}");
         $timeout = (int) config('avatar_preview.timeout_seconds', 20);
@@ -93,7 +200,7 @@ final class VoicePreviewService
                 'cartesia' => $this->request($this->key('services.cartesia.api_key'), 'X-API-Key', $timeout)
                     ->withHeaders(['Cartesia-Version' => (string) config('avatar_preview.cartesia_version')])
                     ->post(self::CARTESIA_URL, [
-                        'model_id' => config('avatar_preview.models.cartesia'),
+                        'model_id' => $model,
                         'transcript' => $phrase,
                         'voice' => ['mode' => 'id', 'id' => $voiceId],
                         'language' => $language,
@@ -105,7 +212,7 @@ final class VoicePreviewService
                         'output_format' => config('avatar_preview.output_formats.elevenlabs'),
                     ]), [
                         'text' => $phrase,
-                        'model_id' => config('avatar_preview.models.elevenlabs'),
+                        'model_id' => $model,
                         'language_code' => $language,
                     ]),
                 default => $this->request($this->key('interview.heygen.api_key'), 'X-API-KEY', $timeout)

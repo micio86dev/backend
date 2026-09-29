@@ -29,7 +29,9 @@ class AvatarVoicePreviewRequest extends FormRequest
     {
         return [
             'provider' => ['required', 'string', 'in:cartesia,elevenlabs,heygen,tavus'],
-            'voice_id' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{1,80}$/'],
+            // Exactly one of `voice_id` / `pal_id`; `pal_id` (a Tavus persona) only with `tavus`.
+            'voice_id' => ['required_without:pal_id', 'prohibits:pal_id', 'string', 'regex:/^[A-Za-z0-9_-]{1,80}$/'],
+            'pal_id' => ['required_without:voice_id', 'prohibits:voice_id', 'prohibited_unless:provider,tavus', 'string', 'regex:/^[A-Za-z0-9_-]{1,40}$/'],
             // Meaningful for `tavus` only: which TTS vendor its voice is routed through.
             'tts_engine' => ['nullable', 'string', 'in:cartesia,elevenlabs,tavus-auto,azure'],
             'language' => ['nullable', 'string', 'in:it,en'],

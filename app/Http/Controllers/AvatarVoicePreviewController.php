@@ -29,6 +29,10 @@ final class AvatarVoicePreviewController extends Controller
      * not JSON. Failures are `{message: <code>}` with one of
      * `voice_preview_unavailable` (422, Tavus stock voice), `voice_preview_provider_not_configured`
      * (503), `voice_preview_voice_not_found` (404) and `voice_preview_provider_error` (502).
+     * `voice_preview_unavailable` also carries a `reason`: `tavus_stock_voice`,
+     * `pal_uses_tavus_voice`, `pal_azure_engine` or `pal_no_voice_configured`.
+     *
+     * For `provider: tavus` send `pal_id` INSTEAD of `voice_id` to hear a persona's voice.
      *
      * @response string
      */
@@ -39,14 +43,15 @@ final class AvatarVoicePreviewController extends Controller
         $validated = $request->validated();
 
         try {
-            $preview = $this->previews->preview(
-                $validated['provider'],
-                $validated['voice_id'],
-                $validated['tts_engine'] ?? null,
-                $validated['language'] ?? 'it',
-            );
+            $language = $validated['language'] ?? 'it';
+            $preview = isset($validated['pal_id'])
+                ? $this->previews->previewPersona($validated['pal_id'], $language)
+                : $this->previews->preview($validated['provider'], $validated['voice_id'], $validated['tts_engine'] ?? null, $language);
         } catch (VoicePreviewException $e) {
-            return response()->json(['message' => $e->errorCode], $e->httpStatus());
+            return response()->json(
+                ['message' => $e->errorCode] + ($e->reason === null ? [] : ['reason' => $e->reason]),
+                $e->httpStatus(),
+            );
         }
 
         return response($preview['audio'], 200, [
