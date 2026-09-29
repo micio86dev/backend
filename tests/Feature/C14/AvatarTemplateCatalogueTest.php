@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 use App\Models\Organization;
 use App\Models\User;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
@@ -194,7 +195,7 @@ test('Cartesia voices are requested with expand[]=preview_file_url and expose it
         ->assertJsonPath('data.items.1.id', 'c-en')
         ->assertJsonPath('data.items.1.preview_audio_url', null);
 
-    Http::assertSent(fn (Illuminate\Http\Client\Request $request): bool => str_contains(urldecode($request->url()), 'expand[]=preview_file_url')
+    Http::assertSent(fn (Request $request): bool => str_contains(urldecode($request->url()), 'expand[]=preview_file_url')
         && str_contains($request->url(), 'limit=100'));
 });
 

@@ -44,9 +44,8 @@ return [
         'elevenlabs' => 'mp3_44100_128',
     ],
 
-    // Disk holding the generated audio cache (`voice-previews/` prefix). Null
-    // means the application's default filesystem disk.
-    'disk' => env('AVATAR_PREVIEW_DISK'),
+    // Audio is cached on the application's single default filesystem disk under
+    // `voice-previews/` (no disk option: see tests/Arch/Storage/SingleStorageDiskArchTest).
 
     // Upper bound on the audio accepted from a provider, so a misbehaving vendor
     // cannot fill the disk or the response. A ~20 word sample is ~100 KB of mp3.

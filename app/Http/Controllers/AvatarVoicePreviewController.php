@@ -30,7 +30,7 @@ final class AvatarVoicePreviewController extends Controller
      * `voice_preview_unavailable` (422, Tavus stock voice), `voice_preview_provider_not_configured`
      * (503), `voice_preview_voice_not_found` (404) and `voice_preview_provider_error` (502).
      *
-     * @response 200 string
+     * @response string
      */
     public function __invoke(AvatarVoicePreviewRequest $request): Response|JsonResponse
     {

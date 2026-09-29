@@ -1730,6 +1730,47 @@
                 }
             }
         },
+        "/avatar-templates/voice-preview": {
+            "post": {
+                "operationId": "avatarVoicePreview",
+                "description": "Returns the RAW AUDIO bytes (`audio/mpeg`, `audio/wav` or `audio/ogg`),\nnot JSON. Failures are `{message: <code>}` with one of\n`voice_preview_unavailable` (422, Tavus stock voice), `voice_preview_provider_not_configured`\n(503), `voice_preview_voice_not_found` (404) and `voice_preview_provider_error` (502).",
+                "summary": "POST /api/avatar-templates/voice-preview",
+                "tags": [
+                    "AvatarVoicePreview"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AvatarVoicePreviewRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
         "/catalogue/bars-indicators": {
             "get": {
                 "operationId": "barsIndicator.index",
@@ -11924,6 +11965,55 @@
                     "llm"
                 ],
                 "title": "AvatarTemplateResource"
+            },
+            "AvatarVoicePreviewRequest": {
+                "type": "object",
+                "description": "Body of `POST /api/avatar-templates/voice-preview`.\n\nThere is deliberately NO free-text field: the sample sentence lives in\n`config/avatar_preview.php`, so an unknown key such as `text` is simply never\nread. `voice_id` is format-restricted because it is interpolated into a\nprovider URL path (ElevenLabs, LiveAvatar).\n\nAuthorization is done in the controller with the same `create` ability as\nauthoring a template, like the sibling export/import actions.",
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "enum": [
+                            "cartesia",
+                            "elevenlabs",
+                            "heygen",
+                            "tavus"
+                        ]
+                    },
+                    "voice_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                    },
+                    "tts_engine": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Meaningful for `tavus` only: which TTS vendor its voice is routed through.",
+                        "enum": [
+                            "cartesia",
+                            "elevenlabs",
+                            "tavus-auto",
+                            "azure",
+                            null
+                        ]
+                    },
+                    "language": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "it",
+                            "en",
+                            null
+                        ]
+                    }
+                },
+                "required": [
+                    "provider",
+                    "voice_id"
+                ],
+                "title": "AvatarVoicePreviewRequest"
             },
             "BarsIndicatorResource": {
                 "type": "object",

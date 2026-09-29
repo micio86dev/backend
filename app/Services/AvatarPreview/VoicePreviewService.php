@@ -51,7 +51,7 @@ final class VoicePreviewService
         $model = $vendor === 'heygen' ? self::GENERIC : (string) config("avatar_preview.models.{$vendor}");
         $lang = $vendor === 'heygen' ? self::GENERIC : $language;
 
-        $disk = Storage::disk(config('avatar_preview.disk'));
+        $disk = Storage::disk();
         $path = 'voice-previews/'.hash('sha256', implode('|', [
             $vendor, $voiceId, $model, (string) config('avatar_preview.phrase_version'), $lang,
         ])).'.audio';
