@@ -172,6 +172,32 @@ test('an admin lists Cartesia voices, Italian first, and can filter to native It
         ->assertJsonPath('data.items.0.id', 'c-it');
 });
 
+test('Cartesia voices are requested with expand[]=preview_file_url and expose it as preview_audio_url', function (): void {
+    $org = Organization::factory()->create();
+    config(['services.cartesia.api_key' => 'TEST_CARTESIA_KEY']);
+
+    Http::fake([
+        'api.cartesia.ai/voices*' => Http::response([
+            'data' => [
+                ['id' => 'c-it', 'name' => 'Giulia', 'language' => 'it', 'preview_file_url' => 'https://cdn.example.test/giulia.mp3'],
+                ['id' => 'c-en', 'name' => 'Zed', 'language' => 'en'],
+            ],
+            'has_more' => false,
+        ], 200),
+    ]);
+
+    $this->withToken(catalogueActor($org, 'admin'))
+        ->getJson('/api/avatar-templates/catalogue?provider=cartesia&resource=voice')
+        ->assertOk()
+        ->assertJsonPath('data.items.0.id', 'c-it')
+        ->assertJsonPath('data.items.0.preview_audio_url', 'https://cdn.example.test/giulia.mp3')
+        ->assertJsonPath('data.items.1.id', 'c-en')
+        ->assertJsonPath('data.items.1.preview_audio_url', null);
+
+    Http::assertSent(fn (Illuminate\Http\Client\Request $request): bool => str_contains(urldecode($request->url()), 'expand[]=preview_file_url')
+        && str_contains($request->url(), 'limit=100'));
+});
+
 test('a voice-only provider has no avatar resource', function (): void {
     $org = Organization::factory()->create();
 

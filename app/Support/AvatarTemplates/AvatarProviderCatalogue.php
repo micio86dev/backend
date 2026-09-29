@@ -24,9 +24,14 @@ use Throwable;
  * guessed. In particular:
  * - Neither Tavus resource carries a `language` field at all — the
  *   normalizer never infers one; it is always `null` (D4).
- * - Neither provider's VOICE resource carries any preview media field
- *   today; only Tavus's replica (`thumbnail_image_url`/
- *   `thumbnail_video_url`) and HeyGen's avatar (`preview_url`) do.
+ * - Preview media: Cartesia voices carry `preview_file_url` (only when asked
+ *   with `expand[]=preview_file_url`) and ElevenLabs voices `preview_url`;
+ *   both surface as `preview_audio_url`. Tavus voices carry none, and HeyGen's
+ *   voice list carries none either (its sample is a per-voice base64 endpoint,
+ *   deliberately NOT fetched here — that would be one call per voice — and is
+ *   served by `POST /api/avatar-templates/voice-preview`). Tavus's replica
+ *   (`thumbnail_image_url`/`thumbnail_video_url`) and HeyGen's avatar
+ *   (`preview_url`) carry image/video previews.
  *
  * VOICE-ONLY providers: `cartesia` and `elevenlabs` (resource `voice`) list a
  * third-party TTS vendor's own voices. They are not avatar providers — a Tavus
@@ -318,7 +323,8 @@ final class AvatarProviderCatalogue
      * language, gender, is_public, ...}], has_more, next_page}`, paginated
      * with `limit` / `starting_after`. Older API versions answer a bare list;
      * both are accepted. Cartesia carries no accent field, so `accent` is
-     * always null. UNVERIFIED against a live account.
+     * always null. `preview_file_url` is only present with
+     * `expand[]=preview_file_url`. UNVERIFIED against a live account.
      *
      * @return list<array<string, mixed>>
      */
@@ -333,7 +339,10 @@ final class AvatarProviderCatalogue
                 self::CARTESIA_BASE_URL.'/voices',
                 (string) config('services.cartesia.api_key', ''),
                 'X-API-Key',
-                ['limit' => self::PAGE_SIZE] + ($startingAfter === null ? [] : ['starting_after' => $startingAfter]),
+                // A string, not an array: Guzzle would encode the list as `expand[0]=`,
+                // and Cartesia documents the repeated `expand[]` form.
+                http_build_query(['limit' => self::PAGE_SIZE] + ($startingAfter === null ? [] : ['starting_after' => $startingAfter]))
+                    .'&expand[]=preview_file_url',
                 ['Cartesia-Version' => self::CARTESIA_VERSION],
             );
 
@@ -359,6 +368,7 @@ final class AvatarProviderCatalogue
                     id: self::stringOrEmpty($row['id'] ?? null),
                     label: self::stringOrEmpty($row['name'] ?? null),
                     language: $language,
+                    previewAudioUrl: self::stringOrNull($row['preview_file_url'] ?? null),
                     locale: $language,
                     italian: self::isItalianCode($language) ? 'native' : null,
                 );
@@ -585,7 +595,7 @@ final class AvatarProviderCatalogue
      * its callers ever place any part of a response body into an exception
      * message or a return value.
      *
-     * @param  array<string, mixed>  $query
+     * @param  array<string, mixed>|string  $query
      * @param  array<string, string>  $extraHeaders
      * @return array<mixed>
      */
@@ -594,7 +604,7 @@ final class AvatarProviderCatalogue
         string $url,
         string $apiKey,
         string $authHeader,
-        array $query,
+        array|string $query,
         array $extraHeaders = [],
     ): array {
         if ($apiKey === '') {
