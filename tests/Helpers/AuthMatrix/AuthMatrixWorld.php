@@ -11,6 +11,7 @@ use App\Services\ApiKeyGenerator;
 use App\Support\Jwt\CandidateTokenFactory;
 use Illuminate\Support\Str;
 use LogicException;
+use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -52,10 +53,25 @@ final class AuthMatrixWorld
         $marker = 'amx'.Str::lower(Str::random(10));
 
         return new self(
-            Organization::factory()->create(['name' => "{$marker} org a"]),
-            Organization::factory()->create(['name' => "{$marker} org b"]),
+            self::provisioned(Organization::factory()->create(['name' => "{$marker} org a"])),
+            self::provisioned(Organization::factory()->create(['name' => "{$marker} org b"])),
             $marker,
         );
+    }
+
+    /**
+     * Gives the organization its three authorization roles up front, as
+     * production provisioning does (ProvisionOrganizationCommand): a route that
+     * assigns a role (`POST /users`) resolves it with firstOrFail(), so an
+     * organization without them would 404 for a reason unrelated to authorization.
+     */
+    private static function provisioned(Organization $org): Organization
+    {
+        foreach (['admin', 'operator', 'viewer'] as $role) {
+            SpatieRole::firstOrCreate(['name' => $role, 'guard_name' => 'api', 'team_id' => $org->id]);
+        }
+
+        return $org;
     }
 
     public function resources(): AuthMatrixResources

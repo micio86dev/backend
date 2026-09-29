@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Helpers\AuthMatrix;
 
-use Illuminate\Http\UploadedFile;
 use Illuminate\Testing\TestResponse;
 use LogicException;
 use PHPUnit\Framework\Assert;
@@ -78,10 +77,6 @@ final class AuthMatrixRunner
         $client = $token === null ? $test : $test->withToken($token);
         $client = $client->withHeader('Accept', 'application/json');
 
-        if (self::hasUpload($payload)) {
-            return $client->call($method, $uri, self::scalars($payload), [], self::uploads($payload));
-        }
-
         return $client->json($method, $uri, $payload);
     }
 
@@ -121,8 +116,25 @@ final class AuthMatrixRunner
     }
 
     /**
+     * What can still be asserted about a cell whose OUTCOME is unresolved: if
+     * the code refused the request (a 4xx that is not a success), the refusal
+     * must not have changed anything. Only the status itself is left open.
+     *
      * @param  TestResponse<Response>  $response
+     * @param  array<string, array{count: int, checksum: string}>  $before
      */
+    public static function judgeUnresolvedRefusal(string $cell, TestResponse $response, array $before): void
+    {
+        $status = $response->getStatusCode();
+
+        if ($status < 400 || $status >= 500) {
+            return;
+        }
+
+        $changed = AuthMatrixSnapshot::diff($before, AuthMatrixSnapshot::take());
+        Assert::assertSame([], $changed, "{$cell}: refused with {$status} but changed state: ".implode('; ', $changed));
+    }
+
     /**
      * The KNOWN_QUESTIONS record that owns an UNRESOLVED cell, if any.
      */
@@ -137,34 +149,11 @@ final class AuthMatrixRunner
         return null;
     }
 
+    /**
+     * @param  TestResponse<Response>  $response
+     */
     private static function excerpt(TestResponse $response): string
     {
         return mb_substr((string) $response->getContent(), 0, 300);
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private static function hasUpload(array $payload): bool
-    {
-        return self::uploads($payload) !== [];
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, UploadedFile>
-     */
-    private static function uploads(array $payload): array
-    {
-        return array_filter($payload, static fn (mixed $v): bool => $v instanceof UploadedFile);
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
-     */
-    private static function scalars(array $payload): array
-    {
-        return array_filter($payload, static fn (mixed $v): bool => ! $v instanceof UploadedFile);
     }
 }

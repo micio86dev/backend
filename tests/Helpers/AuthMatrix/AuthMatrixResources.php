@@ -14,6 +14,7 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
+use App\Models\User;
 use App\Models\Utterance;
 use App\Support\Tenancy\TenantContextScope;
 
@@ -170,6 +171,35 @@ final class AuthMatrixResources
                 return $participant->refresh();
             },
         );
+    }
+
+    /**
+     * An ACTIVE viewer of orgA: the user an admin edits or deactivates.
+     */
+    public function member(): User
+    {
+        return $this->memo['member'] ??= $this->newMember('member');
+    }
+
+    /**
+     * A DEACTIVATED viewer of orgA: the user an admin may bring back.
+     */
+    public function deactivatedMember(): User
+    {
+        return $this->memo['deactivated'] ??= (function (): User {
+            $user = $this->newMember('deactivated member');
+            $user->forceFill(['deactivated_at' => now()])->save();
+
+            return $user->refresh();
+        })();
+    }
+
+    private function newMember(string $label): User
+    {
+        $user = authUserAndTokenForRole($this->world->orgA, 'viewer')['user'];
+        $user->forceFill(['name' => "{$this->world->marker} {$label}"])->save();
+
+        return $user->refresh();
     }
 
     public function session(): InterviewSession

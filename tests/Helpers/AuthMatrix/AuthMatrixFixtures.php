@@ -10,6 +10,7 @@ use App\Support\Tenancy\TenantContextScope;
 use Closure;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -111,6 +112,54 @@ final class AuthMatrixFixtures
             'GET api/dashboard/activity' => [],
             'GET api/dashboard/metrics' => [],
 
+            // ─── users (admin only) ──────────────────────────────────────────
+            'GET api/users' => [],
+            'POST api/users' => [
+                'payload' => fn (): array => [
+                    'name' => 'User created by the matrix',
+                    'email' => Str::lower(Str::random(8)).'@matrix.test',
+                    'password' => 'a-long-enough-password',
+                    'role' => 'viewer',
+                ],
+            ],
+            'PATCH api/users/{user}' => [
+                'params' => fn (AuthMatrixResources $r): array => ['user' => $r->member()->id],
+                'payload' => fn (): array => ['name' => 'Renamed by the matrix'],
+            ],
+            'POST api/users/{user}/deactivate' => [
+                'params' => fn (AuthMatrixResources $r): array => ['user' => $r->member()->id],
+            ],
+            'POST api/users/{user}/activate' => [
+                'params' => fn (AuthMatrixResources $r): array => ['user' => $r->deactivatedMember()->id],
+            ],
+
+            // ─── organization + logo (own organization) ──────────────────────
+            'GET api/organization' => [],
+            'PATCH api/organization' => ['payload' => fn (): array => ['name' => 'Renamed organization']],
+            'POST api/organization/logo' => [
+                'before' => fn () => Storage::fake(),
+                'payload' => fn (): array => ['logo' => self::imageUpload('logo.png')],
+            ],
+            'DELETE api/organization/logo' => ['before' => fn () => Storage::fake()],
+
+            // ─── profile + own session (the caller's own account) ────────────
+            'GET api/auth/me' => [],
+            'POST api/auth/logout' => [],
+            'GET api/profile' => [],
+            'PATCH api/profile' => ['payload' => fn (): array => ['name' => 'Renamed profile']],
+            'PUT api/profile/password' => [
+                'payload' => fn (): array => [
+                    'current_password' => 'password',
+                    'password' => 'a-brand-new-password',
+                    'password_confirmation' => 'a-brand-new-password',
+                ],
+            ],
+            'POST api/profile/photo' => [
+                'before' => fn () => Storage::fake(),
+                'payload' => fn (): array => ['photo' => self::imageUpload('photo.png')],
+            ],
+            'DELETE api/profile/photo' => ['before' => fn () => Storage::fake()],
+
             // ─── entry links ─────────────────────────────────────────────────
             // `send_email` off: an allowed mint must not depend on a mailer.
             'POST api/entry-links' => [
@@ -187,6 +236,14 @@ final class AuthMatrixFixtures
     }
 
     /**
+     * @return list<string>
+     */
+    public static function keys(): array
+    {
+        return array_keys(self::registry());
+    }
+
+    /**
      * Route-specific test-environment setup that must be in place before the
      * request (and before the database is fingerprinted).
      */
@@ -238,8 +295,8 @@ final class AuthMatrixFixtures
         return $params;
     }
 
-    public static function pngUpload(string $field = 'logo'): UploadedFile
+    private static function imageUpload(string $filename): UploadedFile
     {
-        return UploadedFile::fake()->image("{$field}.png", 64, 64);
+        return UploadedFile::fake()->image($filename, 64, 64);
     }
 }
