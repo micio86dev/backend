@@ -20,6 +20,7 @@ use App\Http\Middleware\PublicApi\RateLimitPublicApi;
 use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Http\Middleware\PublicApi\RequireScope;
 use App\Http\Middleware\RejectStaleCredentials;
+use App\Http\Middleware\RequireOrganizationContext;
 use App\Http\Middleware\RequireRefreshCsrfHeader;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocaleFromRequest;
@@ -190,6 +191,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'ability' => CheckAbility::class,
             'refresh.csrf' => RequireRefreshCsrfHeader::class,
+            // A tenant-scoped write with no acting client answers 409
+            // `organization_context_required`, not a 500. Opt-in per route.
+            'org.context' => RequireOrganizationContext::class,
             // public-api step 2: the `/v1` counterpart of `ability` — e.g.
             // Route::middleware('scope:interviews:read').
             'scope' => RequireScope::class,

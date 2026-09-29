@@ -53,6 +53,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -295,28 +296,44 @@ test('(2) 23505 re-entry loop guard: reentrant=true path logs error and returns'
     expect(true)->toBeTrue('reentrant=true path must not throw.');
 });
 
-test('(2b) 23505 re-entry loop guard: reentrant=true + UniqueConstraintViolation → logs error and returns', function (): void {
-    // Directly invoke enterEvaluationGuard(participant, reentrant=true) on a participant
-    // that has NO Evaluation row. Inside the method, first() → null, then create() is
-    // attempted. But we can't easily make create() throw in a real DB without a duplicate.
-    // Instead, pre-insert a matching row under a DIFFERENT tenant scope to defeat the
-    // withoutGlobalScopes() query — not feasible.
-    //
-    // Purest test: mock the static Eloquent call. We skip this here to avoid brittle
-    // static mocking and rely on the integration evidence from test (2) plus the
-    // production code review confirming the guard at lines 173-179.
-    //
-    // We mark this as a known uncoverable path via normal integration (requires concurrent
-    // thread or deep mock) and cover lines 182-188 (the re-entry reload + re-enter) via
-    // test (2) above instead.
-    //
-    // This test confirms the JOB itself doesn't explode when re-entering with an
-    // already-processing evaluation (the functional equivalent in a sync test).
-    expect(true)->toBeTrue(
-        'Lines 173-179 (reentrant=true + create() throw) require concurrent execution or deep mocking. '
-        .'Covered at code-review level; integration evidence is in test (2).'
-    );
-})->skip('23505 re-entry loop guard inner path requires concurrent execution or Eloquent static mock — documented uncoverable via integration alone.');
+test('(2b) 23505 re-entry loop guard: create() keeps throwing UniqueConstraintViolation → logs error and stops, no unbounded recursion', function (): void {
+    // The state is impossible in PostgreSQL (a 23505 means the row EXISTS, so the
+    // reload would find it), which is exactly why the guard is there: it is the
+    // ceiling on a loop that must never spin. An Eloquent `creating` hook lets the
+    // test throw the violation deterministically, with no concurrent thread and no
+    // static mock.
+    $org = defOrg();
+    $project = defProject($org);
+    $participant = defParticipant($org, $project);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    Evaluation::creating(static function (): never {
+        throw new UniqueConstraintViolationException('pgsql', 'insert into "evaluations"', [], new PDOException('23505'));
+    });
+
+    Log::spy();
+
+    $job = new ScoreEvaluationJob($participant->id);
+    $method = (new ReflectionClass($job))->getMethod('enterEvaluationGuard');
+    $method->setAccessible(true);
+
+    // First entry (reentrant=false): the violation triggers ONE reload + re-entry,
+    // which hits the violation again and must give up rather than recurse.
+    $method->invoke($job, $participant);
+
+    Log::shouldHaveReceived('info')
+        ->withArgs(static fn (string $message): bool => str_contains($message, '23505 concurrent INSERT'))
+        ->once();
+    Log::shouldHaveReceived('error')
+        ->withArgs(static fn (string $message, array $context): bool => str_contains($message, '23505 re-entry loop detected')
+            && $context['participant_id'] === $participant->id)
+        ->once();
+
+    expect(Evaluation::withoutGlobalScopes()->where('participant_id', $participant->id)->count())->toBe(0);
+});
 
 // ─── (3) Null project guard in runScoringPipeline ────────────────────────────
 
@@ -728,25 +745,32 @@ test('(9) resolveFrameworkVersionId: null project → RuntimeException thrown', 
 
 // ─── (10) failed() transition-exception catch ────────────────────────────────
 
-test('(10) failed() transition-exception catch: documented as requiring DI refactor', function (): void {
-    // Lines 737-740: if participant->save() throws inside failed(), the Throwable is
-    // caught and logged, and EvaluationFailed is STILL emitted.
-    //
-    // This path requires participant->save() to throw while status == 'in_valutazione'.
-    // Testing it without production logic changes requires either:
-    //   (a) Mockery::alias() on Participant::withoutGlobalScopes() — brittle and dangerous.
-    //   (b) Refactoring ScoreEvaluationJob to accept an injectable participant resolver.
-    //
-    // Option (b) is the correct DI refactor but constitutes a production logic change,
-    // which is out of scope for this quality debt pass. Documented as a follow-up item.
-    //
-    // Observable guarantee: EvaluationFailed is always emitted regardless of transition
-    // outcome — this is fully covered in ScoreEvaluationJobFailedTest.
-    expect(true)->toBeTrue(
-        'Lines 737-740 (save() exception catch in failed()) require injectable participant resolver. '
-        .'Documented. EvaluationFailed-always-emitted coverage is in ScoreEvaluationJobFailedTest.'
-    );
-})->skip('Lines 737-740 require injectable participant resolver; production logic change out of scope for this quality pass.');
+test('(10) failed() transition-exception catch: a save() that throws is logged and EvaluationFailed is still emitted', function (): void {
+    // Making participant->save() throw needs no production change and no static
+    // mock: an Eloquent `saving` hook throws exactly where the database would.
+    Event::fake([EvaluationFailed::class]);
+
+    $org = defOrg();
+    $project = defProject($org);
+    $participant = defParticipant($org, $project, 'in_valutazione');
+
+    Participant::saving(static function (): never {
+        throw new RuntimeException('database went away');
+    });
+
+    Log::spy();
+
+    (new ScoreEvaluationJob($participant->id))->failed(new RuntimeException('retries exhausted'));
+
+    Log::shouldHaveReceived('error')
+        ->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'failed to transition participant to errore')
+            && $context['error'] === 'database went away')
+        ->once();
+
+    // The transition did not happen, but the calling system is still told.
+    expect(Participant::withoutGlobalScopes()->findOrFail($participant->id)->status)->toBe('in_valutazione');
+    Event::assertDispatched(EvaluationFailed::class, static fn (EvaluationFailed $e): bool => $e->participantId === $participant->id);
+});
 
 // ─── (10b) failed() — participant null path ───────────────────────────────────
 
