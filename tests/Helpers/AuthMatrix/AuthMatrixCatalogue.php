@@ -399,7 +399,8 @@ final class AuthMatrixCatalogue
                 'summary' => 'Informational: DELETE /m2m/clients/{apiClient} binds a non-tenant model, so a foreign '
                     .'organization\'s key id answers 403 (policy org mismatch) while an unknown id answers 404 — the '
                     .'existence oracle every tenant-scoped route avoids. And Gate::before lets ANY superadmin '
-                    .'(bare or acting) revoke any organization\'s key, bypassing the org check in the policy.',
+                    .'(bare or acting) revoke any organization\'s key, bypassing the org check in the policy. '
+                    .'Asserted as DOCUMENTED behaviour (not endorsed) in AuthMatrixPlatformBehaviourTest.',
                 'evidence' => [
                     'app/Policies/ApiClientPolicy.php:57-64',
                     'app/Http/Controllers/M2m/ApiClientController.php:203-205',
