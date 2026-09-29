@@ -124,3 +124,33 @@ test('a test-mode key cannot mint a session token for a live interview, nor a li
     'test key, live interview' => ['test', 'live'],
     'live key, test interview' => ['live', 'test'],
 ])->skip('KQ-5: session-tokens resolves the participant without the key mode filter every sibling route applies, so it answers 201 (SessionTokenController.php:60-63).');
+
+test('minting a candidate token or an entry link leaves no trace on the next user token', function (string $minter): void {
+    $m = AuthMatrixMachineWorld::make();
+    $user = $m->world->actor(AuthMatrix::ADMIN)['user'];
+    $ttlBefore = (int) config('jwt.ttl');
+
+    if ($minter === 'candidate') {
+        $m->token($m->participant($m->world->orgA, 'in_corso', label: 'minted'));
+    } else {
+        $m->ssoLink($m->project($m->world->orgA));
+    }
+
+    $token = (string) auth('api')->login($user);
+    $claims = json_decode((string) base64_decode(strtr(explode('.', $token)[1], '-_', '+/')), true);
+
+    expect($claims)->not->toHaveKey('typ')
+        ->and($claims)->not->toHaveKey('candidate_ref')
+        ->and($claims['exp'] - $claims['iat'])->toBe($ttlBefore * 60);
+})->with(['candidate', 'sso-link'])
+    ->skip('KQ-6: the shared JWTAuth singleton keeps the custom claims and TTL of the last candidate/entry-link mint, so the next user token carries typ=candidate / typ=sso-link (CandidateTokenFactory.php:77-78, 110-112); harmless under php-fpm (one request per process), real under a long-lived worker.');
+
+test('a user token is never accepted as an entry link, even after one was minted in the same process', function (): void {
+    $m = AuthMatrixMachineWorld::make();
+    $userJwt = $m->world->actor(AuthMatrix::ADMIN)['token'];
+    $m->ssoLink($m->project($m->world->orgA));
+
+    $response = $this->getJson('/api/sso/exchange?token='.urlencode($userJwt));
+
+    expect($response->getStatusCode())->toBe(401);
+})->skip('KQ-6: after a mint the shared JWT singleton re-applies its typ=sso-link claims to whatever it decodes next, so /sso/exchange answers 200 and mints a candidate token for a user JWT (SsoExchangeController.php:37-45, CandidateTokenFactory.php:77-78).');

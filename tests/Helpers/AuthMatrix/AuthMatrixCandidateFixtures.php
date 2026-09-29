@@ -147,7 +147,7 @@ final class AuthMatrixCandidateFixtures
     {
         return match ($forgery) {
             'expired' => self::tokenFromThePast($m, $owner),
-            'tampered_signature' => self::flipLastCharacter($m->token($owner)),
+            'tampered_signature' => self::tamperSignature($m->token($owner)),
             'swapped_subject' => self::withSubject($m->token($owner), (string) $victim->id),
             'sso_link_type' => CandidateTokenFactory::mintCandidateToken($owner, ['typ' => 'sso-link']),
             'foreign_type' => CandidateTokenFactory::mintCandidateToken($owner, ['typ' => 'access']),
@@ -179,11 +179,16 @@ final class AuthMatrixCandidateFixtures
         return $token;
     }
 
-    private static function flipLastCharacter(string $token): string
+    /**
+     * The token with the FIRST character of its signature changed. The last
+     * character of a base64url HMAC carries padding bits, so changing only it
+     * can decode to the very same signature and leave the token valid.
+     */
+    public static function tamperSignature(string $token): string
     {
-        $last = substr($token, -1);
+        [$header, $payload, $signature] = explode('.', $token);
 
-        return substr($token, 0, -1).($last === 'A' ? 'B' : 'A');
+        return "{$header}.{$payload}.".($signature[0] === 'A' ? 'B' : 'A').substr($signature, 1);
     }
 
     /**

@@ -24,6 +24,7 @@ use App\Models\Utterance;
 use App\Models\WebhookDelivery;
 use App\Services\ApiKeyGenerator;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\PublicApi\SessionTokenMinter;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Storage;
 
@@ -235,6 +236,38 @@ final class AuthMatrixMachineWorld
     public function token(Participant $participant): string
     {
         return CandidateTokenFactory::mintCandidateToken($participant);
+    }
+
+    /**
+     * A genuine embed session token for the (pending) participant, registered
+     * as the participant's current one — what `POST /v1/interviews` hands out.
+     */
+    public function sessionToken(Participant $participant): string
+    {
+        $minted = app(SessionTokenMinter::class)->mint($participant);
+        $participant->forceFill(['session_token_jti' => $minted->jti])->save();
+
+        return $minted->token;
+    }
+
+    /**
+     * A genuine SSO entry-link token for a fresh candidate of the project — what
+     * `POST /m2m/sso-link` and `POST /entry-links` hand out.
+     *
+     * @param  array<string, mixed>  $overrides  claims to replace
+     */
+    public function ssoLink(Project $project, array $overrides = []): string
+    {
+        return CandidateTokenFactory::mintSsoLink([
+            'candidate_ref' => 'sso-'.uniqid(),
+            'display_name' => "{$this->world->marker} sso candidate",
+            'email' => uniqid('sso-').'@matrix.test',
+            'project_id' => $project->id,
+            'org_id' => $project->organization_id,
+            'role_code' => $project->role_code,
+            'lang' => 'en',
+            ...$overrides,
+        ]);
     }
 
     /**

@@ -400,6 +400,25 @@ final class AuthMatrixCatalogue
                 ],
                 'cells' => [],
             ],
+            'KQ-6' => [
+                'summary' => 'Informational (latent): CandidateTokenFactory mints through the SHARED JWTAuth singleton '
+                    .'and never resets it — setTTL(120) / setTTL(30) and the custom claims (typ=candidate, '
+                    .'candidate_ref, project_id, organization_id ... or typ=sso-link) stick to it. In the same PHP '
+                    .'process the NEXT user token (auth(\'api\')->login) then carries typ=candidate/sso-link and the '
+                    .'longer TTL. Harmless under php-fpm, which the Dockerfile uses (one request per process); it '
+                    .'would let a staff JWT pass the api-candidate guard (typ check, numeric sub, Participant::find) '
+                    .'under any long-lived worker (Octane, queue worker minting then logging in). The DECODE side '
+                    .'is worse: after a mint in the same process, GET /sso/exchange with a plain USER JWT answers 200 '
+                    .'and returns a candidate token (the singleton re-applies typ=sso-link and the previous '
+                    .'mint\'s project/candidate claims). CONFIRMED by real requests; unreachable under php-fpm.',
+                'evidence' => [
+                    'app/Support/Jwt/CandidateTokenFactory.php:110-112 (mintCandidateToken: setTTL(120) + customClaims on the singleton)',
+                    'app/Support/Jwt/CandidateTokenFactory.php:77-78 (mintSsoLink: setTTL(30) + factory()->customClaims)',
+                    'app/Http/Controllers/Sso/SsoExchangeController.php:37-45 (trusts the decoded typ claim)',
+                    'app/Providers/AppServiceProvider.php:306-336 (api-candidate guard trusts typ + numeric sub)',
+                ],
+                'cells' => [],
+            ],
             'KQ-I1' => [
                 'summary' => 'Informational: POST /participants/{id}/evaluation/audit checks the scoring.audit.enabled '
                     .'kill switch BEFORE authorization, so while the audit is disabled ANY authenticated user '
