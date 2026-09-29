@@ -169,6 +169,13 @@ final class AuthMatrix
     /** The request conflicts with the caller's state (e.g. no acting client selected). */
     public const CONFLICT = '409';
 
+    /**
+     * Refused by validation. Only correct for a cell whose request is valid
+     * for everybody EXCEPT this actor (a superadmin with no acting client
+     * cannot reference any organization's framework version).
+     */
+    public const UNPROCESSABLE = '422';
+
     /** Cross-tenant / unknown id: existence is never confirmed. */
     public const NOT_FOUND = '404';
 
@@ -191,6 +198,7 @@ final class AuthMatrix
         self::FORBIDDEN,
         self::CONFLICT,
         self::NOT_FOUND,
+        self::UNPROCESSABLE,
         self::OPEN,
         self::UNRESOLVED,
     ];

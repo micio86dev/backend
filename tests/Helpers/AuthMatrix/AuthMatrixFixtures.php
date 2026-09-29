@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Helpers\AuthMatrix;
 
+use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Support\Tenancy\TenantContextScope;
 use Closure;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
 
 /**
  * The FIXTURE RESOLVER of the matrix: how to build a VALID request for a route.
@@ -35,7 +38,75 @@ final class AuthMatrixFixtures
      */
     private static function registry(): array
     {
-        return [];
+        return [
+            // ─── projects ────────────────────────────────────────────────────
+            'GET api/projects' => [],
+            'POST api/projects' => [
+                'payload' => fn (AuthMatrixWorld $w, Organization $org): array => self::newProject($org),
+            ],
+            'GET api/projects/{project}' => ['params' => self::project(...)],
+            'PUT|PATCH api/projects/{project}' => [
+                'params' => self::project(...),
+                'payload' => fn (): array => ['name' => 'Renamed by the matrix'],
+            ],
+            'DELETE api/projects/{project}' => ['params' => self::project(...)],
+
+            // ─── project questions ───────────────────────────────────────────
+            'GET api/projects/{project}/questions' => ['params' => self::project(...)],
+            'POST api/projects/{project}/questions' => [
+                'params' => self::project(...),
+                'payload' => fn (AuthMatrixWorld $w): array => [
+                    'competency_id' => $w->resources()->spareCompetency()->id,
+                    'text' => ['en' => 'A question authored by the matrix'],
+                ],
+            ],
+            'PUT api/projects/{project}/questions/order' => [
+                'params' => self::project(...),
+                'payload' => fn (AuthMatrixWorld $w): array => ['ids' => [$w->resources()->question()->id]],
+            ],
+            'PATCH api/projects/{project}/questions/{question}' => [
+                'params' => self::question(...),
+                'payload' => fn (): array => ['text' => ['en' => 'Edited by the matrix']],
+            ],
+            'DELETE api/projects/{project}/questions/{question}' => ['params' => self::question(...)],
+        ];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private static function project(AuthMatrixResources $r): array
+    {
+        return ['project' => $r->project()->id];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private static function question(AuthMatrixResources $r): array
+    {
+        return ['project' => $r->project()->id, 'question' => $r->question()->id];
+    }
+
+    /**
+     * A valid `POST /projects` body that references ONLY the given
+     * organization's own framework version and avatar template — which is
+     * all a caller may reference.
+     *
+     * @return array<string, mixed>
+     */
+    private static function newProject(Organization $org): array
+    {
+        return TenantContextScope::runFor($org->id, fn (): array => [
+            'framework_version_id' => FrameworkVersion::factory()->create(['organization_id' => $org->id])->id,
+            'slug' => 'matrix-'.Str::lower(Str::random(8)),
+            'name' => 'Project created by the matrix',
+            'assessment_type' => 'standard',
+            'role_code' => 'ICO',
+            'language' => 'en',
+            'avatar_template_id' => templateIdForCurrentOrg(),
+            'competency_ids' => [],
+        ]);
     }
 
     public static function has(string $key): bool

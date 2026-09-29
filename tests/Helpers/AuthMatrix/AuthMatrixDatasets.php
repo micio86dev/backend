@@ -30,7 +30,7 @@ final class AuthMatrixDatasets
      *
      * @var list<string>
      */
-    public const ORG_SCOPED_DOMAINS = [];
+    public const ORG_SCOPED_DOMAINS = ['projects', 'project-questions'];
 
     /**
      * Every jwt-user route x {no credential, candidate JWT, API key}.

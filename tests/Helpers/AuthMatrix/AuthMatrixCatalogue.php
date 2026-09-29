@@ -194,9 +194,12 @@ final class AuthMatrixCatalogue
 
             // ─── projects ────────────────────────────────────────────────────
             'GET api/projects' => self::user('projects', self::orgScoped([self::A, self::O, self::V])),
-            'POST api/projects' => self::user('projects', self::orgScoped([self::A, self::O], bare: AuthMatrix::UNRESOLVED)),
+            // A bare superadmin has no organization whose framework version / avatar template
+            // it may reference, so the (org-scoped) validation refuses: 422, and nothing is created.
+            'POST api/projects' => self::user('projects', self::orgScoped([self::A, self::O], bare: AuthMatrix::UNPROCESSABLE)),
             'GET api/projects/{project}' => self::user('projects', self::orgScoped([self::A, self::O, self::V], cross: AuthMatrix::NOT_FOUND)),
-            'PUT|PATCH api/projects/{project}' => self::user('projects', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::UNRESOLVED)),
+            // Under bypass a bare superadmin sees (and may edit) every tenant's project.
+            'PUT|PATCH api/projects/{project}' => self::user('projects', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
             'DELETE api/projects/{project}' => self::user('projects', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND)),
 
             // ─── project questions (read = view, every write = `update` on the project) ──
@@ -356,16 +359,15 @@ final class AuthMatrixCatalogue
             'KQ-3' => [
                 'summary' => 'Bare-superadmin writes whose outcome static reading could not settle (validation '
                     .'rules bind to the resolved org id, which is null; the target row is visible under bypass but '
-                    .'the org-scoped rules are not). To be settled by an actual request in the per-actor tests.',
+                    .'the org-scoped rules are not). SETTLED by real requests in the matrix tests: '
+                    .'POST /projects answers 422 (nothing to reference) and PATCH /projects/{project} answers 200 '
+                    .'(bypass reaches the row); both are now encoded. Still open: the entry-link mint.',
                 'evidence' => [
                     'app/Http/Requests/StoreProjectRequest.php:77-88',
-                    'app/Http/Controllers/Api/ProjectController.php:84',
                     'app/Http/Requests/UpdateProjectRequest.php:124',
                     'app/Http/Controllers/Api/EntryLinkController.php:110',
                 ],
                 'cells' => [
-                    'POST api/projects' => $bare,
-                    'PUT|PATCH api/projects/{project}' => $bare,
                     'POST api/entry-links' => $bare,
                 ],
             ],

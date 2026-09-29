@@ -33,7 +33,7 @@ final class AuthMatrixRunner
         AuthMatrix::FORBIDDEN,
         AuthMatrix::NOT_FOUND,
         AuthMatrix::CONFLICT,
-        '422',
+        AuthMatrix::UNPROCESSABLE,
     ];
 
     /**
@@ -123,6 +123,20 @@ final class AuthMatrixRunner
     /**
      * @param  TestResponse<Response>  $response
      */
+    /**
+     * The KNOWN_QUESTIONS record that owns an UNRESOLVED cell, if any.
+     */
+    public static function knownQuestion(string $key, string $actor): ?string
+    {
+        foreach (AuthMatrixCatalogue::knownQuestions() as $id => $question) {
+            if (in_array($actor, $question['cells'][$key] ?? [], true)) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
     private static function excerpt(TestResponse $response): string
     {
         return mb_substr((string) $response->getContent(), 0, 300);
