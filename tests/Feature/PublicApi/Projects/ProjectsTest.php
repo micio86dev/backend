@@ -136,7 +136,7 @@ test('T-PRJ-003: hidden fields never appear in list or detail responses', functi
     ]);
 
     $forbidden = [
-        'provider', 'config', 'persona', 'llm_model', 'llm_credential_id', 'llm_sync_status',
+        'provider', 'config', 'persona', 'llm_model', 'llm_credential_id', 'llm_sync_status', 'pal_sync', 'pal_sync_code',
         'webhook_url', 'webhook_secret', 'webhook_events', 'has_webhook_secret',
         'error_redirect_url', 'deadline_at', 'goes_live_at', 'pin_context', 'can',
         'framework_version_id', 'organization_id', 'avatar_template_id', 'avatar_template',

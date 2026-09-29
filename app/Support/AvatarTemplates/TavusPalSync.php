@@ -7,6 +7,7 @@ namespace App\Support\AvatarTemplates;
 use App\Models\AvatarTemplate;
 use App\Services\ConversationLlm\LlmBindingResolver;
 use App\Services\ConversationLlm\ManagedLlmPayload;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -41,6 +42,11 @@ final class TavusPalSync
     public function __construct(private readonly LlmBindingResolver $bindingResolver) {}
 
     /**
+     * `message` on a warning IS the stable machine code (`tavus_key_missing`,
+     * `pal_id_missing`, `pal_not_editable`, `pal_sync_rejected`,
+     * `pal_sync_unauthorized`, `pal_not_found`, `pal_sync_failed`,
+     * `pal_sync_unreachable`); `ResyncTemplateBinding` persists it.
+     *
      * @return array{status: 'skipped'|'synced'|'warning', message?: string}
      */
     public function sync(AvatarTemplate $template): array
@@ -114,21 +120,49 @@ final class TavusPalSync
                 return ['status' => 'synced'];
             }
 
-            // The status, never the body. Tavus error text names the vendor and
-            // can echo request content, and this string travels to a UI.
+            // The status and the mapped code, never the body. Tavus error text
+            // names the vendor and can echo request content, and this string
+            // travels to a UI.
+            $code = self::codeFor($response);
+
             Log::warning('Tavus PAL sync failed', [
                 'template_id' => $template->id,
                 'status' => $response->status(),
+                'code' => $code,
             ]);
 
-            return ['status' => 'warning', 'message' => 'pal_sync_failed'];
+            return ['status' => 'warning', 'message' => $code];
         } catch (Throwable $e) {
             Log::warning('Tavus PAL sync errored', [
                 'template_id' => $template->id,
                 'exception' => $e::class,
+                'code' => 'pal_sync_unreachable',
             ]);
 
             return ['status' => 'warning', 'message' => 'pal_sync_unreachable'];
         }
+    }
+
+    /**
+     * Maps a refused PATCH to a stable machine code. The body is READ to tell
+     * the one 400 that means "this persona is not yours to edit" from every
+     * other 400, and is never stored, logged or returned.
+     *
+     * @wire-source live Tavus smoke-check 2026-09-29: PATCH /v2/pals/{id} on a
+     * persona outside the account's own list answers 400 `{"message":"Invalid
+     * persona_id"}` while GET on the same id works. A 400 for any other reason
+     * (a bad layer value) is a different problem with a different remedy.
+     */
+    private static function codeFor(Response $response): string
+    {
+        $status = $response->status();
+
+        return match (true) {
+            $status === 400 && stripos($response->body(), 'invalid persona_id') !== false => 'pal_not_editable',
+            $status >= 400 && $status < 500 && ! in_array($status, [401, 403, 404, 429], true) => 'pal_sync_rejected',
+            $status === 401, $status === 403 => 'pal_sync_unauthorized',
+            $status === 404 => 'pal_not_found',
+            default => 'pal_sync_failed',
+        };
     }
 }
