@@ -12044,6 +12044,34 @@
                         "required": [
                             "estimated_cost_usd_per_interview"
                         ]
+                    },
+                    "pal_sync": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "synced_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "status",
+                            "code",
+                            "synced_at"
+                        ]
                     }
                 },
                 "required": [
@@ -12059,7 +12087,8 @@
                     "llm_credential_id",
                     "llm_sync_status",
                     "llm_synced_at",
-                    "llm"
+                    "llm",
+                    "pal_sync"
                 ],
                 "title": "AvatarTemplateResource"
             },
