@@ -210,8 +210,8 @@ final class AuthMatrixPlatformFixtures
 
         return [
             'GET api/framework/roles' => ['before' => $seeded],
-            'GET api/framework/roles/{roleCode}/competencies' => ['before' => $seeded],
-            'GET api/framework/roles/{roleCode}/competencies/{competencyCode}/indicators' => ['before' => $seeded],
+            'GET api/framework/roles/{roleCode}/competencies' => ['before' => $seeded, 'params' => fn (): array => ['roleCode' => 'ICO']],
+            'GET api/framework/roles/{roleCode}/competencies/{competencyCode}/indicators' => ['before' => $seeded, 'params' => fn (): array => ['roleCode' => 'ICO', 'competencyCode' => 'PRS']],
             'GET api/framework/potential-competencies' => ['before' => $seeded],
             'GET api/framework/versions' => [],
         ];
