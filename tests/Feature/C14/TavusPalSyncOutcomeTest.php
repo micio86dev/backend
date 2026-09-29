@@ -182,3 +182,21 @@ test('the code is never mass-assignable', function (): void {
         ->and($template->isFillable('pal_sync_code'))->toBeFalse()
         ->and($template->isFillable('pal_synced_at'))->toBeFalse();
 });
+
+test('creating a template on a persona Tavus refuses saves anyway and carries the warning code', function (): void {
+    $org = palOutcomeOrg();
+    Http::fake([
+        'tavusapi.com/v2/faces*' => Http::response(['data' => [['face_id' => 'f_ok', 'face_name' => 'F', 'status' => 'completed']], 'total_count' => 1], 200),
+        'tavusapi.com/v2/pals?*' => Http::response(['data' => [['pal_id' => 'p_stock', 'pal_name' => 'Stock']], 'total_count' => 1], 200),
+        'tavusapi.com/v2/pals/*' => Http::response(['message' => 'Invalid persona_id'], 400),
+    ]);
+
+    $this->withToken(authTokenForRole($org, 'platform'))
+        ->postJson('/api/avatar-templates', [
+            'name' => 'Stock persona '.uniqid(), 'provider' => 'tavus',
+            'config' => ['faceId' => 'f_ok', 'palId' => 'p_stock', 'llmTemperature' => 0.4],
+        ])
+        ->assertCreated()
+        ->assertJsonPath('warning', 'pal_not_editable')
+        ->assertJsonPath('data.pal_sync.code', 'pal_not_editable');
+});
