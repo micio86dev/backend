@@ -66,16 +66,18 @@ final class AuthMatrixRunner
     /**
      * @param  array<string, string|int>  $params
      * @param  array<string, mixed>  $payload
+     * @param  array<string, string>  $headers  extra request headers (e.g. a browser `Origin`)
      * @return TestResponse<Response>
      */
-    public static function send(TestCase $test, string $key, ?string $token, array $params, array $payload = []): TestResponse
+    public static function send(TestCase $test, string $key, ?string $token, array $params, array $payload = [], array $headers = []): TestResponse
     {
         resetAuthGuardState();
+        $test->flushHeaders();
 
         $method = self::method($key);
         $uri = self::uri($key, $params);
         $client = $token === null ? $test : $test->withToken($token);
-        $client = $client->withHeader('Accept', 'application/json');
+        $client = $client->withHeader('Accept', 'application/json')->withHeaders($headers);
 
         return $client->json($method, $uri, $payload);
     }
