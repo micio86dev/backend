@@ -272,6 +272,11 @@ final class AuthMatrixPlatformFixtures
             ],
             'DELETE api/avatar-templates/{id}' => ['params' => $template],
             'POST api/avatar-templates/{id}/activate' => ['params' => $template],
+            // Copies into orgB (never the source's own org), so an allowed cell really creates a row.
+            'POST api/avatar-templates/{id}/duplicate' => [
+                'params' => $template,
+                'payload' => fn (AuthMatrixWorld $w): array => ['target_organization_ids' => [$w->orgB->id]],
+            ],
             'POST api/avatar-templates/{id}/deactivate' => [
                 'params' => fn (AuthMatrixResources $r): array => ['id' => $r->platform()->activeTemplate()->id],
             ],

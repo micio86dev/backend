@@ -37,6 +37,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\AvatarTemplateController;
+use App\Http\Controllers\AvatarTemplateDuplicateController;
 use App\Http\Controllers\AvatarTemplatePortabilityController;
 use App\Http\Controllers\AvatarVoicePreviewController;
 use App\Http\Controllers\Candidate\IntegrityController;
@@ -577,6 +578,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/avatar-templates/voice-preview', AvatarVoicePreviewController::class)->middleware('throttle:avatar-voice-preview');
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
+    Route::post('/avatar-templates/{id}/duplicate', AvatarTemplateDuplicateController::class);
 
     Route::get('/avatar-templates', [AvatarTemplateController::class, 'index']);
     Route::post('/avatar-templates', [AvatarTemplateController::class, 'store'])->middleware('org.context');

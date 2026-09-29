@@ -178,6 +178,8 @@ final class AuthMatrixCatalogue
             'DELETE api/avatar-templates/{id}' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
             'POST api/avatar-templates/{id}/activate' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
             'POST api/avatar-templates/{id}/deactivate' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
+            // `create` is checked BEFORE the lookup, so every non-superadmin gets a flat 403 (no existence oracle).
+            'POST api/avatar-templates/{id}/duplicate' => self::user('avatar-templates', self::superadminWrite()),
 
             // ─── organization (own organization) ─────────────────────────────
             'GET api/organization' => self::user('organization', self::orgScoped([self::A, self::O, self::V])),
