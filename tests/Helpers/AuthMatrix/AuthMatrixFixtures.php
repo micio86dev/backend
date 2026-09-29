@@ -36,7 +36,7 @@ use Illuminate\Support\Str;
 final class AuthMatrixFixtures
 {
     /**
-     * @return array<string, array{params?: Closure(AuthMatrixResources): array<string, string|int>, payload?: Closure(AuthMatrixWorld, Organization): array<string, mixed>, before?: Closure(): void}>
+     * @return array<string, array{params?: Closure(AuthMatrixResources): array<string, string|int>, payload?: Closure(AuthMatrixWorld, Organization): array<string, mixed>, before?: Closure(): mixed}>
      */
     private static function registry(): array
     {
