@@ -228,21 +228,74 @@ final class AvatarProviderCatalogue
     /**
      * `GET /v2/pals` returns `{data: [{pal_id, pal_name, default_face_id,
      * system_prompt, layers, ...}], total_count}`; paginated like the others
-     * (`limit` default 10). Only the id and name are kept: a PAL carries its
-     * system prompt and layer configuration, none of which a picker may see.
+     * (`limit` default 10). Only the id, name and `editable` are kept: a PAL
+     * carries its system prompt and layer configuration, none of which a picker
+     * may see.
+     *
+     * `editable` says whether BEAI may PATCH this persona's layers:
+     *  - `true`  — the id is in Tavus's `GET /v2/pals?persona_type=user` list,
+     *              i.e. a persona the account authored;
+     *  - `false` — the id is in `persona_type=system` (Tavus stock personas);
+     *  - `null`  — UNKNOWN. In neither list (observed live 2026-09-29: 46
+     *              personas unfiltered, 10 `user`, 30 `system`, so some are in
+     *              neither), or the list that would decide could not be
+     *              fetched. Unknown is never promoted to true: PATCH on such a
+     *              persona was answered 400 "Invalid persona_id".
+     * A persona in both lists is `true`. A failed `persona_type` call degrades
+     * only this flag; it never fails the catalogue.
      *
      * @return list<array<string, mixed>>
      */
     private static function tavusPals(): array
     {
+        $rows = self::tavusPaged('/pals', []);
+        $userIds = self::tavusPalIds('user');
+        $systemIds = self::tavusPalIds('system');
+
         return array_map(
-            fn (array $row): array => self::entry(
-                provider: 'tavus',
-                id: self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null),
-                label: self::stringOrEmpty($row['pal_name'] ?? $row['persona_name'] ?? null),
-            ),
-            self::tavusPaged('/pals', []),
+            function (array $row) use ($userIds, $systemIds): array {
+                $id = self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null);
+
+                $editable = match (true) {
+                    $userIds !== null && in_array($id, $userIds, true) => true,
+                    $systemIds !== null && in_array($id, $systemIds, true) => false,
+                    default => null,
+                };
+
+                return self::entry(
+                    provider: 'tavus',
+                    id: $id,
+                    label: self::stringOrEmpty($row['pal_name'] ?? $row['persona_name'] ?? null),
+                ) + ['editable' => $editable];
+            },
+            $rows,
         );
+    }
+
+    /**
+     * The ids of one `persona_type` list, or `null` when it could not be
+     * fetched (so the caller can tell "not in the list" from "list unknown").
+     *
+     * @return list<string>|null
+     */
+    private static function tavusPalIds(string $personaType): ?array
+    {
+        try {
+            $rows = self::tavusPaged('/pals', ['persona_type' => $personaType]);
+        } catch (CatalogueFetchException $e) {
+            Log::warning('AvatarProviderCatalogue: persona_type list failed', [
+                'persona_type' => $personaType,
+                'code' => $e->safeCode,
+                'http_status' => $e->httpStatus,
+            ]);
+
+            return null;
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (array $row): string => self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null),
+            $rows,
+        ), static fn (string $id): bool => $id !== ''));
     }
 
     /**
