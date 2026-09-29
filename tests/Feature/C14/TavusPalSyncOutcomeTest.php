@@ -144,6 +144,28 @@ test('a later successful sync clears the code and stamps the time', function ():
     expect($template->fresh()->pal_synced_at)->not->toBeNull();
 });
 
+test('a later failure keeps the time of the last success', function (): void {
+    $org = palOutcomeOrg();
+    $token = authTokenForRole($org, 'platform');
+    Http::fakeSequence('*')
+        ->push([], 200)
+        ->push(['message' => 'boom'], 500);
+
+    $template = palOutcomeTemplate($org);
+
+    $this->withToken($token)->patchJson("/api/avatar-templates/{$template->id}", ['name' => 'One'])->assertSuccessful();
+    $syncedAt = $template->fresh()->pal_synced_at;
+    expect($syncedAt)->not->toBeNull();
+
+    $this->travel(5)->minutes();
+    $this->withToken($token)->patchJson("/api/avatar-templates/{$template->id}", ['name' => 'Two'])->assertSuccessful();
+
+    $fresh = $template->fresh();
+    expect($fresh->pal_sync_status)->toBe('warning')
+        ->and($fresh->pal_sync_code)->toBe('pal_sync_failed')
+        ->and($fresh->pal_synced_at->equalTo($syncedAt))->toBeTrue();
+});
+
 test('a template with no persona knobs records skipped, and a heygen template records nothing', function (): void {
     $org = palOutcomeOrg();
     Http::fake();
