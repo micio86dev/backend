@@ -37,7 +37,9 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\AvatarTemplateController;
+use App\Http\Controllers\AvatarTemplateDuplicateController;
 use App\Http\Controllers\AvatarTemplatePortabilityController;
+use App\Http\Controllers\AvatarVoicePreviewController;
 use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
@@ -569,8 +571,14 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // `field-specs`/`options` above — registered after, Laravel would match
     // "catalogue" as an id and 404 with no hint why.
     Route::get('/avatar-templates/catalogue', [AvatarTemplateController::class, 'catalogue']);
+    // avatar-voice-preview: listen to a vendor voice before activating a template.
+    // Same `create` gate as authoring one, NO org.context (it touches no tenant
+    // row, so a bare superadmin works), throttled per user because every miss is
+    // a paid provider call. Declared BEFORE /{id} like the literal paths above.
+    Route::post('/avatar-templates/voice-preview', AvatarVoicePreviewController::class)->middleware('throttle:avatar-voice-preview');
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
+    Route::post('/avatar-templates/{id}/duplicate', AvatarTemplateDuplicateController::class);
 
     Route::get('/avatar-templates', [AvatarTemplateController::class, 'index']);
     Route::post('/avatar-templates', [AvatarTemplateController::class, 'store'])->middleware('org.context');

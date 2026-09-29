@@ -8,6 +8,7 @@ use App\Models\Organization;
 use Closure;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -253,6 +254,16 @@ final class AuthMatrixPlatformFixtures
                     ]],
                 ],
             ],
+            // A synthesised sample is a paid provider call: an allowed cell must neither reach the
+            // network nor write to the real disk.
+            'POST api/avatar-templates/voice-preview' => [
+                'before' => function (): void {
+                    Storage::fake();
+                    config(['services.cartesia.api_key' => 'TEST_CARTESIA_KEY']);
+                    Http::fake(['*' => Http::response("ID3\x03\x00\x00\x00\x00\x00\x00MATRIX", 200)]);
+                },
+                'payload' => fn (): array => ['provider' => 'cartesia', 'voice_id' => 'matrix-voice'],
+            ],
             'GET api/avatar-templates/options' => [],
             'GET api/avatar-templates/{id}' => ['params' => $template],
             'PATCH api/avatar-templates/{id}' => [
@@ -261,6 +272,11 @@ final class AuthMatrixPlatformFixtures
             ],
             'DELETE api/avatar-templates/{id}' => ['params' => $template],
             'POST api/avatar-templates/{id}/activate' => ['params' => $template],
+            // Copies into orgB (never the source's own org), so an allowed cell really creates a row.
+            'POST api/avatar-templates/{id}/duplicate' => [
+                'params' => $template,
+                'payload' => fn (AuthMatrixWorld $w): array => ['target_organization_ids' => [$w->orgB->id]],
+            ],
             'POST api/avatar-templates/{id}/deactivate' => [
                 'params' => fn (AuthMatrixResources $r): array => ['id' => $r->platform()->activeTemplate()->id],
             ],

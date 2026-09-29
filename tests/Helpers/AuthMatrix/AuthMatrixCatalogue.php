@@ -170,12 +170,16 @@ final class AuthMatrixCatalogue
             'GET api/avatar-templates/export' => self::user('avatar-templates', self::superadminWrite()),
             'GET api/avatar-templates/field-specs' => self::user('avatar-templates', self::orgScoped([self::A])),
             'POST api/avatar-templates/import' => self::user('avatar-templates', self::superadminWrite(bare: AuthMatrix::CONFLICT)),
+            // No org.context: it touches no tenant row, so a bare superadmin is served.
+            'POST api/avatar-templates/voice-preview' => self::user('avatar-templates', self::superadminWrite()),
             'GET api/avatar-templates/options' => self::user('avatar-templates', self::orgScoped([self::A, self::O, self::V])),
             'GET api/avatar-templates/{id}' => self::user('avatar-templates', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND)),
             'PATCH api/avatar-templates/{id}' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
             'DELETE api/avatar-templates/{id}' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
             'POST api/avatar-templates/{id}/activate' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
             'POST api/avatar-templates/{id}/deactivate' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),
+            // `create` is checked BEFORE the lookup, so every non-superadmin gets a flat 403 (no existence oracle).
+            'POST api/avatar-templates/{id}/duplicate' => self::user('avatar-templates', self::superadminWrite()),
 
             // ─── organization (own organization) ─────────────────────────────
             'GET api/organization' => self::user('organization', self::orgScoped([self::A, self::O, self::V])),
