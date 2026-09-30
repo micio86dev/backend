@@ -12,8 +12,10 @@ declare(strict_types=1);
  * escape hatch reviewable: a new caller turns this red until someone decides,
  * in review, that it belongs.
  *
- * The allowlists deliberately name files that arrive in later slices; a file
- * that does not exist yet simply has no call site.
+ * The allowlists name only files that exist and call the scope TODAY, and the
+ * assertions are exact: a listed file that stops calling it fails just as an
+ * unlisted one that starts does. Each later slice adds its own entries with
+ * the file that needs them, never in advance.
  */
 
 /**
@@ -75,21 +77,18 @@ test('availableToTenant() is called only from the pinned runtime and picker site
         'app/Support/AvatarTemplates/ActiveTemplateResolver.php',
     ];
 
-    expect(array_values(array_diff($hits, $allowed)))->toBe([], 'Unpinned availableToTenant() caller(s): '.implode(', ', $hits));
+    expect($hits)->toBe($allowed, 'availableToTenant() callers changed: '.implode(', ', $hits));
 })->group('arch');
 
-test('platformOnly() is called only from the platform controller and the usage reader', function (): void {
+test('platformOnly() has no application caller yet', function (): void {
+    // The platform controller and the usage reader arrive with the slices
+    // that create them, and they extend this list then.
     $hits = atsFilesMatching(atsCode('app'), '/(->|::)platformOnly\(/');
 
-    $allowed = [
-        'app/Http/Controllers/Api/PlatformAvatarTemplateController.php',
-        'app/Support/AvatarTemplates/GlobalAvatarTemplateUsage.php',
-    ];
-
-    expect(array_values(array_diff($hits, $allowed)))->toBe([], 'Unpinned platformOnly() caller(s): '.implode(', ', $hits));
+    expect($hits)->toBe([], 'Unpinned platformOnly() caller(s): '.implode(', ', $hits));
 })->group('arch');
 
-test('the platform write context is entered only by the platform controller', function (): void {
+test('the platform write context is not entered by any application code yet', function (): void {
     $files = array_filter(
         atsCode('app'),
         fn (string $code): bool => str_contains($code, 'PlatformTemplateContext')
@@ -97,8 +96,10 @@ test('the platform write context is entered only by the platform controller', fu
 
     $hits = atsFilesMatching($files, '/(->|::)run\(/');
 
-    expect(array_values(array_diff($hits, ['app/Http/Controllers/Api/PlatformAvatarTemplateController.php'])))
-        ->toBe([], 'PlatformTemplateContext::run() caller(s) outside the platform controller: '.implode(', ', $hits));
+    // The class itself defines run() and does not call it. The platform
+    // controller is added here by the slice that creates it.
+    expect(array_values(array_diff($hits, ['app/Support/AvatarTemplates/PlatformTemplateContext.php'])))
+        ->toBe([], 'PlatformTemplateContext::run() caller(s): '.implode(', ', $hits));
 })->group('arch');
 
 test('only AvatarTemplate implements AdmitsPlatformRows', function (): void {
@@ -107,11 +108,26 @@ test('only AvatarTemplate implements AdmitsPlatformRows', function (): void {
     expect($hits)->toBe(['app/Models/AvatarTemplate.php']);
 })->group('arch');
 
-test('scope strips under app/Support/AvatarTemplates are limited to the usage reader', function (): void {
+test('nothing under app/Support/AvatarTemplates strips a global scope yet', function (): void {
     $hits = atsFilesMatching(atsCode('app/Support/AvatarTemplates'), '/(->|::)withoutGlobalScopes?\(/');
 
-    expect(array_values(array_diff($hits, ['app/Support/AvatarTemplates/GlobalAvatarTemplateUsage.php'])))
-        ->toBe([], 'Unexpected scope strip(s): '.implode(', ', $hits));
+    // The cross-organization usage reader is added here by the slice that creates it.
+    expect($hits)->toBe([], 'Unexpected scope strip(s): '.implode(', ', $hits));
+})->group('arch');
+
+test('quiet writes on an avatar template never carry organization_id', function (): void {
+    // The write guards are model events, and `saveQuietly()` skips events by
+    // design: provider bookkeeping (sync status, configuration ids) must be able
+    // to stamp a platform row from any context. That leaves ONE thing a quiet
+    // write must never do, change which organization a template belongs to.
+    $quiet = array_filter(atsCode('app'), fn (string $code): bool => str_contains($code, 'AvatarTemplate')
+        && preg_match('/(saveQuietly|updateQuietly|withoutEvents)\(/', $code) === 1);
+
+    expect(array_keys($quiet))->toContain('app/Actions/ConversationLlm/ResyncTemplateBinding.php');
+
+    $offenders = atsFilesMatching($quiet, '/(forceFill|fill|updateQuietly)\(\s*\[[^\]]*[\'"]organization_id[\'"]/');
+
+    expect($offenders)->toBe([], 'organization_id written quietly in: '.implode(', ', $offenders));
 })->group('arch');
 
 test('TenantScoped::creating keeps its unconditional throw and admits only the platform contract', function (): void {
