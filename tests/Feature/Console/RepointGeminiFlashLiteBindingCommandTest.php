@@ -22,6 +22,7 @@ use Illuminate\Database\PostgresConnection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 
 function repointOldModel(): LlmModel
 {
@@ -580,4 +581,35 @@ test('the per-organization query the command runs never resolves another organiz
 
     expect($seenByA)->toBe([$templateA->id])
         ->and($seenByB)->toBe([$templateB->id]);
+});
+
+/**
+ * Platform templates are deliberately NOT repointed (global-avatar-templates
+ * A4, design D10). The command is one-off and per-organization; a platform row
+ * has no organization to run under, and invariant I5 already refuses binding
+ * the withdrawn model to a new platform template, so none can be re-bound to
+ * it. A separate platform pass was considered (spec) and rejected (design).
+ * This pins that a platform template bound to the old model is never matched,
+ * never re-synced and never counted, while organization rows are handled
+ * exactly once.
+ */
+test('a platform template bound to the old model is never repointed, synced or counted', function (): void {
+    repointNewModel();
+    [$template] = repointTemplateBoundToOldModel('heygen');
+    $global = PlatformTemplates::insertGlobal([
+        'llm_model_id' => $template->llm_model_id,
+        'llm_credential_id' => $template->llm_credential_id,
+    ]);
+    repointHeygenFakes();
+
+    $this->artisan('beai:repoint-gemini-flash-lite')
+        ->assertExitCode(0)
+        ->expectsOutputToContain('Repointed 1 template(s)');
+
+    $untouched = AvatarTemplate::platformOnly()->findOrFail($global->id);
+
+    expect($template->fresh()->llm_model_id)->toBe(repointNewModel()->id)
+        ->and($untouched->llm_model_id)->toBe(repointOldModel()->id)
+        ->and($untouched->llm_sync_status)->toBeNull()
+        ->and(Http::recorded(fn ($request) => str_ends_with($request->url(), '/v1/llm-configurations'))->count())->toBe(1);
 });
