@@ -51,9 +51,13 @@ class AvatarTemplateResource extends JsonResource
      * template carries no usable binding, computed by the SAME
      * `ConversationLlmUsageEstimator` the real `/end` write uses.
      *
-     * @return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}}
+     * `pal_sync` is the LAST Tavus persona sync outcome (`status` synced|skipped|
+     * warning|null, `code` the stable machine code behind a warning, `synced_at`
+     * the last SUCCESS). Admin-only: classified in `ExposureCatalogue`.
      *
-     * @scramble-return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}}
+     * @return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
+     *
+     * @scramble-return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
      */
     public function toArray(Request $request): array
     {
@@ -75,6 +79,11 @@ class AvatarTemplateResource extends JsonResource
             'llm_synced_at' => $template->llm_synced_at?->toIso8601String(),
             'llm' => [
                 'estimated_cost_usd_per_interview' => $this->forecast($template),
+            ],
+            'pal_sync' => [
+                'status' => $template->pal_sync_status,
+                'code' => $template->pal_sync_code,
+                'synced_at' => $template->pal_synced_at?->toIso8601String(),
             ],
         ];
     }

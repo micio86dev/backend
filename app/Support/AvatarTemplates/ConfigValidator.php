@@ -62,7 +62,8 @@ final class ConfigValidator
                 continue;
             }
 
-            $error = self::checkValue($field, $config[$field->key]);
+            $error = self::checkValue($field, $config[$field->key])
+                ?? self::checkDependentOption($field, $config);
 
             if ($error !== null) {
                 $errors[] = ['key' => $field->key, 'code' => $error];
@@ -70,6 +71,26 @@ final class ConfigValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * A select whose options depend on another field: the value must belong to
+     * the list its governing field's CURRENT value allows. A governing value
+     * with no list (`azure`, `tavus-auto`, or unset) allows none, so a model
+     * with no engine that takes one is refused rather than saved and never sent.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private static function checkDependentOption(FieldSpec $field, array $config): ?string
+    {
+        if ($field->optionsDependOn === null || $field->optionsByValue === null) {
+            return null;
+        }
+
+        $governing = $config[$field->optionsDependOn] ?? null;
+        $allowed = is_string($governing) ? ($field->optionsByValue[$governing] ?? []) : [];
+
+        return in_array($config[$field->key], $allowed, true) ? null : 'tts_model_engine_mismatch';
     }
 
     private static function checkValue(FieldSpec $field, mixed $value): ?string

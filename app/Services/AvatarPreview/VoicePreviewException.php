@@ -31,7 +31,11 @@ final class VoicePreviewException extends RuntimeException
         self::PROVIDER_ERROR => 502,
     ];
 
-    public function __construct(public readonly string $errorCode)
+    /**
+     * @param  string|null  $reason  Optional machine sub-reason a UI can translate
+     *                               (only for `voice_preview_unavailable`).
+     */
+    public function __construct(public readonly string $errorCode, public readonly ?string $reason = null)
     {
         parent::__construct($errorCode);
     }

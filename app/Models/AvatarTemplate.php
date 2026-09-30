@@ -40,6 +40,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $heygen_llm_configuration_id
  * @property string|null $llm_sync_status
  * @property Carbon|null $llm_synced_at
+ * @property string|null $pal_sync_status
+ * @property string|null $pal_sync_code
+ * @property Carbon|null $pal_synced_at
  */
 class AvatarTemplate extends TenantModel
 {
@@ -87,6 +90,7 @@ class AvatarTemplate extends TenantModel
             'llm_model_id' => 'integer',
             'llm_credential_id' => 'integer',
             'llm_synced_at' => 'datetime',
+            'pal_synced_at' => 'datetime',
         ];
     }
 

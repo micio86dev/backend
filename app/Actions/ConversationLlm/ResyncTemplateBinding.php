@@ -64,12 +64,28 @@ final class ResyncTemplateBinding
         // observers a second time for a write that is bookkeeping ABOUT a sync,
         // not a save a user made. Do NOT "tidy" this to save() in a future
         // refactor.
-        $template->forceFill([
+        $attributes = [
             'llm_sync_status' => $result['status'] === 'synced'
                 ? 'synced'
                 : ($isBound ? 'failed' : 'not_required'),
             'llm_synced_at' => $result['status'] === 'synced' ? now() : null,
-        ])->saveQuietly();
+        ];
+
+        // The Tavus PERSONA outcome is a separate fact from the binding's
+        // (`llm_sync_*` gates billing; this says whether the persona knobs
+        // reached the vendor and, if not, why). Only the stable code is kept,
+        // never a provider message. `pal_synced_at` is the last SUCCESS, so a
+        // later failure does not erase it.
+        if ($template->provider === 'tavus') {
+            $attributes['pal_sync_status'] = $result['status'];
+            $attributes['pal_sync_code'] = $result['status'] === 'warning' ? ($result['message'] ?? 'pal_sync_failed') : null;
+
+            if ($result['status'] === 'synced') {
+                $attributes['pal_synced_at'] = now();
+            }
+        }
+
+        $template->forceFill($attributes)->saveQuietly();
 
         return $result;
     }

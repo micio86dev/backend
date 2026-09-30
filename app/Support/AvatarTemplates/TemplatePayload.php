@@ -148,6 +148,16 @@ final class TemplatePayload
             self::put($layers, $path, $value);
         }
 
+        // A model is ALWAYS sent for the engines that take one. The PATCH
+        // replaces the whole `/layers` node, so omitting it silently reverts the
+        // persona to Tavus's own default model, which may not speak Italian.
+        $engine = $layers['tts']['tts_engine'] ?? null;
+
+        if (is_string($engine) && ! isset($layers['tts']['tts_model_name'])
+            && isset(ProviderFieldSpecs::TAVUS_TTS_DEFAULT_MODEL[$engine])) {
+            $layers['tts']['tts_model_name'] = ProviderFieldSpecs::TAVUS_TTS_DEFAULT_MODEL[$engine];
+        }
+
         return $layers;
     }
 

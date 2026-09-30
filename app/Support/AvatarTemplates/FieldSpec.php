@@ -53,6 +53,16 @@ final readonly class FieldSpec
          * omit it, exactly like `hintKey`.
          */
         public ?string $catalogueResource = null,
+        /**
+         * For a select whose valid options depend on ANOTHER field's value:
+         * that field's key (`ttsModelName` depends on `ttsEngine`).
+         * `$options` stays the flat union so a client that ignores this still
+         * renders a legal list; `$optionsByValue` narrows it per value.
+         * `ConfigValidator` enforces the pairing server-side.
+         */
+        public ?string $optionsDependOn = null,
+        /** @var array<string, list<string>>|null */
+        public ?array $optionsByValue = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -69,6 +79,8 @@ final readonly class FieldSpec
             'max' => $this->max,
             'step' => $this->step,
             'catalogue_resource' => $this->catalogueResource,
+            'options_depend_on' => $this->optionsDependOn,
+            'options_by_value' => $this->optionsByValue,
         ], fn (mixed $v): bool => $v !== null && $v !== false);
     }
 }

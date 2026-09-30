@@ -18,9 +18,12 @@ use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -184,7 +187,7 @@ test('tavus stock voices have no preview: 422 voice_preview_unavailable and no p
     $this->withToken(voicePreviewSuperadmin())
         ->postJson(VOICE_PREVIEW_URI, $payload)
         ->assertStatus(422)
-        ->assertExactJson(['message' => 'voice_preview_unavailable']);
+        ->assertExactJson(['message' => 'voice_preview_unavailable', 'reason' => 'tavus_stock_voice']);
 
     Http::assertNothingSent();
 })->with([[null], ['tavus-auto'], ['azure']]);
@@ -335,4 +338,242 @@ test('the endpoint is throttled per user', function (): void {
     $this->withToken($token)
         ->postJson(VOICE_PREVIEW_URI, ['provider' => 'cartesia', 'voice_id' => 'v4'])
         ->assertStatus(429);
+});
+
+// ─── Tavus persona (PAL) variant ────────────────────────────────────────────
+
+const PAL_SECRET = 'sk-SECRET-PERSONA-KEY-123';
+
+/**
+ * @param  array<string, mixed>  $tts
+ * @return array<string, mixed>
+ */
+function palBody(array $tts): array
+{
+    return [
+        'pal_id' => 'p1',
+        'pal_name' => 'Persona',
+        'system_prompt' => 'SECRET-SYSTEM-PROMPT',
+        'api_key' => PAL_SECRET,
+        'layers' => [
+            'llm' => ['model' => 'x', 'api_key' => PAL_SECRET],
+            'tts' => $tts + ['api_key' => PAL_SECRET],
+        ],
+    ];
+}
+
+function fakePal(array $tts, ?string $vendorBody = VOICE_PREVIEW_MP3): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        'tavusapi.com/v2/pals/*' => Http::response(palBody($tts), 200),
+        'api.cartesia.ai/tts/bytes' => Http::response($vendorBody, 200),
+        'api.elevenlabs.io/v1/text-to-speech/*' => Http::response($vendorBody, 200),
+    ]);
+}
+
+function palPreview(mixed $test, array $extra = []): TestResponse
+{
+    return $test->withToken(voicePreviewSuperadmin())
+        ->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1'] + $extra);
+}
+
+beforeEach(function (): void {
+    config(['interview.tavus.api_key' => 'TEST_TAVUS_KEY']);
+});
+
+test('pal: a cartesia persona resolves to its external voice and is synthesised with the persona model', function (): void {
+    fakePal(['tts_engine' => 'cartesia', 'external_voice_id' => 'ext-c-1', 'tts_model_name' => 'sonic-2']);
+
+    $response = palPreview($this);
+
+    $response->assertOk()->assertHeader('Content-Type', 'audio/mpeg');
+    expect($response->getContent())->toBe(VOICE_PREVIEW_MP3);
+
+    Http::assertSent(fn (HttpRequest $r): bool => $r->url() === 'https://tavusapi.com/v2/pals/p1'
+        && $r->method() === 'GET'
+        && $r->hasHeader('x-api-key', 'TEST_TAVUS_KEY'));
+    Http::assertSent(fn (HttpRequest $r): bool => $r->url() === 'https://api.cartesia.ai/tts/bytes'
+        && $r['voice'] === ['mode' => 'id', 'id' => 'ext-c-1']
+        && $r['model_id'] === 'sonic-2'
+        && $r['transcript'] === config('avatar_preview.phrases.it'));
+    Http::assertSentCount(2);
+});
+
+test('pal: an elevenlabs persona uses the configured model when it has none', function (): void {
+    fakePal(['tts_engine' => 'elevenlabs', 'external_voice_id' => 'El-Ext_9']);
+
+    palPreview($this, ['language' => 'en'])->assertOk();
+
+    Http::assertSent(fn (HttpRequest $r): bool => str_starts_with($r->url(), 'https://api.elevenlabs.io/v1/text-to-speech/El-Ext_9')
+        && $r['model_id'] === 'eleven_multilingual_v2'
+        && $r['language_code'] === 'en');
+});
+
+test('pal: unavailable personas answer 422 voice_preview_unavailable with a machine reason and never call a vendor', function (array $tts, string $reason): void {
+    fakePal($tts);
+
+    palPreview($this)
+        ->assertStatus(422)
+        ->assertExactJson(['message' => 'voice_preview_unavailable', 'reason' => $reason]);
+
+    Http::assertSentCount(1);
+})->with([
+    'tavus-auto' => [['tts_engine' => 'tavus-auto'], 'pal_uses_tavus_voice'],
+    'empty engine' => [['tts_engine' => ''], 'pal_uses_tavus_voice'],
+    'native voice only' => [['voice_id' => 'tavus-native-1'], 'pal_uses_tavus_voice'],
+    'azure' => [['tts_engine' => 'azure', 'voice_id' => 'x'], 'pal_azure_engine'],
+    'external engine without a voice' => [['tts_engine' => 'cartesia'], 'pal_no_voice_configured'],
+    'no tts layer' => [[], 'pal_no_voice_configured'],
+]);
+
+test('pal: a stock Tavus voice_id preview carries a reason too', function (): void {
+    Http::fake();
+
+    $this->withToken(voicePreviewSuperadmin())
+        ->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'voice_id' => 'stock'])
+        ->assertStatus(422)
+        ->assertExactJson(['message' => 'voice_preview_unavailable', 'reason' => 'tavus_stock_voice']);
+});
+
+test('pal: a persona Tavus does not know is 404 voice_preview_voice_not_found', function (): void {
+    Http::preventStrayRequests();
+    Http::fake(['tavusapi.com/v2/pals/*' => Http::response(['message' => 'nope'], 404)]);
+
+    palPreview($this)->assertStatus(404)->assertExactJson(['message' => 'voice_preview_voice_not_found']);
+});
+
+test('pal: Tavus failures map to the provider error and are not cached', function (int $status): void {
+    Http::preventStrayRequests();
+    Http::fake(['tavusapi.com/v2/pals/*' => Http::sequence()
+        ->push(['error' => PAL_SECRET], $status)
+        ->push(palBody(['tts_engine' => 'tavus-auto']), 200)]);
+
+    palPreview($this)->assertStatus(502)->assertExactJson(['message' => 'voice_preview_provider_error']);
+    palPreview($this)->assertStatus(422);
+})->with([401, 403, 429, 500]);
+
+test('pal: a Tavus timeout is a provider error', function (): void {
+    Http::preventStrayRequests();
+    Http::fake(fn () => throw new ConnectionException('timeout'));
+
+    palPreview($this)->assertStatus(502)->assertExactJson(['message' => 'voice_preview_provider_error']);
+});
+
+test('pal: a missing Tavus key is 503 and nothing is sent', function (): void {
+    config(['interview.tavus.api_key' => '']);
+    Http::preventStrayRequests();
+    Http::fake();
+
+    palPreview($this)->assertStatus(503)->assertExactJson(['message' => 'voice_preview_provider_not_configured']);
+    Http::assertNothingSent();
+});
+
+test('pal: exactly one of voice_id and pal_id, and pal_id only with tavus', function (array $payload): void {
+    Http::fake();
+
+    $this->withToken(voicePreviewSuperadmin())->postJson(VOICE_PREVIEW_URI, $payload)->assertStatus(422);
+
+    Http::assertNothingSent();
+})->with([
+    'both' => [['provider' => 'tavus', 'voice_id' => 'v1', 'pal_id' => 'p1']],
+    'neither' => [['provider' => 'tavus']],
+    'pal_id with cartesia' => [['provider' => 'cartesia', 'pal_id' => 'p1']],
+    'pal_id with heygen' => [['provider' => 'heygen', 'pal_id' => 'p1']],
+    'bad pal_id' => [['provider' => 'tavus', 'pal_id' => '../pals']],
+    'overlong pal_id' => [['provider' => 'tavus', 'pal_id' => str_repeat('a', 41)]],
+]);
+
+test('pal: the second identical request makes ZERO HTTP calls, the persona lookup included', function (): void {
+    fakePal(['tts_engine' => 'cartesia', 'external_voice_id' => 'ext-c-1']);
+    $token = voicePreviewSuperadmin();
+
+    $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1'])->assertOk();
+    Http::assertSentCount(2);
+
+    $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1'])->assertOk();
+    Http::assertSentCount(2);
+});
+
+test('pal: personas sharing a voice share the audio; a persona whose voice changed is not served stale audio', function (): void {
+    $token = voicePreviewSuperadmin();
+    Http::preventStrayRequests();
+    Http::fake([
+        'tavusapi.com/v2/pals/p1' => Http::sequence()
+            ->push(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'shared']), 200)
+            ->push(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'changed']), 200),
+        'tavusapi.com/v2/pals/p2' => Http::response(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'shared']), 200),
+        'api.cartesia.ai/tts/bytes' => Http::sequence()
+            ->push(VOICE_PREVIEW_MP3, 200)
+            ->push(VOICE_PREVIEW_MP3.'-NEW', 200),
+    ]);
+
+    $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1'])->assertOk();
+    $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p2'])->assertOk();
+
+    Http::assertSentCount(3);
+    expect(Storage::allFiles('voice-previews'))->toHaveCount(1);
+
+    // p1's persona now points at another voice; once the lookup cache expires the new voice is synthesised.
+    Cache::flush();
+
+    $response = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1']);
+
+    expect($response->getContent())->toBe(VOICE_PREVIEW_MP3.'-NEW')
+        ->and(Storage::allFiles('voice-previews'))->toHaveCount(2);
+});
+
+test('pal: nothing of the persona body reaches the response, the logs or the caches', function (): void {
+    $logged = [];
+    Log::listen(function ($event) use (&$logged): void {
+        $logged[] = $event->message.json_encode($event->context);
+    });
+    $token = voicePreviewSuperadmin();
+    Http::preventStrayRequests();
+
+    // A failing vendor call logs; an unavailable persona answers with an error body; a good one caches.
+    Http::fake([
+        'tavusapi.com/v2/pals/bad' => Http::response(palBody(['tts_engine' => 'azure']), 200),
+        'tavusapi.com/v2/pals/ok' => Http::response(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'v']), 200),
+        'api.cartesia.ai/tts/bytes' => Http::sequence()->push(['error' => PAL_SECRET], 500)->push(VOICE_PREVIEW_MP3, 200),
+    ]);
+
+    $unavailable = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'bad']);
+    $failed = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'ok']);
+
+    $good = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'ok']);
+
+    $everything = $unavailable->getContent().$failed->getContent().$good->headers->__toString()
+        .implode('', $logged)
+        .json_encode([
+            Cache::get('voice-preview:pal:v1:ok'),
+            Cache::get('voice-preview:pal:v1:bad'),
+        ]);
+    foreach (Storage::allFiles('voice-previews') as $file) {
+        $everything .= Storage::get($file);
+    }
+
+    expect($everything)->not->toContain(PAL_SECRET)
+        ->not->toContain('SECRET-SYSTEM-PROMPT')
+        ->not->toContain('TEST_TAVUS_KEY')
+        ->and($unavailable->status())->toBe(422)
+        ->and($failed->status())->toBe(502)
+        ->and($good->status())->toBe(200);
+});
+
+test('pal: a persona whose model changed is synthesised again, not served the old model audio', function (): void {
+    $token = voicePreviewSuperadmin();
+    Http::preventStrayRequests();
+    Http::fake([
+        'tavusapi.com/v2/pals/p1' => Http::sequence()
+            ->push(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'v', 'tts_model_name' => 'sonic-2']), 200)
+            ->push(palBody(['tts_engine' => 'cartesia', 'external_voice_id' => 'v', 'tts_model_name' => 'sonic-3']), 200),
+        'api.cartesia.ai/tts/bytes' => Http::sequence()->push('OLD-MODEL-AUDIO', 200)->push('NEW-MODEL-AUDIO', 200),
+    ]);
+
+    $first = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1']);
+    Cache::flush();
+    $second = $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'tavus', 'pal_id' => 'p1']);
+
+    expect($first->getContent())->toBe('OLD-MODEL-AUDIO')->and($second->getContent())->toBe('NEW-MODEL-AUDIO');
 });
