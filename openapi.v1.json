@@ -781,6 +781,22 @@
                         }
                     },
                     {
+                        "name": "external_id",
+                        "in": "query",
+                        "description": "Exact match on the external_id supplied as candidate.external_id when the interview was created. An integer from 1 to 9007199254740991; any other value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "in": "query",
+                        "description": "Exact, case-sensitive match on the source supplied as candidate.source when the interview was created. At most 180 characters; a longer value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
                         "name": "expand",
                         "in": "query",
                         "description": "Comma-separated related resources to inline. Supported: project.",

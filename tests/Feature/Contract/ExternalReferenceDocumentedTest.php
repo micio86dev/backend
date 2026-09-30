@@ -25,9 +25,12 @@ declare(strict_types=1);
  * The READ side of the backoffice and of /v1 is pinned next (slice A3a-ii): the
  * admin list and detail schemas in `openapi.json`, and `PublicInterview` in
  * `openapi.v1.json`. The /v1 WRITE side closes the file (slice A3b): the
- * `candidate` object of the create-interview request, in BOTH the Scramble
- * export and the vendored `public-api/openapi.yaml`, which
- * `ContractEquivalenceTest` does not compare below the top-level properties.
+ * `candidate` object of the create-interview request, and the `external_id` /
+ * `source` filters of the interview list, in BOTH the Scramble export and the
+ * vendored `public-api/openapi.yaml`. `ContractEquivalenceTest` compares the
+ * query parameter NAMES and the top-level request properties only, so the
+ * nested `candidate` schema, and the type, bounds and wording of each filter,
+ * are pinned here.
  *
  * REQ: External Reference Validation Is One Shared Contract,
  *      M2M Participant Create Accepts And Returns The External Reference,
@@ -325,3 +328,69 @@ test('the create-interview request documents candidate.source as string|null of 
     expect($property['maxLength'])->toBe(ExternalReference::SOURCE_MAX_LENGTH);
     expect($candidate['required'] ?? [])->not->toContain('source');
 })->with(fn () => externalReferencePublicDocuments());
+
+// ---------------------------------------------------------------------------
+// The /v1 list filters (slice A3b)
+// ---------------------------------------------------------------------------
+
+/**
+ * One query parameter of `GET /interviews`, from the Scramble export of `/v1`
+ * or from the vendored contract.
+ *
+ * @return array<string, mixed>
+ */
+function externalReferenceListParameter(string $document, string $name): array
+{
+    $source = $document === 'contract'
+        ? Yaml::parseFile(config('public_api.contract_path'))
+        : externalReferencePublicSpec();
+
+    foreach ($source['paths']['/interviews']['get']['parameters'] as $parameter) {
+        if (($parameter['name'] ?? null) === $name && ($parameter['in'] ?? null) === 'query') {
+            return $parameter;
+        }
+    }
+
+    return [];
+}
+
+test('GET /interviews documents the external_id filter as an integer query parameter with a description', function (string $document): void {
+    $parameter = externalReferenceListParameter($document, 'external_id');
+
+    expect($parameter)->not->toBe([], "{$document}: listInterviews has no external_id query parameter");
+    expect($parameter['schema']['type'])->toBe('integer');
+    expect($parameter['description'] ?? '')->toBeString()->not->toBe('');
+    // The filter is optional.
+    expect($parameter['required'] ?? false)->toBeFalse();
+})->with(fn () => externalReferencePublicDocuments());
+
+test('GET /interviews documents the source filter as a string query parameter with a description', function (string $document): void {
+    $parameter = externalReferenceListParameter($document, 'source');
+
+    expect($parameter)->not->toBe([], "{$document}: listInterviews has no source query parameter");
+    expect($parameter['schema']['type'])->toBe('string');
+    expect($parameter['description'] ?? '')->toBeString()->not->toBe('');
+    expect($parameter['required'] ?? false)->toBeFalse();
+})->with(fn () => externalReferencePublicDocuments());
+
+test('the vendored contract bounds the filters like the request body: external_id 1 to 2^53-1, source 180 characters', function (): void {
+    $externalId = externalReferenceListParameter('contract', 'external_id');
+    $source = externalReferenceListParameter('contract', 'source');
+
+    expect($externalId['schema']['minimum'])->toBe(1);
+    expect($externalId['schema']['maximum'])->toBe(ExternalReference::MAX_EXTERNAL_ID);
+    expect($source['schema']['maxLength'])->toBe(ExternalReference::SOURCE_MAX_LENGTH);
+});
+
+test('the exported filter descriptions are consumer-facing, not maintainer notes lifted from a code comment', function (string $name): void {
+    $description = (string) externalReferenceListParameter('export', $name)['description'];
+
+    // Scramble lifts the nearest code comment into a parameter's description
+    // when the parameter has none of its own; these are the words that only a
+    // maintainer comment would carry.
+    expect($description)
+        ->not->toContain('validateFilterFormats')
+        ->not->toContain('ConvertEmptyStringsToNull')
+        ->not->toContain('base query');
+    expect($description)->toContain('400');
+})->with(['external_id', 'source']);
