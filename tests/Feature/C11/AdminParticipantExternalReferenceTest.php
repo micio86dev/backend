@@ -175,3 +175,138 @@ test('a participant of another organization is neither listed nor readable, refe
 
     $this->withToken($token)->getJson("/api/participants/{$foreign->id}")->assertNotFound();
 });
+
+// ---------------------------------------------------------------------------
+// `q` matches the external reference (A3a-ii)
+// ---------------------------------------------------------------------------
+
+/**
+ * A participant whose candidate_ref, display_name and email cannot contain any
+ * search term used below (the factory's random uuid could, rarely, contain
+ * "4471"), so a hit is always attributable to `source` or `external_id`.
+ */
+function extRefSearchable(Project $project, ?int $externalId, ?string $source, string $name): Participant
+{
+    return extRefParticipant($project, $externalId, $source, [
+        'candidate_ref' => 'ref-'.$name,
+        'display_name' => 'Person '.$name,
+        'email' => $name.'@example.test',
+    ]);
+}
+
+/**
+ * @return list<string> the display names of the rows a search returned
+ */
+function extRefSearch(mixed $test, string $token, string $query): array
+{
+    $response = $test->withToken($token)->getJson('/api/participants?'.$query);
+    $response->assertOk();
+
+    $names = collect($response->json('data'))->pluck('display_name')->map(fn (string $name): string => str_replace('Person ', '', $name))->all();
+    sort($names);
+
+    return $names;
+}
+
+test('q matches source case-insensitively and partially', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+    $project = extRefProjectIn($org);
+
+    extRefSearchable($project, null, 'Acme ATS', 'hit');
+    extRefSearchable($project, null, 'Workday', 'miss');
+
+    expect(extRefSearch($this, $token, 'q=acme'))->toBe(['hit']);
+    expect(extRefSearch($this, $token, 'q=ME%20AT'))->toBe(['hit']);
+});
+
+test('a numeric q matches external_id exactly, never as a prefix or suffix, and also a source containing the digits', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+    $project = extRefProjectIn($org);
+
+    extRefSearchable($project, 4471, 'workday', 'exact');
+    extRefSearchable($project, 44710, 'workday', 'prefix');
+    extRefSearchable($project, 14471, 'workday', 'suffix');
+    extRefSearchable($project, null, 'job-4471', 'insource');
+
+    // `prefix` and `suffix` are not returned: the external_id branch is an
+    // equality, while the source branch is the one that contains the digits.
+    expect(extRefSearch($this, $token, 'q=4471'))->toBe(['exact', 'insource']);
+});
+
+test('a non-numeric q never reaches the bigint column and returns 200', function (string $term): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+    $project = extRefProjectIn($org);
+
+    extRefSearchable($project, 44, 'acme', 'one');
+
+    // Comparing `external_id` to "44x" would be a Postgres 22P02 and a 500: the
+    // 200 is the proof that the branch was never built.
+    extRefSearch($this, $token, 'q='.$term);
+})->with(['44x', 'acme', '4471e3', '-5', '1.5', '0x1F', '']);
+
+test('q=44x matches nothing through external_id even though 44 exists', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+    extRefSearchable(extRefProjectIn($org), 44, 'workday', 'one');
+
+    expect(extRefSearch($this, $token, 'q=44x'))->toBe([]);
+});
+
+test('an all-digit q above the safe-integer cap returns 200 and still matches the text columns', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+    $project = extRefProjectIn($org);
+
+    extRefSearchable($project, 4471, 'job-99999999999999999999999', 'insource');
+    extRefSearchable($project, 4471, 'workday', 'miss');
+
+    expect(extRefSearch($this, $token, 'q=99999999999999999999999'))->toBe(['insource']);
+    // Just past the cap, where a BIGINT comparison would still parse as a number.
+    expect(extRefSearch($this, $token, 'q=9007199254740992'))->toBe([]);
+});
+
+test('a q of 0 is not an external_id and never matches one', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+
+    extRefSearchable(extRefProjectIn($org), 1, 'workday', 'one');
+
+    expect(extRefSearch($this, $token, 'q=0'))->toBe([]);
+});
+
+test('q stays combinable with the status filter', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+    $project = extRefProjectIn($org);
+
+    extRefSearchable($project, null, 'acme-ats', 'pending');
+    $done = extRefSearchable($project, null, 'acme-ats', 'done');
+    $done->forceFill(['status' => 'in_corso'])->save();
+
+    expect(extRefSearch($this, $token, 'q=acme&status=in_attesa'))->toBe(['pending']);
+    expect(extRefSearch($this, $token, 'q=acme&status=in_corso'))->toBe(['done']);
+});
+
+test('a NULL source never matches a search', function (): void {
+    $org = Organization::factory()->create();
+    $token = extRefAdminToken($org);
+
+    extRefSearchable(extRefProjectIn($org), null, null, 'nosource');
+
+    expect(extRefSearch($this, $token, 'q=null'))->toBe([]);
+    expect(extRefSearch($this, $token, 'q=acme'))->toBe([]);
+});
+
+test('a search never returns another organization\'s row, for a source or an external_id', function (string $term): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $token = extRefAdminToken($orgA);
+
+    extRefSearchable(extRefProjectIn($orgA), 4471, 'acme-ats', 'own');
+    extRefSearchable(extRefProjectIn($orgB), 4471, 'acme-ats', 'foreign');
+
+    expect(extRefSearch($this, $token, 'q='.$term))->toBe(['own']);
+})->with(['acme-ats', '4471']);

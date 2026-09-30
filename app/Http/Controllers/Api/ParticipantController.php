@@ -13,6 +13,7 @@ use App\Services\Admin\AdminEvaluationSerializer;
 use App\Services\Admin\AdminTranscriptSerializer;
 use App\Support\Admin\AdminParticipantReader;
 use App\Support\Admin\ParticipantReadScope;
+use App\Support\Participant\ExternalReference;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -56,6 +57,10 @@ final class ParticipantController extends Controller
      * Server-paginated (D5 — a fresh authorized query per page, never
      * fetch-all + client filter). Sort is fixed (created_at desc, id desc):
      * no client-specified sort column reaches the query builder.
+     *
+     * `q` also matches the candidate's external reference: `source` by
+     * case-insensitive substring, and `external_id` by exact equality, only
+     * when the trimmed term is a whole number from 1 to 9007199254740991.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -71,9 +76,22 @@ final class ParticipantController extends Controller
 
         if ($request->filled('q')) {
             $term = '%'.$request->string('q')->value().'%';
-            $query->where(function ($sub) use ($term): void {
+            // Null unless the trimmed term is all ASCII digits within 1..2^53-1:
+            // a non-numeric or over-range term must never reach the BIGINT
+            // comparison below (Postgres would raise 22P02 / 22003 -> 500).
+            $externalId = ExternalReference::parseExternalIdTerm($request->string('q')->trim()->value());
+
+            // One OR group nested in a single where(): it can never escape the
+            // `organization_id` scope `AdminParticipantReader::listQuery()` and
+            // the `status`/`project_id` filters above already applied.
+            $query->where(function ($sub) use ($term, $externalId): void {
                 $sub->where('candidate_ref', 'like', $term)
-                    ->orWhere('display_name', 'like', $term);
+                    ->orWhere('display_name', 'like', $term)
+                    ->orWhere('source', 'ilike', $term);
+
+                if ($externalId !== null) {
+                    $sub->orWhere('external_id', $externalId);
+                }
             });
         }
 
