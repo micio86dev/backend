@@ -832,6 +832,9 @@
                                                         },
                                                         "delete": {
                                                             "type": "boolean"
+                                                        },
+                                                        "manageGlobal": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
@@ -839,7 +842,8 @@
                                                         "create",
                                                         "update",
                                                         "activate",
-                                                        "delete"
+                                                        "delete",
+                                                        "manageGlobal"
                                                     ]
                                                 },
                                                 "projects": {
@@ -7512,6 +7516,308 @@
                 }
             }
         },
+        "/admin/avatar-templates": {
+            "get": {
+                "operationId": "platformAvatarTemplate.index",
+                "summary": "List platform avatar templates with their usage",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "platformAvatarTemplate.store",
+                "description": "Created INACTIVE and never activatable through this payload: creating a\ntemplate must not change what candidates are being interviewed with\nright now, and offering it to every organization is its own decision.",
+                "summary": "Create a platform avatar template",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    },
+                                    "provider": {
+                                        "type": "string",
+                                        "description": "Literal list \u2014 see catalogue()'s validation for why implode(self::PROVIDERS) is not used.",
+                                        "enum": [
+                                            "heygen",
+                                            "tavus"
+                                        ]
+                                    },
+                                    "config": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "minItems": 1
+                                    },
+                                    "llm_model_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4)."
+                                    },
+                                    "llm_credential_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "provider",
+                                    "config"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}": {
+            "get": {
+                "operationId": "platformAvatarTemplate.show",
+                "summary": "Show a platform avatar template with its usage",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "An error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Error overview.",
+                                            "examples": [
+                                                ""
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "platformAvatarTemplate.update",
+                "description": "An edit reaches EVERY project that pins this template, in every\norganization, on the next read (live edit, design D1) \u2014 which is why the\naudit row carries the usage at edit time: the reach of the change is part\nof what happened. It records field NAMES, never config values.",
+                "summary": "Edit a platform avatar template",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    },
+                                    "config": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "llm_model_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4). Both null\nclears the binding (see \"Unbinding a template clears only\n that template's binding\")."
+                                    },
+                                    "llm_credential_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/admin/platform-users": {
             "get": {
                 "operationId": "platformUser.index",
@@ -13436,6 +13742,168 @@
                     "created_at"
                 ],
                 "title": "ParticipantResource"
+            },
+            "PlatformAvatarTemplateResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "organization",
+                            "platform"
+                        ]
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm_model_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_credential_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_sync_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm_synced_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm": {
+                        "type": "object",
+                        "properties": {
+                            "estimated_cost_usd_per_interview": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "minutes": {
+                                        "type": "integer"
+                                    },
+                                    "turns": {
+                                        "type": "integer"
+                                    },
+                                    "usd": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "minutes",
+                                    "turns",
+                                    "usd"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "estimated_cost_usd_per_interview"
+                        ]
+                    },
+                    "pal_sync": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "synced_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "status",
+                            "code",
+                            "synced_at"
+                        ]
+                    },
+                    "usage": {
+                        "type": "object",
+                        "properties": {
+                            "organization_count": {
+                                "type": "integer"
+                            },
+                            "project_count": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "organization_count",
+                            "project_count"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "provider",
+                    "scope",
+                    "config",
+                    "is_active",
+                    "created_at",
+                    "updated_at",
+                    "llm_model_id",
+                    "llm_credential_id",
+                    "llm_sync_status",
+                    "llm_synced_at",
+                    "llm",
+                    "pal_sync",
+                    "usage"
+                ],
+                "title": "PlatformAvatarTemplateResource"
             },
             "PlatformUserResource": {
                 "type": "object",
