@@ -13,6 +13,7 @@ use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
 use App\Rules\ScheduledStartWithinLeadTime;
+use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
@@ -61,6 +62,15 @@ use Illuminate\Support\Carbon;
  *   8. Respond 201 { entry_url, expires_at } — never the bare token (design
  *      D1's "operator-facing payload" rule).
  *
+ * Optional external reference (candidate-external-reference): `external_id`
+ * (integer, 1..2^53-1) and `source` (string, at most 180 characters), validated
+ * by the shared `ExternalReference::rules()`. On the scheduled branch they are
+ * written on the eagerly created row; on the immediate branch they travel in
+ * the sso-link token as claims (only when present) and the exchange persists
+ * them. Those claims are readable by whoever holds the link (a JWT payload is
+ * base64, not encrypted), like `email` and `display_name`: do not put a secret
+ * in `source`.
+ *
  * REQ: Operator-Facing Entry Link Mint Endpoint,
  *      Entry Link Response Composes the Absolute URL,
  *      Optional Scheduled Start On Participant Creation,
@@ -102,6 +112,10 @@ final class EntryLinkController extends Controller
             // that made this feature necessary in the first place. An operator
             // who wants to deliver the link some other way opts out explicitly.
             'send_email' => ['sometimes', 'boolean'],
+            // Spread INTO the inline call, never hoisted out of it: Scramble
+            // evaluates this array to derive the requestBody, and the shared
+            // rules keep every surface accepting exactly the same values.
+            ...ExternalReference::rules(),
         ]);
 
         // Project is resolved manually (not route model binding), scoped by
@@ -136,6 +150,8 @@ final class EntryLinkController extends Controller
             ], 422);
         }
 
+        $externalReference = ExternalReference::fromValidated($validated);
+
         // interview-scheduling (design AD-1 amendment, tasks T-B1): the
         // SCHEDULED branch. Creates the participant row EAGERLY — this is
         // the only creation path this endpoint has ever had a reason to
@@ -161,6 +177,7 @@ final class EntryLinkController extends Controller
                 // a zero-offset UTC clock, so this bug was invisible until a
                 // non-zero-offset round-trip case was added.
                 Carbon::parse($validated['scheduled_at'])->utc(),
+                $externalReference,
             );
 
             if ($result['conflict'] !== null) {
@@ -189,6 +206,7 @@ final class EntryLinkController extends Controller
                 $validated['email'],
                 $validated['role_code'] ?? null,
                 $validated['lang'] ?? null,
+                $externalReference,
             );
         } catch (EntryLinkRefused $e) {
             return match ($e->reason) {

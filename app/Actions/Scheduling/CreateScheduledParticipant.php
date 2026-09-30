@@ -7,6 +7,7 @@ namespace App\Actions\Scheduling;
 use App\Enums\ParticipantSchedulingStatus;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Support\Participant\ExternalReference;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,11 @@ use Illuminate\Support\Facades\DB;
  * binding domain constraint and this action creates the FIRST row, exactly
  * like the M2M controller already does for its own immediate create.
  *
+ * The optional external reference (candidate-external-reference) is a trailing
+ * parameter so every existing caller stays valid; its `external_id` / `source`
+ * are written through `forceFill()` like the rest of the row (neither column is
+ * mass-assignable).
+ *
  * Does NOT fire `App\Events\ParticipantCreated` — consistent with
  * `M2m\ParticipantController::store()`'s own existing precedent (AD-11): a
  * caller that receives a synchronous 201 for a row it just created directly
@@ -47,6 +53,7 @@ final class CreateScheduledParticipant
         ?string $roleCode,
         ?string $language,
         Carbon $scheduledAt,
+        ExternalReference $externalReference = new ExternalReference,
     ): array {
         $participant = new Participant;
         $participant->forceFill([
@@ -60,6 +67,7 @@ final class CreateScheduledParticipant
             'status' => 'in_attesa',
             'scheduled_at' => $scheduledAt,
             'scheduling_status' => ParticipantSchedulingStatus::Pending,
+            ...$externalReference->toAttributes(),
         ]);
 
         // DB::transaction() — not a bare save() — for the SAME reason
