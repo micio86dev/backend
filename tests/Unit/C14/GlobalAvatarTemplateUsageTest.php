@@ -64,10 +64,14 @@ test('the number of queries does not grow with the number of organizations', fun
     $global = PlatformTemplates::insertGlobal();
     gauPin(Organization::factory()->create(), $global->id);
 
-    $count = function () use ($global): int {
+    // Neither the number of organizations nor the number of templates asked for
+    // may change the number of queries.
+    $others = [PlatformTemplates::insertGlobal()->id, PlatformTemplates::insertGlobal()->id];
+
+    $count = function (array $ids = []) use ($global): int {
         DB::enableQueryLog();
         DB::flushQueryLog();
-        app(GlobalAvatarTemplateUsage::class)->for([$global->id]);
+        app(GlobalAvatarTemplateUsage::class)->for([$global->id, ...$ids]);
         $queries = count(DB::getQueryLog());
         DB::disableQueryLog();
 
@@ -80,7 +84,7 @@ test('the number of queries does not grow with the number of organizations', fun
         gauPin(Organization::factory()->create(), $global->id);
     }
 
-    expect($count())->toBe($withOne)->and($withOne)->toBe(1)
+    expect($count())->toBe($withOne)->and($count($others))->toBe($withOne)->and($withOne)->toBe(1)
         ->and(app(GlobalAvatarTemplateUsage::class)->for([$global->id])[$global->id]['organization_count'])->toBe(13);
 });
 
