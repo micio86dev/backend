@@ -51,13 +51,18 @@ class AvatarTemplateResource extends JsonResource
      * template carries no usable binding, computed by the SAME
      * `ConversationLlmUsageEstimator` the real `/end` write uses.
      *
+     * `scope` is `organization` or `platform`. Organization routes never
+     * serve a platform row, so a caller reads `platform` only through a
+     * pinned template rendered elsewhere; it is here so every representation
+     * of a template says whose it is.
+     *
      * `pal_sync` is the LAST Tavus persona sync outcome (`status` synced|skipped|
      * warning|null, `code` the stable machine code behind a warning, `synced_at`
      * the last SUCCESS). Admin-only: classified in `ExposureCatalogue`.
      *
-     * @return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
+     * @return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
      *
-     * @scramble-return array{id: int, name: string, description: string|null, provider: string, config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
+     * @scramble-return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
      */
     public function toArray(Request $request): array
     {
@@ -69,6 +74,7 @@ class AvatarTemplateResource extends JsonResource
             'name' => $template->name,
             'description' => $template->description,
             'provider' => $template->provider,
+            'scope' => $template->scopeLabel()->value,
             'config' => $template->config,
             'is_active' => $template->is_active,
             'created_at' => $template->created_at?->toIso8601String(),

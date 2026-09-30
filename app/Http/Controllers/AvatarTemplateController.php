@@ -15,6 +15,8 @@ use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TavusPalSync;
 use App\Support\AvatarTemplates\TemplateReferenceValidator;
+use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -74,9 +76,10 @@ final class AvatarTemplateController extends Controller
      * submit, with nothing they could do about it.
      *
      * So this is the narrow answer rather than a widened `viewAny`: exactly
-     * the four fields choosing a template requires — `id`, `name`, `provider`
-     * and `is_active`, which is what the method below returns and what
-     * `openapi.json` publishes. A viewer gets it too —
+     * the five fields choosing a template requires — `id`, `name`, `provider`,
+     * `is_active` and `scope` (`organization` | `platform`, so a picker can
+     * group and badge the platform templates it is offered), which is what the
+     * method below returns and what `openapi.json` publishes. A viewer gets it too —
      * reading a project's configuration should show which template it names,
      * not a bare id.
      *
@@ -89,7 +92,23 @@ final class AvatarTemplateController extends Controller
     {
         $this->authorize('listOptions', AvatarTemplate::class);
 
-        $options = AvatarTemplate::orderByDesc('is_active')
+        // Own templates plus the platform ones, through the named scope. A
+        // platform template is offered only while it is active, or while a
+        // live project of THIS organization still pins it: the edit form has
+        // to render its current pin, and the project subquery is tenant-scoped
+        // so another organization's pin never surfaces a retired global here.
+        // A bare superadmin has no organization to offer anything to and sees
+        // every row. Organization rows first, then active, then by name.
+        $options = AvatarTemplate::availableToTenant()
+            ->when(
+                ! app(TenantResolver::class)->isBypass(),
+                fn (Builder $query) => $query->where(fn (Builder $offered) => $offered
+                    ->whereNotNull('organization_id')
+                    ->orWhere('is_active', true)
+                    ->orWhereIn('id', Project::query()->select('avatar_template_id')))
+            )
+            ->orderByRaw('(avatar_templates.organization_id IS NULL) ASC')
+            ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
             ->map(fn (AvatarTemplate $template): array => [
@@ -97,6 +116,7 @@ final class AvatarTemplateController extends Controller
                 'name' => $template->name,
                 'provider' => $template->provider,
                 'is_active' => (bool) $template->is_active,
+                'scope' => $template->scopeLabel()->value,
             ])
             ->all();
 

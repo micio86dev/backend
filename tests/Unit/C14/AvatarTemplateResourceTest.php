@@ -42,6 +42,7 @@ test('AvatarTemplateResource wire types pin the docblock against schema drift', 
     $array = $resource->toArray(new Request);
 
     expect($array['id'])->toBeInt();
+    expect($array['scope'])->toBe('organization');
     expect($array['is_active'])->toBeBool();
     expect($array['is_active'])->toBeTrue();
     expect($array['config'])->toBeArray();
