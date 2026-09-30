@@ -63,8 +63,18 @@ final class InterviewSerializer
      * `store()` — a brand-new enrolment with no recording possible yet —
      * ever passes) falls back to a per-row lookup.
      *
+     * `external_id`/`source` (candidate-external-reference) are the calling
+     * system's own identifiers: ALWAYS present, `null` when the enrolment
+     * carries none, and `external_id` is capped at 2^53-1 so a JSON number is
+     * exact. They are appended AFTER `updated_at` so every earlier CSV export
+     * column (`GenerateExportJob::toCsv()` writes first-seen key order) keeps
+     * its position; the optional `project` expansion still comes last. The
+     * inline comment above each one is what Scramble lifts into the exported
+     * field description, so it is written for the API consumer, not for a
+     * maintainer — rationale belongs here.
+     *
      * @param  list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>|null  $progress
-     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string}
+     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string, external_id: int|null, source: string|null}
      */
     public static function toArray(Participant $participant, bool $expandProject = false, ?array $progress = null, ?bool $recordingReady = null): array
     {
@@ -113,6 +123,10 @@ final class InterviewSerializer
             'recording_ready' => (bool) ($recordingReady ?? self::recordingReady($participant)),
             'created_at' => (string) $participant->created_at->toISOString(),
             'updated_at' => (string) $participant->updated_at->toISOString(),
+            // The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given.
+            'external_id' => $participant->external_id,
+            // The calling system the candidate came from, as supplied when the interview was created; `null` when none was given.
+            'source' => $participant->source,
         ];
 
         if ($expandProject && $participant->relationLoaded('project')) {

@@ -22,8 +22,10 @@ declare(strict_types=1);
  * these shapes, and it does not have to agree with the array the method
  * returns; a stale one fails nothing except a client's generated types.
  *
- * Later slices extend this file with the admin resources and the public
- * `openapi.v1.json`.
+ * The READ side of the backoffice and of /v1 is pinned at the end of this file
+ * (slice A3a-ii): the admin list and detail schemas in `openapi.json`, and
+ * `PublicInterview` in `openapi.v1.json`. The create-request body and the list
+ * filters of /v1 arrive with slice A3b.
  *
  * REQ: External Reference Validation Is One Shared Contract,
  *      M2M Participant Create Accepts And Returns The External Reference,
@@ -202,4 +204,58 @@ test('the candidate session schema documents neither external_id nor source', fu
     $properties = $spec['components']['schemas']['App.Http.Resources.ParticipantResource']['properties'];
 
     expect($properties)->not->toHaveKey('external_id')->not->toHaveKey('source');
+});
+
+// ---------------------------------------------------------------------------
+// Admin read schemas and the public Interview (slice A3a-ii)
+// ---------------------------------------------------------------------------
+
+/**
+ * @return array<string, mixed>
+ */
+function externalReferencePublicSpec(): array
+{
+    return json_decode((string) file_get_contents(base_path('openapi.v1.json')), true, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * The resources that return a participant to the backoffice and to /v1
+ * integrations, keyed by a readable name: `[file, schema]`.
+ *
+ * @return array<string, array{0: string, 1: string}>
+ */
+function externalReferenceReadSchemas(): array
+{
+    return [
+        'admin list row' => ['openapi.json', 'ParticipantResource'],
+        'admin detail' => ['openapi.json', 'ParticipantDetailResource'],
+        'public Interview' => ['openapi.v1.json', 'PublicInterview'],
+    ];
+}
+
+test('the read schemas document external_id as integer|null and source as string|null, both required', function (string $file, string $schemaName): void {
+    $spec = json_decode((string) file_get_contents(base_path($file)), true, flags: JSON_THROW_ON_ERROR);
+    $schema = $spec['components']['schemas'][$schemaName] ?? null;
+
+    expect($schema)->not->toBeNull("{$file} declares no {$schemaName} schema");
+    expect(externalReferenceTypeIs($schema['properties']['external_id'] ?? [], 'integer'))->toBeTrue("{$schemaName}.external_id must be integer|null");
+    expect(externalReferenceTypeIs($schema['properties']['source'] ?? [], 'string'))->toBeTrue("{$schemaName}.source must be string|null");
+    // Always present (null when absent), so a consumer tells "no reference"
+    // from "a server that predates the field" by the key.
+    expect($schema['required'])->toContain('external_id')->toContain('source');
+})->with(fn () => externalReferenceReadSchemas());
+
+test('the candidate session schema still documents neither field after the admin resources gained them', function (): void {
+    $properties = externalReferenceSpec()['components']['schemas']['App.Http.Resources.ParticipantResource']['properties'];
+
+    expect($properties)->not->toHaveKey('external_id')->not->toHaveKey('source');
+});
+
+test('the admin list and detail endpoints reference the schemas that carry the fields', function (): void {
+    $spec = externalReferenceSpec();
+
+    expect(externalReferenceResponseRefs($spec, '/participants', 'get', '200'))
+        ->toContain('#/components/schemas/ParticipantResource');
+    expect(externalReferenceResponseRefs($spec, '/participants/{id}', 'get', '200'))
+        ->toContain('#/components/schemas/ParticipantDetailResource');
 });
