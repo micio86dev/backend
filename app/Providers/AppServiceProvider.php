@@ -414,6 +414,14 @@ class AppServiceProvider extends ServiceProvider
                 ->by(RateLimitPublicApi::keyFor($client));
         });
 
+        // `avatar-voice-preview` — POST /api/avatar-templates/voice-preview.
+        // Every cache miss is a paid TTS call on the platform's provider key, so
+        // the bucket is per USER (the route sits behind auth:api).
+        RateLimiter::for('avatar-voice-preview', function (Request $request) {
+            return Limit::perMinute((int) config('avatar_preview.throttle_per_minute', 10))
+                ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()));
+        });
+
         // `embed-exchange` — GET /api/embed/exchange (public-api step 5,
         // SPEC.md §3.5, G-32). A NAMED limiter (step 5 review follow-up,
         // item 2), not the numeric `throttle:30,1` this route used before:

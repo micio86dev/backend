@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.59.2"
+        "version": "0.60.0"
     },
     "servers": [
         {

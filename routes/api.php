@@ -37,7 +37,9 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\AvatarTemplateController;
+use App\Http\Controllers\AvatarTemplateDuplicateController;
 use App\Http\Controllers\AvatarTemplatePortabilityController;
+use App\Http\Controllers\AvatarVoicePreviewController;
 use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\InterviewController;
 use App\Http\Controllers\Candidate\SessionController;
@@ -357,7 +359,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // `PUT /questions/order` would match the update route with the literal
     // "order" as the id, and fail as a bad integer instead of reordering.
     Route::get('projects/{project}/questions', [ProjectQuestionController::class, 'index']);
-    Route::post('projects/{project}/questions', [ProjectQuestionController::class, 'store']);
+    Route::post('projects/{project}/questions', [ProjectQuestionController::class, 'store'])->middleware('org.context');
     Route::put('projects/{project}/questions/order', [ProjectQuestionController::class, 'reorder']);
     Route::patch('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'update']);
     Route::delete('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'destroy']);
@@ -553,7 +555,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // lift configuration out of a tenant, import changes what future
     // interviews run on. Declared BEFORE /{id} so the literal paths win.
     Route::get('/avatar-templates/export', [AvatarTemplatePortabilityController::class, 'export']);
-    Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import']);
+    Route::post('/avatar-templates/import', [AvatarTemplatePortabilityController::class, 'import'])->middleware('org.context');
     // Declared BEFORE /{id}, like `field-specs` and for the same reason:
     // registered after, Laravel matches "options" as an id and the endpoint
     // 404s with no hint as to why.
@@ -569,11 +571,17 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // `field-specs`/`options` above — registered after, Laravel would match
     // "catalogue" as an id and 404 with no hint why.
     Route::get('/avatar-templates/catalogue', [AvatarTemplateController::class, 'catalogue']);
+    // avatar-voice-preview: listen to a vendor voice before activating a template.
+    // Same `create` gate as authoring one, NO org.context (it touches no tenant
+    // row, so a bare superadmin works), throttled per user because every miss is
+    // a paid provider call. Declared BEFORE /{id} like the literal paths above.
+    Route::post('/avatar-templates/voice-preview', AvatarVoicePreviewController::class)->middleware('throttle:avatar-voice-preview');
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
+    Route::post('/avatar-templates/{id}/duplicate', AvatarTemplateDuplicateController::class);
 
     Route::get('/avatar-templates', [AvatarTemplateController::class, 'index']);
-    Route::post('/avatar-templates', [AvatarTemplateController::class, 'store']);
+    Route::post('/avatar-templates', [AvatarTemplateController::class, 'store'])->middleware('org.context');
     Route::get('/avatar-templates/{id}', [AvatarTemplateController::class, 'show']);
     Route::patch('/avatar-templates/{id}', [AvatarTemplateController::class, 'update']);
     Route::delete('/avatar-templates/{id}', [AvatarTemplateController::class, 'destroy']);

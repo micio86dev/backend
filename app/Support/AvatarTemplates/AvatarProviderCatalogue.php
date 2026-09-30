@@ -24,9 +24,14 @@ use Throwable;
  * guessed. In particular:
  * - Neither Tavus resource carries a `language` field at all — the
  *   normalizer never infers one; it is always `null` (D4).
- * - Neither provider's VOICE resource carries any preview media field
- *   today; only Tavus's replica (`thumbnail_image_url`/
- *   `thumbnail_video_url`) and HeyGen's avatar (`preview_url`) do.
+ * - Preview media: Cartesia voices carry `preview_file_url` (only when asked
+ *   with `expand[]=preview_file_url`) and ElevenLabs voices `preview_url`;
+ *   both surface as `preview_audio_url`. Tavus voices carry none, and HeyGen's
+ *   voice list carries none either (its sample is a per-voice base64 endpoint,
+ *   deliberately NOT fetched here — that would be one call per voice — and is
+ *   served by `POST /api/avatar-templates/voice-preview`). Tavus's replica
+ *   (`thumbnail_image_url`/`thumbnail_video_url`) and HeyGen's avatar
+ *   (`preview_url`) carry image/video previews.
  *
  * VOICE-ONLY providers: `cartesia` and `elevenlabs` (resource `voice`) list a
  * third-party TTS vendor's own voices. They are not avatar providers — a Tavus
@@ -67,6 +72,15 @@ final class AvatarProviderCatalogue
 
     private const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
 
+    /**
+     * Part of every cache key. BUMP IT whenever a catalogue item gains, loses
+     * or changes a key (the shape snapshot test fails as a reminder): entries
+     * live 24h, so a deploy that changes the shape would otherwise keep serving
+     * the old one — e.g. personas without `editable` read as "unknown".
+     * v2: Tavus persona items gained `editable`.
+     */
+    public const CACHE_VERSION = 2;
+
     private const PAGE_SIZE = 100;
 
     private const TIMEOUT_SECONDS = 15;
@@ -93,7 +107,7 @@ final class AvatarProviderCatalogue
      */
     public static function fetch(string $provider, string $resource, bool $fresh = false): array
     {
-        $cacheKey = "avatar-catalogue:{$provider}:{$resource}";
+        $cacheKey = self::cacheKey($provider, $resource);
 
         // `$fresh` skips the 24h cache for one call: a just-created avatar or
         // voice must not be refused for a day because the list predates it.
@@ -142,6 +156,12 @@ final class AvatarProviderCatalogue
         Cache::put($cacheKey, $result, now()->addDay());
 
         return $result;
+    }
+
+    /** The one place a catalogue cache key is built. */
+    public static function cacheKey(string $provider, string $resource): string
+    {
+        return 'avatar-catalogue:v'.self::CACHE_VERSION.":{$provider}:{$resource}";
     }
 
     /**
@@ -223,21 +243,74 @@ final class AvatarProviderCatalogue
     /**
      * `GET /v2/pals` returns `{data: [{pal_id, pal_name, default_face_id,
      * system_prompt, layers, ...}], total_count}`; paginated like the others
-     * (`limit` default 10). Only the id and name are kept: a PAL carries its
-     * system prompt and layer configuration, none of which a picker may see.
+     * (`limit` default 10). Only the id, name and `editable` are kept: a PAL
+     * carries its system prompt and layer configuration, none of which a picker
+     * may see.
+     *
+     * `editable` says whether BEAI may PATCH this persona's layers:
+     *  - `true`  — the id is in Tavus's `GET /v2/pals?persona_type=user` list,
+     *              i.e. a persona the account authored;
+     *  - `false` — the id is in `persona_type=system` (Tavus stock personas);
+     *  - `null`  — UNKNOWN. In neither list (observed live 2026-09-29: 46
+     *              personas unfiltered, 10 `user`, 30 `system`, so some are in
+     *              neither), or the list that would decide could not be
+     *              fetched. Unknown is never promoted to true: PATCH on such a
+     *              persona was answered 400 "Invalid persona_id".
+     * A persona in both lists is `true`. A failed `persona_type` call degrades
+     * only this flag; it never fails the catalogue.
      *
      * @return list<array<string, mixed>>
      */
     private static function tavusPals(): array
     {
+        $rows = self::tavusPaged('/pals', []);
+        $userIds = self::tavusPalIds('user');
+        $systemIds = self::tavusPalIds('system');
+
         return array_map(
-            fn (array $row): array => self::entry(
-                provider: 'tavus',
-                id: self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null),
-                label: self::stringOrEmpty($row['pal_name'] ?? $row['persona_name'] ?? null),
-            ),
-            self::tavusPaged('/pals', []),
+            function (array $row) use ($userIds, $systemIds): array {
+                $id = self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null);
+
+                $editable = match (true) {
+                    $userIds !== null && in_array($id, $userIds, true) => true,
+                    $systemIds !== null && in_array($id, $systemIds, true) => false,
+                    default => null,
+                };
+
+                return self::entry(
+                    provider: 'tavus',
+                    id: $id,
+                    label: self::stringOrEmpty($row['pal_name'] ?? $row['persona_name'] ?? null),
+                ) + ['editable' => $editable];
+            },
+            $rows,
         );
+    }
+
+    /**
+     * The ids of one `persona_type` list, or `null` when it could not be
+     * fetched (so the caller can tell "not in the list" from "list unknown").
+     *
+     * @return list<string>|null
+     */
+    private static function tavusPalIds(string $personaType): ?array
+    {
+        try {
+            $rows = self::tavusPaged('/pals', ['persona_type' => $personaType]);
+        } catch (CatalogueFetchException $e) {
+            Log::warning('AvatarProviderCatalogue: persona_type list failed', [
+                'persona_type' => $personaType,
+                'code' => $e->safeCode,
+                'http_status' => $e->httpStatus,
+            ]);
+
+            return null;
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (array $row): string => self::stringOrEmpty($row['pal_id'] ?? $row['persona_id'] ?? null),
+            $rows,
+        ), static fn (string $id): bool => $id !== ''));
     }
 
     /**
@@ -318,7 +391,8 @@ final class AvatarProviderCatalogue
      * language, gender, is_public, ...}], has_more, next_page}`, paginated
      * with `limit` / `starting_after`. Older API versions answer a bare list;
      * both are accepted. Cartesia carries no accent field, so `accent` is
-     * always null. UNVERIFIED against a live account.
+     * always null. `preview_file_url` is only present with
+     * `expand[]=preview_file_url`. UNVERIFIED against a live account.
      *
      * @return list<array<string, mixed>>
      */
@@ -333,7 +407,10 @@ final class AvatarProviderCatalogue
                 self::CARTESIA_BASE_URL.'/voices',
                 (string) config('services.cartesia.api_key', ''),
                 'X-API-Key',
-                ['limit' => self::PAGE_SIZE] + ($startingAfter === null ? [] : ['starting_after' => $startingAfter]),
+                // A string, not an array: Guzzle would encode the list as `expand[0]=`,
+                // and Cartesia documents the repeated `expand[]` form.
+                http_build_query(['limit' => self::PAGE_SIZE] + ($startingAfter === null ? [] : ['starting_after' => $startingAfter]))
+                    .'&expand[]=preview_file_url',
                 ['Cartesia-Version' => self::CARTESIA_VERSION],
             );
 
@@ -359,6 +436,7 @@ final class AvatarProviderCatalogue
                     id: self::stringOrEmpty($row['id'] ?? null),
                     label: self::stringOrEmpty($row['name'] ?? null),
                     language: $language,
+                    previewAudioUrl: self::stringOrNull($row['preview_file_url'] ?? null),
                     locale: $language,
                     italian: self::isItalianCode($language) ? 'native' : null,
                 );
@@ -585,7 +663,7 @@ final class AvatarProviderCatalogue
      * its callers ever place any part of a response body into an exception
      * message or a return value.
      *
-     * @param  array<string, mixed>  $query
+     * @param  array<string, mixed>|string  $query
      * @param  array<string, string>  $extraHeaders
      * @return array<mixed>
      */
@@ -594,7 +672,7 @@ final class AvatarProviderCatalogue
         string $url,
         string $apiKey,
         string $authHeader,
-        array $query,
+        array|string $query,
         array $extraHeaders = [],
     ): array {
         if ($apiKey === '') {

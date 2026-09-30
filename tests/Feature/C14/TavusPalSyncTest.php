@@ -122,7 +122,7 @@ test('the warning never carries the provider\'s own words', function (): void {
     // Provider error text names the vendor and can echo request content, and
     // this string travels to a UI. A stable code is what the backoffice
     // translates; the detail goes to the log.
-    expect($result['message'])->toBe('pal_sync_failed');
+    expect($result['message'])->toBe('pal_not_found');
     expect(json_encode($result))->not->toContain('tavusapi');
 });
 

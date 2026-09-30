@@ -353,7 +353,7 @@ test('HeyGen voices include private (third-party bound) voices', function (): vo
     Http::assertSent(fn ($r): bool => str_contains($r->url(), 'voice_type=private'));
 });
 
-test('Tavus PALs list only id and name — never the system prompt or layers', function (): void {
+test('Tavus PALs list only id, name and editable — never the system prompt or layers', function (): void {
     Http::fake([
         'tavusapi.com/v2/pals*' => Http::response([
             'data' => [[
@@ -366,6 +366,8 @@ test('Tavus PALs list only id and name — never the system prompt or layers', f
 
     $result = AvatarProviderCatalogue::fetch('tavus', 'pal');
 
-    expect($result)->toBe(['status' => 'ok', 'items' => [catalogueItem('tavus', 'p1', 'Interviewer')]]);
+    // The wildcard stub also answers the persona_type lists, so p1 reads as the
+    // account's own. The editable rules themselves live in TavusPalEditableCatalogueTest.
+    expect($result)->toBe(['status' => 'ok', 'items' => [catalogueItem('tavus', 'p1', 'Interviewer', ['editable' => true])]]);
     expect(json_encode($result))->not->toContain('CONFIDENTIAL')->not->toContain('SECRET_LAYER_KEY');
 });
