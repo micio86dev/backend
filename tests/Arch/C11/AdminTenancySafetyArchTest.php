@@ -91,7 +91,7 @@ function phpFilesUnder(string $directory): array
  *
  * @var array<string, string>
  */
-$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Listeners'];
+$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Listeners', 'Support/AvatarTemplates'];
 
 /**
  * Matches an actual invocation (`::` or `->`) rather than a bare string, so
@@ -187,6 +187,14 @@ $tenantScopeStripAllowlist = [
         .'tenant context exists — the scope cannot be respected because it has not been '
         .'established yet. Strips ONLY the named tenant scope, never the plural no-args form, so '
         .'SoftDeletingScope survives and a deleted project stays unreachable.',
+    'Support/AvatarTemplates/GlobalAvatarTemplateUsage.php' => 'Counts the projects that pin each PLATFORM '
+        .'avatar template, across every organization, for the superadmin-only platform list and '
+        .'detail. The count is cross-tenant by definition: a scoped count would report "unused" for '
+        .'a template another organization pins, which is the number an operator relies on before '
+        .'editing something that reaches every pinning project. Strips ONLY the named tenant scope, '
+        .'never the plural no-args form, so SoftDeletingScope survives and the count agrees with the '
+        .'model deleting hook. ONE grouped query, counts only, no organization identity; reached only '
+        .'from PlatformAvatarTemplateController, pinned by AvatarTemplateScopeEntryPointsArchTest.',
     'Http/Controllers/Api/LlmCredentialController.php' => 'destroy() counts the AvatarTemplates bound to '
         .'a credential before deleting it, and credentials are PLATFORM rows (RATIFIED '
         .'2026-09-14) while templates are still tenant-scoped. The foreign key '

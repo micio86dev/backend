@@ -211,6 +211,12 @@ class AppServiceProvider extends ServiceProvider
         // second time for the backoffice's rendering hint.
         Gate::define('manageCatalogue', static fn (User $user): bool => $user->is_superadmin === true);
 
+        // global-avatar-templates D3 — same shape again: a platform template
+        // belongs to no organization, so no org-scoped policy describes who may
+        // manage one. Published as `avatarTemplates.manageGlobal`; the platform
+        // controller repeats the check inline, this is only the rendering hint.
+        Gate::define('manageGlobalAvatarTemplates', static fn (User $user): bool => $user->is_superadmin === true);
+
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //
         // Two conditions, deliberately, and this is a considered DEVIATION from

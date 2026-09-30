@@ -143,10 +143,7 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
         static::creating(fn (self $template) => $template->assertWriteSide($template->organization_id, 'create'));
 
         static::updating(function (self $template): void {
-            if ($template->isDirty('organization_id')) {
-                throw new PlatformTemplateWriteRefusedException('move');
-            }
-
+            $template->assertOrganizationUnchanged();
             $template->assertWriteSide($template->getOriginal('organization_id'), 'update');
         });
 
@@ -349,6 +346,40 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
     public function writesAsPlatformRow(): bool
     {
         return app(PlatformTemplateContext::class)->active();
+    }
+
+    /**
+     * `saveQuietly()` — and `updateQuietly()`, which routes through it — skip
+     * model events, so the `creating`/`updating` guards never run for them.
+     * Provider bookkeeping (`llm_sync_*`, `pal_sync_*`,
+     * `heygen_llm_configuration_id`) DOES need to save quietly, on a platform
+     * row, from any context; what a quiet write must never do is decide whose
+     * template it is. So the organization invariant is applied here directly:
+     * an existing row's organization cannot change (which also covers crossing
+     * the NULL boundary either way), and a new row cannot be quietly created as
+     * a platform row outside the platform context.
+     *
+     * `Model::withoutEvents()` and query-builder writes remain unguarded by
+     * construction; `AvatarTemplateScopeEntryPointsArchTest` is the second layer.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function saveQuietly(array $options = []): bool
+    {
+        if ($this->exists) {
+            $this->assertOrganizationUnchanged();
+        } else {
+            $this->assertWriteSide($this->organization_id, 'create');
+        }
+
+        return parent::saveQuietly($options);
+    }
+
+    private function assertOrganizationUnchanged(): void
+    {
+        if ($this->isDirty('organization_id')) {
+            throw new PlatformTemplateWriteRefusedException('move');
+        }
     }
 
     private function assertWriteSide(mixed $organizationId, string $action): void

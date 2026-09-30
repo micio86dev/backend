@@ -159,20 +159,53 @@ test('provider bookkeeping saved quietly on a platform row works from any contex
     expect(AvatarTemplate::platformOnly()->whereKey($global->id)->value('llm_sync_status'))->toBe('ok');
 });
 
-test('the guards are model events, so a quiet save skips them and app code must never write organization_id that way', function (): void {
-    // Pins the boundary rather than blessing it. Provider bookkeeping needs
-    // saveQuietly() to work on a platform row from any context (test above), and
-    // the same mechanism would let a quiet write re-home a template. Nothing in
-    // the application does that, and AvatarTemplateScopeEntryPointsArchTest
-    // ('quiet writes on an avatar template never carry organization_id') keeps
-    // it that way: this is a code-review rule, not a runtime guarantee.
+test('a quiet save can never re-home a template or move it across the platform boundary', function (): void {
+    // `saveQuietly()` skips model EVENTS, so the guards above never see it; the
+    // model overrides it to apply the same organization invariant directly.
+    $a = Organization::factory()->create();
+    $b = Organization::factory()->create();
     $global = PlatformTemplates::insertGlobal();
-    $org = Organization::factory()->create();
+    $owned = TenantContextScope::runFor($a->id, fn (): AvatarTemplate => AvatarTemplate::create(wgPayload('Owned')));
 
+    // platform -> organization
     $row = AvatarTemplate::platformOnly()->findOrFail($global->id);
-    $row->forceFill(['organization_id' => $org->id])->saveQuietly();
+    $row->forceFill(['organization_id' => $b->id]);
+    expect(fn () => $row->saveQuietly())->toThrow(PlatformTemplateWriteRefusedException::class);
 
-    expect(AvatarTemplate::withoutGlobalScopes()->find($global->id)->organization_id)->toBe($org->id);
+    // organization -> another organization, and organization -> platform
+    foreach ([$b->id, null] as $target) {
+        $row = AvatarTemplate::withoutGlobalScopes()->findOrFail($owned->id);
+        $row->organization_id = $target;
+        expect(fn () => $row->saveQuietly())->toThrow(PlatformTemplateWriteRefusedException::class);
+    }
+
+    // The other quiet entry point routes through the same check.
+    $row = AvatarTemplate::withoutGlobalScopes()->findOrFail($owned->id);
+    $row->organization_id = $b->id;
+    expect(fn () => $row->updateQuietly(['description' => 'x']))->toThrow(PlatformTemplateWriteRefusedException::class);
+
+    expect(AvatarTemplate::withoutGlobalScopes()->find($global->id)->organization_id)->toBeNull()
+        ->and(AvatarTemplate::withoutGlobalScopes()->find($owned->id)->organization_id)->toBe($a->id);
+});
+
+test('a quiet create of a platform row outside the platform context is refused', function (): void {
+    $row = new AvatarTemplate(wgPayload('Quiet global'));
+    $row->organization_id = null;
+
+    expect(fn () => $row->saveQuietly())->toThrow(PlatformTemplateWriteRefusedException::class)
+        ->and(AvatarTemplate::withoutGlobalScopes()->where('name', 'Quiet global')->exists())->toBeFalse();
+});
+
+test('provider bookkeeping saved quietly on an organization row works from a bare context', function (): void {
+    $org = Organization::factory()->create();
+    $owned = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create(wgPayload('Owned')));
+
+    $row = AvatarTemplate::withoutGlobalScopes()->findOrFail($owned->id);
+    $row->forceFill(['llm_sync_status' => 'synced'])->saveQuietly();
+    $row->updateQuietly(['description' => 'edited quietly']);
+
+    $fresh = AvatarTemplate::withoutGlobalScopes()->findOrFail($owned->id);
+    expect($fresh->llm_sync_status)->toBe('synced')->and($fresh->description)->toBe('edited quietly');
 });
 
 test('other tenant models are untouched by the platform branch', function (): void {

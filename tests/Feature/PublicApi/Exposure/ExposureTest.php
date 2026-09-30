@@ -16,6 +16,7 @@ use App\Http\Resources\Admin\ParticipantDetailResource as AdminParticipantDetail
 use App\Http\Resources\Admin\ParticipantResource as AdminParticipantResource;
 use App\Http\Resources\Admin\TranscriptResource as AdminTranscriptResource;
 use App\Http\Resources\AvatarTemplateResource;
+use App\Http\Resources\PlatformAvatarTemplateResource;
 use App\Http\Resources\ProjectResource as AdminProjectResource;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
@@ -39,6 +40,7 @@ use App\Support\PublicApi\PublicId;
 use App\Support\PublicApi\WebhookDeliveryId;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Storage;
+use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 use Tests\Helpers\PublicApi\ExposureCatalogue;
 use Tests\Helpers\PublicApi\Step6Fixtures;
 
@@ -129,6 +131,28 @@ test('T-EXPOSE-001: Project (+ its nested avatar template) — admin minus publi
         expect($exclusions)->toBe($expectedExclusions);
         expect($additions)->toBe($expectedAdditions);
     });
+});
+
+test('T-EXPOSE-001: PlatformAvatarTemplate — the platform resource adds exactly the frozen admin-only keys over AvatarTemplateResource, and none of them is public', function (): void {
+    $global = PlatformTemplates::insertGlobal();
+
+    $base = ExposureCatalogue::flattenKeys((new AvatarTemplateResource($global))->toArray(request()));
+    $platform = ExposureCatalogue::flattenKeys(
+        (new PlatformAvatarTemplateResource($global, ['organization_count' => 1, 'project_count' => 2]))->toArray(request())
+    );
+
+    $added = array_values(array_diff($platform, $base));
+    $expected = ExposureCatalogue::exclusions()['PlatformAvatarTemplate'];
+    sort($added);
+    sort($expected);
+
+    expect($added)->toBe($expected);
+
+    $org = Organization::factory()->create();
+    $project = TenantContextScope::runFor($org->id, fn (): Project => Project::factory()->create(['organization_id' => $org->id]));
+    $public = ExposureCatalogue::flattenKeys(ProjectSerializer::toArray($project->fresh(['frameworkVersion', 'avatarTemplate', 'competencies'])));
+
+    expect(array_intersect($added, $public))->toBe([]);
 });
 
 test('T-EXPOSE-001: Interview — admin (list ∪ detail) minus public equals exactly the frozen exclusion list, public minus admin equals exactly the frozen addition list', function (): void {

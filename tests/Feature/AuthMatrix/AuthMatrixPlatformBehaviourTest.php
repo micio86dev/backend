@@ -26,6 +26,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\Helpers\AuthMatrix\AuthMatrix;
 use Tests\Helpers\AuthMatrix\AuthMatrixRunner;
+use Tests\Helpers\AuthMatrix\AuthMatrixSnapshot;
 use Tests\Helpers\AuthMatrix\AuthMatrixWorld;
 
 uses(RefreshDatabase::class);
@@ -170,3 +171,36 @@ test('the catalogue is platform-global: a bare and an acting superadmin read the
     expect($read(AuthMatrix::SUPERADMIN_BARE))->toBe($read(AuthMatrix::SUPERADMIN_ACTING))
         ->and($read(AuthMatrix::SUPERADMIN_BARE))->toHaveCount(1);
 });
+
+test('a platform template id is a 404 on every organization id route, whoever asks, and nothing changes', function (string $actor): void {
+    $world = AuthMatrixWorld::make();
+    $global = $world->platform()->globalTemplate();
+    $credential = $world->actor($actor);
+    $isSuperadmin = in_array($actor, [AuthMatrix::SUPERADMIN_BARE, AuthMatrix::SUPERADMIN_ACTING], true);
+
+    // The lookup runs before the role check on every id route, so a platform id is
+    // a 404 for every principal, superadmins included. `duplicate` is the one route
+    // that authorizes `create` first: a non-superadmin never gets far enough to be
+    // told the id does not exist.
+    $routes = [
+        'GET api/avatar-templates/{id}' => [AuthMatrix::NOT_FOUND, []],
+        'PATCH api/avatar-templates/{id}' => [AuthMatrix::NOT_FOUND, ['name' => 'Hijack']],
+        'DELETE api/avatar-templates/{id}' => [AuthMatrix::NOT_FOUND, []],
+        'POST api/avatar-templates/{id}/activate' => [AuthMatrix::NOT_FOUND, []],
+        'POST api/avatar-templates/{id}/deactivate' => [AuthMatrix::NOT_FOUND, []],
+        'POST api/avatar-templates/{id}/duplicate' => [
+            $isSuperadmin ? AuthMatrix::NOT_FOUND : AuthMatrix::FORBIDDEN,
+            ['target_organization_ids' => [$world->orgB->id]],
+        ],
+    ];
+
+    foreach ($routes as $key => [$expected, $payload]) {
+        $before = AuthMatrixSnapshot::take();
+        $response = AuthMatrixRunner::send($this, $key, $credential['token'], ['id' => $global->id], $payload);
+
+        AuthMatrixRunner::judge("{$key} :: {$actor} on a platform id", $expected, $response, $before, $world->marker);
+    }
+})->with([
+    AuthMatrix::ADMIN, AuthMatrix::OPERATOR, AuthMatrix::VIEWER, AuthMatrix::NO_ROLE,
+    AuthMatrix::CROSS_TENANT_ADMIN, AuthMatrix::SUPERADMIN_BARE, AuthMatrix::SUPERADMIN_ACTING,
+]);
