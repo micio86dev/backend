@@ -951,7 +951,7 @@
         "/avatar-templates/options": {
             "get": {
                 "operationId": "avatarTemplate.options",
-                "description": "`index()` above stays admin-only because this resource carries `config`,\nand that holds provider-side identifiers (avatarId, voiceId, faceId,\npalId) which are closer to credentials than to settings. But\n`projects.avatar_template_id` is NOT NULL, so every operator creating a\nproject has to choose one \u2014 and an operator who cannot list templates\ncannot choose. Their select came back empty and the form refused its own\nsubmit, with nothing they could do about it.\n\nSo this is the narrow answer rather than a widened `viewAny`: exactly\nthe four fields choosing a template requires \u2014 `id`, `name`, `provider`\nand `is_active`, which is what the method below returns and what\n`openapi.json` publishes. A viewer gets it too \u2014\nreading a project's configuration should show which template it names,\nnot a bare id.\n\nThe shape is hand-built rather than run through `AvatarTemplateResource`\nON PURPOSE. A resource is a list of fields somebody will add to; this\nendpoint's entire value is that it cannot grow one, and a future field on\nthat resource must not silently become readable by every role.",
+                "description": "`index()` above stays admin-only because this resource carries `config`,\nand that holds provider-side identifiers (avatarId, voiceId, faceId,\npalId) which are closer to credentials than to settings. But\n`projects.avatar_template_id` is NOT NULL, so every operator creating a\nproject has to choose one \u2014 and an operator who cannot list templates\ncannot choose. Their select came back empty and the form refused its own\nsubmit, with nothing they could do about it.\n\nSo this is the narrow answer rather than a widened `viewAny`: exactly\nthe five fields choosing a template requires \u2014 `id`, `name`, `provider`,\n`is_active` and `scope` (`organization` | `platform`, so a picker can\ngroup and badge the platform templates it is offered), which is what the\nmethod below returns and what `openapi.json` publishes. A viewer gets it too \u2014\nreading a project's configuration should show which template it names,\nnot a bare id.\n\nThe shape is hand-built rather than run through `AvatarTemplateResource`\nON PURPOSE. A resource is a list of fields somebody will add to; this\nendpoint's entire value is that it cannot grow one, and a future field on\nthat resource must not silently become readable by every role.",
                 "summary": "The picker list: id, name, provider. Nothing else",
                 "tags": [
                     "AvatarTemplate"
@@ -980,13 +980,17 @@
                                                     },
                                                     "is_active": {
                                                         "type": "boolean"
+                                                    },
+                                                    "scope": {
+                                                        "$ref": "#/components/schemas/AvatarTemplateScope"
                                                     }
                                                 },
                                                 "required": [
                                                     "id",
                                                     "name",
                                                     "provider",
-                                                    "is_active"
+                                                    "is_active",
+                                                    "scope"
                                                 ]
                                             }
                                         }
@@ -11972,6 +11976,13 @@
                     "provider": {
                         "type": "string"
                     },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "organization",
+                            "platform"
+                        ]
+                    },
                     "config": {
                         "type": "object",
                         "additionalProperties": {}
@@ -12079,6 +12090,7 @@
                     "name",
                     "description",
                     "provider",
+                    "scope",
                     "config",
                     "is_active",
                     "created_at",
@@ -12091,6 +12103,15 @@
                     "pal_sync"
                 ],
                 "title": "AvatarTemplateResource"
+            },
+            "AvatarTemplateScope": {
+                "type": "string",
+                "description": "Who owns an avatar template: one organization, or the platform itself (`organization_id IS NULL`). The wire vocabulary for the scope marker on template resources and picker options.\n",
+                "enum": [
+                    "organization",
+                    "platform"
+                ],
+                "title": "AvatarTemplateScope"
             },
             "AvatarVoicePreviewRequest": {
                 "type": "object",
@@ -13648,6 +13669,13 @@
                             "provider": {
                                 "type": "string"
                             },
+                            "scope": {
+                                "type": "string",
+                                "enum": [
+                                    "organization",
+                                    "platform"
+                                ]
+                            },
                             "llm_model": {
                                 "type": [
                                     "string",
@@ -13659,6 +13687,7 @@
                             "id",
                             "name",
                             "provider",
+                            "scope",
                             "llm_model"
                         ]
                     },

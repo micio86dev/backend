@@ -159,6 +159,22 @@ test('provider bookkeeping saved quietly on a platform row works from any contex
     expect(AvatarTemplate::platformOnly()->whereKey($global->id)->value('llm_sync_status'))->toBe('ok');
 });
 
+test('the guards are model events, so a quiet save skips them and app code must never write organization_id that way', function (): void {
+    // Pins the boundary rather than blessing it. Provider bookkeeping needs
+    // saveQuietly() to work on a platform row from any context (test above), and
+    // the same mechanism would let a quiet write re-home a template. Nothing in
+    // the application does that, and AvatarTemplateScopeEntryPointsArchTest
+    // ('quiet writes on an avatar template never carry organization_id') keeps
+    // it that way: this is a code-review rule, not a runtime guarantee.
+    $global = PlatformTemplates::insertGlobal();
+    $org = Organization::factory()->create();
+
+    $row = AvatarTemplate::platformOnly()->findOrFail($global->id);
+    $row->forceFill(['organization_id' => $org->id])->saveQuietly();
+
+    expect(AvatarTemplate::withoutGlobalScopes()->find($global->id)->organization_id)->toBe($org->id);
+});
+
 test('other tenant models are untouched by the platform branch', function (): void {
     expect(fn () => Project::create(['name' => 'No tenant']))->toThrow(MissingTenantContextException::class);
 

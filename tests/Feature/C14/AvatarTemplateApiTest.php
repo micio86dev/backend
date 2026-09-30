@@ -459,7 +459,7 @@ test('every role can read the PICKER list, and it carries no provider identifier
         // `AvatarTemplateResource` must not silently become readable by every
         // role, which is why this endpoint builds its own shape.
         expect(array_keys($response->json('data.0')))
-            ->toBe(['id', 'name', 'provider', 'is_active']);
+            ->toBe(['id', 'name', 'provider', 'is_active', 'scope']);
     }
 });
 

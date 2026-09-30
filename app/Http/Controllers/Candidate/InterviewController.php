@@ -1636,7 +1636,7 @@ class InterviewController extends Controller
             return 'mock';
         }
 
-        $pinnedProvider = AvatarTemplate::whereKey($project->avatar_template_id)->value('provider');
+        $pinnedProvider = AvatarTemplate::availableToTenant()->whereKey($project->avatar_template_id)->value('provider');
 
         return $pinnedProvider ?? $project->provider_override ?? config('interview.provider', 'heygen');
     }

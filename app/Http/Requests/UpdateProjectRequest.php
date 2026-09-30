@@ -162,7 +162,7 @@ class UpdateProjectRequest extends FormRequest
             'error_redirect_url' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
             'webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048', new SafeWebhookUrl],
             // `sometimes` WITHOUT `nullable`: see `avatarTemplateRule()`.
-            'avatar_template_id' => $this->avatarTemplateRule($orgId, 'sometimes'),
+            'avatar_template_id' => $this->avatarTemplateRule($orgId, 'sometimes', $project?->avatar_template_id),
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
             // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
             // the config, never a hardcoded list.

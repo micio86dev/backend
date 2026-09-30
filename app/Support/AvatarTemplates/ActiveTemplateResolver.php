@@ -6,6 +6,7 @@ namespace App\Support\AvatarTemplates;
 
 use App\Models\AvatarTemplate;
 use App\Models\Project;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The organization's active avatar template for a given provider, if it has
@@ -48,7 +49,12 @@ final class ActiveTemplateResolver
             return $pinned;
         }
 
+        // Explicit `whereNotNull`, over the `exclude_platform_rows` scope that
+        // already implies it: a platform template is offered to organizations
+        // for a NEW pin, never adopted as an organization's default, and this
+        // line is the one that says so if that scope is ever relaxed.
         return AvatarTemplate::where('is_active', true)
+            ->whereNotNull('organization_id')
             ->where('provider', $provider)
             ->first();
     }
@@ -62,10 +68,19 @@ final class ActiveTemplateResolver
      * Pinning IS the project's choice; `is_active` is only the fallback for
      * projects that made none.
      *
-     * Both reads go through the TenantScoped global scope, so a project or a
-     * template belonging to another organization is invisible here rather than
+     * The project read goes through the TenantScoped global scope, so a
+     * project belonging to another organization is invisible here rather than
      * merely rejected — the same reason this class takes no organization_id
-     * argument and therefore has none to pass wrongly.
+     * argument and therefore has none to pass wrongly. The template read goes
+     * through `availableToTenant()`: the caller's own templates PLUS the
+     * platform ones, because a project may pin a global and the strict scope
+     * cannot see a NULL-organization row.
+     *
+     * A pin that resolves to nothing (soft-deleted, or a row of another
+     * organization) is logged as `avatar_template.pin_unresolved`: the caller
+     * then falls back to the environment defaults, and that must never happen
+     * silently. A provider mismatch is NOT logged — asking the wrong provider
+     * about a pin is a legitimate question with the answer "not for you".
      *
      * The provider check is not redundant with the caller deriving the
      * provider FROM this template: it is what stops a stale or hand-edited pin
@@ -84,8 +99,18 @@ final class ActiveTemplateResolver
             return null;
         }
 
-        return AvatarTemplate::whereKey($templateId)
-            ->where('provider', $provider)
-            ->first();
+        $template = AvatarTemplate::availableToTenant()->whereKey($templateId)->first();
+
+        if ($template === null) {
+            Log::warning('avatar_template.pin_unresolved', [
+                'project_id' => $projectId,
+                'template_id' => (int) $templateId,
+                'provider' => $provider,
+            ]);
+
+            return null;
+        }
+
+        return $template->provider === $provider ? $template : null;
     }
 }

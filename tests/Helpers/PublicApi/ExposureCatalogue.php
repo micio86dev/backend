@@ -48,6 +48,7 @@ final class ExposureCatalogue
                 'avatar_template.name',
                 'avatar_template.description',
                 'avatar_template.provider',
+                'avatar_template.scope',
                 'avatar_template.config.persona_id',
                 'avatar_template.is_active',
                 'avatar_template.created_at',
