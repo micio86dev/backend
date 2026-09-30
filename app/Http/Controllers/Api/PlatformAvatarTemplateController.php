@@ -28,6 +28,8 @@ use Symfony\Component\HttpFoundation\Response;
  *   POST  /admin/avatar-templates
  *   GET   /admin/avatar-templates/{id}
  *   PATCH /admin/avatar-templates/{id}
+ *   POST  /admin/avatar-templates/{id}/activate     (offer for new project pins)
+ *   POST  /admin/avatar-templates/{id}/deactivate   (retire; existing pins are untouched)
  *
  * Every write runs inside `PlatformTemplateContext::run()` — the one door
  * through which a NULL-organization row can be persisted — and inside ONE
@@ -204,6 +206,85 @@ final class PlatformAvatarTemplateController extends Controller
         })));
 
         return $this->present($template)->additional($this->recordSync($template));
+    }
+
+    /**
+     * Offer a platform avatar template for new project pins.
+     *
+     * "Offered" is not "the one in use": any number of platform templates may
+     * be offered at once (a single active row per provider is an organization
+     * rule), so nothing else is deactivated. The stored config is validated
+     * again HERE because a config goes stale when the field spec changes, and
+     * offering is the last moment anyone can catch that before an organization
+     * pins it. Idempotent: offering an offered template changes and audits
+     * nothing.
+     */
+    public function activate(Request $request, int $id): PlatformAvatarTemplateResource
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        if (! $template->is_active) {
+            $this->assertConfigValid($template->provider, $template->config);
+            $this->setOffered($actor, $template, true);
+
+            return $this->present($template)->additional($this->recordSync($template));
+        }
+
+        return $this->present($template);
+    }
+
+    /**
+     * Retire a platform avatar template: it is no longer offered for NEW pins.
+     *
+     * Existing pins keep resolving to it (a pin is valid in any state), so
+     * retiring is reversible bookkeeping and always allowed — including while
+     * projects in other organizations still use it. No config revalidation:
+     * withdrawing can only reduce exposure, and an already-invalid template is
+     * exactly the one an operator most wants to retire. Idempotent.
+     */
+    public function deactivate(Request $request, int $id): PlatformAvatarTemplateResource
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        if ($template->is_active) {
+            $this->setOffered($actor, $template, false);
+        }
+
+        return $this->present($template);
+    }
+
+    /**
+     * The flag write and its audit row share one transaction. The row carries
+     * the usage at that moment: how many organizations and projects a change of
+     * availability reaches is part of what happened.
+     */
+    private function setOffered(User $actor, AvatarTemplate $template, bool $offered): void
+    {
+        $usage = $this->usage->for([$template->id])[$template->id];
+        $snapshot = ['name' => $template->name, 'provider' => $template->provider, 'scope' => 'platform', 'usage' => $usage];
+
+        $this->context->run($actor, fn () => DB::transaction(function () use ($actor, $template, $offered, $snapshot): void {
+            $template->update(['is_active' => $offered]);
+
+            $this->audit->record(
+                $actor->id,
+                $offered ? 'avatar_template.activated' : 'avatar_template.deactivated',
+                'avatar_template',
+                $template->id,
+                $offered ? null : $snapshot,
+                $offered ? $snapshot : null,
+            );
+        }));
     }
 
     /**

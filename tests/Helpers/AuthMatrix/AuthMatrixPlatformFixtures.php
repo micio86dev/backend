@@ -241,6 +241,10 @@ final class AuthMatrixPlatformFixtures
                 'params' => $global,
                 'payload' => fn (): array => ['name' => 'Platform template renamed by the matrix '.Str::random(6)],
             ],
+            'POST api/admin/avatar-templates/{id}/activate' => ['params' => $global],
+            'POST api/admin/avatar-templates/{id}/deactivate' => [
+                'params' => fn (AuthMatrixResources $r): array => ['id' => $r->platform()->activeGlobalTemplate()->id],
+            ],
             'GET api/avatar-templates' => [],
             'POST api/avatar-templates' => [
                 'payload' => fn () => [
