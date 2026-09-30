@@ -10,6 +10,8 @@ declare(strict_types=1);
  * - Participant does NOT use HasRoles
  * - Participant implements AuthenticatableContract
  * - organization_id NOT in $fillable (named security invariant)
+ * - external_id / source NOT in $fillable (candidate-external-reference: written only
+ *   through forceFill(ExternalReference::toAttributes()), never mass-assigned)
  * - no SoftDeletes trait on Participant
  * - Participant implements JWTSubject (required for fromUser)
  *
@@ -53,6 +55,13 @@ test('organization_id is NOT in Participant $fillable (named security invariant)
     $participant = new Participant;
 
     expect($participant->getFillable())->not->toContain('organization_id');
+});
+
+test('external_id and source are NOT in Participant $fillable (written only via forceFill)', function (): void {
+    $fillable = (new Participant)->getFillable();
+
+    expect($fillable)->not->toContain('external_id');
+    expect($fillable)->not->toContain('source');
 });
 
 test('Participant does NOT use SoftDeletes trait (no SoftDeletes in C6)', function (): void {

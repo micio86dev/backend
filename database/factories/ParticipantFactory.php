@@ -86,6 +86,18 @@ class ParticipantFactory extends Factory
     }
 
     /**
+     * Participant carrying an external reference (candidate-external-reference):
+     * the calling system's own id and the name of that system.
+     */
+    public function withExternalReference(int $externalId = 12345, string $source = 'workday'): static
+    {
+        return $this->state(fn (array $attrs) => [
+            'external_id' => $externalId,
+            'source' => $source,
+        ]);
+    }
+
+    /**
      * Participant with a specific status.
      */
     public function withStatus(string $status): static

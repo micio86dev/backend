@@ -57,6 +57,8 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore' $status
  * @property array<string, string>|null $metadata Public API step 5 — client-owned free-form key/value pairs.
  * @property string|null $exit_redirect_url Public API step 5 — per-enrolment override of the project's own.
+ * @property int|null $external_id candidate-external-reference — the calling system's own integer id (1..2^53-1), nullable.
+ * @property string|null $source candidate-external-reference — name of the system `external_id` comes from (<= 180 chars), nullable.
  * @property ApiKeyMode $mode Public API step 5 — live/test, stamped from the enrolling key.
  * @property string|null $session_token_jti Public API step 5 — jti of the current unconsumed session token.
  * @property Carbon|null $started_at
@@ -82,6 +84,11 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject, 
      * forceFill(), mirroring the existing organization_id discipline; mass
      * assignment of a scheduling field from an uncontrolled array is exactly
      * the kind of surface this list is deliberately narrow to prevent.
+     *
+     * external_id/source (candidate-external-reference) are excluded for the
+     * same reason: they are written only through
+     * forceFill(ExternalReference::toAttributes()), after validation and
+     * normalisation by that value object, never from a raw request array.
      *
      * @var list<string>
      */
@@ -114,6 +121,7 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject, 
             'scheduling_status' => ParticipantSchedulingStatus::class,
             'metadata' => 'array',
             'mode' => ApiKeyMode::class,
+            'external_id' => 'integer',
         ];
     }
 
