@@ -451,8 +451,17 @@ final class HeygenLlmRegistrar
         return sprintf('beai-platform-cred%d', $credential->id);
     }
 
+    /**
+     * A platform template has no organization, so it gets no `org` segment: an
+     * `org0` label would claim an owner that does not exist, in the one place
+     * (BEAI's own HeyGen dashboard) where a human reads it.
+     */
     private function configurationDisplayName(AvatarTemplate $template): string
     {
+        if ($template->isPlatform()) {
+            return sprintf('beai-platform-template%d', $template->id);
+        }
+
         return sprintf('beai-org%d-template%d', $template->organization_id, $template->id);
     }
 }
