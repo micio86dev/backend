@@ -95,7 +95,7 @@ final class UserAbilities
      *     apiClients: array{viewAny: bool, create: bool, delete: bool},
      *     users: array{viewAny: bool, create: bool, update: bool, deactivate: bool, activate: bool},
      *     llmCredentials: array{viewAny: bool, create: bool, update: bool, delete: bool},
-     *     avatarTemplates: array{viewAny: bool, create: bool, update: bool, activate: bool, delete: bool},
+     *     avatarTemplates: array{viewAny: bool, create: bool, update: bool, activate: bool, delete: bool, manageGlobal: bool},
      *     projects: array{viewAny: bool, create: bool, update: bool, delete: bool},
      *     participants: array{viewAny: bool, create: bool, recover: bool},
      *     clients: array{viewAny: bool},
@@ -199,6 +199,8 @@ final class UserAbilities
                 'update' => $gate->allows('update', $avatarTemplate),
                 'activate' => $gate->allows('activate', $avatarTemplate),
                 'delete' => $gate->allows('delete', $avatarTemplate),
+                // No subject: platform templates belong to no organization.
+                'manageGlobal' => $gate->allows('manageGlobalAvatarTemplates'),
             ],
             'projects' => [
                 'viewAny' => $gate->allows('viewAny', Project::class),

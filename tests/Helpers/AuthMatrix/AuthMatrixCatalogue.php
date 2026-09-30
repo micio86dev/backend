@@ -160,6 +160,10 @@ final class AuthMatrixCatalogue
             'GET api/framework/versions' => self::user('framework', self::authenticatedRead()),
 
             // ─── avatar templates ────────────────────────────────────────────
+            // Platform (global) templates: NULL organization, superadmin only, no `org.context`
+            // (a bare superadmin is exactly who manages them). Bare AND acting are served.
+            'GET api/admin/avatar-templates' => self::superadminOnly('avatar-templates'),
+            'GET api/admin/avatar-templates/{id}' => self::superadminOnly('avatar-templates'),
             // Reads (`viewAny`/`view`) are admin-only; the four writes are
             // denied to EVERY role (AvatarTemplatePolicy) and reachable only
             // through Gate::before, i.e. by a superadmin. `options` alone is

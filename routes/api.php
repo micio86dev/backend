@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\ParticipantController as AdminParticipantController
 use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ParticipantRecoveryController;
 use App\Http\Controllers\Api\ParticipantScheduleController;
+use App\Http\Controllers\Api\PlatformAvatarTemplateController;
 use App\Http\Controllers\Api\PlatformUserController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
@@ -402,6 +403,14 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::patch('admin/platform-users/{id}', [PlatformUserController::class, 'update']);
     Route::post('admin/platform-users/{id}/deactivate', [PlatformUserController::class, 'deactivate']);
     Route::post('admin/platform-users/{id}/activate', [PlatformUserController::class, 'activate']);
+
+    // Platform (global) avatar templates: rows with no organization. Superadmin
+    // only, deliberately WITHOUT `org.context` — a bare superadmin has no
+    // organization and is exactly who manages these. Every lookup goes through
+    // `AvatarTemplate::platformOnly()`, so the organization routes below never
+    // see one and these never see an organization's.
+    Route::get('admin/avatar-templates', [PlatformAvatarTemplateController::class, 'index']);
+    Route::get('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'show'])->whereNumber('id');
 });
 
 // ─── Framework Catalogue Authoring (framework-catalogue-authoring PR3, D12) ──

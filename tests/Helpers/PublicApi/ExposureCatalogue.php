@@ -42,6 +42,13 @@ final class ExposureCatalogue
                 'has_default_webhook_secret',
                 'updated_at',
             ],
+            // Keys the superadmin PLATFORM template resource adds on top of the
+            // already-classified `AvatarTemplateResource`. Cross-organization
+            // counts: admin-only, never public.
+            'PlatformAvatarTemplate' => [
+                'usage.organization_count',
+                'usage.project_count',
+            ],
             'Project' => [
                 'avatar_template_id',
                 'avatar_template.id',

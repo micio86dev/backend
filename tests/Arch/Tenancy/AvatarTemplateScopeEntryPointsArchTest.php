@@ -80,12 +80,10 @@ test('availableToTenant() is called only from the pinned runtime and picker site
     expect($hits)->toBe($allowed, 'availableToTenant() callers changed: '.implode(', ', $hits));
 })->group('arch');
 
-test('platformOnly() has no application caller yet', function (): void {
-    // The platform controller and the usage reader arrive with the slices
-    // that create them, and they extend this list then.
+test('platformOnly() is called only by the platform controller', function (): void {
     $hits = atsFilesMatching(atsCode('app'), '/(->|::)platformOnly\(/');
 
-    expect($hits)->toBe([], 'Unpinned platformOnly() caller(s): '.implode(', ', $hits));
+    expect($hits)->toBe(['app/Http/Controllers/Api/PlatformAvatarTemplateController.php'], 'platformOnly() callers changed: '.implode(', ', $hits));
 })->group('arch');
 
 test('the platform write context is not entered by any application code yet', function (): void {
@@ -108,11 +106,10 @@ test('only AvatarTemplate implements AdmitsPlatformRows', function (): void {
     expect($hits)->toBe(['app/Models/AvatarTemplate.php']);
 })->group('arch');
 
-test('nothing under app/Support/AvatarTemplates strips a global scope yet', function (): void {
+test('the only scope strip under app/Support/AvatarTemplates is the cross-organization usage reader', function (): void {
     $hits = atsFilesMatching(atsCode('app/Support/AvatarTemplates'), '/(->|::)withoutGlobalScopes?\(/');
 
-    // The cross-organization usage reader is added here by the slice that creates it.
-    expect($hits)->toBe([], 'Unexpected scope strip(s): '.implode(', ', $hits));
+    expect($hits)->toBe(['app/Support/AvatarTemplates/GlobalAvatarTemplateUsage.php'], 'Scope strip callers changed: '.implode(', ', $hits));
 })->group('arch');
 
 test('quiet writes on an avatar template never carry organization_id', function (): void {

@@ -225,7 +225,11 @@ final class AuthMatrixPlatformFixtures
         $template = fn (AuthMatrixResources $r): array => ['id' => $r->platform()->template()->id];
         $config = fn (): array => ['avatarId' => 'av_'.Str::random(6), 'voiceId' => 'vo_'.Str::random(6)];
 
+        $global = fn (AuthMatrixResources $r): array => ['id' => $r->platform()->globalTemplate()->id];
+
         return [
+            'GET api/admin/avatar-templates' => [],
+            'GET api/admin/avatar-templates/{id}' => ['params' => $global],
             'GET api/avatar-templates' => [],
             'POST api/avatar-templates' => [
                 'payload' => fn () => [
