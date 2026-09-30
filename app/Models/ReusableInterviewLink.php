@@ -146,9 +146,9 @@ class ReusableInterviewLink extends TenantModel implements PubliclyIdentifiable
     }
 
     /**
-     * The anonymous visitors this link produced. The marker column on
-     * `participants` ships with the next migration; the relation is declared
-     * here so the model is complete and readers can depend on its name.
+     * The anonymous visitors this link produced, found through the nullable
+     * `participants.reusable_interview_link_id` marker. Participants created any
+     * other way carry NULL there and never appear.
      *
      * @return HasMany<Participant, $this>
      */

@@ -35,6 +35,32 @@ function reusableLinksMigration(): Migration
 }
 
 /**
+ * The migration that adds `participants.reusable_interview_link_id`, whose
+ * foreign key points AT this table (reusable-interview-links B1b).
+ */
+function reusableLinksMarkerMigration(): Migration
+{
+    /** @var Migration $migration */
+    $migration = require database_path('migrations/2026_10_01_100100_add_reusable_interview_link_id_to_participants_table.php');
+
+    return $migration;
+}
+
+/**
+ * Rolls the marker migration back so this table can be dropped, exactly as
+ * `migrate:rollback` does (newest migration first): Postgres refuses to drop a
+ * table a foreign key still references. Returns the migration so a test that
+ * re-applies this one can re-apply the marker after it.
+ */
+function reusableLinksRollBackMarkerFirst(): Migration
+{
+    $marker = reusableLinksMarkerMigration();
+    $marker->down();
+
+    return $marker;
+}
+
+/**
  * @return list<string> the statements run while the callback executes
  */
 function reusableLinksStatementsDuring(callable $callback): array
@@ -102,12 +128,14 @@ test('up() on an existing table is a no-op that leaves rows and structure alone'
 });
 
 test('down() drops the table', function (): void {
+    reusableLinksRollBackMarkerFirst();
     reusableLinksMigration()->down();
 
     expect(Schema::hasTable('reusable_interview_links'))->toBeFalse();
 });
 
 test('down() is guarded: running it twice does not fail', function (): void {
+    reusableLinksRollBackMarkerFirst();
     $migration = reusableLinksMigration();
 
     $migration->down();
@@ -123,9 +151,11 @@ test('down() then up() restores the columns, the constraints and the indexes', f
     $uniquesBefore = reusableLinksConstraintNames('u');
     $indexNamesBefore = collect(Schema::getIndexes('reusable_interview_links'))->pluck('name')->sort()->values()->all();
 
+    $marker = reusableLinksRollBackMarkerFirst();
     $migration = reusableLinksMigration();
     $migration->down();
     $migration->up();
+    $marker->up();
 
     expect(Schema::getColumnListing('reusable_interview_links'))->toBe($columnsBefore);
     expect(reusableLinksConstraintNames('c'))->toBe($checksBefore)->not->toBe([]);

@@ -59,6 +59,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  * @property string|null $exit_redirect_url Public API step 5 — per-enrolment override of the project's own.
  * @property int|null $external_id candidate-external-reference — the calling system's own integer id (1..2^53-1), nullable.
  * @property string|null $source candidate-external-reference — name of the system `external_id` comes from (<= 180 chars), nullable.
+ * @property int|null $reusable_interview_link_id reusable-interview-links — the reusable link whose redemption created this participant, NULL for every other origin.
  * @property ApiKeyMode $mode Public API step 5 — live/test, stamped from the enrolling key.
  * @property string|null $session_token_jti Public API step 5 — jti of the current unconsumed session token.
  * @property Carbon|null $started_at
@@ -89,6 +90,11 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject, 
      * same reason: they are written only through
      * forceFill(ExternalReference::toAttributes()), after validation and
      * normalisation by that value object, never from a raw request array.
+     *
+     * reusable_interview_link_id (reusable-interview-links) is excluded too: it
+     * records which link created the participant, so it is written only by the
+     * redemption action through forceFill(). A request body that could set it
+     * would forge that origin.
      *
      * @var list<string>
      */
@@ -245,6 +251,18 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject, 
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * The reusable link whose redemption created this participant (a "visitor"),
+     * or NULL for every other origin, and once that link row has been deleted
+     * (the foreign key is `ON DELETE SET NULL`).
+     *
+     * @return BelongsTo<ReusableInterviewLink, $this>
+     */
+    public function reusableInterviewLink(): BelongsTo
+    {
+        return $this->belongsTo(ReusableInterviewLink::class);
     }
 
     /**

@@ -7,6 +7,7 @@ namespace Database\Factories;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ReusableInterviewLink;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -95,6 +96,27 @@ class ParticipantFactory extends Factory
             'external_id' => $externalId,
             'source' => $source,
         ]);
+    }
+
+    /**
+     * Participant created by a reusable link (reusable-interview-links): the
+     * link's project and tenant, the link's language, and the origin marker.
+     *
+     * The marker is not mass-assignable on the model (it is written only through
+     * forceFill() by the redemption action), so it is applied after making, the
+     * same way `forProject()` applies the organisation.
+     */
+    public function fromReusableLink(ReusableInterviewLink $link): static
+    {
+        return $this->state(fn (array $attrs) => [
+            'project_id' => $link->project_id,
+            'language' => $link->lang,
+        ])->afterMaking(function (Participant $participant) use ($link): void {
+            $participant->forceFill([
+                'organization_id' => $link->organization_id,
+                'reusable_interview_link_id' => $link->id,
+            ]);
+        });
     }
 
     /**

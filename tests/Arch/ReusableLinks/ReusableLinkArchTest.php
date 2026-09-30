@@ -10,12 +10,15 @@ declare(strict_types=1);
  * change breaks the convention even though every behavioural test still passes:
  * - the model is a `TenantModel` (admin reads can never forget an org filter)
  * - `token_hash` is hidden and not mass-assignable
+ * - `Participant::reusable_interview_link_id` (the "created by a reusable link"
+ *   marker) is not mass-assignable either (B1b.2)
  * - the token generator draws its randomness from `random_bytes()` and nothing
  *   else: a weaker source would not show up in any functional test
  * - the tenant scope may be lifted off this model only by the public redemption
  *   action, which has to look a link up by hash before any tenant is known
  */
 
+use App\Models\Participant;
 use App\Models\ReusableInterviewLink;
 use App\Models\TenantModel;
 use App\Services\ReusableLinkTokenGenerator;
@@ -51,6 +54,23 @@ test('token_hash is hidden from serialisation and not mass-assignable', function
     expect($model->getHidden())->toContain('token_hash');
     expect($model->getFillable())->not->toContain('token_hash');
     expect($model->isFillable('token_hash'))->toBeFalse();
+});
+
+test('reusable_interview_link_id is not mass-assignable on Participant (written only through forceFill)', function (): void {
+    // The marker says "this participant was created by a reusable link". A
+    // request body that could set it would forge that origin, so it is written
+    // only by the trusted redemption action through forceFill(), never bound
+    // from input. GUARD: passes at write time, protects the next edit of
+    // `Participant::$fillable`.
+    $participant = new Participant;
+
+    expect($participant->getFillable())->not->toContain('reusable_interview_link_id');
+    expect($participant->isFillable('reusable_interview_link_id'))->toBeFalse();
+
+    $participant->fill(['reusable_interview_link_id' => 42, 'display_name' => 'Ada']);
+
+    expect($participant->reusable_interview_link_id)->toBeNull();
+    expect($participant->display_name)->toBe('Ada');
 });
 
 test('the token generator draws randomness only from random_bytes()', function (): void {
