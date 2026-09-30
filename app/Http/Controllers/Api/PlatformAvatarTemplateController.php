@@ -62,6 +62,8 @@ final class PlatformAvatarTemplateController extends Controller
     }
 
     /**
+     * List platform avatar templates with their usage.
+     *
      * @response array{data: list<\App\Http\Resources\PlatformAvatarTemplateResource>}
      */
     public function index(Request $request): AnonymousResourceCollection
@@ -77,6 +79,9 @@ final class PlatformAvatarTemplateController extends Controller
         );
     }
 
+    /**
+     * Show a platform avatar template with its usage.
+     */
     public function show(Request $request, int $id): PlatformAvatarTemplateResource
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
@@ -85,6 +90,8 @@ final class PlatformAvatarTemplateController extends Controller
     }
 
     /**
+     * Create a platform avatar template.
+     *
      * Created INACTIVE and never activatable through this payload: creating a
      * template must not change what candidates are being interviewed with
      * right now, and offering it to every organization is its own decision.
@@ -123,6 +130,8 @@ final class PlatformAvatarTemplateController extends Controller
     }
 
     /**
+     * Edit a platform avatar template.
+     *
      * An edit reaches EVERY project that pins this template, in every
      * organization, on the next read (live edit, design D1) — which is why the
      * audit row carries the usage at edit time: the reach of the change is part
