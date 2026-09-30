@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Jwt;
 
 use App\Models\Participant;
+use App\Support\Participant\ExternalReference;
 use Illuminate\Support\Facades\Cache;
 use Tymon\JWTAuth\JWTAuth;
 
@@ -50,8 +51,16 @@ class CandidateTokenFactory
      * The jti is auto-populated by tymon's factory. It is NOT stored in Redis here —
      * the exchange endpoint performs the sole atomic consume on first use.
      *
+     * The optional external reference (`external_id`, `source` — see
+     * {@see ExternalReference}) is copied into the payload ONLY when present,
+     * so a link minted without one carries exactly the claims it carried
+     * before the reference existed (no null-valued keys). These claims are
+     * readable by whoever holds the link (a JWT payload is base64, not
+     * encrypted), exactly like the `email` and `display_name` claims beside
+     * them: never put a secret in `source`.
+     *
      * @param  array<string, mixed>  $claims  Must include 'candidate_ref', 'project_id', 'org_id', 'display_name',
-     *                                        'email'. Optional: 'role_code', 'lang'.
+     *                                        'email'. Optional: 'role_code', 'lang', 'external_id', 'source'.
      * @return string Signed HS256 JWT
      */
     public static function mintSsoLink(array $claims): string
@@ -70,12 +79,23 @@ class CandidateTokenFactory
             'lang' => $claims['lang'] ?? null,
         ];
 
+        foreach (['external_id', 'source'] as $optionalClaim) {
+            if (isset($claims[$optionalClaim])) {
+                $payload[$optionalClaim] = $claims[$optionalClaim];
+            }
+        }
+
         // RAW mint: iss/iat/exp/nbf/jti auto-populated by factory.
         // setTTL(self::SSO_LINK_TTL_MINUTES) for the sso-link token.
         // Build Payload then encode to token string.
         $jwt = app(JWTAuth::class);
         $jwt->factory()->setTTL(self::SSO_LINK_TTL_MINUTES);
-        $jwtPayload = $jwt->factory()->customClaims($payload)->make();
+        // make(true), not make(): tymon's factory is a container singleton
+        // whose claim collection ACCUMULATES across calls. Without the reset,
+        // a link minted for candidate B in the same process would inherit the
+        // optional `external_id`/`source` claims of candidate A minted just
+        // before it (the scheduled-invitation sweep mints many links per run).
+        $jwtPayload = $jwt->factory()->customClaims($payload)->make(true);
 
         return $jwt->manager()->encode($jwtPayload)->get();
     }
@@ -108,6 +128,13 @@ class CandidateTokenFactory
         // setTTL(120) BEFORE fromUser — overrides the global 30-min default.
         $jwt = app(JWTAuth::class);
         $jwt->factory()->setTTL(120);
+
+        // The factory is a container singleton that accumulates claims, and
+        // decoding the sso-link in the same exchange request feeds ITS claims
+        // (display_name, email, org_id and the optional external reference)
+        // into that collection. Reset so the candidate token carries only the
+        // claims built here; the external reference must never travel on it.
+        $jwt->factory()->emptyClaims();
 
         return $jwt->customClaims($customClaims)->fromUser($participant);
     }

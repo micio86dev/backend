@@ -9,6 +9,7 @@ use App\Exceptions\Sso\EntryLinkRefused;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Participant\ExternalReference;
 use Illuminate\Support\Carbon;
 use Tymon\JWTAuth\JWTAuth;
 
@@ -35,6 +36,13 @@ use Tymon\JWTAuth\JWTAuth;
 final class EntryLinkMinter
 {
     /**
+     * `$externalReference` is optional and trailing so every existing caller
+     * (notably the scheduled-invitation sweep, which calls this positionally
+     * with no reference) stays valid. When it carries values they travel as
+     * `external_id` / `source` claims on the sso-link and are persisted by the
+     * exchange; they are readable by whoever holds the link, so callers must
+     * not put a secret in `source`.
+     *
      * @throws EntryLinkRefused When the project's entry gates, the role_code,
      *                          or a terminal-status participant refuses the mint.
      */
@@ -45,6 +53,7 @@ final class EntryLinkMinter
         string $email,
         ?string $roleCode,
         ?string $lang,
+        ExternalReference $externalReference = new ExternalReference,
     ): MintedEntryLink {
         if (! $this->projectIsAccessible($project)) {
             throw new EntryLinkRefused(EntryLinkRefusalReason::Gates);
@@ -108,6 +117,7 @@ final class EntryLinkMinter
             'org_id' => $project->organization_id,
             'role_code' => $resolvedRoleCode,
             'lang' => $resolvedLang,
+            ...$externalReference->toClaims(),
         ]);
 
         // expires_at is read back from the token's OWN exp claim — never
