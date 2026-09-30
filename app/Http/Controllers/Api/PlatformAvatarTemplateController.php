@@ -16,6 +16,8 @@ use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Superadmin\PlatformAuditWriter;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -74,6 +76,8 @@ final class PlatformAvatarTemplateController extends Controller
      * List platform avatar templates with their usage.
      *
      * @response array{data: list<\App\Http\Resources\PlatformAvatarTemplateResource>}
+     *
+     * @throws AuthorizationException
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -90,6 +94,8 @@ final class PlatformAvatarTemplateController extends Controller
 
     /**
      * Show a platform avatar template with its usage.
+     *
+     * @throws AuthorizationException
      */
     public function show(Request $request, int $id): PlatformAvatarTemplateResource
     {
@@ -104,6 +110,8 @@ final class PlatformAvatarTemplateController extends Controller
      * Created INACTIVE and never activatable through this payload: creating a
      * template must not change what candidates are being interviewed with
      * right now, and offering it to every organization is its own decision.
+     *
+     * @throws AuthorizationException
      */
     public function store(Request $request): JsonResponse
     {
@@ -145,6 +153,8 @@ final class PlatformAvatarTemplateController extends Controller
      * organization, on the next read (live edit, design D1) — which is why the
      * audit row carries the usage at edit time: the reach of the change is part
      * of what happened. It records field NAMES, never config values.
+     *
+     * @throws AuthorizationException
      */
     public function update(Request $request, int $id): PlatformAvatarTemplateResource
     {
@@ -225,6 +235,8 @@ final class PlatformAvatarTemplateController extends Controller
      * offering is the last moment anyone can catch that before an organization
      * pins it. Idempotent: offering an offered template changes and audits
      * nothing.
+     *
+     * @throws AuthorizationException
      */
     public function activate(Request $request, int $id): PlatformAvatarTemplateResource
     {
@@ -253,6 +265,8 @@ final class PlatformAvatarTemplateController extends Controller
      * projects in other organizations still use it. No config revalidation:
      * withdrawing can only reduce exposure, and an already-invalid template is
      * exactly the one an operator most wants to retire. Idempotent.
+     *
+     * @throws AuthorizationException
      */
     public function deactivate(Request $request, int $id): PlatformAvatarTemplateResource
     {
@@ -281,8 +295,10 @@ final class PlatformAvatarTemplateController extends Controller
      * count-then-delete window is closed by the model's own `deleting` guard,
      * whose exception renders as the same 409.
      *
-     * @response 204
+     * @throws AuthorizationException
      */
+    #[ResponseDoc(204, description: 'The template was deleted.', type: 'null')]
+    #[ResponseDoc(409, description: 'Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: string, project_count?: int, organization_count?: int}")]
     public function destroy(Request $request, int $id): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
@@ -336,6 +352,8 @@ final class PlatformAvatarTemplateController extends Controller
      * the tenant recorder, with `source_scope: platform`.
      *
      * @response array{data: list<array{organization_id: int, id: int, name: string}>}
+     *
+     * @throws AuthorizationException
      */
     public function duplicate(Request $request, int $id): JsonResponse
     {

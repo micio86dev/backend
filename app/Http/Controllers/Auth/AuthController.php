@@ -160,6 +160,14 @@ final class AuthController extends Controller
      * `string` there makes every `abilities.users.viewAny` read a compile
      * error in the two repositories that consume it.
      *
+     * `abilities.avatarTemplates.manageGlobal` is true only for a superadmin: it
+     * gates the platform (global) avatar template surface under
+     * `/admin/avatar-templates`, whose templates are offered to every
+     * organization. It is a rendering hint for the client; the server still
+     * refuses every other caller with a 403. (A per-flag schema description is
+     * not expressible here: the shape is an inline PHPDoc type, and a nested
+     * doc comment would end this block.)
+     *
      * @scramble-return array{
      *     user: array{id: int, name: string, email: string, locale: string, photo_url: string|null, is_superadmin: bool},
      *     organization: array{id: int, name: string}|null,
