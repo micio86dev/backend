@@ -14,13 +14,16 @@ declare(strict_types=1);
  * PlatformAvatarTemplateReadWriteTest.
  */
 
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Models\AvatarTemplate;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Project;
+use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
 
@@ -200,4 +203,125 @@ test('an unauthenticated caller cannot offer or retire', function (): void {
 
     $this->postJson("/api/admin/avatar-templates/{$global->id}/activate")->assertUnauthorized();
     $this->postJson("/api/admin/avatar-templates/{$global->id}/deactivate")->assertUnauthorized();
+});
+
+// ─── delete ──────────────────────────────────────────────────────────────────
+
+test('an offered template cannot be deleted: retire it first', function (): void {
+    $global = PlatformTemplates::insertActiveGlobal();
+
+    $this->withToken(pllToken('bare', Organization::factory()->create()))
+        ->deleteJson("/api/admin/avatar-templates/{$global->id}")
+        ->assertStatus(409)
+        ->assertExactJson(['error' => 'template_active', 'message' => 'template_active']);
+
+    expect(AvatarTemplate::platformOnly()->find($global->id))->not->toBeNull()->and(pllAudit('avatar_template.deleted'))->toBe([]);
+});
+
+test('a retired template pinned across organizations is refused with organization and project counts', function (string $actor): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal();
+    pllPin($orgA, $global, 2);
+    pllPin($orgB, $global, 1);
+
+    $this->withToken(pllToken($actor, $orgA))->deleteJson("/api/admin/avatar-templates/{$global->id}")
+        ->assertStatus(409)
+        ->assertExactJson(['error' => 'template_in_use', 'message' => 'template_in_use', 'organization_count' => 2, 'project_count' => 3]);
+
+    expect(AvatarTemplate::platformOnly()->find($global->id))->not->toBeNull()->and(pllAudit('avatar_template.deleted'))->toBe([]);
+})->with('pllSuperadmins');
+
+test('deleting an unpinned retired template answers 204, audits it once and tolerates a failing HeyGen cleanup', function (): void {
+    config()->set('interview.heygen.api_key', 'test-key');
+    Http::fake(['*' => Http::response(['message' => 'down'], 500)]);
+    $global = PlatformTemplates::insertGlobal(['name' => 'Doomed', 'heygen_llm_configuration_id' => 'cfg_platform_1']);
+
+    $this->withToken(pllToken('acting', Organization::factory()->create()))
+        ->deleteJson("/api/admin/avatar-templates/{$global->id}")->assertNoContent();
+
+    Http::assertSent(fn ($request) => $request->method() === 'DELETE' && str_ends_with($request->url(), '/llm-configurations/cfg_platform_1'));
+
+    [$row] = pllAudit('avatar_template.deleted');
+
+    expect(AvatarTemplate::platformOnly()->find($global->id))->toBeNull()
+        ->and(AvatarTemplate::withoutGlobalScopes()->onlyTrashed()->whereKey($global->id)->exists())->toBeTrue()
+        ->and(pllAudit('avatar_template.deleted'))->toHaveCount(1)
+        ->and($row->organization_id)->toBeNull()
+        ->and($row->subject_id)->toBe($global->id)
+        ->and(json_decode($row->before, true))->toEqual(['name' => 'Doomed', 'provider' => 'heygen', 'scope' => 'platform']);
+});
+
+test('projects that are already in the trash do not block deleting the template', function (): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal();
+    pllPin($org, $global, 2, trashed: true);
+
+    $this->withToken(pllToken('bare', $org))->deleteJson("/api/admin/avatar-templates/{$global->id}")->assertNoContent();
+});
+
+test('the model refuses a delete that would strand pins and reports both counts', function (): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal();
+    pllPin($orgA, $global, 2);
+    pllPin($orgB, $global, 1);
+    $actor = auth('api')->setToken(pllToken('bare', $orgA))->user();
+
+    $thrown = null;
+
+    try {
+        app(PlatformTemplateContext::class)->run($actor, fn () => $global->delete());
+    } catch (AvatarTemplateInUseException $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->toBeInstanceOf(AvatarTemplateInUseException::class)
+        ->and($thrown->projectCount)->toBe(3)
+        ->and($thrown->organizationCount)->toBe(2);
+});
+
+test('a pin that appears after the usage check but before the delete is a 409, never a 500', function (): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal();
+    $armed = true;
+
+    DB::listen(function ($query) use (&$armed, $org, $global): void {
+        if ($armed && str_contains($query->sql, 'group by "avatar_template_id"')) {
+            $armed = false;
+            pllPin($org, $global);
+        }
+    });
+
+    $this->withToken(pllToken('bare', $org))->deleteJson("/api/admin/avatar-templates/{$global->id}")
+        ->assertStatus(409)
+        ->assertJson(['error' => 'template_in_use', 'organization_count' => 1, 'project_count' => 1]);
+
+    expect(AvatarTemplate::platformOnly()->find($global->id))->not->toBeNull()->and(pllAudit('avatar_template.deleted'))->toBe([]);
+});
+
+test('an organization template id is a 404 on the platform delete', function (): void {
+    $org = Organization::factory()->create();
+    $own = TenantContextScope::runFor($org->id, fn () => AvatarTemplate::create([
+        'name' => 'Own', 'provider' => 'heygen', 'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+    ]));
+
+    $this->withToken(pllToken('bare', $org))->deleteJson("/api/admin/avatar-templates/{$own->id}")->assertNotFound();
+
+    expect(AvatarTemplate::withoutGlobalScopes()->find($own->id))->not->toBeNull();
+});
+
+test('every non-superadmin principal is refused the delete and the template survives', function (string $actor): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal();
+
+    $this->withToken(pllToken($actor, $org))->deleteJson("/api/admin/avatar-templates/{$global->id}")->assertForbidden();
+
+    expect(AvatarTemplate::platformOnly()->find($global->id))->not->toBeNull();
+})->with('pllDenied');
+
+test('an unauthenticated caller cannot delete', function (): void {
+    $global = PlatformTemplates::insertGlobal();
+
+    $this->deleteJson("/api/admin/avatar-templates/{$global->id}")->assertUnauthorized();
 });

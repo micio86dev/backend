@@ -241,6 +241,8 @@ final class AuthMatrixPlatformFixtures
                 'params' => $global,
                 'payload' => fn (): array => ['name' => 'Platform template renamed by the matrix '.Str::random(6)],
             ],
+            // The fixture is retired and unpinned, so an allowed cell really deletes it.
+            'DELETE api/admin/avatar-templates/{id}' => ['params' => $global],
             'POST api/admin/avatar-templates/{id}/activate' => ['params' => $global],
             'POST api/admin/avatar-templates/{id}/deactivate' => [
                 'params' => fn (AuthMatrixResources $r): array => ['id' => $r->platform()->activeGlobalTemplate()->id],

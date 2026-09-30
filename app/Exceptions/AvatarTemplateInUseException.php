@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Exceptions;
 
+use Illuminate\Http\JsonResponse;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Refuses to remove a template that live projects still point at.
@@ -21,8 +23,20 @@ use RuntimeException;
  */
 final class AvatarTemplateInUseException extends RuntimeException
 {
-    public function __construct(public readonly int $projectCount)
-    {
+    public function __construct(
+        public readonly int $projectCount,
+        public readonly int $organizationCount = 0,
+    ) {
         parent::__construct('avatar_template_in_use');
+    }
+
+    public function render(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'template_in_use',
+            'message' => 'template_in_use',
+            'project_count' => $this->projectCount,
+            'organization_count' => $this->organizationCount,
+        ], Response::HTTP_CONFLICT);
     }
 }

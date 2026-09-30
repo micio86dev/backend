@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PlatformAvatarTemplateResource;
 use App\Models\AvatarTemplate;
 use App\Models\User;
+use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Superadmin\PlatformAuditWriter;
@@ -30,6 +32,7 @@ use Symfony\Component\HttpFoundation\Response;
  *   PATCH /admin/avatar-templates/{id}
  *   POST  /admin/avatar-templates/{id}/activate     (offer for new project pins)
  *   POST  /admin/avatar-templates/{id}/deactivate   (retire; existing pins are untouched)
+ *   DELETE /admin/avatar-templates/{id}             (only when retired AND unpinned)
  *
  * Every write runs inside `PlatformTemplateContext::run()` — the one door
  * through which a NULL-organization row can be persisted — and inside ONE
@@ -261,6 +264,60 @@ final class PlatformAvatarTemplateController extends Controller
         }
 
         return $this->present($template);
+    }
+
+    /**
+     * Delete a platform avatar template: only when it is retired AND unpinned.
+     *
+     * Two 409s, in this order. `template_active`: deleting what organizations
+     * are being offered is a decision, not a cleanup — retire it first.
+     * `template_in_use`: a pin in ANY organization refuses the delete, and the
+     * body carries the organization and project counts so the superadmin knows
+     * how far the blast radius reaches. Trashed projects do not count. The
+     * count-then-delete window is closed by the model's own `deleting` guard,
+     * whose exception renders as the same 409.
+     *
+     * @response 204
+     */
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        if ($template->is_active) {
+            return response()->json(['error' => 'template_active', 'message' => 'template_active'], Response::HTTP_CONFLICT);
+        }
+
+        $usage = $this->usage->for([$template->id])[$template->id];
+
+        if ($usage['project_count'] > 0) {
+            throw new AvatarTemplateInUseException($usage['project_count'], $usage['organization_count']);
+        }
+
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8): deleting OUR row must not be blocked by
+            // an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
+        }
+
+        $this->context->run($actor, fn () => DB::transaction(function () use ($actor, $template): void {
+            $this->audit->record(
+                $actor->id,
+                'avatar_template.deleted',
+                'avatar_template',
+                $template->id,
+                ['name' => $template->name, 'provider' => $template->provider, 'scope' => 'platform'],
+                null,
+            );
+
+            $template->delete();
+        }));
+
+        return response()->json(null, Response::HTTP_NO_CONTENT);
     }
 
     /**

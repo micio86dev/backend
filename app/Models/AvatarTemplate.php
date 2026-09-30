@@ -11,6 +11,7 @@ use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
 use App\Exceptions\PlatformTemplateWriteRefusedException;
 use App\Models\Contracts\AdmitsPlatformRows;
+use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Builder;
@@ -167,16 +168,15 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             // can see — and it would disagree with the count the controller
             // reports, so the operator would read "0 projects" and still be
             // refused.
-            // The tenant scope is dropped, the SOFT-DELETE scope deliberately
-            // is not: a template is deleted from within its own tenant context
-            // anyway, and dropping every scope would silently start counting
-            // trashed projects — the opposite of what the comment above says.
-            $projectCount = Project::withoutGlobalScope('tenant')
-                ->where('avatar_template_id', $template->id)
-                ->count();
+            // Counted by the one class that owns this predicate
+            // (`GlobalAvatarTemplateUsage`): the tenant scope is dropped — a
+            // platform template is pinned by projects of EVERY organization —
+            // and the SOFT-DELETE scope deliberately is not, so trashed
+            // projects are not counted, exactly as above.
+            $usage = app(GlobalAvatarTemplateUsage::class)->for([(int) $template->id])[(int) $template->id];
 
-            if ($projectCount > 0) {
-                throw new AvatarTemplateInUseException($projectCount);
+            if ($usage['project_count'] > 0) {
+                throw new AvatarTemplateInUseException($usage['project_count'], $usage['organization_count']);
             }
         });
 
