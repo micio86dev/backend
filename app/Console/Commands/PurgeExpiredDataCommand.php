@@ -163,7 +163,12 @@ final class PurgeExpiredDataCommand extends Command
 
     private function purgeTranscripts(Carbon $cutoff, int $batch, bool $dryRun): int
     {
-        $query = Utterance::withoutGlobalScopes()->where('created_at', '<', $cutoff)->limit($batch);
+        // `ts`, NOT `created_at`: utterances has no created_at column at all
+        // (`$timestamps` is false on the model; `ts` is the utterance's own
+        // timestamp). Filtering on created_at threw at runtime whenever the
+        // class was enabled — found only because this path got a test, the
+        // same mistake `purgeSnapshots()` documents for `taken_at`.
+        $query = Utterance::withoutGlobalScopes()->where('ts', '<', $cutoff)->limit($batch);
 
         if ($dryRun) {
             return $query->count();

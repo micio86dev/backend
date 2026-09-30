@@ -22,6 +22,7 @@ use App\Models\InterviewSnapshot;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\Utterance;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Retention\RetentionPolicy;
 use App\Support\Tenancy\TenantContextScope;
@@ -156,6 +157,35 @@ test('personal data past the window is redacted, the audit record kept', functio
     // would destroy the audit trail without protecting anybody.
     expect($fresh->display_name)->toBe(PurgeExpiredDataCommand::PURGED_NAME);
     expect($fresh->candidate_ref)->toBe($ref);
+});
+
+// ─── Transcripts ─────────────────────────────────────────────────────────────
+
+test('the transcript class deletes utterances past the window and keeps recent ones', function (): void {
+    // `utterances` has no `created_at` (`$timestamps = false`; `ts` is the only
+    // timestamp), and this class filtered on it: enabling `transcript` threw
+    // "column created_at does not exist". It was found only because the class
+    // had no test, the same way the snapshot class's identical mistake was.
+    $org = purgeOrg();
+    $fixture = roundTripCandidateFixture($org);
+
+    $make = fn (string $text, int $daysAgo): Utterance => Utterance::forceCreate([
+        'interview_session_id' => $fixture['session']->id,
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => $text,
+        'ts' => now()->subDays($daysAgo),
+    ]);
+    $old = $make('an old answer', 90);
+    $recent = $make('a recent answer', 5);
+
+    config()->set('retention.enabled', true);
+    config()->set('retention.days.transcript', 30);
+
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [transcript]: 1')->assertSuccessful();
+
+    expect(Utterance::withoutGlobalScopes()->whereKey($old->id)->exists())->toBeFalse();
+    expect(Utterance::withoutGlobalScopes()->whereKey($recent->id)->exists())->toBeTrue();
 });
 
 // ─── Snapshots take their stored object with them ────────────────────────────
