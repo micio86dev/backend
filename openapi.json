@@ -657,7 +657,7 @@
         "/auth/me": {
             "get": {
                 "operationId": "auth.me",
-                "description": "GET /api/auth/me\nProtected: auth:api\n\nThe `abilities` shape is spelled out for Scramble. Inferred, it comes\nout as a bare `string` \u2014 `app(UserAbilities::class)->for()` is a\ncontainer call it cannot follow \u2014 and a wrong type in the spec is worse\nthan no type: both Nuxt apps generate their client from this file, so a\n`string` there makes every `abilities.users.viewAny` read a compile\nerror in the two repositories that consume it.",
+                "description": "GET /api/auth/me\nProtected: auth:api\n\nThe `abilities` shape is spelled out for Scramble. Inferred, it comes\nout as a bare `string` \u2014 `app(UserAbilities::class)->for()` is a\ncontainer call it cannot follow \u2014 and a wrong type in the spec is worse\nthan no type: both Nuxt apps generate their client from this file, so a\n`string` there makes every `abilities.users.viewAny` read a compile\nerror in the two repositories that consume it.\n\n`abilities.avatarTemplates.manageGlobal` is true only for a superadmin: it\ngates the platform (global) avatar template surface under\n`/admin/avatar-templates`, whose templates are offered to every\norganization. It is a rendering hint for the client; the server still\nrefuses every other caller with a 403. (A per-flag schema description is\nnot expressible here: the shape is an inline PHPDoc type, and a nested\ndoc comment would end this block.)",
                 "summary": "Return the authenticated user, their organization, their roles, and\nwhat they may do",
                 "tags": [
                     "Auth"
@@ -7546,26 +7546,7 @@
                         }
                     },
                     "403": {
-                        "description": "An error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "description": "Error overview.",
-                                            "examples": [
-                                                ""
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "message"
-                                    ]
-                                }
-                            }
-                        }
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -7703,26 +7684,7 @@
                         }
                     },
                     "403": {
-                        "description": "An error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "description": "Error overview.",
-                                            "examples": [
-                                                ""
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "message"
-                                    ]
-                                }
-                            }
-                        }
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -7797,6 +7759,263 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "platformAvatarTemplate.destroy",
+                "description": "Two 409s, in this order. `template_active`: deleting what organizations\nare being offered is a decision, not a cleanup \u2014 retire it first.\n`template_in_use`: a pin in ANY organization refuses the delete, and the\nbody carries the organization and project counts so the superadmin knows\nhow far the blast radius reaches. Trashed projects do not count. The\ncount-then-delete window is closed by the model's own `deleting` guard,\nwhose exception renders as the same 409.",
+                "summary": "Delete a platform avatar template: only when it is retired AND unpinned",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "The template was deleted.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "null"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "enum": [
+                                                "template_active",
+                                                "template_in_use"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "project_count": {
+                                            "type": "integer"
+                                        },
+                                        "organization_count": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "error",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}/activate": {
+            "post": {
+                "operationId": "platformAvatarTemplate.activate",
+                "description": "\"Offered\" is not \"the one in use\": any number of platform templates may\nbe offered at once (a single active row per provider is an organization\nrule), so nothing else is deactivated. The stored config is validated\nagain HERE because a config goes stale when the field spec changes, and\noffering is the last moment anyone can catch that before an organization\npins it. Idempotent: offering an offered template changes and audits\nnothing.",
+                "summary": "Offer a platform avatar template for new project pins",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}/deactivate": {
+            "post": {
+                "operationId": "platformAvatarTemplate.deactivate",
+                "description": "Existing pins keep resolving to it (a pin is valid in any state), so\nretiring is reversible bookkeeping and always allowed \u2014 including while\nprojects in other organizations still use it. No config revalidation:\nwithdrawing can only reduce exposure, and an already-invalid template is\nexactly the one an operator most wants to retire. Idempotent.",
+                "summary": "Retire a platform avatar template: it is no longer offered for NEW pins",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}/duplicate": {
+            "post": {
+                "operationId": "platformAvatarTemplate.duplicate",
+                "description": "This is the ONLY route that copies a platform template: the organization\nduplicate route answers 404 for a platform id, like every organization\nroute. Each copy is an independent, INACTIVE organization template (no\nshared provider-side configuration), so editing the platform template\nafterwards never reaches it. Written OUTSIDE the platform context \u2014 the\ncopies belong to their target organizations \u2014 and audited per target by\nthe tenant recorder, with `source_scope: platform`.",
+                "summary": "Copy a platform avatar template into one or more organizations",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "target_organization_ids": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer"
+                                        },
+                                        "minItems": 1
+                                    },
+                                    "name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 120
+                                    }
+                                },
+                                "required": [
+                                    "target_organization_ids"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "organization_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "organization_id",
+                                                    "id",
+                                                    "name"
+                                                ]
+                                            }
                                         }
                                     },
                                     "required": [
