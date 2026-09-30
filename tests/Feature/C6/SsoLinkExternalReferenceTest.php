@@ -306,3 +306,31 @@ test('minting writes no participant row: the exchange does', function (): void {
 
     expect(Participant::where('project_id', $project->id)->count())->toBe(0);
 });
+
+test('a link minted over HTTP round-trips through the exchange: claims in, stored values out, preserved on a bare re-mint', function (): void {
+    // Both halves through real code (no forged token): the mint endpoint puts
+    // the claims in, the exchange persists them, and a later mint that omits
+    // them must not erase what the row already holds.
+    $org = Organization::factory()->create();
+    $project = ssoLinkRefProject($org);
+    $m2m = ssoLinkRefClient($org);
+
+    $withReference = $this->withToken($m2m['key'])->postJson(
+        '/api/m2m/sso-link',
+        ssoLinkRefBody($project, ['external_id' => 4471, 'source' => 'acme-ats']),
+    );
+    $this->getJson('/api/sso/exchange?token='.$withReference->json('token'))->assertOk();
+
+    $stored = fn () => DB::table('participants')
+        ->where('project_id', $project->id)
+        ->where('candidate_ref', 'ref-cand-001')
+        ->first(['external_id', 'source']);
+
+    expect($stored()->external_id)->toBe(4471)->and($stored()->source)->toBe('acme-ats');
+
+    $bare = $this->withToken($m2m['key'])->postJson('/api/m2m/sso-link', ssoLinkRefBody($project));
+    $this->getJson('/api/sso/exchange?token='.$bare->json('token'))->assertOk();
+
+    expect($stored()->external_id)->toBe(4471)->and($stored()->source)->toBe('acme-ats');
+    expect(Participant::where('project_id', $project->id)->count())->toBe(1);
+});
