@@ -135,6 +135,31 @@ test('PATCH and DELETE responses carry the external reference, null when the par
     expect($deleted->json('source'))->toBe($source);
 })->with(fn () => ExternalReferenceCases::validCombinations());
 
+test('PATCH with a non-zero UTC offset stores the instant, not the local wall-clock digits', function (): void {
+    // `store` paths normalise with ->utc() for a documented reason: Eloquent's
+    // datetime cast formats a Carbon in ITS OWN timezone when writing, so an
+    // un-normalised "+02:00" instant would persist its local digits as if they
+    // were UTC and silently move the interview by the offset. Reschedule takes
+    // the same client-supplied value and must hold the same line.
+    $org = Organization::factory()->create();
+    $project = reschedProject($org);
+    $token = reschedToken($org);
+    $participant = reschedParticipant($project, $org, [
+        'scheduled_at' => now('UTC')->addHours(2),
+        'scheduling_status' => ParticipantSchedulingStatus::Pending,
+    ]);
+    $instant = now('UTC')->addHours(5)->startOfSecond();
+    $withOffset = $instant->copy()->setTimezone('Europe/Rome')->toIso8601String();
+
+    expect($withOffset)->toMatch('/[+-]0[12]:00$/');
+
+    $this->withToken($token)->patchJson("/api/participants/{$participant->id}/schedule", [
+        'scheduled_at' => $withOffset,
+    ])->assertOk();
+
+    expect($participant->refresh()->scheduled_at->getTimestamp())->toBe($instant->getTimestamp());
+});
+
 test('PATCH while pending with a value too close to now is rejected 422 without changing the row', function (): void {
     $org = Organization::factory()->create();
     $project = reschedProject($org);
