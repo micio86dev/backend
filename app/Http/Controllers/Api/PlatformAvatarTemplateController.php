@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Controllers\Controller;
@@ -11,6 +12,7 @@ use App\Http\Resources\PlatformAvatarTemplateResource;
 use App\Models\AvatarTemplate;
 use App\Models\User;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
+use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Superadmin\PlatformAuditWriter;
@@ -18,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -33,6 +36,7 @@ use Symfony\Component\HttpFoundation\Response;
  *   POST  /admin/avatar-templates/{id}/activate     (offer for new project pins)
  *   POST  /admin/avatar-templates/{id}/deactivate   (retire; existing pins are untouched)
  *   DELETE /admin/avatar-templates/{id}             (only when retired AND unpinned)
+ *   POST  /admin/avatar-templates/{id}/duplicate    (copy into organizations)
  *
  * Every write runs inside `PlatformTemplateContext::run()` — the one door
  * through which a NULL-organization row can be persisted — and inside ONE
@@ -318,6 +322,45 @@ final class PlatformAvatarTemplateController extends Controller
         }));
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * Copy a platform avatar template into one or more organizations.
+     *
+     * This is the ONLY route that copies a platform template: the organization
+     * duplicate route answers 404 for a platform id, like every organization
+     * route. Each copy is an independent, INACTIVE organization template (no
+     * shared provider-side configuration), so editing the platform template
+     * afterwards never reaches it. Written OUTSIDE the platform context — the
+     * copies belong to their target organizations — and audited per target by
+     * the tenant recorder, with `source_scope: platform`.
+     *
+     * @response array{data: list<array{organization_id: int, id: int, name: string}>}
+     */
+    public function duplicate(Request $request, int $id): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $validated = $request->validate([
+            'target_organization_ids' => ['required', 'array', 'min:1'],
+            'target_organization_ids.*' => ['required', 'integer', 'distinct', Rule::exists('organizations', 'id')],
+            'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+        ]);
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        // A copy of a template that no longer validates would just move the
+        // problem into another organization.
+        if (ConfigValidator::validate($template->provider, $template->config) !== []) {
+            throw ValidationException::withMessages(['template' => 'source_config_invalid']);
+        }
+
+        /** @var list<int> $targets */
+        $targets = array_map(intval(...), $validated['target_organization_ids']);
+
+        $created = app(DuplicateAvatarTemplate::class)->run($template, $targets, $validated['name'] ?? null);
+
+        return response()->json(['data' => $created], Response::HTTP_CREATED);
     }
 
     /**

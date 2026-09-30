@@ -243,6 +243,11 @@ final class AuthMatrixPlatformFixtures
             ],
             // The fixture is retired and unpinned, so an allowed cell really deletes it.
             'DELETE api/admin/avatar-templates/{id}' => ['params' => $global],
+            // Copies into orgB, so an allowed cell really creates an organization row.
+            'POST api/admin/avatar-templates/{id}/duplicate' => [
+                'params' => $global,
+                'payload' => fn (AuthMatrixWorld $w): array => ['target_organization_ids' => [$w->orgB->id]],
+            ],
             'POST api/admin/avatar-templates/{id}/activate' => ['params' => $global],
             'POST api/admin/avatar-templates/{id}/deactivate' => [
                 'params' => fn (AuthMatrixResources $r): array => ['id' => $r->platform()->activeGlobalTemplate()->id],

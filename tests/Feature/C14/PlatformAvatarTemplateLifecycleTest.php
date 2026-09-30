@@ -325,3 +325,139 @@ test('an unauthenticated caller cannot delete', function (): void {
 
     $this->deleteJson("/api/admin/avatar-templates/{$global->id}")->assertUnauthorized();
 });
+
+// ─── duplicate into organizations ────────────────────────────────────────────
+
+/** @return list<AvatarTemplate> */
+function pllCopiesIn(Organization $org): array
+{
+    return TenantContextScope::runFor($org->id, fn () => AvatarTemplate::orderBy('id')->get()->all());
+}
+
+test('duplicating a platform template creates an inactive organization copy in every target', function (string $actor): void {
+    $source = Organization::factory()->create();
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+    $global = PlatformTemplates::insertActiveGlobal([
+        'name' => 'Corporate voice',
+        'description' => 'House style',
+        'config' => ['avatarId' => 'av_house', 'voiceId' => 'vo_house'],
+        'heygen_llm_configuration_id' => 'cfg_shared',
+    ]);
+
+    $response = $this->withToken(pllToken($actor, $source))
+        ->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [$orgA->id, $orgB->id]])
+        ->assertCreated();
+
+    expect(collect($response->json('data'))->pluck('organization_id')->all())->toBe([$orgA->id, $orgB->id]);
+
+    foreach ([$orgA, $orgB] as $org) {
+        [$copy] = pllCopiesIn($org);
+
+        expect(pllCopiesIn($org))->toHaveCount(1)
+            ->and($copy->organization_id)->toBe($org->id)
+            ->and($copy->name)->toBe('Corporate voice')
+            ->and($copy->is_active)->toBeFalse()
+            ->and($copy->config)->toEqual(['avatarId' => 'av_house', 'voiceId' => 'vo_house'])
+            ->and($copy->heygen_llm_configuration_id)->toBeNull();
+    }
+
+    expect(pllActive($global->id))->toBeTrue()->and(pllCopiesIn($source))->toBe([]);
+})->with('pllSuperadmins');
+
+test('a copy is independent: editing the platform template afterwards leaves it untouched', function (): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal(['name' => 'Original']);
+    $token = pllToken('bare', $org);
+
+    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [$org->id]])->assertCreated();
+    $this->withToken($token)->patchJson("/api/admin/avatar-templates/{$global->id}", ['name' => 'Edited', 'config' => ['avatarId' => 'av_new', 'voiceId' => 'vo_new']])->assertOk();
+
+    [$copy] = pllCopiesIn($org);
+
+    expect($copy->name)->toBe('Original')->and($copy->config)->toEqual(['avatarId' => 'av_platform', 'voiceId' => 'vo_platform']);
+});
+
+test('a name equal to the platform template is not a collision, and one already taken in the target is suffixed', function (): void {
+    $free = Organization::factory()->create();
+    $taken = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal(['name' => 'Shared name']);
+    TenantContextScope::runFor($taken->id, fn () => AvatarTemplate::create([
+        'name' => 'Shared name', 'provider' => 'heygen', 'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+    ]));
+
+    $this->withToken(pllToken('bare', $free))
+        ->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [$free->id, $taken->id]])
+        ->assertCreated();
+
+    expect(collect(pllCopiesIn($free))->pluck('name')->all())->toBe(['Shared name'])
+        ->and(collect(pllCopiesIn($taken))->pluck('name')->all())->toBe(['Shared name', 'Shared name (copy)']);
+});
+
+test('each copy is audited in its target organization as coming from the platform, without config content', function (): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal(['name' => 'Audited copy', 'config' => ['avatarId' => 'av_secret_9', 'voiceId' => 'vo_secret_9']]);
+
+    $this->withToken(pllToken('bare', $org))
+        ->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [$org->id]])->assertCreated();
+
+    [$copy] = pllCopiesIn($org);
+    $rows = DB::table('audit_logs')->where('action', 'avatar_template.duplicated')->get();
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->organization_id)->toBe($org->id)
+        ->and($rows[0]->subject_id)->toBe($copy->id)
+        ->and(json_decode($rows[0]->after, true))->toEqual([
+            'name' => 'Audited copy',
+            'provider' => 'heygen',
+            'source_template_id' => $global->id,
+            'source_organization_id' => null,
+            'source_scope' => 'platform',
+        ])
+        ->and($rows[0]->after)->not->toContain('av_secret_9');
+});
+
+test('the duplicate payload is validated and a stale platform config is refused', function (): void {
+    $global = PlatformTemplates::insertGlobal(['config' => ['definitelyNotAKnob' => 'x']]);
+    $token = pllToken('bare', Organization::factory()->create());
+
+    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", [])
+        ->assertUnprocessable()->assertJsonValidationErrors(['target_organization_ids']);
+    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [999999]])
+        ->assertUnprocessable()->assertJsonValidationErrors(['target_organization_ids.0']);
+    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [Organization::factory()->create()->id]])
+        ->assertUnprocessable()->assertJsonValidationErrors(['template']);
+});
+
+test('an organization template id is a 404 on the platform duplicate, and a platform id is a 404 on the organization duplicate', function (): void {
+    $org = Organization::factory()->create();
+    $target = Organization::factory()->create();
+    $own = TenantContextScope::runFor($org->id, fn () => AvatarTemplate::create([
+        'name' => 'Own', 'provider' => 'heygen', 'config' => ['avatarId' => 'a', 'voiceId' => 'v'],
+    ]));
+    $global = PlatformTemplates::insertGlobal();
+    $token = pllToken('bare', $org);
+    $payload = ['target_organization_ids' => [$target->id]];
+
+    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$own->id}/duplicate", $payload)->assertNotFound();
+    $this->withToken($token)->postJson("/api/avatar-templates/{$global->id}/duplicate", $payload)->assertNotFound();
+
+    expect(pllCopiesIn($target))->toBe([]);
+});
+
+test('every non-superadmin principal is refused the duplicate and nothing is created', function (string $actor): void {
+    $org = Organization::factory()->create();
+    $target = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal();
+
+    $this->withToken(pllToken($actor, $org))
+        ->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [$target->id]])->assertForbidden();
+
+    expect(pllCopiesIn($target))->toBe([])->and(DB::table('audit_logs')->count())->toBe(0);
+})->with('pllDenied');
+
+test('an unauthenticated caller cannot duplicate', function (): void {
+    $global = PlatformTemplates::insertGlobal();
+
+    $this->postJson("/api/admin/avatar-templates/{$global->id}/duplicate", ['target_organization_ids' => [1]])->assertUnauthorized();
+});
