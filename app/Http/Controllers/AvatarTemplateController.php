@@ -116,7 +116,7 @@ final class AvatarTemplateController extends Controller
                 'name' => $template->name,
                 'provider' => $template->provider,
                 'is_active' => (bool) $template->is_active,
-                'scope' => $template->scopeLabel()->value,
+                'scope' => $template->scopeLabel(),
             ])
             ->all();
 
