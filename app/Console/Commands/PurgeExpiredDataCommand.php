@@ -33,6 +33,14 @@ use Illuminate\Support\Facades\Storage;
  *   the calling system's own opaque identifier and carries no personal data;
  *   deleting the row would destroy the audit trail without protecting anybody.
  *
+ * `participants.external_id` and `participants.source` belong to NO class: every
+ * class leaves both columns exactly as they are (values retained, NULL left
+ * NULL), treated like `candidate_ref`. They are the calling system's own record
+ * id and name. This is a DOCUMENTED DEFAULT, not a legal conclusion — an
+ * external id can still be linkable personal data in a given integration, so
+ * the ruling-2 legal sign-off must also name both columns, and a decision to
+ * purge them is one additive class.
+ *
  * Both are overwritten with a SENTINEL rather than nulled, and that is not a
  * workaround. Both columns are NOT NULL, and relaxing them would weaken
  * invariants live code depends on — C6's SSO exchange asserts a non-empty

@@ -23,11 +23,13 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\Utterance;
+use App\Models\WebhookDelivery;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Retention\RetentionPolicy;
 use App\Support\Tenancy\TenantContextScope;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Filesystem\FilesystemAdapter;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 function purgeOrg(): Organization
@@ -186,6 +188,123 @@ test('the transcript class deletes utterances past the window and keeps recent o
 
     expect(Utterance::withoutGlobalScopes()->whereKey($old->id)->exists())->toBeFalse();
     expect(Utterance::withoutGlobalScopes()->whereKey($recent->id)->exists())->toBeTrue();
+});
+
+// ─── The external reference is retained (candidate-external-reference) ───────
+
+/**
+ * `external_id` and `source` are the calling system's own record id and name.
+ * They belong to NO artifact class: every class leaves both columns exactly as
+ * they are, treated like `candidate_ref`. A DOCUMENTED DEFAULT pending the
+ * ruling-2 legal sign-off, not a legal conclusion — so these tests pin the
+ * current behaviour, and a legal decision to purge them is a new class, which
+ * would turn one of them red on purpose.
+ */
+test('the participant_pii purge redacts the name and leaves the external reference untouched', function (): void {
+    $org = purgeOrg();
+    $old = purgeParticipant($org, now()->subDays(90)->toDateTimeString());
+    $old->forceFill(['external_id' => 4471, 'source' => 'acme-ats'])->save();
+
+    config()->set('retention.enabled', true);
+    config()->set('retention.days.participant_pii', 30);
+
+    $this->artisan('beai:purge-expired-data')->assertSuccessful();
+
+    $fresh = $old->fresh();
+
+    expect($fresh->display_name)->toBe(PurgeExpiredDataCommand::PURGED_NAME);
+    expect($fresh->candidate_ref)->toBe($old->candidate_ref);
+    // Verbatim: not the sentinel, not nulled.
+    expect($fresh->external_id)->toBe(4471);
+    expect($fresh->source)->toBe('acme-ats');
+});
+
+test('NULL is not coerced: a participant without a reference keeps both columns NULL after the purge', function (): void {
+    $org = purgeOrg();
+    $old = purgeParticipant($org, now()->subDays(90)->toDateTimeString());
+
+    config()->set('retention.enabled', true);
+    config()->set('retention.days.participant_pii', 30);
+
+    $this->artisan('beai:purge-expired-data')->assertSuccessful();
+
+    // Read raw: a model cast could hide a coerced value.
+    $row = DB::table('participants')->where('id', $old->id)->first();
+
+    expect($row->display_name)->toBe(PurgeExpiredDataCommand::PURGED_NAME);
+    expect($row->external_id)->toBeNull();
+    expect($row->source)->toBeNull();
+});
+
+test('no other artifact class touches the external reference', function (): void {
+    $org = purgeOrg();
+    $fixture = roundTripCandidateFixture($org);
+    $participant = $fixture['participant'];
+    $participant->forceFill(['external_id' => 4471, 'source' => 'acme-ats'])->save();
+
+    $utterance = Utterance::forceCreate([
+        'interview_session_id' => $fixture['session']->id,
+        'organization_id' => $org->id,
+        'speaker' => 'candidate',
+        'text' => 'I led the migration',
+        'ts' => now()->subDays(90),
+    ]);
+
+    $delivery = TenantContextScope::runFor($org->id, function () use ($participant): WebhookDelivery {
+        $delivery = WebhookDelivery::factory()->forParticipant($participant)->create();
+        $delivery->forceFill(['created_at' => now()->subDays(90)])->save();
+
+        return $delivery;
+    });
+
+    // Every class EXCEPT participant_pii: their effects are asserted below so
+    // the test cannot pass vacuously, and the participant row must not move.
+    config()->set('retention.enabled', true);
+    config()->set('retention.days', [
+        'snapshot' => 30,
+        'transcript' => 30,
+        'webhook_payload' => 30,
+        'participant_pii' => null,
+    ]);
+
+    $this->artisan('beai:purge-expired-data')->assertSuccessful();
+
+    expect(Utterance::withoutGlobalScopes()->whereKey($utterance->id)->exists())->toBeFalse();
+    expect(DB::table('webhook_deliveries')->where('id', $delivery->id)->value('payload'))->toContain('purged');
+
+    $row = DB::table('participants')->where('id', $participant->id)->first();
+    expect($row->external_id)->toBe(4471);
+    expect($row->source)->toBe('acme-ats');
+    expect($row->display_name)->toBe($participant->display_name);
+});
+
+test('two organizations sharing the same reference are each purged inside their own scope, and a second run changes nothing', function (): void {
+    $orgA = Organization::factory()->create();
+    $orgB = Organization::factory()->create();
+
+    $make = fn (Organization $org): Participant => TenantContextScope::runFor($org->id, function () use ($org): Participant {
+        $project = Project::factory()->create(['organization_id' => $org->id]);
+        $p = Participant::factory()->create(['project_id' => $project->id]);
+        $p->forceFill(['created_at' => now()->subDays(90), 'external_id' => 4471, 'source' => 'acme-ats'])->save();
+
+        return $p->fresh();
+    });
+    $a = $make($orgA);
+    $b = $make($orgB);
+
+    config()->set('retention.enabled', true);
+    config()->set('retention.days.participant_pii', 30);
+
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [participant_pii]: 2')->assertSuccessful();
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [participant_pii]: 0')->assertSuccessful();
+
+    foreach ([$a, $b] as $participant) {
+        $row = DB::table('participants')->where('id', $participant->id)->first();
+
+        expect($row->display_name)->toBe(PurgeExpiredDataCommand::PURGED_NAME);
+        expect($row->external_id)->toBe(4471);
+        expect($row->source)->toBe('acme-ats');
+    }
 });
 
 // ─── Snapshots take their stored object with them ────────────────────────────
