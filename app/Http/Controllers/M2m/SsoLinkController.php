@@ -9,6 +9,7 @@ use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
 use App\Models\ApiClient;
 use App\Models\Project;
+use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use Illuminate\Http\JsonResponse;
@@ -40,6 +41,14 @@ use Illuminate\Http\Request;
  *      response — request validation and every OTHER response body below
  *      are UNCHANGED from before the extraction, byte-identical
  *      (`SsoLinkMintTest.php`, `SsoLinkResponseGoldenTest.php`).
+ *
+ * Optional external reference (candidate-external-reference): `external_id`
+ * (integer, 1..2^53-1) and `source` (string, at most 180 characters) are
+ * validated by the shared `ExternalReference::rules()` and carried in the
+ * token as claims ONLY when present; the exchange persists them. The response
+ * body is unchanged. The claims are readable by whoever holds the link (a JWT
+ * payload is base64, not encrypted), like `email` and `display_name`: do not
+ * put a secret in `source`.
  *
  * Security invariants:
  * - Project is resolved SCOPED to the caller's org: cross-org → 404.
@@ -87,6 +96,10 @@ final class SsoLinkController extends Controller
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
+            // Spread INTO the inline call, never hoisted out of it: Scramble
+            // evaluates this array to derive the requestBody, and the shared
+            // rules keep every surface accepting exactly the same values.
+            ...ExternalReference::rules(),
         ]);
 
         // Resolve project SCOPED to caller org (cross-org → 404) — the one
@@ -126,6 +139,7 @@ final class SsoLinkController extends Controller
                 $validated['email'],
                 $validated['role_code'] ?? null,
                 $validated['lang'] ?? null,
+                ExternalReference::fromValidated($validated),
             );
         } catch (EntryLinkRefused $e) {
             return match ($e->reason) {

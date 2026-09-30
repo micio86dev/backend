@@ -15,6 +15,7 @@ use App\Models\ApiClient;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Rules\ScheduledStartWithinLeadTime;
+use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -105,7 +106,14 @@ final class ParticipantController extends Controller
             // check, the future check, and the minimum-lead-time check all
             // live in ONE place, never re-typed per surface.
             'scheduled_at' => ['sometimes', new ScheduledStartWithinLeadTime],
+            // candidate-external-reference: the calling system's own id and
+            // name, validated by the shared rules. Spread INTO the inline call,
+            // never hoisted out of it: Scramble evaluates this array to derive
+            // the requestBody.
+            ...ExternalReference::rules(),
         ]);
+
+        $externalReference = ExternalReference::fromValidated($validated);
 
         // Resolve project SCOPED to caller org (cross-org → 404).
         $project = Project::where('organization_id', $clientOrgId)
@@ -168,6 +176,7 @@ final class ParticipantController extends Controller
                 // wall-clock digits as if they were already UTC — silently
                 // shifting the stored instant by the offset.
                 Carbon::parse($validated['scheduled_at'])->utc(),
+                $externalReference,
             );
 
             if ($result['conflict'] !== null) {
@@ -200,6 +209,7 @@ final class ParticipantController extends Controller
             'role_code' => $validated['role_code'] ?? null,
             'language' => $validated['language'] ?? null,
             'status' => 'in_attesa',
+            ...$externalReference->toAttributes(),
         ]);
 
         // R3-test-pins-500 (framework-catalogue-authoring, REQUIRED BEFORE

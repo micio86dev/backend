@@ -103,6 +103,34 @@ final readonly class ExternalReference
     }
 
     /**
+     * The claims that were PRESENT but that {@see self::fromClaims()} had to
+     * drop, by name. The exchange narrows a malformed claim silently so a
+     * candidate is never turned away, which would also hide an integration
+     * that systematically sends a bad value: this is what lets the exchange
+     * log it. An empty or whitespace-only `source` is "absent", not malformed.
+     * Only names are returned, never values: both fields are the caller's data.
+     *
+     * @return list<string>
+     */
+    public static function malformedClaims(mixed $externalId, mixed $source): array
+    {
+        $reference = self::fromClaims($externalId, $source);
+        $malformed = [];
+
+        if ($externalId !== null && $reference->externalId === null) {
+            $malformed[] = 'external_id';
+        }
+
+        $sourcePresent = is_string($source) ? Str::trim($source) !== '' : $source !== null;
+
+        if ($sourcePresent && $reference->source === null) {
+            $malformed[] = 'source';
+        }
+
+        return $malformed;
+    }
+
+    /**
      * Interpret an admin search term as an external id. Only an all-digit
      * term that fits 1..MAX qualifies, so a non-numeric or out-of-range term
      * never reaches the BIGINT comparison (where an over-range literal would

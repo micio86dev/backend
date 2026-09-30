@@ -11,10 +11,12 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\JWTAuth;
 
@@ -56,7 +58,12 @@ use Tymon\JWTAuth\JWTAuth;
  *      {Pending, Cancelled}                                → fail: 403 generic
  *      (see "Scheduled participants" note below Step 4 for why this is safe)
  *  10. Atomic upsert ON CONFLICT(project_id, candidate_ref) DO UPDATE
- *      WHERE status='in_attesa' (secondary safety net)
+ *      WHERE status='in_attesa' (secondary safety net). Also writes the optional
+ *      external reference (`external_id`, `source`) from the sso-link claims:
+ *      a PRESENT claim overwrites the stored value, an ABSENT claim keeps it
+ *      (`COALESCE(EXCLUDED.x, participants.x)`, per column). A malformed claim
+ *      is narrowed to "absent" by `ExternalReference::fromClaims()` and NEVER
+ *      fails the exchange — optional data must not turn a candidate away.
  *  11. Mint candidate JWT (setTTL 120)                     → 200 { access_token }
  *
  * Z14 (R4-sso-gate-burns-link, REQUIRED BEFORE ARCHIVE): interviewability
@@ -289,6 +296,28 @@ final class SsoExchangeController extends Controller
         // placeholder can never reach a real person, and it is greppable.
         $email = (string) ($payload->get('email') ?? $candidateRef.'@invalid.beai.local');
 
+        // The optional external reference. The token is HS256-signed by our own
+        // minter, so a malformed claim is not an attack; `fromClaims()` narrows
+        // anything outside the shared validation contract to null and this
+        // exchange carries on. A pre-change token has no such claims at all,
+        // which reads the same way: both null, stored values preserved below.
+        $externalIdClaim = $payload->get('external_id');
+        $sourceClaim = $payload->get('source');
+        $externalReference = ExternalReference::fromClaims($externalIdClaim, $sourceClaim);
+
+        // Narrowing is silent for the candidate but not for the operator: an
+        // integration that systematically sends a bad value would otherwise
+        // never be noticed. Claim NAMES only, never values (caller's data).
+        $malformedClaims = ExternalReference::malformedClaims($externalIdClaim, $sourceClaim);
+
+        if ($malformedClaims !== []) {
+            Log::warning('sso.exchange.external_reference_dropped', [
+                'claims' => $malformedClaims,
+                'project_id' => $project->id,
+                'organization_id' => $project->organization_id,
+            ]);
+        }
+
         // `public_id` (public-api step 5, G-05): this raw statement bypasses
         // Eloquent entirely, so `App\Models\Concerns\HasPublicId`'s
         // `creating` hook never runs for the INSERT branch — the column is
@@ -297,17 +326,26 @@ final class SsoExchangeController extends Controller
         // touch `public_id`: an existing row keeps the id it already has,
         // exactly like every other identity column this same clause already
         // excludes (organization_id, project_id, candidate_ref).
+        //
+        // `external_id` / `source` use COALESCE(EXCLUDED.x, participants.x):
+        // an absent claim (NULL) keeps whatever the row already holds — a
+        // re-issued link that omits them must not erase them, and the
+        // scheduled-invitation sweep mints with no reference at all — while a
+        // present claim overwrites, per column. Consequence, accepted: a value
+        // cannot be cleared back to NULL through this path.
         DB::statement("
             INSERT INTO participants
-                (organization_id, project_id, candidate_ref, display_name, email, role_code, language, status, public_id, created_at, updated_at)
+                (organization_id, project_id, candidate_ref, display_name, email, role_code, language, external_id, source, status, public_id, created_at, updated_at)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?, ?)
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_attesa', ?, ?, ?)
             ON CONFLICT (project_id, candidate_ref)
             DO UPDATE SET
                 display_name = EXCLUDED.display_name,
                 email        = EXCLUDED.email,
                 role_code    = EXCLUDED.role_code,
                 language     = EXCLUDED.language,
+                external_id  = COALESCE(EXCLUDED.external_id, participants.external_id),
+                source       = COALESCE(EXCLUDED.source, participants.source),
                 updated_at   = EXCLUDED.updated_at
             WHERE participants.status = 'in_attesa'
         ", [
@@ -318,6 +356,8 @@ final class SsoExchangeController extends Controller
             $email,
             $roleCode,
             $lang,
+            $externalReference->externalId,
+            $externalReference->source,
             (string) Str::ulid(),
             $now,
             $now,
