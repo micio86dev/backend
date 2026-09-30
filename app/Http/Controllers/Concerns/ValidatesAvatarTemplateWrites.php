@@ -8,12 +8,16 @@ use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Models\AvatarTemplate;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\TemplateReferenceValidator;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The write-side validation and provider sync shared by the organization and
- * the platform avatar-template controllers (global-avatar-templates A3).
+ * The write-side validation and provider sync used by BOTH avatar-template
+ * controllers: `AvatarTemplateController` (organization templates) and
+ * `Api\PlatformAvatarTemplateController` (platform templates)
+ * (global-avatar-templates A3).
  *
  * Extracted so the two surfaces cannot drift apart on what a valid template
  * is. What stays per controller is everything that depends on WHOSE template
@@ -114,7 +118,38 @@ trait ValidatesAvatarTemplateWrites
         // Checked here so the unique index does not surface as a QueryException
         // → 500. A name collision is something the operator can fix, so it has
         // to read like one.
-        throw ValidationException::withMessages([
+        throw $this->nameTaken();
+    }
+
+    /**
+     * The pre-check above and the write are two statements, so two writers can
+     * both pass the check; the partial unique index over live platform names is
+     * the real guard and refuses the loser. That refusal is the same problem
+     * the pre-check reports, so it is answered the same way: a 422 on `name`,
+     * not a 500. Only THIS index is translated — any other unique violation is
+     * a genuine defect and keeps propagating.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $write
+     * @return T
+     */
+    private function answeringPlatformNameRace(Closure $write): mixed
+    {
+        try {
+            return $write();
+        } catch (UniqueConstraintViolationException $e) {
+            if (! str_contains($e->getMessage(), 'avatar_templates_global_name_unique')) {
+                throw $e;
+            }
+
+            throw $this->nameTaken();
+        }
+    }
+
+    private function nameTaken(): ValidationException
+    {
+        return ValidationException::withMessages([
             'name' => 'A template with this name already exists.',
         ]);
     }

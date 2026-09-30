@@ -413,6 +413,10 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('admin/avatar-templates', [PlatformAvatarTemplateController::class, 'store']);
     Route::get('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'show'])->whereNumber('id');
     Route::patch('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'update'])->whereNumber('id');
+    Route::post('admin/avatar-templates/{id}/activate', [PlatformAvatarTemplateController::class, 'activate'])->whereNumber('id');
+    Route::post('admin/avatar-templates/{id}/deactivate', [PlatformAvatarTemplateController::class, 'deactivate'])->whereNumber('id');
+    Route::delete('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'destroy'])->whereNumber('id');
+    Route::post('admin/avatar-templates/{id}/duplicate', [PlatformAvatarTemplateController::class, 'duplicate'])->whereNumber('id');
 });
 
 // ─── Framework Catalogue Authoring (framework-catalogue-authoring PR3, D12) ──

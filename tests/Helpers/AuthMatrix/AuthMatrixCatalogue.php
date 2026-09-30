@@ -166,6 +166,10 @@ final class AuthMatrixCatalogue
             'POST api/admin/avatar-templates' => self::superadminOnly('avatar-templates'),
             'GET api/admin/avatar-templates/{id}' => self::superadminOnly('avatar-templates'),
             'PATCH api/admin/avatar-templates/{id}' => self::superadminOnly('avatar-templates'),
+            'POST api/admin/avatar-templates/{id}/activate' => self::superadminOnly('avatar-templates'),
+            'POST api/admin/avatar-templates/{id}/deactivate' => self::superadminOnly('avatar-templates'),
+            'DELETE api/admin/avatar-templates/{id}' => self::superadminOnly('avatar-templates'),
+            'POST api/admin/avatar-templates/{id}/duplicate' => self::superadminOnly('avatar-templates'),
             // Reads (`viewAny`/`view`) are admin-only; the four writes are
             // denied to EVERY role (AvatarTemplatePolicy) and reachable only
             // through Gate::before, i.e. by a superadmin. `options` alone is

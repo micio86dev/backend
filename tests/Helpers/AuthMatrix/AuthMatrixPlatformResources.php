@@ -145,6 +145,16 @@ final class AuthMatrixPlatformResources
         ]);
     }
 
+    /**
+     * An OFFERED platform template, which `deactivate` retires.
+     */
+    public function activeGlobalTemplate(): AvatarTemplate
+    {
+        return $this->memo['activeGlobalTemplate'] ??= PlatformTemplates::insertActiveGlobal([
+            'name' => "{$this->world->marker} offered global template",
+        ]);
+    }
+
     private function newTemplate(string $label, bool $active): AvatarTemplate
     {
         return TenantContextScope::runFor($this->world->orgA->id, fn (): AvatarTemplate => AvatarTemplate::create([

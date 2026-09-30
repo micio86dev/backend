@@ -24,6 +24,10 @@ use Illuminate\Support\Facades\DB;
  * provider-side resources (`heygen_llm_configuration_id`, `llm_sync_status`,
  * `llm_synced_at`) — the copy has its own lifecycle and syncs on its own.
  *
+ * The source may be a PLATFORM template (NULL organization). Copies are still
+ * created here, OUTSIDE `PlatformTemplateContext`, so each one is a plain
+ * organization row of its target and nothing is shared with the source.
+ *
  * All-or-nothing: one transaction across every target. Audit rows are written
  * AFTER it commits, so a failed audit write can neither abort the copies nor
  * be recorded for copies that were rolled back. `AuditRecorder::record()` never
@@ -80,6 +84,9 @@ final class DuplicateAvatarTemplate
                         'provider' => $source->provider,
                         'source_template_id' => $source->id,
                         'source_organization_id' => $source->organization_id,
+                        // `organization` or `platform`: a NULL source organization
+                        // alone would read as "unknown" to an auditor.
+                        'source_scope' => $source->scopeLabel()->value,
                     ],
                 );
             });

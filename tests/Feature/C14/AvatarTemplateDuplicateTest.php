@@ -340,11 +340,12 @@ test('each copy is audited in its target organization without any config content
     expect($log->organization_id)->toBe($target->id)
         ->and($log->subject_type)->toBe('avatar_template')
         ->and($log->subject_id)->toBe($copy->id)
-        ->and($log->after)->toBe([
+        ->and($log->after)->toEqual([
             'name' => 'Ada',
             'provider' => 'heygen',
             'source_template_id' => $template->id,
             'source_organization_id' => $source->id,
+            'source_scope' => 'organization',
         ])
         ->and(json_encode($log->after))->not->toContain('av_1');
 });

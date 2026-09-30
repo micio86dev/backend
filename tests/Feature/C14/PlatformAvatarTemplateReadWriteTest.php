@@ -8,7 +8,9 @@ declare(strict_types=1);
  *
  * Every route serves a bare superadmin AND one acting as an organization —
  * the platform context is explicit, the acting organization is never stamped —
- * and answers 403 to every other principal, 401 to nobody.
+ * answers 403 to every other authenticated principal and 401 to an
+ * unauthenticated caller. The lifecycle routes (activate, retire, delete,
+ * duplicate) are covered by PlatformAvatarTemplateLifecycleTest.
  */
 
 use App\Models\AvatarTemplate;
@@ -18,6 +20,8 @@ use App\Models\Project;
 use App\Models\User;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
@@ -285,3 +289,72 @@ test('an unauthenticated caller cannot create or update', function (): void {
     $this->postJson('/api/admin/avatar-templates', patPayload())->assertUnauthorized();
     $this->patchJson("/api/admin/avatar-templates/{$global->id}", ['name' => 'x'])->assertUnauthorized();
 });
+
+// ─── ordering, name race, gate parity (A3 review findings) ───────────────────
+
+test('the list is ordered offered first, then by name', function (): void {
+    PlatformTemplates::insertGlobal(['name' => 'Alpha retired']);
+    PlatformTemplates::insertActiveGlobal(['name' => 'Zulu offered']);
+    PlatformTemplates::insertActiveGlobal(['name' => 'Mike offered']);
+    PlatformTemplates::insertGlobal(['name' => 'Bravo retired']);
+
+    $names = $this->withToken(patToken('bare', Organization::factory()->create()))
+        ->getJson('/api/admin/avatar-templates')->assertOk()->json('data.*.name');
+
+    expect($names)->toBe(['Mike offered', 'Zulu offered', 'Alpha retired', 'Bravo retired']);
+});
+
+/**
+ * Inserts a conflicting live global the moment the request's own name pre-check
+ * has run: the window the partial unique index alone can close.
+ */
+function patRaceOnNameCheck(string $name): void
+{
+    $armed = true;
+
+    DB::listen(function ($query) use (&$armed, $name): void {
+        if ($armed && str_contains($query->sql, 'select exists') && str_contains($query->sql, '"avatar_templates"')) {
+            $armed = false;
+            PlatformTemplates::insertGlobal(['name' => $name]);
+        }
+    });
+}
+
+test('a name taken between the check and the create is a 422 on name, never a 500', function (): void {
+    $token = patToken('bare', Organization::factory()->create());
+    patRaceOnNameCheck('Raced');
+
+    $this->withToken($token)->postJson('/api/admin/avatar-templates', patPayload('Raced'))
+        ->assertUnprocessable()->assertJsonValidationErrors(['name']);
+
+    expect(AvatarTemplate::platformOnly()->where('name', 'Raced')->count())->toBe(1)
+        ->and(DB::table('audit_logs')->where('action', 'avatar_template.created')->count())->toBe(0);
+});
+
+test('a name taken between the check and the update is a 422 on name and the row keeps its name', function (): void {
+    $global = PlatformTemplates::insertGlobal(['name' => 'Mine']);
+    $token = patToken('acting', Organization::factory()->create());
+    patRaceOnNameCheck('Raced');
+
+    $this->withToken($token)->patchJson("/api/admin/avatar-templates/{$global->id}", ['name' => 'Raced'])
+        ->assertUnprocessable()->assertJsonValidationErrors(['name']);
+
+    expect(AvatarTemplate::platformOnly()->findOrFail($global->id)->name)->toBe('Mine');
+});
+
+test('the controller superadmin check and the manageGlobalAvatarTemplates gate never disagree', function (string $actor, bool $allowed): void {
+    $org = Organization::factory()->create();
+    $token = patToken($actor, $org);
+    $user = auth('api')->setToken($token)->user();
+
+    $this->withToken($token)->getJson('/api/admin/avatar-templates')->assertStatus($allowed ? 200 : 403);
+
+    expect(Gate::forUser($user)->allows('manageGlobalAvatarTemplates'))->toBe($allowed);
+})->with([
+    'bare superadmin' => ['bare', true],
+    'acting superadmin' => ['acting', true],
+    'admin' => ['admin', false],
+    'operator' => ['operator', false],
+    'viewer' => ['viewer', false],
+    'no role' => ['no_role', false],
+]);

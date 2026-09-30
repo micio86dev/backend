@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PlatformAvatarTemplateResource;
 use App\Models\AvatarTemplate;
 use App\Models\User;
+use App\Services\ConversationLlm\HeygenLlmRegistrar;
+use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Superadmin\PlatformAuditWriter;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -28,6 +35,10 @@ use Symfony\Component\HttpFoundation\Response;
  *   POST  /admin/avatar-templates
  *   GET   /admin/avatar-templates/{id}
  *   PATCH /admin/avatar-templates/{id}
+ *   POST  /admin/avatar-templates/{id}/activate     (offer for new project pins)
+ *   POST  /admin/avatar-templates/{id}/deactivate   (retire; existing pins are untouched)
+ *   DELETE /admin/avatar-templates/{id}             (only when retired AND unpinned)
+ *   POST  /admin/avatar-templates/{id}/duplicate    (copy into organizations)
  *
  * Every write runs inside `PlatformTemplateContext::run()` — the one door
  * through which a NULL-organization row can be persisted — and inside ONE
@@ -65,6 +76,8 @@ final class PlatformAvatarTemplateController extends Controller
      * List platform avatar templates with their usage.
      *
      * @response array{data: list<\App\Http\Resources\PlatformAvatarTemplateResource>}
+     *
+     * @throws AuthorizationException
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -81,6 +94,8 @@ final class PlatformAvatarTemplateController extends Controller
 
     /**
      * Show a platform avatar template with its usage.
+     *
+     * @throws AuthorizationException
      */
     public function show(Request $request, int $id): PlatformAvatarTemplateResource
     {
@@ -95,6 +110,8 @@ final class PlatformAvatarTemplateController extends Controller
      * Created INACTIVE and never activatable through this payload: creating a
      * template must not change what candidates are being interviewed with
      * right now, and offering it to every organization is its own decision.
+     *
+     * @throws AuthorizationException
      */
     public function store(Request $request): JsonResponse
     {
@@ -108,7 +125,7 @@ final class PlatformAvatarTemplateController extends Controller
         $this->assertConfigValid($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
 
-        $template = $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
+        $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
             $template = AvatarTemplate::create($validated);
 
             $this->audit->record(
@@ -121,7 +138,7 @@ final class PlatformAvatarTemplateController extends Controller
             );
 
             return $template;
-        }));
+        })));
 
         return $this->present($template)
             ->additional($this->recordSync($template))
@@ -136,6 +153,8 @@ final class PlatformAvatarTemplateController extends Controller
      * organization, on the next read (live edit, design D1) — which is why the
      * audit row carries the usage at edit time: the reach of the change is part
      * of what happened. It records field NAMES, never config values.
+     *
+     * @throws AuthorizationException
      */
     public function update(Request $request, int $id): PlatformAvatarTemplateResource
     {
@@ -169,7 +188,7 @@ final class PlatformAvatarTemplateController extends Controller
         $beforeBinding = $this->bindingNames($template);
         $usage = $this->usage->for([$template->id])[$template->id];
 
-        $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
+        $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
             $template->update($validated);
 
             $changed = array_values(array_filter(
@@ -201,9 +220,189 @@ final class PlatformAvatarTemplateController extends Controller
                     $unbound ? null : $this->bindingNames($template->refresh()),
                 );
             }
-        }));
+        })));
 
         return $this->present($template)->additional($this->recordSync($template));
+    }
+
+    /**
+     * Offer a platform avatar template for new project pins.
+     *
+     * "Offered" is not "the one in use": any number of platform templates may
+     * be offered at once (a single active row per provider is an organization
+     * rule), so nothing else is deactivated. The stored config is validated
+     * again HERE because a config goes stale when the field spec changes, and
+     * offering is the last moment anyone can catch that before an organization
+     * pins it. Idempotent: offering an offered template changes and audits
+     * nothing.
+     *
+     * @throws AuthorizationException
+     */
+    public function activate(Request $request, int $id): PlatformAvatarTemplateResource
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        if (! $template->is_active) {
+            $this->assertConfigValid($template->provider, $template->config);
+            $this->setOffered($actor, $template, true);
+
+            return $this->present($template)->additional($this->recordSync($template));
+        }
+
+        return $this->present($template);
+    }
+
+    /**
+     * Retire a platform avatar template: it is no longer offered for NEW pins.
+     *
+     * Existing pins keep resolving to it (a pin is valid in any state), so
+     * retiring is reversible bookkeeping and always allowed — including while
+     * projects in other organizations still use it. No config revalidation:
+     * withdrawing can only reduce exposure, and an already-invalid template is
+     * exactly the one an operator most wants to retire. Idempotent.
+     *
+     * @throws AuthorizationException
+     */
+    public function deactivate(Request $request, int $id): PlatformAvatarTemplateResource
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        if ($template->is_active) {
+            $this->setOffered($actor, $template, false);
+        }
+
+        return $this->present($template);
+    }
+
+    /**
+     * Delete a platform avatar template: only when it is retired AND unpinned.
+     *
+     * Two 409s, in this order. `template_active`: deleting what organizations
+     * are being offered is a decision, not a cleanup — retire it first.
+     * `template_in_use`: a pin in ANY organization refuses the delete, and the
+     * body carries the organization and project counts so the superadmin knows
+     * how far the blast radius reaches. Trashed projects do not count. The
+     * count-then-delete window is closed by the model's own `deleting` guard,
+     * whose exception renders as the same 409.
+     *
+     * @throws AuthorizationException
+     */
+    #[ResponseDoc(204, description: 'The template was deleted.', type: 'null')]
+    #[ResponseDoc(409, description: 'Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).', type: "array{error: 'template_active'|'template_in_use', message: string, project_count?: int, organization_count?: int}")]
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        if ($template->is_active) {
+            return response()->json(['error' => 'template_active', 'message' => 'template_active'], Response::HTTP_CONFLICT);
+        }
+
+        $usage = $this->usage->for([$template->id])[$template->id];
+
+        if ($usage['project_count'] > 0) {
+            throw new AvatarTemplateInUseException($usage['project_count'], $usage['organization_count']);
+        }
+
+        if ($template->provider === 'heygen') {
+            // Never throws (design D8): deleting OUR row must not be blocked by
+            // an unreachable HeyGen account.
+            app(HeygenLlmRegistrar::class)->forget($template);
+        }
+
+        $this->context->run($actor, fn () => DB::transaction(function () use ($actor, $template): void {
+            $this->audit->record(
+                $actor->id,
+                'avatar_template.deleted',
+                'avatar_template',
+                $template->id,
+                ['name' => $template->name, 'provider' => $template->provider, 'scope' => 'platform'],
+                null,
+            );
+
+            $template->delete();
+        }));
+
+        return response()->json(null, Response::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * Copy a platform avatar template into one or more organizations.
+     *
+     * This is the ONLY route that copies a platform template: the organization
+     * duplicate route answers 404 for a platform id, like every organization
+     * route. Each copy is an independent, INACTIVE organization template (no
+     * shared provider-side configuration), so editing the platform template
+     * afterwards never reaches it. Written OUTSIDE the platform context — the
+     * copies belong to their target organizations — and audited per target by
+     * the tenant recorder, with `source_scope: platform`.
+     *
+     * @response array{data: list<array{organization_id: int, id: int, name: string}>}
+     *
+     * @throws AuthorizationException
+     */
+    public function duplicate(Request $request, int $id): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $validated = $request->validate([
+            'target_organization_ids' => ['required', 'array', 'min:1'],
+            'target_organization_ids.*' => ['required', 'integer', 'distinct', Rule::exists('organizations', 'id')],
+            'name' => ['sometimes', 'nullable', 'string', 'max:120'],
+        ]);
+
+        $template = AvatarTemplate::platformOnly()->findOrFail($id);
+
+        // A copy of a template that no longer validates would just move the
+        // problem into another organization.
+        if (ConfigValidator::validate($template->provider, $template->config) !== []) {
+            throw ValidationException::withMessages(['template' => 'source_config_invalid']);
+        }
+
+        /** @var list<int> $targets */
+        $targets = array_map(intval(...), $validated['target_organization_ids']);
+
+        $created = app(DuplicateAvatarTemplate::class)->run($template, $targets, $validated['name'] ?? null);
+
+        return response()->json(['data' => $created], Response::HTTP_CREATED);
+    }
+
+    /**
+     * The flag write and its audit row share one transaction. The row carries
+     * the usage at that moment: how many organizations and projects a change of
+     * availability reaches is part of what happened.
+     */
+    private function setOffered(User $actor, AvatarTemplate $template, bool $offered): void
+    {
+        $usage = $this->usage->for([$template->id])[$template->id];
+        $snapshot = ['name' => $template->name, 'provider' => $template->provider, 'scope' => 'platform', 'usage' => $usage];
+
+        $this->context->run($actor, fn () => DB::transaction(function () use ($actor, $template, $offered, $snapshot): void {
+            $template->update(['is_active' => $offered]);
+
+            $this->audit->record(
+                $actor->id,
+                $offered ? 'avatar_template.activated' : 'avatar_template.deactivated',
+                'avatar_template',
+                $template->id,
+                $offered ? null : $snapshot,
+                $offered ? $snapshot : null,
+            );
+        }));
     }
 
     /**
