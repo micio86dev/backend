@@ -16,6 +16,7 @@ use App\Support\Project\ProjectInterviewability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\JWTAuth;
 
@@ -300,10 +301,22 @@ final class SsoExchangeController extends Controller
         // anything outside the shared validation contract to null and this
         // exchange carries on. A pre-change token has no such claims at all,
         // which reads the same way: both null, stored values preserved below.
-        $externalReference = ExternalReference::fromClaims(
-            $payload->get('external_id'),
-            $payload->get('source'),
-        );
+        $externalIdClaim = $payload->get('external_id');
+        $sourceClaim = $payload->get('source');
+        $externalReference = ExternalReference::fromClaims($externalIdClaim, $sourceClaim);
+
+        // Narrowing is silent for the candidate but not for the operator: an
+        // integration that systematically sends a bad value would otherwise
+        // never be noticed. Claim NAMES only, never values (caller's data).
+        $malformedClaims = ExternalReference::malformedClaims($externalIdClaim, $sourceClaim);
+
+        if ($malformedClaims !== []) {
+            Log::warning('sso.exchange.external_reference_dropped', [
+                'claims' => $malformedClaims,
+                'project_id' => $project->id,
+                'organization_id' => $project->organization_id,
+            ]);
+        }
 
         // `public_id` (public-api step 5, G-05): this raw statement bypasses
         // Eloquent entirely, so `App\Models\Concerns\HasPublicId`'s

@@ -35,6 +35,7 @@ use App\Models\WebhookDelivery;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Tests\Helpers\ExternalReferenceCases;
 use Tymon\JWTAuth\JWTAuth as JwtAuthManager;
@@ -336,6 +337,47 @@ test('a malformed claim keeps the stored value on an existing row', function (ar
 
     expect(extRefStored($project, 'ref-malformed-keep'))->toBe(['external_id' => 4471, 'source' => 'acme-ats']);
 })->with(fn () => extRefMalformedClaims());
+
+// Silent narrowing is the design (AD-5), but a systematically broken
+// integration must still be detectable server-side: a dropped claim is logged
+// by NAME only (never the value: `source` and `external_id` are the caller's
+// data), with enough context to find the project.
+
+test('a dropped claim is logged by name, without its value, and the exchange still succeeds', function (): void {
+    Log::spy();
+    $org = Organization::factory()->create();
+    $project = extRefExchangeProject($org);
+
+    $this->getJson('/api/sso/exchange?token='.extRefForgeSsoLink($project, 'ref-logged', [
+        'external_id' => 'leaked-value-abc',
+        'source' => 123,
+    ]))->assertOk();
+
+    Log::shouldHaveReceived('warning')
+        ->withArgs(function (string $message, array $context) use ($project): bool {
+            return $message === 'sso.exchange.external_reference_dropped'
+                && $context['claims'] === ['external_id', 'source']
+                && $context['project_id'] === $project->id
+                && $context['organization_id'] === $project->organization_id
+                && ! str_contains(json_encode($context), 'leaked-value-abc');
+        })
+        ->once();
+});
+
+test('a well-formed, absent or empty claim logs nothing', function (array $claims): void {
+    Log::spy();
+    $org = Organization::factory()->create();
+    $project = extRefExchangeProject($org);
+
+    $this->getJson('/api/sso/exchange?token='.extRefForgeSsoLink($project, 'ref-quiet', $claims))->assertOk();
+
+    Log::shouldNotHaveReceived('warning', fn (string $message): bool => $message === 'sso.exchange.external_reference_dropped');
+})->with([
+    'no claims' => [[]],
+    'well-formed pair' => [['external_id' => 4471, 'source' => 'acme-ats']],
+    'empty source' => [['source' => '']],
+    'whitespace-only source' => [['source' => '   ']],
+]);
 
 test('the 2^53-1 cap and a 180-character source are accepted verbatim', function (): void {
     $org = Organization::factory()->create();

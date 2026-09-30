@@ -198,6 +198,49 @@ describe('toClaims()', function (): void {
     });
 });
 
+describe('malformedClaims()', function (): void {
+    test('names nothing for a well-formed or absent pair', function (): void {
+        expect(ExternalReference::malformedClaims(4471, 'acme-ats'))->toBe([]);
+        expect(ExternalReference::malformedClaims(null, null))->toBe([]);
+        expect(ExternalReference::malformedClaims(ExternalReference::MAX_EXTERNAL_ID, str_repeat('a', 180)))->toBe([]);
+    });
+
+    test('treats an empty or whitespace-only source as absent, not malformed', function (): void {
+        expect(ExternalReference::malformedClaims(null, ''))->toBe([]);
+        expect(ExternalReference::malformedClaims(null, '   '))->toBe([]);
+    });
+
+    test('names a present external_id that fromClaims() had to drop', function (mixed $claim): void {
+        expect(ExternalReference::malformedClaims($claim, null))->toBe(['external_id']);
+    })->with([
+        'numeric string' => ['12'],
+        'float' => [12.5],
+        'boolean' => [true],
+        'zero' => [0],
+        'negative' => [-5],
+        'above the cap' => [ExternalReference::MAX_EXTERNAL_ID + 1],
+        'array' => [[4471]],
+    ]);
+
+    test('names a present source that fromClaims() had to drop', function (mixed $claim): void {
+        expect(ExternalReference::malformedClaims(null, $claim))->toBe(['source']);
+    })->with([
+        'integer' => [123],
+        'array' => [['acme-ats']],
+        'over the length cap' => [str_repeat('a', 181)],
+    ]);
+
+    test('names both, external_id first, when both are malformed', function (): void {
+        expect(ExternalReference::malformedClaims('x', 99))->toBe(['external_id', 'source']);
+    });
+
+    test('never contains a claim value, only claim names', function (): void {
+        expect(json_encode(ExternalReference::malformedClaims('secret-value', 'another-secret')))
+            ->not->toContain('secret-value')
+            ->not->toContain('another-secret');
+    });
+});
+
 describe('toAttributes()', function (): void {
     test('always carries both columns, null included, ready for forceFill()', function (): void {
         expect((new ExternalReference)->toAttributes())->toBe(['external_id' => null, 'source' => null]);
