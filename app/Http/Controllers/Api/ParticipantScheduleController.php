@@ -9,7 +9,7 @@ use App\Actions\Scheduling\RescheduleParticipant;
 use App\Exceptions\Sso\ParticipantScheduleRefusalReason;
 use App\Exceptions\Sso\ParticipantScheduleRefused;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\ParticipantResource;
+use App\Http\Resources\ParticipantEnrolmentResource;
 use App\Policies\ParticipantPolicy;
 use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Tenancy\TenantResolver;
@@ -77,7 +77,7 @@ final class ParticipantScheduleController extends Controller
             return response()->json(['reason' => $e->reason->value], $this->statusFor($e->reason));
         }
 
-        return response()->json(new ParticipantResource($updated), 200);
+        return response()->json(new ParticipantEnrolmentResource($updated), 200);
     }
 
     /**
@@ -93,7 +93,7 @@ final class ParticipantScheduleController extends Controller
             return response()->json(['reason' => $e->reason->value], $this->statusFor($e->reason));
         }
 
-        return response()->json(new ParticipantResource($updated), 200);
+        return response()->json(new ParticipantEnrolmentResource($updated), 200);
     }
 
     /**

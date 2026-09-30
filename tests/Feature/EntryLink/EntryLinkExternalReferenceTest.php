@@ -10,8 +10,10 @@ declare(strict_types=1);
  *   the values travel in the sso-link token as claims (only when present) and
  *   the exchange persists them.
  * - SCHEDULED path (`scheduled_at`): the row is created eagerly with the
- *   values persisted. The 201 body's new keys are asserted in slice A3a, when
- *   the response resource is split; here only the database is asserted.
+ *   values persisted, and the 201 body (a `ParticipantEnrolmentResource`, slice
+ *   A3a) returns them: `external_id` and `source` always present, null when
+ *   absent. The immediate path's body is `{entry_url, expires_at, email_sent}`
+ *   and is unchanged.
  *
  * Both paths validate through the shared `ExternalReference` rules, before any
  * side effect: a refused request mints no token and writes no row.
@@ -175,6 +177,29 @@ test('the scheduled path persists exactly the values that were sent', function (
     $row = DB::table('participants')->where('project_id', $project->id)->where('candidate_ref', 'entry-ref-001')->first();
     expect($row->external_id)->toBe($externalId)->and($row->source)->toBe($source);
     Bus::assertNotDispatched(SendCandidateInvitationJob::class);
+})->with(fn () => ExternalReferenceCases::validCombinations());
+
+test('the scheduled path 201 body carries both keys with the values that were sent', function (?int $externalId, ?string $source): void {
+    $org = Organization::factory()->create();
+    $project = extRefEntryProject($org);
+    $token = authTokenForRole($org, 'operator');
+
+    $body = extRefEntryBody($project, extRefEntryScheduled());
+    if ($externalId !== null) {
+        $body['external_id'] = $externalId;
+    }
+    if ($source !== null) {
+        $body['source'] = $source;
+    }
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', $body);
+
+    $response->assertStatus(201);
+    // Present even when null, typed: an integer and a string, never a string id.
+    expect($response->json())->toHaveKeys(['external_id', 'source']);
+    expect($response->json('external_id'))->toBe($externalId);
+    expect($response->json('source'))->toBe($source);
+    expect($response->json('candidate_ref'))->toBe('entry-ref-001');
 })->with(fn () => ExternalReferenceCases::validCombinations());
 
 test('the boundary values are accepted on both paths: external_id 2^53-1 and a 180-character multibyte source', function (): void {

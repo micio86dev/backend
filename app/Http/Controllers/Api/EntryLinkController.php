@@ -8,7 +8,7 @@ use App\Actions\Scheduling\CreateScheduledParticipant;
 use App\Exceptions\Sso\EntryLinkRefusalReason;
 use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\ParticipantResource;
+use App\Http\Resources\ParticipantEnrolmentResource;
 use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
@@ -50,8 +50,9 @@ use Illuminate\Support\Carbon;
  *   5. SCHEDULED BRANCH (interview-scheduling, design AD-1 amendment): when
  *      `scheduled_at` is present, delegate to `CreateScheduledParticipant`
  *      (the SAME shared action `M2m\ParticipantController::store()`'s own
- *      scheduled branch uses) and return 201 with a `ParticipantResource` —
- *      no mint, no `entry_url`, no email. `EntryLinkMinter`/
+ *      scheduled branch uses) and return 201 with a
+ *      `ParticipantEnrolmentResource` (the candidate shape plus `external_id`
+ *      and `source`) — no mint, no `entry_url`, no email. `EntryLinkMinter`/
  *      `SendCandidateInvitationJob` are never reached on this branch.
  *      When `scheduled_at` is absent, behavior below is byte-for-byte
  *      unchanged — this is a strict superset of steps 6-8.
@@ -195,7 +196,7 @@ final class EntryLinkController extends Controller
                 ], 409);
             }
 
-            return response()->json(new ParticipantResource($result['participant']), 201);
+            return response()->json(new ParticipantEnrolmentResource($result['participant']), 201);
         }
 
         try {

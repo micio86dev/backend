@@ -14,10 +14,20 @@ declare(strict_types=1);
  * missing both fields. So the COMMITTED `openapi.json` is read here, as a
  * client's codegen would read it.
  *
- * Later slices extend this file with the response schemas and the public
+ * The RESPONSE side is pinned the same way (slice A3a): every operator, M2M and
+ * integration response that returns a participant must reference
+ * `ParticipantEnrolmentResource`, whose `external_id` / `source` are typed and
+ * always present, while the candidate session keeps the schema that carries
+ * neither. A hand-written `@scramble-return` is the only thing that produces
+ * these shapes, and it does not have to agree with the array the method
+ * returns; a stale one fails nothing except a client's generated types.
+ *
+ * Later slices extend this file with the admin resources and the public
  * `openapi.v1.json`.
  *
- * REQ: External Reference Validation Is One Shared Contract
+ * REQ: External Reference Validation Is One Shared Contract,
+ *      M2M Participant Create Accepts And Returns The External Reference,
+ *      Surfaces That Never Carry The External Reference
  *      (sdd/candidate-external-reference/spec/participant-sso)
  */
 
@@ -90,3 +100,106 @@ test('the request body documents source as a nullable string of at most 180 char
     expect($property['maxLength'])->toBe(ExternalReference::SOURCE_MAX_LENGTH);
     expect($schema['required'] ?? [])->not->toContain('source');
 })->with(fn () => externalReferenceRequestSurfaces());
+
+// ---------------------------------------------------------------------------
+// Response schemas (slice A3a)
+// ---------------------------------------------------------------------------
+
+/**
+ * @return array<string, mixed>
+ */
+function externalReferenceSpec(): array
+{
+    return json_decode((string) file_get_contents(base_path('openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * Every `$ref` reachable under one documented response, in document order.
+ *
+ * @param  array<string, mixed>  $spec
+ * @return list<string>
+ */
+function externalReferenceResponseRefs(array $spec, string $path, string $method, string $status): array
+{
+    $schema = $spec['paths'][$path][$method]['responses'][$status]['content']['application/json']['schema'] ?? null;
+    expect($schema)->not->toBeNull("openapi.json documents no JSON {$status} response for {$method} {$path}");
+
+    $refs = [];
+    $collect = function (mixed $node) use (&$collect, &$refs): void {
+        if (! is_array($node)) {
+            return;
+        }
+
+        foreach ($node as $key => $value) {
+            if ($key === '$ref' && is_string($value)) {
+                $refs[] = $value;
+            } else {
+                $collect($value);
+            }
+        }
+    };
+    $collect($schema);
+
+    return $refs;
+}
+
+/**
+ * The routes whose response is a participant for an operator or an integration,
+ * keyed by a readable description: `[path, method, status]`.
+ *
+ * @return array<string, array{0: string, 1: string, 2: string}>
+ */
+function externalReferenceEnrolmentResponses(): array
+{
+    return [
+        'M2M create' => ['/m2m/participants', 'post', '201'],
+        'M2M index' => ['/m2m/participants', 'get', '200'],
+        'M2M show' => ['/m2m/participants/{id}', 'get', '200'],
+        'M2M reschedule' => ['/m2m/participants/{id}/schedule', 'patch', '200'],
+        'M2M cancel schedule' => ['/m2m/participants/{id}/schedule', 'delete', '200'],
+        'operator scheduled entry link' => ['/entry-links', 'post', '201'],
+        'operator reschedule' => ['/participants/{id}/schedule', 'patch', '200'],
+        'operator cancel schedule' => ['/participants/{id}/schedule', 'delete', '200'],
+    ];
+}
+
+test('the operator and M2M participant responses reference the enrolment schema, never the candidate one', function (string $path, string $method, string $status): void {
+    $refs = externalReferenceResponseRefs(externalReferenceSpec(), $path, $method, $status);
+
+    expect($refs)->toContain('#/components/schemas/ParticipantEnrolmentResource');
+    expect($refs)->not->toContain('#/components/schemas/App.Http.Resources.ParticipantResource');
+})->with(fn () => externalReferenceEnrolmentResponses());
+
+test('the enrolment schema documents external_id as integer|null and source as string|null, both required', function (): void {
+    $schema = externalReferenceSpec()['components']['schemas']['ParticipantEnrolmentResource'] ?? null;
+
+    expect($schema)->not->toBeNull('openapi.json declares no ParticipantEnrolmentResource schema');
+    expect(externalReferenceTypeIs($schema['properties']['external_id'], 'integer'))->toBeTrue('external_id must be integer|null');
+    expect(externalReferenceTypeIs($schema['properties']['source'], 'string'))->toBeTrue('source must be string|null');
+    // Always present (null when absent): a consumer tells "no reference" from
+    // "a server that predates the field" by the key, not by its value.
+    expect($schema['required'])->toContain('external_id')->toContain('source');
+});
+
+test('the enrolment schema is the candidate schema plus exactly the two reference fields', function (): void {
+    $schemas = externalReferenceSpec()['components']['schemas'];
+
+    $enrolment = array_keys($schemas['ParticipantEnrolmentResource']['properties']);
+    $candidate = array_keys($schemas['App.Http.Resources.ParticipantResource']['properties']);
+    sort($enrolment);
+    sort($candidate);
+
+    expect(array_values(array_diff($enrolment, $candidate)))->toBe(['external_id', 'source']);
+    expect(array_diff($candidate, $enrolment))->toBe([]);
+});
+
+test('the candidate session schema documents neither external_id nor source', function (): void {
+    $spec = externalReferenceSpec();
+
+    expect(externalReferenceResponseRefs($spec, '/candidate/session', 'get', '200'))
+        ->toContain('#/components/schemas/App.Http.Resources.ParticipantResource');
+
+    $properties = $spec['components']['schemas']['App.Http.Resources.ParticipantResource']['properties'];
+
+    expect($properties)->not->toHaveKey('external_id')->not->toHaveKey('source');
+});

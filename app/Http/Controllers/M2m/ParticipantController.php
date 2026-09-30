@@ -10,7 +10,7 @@ use App\Actions\Scheduling\RescheduleParticipant;
 use App\Exceptions\Sso\ParticipantScheduleRefusalReason;
 use App\Exceptions\Sso\ParticipantScheduleRefused;
 use App\Http\Controllers\Controller;
-use App\Http\Resources\ParticipantResource;
+use App\Http\Resources\ParticipantEnrolmentResource;
 use App\Models\ApiClient;
 use App\Models\Participant;
 use App\Models\Project;
@@ -186,7 +186,7 @@ final class ParticipantController extends Controller
                 ], 409);
             }
 
-            return response()->json(new ParticipantResource($result['participant']), 201);
+            return response()->json(new ParticipantEnrolmentResource($result['participant']), 201);
         }
 
         // Create participant — organization_id from project (NOT from
@@ -250,7 +250,7 @@ final class ParticipantController extends Controller
             ], 409);
         }
 
-        return response()->json(new ParticipantResource($participant), 201);
+        return response()->json(new ParticipantEnrolmentResource($participant), 201);
     }
 
     /**
@@ -270,7 +270,7 @@ final class ParticipantController extends Controller
             ->orderByDesc('created_at')
             ->paginate(20);
 
-        return ParticipantResource::collection($participants);
+        return ParticipantEnrolmentResource::collection($participants);
     }
 
     /**
@@ -279,7 +279,7 @@ final class ParticipantController extends Controller
      * GET /api/m2m/participants/{id}
      * Auth: auth:api-m2m + ability:participants:read
      */
-    public function show(Request $request, int $id): ParticipantResource
+    public function show(Request $request, int $id): ParticipantEnrolmentResource
     {
         /** @var ApiClient $client */
         $client = $request->user('api-m2m');
@@ -289,7 +289,7 @@ final class ParticipantController extends Controller
         $participant = Participant::where('organization_id', $orgId)
             ->findOrFail($id);
 
-        return new ParticipantResource($participant);
+        return new ParticipantEnrolmentResource($participant);
     }
 
     /**
@@ -318,7 +318,7 @@ final class ParticipantController extends Controller
             return response()->json(['reason' => $e->reason->value], $this->scheduleRefusalStatus($e->reason));
         }
 
-        return response()->json(new ParticipantResource($updated), 200);
+        return response()->json(new ParticipantEnrolmentResource($updated), 200);
     }
 
     /**
@@ -339,7 +339,7 @@ final class ParticipantController extends Controller
             return response()->json(['reason' => $e->reason->value], $this->scheduleRefusalStatus($e->reason));
         }
 
-        return response()->json(new ParticipantResource($updated), 200);
+        return response()->json(new ParticipantEnrolmentResource($updated), 200);
     }
 
     /**

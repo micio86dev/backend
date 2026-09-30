@@ -95,6 +95,66 @@ test('candidate identifiers never reach the sink', function (): void {
     expect($encoded)->not->toContain($email);
 });
 
+test('the external id never reaches the sink: singular, plural, compound and nested', function (): void {
+    // candidate-external-reference: `external_id` is the calling system's own
+    // record id for a named person, the same class as `candidate_ref` — the
+    // datum that links an error report back to a candidate. Plain integers carry
+    // nothing for the free-text pass to grip, so the KEY is the only defence.
+    $event = scrubbedEvent([
+        'external_id' => 88410013,
+        'external_ids' => [88410014, 88410015],
+        // A compound key: the denied name anywhere inside it is still that name.
+        'participant_external_id' => 88410016,
+        'context' => ['participant' => ['external_id' => 88410017]],
+    ]);
+
+    $encoded = json_encode($event->getExtra());
+
+    foreach (range(88410013, 88410017) as $id) {
+        expect($encoded)->not->toContain((string) $id);
+    }
+});
+
+test('the external id is scrubbed in request data, breadcrumb metadata and a document embedded in a message', function (): void {
+    $event = scrubbedEvent([], ['data' => ['external_id' => 88410021, 'project_id' => 7]]);
+    expect(json_encode($event->getRequest()))->not->toContain('88410021');
+    // The diagnostic next to it survives: a scrubbed report stays usable.
+    expect(json_encode($event->getRequest()))->toContain('project_id');
+
+    $crumbEvent = Event::createEvent();
+    $crumbEvent->setBreadcrumb([new Breadcrumb(
+        Breadcrumb::LEVEL_ERROR,
+        Breadcrumb::TYPE_DEFAULT,
+        'log',
+        'enrolment failed',
+        ['external_id' => 88410022],
+    )]);
+    $scrubbed = SentryScrubber::handle($crumbEvent);
+    expect(json_encode($scrubbed->getBreadcrumbs()[0]->getMetadata()))->not->toContain('88410022');
+
+    // A Guzzle-style exception message carries the JSON body under no key at all.
+    $messageEvent = Event::createEvent();
+    $messageEvent->setMessage('422 response: {"external_id":88410023,"status":"refused"}');
+    $message = SentryScrubber::handle($messageEvent)->getMessage();
+    expect($message)->not->toContain('88410023')->toContain('refused');
+});
+
+test('source is NOT a denied key: it names a system, not a person, and is a generic key elsewhere', function (): void {
+    // Design decision DV-4 (candidate-external-reference): `source` is also
+    // Sentry's own `transaction_info.source` and a common log-context key, so
+    // denying it would cost reports their diagnostics for a value that names a
+    // calling SYSTEM ("acme-ats"), not a person. The id is the linkable datum.
+    $event = scrubbedEvent([
+        'source' => 'acme-ats',
+        'transaction_info' => ['source' => 'route'],
+        'project_id' => 7,
+    ]);
+
+    $encoded = json_encode($event->getExtra());
+
+    expect($encoded)->toContain('acme-ats')->toContain('route')->toContain('project_id');
+});
+
 test('secrets nested at any depth are scrubbed', function (): void {
     $event = scrubbedEvent([
         'context' => ['delivery' => ['payload' => ['answer' => 'NESTED-LEAK']]],

@@ -85,7 +85,14 @@ final class RescheduleParticipant
             // candidate already holds a notice naming the OLD time, so the
             // sweep must send a FRESH one for the new time (spec: "re-arms a
             // fresh notice").
-            $participant->scheduled_at = $newScheduledAt;
+            // ->utc() is load-bearing, not cosmetic: Eloquent's datetime cast
+            // formats the Carbon instance in ITS OWN timezone when writing, so
+            // a value still holding a non-zero offset (e.g. "+02:00") would
+            // persist its LOCAL wall-clock digits as if they were already UTC,
+            // silently moving the interview by the offset. The create paths
+            // normalise at their controllers for the same reason; doing it here
+            // covers both reschedule surfaces in the one place they share.
+            $participant->scheduled_at = $newScheduledAt->copy()->utc();
             $participant->scheduling_status = ParticipantSchedulingStatus::Pending;
             $participant->save();
 

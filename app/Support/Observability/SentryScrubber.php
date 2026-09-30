@@ -146,6 +146,14 @@ final class SentryScrubber
      * `candidate_ref` an address is directly identifying with no calling system
      * needed to resolve it.
      *
+     * `external_id` and `external_ids` (candidate-external-reference) are the
+     * same class as `candidate_ref`: the calling system's own record id for a
+     * named person, which is what links an error report back to a candidate.
+     * `source` is deliberately NOT here — it names the calling SYSTEM
+     * ("acme-ats"), not a person, and it is also Sentry's own
+     * `transaction_info.source` and a common log-context key, so denying it
+     * would cost reports their diagnostics for nothing.
+     *
      * CANDIDATE-AUTHORED CONTENT: transcript, prompt, answer, excerpt,
      * utterance, content and their plurals, plus three the synonym list missed:
      * `text` is what this PRODUCT calls transcribed speech (`utterances.text`
@@ -189,6 +197,8 @@ final class SentryScrubber
         'candidate_refs',
         'display_name',
         'display_names',
+        'external_id',
+        'external_ids',
         'email',
         'transcript',
         'transcripts',
