@@ -6517,7 +6517,7 @@
         "/participants": {
             "get": {
                 "operationId": "participant.index",
-                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.",
+                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.\n\n`q` matches `candidate_ref`, `display_name` and `source` as a\ncase-insensitive substring, taking `%`, `_` and `\\` literally, and the\ncandidate's `external_id` by exact equality, only when the trimmed term\nis a whole number from 1 to 9007199254740991.",
                 "summary": "GET /api/participants",
                 "tags": [
                     "Participant"
@@ -13698,6 +13698,18 @@
                     "email": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -13912,6 +13924,8 @@
                     "candidate_ref",
                     "display_name",
                     "email",
+                    "external_id",
+                    "source",
                     "role_code",
                     "language",
                     "status",
@@ -14119,6 +14133,18 @@
                     "email": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -14174,6 +14200,8 @@
                     "candidate_ref",
                     "display_name",
                     "email",
+                    "external_id",
+                    "source",
                     "role_code",
                     "language",
                     "status",
@@ -14858,6 +14886,20 @@
                     "updated_at": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given."
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The calling system the candidate came from, as supplied when the interview was created; `null` when none was given."
+                    },
                     "project": {
                         "type": "object",
                         "properties": {
@@ -14976,6 +15018,8 @@
                     "recording_ready",
                     "created_at",
                     "updated_at",
+                    "external_id",
+                    "source",
                     "project"
                 ],
                 "title": "PublicInterview"

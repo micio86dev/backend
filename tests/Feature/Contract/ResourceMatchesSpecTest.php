@@ -225,3 +225,39 @@ test('the scheduled entry-link 201 returns exactly what ParticipantEnrolmentReso
 
     expect($actual)->toBe(specProperties('ParticipantEnrolmentResource'));
 });
+
+test('GET /api/participants rows return exactly what the admin ParticipantResource declares', function (): void {
+    // The admin list row is a DIFFERENT class from the candidate one despite the
+    // shared basename; Scramble names the admin schema `ParticipantResource` and
+    // fully qualifies the candidate one. Both carry a hand-written
+    // `@scramble-return`, so the row is compared to the committed spec.
+    $org = Organization::factory()->create();
+    $token = contractAdminToken($org);
+    $project = Project::factory()->create(['organization_id' => $org->id]);
+    Participant::factory()->forProject($project)->withExternalReference(4471, 'acme-ats')->create();
+
+    $response = $this->withToken($token)->getJson('/api/participants');
+    $response->assertOk();
+
+    $actual = array_keys($response->json('data.0'));
+    sort($actual);
+
+    expect($actual)->toBe(specProperties('ParticipantResource'));
+    expect($actual)->toContain('external_id')->toContain('source');
+});
+
+test('GET /api/participants/{id} returns exactly what ParticipantDetailResource declares', function (): void {
+    $org = Organization::factory()->create();
+    $token = contractAdminToken($org);
+    $project = Project::factory()->create(['organization_id' => $org->id]);
+    $participant = Participant::factory()->forProject($project)->withExternalReference(4471, 'acme-ats')->create();
+
+    $response = $this->withToken($token)->getJson("/api/participants/{$participant->id}");
+    $response->assertOk();
+
+    $actual = array_keys($response->json('data'));
+    sort($actual);
+
+    expect($actual)->toBe(specProperties('ParticipantDetailResource'));
+    expect($actual)->toContain('external_id')->toContain('source');
+});

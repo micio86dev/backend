@@ -2835,6 +2835,20 @@
                     "updated_at": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given."
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The calling system the candidate came from, as supplied when the interview was created; `null` when none was given."
+                    },
                     "project": {
                         "type": "object",
                         "properties": {
@@ -2953,6 +2967,8 @@
                     "recording_ready",
                     "created_at",
                     "updated_at",
+                    "external_id",
+                    "source",
                     "project"
                 ],
                 "title": "PublicInterview"

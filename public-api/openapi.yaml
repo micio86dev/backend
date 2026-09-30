@@ -835,7 +835,7 @@ components:
     Interview:
       type: object
       description: A participant enrolment — one candidate in one project.
-      required: [id, project_id, candidate_ref, email, display_name, language, status, livemode, metadata, progress, transcript_ready, scoring_ready, recording_ready, created_at, updated_at]
+      required: [id, project_id, candidate_ref, email, display_name, language, status, livemode, metadata, progress, transcript_ready, scoring_ready, recording_ready, created_at, updated_at, external_id, source]
       properties:
         id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
         project_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" }
@@ -861,6 +861,8 @@ components:
         recording_ready: { type: boolean, description: Audio recording availability. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        external_id: { type: [integer, "null"], minimum: 1, maximum: 9007199254740991, description: "The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given." }
+        source: { type: [string, "null"], maxLength: 180, description: "The calling system the candidate came from, as supplied when the interview was created; `null` when none was given." }
 
     CreateInterviewRequest:
       type: object
