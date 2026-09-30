@@ -16,6 +16,7 @@ use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 
 /** @return array{a: Organization, b: Organization, aRow: AvatarTemplate, bRow: AvatarTemplate, global: AvatarTemplate, trashed: AvatarTemplate} */
@@ -53,7 +54,7 @@ function gatBare(callable $fn): mixed
 }
 
 /** @return list<string> */
-function gatNames(\Illuminate\Database\Eloquent\Builder $query): array
+function gatNames(Builder $query): array
 {
     return $query->orderBy('name')->pluck('name')->all();
 }

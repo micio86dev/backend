@@ -366,7 +366,13 @@ final class AvatarTemplateController extends Controller
             // PER PROVIDER simultaneously — deactivating across every
             // provider would silently kill an unrelated, still-correct
             // Tavus template the moment an operator activates a HeyGen one.
-            AvatarTemplate::where('is_active', true)
+            //
+            // Filtered by the template's OWN organization explicitly, not by the
+            // implicit tenant scope: that scope filters nothing under superadmin
+            // bypass, so a bare superadmin used to deactivate the active
+            // template of EVERY organization on this provider.
+            AvatarTemplate::where('organization_id', $template->organization_id)
+                ->where('is_active', true)
                 ->where('provider', $template->provider)
                 ->whereKeyNot($template->id)
                 ->update(['is_active' => false]);

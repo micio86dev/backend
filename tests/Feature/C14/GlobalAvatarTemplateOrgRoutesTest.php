@@ -11,6 +11,7 @@ declare(strict_types=1);
  * this: under bypass it filters nothing.
  */
 
+use App\Models\AvatarTemplate;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Tenancy\ActingOrganization;
@@ -50,7 +51,7 @@ test('a platform id is 404 on show, update, activate, deactivate and destroy', f
     $this->withToken($token)->postJson("/api/avatar-templates/{$global->id}/deactivate")->assertNotFound();
     $this->withToken($token)->deleteJson("/api/avatar-templates/{$global->id}")->assertNotFound();
 
-    $row = \App\Models\AvatarTemplate::withoutGlobalScopes()->find($global->id);
+    $row = AvatarTemplate::withoutGlobalScopes()->find($global->id);
     expect($row->name)->not->toBe('Hijack')->and($row->is_active)->toBeFalse()->and($row->deleted_at)->toBeNull();
 })->with('gatActors');
 
