@@ -301,6 +301,30 @@ test('it is all-or-nothing: a failure on the second target creates no copy at al
         ->and(dupTemplatesOf($targetB))->toBeEmpty();
 });
 
+test('a failing audit write never fails the duplication it records', function (): void {
+    $source = Organization::factory()->create();
+    $target = Organization::factory()->create();
+    $template = dupTemplate($source);
+    $token = dupBareSuperadminToken();
+
+    $armed = true;
+    AuditLog::creating(function () use (&$armed): void {
+        if ($armed) {
+            throw new RuntimeException('audit store down');
+        }
+    });
+
+    try {
+        $this->withToken($token)
+            ->postJson("/api/avatar-templates/{$template->id}/duplicate", ['target_organization_ids' => [$target->id]])
+            ->assertCreated();
+    } finally {
+        $armed = false;
+    }
+
+    expect(dupTemplatesOf($target))->toHaveCount(1);
+});
+
 test('each copy is audited in its target organization without any config content', function (): void {
     $source = Organization::factory()->create();
     $target = Organization::factory()->create();

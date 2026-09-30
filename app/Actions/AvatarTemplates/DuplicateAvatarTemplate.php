@@ -26,7 +26,8 @@ use Illuminate\Support\Facades\DB;
  *
  * All-or-nothing: one transaction across every target. Audit rows are written
  * AFTER it commits, so a failed audit write can neither abort the copies nor
- * be recorded for copies that were rolled back.
+ * be recorded for copies that were rolled back. `AuditRecorder::record()` never
+ * throws (it logs and swallows its own failure), so no guard is needed here.
  */
 final class DuplicateAvatarTemplate
 {

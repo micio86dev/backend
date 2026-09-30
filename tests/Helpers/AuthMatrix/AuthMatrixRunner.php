@@ -119,7 +119,7 @@ final class AuthMatrixRunner
 
     /**
      * What can still be asserted about a cell whose OUTCOME is unresolved: if
-     * the code refused the request (a 4xx that is not a success), the refusal
+     * the code refused the request (a 4xx or 5xx that is not a success), the refusal
      * must not have changed anything. Only the status itself is left open.
      *
      * @param  TestResponse<Response>  $response
@@ -129,7 +129,7 @@ final class AuthMatrixRunner
     {
         $status = $response->getStatusCode();
 
-        if ($status < 400 || $status >= 500) {
+        if ($status < 400) {
             return;
         }
 
