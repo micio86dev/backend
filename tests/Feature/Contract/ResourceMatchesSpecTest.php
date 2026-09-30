@@ -19,11 +19,13 @@ declare(strict_types=1);
  * the only check in the chain that reads both sides.
  */
 
+use App\Models\ApiClient;
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\ApiKeyGenerator;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -168,4 +170,58 @@ test('GET /api/candidate/session returns exactly what the candidate resource dec
     // organization_id is excluded by design — no internal-id leak to someone
     // outside the tenant.
     expect($actual)->not->toContain('organization_id');
+});
+
+test('GET /api/m2m/participants/{id} returns exactly what ParticipantEnrolmentResource declares', function (): void {
+    // The operator/integration twin of the candidate resource: the same shape
+    // plus the calling system's `external_id` and `source`. Compared to the
+    // COMMITTED spec for the reason this file opens with — the hand-written
+    // `@scramble-return` is the only thing that produces these keys in the
+    // exported schema, and it does not have to agree with `toArray()`.
+    $org = Organization::factory()->create();
+    app(TenantResolver::class)->setOrgId($org->id);
+
+    $project = Project::factory()->create(['organization_id' => $org->id]);
+    $participant = Participant::factory()->forProject($project)->withExternalReference(4471, 'acme-ats')->create();
+
+    $rawKey = ApiKeyGenerator::generate();
+    ApiClient::factory()->withRawKey($rawKey)->create([
+        'organization_id' => $org->id,
+        'is_active' => true,
+        'abilities' => ['participants:read'],
+    ]);
+
+    $response = $this->withToken($rawKey)->getJson("/api/m2m/participants/{$participant->id}");
+    $response->assertOk();
+
+    $actual = array_keys($response->json('data'));
+    sort($actual);
+
+    expect($actual)->toBe(specProperties('ParticipantEnrolmentResource'));
+    // The two fields the candidate schema must not have.
+    expect($actual)->toContain('external_id')->toContain('source');
+    expect(specProperties('App.Http.Resources.ParticipantResource'))->not->toContain('external_id')->not->toContain('source');
+});
+
+test('the scheduled entry-link 201 returns exactly what ParticipantEnrolmentResource declares', function (): void {
+    $org = Organization::factory()->create();
+    $token = contractAdminToken($org);
+    $project = Project::factory()->create(['organization_id' => $org->id, 'status' => 'active']);
+    makeProjectInterviewable($project);
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'contract-entry-001',
+        'display_name' => 'Contract Candidate',
+        'email' => 'contract-entry@example.test',
+        'scheduled_at' => now('UTC')->addMinutes(30)->toIso8601String(),
+        'external_id' => 4471,
+        'source' => 'acme-ats',
+    ]);
+    $response->assertStatus(201);
+
+    $actual = array_keys($response->json());
+    sort($actual);
+
+    expect($actual)->toBe(specProperties('ParticipantEnrolmentResource'));
 });

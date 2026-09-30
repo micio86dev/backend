@@ -3021,7 +3021,7 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3047,7 +3047,7 @@
                                             ]
                                         },
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         }
                                     ]
                                 }
@@ -6875,11 +6875,11 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                    "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                 }
                             }
                         }
@@ -6950,7 +6950,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Paginated set of `App.Http.Resources.ParticipantResource`",
+                        "description": "Paginated set of `ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6959,7 +6959,7 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                                "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                             }
                                         },
                                         "links": {
@@ -7114,14 +7114,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         }
                                     },
                                     "required": [
@@ -7175,13 +7175,13 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -7221,13 +7221,13 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -7470,13 +7470,13 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -7518,13 +7518,13 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -13925,6 +13925,184 @@
                     "created_at"
                 ],
                 "title": "ParticipantDetailResource"
+            },
+            "ParticipantEnrolmentResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "in_attesa",
+                            "in_corso",
+                            "in_valutazione",
+                            "completato",
+                            "errore"
+                        ]
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "completed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "scheduled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "scheduling_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "pending",
+                            "notice_sent",
+                            "started",
+                            "cancelled",
+                            null
+                        ]
+                    },
+                    "branding": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "primary_color": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "logo_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "name",
+                            "primary_color",
+                            "logo_url"
+                        ]
+                    },
+                    "project": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "role_code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "language": {
+                                "type": "string"
+                            },
+                            "assessment_type": {
+                                "type": "string",
+                                "enum": [
+                                    "standard",
+                                    "potential"
+                                ]
+                            },
+                            "exit_redirect_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "error_redirect_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "role_code",
+                            "language",
+                            "assessment_type",
+                            "exit_redirect_url",
+                            "error_redirect_url"
+                        ]
+                    },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "candidate_ref",
+                    "display_name",
+                    "role_code",
+                    "language",
+                    "status",
+                    "started_at",
+                    "completed_at",
+                    "created_at",
+                    "scheduled_at",
+                    "scheduling_status",
+                    "branding",
+                    "project",
+                    "external_id",
+                    "source"
+                ],
+                "title": "ParticipantEnrolmentResource"
             },
             "ParticipantResource": {
                 "type": "object",
