@@ -877,6 +877,8 @@ components:
             email: { type: string, format: email, description: Mandatory. Unique per project. }
             display_name: { type: string, minLength: 1, maxLength: 255, description: Shown in the UI and used in the interview context. }
             language: { $ref: "#/components/schemas/Language", description: Defaults to the project's language. }
+            external_id: { type: [integer, "null"], minimum: 1, maximum: 9007199254740991, description: "Optional. Your own numeric identifier for this candidate, stored on the interview and returned as `external_id`. Not unique: the same value may be used on several interviews. A JSON integer is required; a string, a fractional number or a boolean answers `422 validation_failed`." }
+            source: { type: [string, "null"], maxLength: 180, description: "Optional. The name of the system the candidate came from (for example your ATS), stored on the interview and returned as `source`. Not unique. Surrounding whitespace is trimmed and a blank value is stored as `null`." }
         metadata: { $ref: "#/components/schemas/Metadata" }
         exit_redirect_url:
           type: string

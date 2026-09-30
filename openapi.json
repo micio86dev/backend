@@ -13091,6 +13091,21 @@
                                 ],
                                 "description": "ISO 639-1, matching `openapi.yaml`'s `Language` schema pattern\nexactly (`^[a-z]{2}$`) \u2014 no further allow-list check: the\ncontract does not restrict `candidate.language` to a\nper-project or per-platform locale set, and this endpoint has\nno such catalogue to validate against (unlike\n`config/translatable.php`'s `supported_locales`, which is a\nBACKOFFICE UI concept).",
                                 "pattern": "^[a-z]{2}$"
+                            },
+                            "external_id": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ],
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                            },
+                            "source": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 180
                             }
                         },
                         "required": [

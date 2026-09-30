@@ -22,6 +22,7 @@ use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\ScoringSerializer;
 use App\PublicApi\Serializers\TranscriptSerializer;
 use App\Rules\PublicApi\Iso8601DateTime;
+use App\Support\Participant\ExternalReference;
 use App\Support\PublicApi\ApiMode;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Expand;
@@ -114,6 +115,12 @@ final class InterviewController extends Controller
 
         $language = $request->input('candidate.language');
 
+        // From the VALIDATED body, never the raw input: `external_id` has
+        // already passed `integer:strict`, so `fromValidated()` only has to
+        // trim `source` and turn a blank one into null.
+        $validatedCandidate = $request->validated('candidate');
+        $externalReference = ExternalReference::fromValidated(is_array($validatedCandidate) ? $validatedCandidate : []);
+
         try {
             $result = $this->enrolCandidate->handle(
                 $project,
@@ -127,6 +134,7 @@ final class InterviewController extends Controller
                 self::stringMap($request->input('metadata')),
                 self::nullableString($request->input('exit_redirect_url')),
                 $client->mode,
+                $externalReference,
             );
         } catch (EnrolmentRefused $e) {
             return $this->renderRefusal($request, $e->reason);
