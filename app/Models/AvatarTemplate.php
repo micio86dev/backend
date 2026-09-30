@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\AvatarTemplateScope;
 use App\Enums\LlmMode;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
+use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -23,12 +26,19 @@ use Illuminate\Support\Carbon;
  * nobody is in a hurry is not a check. Application code deactivates first for
  * a clean user experience, and the index is what makes the invariant true.
  *
+ * PLATFORM ROWS. `organization_id IS NULL` marks a template owned by the
+ * platform. Two always-on scopes keep such a row out of every query by
+ * default: the strict `tenant` scope (which filters nothing under superadmin
+ * bypass) and `exclude_platform_rows` (which does, in every context). A row is
+ * reachable only through the two named scopes below, whose call sites are
+ * pinned by an architecture test.
+ *
  * `organization_id` is NOT fillable. It is stamped by TenantScoped from the
  * resolver, never from a payload — the same invariant Participant and User
  * carry, for the same reason.
  *
  * @property int $id
- * @property int $organization_id
+ * @property int|null $organization_id NULL marks a platform (global) template
  * @property string $name
  * @property string|null $description
  * @property string $provider
@@ -47,6 +57,9 @@ use Illuminate\Support\Carbon;
 class AvatarTemplate extends TenantModel
 {
     use SoftDeletes;
+
+    /** Hides platform (NULL-organization) rows from every default query. */
+    public const SCOPE_EXCLUDE_PLATFORM_ROWS = 'exclude_platform_rows';
 
     /**
      * Mirrors the database defaults IN MEMORY.
@@ -107,6 +120,15 @@ class AvatarTemplate extends TenantModel
         // here; declaring booted() without this call would silently
         // unregister it on the single model this entire change hangs off.
         parent::booted();
+
+        // Second, independent scope: under superadmin bypass the `tenant`
+        // scope applies no filter at all, so without this every org route,
+        // bulk update and demo path would see (and could mutate) platform
+        // rows whenever a bare superadmin runs it.
+        static::addGlobalScope(
+            self::SCOPE_EXCLUDE_PLATFORM_ROWS,
+            fn (Builder $query) => $query->whereNotNull($query->getModel()->getTable().'.organization_id'),
+        );
 
         static::deleting(function (self $template): void {
             // A FORCE delete is still governed by the foreign key itself —
@@ -240,5 +262,63 @@ class AvatarTemplate extends TenantModel
     public function llmCredential(): BelongsTo
     {
         return $this->belongsTo(LlmCredential::class);
+    }
+
+    /**
+     * Own rows PLUS platform rows: the read path for anything that must
+     * resolve a template a project may pin (runtime reads, the picker).
+     *
+     * The organization comes from the resolver, never from an argument, so
+     * there is nothing to pass wrongly. With no context at all it FAILS
+     * CLOSED: `organization_id = NULL OR organization_id IS NULL` would hand
+     * every platform row to a caller that established no tenant.
+     *
+     * NOTE: `has()` / `whereHas()` on a relation using this scope merge the
+     * removed scopes back in; no such call exists today.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeAvailableToTenant(Builder $query): Builder
+    {
+        $query->withoutGlobalScopes(['tenant', self::SCOPE_EXCLUDE_PLATFORM_ROWS]);
+
+        $resolver = app(TenantResolver::class);
+        $column = $query->getModel()->getTable().'.organization_id';
+
+        if ($resolver->isBypass()) {
+            return $query;
+        }
+
+        $orgId = $resolver->getOrgId();
+
+        if ($orgId === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(fn (Builder $q) => $q->where($column, $orgId)->orWhereNull($column));
+    }
+
+    /**
+     * Platform rows only, in any context.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopePlatformOnly(Builder $query): Builder
+    {
+        return $query
+            ->withoutGlobalScopes(['tenant', self::SCOPE_EXCLUDE_PLATFORM_ROWS])
+            ->whereNull($query->getModel()->getTable().'.organization_id');
+    }
+
+    public function isPlatform(): bool
+    {
+        return $this->organization_id === null;
+    }
+
+    public function scopeLabel(): AvatarTemplateScope
+    {
+        return $this->isPlatform() ? AvatarTemplateScope::Platform : AvatarTemplateScope::Organization;
     }
 }
