@@ -25,6 +25,7 @@ use App\Models\LlmModel;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Http\Request;
+use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 
 test('AvatarTemplateResource wire types pin the docblock against schema drift', function (): void {
     $org = Organization::factory()->create();
@@ -47,6 +48,15 @@ test('AvatarTemplateResource wire types pin the docblock against schema drift', 
     expect($array['is_active'])->toBeTrue();
     expect($array['config'])->toBeArray();
     expect($array['config'])->toBe(['avatarId' => 'av_1', 'voiceId' => 'vo_1']);
+});
+
+test('AvatarTemplateResource reports a platform template as scope platform', function (): void {
+    $global = PlatformTemplates::insertGlobal(['name' => 'Platform voice']);
+
+    $array = (new AvatarTemplateResource($global))->toArray(new Request);
+
+    expect($array['scope'])->toBe('platform')
+        ->and($array['name'])->toBe('Platform voice');
 });
 
 test('AvatarTemplateResource exposes a null description as null, not a coerced string', function (): void {

@@ -112,18 +112,20 @@ test('the only scope strip under app/Support/AvatarTemplates is the cross-organi
 })->group('arch');
 
 test('quiet writes on an avatar template never carry organization_id', function (): void {
-    // The write guards are model events, and `saveQuietly()` skips events by
-    // design: provider bookkeeping (sync status, configuration ids) must be able
-    // to stamp a platform row from any context. That leaves ONE thing a quiet
-    // write must never do, change which organization a template belongs to.
+    // First layer: AvatarTemplate::saveQuietly() refuses any organization change
+    // at runtime (GlobalAvatarTemplateWriteGuardTest). This scan is the second,
+    // for what that override cannot see: `withoutEvents()` and query-builder
+    // writes skip it too, so nothing that writes quietly may touch the column.
     $quiet = array_filter(atsCode('app'), fn (string $code): bool => str_contains($code, 'AvatarTemplate')
         && preg_match('/(saveQuietly|updateQuietly|withoutEvents)\(/', $code) === 1);
 
     expect(array_keys($quiet))->toContain('app/Actions/ConversationLlm/ResyncTemplateBinding.php');
 
-    $offenders = atsFilesMatching($quiet, '/(forceFill|fill|updateQuietly)\(\s*\[[^\]]*[\'"]organization_id[\'"]/');
+    $literal = atsFilesMatching($quiet, '/(forceFill|fill|updateQuietly)\(\s*\[[^\]]*[\'"]organization_id[\'"]/');
+    $assigned = atsFilesMatching($quiet, '/->organization_id\s*=[^=>]/');
 
-    expect($offenders)->toBe([], 'organization_id written quietly in: '.implode(', ', $offenders));
+    expect(array_values(array_unique([...$literal, ...$assigned])))
+        ->toBe([], 'organization_id written in a file that also writes quietly: '.implode(', ', [...$literal, ...$assigned]));
 })->group('arch');
 
 test('TenantScoped::creating keeps its unconditional throw and admits only the platform contract', function (): void {
