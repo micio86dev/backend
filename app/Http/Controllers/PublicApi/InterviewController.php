@@ -22,6 +22,7 @@ use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\ScoringSerializer;
 use App\PublicApi\Serializers\TranscriptSerializer;
 use App\Rules\PublicApi\Iso8601DateTime;
+use App\Support\Participant\ExternalReference;
 use App\Support\PublicApi\ApiMode;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Expand;
@@ -114,6 +115,12 @@ final class InterviewController extends Controller
 
         $language = $request->input('candidate.language');
 
+        // From the VALIDATED body, never the raw input: `external_id` has
+        // already passed `integer:strict`, so `fromValidated()` only has to
+        // trim `source` and turn a blank one into null.
+        $validatedCandidate = $request->validated('candidate');
+        $externalReference = ExternalReference::fromValidated(is_array($validatedCandidate) ? $validatedCandidate : []);
+
         try {
             $result = $this->enrolCandidate->handle(
                 $project,
@@ -127,6 +134,7 @@ final class InterviewController extends Controller
                 self::stringMap($request->input('metadata')),
                 self::nullableString($request->input('exit_redirect_url')),
                 $client->mode,
+                $externalReference,
             );
         } catch (EnrolmentRefused $e) {
             return $this->renderRefusal($request, $e->reason);
@@ -175,6 +183,8 @@ final class InterviewController extends Controller
     #[QueryParameter('created_before', description: 'Exclusive upper bound on created_at. Strict ISO 8601 date-time, UTC (Z) or a numeric offset, e.g. 2026-01-01T00:00:00Z. An invalid or non-ISO-8601 value answers 400 validation_failed.', type: 'string')]
     #[QueryParameter('cursor', description: 'Opaque pagination cursor from a previous page\'s next_cursor. Omit for the first page. A present but malformed value answers 400 invalid_cursor.', type: 'string')]
     #[QueryParameter('limit', description: 'Page size, 1-100 (default 25). Out of range answers 400 validation_failed.', type: 'integer')]
+    #[QueryParameter('external_id', description: 'Exact match on the external_id supplied as candidate.external_id when the interview was created. An integer from 1 to 9007199254740991; any other value answers 400 validation_failed. An empty value is ignored.', type: 'integer')]
+    #[QueryParameter('source', description: 'Exact, case-sensitive match on the source supplied as candidate.source when the interview was created. At most 180 characters; a longer value answers 400 validation_failed. An empty value is ignored.', type: 'string')]
     #[QueryParameter('expand', description: 'Comma-separated related resources to inline. Supported: project.', type: 'string')]
     public function index(Request $request): JsonResponse
     {
@@ -272,6 +282,21 @@ final class InterviewController extends Controller
             if ($parsedCreatedBefore !== null) {
                 $query->where('created_at', '<', $parsedCreatedBefore->utc());
             }
+        }
+
+        // Exact matches on the calling system's own reference, AND-ed with
+        // everything above on top of the organization + mode base query. The
+        // `external_id` is validated as a bounded integer by
+        // `validateFilterFormats()`, so the cast below cannot truncate; an
+        // empty value is "no filter", like every other filter here.
+        $externalId = $request->query('external_id');
+        if (is_string($externalId) && $externalId !== '') {
+            $query->where('external_id', (int) $externalId);
+        }
+
+        $source = $request->query('source');
+        if (is_string($source) && $source !== '') {
+            $query->where('source', $source);
         }
 
         $metadata = self::stringMap($request->query('metadata')) ?? [];
@@ -644,6 +669,17 @@ final class InterviewController extends Controller
             'project_id' => ['sometimes', 'string'],
             'email' => ['sometimes', 'string', 'email'],
             'candidate_ref' => ['sometimes', 'string', 'max:255'],
+            // The external reference filters (candidate-external-reference):
+            // the SAME bounds as the create body, but `integer` is NOT
+            // strict here — every query-string value arrives as a string, so
+            // `integer:strict` would refuse them all. A malformed value is a
+            // 400 (a query parameter), not the 422 a body gets. `nullable`
+            // because `ConvertEmptyStringsToNull` turns `?source=` into null
+            // before this runs, and without it `sometimes` alone would refuse
+            // that null with a 400: the contract says an EMPTY reference
+            // filter is simply not applied.
+            'external_id' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:'.ExternalReference::MAX_EXTERNAL_ID],
+            'source' => ['sometimes', 'nullable', 'string', 'max:'.ExternalReference::SOURCE_MAX_LENGTH],
             // Strict ISO 8601 (step 5 review follow-up, item 6) — see
             // `Iso8601DateTime`'s own docblock for why the plain `'date'`
             // rule this replaces was too permissive (relative phrases, a

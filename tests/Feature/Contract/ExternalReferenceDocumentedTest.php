@@ -22,10 +22,15 @@ declare(strict_types=1);
  * these shapes, and it does not have to agree with the array the method
  * returns; a stale one fails nothing except a client's generated types.
  *
- * The READ side of the backoffice and of /v1 is pinned at the end of this file
- * (slice A3a-ii): the admin list and detail schemas in `openapi.json`, and
- * `PublicInterview` in `openapi.v1.json`. The create-request body and the list
- * filters of /v1 arrive with slice A3b.
+ * The READ side of the backoffice and of /v1 is pinned next (slice A3a-ii): the
+ * admin list and detail schemas in `openapi.json`, and `PublicInterview` in
+ * `openapi.v1.json`. The /v1 WRITE side closes the file (slice A3b): the
+ * `candidate` object of the create-interview request, and the `external_id` /
+ * `source` filters of the interview list, in BOTH the Scramble export and the
+ * vendored `public-api/openapi.yaml`. `ContractEquivalenceTest` compares the
+ * query parameter NAMES and the top-level request properties only, so the
+ * nested `candidate` schema, and the type, bounds and wording of each filter,
+ * are pinned here.
  *
  * REQ: External Reference Validation Is One Shared Contract,
  *      M2M Participant Create Accepts And Returns The External Reference,
@@ -34,6 +39,7 @@ declare(strict_types=1);
  */
 
 use App\Support\Participant\ExternalReference;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * @return array<string, mixed>
@@ -259,3 +265,132 @@ test('the admin list and detail endpoints reference the schemas that carry the f
     expect(externalReferenceResponseRefs($spec, '/participants/{id}', 'get', '200'))
         ->toContain('#/components/schemas/ParticipantDetailResource');
 });
+
+// ---------------------------------------------------------------------------
+// The /v1 create-interview request (slice A3b)
+// ---------------------------------------------------------------------------
+
+/**
+ * The `candidate` object schema of the create-interview request, from the
+ * Scramble export of `/v1` (`$ref` followed) or from the vendored contract.
+ *
+ * @return array<string, mixed>
+ */
+function externalReferenceCreateCandidate(string $document): array
+{
+    if ($document === 'contract') {
+        $contract = Yaml::parseFile(config('public_api.contract_path'));
+
+        return $contract['components']['schemas']['CreateInterviewRequest']['properties']['candidate'];
+    }
+
+    $spec = externalReferencePublicSpec();
+    $schema = $spec['paths']['/interviews']['post']['requestBody']['content']['application/json']['schema'];
+
+    if (isset($schema['$ref'])) {
+        $schema = $spec['components']['schemas'][basename((string) $schema['$ref'])];
+    }
+
+    return $schema['properties']['candidate'];
+}
+
+/**
+ * The two documents a consumer reads, keyed by a readable name.
+ *
+ * @return array<string, array{0: string}>
+ */
+function externalReferencePublicDocuments(): array
+{
+    return [
+        'the /v1 Scramble export (openapi.v1.json)' => ['export'],
+        'the vendored contract (public-api/openapi.yaml)' => ['contract'],
+    ];
+}
+
+test('the create-interview request documents candidate.external_id as integer|null within 1 and 2^53-1', function (string $document): void {
+    $candidate = externalReferenceCreateCandidate($document);
+    $property = $candidate['properties']['external_id'] ?? null;
+
+    expect($property)->not->toBeNull("{$document}: candidate.external_id is not documented");
+    expect(externalReferenceTypeIs($property, 'integer'))->toBeTrue('candidate.external_id must be integer|null');
+    expect($property['minimum'])->toEqual(1);
+    expect((float) $property['maximum'])->toBe((float) ExternalReference::MAX_EXTERNAL_ID);
+    // Optional: an enrolment without a reference is the ordinary case.
+    expect($candidate['required'] ?? [])->not->toContain('external_id');
+})->with(fn () => externalReferencePublicDocuments());
+
+test('the create-interview request documents candidate.source as string|null of at most 180 characters', function (string $document): void {
+    $candidate = externalReferenceCreateCandidate($document);
+    $property = $candidate['properties']['source'] ?? null;
+
+    expect($property)->not->toBeNull("{$document}: candidate.source is not documented");
+    expect(externalReferenceTypeIs($property, 'string'))->toBeTrue('candidate.source must be string|null');
+    expect($property['maxLength'])->toBe(ExternalReference::SOURCE_MAX_LENGTH);
+    expect($candidate['required'] ?? [])->not->toContain('source');
+})->with(fn () => externalReferencePublicDocuments());
+
+// ---------------------------------------------------------------------------
+// The /v1 list filters (slice A3b)
+// ---------------------------------------------------------------------------
+
+/**
+ * One query parameter of `GET /interviews`, from the Scramble export of `/v1`
+ * or from the vendored contract.
+ *
+ * @return array<string, mixed>
+ */
+function externalReferenceListParameter(string $document, string $name): array
+{
+    $source = $document === 'contract'
+        ? Yaml::parseFile(config('public_api.contract_path'))
+        : externalReferencePublicSpec();
+
+    foreach ($source['paths']['/interviews']['get']['parameters'] as $parameter) {
+        if (($parameter['name'] ?? null) === $name && ($parameter['in'] ?? null) === 'query') {
+            return $parameter;
+        }
+    }
+
+    return [];
+}
+
+test('GET /interviews documents the external_id filter as an integer query parameter with a description', function (string $document): void {
+    $parameter = externalReferenceListParameter($document, 'external_id');
+
+    expect($parameter)->not->toBe([], "{$document}: listInterviews has no external_id query parameter");
+    expect($parameter['schema']['type'])->toBe('integer');
+    expect($parameter['description'] ?? '')->toBeString()->not->toBe('');
+    // The filter is optional.
+    expect($parameter['required'] ?? false)->toBeFalse();
+})->with(fn () => externalReferencePublicDocuments());
+
+test('GET /interviews documents the source filter as a string query parameter with a description', function (string $document): void {
+    $parameter = externalReferenceListParameter($document, 'source');
+
+    expect($parameter)->not->toBe([], "{$document}: listInterviews has no source query parameter");
+    expect($parameter['schema']['type'])->toBe('string');
+    expect($parameter['description'] ?? '')->toBeString()->not->toBe('');
+    expect($parameter['required'] ?? false)->toBeFalse();
+})->with(fn () => externalReferencePublicDocuments());
+
+test('the vendored contract bounds the filters like the request body: external_id 1 to 2^53-1, source 180 characters', function (): void {
+    $externalId = externalReferenceListParameter('contract', 'external_id');
+    $source = externalReferenceListParameter('contract', 'source');
+
+    expect($externalId['schema']['minimum'])->toBe(1);
+    expect($externalId['schema']['maximum'])->toBe(ExternalReference::MAX_EXTERNAL_ID);
+    expect($source['schema']['maxLength'])->toBe(ExternalReference::SOURCE_MAX_LENGTH);
+});
+
+test('the exported filter descriptions are consumer-facing, not maintainer notes lifted from a code comment', function (string $name): void {
+    $description = (string) externalReferenceListParameter('export', $name)['description'];
+
+    // Scramble lifts the nearest code comment into a parameter's description
+    // when the parameter has none of its own; these are the words that only a
+    // maintainer comment would carry.
+    expect($description)
+        ->not->toContain('validateFilterFormats')
+        ->not->toContain('ConvertEmptyStringsToNull')
+        ->not->toContain('base query');
+    expect($description)->toContain('400');
+})->with(['external_id', 'source']);

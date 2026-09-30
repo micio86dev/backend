@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\PublicApi;
 
 use App\Rules\PublicApi\Metadata;
+use App\Support\Participant\ExternalReference;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -32,6 +33,14 @@ final class CreateInterviewRequest extends FormRequest
     }
 
     /**
+     * `candidate.external_id` / `candidate.source` are the optional external
+     * reference (candidate-external-reference): the SAME rule set every other
+     * write surface spreads, prefixed for the nested `candidate` object, so a
+     * body is refused identically wherever it arrives. A refusal is the
+     * ordinary `422 validation_failed` whose `errors[].field` names the nested
+     * field. This prose lives here, not in the class docblock, because Scramble
+     * publishes the class docblock as the schema description.
+     *
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -54,6 +63,7 @@ final class CreateInterviewRequest extends FormRequest
             // `config/translatable.php`'s `supported_locales`, which is a
             // BACKOFFICE UI concept).
             'candidate.language' => ['sometimes', 'nullable', 'string', 'regex:/^[a-z]{2}$/'],
+            ...ExternalReference::rules('candidate.'),
             'metadata' => ['sometimes', 'nullable', new Metadata],
             // https-only (SPEC.md §3.3 "It must be https") — `url` alone
             // accepts http too, so the scheme is checked separately.

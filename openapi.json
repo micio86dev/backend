@@ -4937,6 +4937,22 @@
                         }
                     },
                     {
+                        "name": "external_id",
+                        "in": "query",
+                        "description": "Exact match on the external_id supplied as candidate.external_id when the interview was created. An integer from 1 to 9007199254740991; any other value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "in": "query",
+                        "description": "Exact, case-sensitive match on the source supplied as candidate.source when the interview was created. At most 180 characters; a longer value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
                         "name": "expand",
                         "in": "query",
                         "description": "Comma-separated related resources to inline. Supported: project.",
@@ -13091,6 +13107,21 @@
                                 ],
                                 "description": "ISO 639-1, matching `openapi.yaml`'s `Language` schema pattern\nexactly (`^[a-z]{2}$`) \u2014 no further allow-list check: the\ncontract does not restrict `candidate.language` to a\nper-project or per-platform locale set, and this endpoint has\nno such catalogue to validate against (unlike\n`config/translatable.php`'s `supported_locales`, which is a\nBACKOFFICE UI concept).",
                                 "pattern": "^[a-z]{2}$"
+                            },
+                            "external_id": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ],
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                            },
+                            "source": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 180
                             }
                         },
                         "required": [
