@@ -108,7 +108,7 @@ final class PlatformAvatarTemplateController extends Controller
         $this->assertConfigValid($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
 
-        $template = $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
+        $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
             $template = AvatarTemplate::create($validated);
 
             $this->audit->record(
@@ -121,7 +121,7 @@ final class PlatformAvatarTemplateController extends Controller
             );
 
             return $template;
-        }));
+        })));
 
         return $this->present($template)
             ->additional($this->recordSync($template))
@@ -169,7 +169,7 @@ final class PlatformAvatarTemplateController extends Controller
         $beforeBinding = $this->bindingNames($template);
         $usage = $this->usage->for([$template->id])[$template->id];
 
-        $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
+        $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
             $template->update($validated);
 
             $changed = array_values(array_filter(
@@ -201,7 +201,7 @@ final class PlatformAvatarTemplateController extends Controller
                     $unbound ? null : $this->bindingNames($template->refresh()),
                 );
             }
-        }));
+        })));
 
         return $this->present($template)->additional($this->recordSync($template));
     }
