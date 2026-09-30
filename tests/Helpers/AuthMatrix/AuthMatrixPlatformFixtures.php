@@ -225,7 +225,33 @@ final class AuthMatrixPlatformFixtures
         $template = fn (AuthMatrixResources $r): array => ['id' => $r->platform()->template()->id];
         $config = fn (): array => ['avatarId' => 'av_'.Str::random(6), 'voiceId' => 'vo_'.Str::random(6)];
 
+        $global = fn (AuthMatrixResources $r): array => ['id' => $r->platform()->globalTemplate()->id];
+
         return [
+            'GET api/admin/avatar-templates' => [],
+            'POST api/admin/avatar-templates' => [
+                'payload' => fn (): array => [
+                    'name' => 'Platform template created by the matrix '.Str::random(6),
+                    'provider' => 'heygen',
+                    'config' => $config(),
+                ],
+            ],
+            'GET api/admin/avatar-templates/{id}' => ['params' => $global],
+            'PATCH api/admin/avatar-templates/{id}' => [
+                'params' => $global,
+                'payload' => fn (): array => ['name' => 'Platform template renamed by the matrix '.Str::random(6)],
+            ],
+            // The fixture is retired and unpinned, so an allowed cell really deletes it.
+            'DELETE api/admin/avatar-templates/{id}' => ['params' => $global],
+            // Copies into orgB, so an allowed cell really creates an organization row.
+            'POST api/admin/avatar-templates/{id}/duplicate' => [
+                'params' => $global,
+                'payload' => fn (AuthMatrixWorld $w): array => ['target_organization_ids' => [$w->orgB->id]],
+            ],
+            'POST api/admin/avatar-templates/{id}/activate' => ['params' => $global],
+            'POST api/admin/avatar-templates/{id}/deactivate' => [
+                'params' => fn (AuthMatrixResources $r): array => ['id' => $r->platform()->activeGlobalTemplate()->id],
+            ],
             'GET api/avatar-templates' => [],
             'POST api/avatar-templates' => [
                 'payload' => fn () => [

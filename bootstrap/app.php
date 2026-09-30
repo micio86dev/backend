@@ -4,6 +4,7 @@ use App\Console\Commands\DispatchScheduledInterviewInvitations;
 use App\Console\Commands\ReapStaleInterviews;
 use App\Console\Commands\ReconcileLlmUsage;
 use App\Exceptions\Admin\LifecycleNotReadyException;
+use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
@@ -276,6 +277,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // The exception's own render() method handles the JSON response.
         $exceptions->render(function (LifecycleNotReadyException $e, Request $request) {
             return $e->render($request);
+        });
+
+        // global-avatar-templates A4: a template pinned between the controller's
+        // usage check and the delete is the same 409 the check itself answers,
+        // never a 500. The exception's own render() builds the body.
+        $exceptions->render(function (AvatarTemplateInUseException $e, Request $request) {
+            return $e->render();
         });
 
         // backoffice-missing-pages: UserGuardException → HTTP 422 with a

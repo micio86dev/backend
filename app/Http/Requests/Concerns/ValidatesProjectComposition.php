@@ -7,6 +7,7 @@ namespace App\Http\Requests\Concerns;
 use App\Models\Competency;
 use App\Models\Role;
 use App\Support\Catalogue\CatalogueRevisionResolver;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -84,20 +85,42 @@ trait ValidatesProjectComposition
      * In the trait because it was copied into both classes, prose and all,
      * and duplicated comments drift exactly like duplicated rules do.
      *
+     * Two things may be pinned: a template of the caller's own organization
+     * (active or not), or a PLATFORM template (NULL organization) that is
+     * ACTIVE. Platform templates are offered for a NEW choice, so a retired
+     * one is refused — except when it is this very project's CURRENT pin:
+     * retiring a global must not make every project pinned to it unsaveable,
+     * and `$currentPinId` (read from the route project, never from the
+     * request) is what lets an unchanged pin through.
+     *
      * @return list<mixed>
      *
      * $orgId is nullable because `User::$organization_id` is: a user with no
      * organization can hold no templates, so the rule matches nothing and the
-     * field is refused — which is the correct answer, not a special case.
+     * field is refused — which is the correct answer, not a special case. It
+     * is spelled out (`1 = 0`) because `where('organization_id', null)` is
+     * `IS NULL`, which would hand every platform template to a bare superadmin
+     * whose `Project::create()` then throws for want of an organization.
      */
-    private function avatarTemplateRule(?int $orgId, string $presence): array
+    private function avatarTemplateRule(?int $orgId, string $presence, ?int $currentPinId = null): array
     {
         return [
             $presence,
             'integer',
             Rule::exists('avatar_templates', 'id')
-                ->where('organization_id', $orgId)
-                ->whereNull('deleted_at'),
+                ->whereNull('deleted_at')
+                ->where(function (Builder $query) use ($orgId, $currentPinId): void {
+                    if ($orgId === null) {
+                        $query->whereRaw('1 = 0');
+
+                        return;
+                    }
+
+                    $query->where('organization_id', $orgId)
+                        ->orWhere(fn (Builder $platform) => $platform->whereNull('organization_id')
+                            ->where(fn (Builder $offered) => $offered->where('is_active', true)
+                                ->when($currentPinId !== null, fn (Builder $q) => $q->orWhere('id', $currentPinId))));
+                }),
         ];
     }
 

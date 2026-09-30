@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models\Concerns;
 
 use App\Exceptions\Tenancy\MissingTenantContextException;
+use App\Models\Contracts\AdmitsPlatformRows;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -67,7 +68,17 @@ trait TenantScoped
         // establishment mechanism (e.g. App\Support\Tenancy\TenantContextScope
         // for queued jobs, or TenantContext/TenantContextCandidate for HTTP)
         // is responsible for ensuring a valid org is set BEFORE this listener runs.
+        //
+        // The ONE exception is a model that implements AdmitsPlatformRows AND is
+        // being written inside an explicit platform context: it is stored with a
+        // NULL organization. Nothing else implements the contract.
         static::creating(function (Model $model): void {
+            if ($model instanceof AdmitsPlatformRows && $model->writesAsPlatformRow()) {
+                $model->setAttribute('organization_id', null);
+
+                return;
+            }
+
             /** @var TenantResolver $resolver */
             $resolver = app(TenantResolver::class);
 

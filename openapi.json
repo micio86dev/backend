@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.60.0"
+        "version": "0.61.0"
     },
     "servers": [
         {
@@ -657,7 +657,7 @@
         "/auth/me": {
             "get": {
                 "operationId": "auth.me",
-                "description": "GET /api/auth/me\nProtected: auth:api\n\nThe `abilities` shape is spelled out for Scramble. Inferred, it comes\nout as a bare `string` \u2014 `app(UserAbilities::class)->for()` is a\ncontainer call it cannot follow \u2014 and a wrong type in the spec is worse\nthan no type: both Nuxt apps generate their client from this file, so a\n`string` there makes every `abilities.users.viewAny` read a compile\nerror in the two repositories that consume it.",
+                "description": "GET /api/auth/me\nProtected: auth:api\n\nThe `abilities` shape is spelled out for Scramble. Inferred, it comes\nout as a bare `string` \u2014 `app(UserAbilities::class)->for()` is a\ncontainer call it cannot follow \u2014 and a wrong type in the spec is worse\nthan no type: both Nuxt apps generate their client from this file, so a\n`string` there makes every `abilities.users.viewAny` read a compile\nerror in the two repositories that consume it.\n\n`abilities.avatarTemplates.manageGlobal` is true only for a superadmin: it\ngates the platform (global) avatar template surface under\n`/admin/avatar-templates`, whose templates are offered to every\norganization. It is a rendering hint for the client; the server still\nrefuses every other caller with a 403. (A per-flag schema description is\nnot expressible here: the shape is an inline PHPDoc type, and a nested\ndoc comment would end this block.)",
                 "summary": "Return the authenticated user, their organization, their roles, and\nwhat they may do",
                 "tags": [
                     "Auth"
@@ -832,6 +832,9 @@
                                                         },
                                                         "delete": {
                                                             "type": "boolean"
+                                                        },
+                                                        "manageGlobal": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
@@ -839,7 +842,8 @@
                                                         "create",
                                                         "update",
                                                         "activate",
-                                                        "delete"
+                                                        "delete",
+                                                        "manageGlobal"
                                                     ]
                                                 },
                                                 "projects": {
@@ -951,7 +955,7 @@
         "/avatar-templates/options": {
             "get": {
                 "operationId": "avatarTemplate.options",
-                "description": "`index()` above stays admin-only because this resource carries `config`,\nand that holds provider-side identifiers (avatarId, voiceId, faceId,\npalId) which are closer to credentials than to settings. But\n`projects.avatar_template_id` is NOT NULL, so every operator creating a\nproject has to choose one \u2014 and an operator who cannot list templates\ncannot choose. Their select came back empty and the form refused its own\nsubmit, with nothing they could do about it.\n\nSo this is the narrow answer rather than a widened `viewAny`: exactly\nthe four fields choosing a template requires \u2014 `id`, `name`, `provider`\nand `is_active`, which is what the method below returns and what\n`openapi.json` publishes. A viewer gets it too \u2014\nreading a project's configuration should show which template it names,\nnot a bare id.\n\nThe shape is hand-built rather than run through `AvatarTemplateResource`\nON PURPOSE. A resource is a list of fields somebody will add to; this\nendpoint's entire value is that it cannot grow one, and a future field on\nthat resource must not silently become readable by every role.",
+                "description": "`index()` above stays admin-only because this resource carries `config`,\nand that holds provider-side identifiers (avatarId, voiceId, faceId,\npalId) which are closer to credentials than to settings. But\n`projects.avatar_template_id` is NOT NULL, so every operator creating a\nproject has to choose one \u2014 and an operator who cannot list templates\ncannot choose. Their select came back empty and the form refused its own\nsubmit, with nothing they could do about it.\n\nSo this is the narrow answer rather than a widened `viewAny`: exactly\nthe five fields choosing a template requires \u2014 `id`, `name`, `provider`,\n`is_active` and `scope` (`organization` | `platform`, so a picker can\ngroup and badge the platform templates it is offered), which is what the\nmethod below returns and what `openapi.json` publishes. A viewer gets it too \u2014\nreading a project's configuration should show which template it names,\nnot a bare id.\n\nThe shape is hand-built rather than run through `AvatarTemplateResource`\nON PURPOSE. A resource is a list of fields somebody will add to; this\nendpoint's entire value is that it cannot grow one, and a future field on\nthat resource must not silently become readable by every role.",
                 "summary": "The picker list: id, name, provider. Nothing else",
                 "tags": [
                     "AvatarTemplate"
@@ -980,13 +984,17 @@
                                                     },
                                                     "is_active": {
                                                         "type": "boolean"
+                                                    },
+                                                    "scope": {
+                                                        "$ref": "#/components/schemas/AvatarTemplateScope"
                                                     }
                                                 },
                                                 "required": [
                                                     "id",
                                                     "name",
                                                     "provider",
-                                                    "is_active"
+                                                    "is_active",
+                                                    "scope"
                                                 ]
                                             }
                                         }
@@ -7508,6 +7516,527 @@
                 }
             }
         },
+        "/admin/avatar-templates": {
+            "get": {
+                "operationId": "platformAvatarTemplate.index",
+                "summary": "List platform avatar templates with their usage",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "post": {
+                "operationId": "platformAvatarTemplate.store",
+                "description": "Created INACTIVE and never activatable through this payload: creating a\ntemplate must not change what candidates are being interviewed with\nright now, and offering it to every organization is its own decision.",
+                "summary": "Create a platform avatar template",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    },
+                                    "provider": {
+                                        "type": "string",
+                                        "description": "Literal list \u2014 see catalogue()'s validation for why implode(self::PROVIDERS) is not used.",
+                                        "enum": [
+                                            "heygen",
+                                            "tavus"
+                                        ]
+                                    },
+                                    "config": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "minItems": 1
+                                    },
+                                    "llm_model_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4)."
+                                    },
+                                    "llm_credential_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "provider",
+                                    "config"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}": {
+            "get": {
+                "operationId": "platformAvatarTemplate.show",
+                "summary": "Show a platform avatar template with its usage",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "platformAvatarTemplate.update",
+                "description": "An edit reaches EVERY project that pins this template, in every\norganization, on the next read (live edit, design D1) \u2014 which is why the\naudit row carries the usage at edit time: the reach of the change is part\nof what happened. It records field NAMES, never config values.",
+                "summary": "Edit a platform avatar template",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 120
+                                    },
+                                    "description": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    },
+                                    "config": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "llm_model_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4). Both null\nclears the binding (see \"Unbinding a template clears only\n that template's binding\")."
+                                    },
+                                    "llm_credential_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "platformAvatarTemplate.destroy",
+                "description": "Two 409s, in this order. `template_active`: deleting what organizations\nare being offered is a decision, not a cleanup \u2014 retire it first.\n`template_in_use`: a pin in ANY organization refuses the delete, and the\nbody carries the organization and project counts so the superadmin knows\nhow far the blast radius reaches. Trashed projects do not count. The\ncount-then-delete window is closed by the model's own `deleting` guard,\nwhose exception renders as the same 409.",
+                "summary": "Delete a platform avatar template: only when it is retired AND unpinned",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "The template was deleted.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "null"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Still offered (`template_active`) or pinned by projects (`template_in_use`, with counts).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "enum": [
+                                                "template_active",
+                                                "template_in_use"
+                                            ]
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "project_count": {
+                                            "type": "integer"
+                                        },
+                                        "organization_count": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "required": [
+                                        "error",
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}/activate": {
+            "post": {
+                "operationId": "platformAvatarTemplate.activate",
+                "description": "\"Offered\" is not \"the one in use\": any number of platform templates may\nbe offered at once (a single active row per provider is an organization\nrule), so nothing else is deactivated. The stored config is validated\nagain HERE because a config goes stale when the field spec changes, and\noffering is the last moment anyone can catch that before an organization\npins it. Idempotent: offering an offered template changes and audits\nnothing.",
+                "summary": "Offer a platform avatar template for new project pins",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}/deactivate": {
+            "post": {
+                "operationId": "platformAvatarTemplate.deactivate",
+                "description": "Existing pins keep resolving to it (a pin is valid in any state), so\nretiring is reversible bookkeeping and always allowed \u2014 including while\nprojects in other organizations still use it. No config revalidation:\nwithdrawing can only reduce exposure, and an already-invalid template is\nexactly the one an operator most wants to retire. Idempotent.",
+                "summary": "Retire a platform avatar template: it is no longer offered for NEW pins",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`PlatformAvatarTemplateResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/PlatformAvatarTemplateResource"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/{id}/duplicate": {
+            "post": {
+                "operationId": "platformAvatarTemplate.duplicate",
+                "description": "This is the ONLY route that copies a platform template: the organization\nduplicate route answers 404 for a platform id, like every organization\nroute. Each copy is an independent, INACTIVE organization template (no\nshared provider-side configuration), so editing the platform template\nafterwards never reaches it. Written OUTSIDE the platform context \u2014 the\ncopies belong to their target organizations \u2014 and audited per target by\nthe tenant recorder, with `source_scope: platform`.",
+                "summary": "Copy a platform avatar template into one or more organizations",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "target_organization_ids": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer"
+                                        },
+                                        "minItems": 1
+                                    },
+                                    "name": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 120
+                                    }
+                                },
+                                "required": [
+                                    "target_organization_ids"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "organization_id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "id": {
+                                                        "type": "integer"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "organization_id",
+                                                    "id",
+                                                    "name"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/admin/platform-users": {
             "get": {
                 "operationId": "platformUser.index",
@@ -11972,6 +12501,13 @@
                     "provider": {
                         "type": "string"
                     },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "organization",
+                            "platform"
+                        ]
+                    },
                     "config": {
                         "type": "object",
                         "additionalProperties": {}
@@ -12079,6 +12615,7 @@
                     "name",
                     "description",
                     "provider",
+                    "scope",
                     "config",
                     "is_active",
                     "created_at",
@@ -12091,6 +12628,15 @@
                     "pal_sync"
                 ],
                 "title": "AvatarTemplateResource"
+            },
+            "AvatarTemplateScope": {
+                "type": "string",
+                "description": "Who owns an avatar template: one organization, or the platform itself (`organization_id IS NULL`). The wire vocabulary for the scope marker on template resources and picker options.\n",
+                "enum": [
+                    "organization",
+                    "platform"
+                ],
+                "title": "AvatarTemplateScope"
             },
             "AvatarVoicePreviewRequest": {
                 "type": "object",
@@ -13416,6 +13962,168 @@
                 ],
                 "title": "ParticipantResource"
             },
+            "PlatformAvatarTemplateResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "provider": {
+                        "type": "string"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": [
+                            "organization",
+                            "platform"
+                        ]
+                    },
+                    "config": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    },
+                    "is_active": {
+                        "type": "boolean"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm_model_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_credential_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "llm_sync_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm_synced_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "llm": {
+                        "type": "object",
+                        "properties": {
+                            "estimated_cost_usd_per_interview": {
+                                "type": [
+                                    "object",
+                                    "null"
+                                ],
+                                "properties": {
+                                    "minutes": {
+                                        "type": "integer"
+                                    },
+                                    "turns": {
+                                        "type": "integer"
+                                    },
+                                    "usd": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "minutes",
+                                    "turns",
+                                    "usd"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "estimated_cost_usd_per_interview"
+                        ]
+                    },
+                    "pal_sync": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "synced_at": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "status",
+                            "code",
+                            "synced_at"
+                        ]
+                    },
+                    "usage": {
+                        "type": "object",
+                        "properties": {
+                            "organization_count": {
+                                "type": "integer"
+                            },
+                            "project_count": {
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "organization_count",
+                            "project_count"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "description",
+                    "provider",
+                    "scope",
+                    "config",
+                    "is_active",
+                    "created_at",
+                    "updated_at",
+                    "llm_model_id",
+                    "llm_credential_id",
+                    "llm_sync_status",
+                    "llm_synced_at",
+                    "llm",
+                    "pal_sync",
+                    "usage"
+                ],
+                "title": "PlatformAvatarTemplateResource"
+            },
             "PlatformUserResource": {
                 "type": "object",
                 "properties": {
@@ -13648,6 +14356,13 @@
                             "provider": {
                                 "type": "string"
                             },
+                            "scope": {
+                                "type": "string",
+                                "enum": [
+                                    "organization",
+                                    "platform"
+                                ]
+                            },
                             "llm_model": {
                                 "type": [
                                     "string",
@@ -13659,6 +14374,7 @@
                             "id",
                             "name",
                             "provider",
+                            "scope",
                             "llm_model"
                         ]
                     },

@@ -15,6 +15,7 @@ use App\Models\LlmCredential;
 use App\Models\Role;
 use App\Models\User;
 use App\Support\Tenancy\TenantContextScope;
+use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 
 /**
  * The target resources of the PLATFORM and avatar-template surfaces of a
@@ -131,6 +132,27 @@ final class AuthMatrixPlatformResources
     public function activeTemplate(): AvatarTemplate
     {
         return $this->memo['activeTemplate'] ??= $this->newTemplate('active template', true);
+    }
+
+    /**
+     * A platform (global) template: NULL organization, owned by nobody. Raw
+     * insert, so building the fixture never depends on the write guards.
+     */
+    public function globalTemplate(): AvatarTemplate
+    {
+        return $this->memo['globalTemplate'] ??= PlatformTemplates::insertGlobal([
+            'name' => "{$this->world->marker} global template",
+        ]);
+    }
+
+    /**
+     * An OFFERED platform template, which `deactivate` retires.
+     */
+    public function activeGlobalTemplate(): AvatarTemplate
+    {
+        return $this->memo['activeGlobalTemplate'] ??= PlatformTemplates::insertActiveGlobal([
+            'name' => "{$this->world->marker} offered global template",
+        ]);
     }
 
     private function newTemplate(string $label, bool $active): AvatarTemplate

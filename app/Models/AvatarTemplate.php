@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\AvatarTemplateScope;
 use App\Enums\LlmMode;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
+use App\Exceptions\PlatformTemplateWriteRefusedException;
+use App\Models\Contracts\AdmitsPlatformRows;
+use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
+use App\Support\AvatarTemplates\PlatformTemplateContext;
+use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -23,12 +30,19 @@ use Illuminate\Support\Carbon;
  * nobody is in a hurry is not a check. Application code deactivates first for
  * a clean user experience, and the index is what makes the invariant true.
  *
+ * PLATFORM ROWS. `organization_id IS NULL` marks a template owned by the
+ * platform. Two always-on scopes keep such a row out of every query by
+ * default: the strict `tenant` scope (which filters nothing under superadmin
+ * bypass) and `exclude_platform_rows` (which does, in every context). A row is
+ * reachable only through the two named scopes below, whose call sites are
+ * pinned by an architecture test.
+ *
  * `organization_id` is NOT fillable. It is stamped by TenantScoped from the
  * resolver, never from a payload — the same invariant Participant and User
  * carry, for the same reason.
  *
  * @property int $id
- * @property int $organization_id
+ * @property int|null $organization_id NULL marks a platform (global) template
  * @property string $name
  * @property string|null $description
  * @property string $provider
@@ -44,9 +58,12 @@ use Illuminate\Support\Carbon;
  * @property string|null $pal_sync_code
  * @property Carbon|null $pal_synced_at
  */
-class AvatarTemplate extends TenantModel
+class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
 {
     use SoftDeletes;
+
+    /** Hides platform (NULL-organization) rows from every default query. */
+    public const SCOPE_EXCLUDE_PLATFORM_ROWS = 'exclude_platform_rows';
 
     /**
      * Mirrors the database defaults IN MEMORY.
@@ -108,7 +125,34 @@ class AvatarTemplate extends TenantModel
         // unregister it on the single model this entire change hangs off.
         parent::booted();
 
+        // Second, independent scope: under superadmin bypass the `tenant`
+        // scope applies no filter at all, so without this every org route,
+        // bulk update and demo path would see (and could mutate) platform
+        // rows whenever a bare superadmin runs it.
+        static::addGlobalScope(
+            self::SCOPE_EXCLUDE_PLATFORM_ROWS,
+            fn (Builder $query) => $query->whereNotNull($query->getModel()->getTable().'.organization_id'),
+        );
+
+        // Write guards: `(organization_id IS NULL) === platform context active`,
+        // in both directions, so the platform context can never write a tenant
+        // row and a tenant context can never write a platform row. `creating`
+        // is registered HERE so it runs after TenantScoped's stamp and sees the
+        // final organization. Quiet writes (`saveQuietly`) skip events on
+        // purpose: provider bookkeeping must be able to stamp a platform row
+        // from any context.
+        static::creating(fn (self $template) => $template->assertWriteSide($template->organization_id, 'create'));
+
+        static::updating(function (self $template): void {
+            $template->assertOrganizationUnchanged();
+            $template->assertWriteSide($template->getOriginal('organization_id'), 'update');
+        });
+
+        static::restoring(fn (self $template) => $template->assertWriteSide($template->organization_id, 'restore'));
+
         static::deleting(function (self $template): void {
+            $template->assertWriteSide($template->organization_id, 'delete');
+
             // A FORCE delete is still governed by the foreign key itself —
             // `restrictOnDelete` sees every project row, trashed ones
             // included, and refuses. Duplicating that here would only add a
@@ -124,16 +168,15 @@ class AvatarTemplate extends TenantModel
             // can see — and it would disagree with the count the controller
             // reports, so the operator would read "0 projects" and still be
             // refused.
-            // The tenant scope is dropped, the SOFT-DELETE scope deliberately
-            // is not: a template is deleted from within its own tenant context
-            // anyway, and dropping every scope would silently start counting
-            // trashed projects — the opposite of what the comment above says.
-            $projectCount = Project::withoutGlobalScope('tenant')
-                ->where('avatar_template_id', $template->id)
-                ->count();
+            // Counted by the one class that owns this predicate
+            // (`GlobalAvatarTemplateUsage`): the tenant scope is dropped — a
+            // platform template is pinned by projects of EVERY organization —
+            // and the SOFT-DELETE scope deliberately is not, so trashed
+            // projects are not counted, exactly as above.
+            $usage = app(GlobalAvatarTemplateUsage::class)->for([(int) $template->id])[(int) $template->id];
 
-            if ($projectCount > 0) {
-                throw new AvatarTemplateInUseException($projectCount);
+            if ($usage['project_count'] > 0) {
+                throw new AvatarTemplateInUseException($usage['project_count'], $usage['organization_count']);
             }
         });
 
@@ -240,5 +283,109 @@ class AvatarTemplate extends TenantModel
     public function llmCredential(): BelongsTo
     {
         return $this->belongsTo(LlmCredential::class);
+    }
+
+    /**
+     * Own rows PLUS platform rows: the read path for anything that must
+     * resolve a template a project may pin (runtime reads, the picker).
+     *
+     * The organization comes from the resolver, never from an argument, so
+     * there is nothing to pass wrongly. With no context at all it FAILS
+     * CLOSED: `organization_id = NULL OR organization_id IS NULL` would hand
+     * every platform row to a caller that established no tenant.
+     *
+     * NOTE: `has()` / `whereHas()` on a relation using this scope merge the
+     * removed scopes back in; no such call exists today.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeAvailableToTenant(Builder $query): Builder
+    {
+        $query->withoutGlobalScopes(['tenant', self::SCOPE_EXCLUDE_PLATFORM_ROWS]);
+
+        $resolver = app(TenantResolver::class);
+        $column = $query->getModel()->getTable().'.organization_id';
+
+        if ($resolver->isBypass()) {
+            return $query;
+        }
+
+        $orgId = $resolver->getOrgId();
+
+        if ($orgId === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(fn (Builder $q) => $q->where($column, $orgId)->orWhereNull($column));
+    }
+
+    /**
+     * Platform rows only, in any context.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopePlatformOnly(Builder $query): Builder
+    {
+        return $query
+            ->withoutGlobalScopes(['tenant', self::SCOPE_EXCLUDE_PLATFORM_ROWS])
+            ->whereNull($query->getModel()->getTable().'.organization_id');
+    }
+
+    public function isPlatform(): bool
+    {
+        return $this->organization_id === null;
+    }
+
+    public function scopeLabel(): AvatarTemplateScope
+    {
+        return $this->isPlatform() ? AvatarTemplateScope::Platform : AvatarTemplateScope::Organization;
+    }
+
+    public function writesAsPlatformRow(): bool
+    {
+        return app(PlatformTemplateContext::class)->active();
+    }
+
+    /**
+     * `saveQuietly()` — and `updateQuietly()`, which routes through it — skip
+     * model events, so the `creating`/`updating` guards never run for them.
+     * Provider bookkeeping (`llm_sync_*`, `pal_sync_*`,
+     * `heygen_llm_configuration_id`) DOES need to save quietly, on a platform
+     * row, from any context; what a quiet write must never do is decide whose
+     * template it is. So the organization invariant is applied here directly:
+     * an existing row's organization cannot change (which also covers crossing
+     * the NULL boundary either way), and a new row cannot be quietly created as
+     * a platform row outside the platform context.
+     *
+     * `Model::withoutEvents()` and query-builder writes remain unguarded by
+     * construction; `AvatarTemplateScopeEntryPointsArchTest` is the second layer.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function saveQuietly(array $options = []): bool
+    {
+        if ($this->exists) {
+            $this->assertOrganizationUnchanged();
+        } else {
+            $this->assertWriteSide($this->organization_id, 'create');
+        }
+
+        return parent::saveQuietly($options);
+    }
+
+    private function assertOrganizationUnchanged(): void
+    {
+        if ($this->isDirty('organization_id')) {
+            throw new PlatformTemplateWriteRefusedException('move');
+        }
+    }
+
+    private function assertWriteSide(mixed $organizationId, string $action): void
+    {
+        if (($organizationId === null) !== $this->writesAsPlatformRow()) {
+            throw new PlatformTemplateWriteRefusedException($action);
+        }
     }
 }

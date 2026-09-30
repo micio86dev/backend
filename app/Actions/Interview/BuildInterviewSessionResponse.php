@@ -145,7 +145,7 @@ final class BuildInterviewSessionResponse
             return false;
         }
 
-        $config = AvatarTemplate::whereKey($templateId)->value('config');
+        $config = AvatarTemplate::availableToTenant()->whereKey($templateId)->value('config');
 
         if (! is_array($config)) {
             return false;

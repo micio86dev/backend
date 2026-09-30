@@ -232,11 +232,17 @@ class Project extends TenantModel implements PubliclyIdentifiable
      * 2026-09-01 migration made the column required, and the correction
      * landed in the class docblock and stopped there.
      *
+     * Resolves through `availableToTenant()` so a pinned PLATFORM template
+     * (NULL organization) renders as it does for its own organization's
+     * rows. Beware `has()` / `whereHas('avatarTemplate')`: they merge the
+     * relation's scope removals into the outer query. Nothing calls them
+     * today; a future caller must decide that on purpose.
+     *
      * @return BelongsTo<AvatarTemplate, $this>
      */
     public function avatarTemplate(): BelongsTo
     {
-        return $this->belongsTo(AvatarTemplate::class);
+        return $this->belongsTo(AvatarTemplate::class)->availableToTenant();
     }
 
     /**

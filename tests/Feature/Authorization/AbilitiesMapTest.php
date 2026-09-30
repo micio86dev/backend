@@ -51,7 +51,7 @@ function expectedAbilities(): array
             // that is the intended narrowing, not a regression.
             'llmCredentials' => ['viewAny' => false, 'create' => false, 'update' => false, 'delete' => false],
             // Read yes, manage no. This row is the bug that started the sweep.
-            'avatarTemplates' => ['viewAny' => true, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false],
+            'avatarTemplates' => ['viewAny' => true, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => true],
             'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
             'clients' => ['viewAny' => false],
@@ -63,7 +63,7 @@ function expectedAbilities(): array
             'apiClients' => ['viewAny' => false, 'create' => false, 'delete' => false],
             'users' => ['viewAny' => false, 'create' => false, 'update' => false, 'deactivate' => false, 'activate' => false],
             'llmCredentials' => ['viewAny' => false, 'create' => false, 'update' => false, 'delete' => false],
-            'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false],
+            'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             // Deletes a project? No. Editing its settings and deleting
             // everything beneath it stopped sharing one permission.
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => false],
@@ -77,7 +77,7 @@ function expectedAbilities(): array
             'apiClients' => ['viewAny' => false, 'create' => false, 'delete' => false],
             'users' => ['viewAny' => false, 'create' => false, 'update' => false, 'deactivate' => false, 'activate' => false],
             'llmCredentials' => ['viewAny' => false, 'create' => false, 'update' => false, 'delete' => false],
-            'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false],
+            'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             'projects' => ['viewAny' => true, 'create' => false, 'update' => false, 'delete' => false],
             'participants' => ['viewAny' => true, 'create' => false, 'recover' => false],
             'clients' => ['viewAny' => false],
@@ -118,6 +118,7 @@ test('the superadmin is told they may manage avatar templates', function (): voi
         'update' => true,
         'activate' => true,
         'delete' => true,
+        'manageGlobal' => true,
     ]);
 });
 

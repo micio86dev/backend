@@ -19,6 +19,7 @@ use App\Models\Project;
 use App\PublicApi\Serializers\ProjectSerializer;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
+use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 
 function psrBuildProject(array $attributes = [], array $competencyNames = ['en' => 'Communication', 'it' => 'Comunicazione']): Project
 {
@@ -99,6 +100,16 @@ test('avatar_display_name is the template name only', function (): void {
     $array = ProjectSerializer::toArray($project);
 
     expect($array['avatar_display_name'])->toBe('Ada — HeyGen');
+});
+
+test('avatar_display_name is the platform template name when the project pins a global', function (): void {
+    $global = PlatformTemplates::insertActiveGlobal(['name' => 'Platform Ada']);
+    $project = psrBuildProject(['avatar_template_id' => $global->id]);
+
+    $array = ProjectSerializer::toArray($project);
+
+    expect($array['avatar_display_name'])->toBe('Platform Ada');
+    expect($array)->not->toHaveKey('scope')->not->toHaveKey('avatar_template');
 });
 
 test('avatar_display_name is null when the avatar template relation is not loaded/unavailable', function (): void {

@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Actions\ConversationLlm\ResyncTemplateBinding;
+use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
 use App\Models\Project;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\AvatarProviderCatalogue;
-use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
-use App\Support\AvatarTemplates\TavusPalSync;
-use App\Support\AvatarTemplates\TemplateReferenceValidator;
+use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -32,6 +31,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class AvatarTemplateController extends Controller
 {
+    use ValidatesAvatarTemplateWrites;
+
     private const PROVIDERS = ['heygen', 'tavus'];
 
     /**
@@ -74,9 +75,10 @@ final class AvatarTemplateController extends Controller
      * submit, with nothing they could do about it.
      *
      * So this is the narrow answer rather than a widened `viewAny`: exactly
-     * the four fields choosing a template requires — `id`, `name`, `provider`
-     * and `is_active`, which is what the method below returns and what
-     * `openapi.json` publishes. A viewer gets it too —
+     * the five fields choosing a template requires — `id`, `name`, `provider`,
+     * `is_active` and `scope` (`organization` | `platform`, so a picker can
+     * group and badge the platform templates it is offered), which is what the
+     * method below returns and what `openapi.json` publishes. A viewer gets it too —
      * reading a project's configuration should show which template it names,
      * not a bare id.
      *
@@ -89,7 +91,23 @@ final class AvatarTemplateController extends Controller
     {
         $this->authorize('listOptions', AvatarTemplate::class);
 
-        $options = AvatarTemplate::orderByDesc('is_active')
+        // Own templates plus the platform ones, through the named scope. A
+        // platform template is offered only while it is active, or while a
+        // live project of THIS organization still pins it: the edit form has
+        // to render its current pin, and the project subquery is tenant-scoped
+        // so another organization's pin never surfaces a retired global here.
+        // A bare superadmin has no organization to offer anything to and sees
+        // every row. Organization rows first, then active, then by name.
+        $options = AvatarTemplate::availableToTenant()
+            ->when(
+                ! app(TenantResolver::class)->isBypass(),
+                fn (Builder $query) => $query->where(fn (Builder $offered) => $offered
+                    ->whereNotNull('organization_id')
+                    ->orWhere('is_active', true)
+                    ->orWhereIn('id', Project::query()->select('avatar_template_id')))
+            )
+            ->orderByRaw('(avatar_templates.organization_id IS NULL) ASC')
+            ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
             ->map(fn (AvatarTemplate $template): array => [
@@ -97,6 +115,7 @@ final class AvatarTemplateController extends Controller
                 'name' => $template->name,
                 'provider' => $template->provider,
                 'is_active' => (bool) $template->is_active,
+                'scope' => $template->scopeLabel(),
             ])
             ->all();
 
@@ -193,21 +212,10 @@ final class AvatarTemplateController extends Controller
     {
         $this->authorize('create', AvatarTemplate::class);
 
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'description' => ['nullable', 'string', 'max:500'],
-            // Literal list — see catalogue()'s validation for why implode(self::PROVIDERS) is not used.
-            'provider' => ['required', 'string', 'in:heygen,tavus'],
-            'config' => ['required', 'array'],
-            // Both-or-neither is enforced by the DB CHECK (I1) and by
-            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
-            // here (pluggable-conversation-llm PR P3a, design D4).
-            'llm_model_id' => ['sometimes', 'nullable', 'integer'],
-            'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
-        ]);
+        $validated = $request->validate($this->templateStoreRules());
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
-        $this->assertNameFree($validated['name'], null);
+        $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], null);
 
         // is_active is deliberately absent from the accepted fields. Creating a
         // template must never change what candidates are seeing right now, and
@@ -233,18 +241,7 @@ final class AvatarTemplateController extends Controller
         $template = AvatarTemplate::findOrFail($id);
         $this->authorize('update', $template);
 
-        $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:120'],
-            'description' => ['sometimes', 'nullable', 'string', 'max:500'],
-            'config' => ['sometimes', 'array'],
-            // Both-or-neither is enforced by the DB CHECK (I1) and by
-            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
-            // here (pluggable-conversation-llm PR P3a, design D4). Both null
-            // clears the binding (see "Unbinding a template clears only
-            // that template's binding").
-            'llm_model_id' => ['sometimes', 'nullable', 'integer'],
-            'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
-        ]);
+        $validated = $request->validate($this->templateUpdateRules());
 
         // The provider is immutable. Changing it would leave every knob in the
         // config belonging to the other one — avatarId where faceId is
@@ -262,7 +259,7 @@ final class AvatarTemplateController extends Controller
         }
 
         if (array_key_exists('name', $validated)) {
-            $this->assertNameFree($validated['name'], $template->id);
+            $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], $template->id);
         }
 
         // Names, never ids — the AuditRecorder doctrine applied to a binding
@@ -366,7 +363,13 @@ final class AvatarTemplateController extends Controller
             // PER PROVIDER simultaneously — deactivating across every
             // provider would silently kill an unrelated, still-correct
             // Tavus template the moment an operator activates a HeyGen one.
-            AvatarTemplate::where('is_active', true)
+            //
+            // Filtered by the template's OWN organization explicitly, not by the
+            // implicit tenant scope: that scope filters nothing under superadmin
+            // bypass, so a bare superadmin used to deactivate the active
+            // template of EVERY organization on this provider.
+            AvatarTemplate::where('organization_id', $template->organization_id)
+                ->where('is_active', true)
                 ->where('provider', $template->provider)
                 ->whereKeyNot($template->id)
                 ->update(['is_active' => false]);
@@ -482,112 +485,5 @@ final class AvatarTemplateController extends Controller
         $template->delete();
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function assertConfigValid(string $provider, array $config): void
-    {
-        $errors = ConfigValidator::validate($provider, $config);
-
-        // References are checked only once the shape is sound: a missing or
-        // mistyped id would otherwise be reported twice.
-        if ($errors === []) {
-            $errors = TemplateReferenceValidator::validate($provider, $config);
-        }
-
-        if ($errors === []) {
-            return;
-        }
-
-        // Every problem at once, one entry per offending knob
-        // (generated-client-truth-and-session-safety D6) — `config.{key}` is
-        // Laravel's own nested-attribute convention (`competency_ids.0`), and
-        // the backoffice form maps each one onto its own control through the
-        // shared 422-mapping pattern. `config` and `config.{knob}` are
-        // disjoint by construction: this method only runs after
-        // `$request->validate(['config' => ['required','array']])` already
-        // passed, so a non-array config never reaches here.
-        throw ValidationException::withMessages(
-            collect($errors)
-                ->mapWithKeys(fn (array $e): array => ["config.{$e['key']}" => $e['code']])
-                ->all()
-        );
-    }
-
-    private function assertNameFree(string $name, ?int $exceptId): void
-    {
-        $query = AvatarTemplate::where('name', $name);
-
-        if ($exceptId !== null) {
-            $query->whereKeyNot($exceptId);
-        }
-
-        if (! $query->exists()) {
-            return;
-        }
-
-        // Checked here so the unique index does not surface as a QueryException
-        // → 500. A name collision is something the operator can fix, so it has
-        // to read like one.
-        throw ValidationException::withMessages([
-            'name' => 'A template with this name already exists.',
-        ]);
-    }
-
-    /**
-     * Push persona-level knobs and the managed-mode LLM binding to the
-     * template's provider, report it if that did not work, and PERSIST the
-     * outcome (pluggable-conversation-llm PR P4/P5, design D0/D7/D8).
-     *
-     * Nine of the seventeen Tavus fields live on the PERSONA, not the
-     * conversation — sent on a conversation they do nothing at all. Offering
-     * them without this call would be the dead-knob defect this change refused
-     * to port, nine times over.
-     *
-     * The result is ADDITIONAL data on a successful response, never an error.
-     * The operator's intent is already recorded in our own database and saving
-     * again retries; failing the save would discard a valid edit because a
-     * third party was slow. But it is reported, because an operator who is not
-     * told will believe the setting took effect.
-     *
-     * `llm_sync_status`/`llm_synced_at` are written HERE for BOTH providers —
-     * `TavusPalSync::sync()` returns a transient result and persists nothing
-     * (C-E: `Support/AvatarTemplates/` stays pure of DB writes); `HeygenLlmRegistrar`
-     * persists `heygen_llm_configuration_id` itself (it IS the orphan ledger,
-     * design D8) but not these two columns — D0's resolver rule stays ONE
-     * line for both providers, decided from these same two columns
-     * regardless of which provider wrote the underlying vendor state.
-     * Without this write, `degraded` (design D0) would be UNREACHABLE: a
-     * template whose provider push failed would still resolve `applied` at a
-     * later session-issue and get billed for a binding that never took
-     * effect.
-     *
-     * Deliberately checks `llm_model_id`/`llm_credential_id` directly rather
-     * than resolving a full `LlmBinding` here — a controller is exactly the
-     * class an `LlmBinding` (which carries the plaintext key) must never
-     * reach (design D6, `LlmBindingContainmentArchTest`), and a boolean
-     * presence check is all this decision needs.
-     *
-     * @return array<string, mixed>
-     */
-    private function recordSync(?AvatarTemplate $template): array
-    {
-        if ($template === null) {
-            return [];
-        }
-
-        // The provider dispatch AND the `llm_sync_status` stamp both moved to
-        // `ResyncTemplateBinding`. They were only ever reachable from here,
-        // which made every other path that re-pushes a binding — credential
-        // rotation above all — a path that left the column stale. This method
-        // keeps the one thing that is genuinely controller business: turning
-        // the result into the response's `warning` key.
-        $result = app(ResyncTemplateBinding::class)->run($template);
-
-        return $result['status'] === 'warning'
-            ? ['warning' => $result['message'] ?? 'pal_sync_failed']
-            : [];
     }
 }
