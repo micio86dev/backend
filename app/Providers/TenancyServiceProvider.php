@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Mail\EmailBranding;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Queue\Events\JobExceptionOccurred;
@@ -31,6 +32,10 @@ class TenancyServiceProvider extends ServiceProvider
         // and a brand colour that outlived its send would put one
         // organization's colour on another organization's message.
         $this->app->scoped(EmailBranding::class, fn () => new EmailBranding);
+
+        // Scoped for the same reason: an open platform-write context that
+        // outlived its request would let the next job write a platform row.
+        $this->app->scoped(PlatformTemplateContext::class, fn () => new PlatformTemplateContext);
     }
 
     /**

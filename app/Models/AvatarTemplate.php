@@ -9,6 +9,9 @@ use App\Enums\LlmMode;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
+use App\Exceptions\PlatformTemplateWriteRefusedException;
+use App\Models\Contracts\AdmitsPlatformRows;
+use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -54,7 +57,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $pal_sync_code
  * @property Carbon|null $pal_synced_at
  */
-class AvatarTemplate extends TenantModel
+class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
 {
     use SoftDeletes;
 
@@ -130,7 +133,28 @@ class AvatarTemplate extends TenantModel
             fn (Builder $query) => $query->whereNotNull($query->getModel()->getTable().'.organization_id'),
         );
 
+        // Write guards: `(organization_id IS NULL) === platform context active`,
+        // in both directions, so the platform context can never write a tenant
+        // row and a tenant context can never write a platform row. `creating`
+        // is registered HERE so it runs after TenantScoped's stamp and sees the
+        // final organization. Quiet writes (`saveQuietly`) skip events on
+        // purpose: provider bookkeeping must be able to stamp a platform row
+        // from any context.
+        static::creating(fn (self $template) => $template->assertWriteSide($template->organization_id, 'create'));
+
+        static::updating(function (self $template): void {
+            if ($template->isDirty('organization_id')) {
+                throw new PlatformTemplateWriteRefusedException('move');
+            }
+
+            $template->assertWriteSide($template->getOriginal('organization_id'), 'update');
+        });
+
+        static::restoring(fn (self $template) => $template->assertWriteSide($template->organization_id, 'restore'));
+
         static::deleting(function (self $template): void {
+            $template->assertWriteSide($template->organization_id, 'delete');
+
             // A FORCE delete is still governed by the foreign key itself —
             // `restrictOnDelete` sees every project row, trashed ones
             // included, and refuses. Duplicating that here would only add a
@@ -320,5 +344,17 @@ class AvatarTemplate extends TenantModel
     public function scopeLabel(): AvatarTemplateScope
     {
         return $this->isPlatform() ? AvatarTemplateScope::Platform : AvatarTemplateScope::Organization;
+    }
+
+    public function writesAsPlatformRow(): bool
+    {
+        return app(PlatformTemplateContext::class)->active();
+    }
+
+    private function assertWriteSide(mixed $organizationId, string $action): void
+    {
+        if (($organizationId === null) !== $this->writesAsPlatformRow()) {
+            throw new PlatformTemplateWriteRefusedException($action);
+        }
     }
 }
