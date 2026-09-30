@@ -6517,7 +6517,7 @@
         "/participants": {
             "get": {
                 "operationId": "participant.index",
-                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.\n\n`q` also matches the candidate's external reference: `source` by\ncase-insensitive substring, and `external_id` by exact equality, only\nwhen the trimmed term is a whole number from 1 to 9007199254740991.",
+                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.\n\n`q` matches `candidate_ref`, `display_name` and `source` as a\ncase-insensitive substring, taking `%`, `_` and `\\` literally, and the\ncandidate's `external_id` by exact equality, only when the trimmed term\nis a whole number from 1 to 9007199254740991.",
                 "summary": "GET /api/participants",
                 "tags": [
                     "Participant"

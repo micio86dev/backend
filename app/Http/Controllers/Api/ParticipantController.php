@@ -58,9 +58,10 @@ final class ParticipantController extends Controller
      * fetch-all + client filter). Sort is fixed (created_at desc, id desc):
      * no client-specified sort column reaches the query builder.
      *
-     * `q` also matches the candidate's external reference: `source` by
-     * case-insensitive substring, and `external_id` by exact equality, only
-     * when the trimmed term is a whole number from 1 to 9007199254740991.
+     * `q` matches `candidate_ref`, `display_name` and `source` as a
+     * case-insensitive substring, taking `%`, `_` and `\` literally, and the
+     * candidate's `external_id` by exact equality, only when the trimmed term
+     * is a whole number from 1 to 9007199254740991.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -75,7 +76,7 @@ final class ParticipantController extends Controller
         }
 
         if ($request->filled('q')) {
-            $term = '%'.$request->string('q')->value().'%';
+            $term = '%'.$this->escapeLike($request->string('q')->value()).'%';
             // Null unless the trimmed term is all ASCII digits within 1..2^53-1:
             // a non-numeric or over-range term must never reach the BIGINT
             // comparison below (Postgres would raise 22P02 / 22003 -> 500).
@@ -85,8 +86,8 @@ final class ParticipantController extends Controller
             // `organization_id` scope `AdminParticipantReader::listQuery()` and
             // the `status`/`project_id` filters above already applied.
             $query->where(function ($sub) use ($term, $externalId): void {
-                $sub->where('candidate_ref', 'like', $term)
-                    ->orWhere('display_name', 'like', $term)
+                $sub->where('candidate_ref', 'ilike', $term)
+                    ->orWhere('display_name', 'ilike', $term)
                     ->orWhere('source', 'ilike', $term);
 
                 if ($externalId !== null) {
@@ -106,6 +107,17 @@ final class ParticipantController extends Controller
             ->paginate($perPage);
 
         return ParticipantResource::collection($participants);
+    }
+
+    /**
+     * Makes a search term literal inside a LIKE pattern. Postgres treats
+     * backslash as the default LIKE escape character, so escaping it first and
+     * then `%` and `_` leaves no character in the term able to act as a
+     * wildcard — a search for `%` or `_` used to match every row.
+     */
+    private function escapeLike(string $term): string
+    {
+        return addcslashes($term, '\\%_');
     }
 
     /**
