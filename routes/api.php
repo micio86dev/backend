@@ -410,7 +410,9 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // `AvatarTemplate::platformOnly()`, so the organization routes below never
     // see one and these never see an organization's.
     Route::get('admin/avatar-templates', [PlatformAvatarTemplateController::class, 'index']);
+    Route::post('admin/avatar-templates', [PlatformAvatarTemplateController::class, 'store']);
     Route::get('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'show'])->whereNumber('id');
+    Route::patch('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'update'])->whereNumber('id');
 });
 
 // ─── Framework Catalogue Authoring (framework-catalogue-authoring PR3, D12) ──

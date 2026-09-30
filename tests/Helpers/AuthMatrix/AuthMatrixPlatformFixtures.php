@@ -229,7 +229,18 @@ final class AuthMatrixPlatformFixtures
 
         return [
             'GET api/admin/avatar-templates' => [],
+            'POST api/admin/avatar-templates' => [
+                'payload' => fn (): array => [
+                    'name' => 'Platform template created by the matrix '.Str::random(6),
+                    'provider' => 'heygen',
+                    'config' => $config(),
+                ],
+            ],
             'GET api/admin/avatar-templates/{id}' => ['params' => $global],
+            'PATCH api/admin/avatar-templates/{id}' => [
+                'params' => $global,
+                'payload' => fn (): array => ['name' => 'Platform template renamed by the matrix '.Str::random(6)],
+            ],
             'GET api/avatar-templates' => [],
             'POST api/avatar-templates' => [
                 'payload' => fn () => [

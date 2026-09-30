@@ -18,6 +18,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
 
@@ -135,4 +136,152 @@ test('/api/auth/me publishes avatarTemplates.manageGlobal to a superadmin only',
     foreach (['admin', 'operator', 'viewer'] as $role) {
         $this->withToken(patToken($role, $org))->getJson('/api/auth/me')->assertJsonPath('abilities.avatarTemplates.manageGlobal', false);
     }
+});
+
+// ─── create ──────────────────────────────────────────────────────────────────
+
+/** @return array<string, mixed> */
+function patPayload(string $name = 'Platform voice', array $config = ['avatarId' => 'av_new', 'voiceId' => 'vo_new']): array
+{
+    return ['name' => $name, 'provider' => 'heygen', 'config' => $config];
+}
+
+function patStoredOrganization(int $id): ?int
+{
+    return AvatarTemplate::withoutGlobalScopes()->findOrFail($id)->organization_id;
+}
+
+test('create persists an inactive platform template with no organization, bare or acting', function (string $actor): void {
+    $org = Organization::factory()->create();
+
+    $response = $this->withToken(patToken($actor, $org))->postJson('/api/admin/avatar-templates', patPayload())
+        ->assertCreated()
+        ->assertJsonPath('data.scope', 'platform')
+        ->assertJsonPath('data.is_active', false)
+        ->assertJsonPath('data.usage', ['organization_count' => 0, 'project_count' => 0]);
+
+    // Acting as an organization does NOT stamp it: the platform context is explicit.
+    expect(patStoredOrganization($response->json('data.id')))->toBeNull();
+})->with('patSuperadmins');
+
+test('create refuses every problem in the config at once, one key per knob', function (): void {
+    $response = $this->withToken(patToken('bare', Organization::factory()->create()))
+        ->postJson('/api/admin/avatar-templates', patPayload('Bad', ['voiceSpeed' => 99, 'nonsense' => 1]))
+        ->assertUnprocessable();
+
+    $response->assertJsonValidationErrors(['config.avatarId', 'config.voiceId', 'config.voiceSpeed', 'config.nonsense']);
+    expect(AvatarTemplate::platformOnly()->count())->toBe(0);
+});
+
+test('a platform name is unique among live platform templates only', function (): void {
+    $org = Organization::factory()->create();
+    PlatformTemplates::insertGlobal(['name' => 'Taken']);
+    $gone = PlatformTemplates::insertGlobal(['name' => 'Reusable', 'deleted_at' => now()]);
+    TenantContextScope::runFor($org->id, fn () => AvatarTemplate::create(patPayload('Shared with an organization')));
+    $token = patToken('bare', $org);
+
+    $this->withToken($token)->postJson('/api/admin/avatar-templates', patPayload('Taken'))
+        ->assertUnprocessable()->assertJsonValidationErrors(['name']);
+
+    $this->withToken($token)->postJson('/api/admin/avatar-templates', patPayload('Shared with an organization'))->assertCreated();
+    $this->withToken($token)->postJson('/api/admin/avatar-templates', patPayload($gone->name))->assertCreated();
+
+    expect(AvatarTemplate::platformOnly()->where('name', 'Taken')->count())->toBe(1);
+});
+
+test('the organization side ignores platform names, so an organization may reuse one', function (): void {
+    $org = Organization::factory()->create();
+    PlatformTemplates::insertGlobal(['name' => 'Same name']);
+
+    $response = $this->withToken(patToken('acting', $org))->postJson('/api/avatar-templates', patPayload('Same name'))->assertCreated();
+
+    expect(patStoredOrganization($response->json('data.id')))->toBe($org->id);
+});
+
+// ─── update ──────────────────────────────────────────────────────────────────
+
+test('update edits a platform template and answers with its usage', function (string $actor): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal(['name' => 'Before']);
+    patPin($org, $global, 2);
+
+    $this->withToken(patToken($actor, $org))
+        ->patchJson("/api/admin/avatar-templates/{$global->id}", ['name' => 'After', 'config' => ['avatarId' => 'av_2', 'voiceId' => 'vo_2']])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'After')
+        ->assertJsonPath('data.config.voiceId', 'vo_2')
+        ->assertJsonPath('data.usage', ['organization_count' => 1, 'project_count' => 2]);
+
+    $row = AvatarTemplate::platformOnly()->findOrFail($global->id);
+    expect($row->name)->toBe('After')->and($row->organization_id)->toBeNull();
+})->with('patSuperadmins');
+
+test('update refuses a provider change and keeps the provider', function (): void {
+    $global = PlatformTemplates::insertGlobal();
+
+    $this->withToken(patToken('bare', Organization::factory()->create()))
+        ->patchJson("/api/admin/avatar-templates/{$global->id}", ['provider' => 'tavus'])
+        ->assertUnprocessable()->assertJsonValidationErrors(['provider']);
+
+    expect(AvatarTemplate::platformOnly()->findOrFail($global->id)->provider)->toBe('heygen');
+});
+
+test('update checks name uniqueness among platform templates excluding the template itself', function (): void {
+    $first = PlatformTemplates::insertGlobal(['name' => 'First']);
+    PlatformTemplates::insertGlobal(['name' => 'Second']);
+    $token = patToken('bare', Organization::factory()->create());
+
+    $this->withToken($token)->patchJson("/api/admin/avatar-templates/{$first->id}", ['name' => 'Second'])
+        ->assertUnprocessable()->assertJsonValidationErrors(['name']);
+    $this->withToken($token)->patchJson("/api/admin/avatar-templates/{$first->id}", ['name' => 'First', 'description' => 'kept'])
+        ->assertOk()->assertJsonPath('data.description', 'kept');
+});
+
+test('an organization template id is a 404 on the platform update', function (): void {
+    $org = Organization::factory()->create();
+    $own = TenantContextScope::runFor($org->id, fn () => AvatarTemplate::create(patPayload('Own')));
+
+    $this->withToken(patToken('bare', $org))->patchJson("/api/admin/avatar-templates/{$own->id}", ['name' => 'Hijack'])->assertNotFound();
+
+    expect(AvatarTemplate::withoutGlobalScopes()->find($own->id)->name)->toBe('Own');
+});
+
+// ─── provider sync ───────────────────────────────────────────────────────────
+
+test('a failed Tavus persona sync is reported on the save and never leaks the provider text', function (): void {
+    config()->set('interview.tavus.api_key', 'test-key');
+    Http::fake(['*' => Http::response(['message' => 'Tavus persona 404 at tavusapi.com'], 404)]);
+
+    $response = $this->withToken(patToken('bare', Organization::factory()->create()))
+        ->postJson('/api/admin/avatar-templates', [
+            'name' => 'Tavus platform', 'provider' => 'tavus',
+            'config' => ['faceId' => 'f_1', 'palId' => 'p_1', 'llmTemperature' => 0.5],
+        ])
+        ->assertCreated()
+        ->assertJsonPath('warning', 'pal_not_found')
+        ->assertJsonPath('data.pal_sync.status', 'warning')
+        ->assertJsonPath('data.pal_sync.code', 'pal_not_found');
+
+    expect($response->getContent())->not->toContain('tavusapi');
+    expect(AvatarTemplate::platformOnly()->findOrFail($response->json('data.id'))->pal_sync_status)->toBe('warning');
+});
+
+// ─── refusal ─────────────────────────────────────────────────────────────────
+
+test('every non-superadmin principal is refused create and update, and nothing changes', function (string $actor): void {
+    $org = Organization::factory()->create();
+    $global = PlatformTemplates::insertGlobal(['name' => 'Untouched']);
+    $token = patToken($actor, $org);
+
+    $this->withToken($token)->postJson('/api/admin/avatar-templates', patPayload())->assertForbidden();
+    $this->withToken($token)->patchJson("/api/admin/avatar-templates/{$global->id}", ['name' => 'Hijack'])->assertForbidden();
+
+    expect(AvatarTemplate::platformOnly()->pluck('name')->all())->toBe(['Untouched']);
+})->with('patDenied');
+
+test('an unauthenticated caller cannot create or update', function (): void {
+    $global = PlatformTemplates::insertGlobal();
+
+    $this->postJson('/api/admin/avatar-templates', patPayload())->assertUnauthorized();
+    $this->patchJson("/api/admin/avatar-templates/{$global->id}", ['name' => 'x'])->assertUnauthorized();
 });

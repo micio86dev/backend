@@ -86,7 +86,7 @@ test('platformOnly() is called only by the platform controller', function (): vo
     expect($hits)->toBe(['app/Http/Controllers/Api/PlatformAvatarTemplateController.php'], 'platformOnly() callers changed: '.implode(', ', $hits));
 })->group('arch');
 
-test('the platform write context is not entered by any application code yet', function (): void {
+test('the platform write context is entered only by the platform controller', function (): void {
     $files = array_filter(
         atsCode('app'),
         fn (string $code): bool => str_contains($code, 'PlatformTemplateContext')
@@ -94,10 +94,9 @@ test('the platform write context is not entered by any application code yet', fu
 
     $hits = atsFilesMatching($files, '/(->|::)run\(/');
 
-    // The class itself defines run() and does not call it. The platform
-    // controller is added here by the slice that creates it.
+    // The class itself defines run() and does not call it.
     expect(array_values(array_diff($hits, ['app/Support/AvatarTemplates/PlatformTemplateContext.php'])))
-        ->toBe([], 'PlatformTemplateContext::run() caller(s): '.implode(', ', $hits));
+        ->toBe(['app/Http/Controllers/Api/PlatformAvatarTemplateController.php'], 'PlatformTemplateContext::run() callers changed: '.implode(', ', $hits));
 })->group('arch');
 
 test('only AvatarTemplate implements AdmitsPlatformRows', function (): void {
