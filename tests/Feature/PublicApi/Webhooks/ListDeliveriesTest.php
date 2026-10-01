@@ -24,6 +24,7 @@ use App\Services\ApiKeyGenerator;
 use App\Support\PublicApi\PublicId;
 use App\Support\PublicApi\WebhookDeliveryId;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Testing\TestResponse;
 use Tests\Helpers\PublicApi\Step6Fixtures;
 
 test('T-WHD-001: lists webhook deliveries for the caller\'s organization, newest first, contract-valid', function (): void {
@@ -127,6 +128,36 @@ test('T-WHD-004: filters by interview_id', function (): void {
     expect($body['data'][0]['id'])->toBe(WebhookDeliveryId::encode($forA->fresh()));
 });
 
+/**
+ * The public ids of $deliveries, sorted: a filter test compares WHICH deliveries a
+ * request returned, not the order the list happens to give them.
+ *
+ * @param  list<WebhookDelivery>  $deliveries
+ * @return list<string>
+ */
+function whdSortedIds(array $deliveries): array
+{
+    $ids = array_map(fn (WebhookDelivery $delivery): string => WebhookDeliveryId::encode($delivery->fresh()), $deliveries);
+    sort($ids);
+
+    return $ids;
+}
+
+/**
+ * The ids a list response returned, sorted the same way as {@see whdSortedIds()} so both
+ * sides of every comparison are ordered alike.
+ *
+ * @return list<string>
+ */
+function whdListedIds(TestResponse $response): array
+{
+    $response->assertOk();
+    $ids = array_column($response->json('data'), 'id');
+    sort($ids);
+
+    return $ids;
+}
+
 test('T-WHD-004: interview_id narrows to that interview only; an empty one is the unfiltered list; an id that matches nothing is an empty page', function (): void {
     ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['webhooks:read']);
     $project = Step6Fixtures::project($org);
@@ -136,34 +167,43 @@ test('T-WHD-004: interview_id narrows to that interview only; an empty one is th
     ['org' => $other, 'key' => $otherKey] = Step6Fixtures::orgWithScopedKey(['webhooks:read']);
     $participantOther = Step6Fixtures::participantWithTranscript($other, Step6Fixtures::project($other), 'completato');
 
-    [$a1, $a2, $b1, $foreign] = [
-        TenantContextScope::runFor($org->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantA)->create(['created_at' => now()->subMinutes(3)])),
-        TenantContextScope::runFor($org->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantA)->create(['created_at' => now()->subMinutes(2)])),
-        TenantContextScope::runFor($org->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantB)->create(['created_at' => now()->subMinute()])),
-        TenantContextScope::runFor($other->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantOther)->create()),
-    ];
-    $ids = fn (array $deliveries): array => collect($deliveries)->map(fn (WebhookDelivery $d): string => WebhookDeliveryId::encode($d->fresh()))->sort()->values()->all();
-    $headers = ['Authorization' => 'Bearer '.$rawKey];
-    $listed = fn (string $query): array => collect($this->withHeaders($headers)->getJson('/api/v1/webhooks/deliveries'.$query)->assertOk()->json('data'))->pluck('id')->sort()->values()->all();
+    [$a1, $a2, $b1] = TenantContextScope::runFor($org->id, fn (): array => [
+        WebhookDelivery::factory()->forParticipant($participantA)->create(['created_at' => now()->subMinutes(3)]),
+        WebhookDelivery::factory()->forParticipant($participantA)->create(['created_at' => now()->subMinutes(2)]),
+        WebhookDelivery::factory()->forParticipant($participantB)->create(['created_at' => now()->subMinute()]),
+    ]);
+    $foreign = TenantContextScope::runFor($other->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantOther)->create());
+
+    // One closure for both organizations' keys, so every request is made and ordered the same way.
+    $listed = fn (string $key, string $query): array => whdListedIds(
+        $this->withHeaders(['Authorization' => 'Bearer '.$key])->getJson('/api/v1/webhooks/deliveries'.$query),
+    );
 
     // One interview: its deliveries, and nobody else's.
-    expect($listed('?interview_id='.PublicId::encode($participantA)))->toBe($ids([$a1, $a2]));
-    expect($listed('?interview_id='.PublicId::encode($participantB)))->toBe($ids([$b1]));
+    expect($listed($rawKey, '?interview_id='.PublicId::encode($participantA)))->toBe(whdSortedIds([$a1, $a2]));
+    expect($listed($rawKey, '?interview_id='.PublicId::encode($participantB)))->toBe(whdSortedIds([$b1]));
 
-    // Empty or whitespace: not provided, so every delivery of the organization and none of the other one's.
-    expect($listed('?interview_id='))->toBe($ids([$a1, $a2, $b1]));
-    expect($listed('?interview_id=%20%20'))->toBe($ids([$a1, $a2, $b1]));
+    // Empty or whitespace: not provided, so every delivery of the organization and none of the
+    // other one's, newest first like every other list.
+    $unfiltered = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/webhooks/deliveries?interview_id=');
+    $unfiltered->assertOk();
+    expect(array_column($unfiltered->json('data'), 'id'))->toBe([
+        WebhookDeliveryId::encode($b1->fresh()),
+        WebhookDeliveryId::encode($a2->fresh()),
+        WebhookDeliveryId::encode($a1->fresh()),
+    ]);
+    expect($listed($rawKey, '?interview_id=%20%20'))->toBe(whdSortedIds([$a1, $a2, $b1]));
 
     // An id that matches nothing is an empty page, never a 400 (an id filter behaves like a path
     // parameter): another organization's interview, a well-formed id nobody holds, and a malformed one.
-    expect($listed('?interview_id='.PublicId::encode($participantOther)))->toBe([]);
-    expect($listed('?interview_id=int_'.str_repeat('0', 26)))->toBe([]);
-    expect($listed('?interview_id=not-an-id'))->toBe([]);
+    expect($listed($rawKey, '?interview_id='.PublicId::encode($participantOther)))->toBe([]);
+    expect($listed($rawKey, '?interview_id=int_'.str_repeat('0', 26)))->toBe([]);
+    expect($listed($rawKey, '?interview_id=not-an-id'))->toBe([]);
 
     // And the other organization's key: its own interview narrows to its own delivery, ours to nothing.
-    $otherListed = fn (string $query): array => collect($this->withHeaders(['Authorization' => 'Bearer '.$otherKey])->getJson('/api/v1/webhooks/deliveries'.$query)->assertOk()->json('data'))->pluck('id')->all();
-    expect($otherListed('?interview_id='.PublicId::encode($participantOther)))->toBe($ids([$foreign]));
-    expect($otherListed('?interview_id='.PublicId::encode($participantA)))->toBe([]);
+    expect($listed($otherKey, '?interview_id='.PublicId::encode($participantOther)))->toBe(whdSortedIds([$foreign]));
+    expect($listed($otherKey, '?interview_id='.PublicId::encode($participantA)))->toBe([]);
+    expect($listed($otherKey, ''))->toBe(whdSortedIds([$foreign]));
 });
 
 test('T-WHD-005: an unrecognised status or event_type filter answers 400 validation_failed, never 422', function (): void {
