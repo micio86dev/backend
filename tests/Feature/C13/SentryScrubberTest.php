@@ -2575,3 +2575,54 @@ test('a free-text query carrier takes the line for every entry on the list', fun
 
     expect(SentryScrubber::handle($event)->getExceptions()[0]->getValue())->toBe('GET /p');
 })->with(['q', 'query', 'search', 'filter', 'name']);
+
+// ─── The visitor identity (reusable-link-visitor-identity, api-3) ─────────────
+
+test('the visitor identity in a redeem request body never reaches the sink, and an unrelated field next to it does', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $event = scrubbedEvent([], ['data' => [
+        'link_token' => $token,
+        'display_name' => 'Ada Lovelace',
+        'email' => 'ada.lovelace@example.com',
+        'project_id' => 7,
+    ]]);
+
+    $encoded = (string) json_encode($event->getRequest());
+    expect($encoded)->not->toContain($token)
+        ->not->toContain('Ada Lovelace')
+        ->not->toContain('ada.lovelace@example.com')
+        ->and($event->getRequest()['data']['project_id'])->toBe(7);
+});
+
+test('a database error message carrying the address and the token loses both', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $message = sentryLinkTokenThrough('exception message', "duplicate key for ada.lovelace@example.com while redeeming {$token}");
+
+    expect($message)->not->toContain('ada.lovelace@example.com')
+        ->not->toContain($token)
+        ->toContain('duplicate key for')
+        ->toContain('while redeeming');
+});
+
+test('the denylist still names email and display_name', function (): void {
+    $denied = (new ReflectionClassConstant(SentryScrubber::class, 'DENIED_KEYS'))->getValue();
+
+    expect($denied)->toContain('email')
+        ->toContain('display_name');
+});
+
+test('an address in the request URL query string and in the query_string field never reaches the sink', function (): void {
+    // The admin participants search sends the operator's term as `?q=`, and a term
+    // is often somebody's email address. Both the URL and the query string field
+    // are cut at the query, and the free-text address pattern is the second net.
+    $event = scrubbedEvent([], [
+        'url' => 'https://api.beai.test/api/participants?q=ada@example.com&project_id=7',
+        'query_string' => 'q=ada@example.com&project_id=7',
+    ]);
+
+    $encoded = (string) json_encode($event->getRequest());
+    expect($encoded)->not->toContain('ada@example.com')
+        ->not->toContain('example.com');
+});

@@ -50,11 +50,15 @@ return [
     |                    survives. Whether a customer's endpoint was told, and
     |                    when, is an integration audit record that must outlive
     |                    the purge of what was said.
-    | participant_pii  — participants.display_name is NULLED; candidate_ref
-    |                    survives. That reference is the calling system's own
-    |                    opaque identifier and carries no personal data, so
-    |                    removing the row would destroy the audit trail without
-    |                    protecting anybody.
+    | participant_pii  — participants.display_name is overwritten with a
+    |                    sentinel AND participants.email with a non-identifying
+    |                    placeholder derived from the participant's own
+    |                    candidate_ref, in the same pass; candidate_ref survives.
+    |                    That reference is the calling system's own opaque
+    |                    identifier and carries no personal data, so removing
+    |                    the row would destroy the audit trail without
+    |                    protecting anybody. No separate duration exists for the
+    |                    email: if the name is due, the email is due.
     |
     */
     'days' => [

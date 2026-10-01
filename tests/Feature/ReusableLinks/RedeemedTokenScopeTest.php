@@ -58,7 +58,7 @@ function redeemScopeClaims(string $jwt): array
  */
 function redeemScopeRedeem(string $token): string
 {
-    $response = test()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $response = test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     return (string) $response->json('access_token');
 }
@@ -256,7 +256,7 @@ test('a visitor already in the interview keeps working after the link is disable
 
     // The admin disables the link while the visitor is mid-session.
     ReusableInterviewLink::withoutGlobalScopes()->whereKey($link->id)->update(['disabled_at' => now()]);
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertNotFound();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertNotFound();
 
     redeemScopeAs($jwt)->getJson('/api/candidate/session')->assertOk();
     redeemScopeAs($jwt)->postJson('/api/candidate/interview/start')->assertStatus(201);

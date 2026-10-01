@@ -84,7 +84,7 @@ test('both limits are environment-overridable and documented in .env.example', f
 test('a well-formed token yields two limits: the IP per minute and the link per hour', function (): void {
     $token = ReusableLinkTokenGenerator::generate();
 
-    $limits = redeemLimits(['link_token' => $token], ip: '203.0.113.7');
+    $limits = redeemLimits(Fx::redeemBody($token), ip: '203.0.113.7');
 
     expect($limits)->toHaveCount(2);
 
@@ -99,7 +99,7 @@ test('a well-formed token yields two limits: the IP per minute and the link per 
 });
 
 test('malformed input still counts against the IP and never builds a link bucket', function (mixed $linkToken): void {
-    $limits = redeemLimits(['link_token' => $linkToken], ip: '203.0.113.7');
+    $limits = redeemLimits(Fx::redeemBody($linkToken), ip: '203.0.113.7');
 
     expect($limits)->toHaveCount(1)
         ->and($limits[0]->key)->toBe('ip:203.0.113.7')
@@ -129,21 +129,21 @@ test('the token is read only from link_token, never from a field named token', f
     $token = ReusableLinkTokenGenerator::generate();
 
     // A well-formed value under the wrong name must not open a link bucket.
-    expect(redeemLimits(['token' => $token]))->toHaveCount(1);
+    expect(redeemLimits(['token' => $token] + Fx::identity()))->toHaveCount(1);
 });
 
 test('no bucket key contains the raw token', function (): void {
     $token = ReusableLinkTokenGenerator::generate();
 
-    foreach (redeemLimits(['link_token' => $token]) as $limit) {
+    foreach (redeemLimits(Fx::redeemBody($token)) as $limit) {
         expect($limit->key)->not->toContain($token)
             ->and($limit->key)->not->toContain(substr($token, strlen(ReusableLinkTokenGenerator::MARKER)));
     }
 });
 
 test('two well-formed tokens get independent link buckets', function (): void {
-    $first = redeemLimits(['link_token' => ReusableLinkTokenGenerator::generate()]);
-    $second = redeemLimits(['link_token' => ReusableLinkTokenGenerator::generate()]);
+    $first = redeemLimits(Fx::redeemBody(ReusableLinkTokenGenerator::generate()));
+    $second = redeemLimits(Fx::redeemBody(ReusableLinkTokenGenerator::generate()));
 
     expect($first[1]->key)->not->toBe($second[1]->key)
         // ...while the IP bucket is shared by both.
@@ -153,8 +153,8 @@ test('two well-formed tokens get independent link buckets', function (): void {
 test('the same token from two IPs shares one link bucket and has two IP buckets', function (): void {
     $token = ReusableLinkTokenGenerator::generate();
 
-    $a = redeemLimits(['link_token' => $token], ip: '203.0.113.1');
-    $b = redeemLimits(['link_token' => $token], ip: '203.0.113.2');
+    $a = redeemLimits(Fx::redeemBody($token), ip: '203.0.113.1');
+    $b = redeemLimits(Fx::redeemBody($token), ip: '203.0.113.2');
 
     expect($a[1]->key)->toBe($b[1]->key)
         ->and($a[0]->key)->not->toBe($b[0]->key);
@@ -166,7 +166,7 @@ test('overriding the configuration changes both limits without a code change', f
         'reusable_links.redeem.per_link_per_hour' => 3,
     ]);
 
-    $limits = redeemLimits(['link_token' => ReusableLinkTokenGenerator::generate()]);
+    $limits = redeemLimits(Fx::redeemBody(ReusableLinkTokenGenerator::generate()));
 
     expect($limits[0]->maxAttempts)->toBe(2)
         ->and($limits[1]->maxAttempts)->toBe(3);
@@ -183,10 +183,10 @@ test('the route throttles per IP: past the limit it answers 429 with Retry-After
     config(['reusable_links.redeem.per_ip_per_minute' => 2]);
     ['link' => $link, 'token' => $token] = Fx::redeemable();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $token]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token));
 
     $response->assertStatus(429);
     expect($response->headers->get('Retry-After'))->not->toBeNull()
@@ -203,12 +203,12 @@ test('the route throttles per link whatever the client address: a new IP does no
 
     foreach (['203.0.113.21', '203.0.113.22'] as $ip) {
         $this->withServerVariables(['REMOTE_ADDR' => $ip])
-            ->postJson(Fx::REDEEM_URL, ['link_token' => $token])
+            ->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))
             ->assertOk();
     }
 
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.23'])
-        ->postJson(Fx::REDEEM_URL, ['link_token' => $token])
+        ->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))
         ->assertStatus(429);
 
     expect(Fx::visitorsOf($link))->toHaveCount(2);
@@ -254,7 +254,7 @@ test('a token in the query string with an empty body opens no per-link bucket an
     // limiter had given the URL token any standing.
     foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33'] as $ip) {
         $response = $this->withServerVariables(['REMOTE_ADDR' => $ip])
-            ->postJson(Fx::REDEEM_URL.'?link_token='.$token);
+            ->postJson(Fx::REDEEM_URL.'?link_token='.$token, Fx::identity());
 
         $response->assertNotFound();
         expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY);
@@ -266,7 +266,7 @@ test('a token in the query string with an empty body opens no per-link bucket an
     // ...and the same link is still redeemable from the body: its bucket was
     // never touched by the three URL attempts.
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.34'])
-        ->postJson(Fx::REDEEM_URL, ['link_token' => $token])
+        ->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))
         ->assertOk();
 });
 
@@ -281,18 +281,18 @@ test('the limiter buckets the token the controller redeems, not the one in the U
     // Body: an unknown token (what the controller looks up). URL: the real one.
     // The first request spends the UNKNOWN token's single hourly attempt...
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.41'])
-        ->postJson(Fx::REDEEM_URL.'?link_token='.$realToken, ['link_token' => $otherToken])
+        ->postJson(Fx::REDEEM_URL.'?link_token='.$realToken, Fx::redeemBody($otherToken))
         ->assertNotFound();
 
     // ...so the second request for it is throttled,
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])
-        ->postJson(Fx::REDEEM_URL.'?link_token='.$realToken, ['link_token' => $otherToken])
+        ->postJson(Fx::REDEEM_URL.'?link_token='.$realToken, Fx::redeemBody($otherToken))
         ->assertStatus(429);
 
     // ...while the real token, which only ever appeared in a URL, has spent
     // nothing and redeems.
     $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.43'])
-        ->postJson(Fx::REDEEM_URL, ['link_token' => $realToken])
+        ->postJson(Fx::REDEEM_URL, Fx::redeemBody($realToken))
         ->assertOk();
 
     expect(Fx::visitorsOf($link))->toHaveCount(1);

@@ -292,7 +292,7 @@ test('a participant created by a real redemption reads back with its origin', fu
     ]);
     $world = Fx::redeemable(linkAttributes: ['label' => rlMarkerLabel()]);
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']))->assertOk();
     [$visitor] = Fx::visitorsOf($world['link']);
 
     ['row' => $row, 'detail' => $detail] = rlMarkerRead($this, authTokenForRole($world['org'], 'admin'), $visitor);

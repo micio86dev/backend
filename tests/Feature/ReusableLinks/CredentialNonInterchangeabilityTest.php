@@ -17,7 +17,7 @@ declare(strict_types=1);
  *     trace there: no participant, and no `sso_jti:` cache key touched;
  *   - presented at ITS door, any other credential is "not found" like any
  *     malformed value: the same 404 as an unknown token, byte for byte, as the
- *     `link_token` field and as an `Authorization: Bearer` with no body, and the
+ *     `link_token` field and as an `Authorization: Bearer` beside an identity-only body, and the
  *     credential is not spent by it.
  *
  * REQ: Unknown, Malformed And Disabled Tokens Are Indistinguishable (other
@@ -230,9 +230,9 @@ test('a link token as the sso-link token is refused with 401, touches no sso_jti
 
 test('every other credential, sent as the link_token, is the same 404 as an unknown token and is not spent', function (string $label): void {
     ['link' => $link, 'credentials' => $credentials] = credentialIsolationWorld();
-    $baseline = $this->postJson(Fx::REDEEM_URL, ['link_token' => ReusableLinkTokenGenerator::generate()]);
+    $baseline = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody(ReusableLinkTokenGenerator::generate()));
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $credentials[$label]]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody([]));
 
     $response->assertNotFound();
     expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY)
@@ -249,12 +249,12 @@ test('every other credential, sent as the link_token, is the same 404 as an unkn
     'an embed session token',
 ]);
 
-test('every other credential, sent as a Bearer with no body, is the same 404: the header is ignored and not spent', function (string $label): void {
+test('every other credential, sent as a Bearer beside an identity-only body, is the same 404: the header is ignored and not spent', function (string $label): void {
     ['link' => $link, 'credentials' => $credentials] = credentialIsolationWorld();
-    $baseline = $this->postJson(Fx::REDEEM_URL);
+    $baseline = $this->postJson(Fx::REDEEM_URL, Fx::identity());
 
     resetAuthGuardState();
-    $response = $this->flushHeaders()->withToken($credentials[$label])->postJson(Fx::REDEEM_URL);
+    $response = $this->flushHeaders()->withToken($credentials[$label])->postJson(Fx::REDEEM_URL, Fx::identity());
 
     $response->assertNotFound();
     expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY)
@@ -262,6 +262,25 @@ test('every other credential, sent as a Bearer with no body, is the same 404: th
         ->and(Fx::visitorsOf($link['link']))->toBe([]);
 
     credentialIsolationAssertStillWorks($label, $credentials[$label]);
+})->with([
+    'a backoffice user JWT',
+    'a candidate JWT',
+    'an sso-link JWT',
+    'a live API key',
+    'a test API key',
+    'an embed session token',
+]);
+
+test('every other credential, sent as a Bearer with no body at all, is a 422 on the identity fields and is not spent', function (string $label): void {
+    ['link' => $link, 'credentials' => $credentials] = credentialIsolationWorld();
+
+    resetAuthGuardState();
+    $response = $this->flushHeaders()->withToken($credentials[$label])->postJson(Fx::REDEEM_URL);
+
+    $response->assertUnprocessable();
+    expect(array_keys($response->json('errors')))->toBe(['display_name', 'email'])
+        ->and(Fx::visitorsOf($link['link']))->toBe([])
+        ->and(ReusableInterviewLink::withoutGlobalScopes()->findOrFail($link['link']->id)->uses_count)->toBe(0);
 })->with([
     'a backoffice user JWT',
     'a candidate JWT',
@@ -276,7 +295,7 @@ test('a valid link token beside any other credential in the Authorization header
 
     resetAuthGuardState();
     $this->flushHeaders()->withToken($credentials[$label])
-        ->postJson(Fx::REDEEM_URL, ['link_token' => $link['token']])
+        ->postJson(Fx::REDEEM_URL, Fx::redeemBody($link['token']))
         ->assertOk();
 
     expect(Fx::visitorsOf($link['link']))->toHaveCount(1);
@@ -293,8 +312,8 @@ test('a valid link token is redeemed only from the body: as a Bearer, a query va
     ['link' => ['link' => $link, 'token' => $token]] = credentialIsolationWorld();
 
     resetAuthGuardState();
-    $bearer = $this->flushHeaders()->withToken($token)->postJson(Fx::REDEEM_URL);
-    $header = $this->flushHeaders()->withHeaders(['X-Link-Token' => $token])->postJson(Fx::REDEEM_URL);
+    $bearer = $this->flushHeaders()->withToken($token)->postJson(Fx::REDEEM_URL, Fx::identity());
+    $header = $this->flushHeaders()->withHeaders(['X-Link-Token' => $token])->postJson(Fx::REDEEM_URL, Fx::identity());
 
     foreach ([$bearer, $header] as $response) {
         $response->assertNotFound();
