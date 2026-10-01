@@ -12,6 +12,7 @@ use App\Http\Resources\ParticipantEnrolmentResource;
 use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
+use App\Rules\NotPlaceholderEmail;
 use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
@@ -105,7 +106,7 @@ final class EntryLinkController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['required', 'email', 'max:255', new NotPlaceholderEmail('candidate_ref')],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
