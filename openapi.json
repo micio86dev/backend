@@ -6538,7 +6538,7 @@
         "/participants": {
             "get": {
                 "operationId": "participant.index",
-                "description": "Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name` and\n`source` as a case-insensitive substring, and the candidate's `external_id` by exact equality when\nthe trimmed term is a whole number from 1 to 9007199254740991.",
+                "description": "Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name`,\n`email` and `source` as a case-insensitive substring, and the candidate's `external_id` by exact\nequality when the trimmed term is a whole number from 1 to 9007199254740991.",
                 "summary": "List participants",
                 "tags": [
                     "Participant"
