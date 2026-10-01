@@ -58,36 +58,6 @@ final class ExchangeController extends Controller
         private readonly SessionTokenMinter $sessionTokenMinter,
     ) {}
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `?token=` documented as REQUIRED (step 5 review follow-up, Part B
-    // item 5) — Scramble's own inference read
-    // `$request->query('token', '')`'s literal default and rendered the
-    // parameter as optional with a `""` default, which is accurate about
-    // this METHOD'S defensive handling of a missing value (never a 500)
-    // but not about the CONTRACT: SPEC.md §3.5 names `token` as the one
-    // parameter this operation accepts, and a caller who omits it always
-    // gets `401 token_invalid`, never a meaningful 200 — the same
-    // "required in the contract, defended in code" distinction
-    // `CreateInterviewRequest`'s own required fields already draw.
-    //
-    // `#[Response(200, type: 'array{access_token: string}')]` (step 6
-    // review follow-up, Part A item 5) — `$accessToken` starts its life
-    // assigned a literal `null` below (so it has a value for the
-    // `$raceLost` early-return branch, which never reads it), and is only
-    // ever reassigned inside the `DB::transaction()` closure it is passed
-    // into BY REFERENCE. Scramble's static inference does not follow a
-    // by-reference mutation through a closure call boundary, so without
-    // this attribute it read only the INITIAL `null` assignment and
-    // exported this operation's `200` body as `{access_token: null}` —
-    // true about the variable's DECLARED starting value, never about what
-    // a real response actually contains: every code path that reaches
-    // `response()->json(['access_token' => $accessToken], 200)` below has
-    // already returned early (`$this->invalid()`/`$this->consumed()`) for
-    // every case where a candidate JWT was NOT minted, so `$accessToken`
-    // is always the `string` `CandidateTokenFactory::mintCandidateToken()`
-    // returns by the time this line runs.
-    // Internal notes for the exported description below (not published):
-    // No `Set-Cookie` — G-32/T-TOK-008.
     /**
      * Exchange a session token.
      *
@@ -99,6 +69,16 @@ final class ExchangeController extends Controller
     #[Response(200, type: 'array{access_token: string}')]
     public function exchange(Request $request): JsonResponse
     {
+        // `?token=` is documented as REQUIRED by the #[QueryParameter] above, not
+        // inferred (step 5 review follow-up, Part B item 5): Scramble reads
+        // `$request->query('token', '')`'s literal default and would render the
+        // parameter as optional with a `""` default. That is accurate about this
+        // METHOD'S defensive handling of a missing value (never a 500) but not
+        // about the CONTRACT: SPEC.md §3.5 names `token` as the one parameter this
+        // operation accepts, and a caller who omits it always gets
+        // `401 token_invalid`, never a meaningful 200 — the same "required in the
+        // contract, defended in code" distinction `CreateInterviewRequest`'s own
+        // required fields already draw.
         $raw = $request->query('token', '');
 
         if (! is_string($raw) || $raw === '') {
@@ -152,6 +132,20 @@ final class ExchangeController extends Controller
         // AND the event insert back together: the token is still set,
         // `status` is untouched, and the caller sees a real 500 to retry
         // against, instead of a silently unrecoverable interview.
+        //
+        // `$accessToken` starts its life assigned a literal `null` (so it has a
+        // value for the `$raceLost` early-return branch, which never reads it), and
+        // is only ever reassigned inside the `DB::transaction()` closure it is
+        // passed into BY REFERENCE (step 6 review follow-up, Part A item 5).
+        // Scramble's static inference does not follow a by-reference mutation
+        // through a closure call boundary, so without the #[Response(200, ...)]
+        // attribute it read only the INITIAL `null` assignment and exported this
+        // operation's `200` body as `{access_token: null}` — true about the
+        // variable's DECLARED starting value, never about what a real response
+        // contains: every path that reaches the final `response()->json(...)` has
+        // already returned early (`$this->invalid()`/`$this->consumed()`) for every
+        // case where a candidate JWT was NOT minted, so `$accessToken` is always the
+        // `string` `CandidateTokenFactory::mintCandidateToken()` returns by then.
         $accessToken = null;
         $raceLost = false;
 
@@ -215,6 +209,8 @@ final class ExchangeController extends Controller
             $accessToken = CandidateTokenFactory::mintCandidateToken($participant);
         });
 
+        // The success response below sets NO `Set-Cookie` (G-32/T-TOK-008): the
+        // access token travels in the body only.
         if ($raceLost) {
             return $this->consumed($request);
         }

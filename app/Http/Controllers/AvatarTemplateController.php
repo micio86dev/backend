@@ -161,12 +161,6 @@ final class AvatarTemplateController extends Controller
     // failure to `{status: 'unavailable', items: []}` on its own (D3); this
     // action's only failure mode is a 422 for an unrecognized
     // `provider`/`resource` pair, checked BEFORE ever calling the provider.
-    // Internal notes for the exported description below (not published):
-    // Literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS) — Scramble's
-    // static analyzer cannot evaluate implode() over a class constant and was
-    // emitting an empty-string-only enum for `provider` in openapi.json, making
-    // the documented endpoint unreachable and poisoning the generated TS client
-    // with `provider: ""` (avatar-template-catalogue, caught by native review).
     /**
      * List a provider's catalogue.
      *
@@ -179,6 +173,11 @@ final class AvatarTemplateController extends Controller
     {
         $this->authorize('viewAny', AvatarTemplate::class);
 
+        // `provider` carries a literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS):
+        // Scramble's static analyzer cannot evaluate implode() over a class constant and
+        // was emitting an empty-string-only enum for `provider` in openapi.json, making
+        // the documented endpoint unreachable and poisoning the generated TS client with
+        // `provider: ""` (avatar-template-catalogue, caught by native review).
         $validated = $request->validate([
             // The provider to query: `heygen`, `tavus`, `cartesia` or `elevenlabs`.
             'provider' => ['required', 'string', 'in:heygen,tavus,cartesia,elevenlabs'],

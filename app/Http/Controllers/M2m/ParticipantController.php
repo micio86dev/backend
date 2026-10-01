@@ -77,17 +77,6 @@ final class ParticipantController extends Controller
         private readonly CancelParticipantSchedule $cancelParticipantSchedule,
     ) {}
 
-    // Internal notes for the exported description below (not published):
-    // Required: the email IS the candidate's identity across projects
-    // and organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and
-    // the column is NOT NULL. There is no legacy contract to keep —
-    // this product is greenfield by ruling.
-    // Internal notes for the exported description below (not published):
-    // interview-scheduling (design AD-2/AD-3, T-C1): optional future
-    // start time, validated by the SAME rule object PR-B's
-    // `EntryLinkController` already uses — the explicit-offset
-    // check, the future check, and the minimum-lead-time check all
-    // live in ONE place, never re-typed per surface.
     /**
      * Create a new participant for a project in the caller's org.
      *
@@ -100,6 +89,16 @@ final class ParticipantController extends Controller
         $client = $request->user('api-m2m');
         $clientOrgId = $client->organization_id;
 
+        // `email` is required: the email IS the candidate's identity across projects
+        // and organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and the column
+        // is NOT NULL. There is no legacy contract to keep — this product is
+        // greenfield by ruling.
+        //
+        // `scheduled_at` (interview-scheduling, design AD-2/AD-3, T-C1): optional
+        // future start time, validated by the SAME rule object PR-B's
+        // `EntryLinkController` already uses — the explicit-offset check, the future
+        // check, and the minimum-lead-time check all live in ONE place, never
+        // re-typed per surface.
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],

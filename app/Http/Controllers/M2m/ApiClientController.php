@@ -38,13 +38,6 @@ use Illuminate\Validation\Rule;
  */
 final class ApiClientController extends Controller
 {
-    // Internal notes for the exported description below (not published):
-    // public-api step 2 (SPEC.md §3.7 test mode): optional, defaults
-    // to 'live' — every client issued before this field existed IS a
-    // live client, so defaulting new ones the same way keeps one
-    // behaviour rather than a silent split. Rule::enum() validates
-    // against App\Enums\ApiKeyMode's own backed values — the single
-    // source of truth for the mode literal (review follow-up finding 3).
     /**
      * Create a new M2M API client.
      *
@@ -75,6 +68,12 @@ final class ApiClientController extends Controller
             return response()->json(['error' => 'no_client_selected'], 409);
         }
 
+        // `mode` (public-api step 2, SPEC.md §3.7 test mode): optional, defaults to
+        // 'live' — every client issued before this field existed IS a live client, so
+        // defaulting new ones the same way keeps one behaviour rather than a silent
+        // split. Rule::enum() validates against App\Enums\ApiKeyMode's own backed
+        // values — the single source of truth for the mode literal (review follow-up
+        // finding 3).
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'abilities' => ['required', 'array'],

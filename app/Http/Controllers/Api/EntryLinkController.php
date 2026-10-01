@@ -88,19 +88,6 @@ final class EntryLinkController extends Controller
         private readonly CreateScheduledParticipant $createScheduledParticipant,
     ) {}
 
-    // Internal notes for the exported description below (not published):
-    // interview-scheduling (design AD-2/AD-3): optional future start
-    // time. The rule object owns the explicit-offset check, the
-    // future check, and the minimum-lead-time check — the SAME rule
-    // object the M2M create and the reschedule endpoint use, never
-    // re-typed as inline logic three times.
-    // Internal notes for the exported description below (not published):
-    // `message` carries the CODE, not a sentence — same
-    // convention this file already documents a few lines below
-    // for EntryLinkRefusalReason::Completed/Failed: the response
-    // body is machine-facing (CLAUDE.md "machine-facing
-    // responses are not localized"), and the backoffice already
-    // translates codes through `translateServerCode`.
     public function store(Request $request): JsonResponse
     {
         $this->authorize('create', ParticipantPolicy::MODEL);
@@ -108,6 +95,12 @@ final class EntryLinkController extends Controller
         // Validation call stays HERE, inline and verbatim — same reasoning as
         // SsoLinkController::store (design D1): Scramble derives this
         // endpoint's requestBody schema from this exact call site.
+        //
+        // `scheduled_at` (interview-scheduling, design AD-2/AD-3): optional future
+        // start time. The rule object owns the explicit-offset check, the future
+        // check, and the minimum-lead-time check — the SAME rule object the M2M
+        // create and the reschedule endpoint use, never re-typed as inline logic
+        // three times.
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
@@ -190,6 +183,11 @@ final class EntryLinkController extends Controller
                 $externalReference,
             );
 
+            // A duplicate enrolment answers 409. `message` carries the CODE, not a
+            // sentence: the response body is machine-facing (CLAUDE.md "machine-facing
+            // responses are not localized"), and the backoffice already translates
+            // codes through `translateServerCode`, as it does for
+            // EntryLinkRefusalReason::Completed/Failed further down.
             if ($result['conflict'] !== null) {
                 // The candidate is already enrolled in this project. `message` is `entry_link_participant_duplicate_email` or `entry_link_participant_duplicate_candidate_ref`, and `reason` names the duplicated field.
                 return response()->json([

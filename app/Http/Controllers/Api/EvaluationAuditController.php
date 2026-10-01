@@ -66,10 +66,6 @@ final class EvaluationAuditController extends Controller
         private readonly AdminParticipantReader $reader,
     ) {}
 
-    // Internal notes for the exported description below (not published):
-    // Redis unavailable -> refuse, not proceed (design D7). Fail
-    // CLOSED: the cheaper mistake here is a refused request, not a
-    // duplicate vendor charge for the same evaluation.
     public function store(Request $request, int $id): JsonResponse
     {
         // (1) Kill switch — BEFORE authorization. A viewer/operator gets the
@@ -98,6 +94,10 @@ final class EvaluationAuditController extends Controller
 
         $ttlSeconds = AuditEvaluationJob::TIMEOUT_SECONDS + 120;
 
+        // Redis unavailable -> refuse, not proceed (design D7). Fail CLOSED: when the
+        // lock store cannot be reached, the catch below answers 409
+        // `audit_lock_unavailable`, because the cheaper mistake here is a refused
+        // request, not a duplicate vendor charge for the same evaluation.
         try {
             // `Cache::lock()` itself, not only the returned Lock's `get()`,
             // can throw: `RedisStore::lock()` resolves a connection before

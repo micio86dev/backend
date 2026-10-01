@@ -135,10 +135,6 @@ final class OrganizationLogoController extends Controller
         ]);
     }
 
-    // Internal notes for the exported description below (not published):
-    // Shape only. `mimes` checks the CLAIM — a browser sends whatever
-    // MIME type it likes — so it is a cheap first filter, never the
-    // decision. Step 2 is the decision.
     public function store(Request $request): JsonResponse
     {
         // The ACTING org, never `$request->user()->organization_id`
@@ -147,6 +143,9 @@ final class OrganizationLogoController extends Controller
 
         $this->authorize('update', $organization);
 
+        // The `logo` rule is shape only. `mimes` checks the CLAIM — a browser sends
+        // whatever MIME type it likes — so it is a cheap first filter, never the
+        // decision: the magic-byte check below is the decision.
         $request->validate([
             // A JPEG or PNG image of at most 2 MB.
             'logo' => ['required', 'file', 'mimes:jpg,jpeg,png', 'max:2048'],

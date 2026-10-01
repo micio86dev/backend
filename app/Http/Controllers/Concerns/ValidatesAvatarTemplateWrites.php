@@ -26,15 +26,13 @@ use Illuminate\Validation\ValidationException;
 trait ValidatesAvatarTemplateWrites
 {
     /**
-     * Internal notes for the exported description below (not published):
-     * Both-or-neither is enforced by the DB CHECK (I1) and by
-     * AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
-     * here (pluggable-conversation-llm PR P3a, design D4).
-     *
      * @return array<string, list<string>>
      */
     private function templateStoreRules(): array
     {
+        // Both-or-neither is enforced by the DB CHECK (I1) and by
+        // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+        // here (pluggable-conversation-llm PR P3a, design D4).
         return [
             'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
@@ -48,17 +46,15 @@ trait ValidatesAvatarTemplateWrites
     }
 
     /**
-     * Internal notes for the exported description below (not published):
-     * Both-or-neither is enforced by the DB CHECK (I1) and by
-     * AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
-     * here (pluggable-conversation-llm PR P3a, design D4). Both null
-     * clears the binding (see "Unbinding a template clears only
-     * that template's binding").
-     *
      * @return array<string, list<string>>
      */
     private function templateUpdateRules(): array
     {
+        // Both-or-neither is enforced by the DB CHECK (I1) and by
+        // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+        // here (pluggable-conversation-llm PR P3a, design D4). Both null
+        // clears the binding (see "Unbinding a template clears only
+        // that template's binding").
         return [
             'name' => ['sometimes', 'string', 'max:120'],
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
