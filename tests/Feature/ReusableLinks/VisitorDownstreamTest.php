@@ -138,7 +138,7 @@ function visitorDownstreamHeygenResponses(): array
  */
 function visitorDownstreamRedeem(array $world): array
 {
-    $response = test()->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']])->assertOk();
+    $response = test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']))->assertOk();
     $visitors = Fx::visitorsOf($world['link']);
 
     return ['visitor' => end($visitors), 'jwt' => (string) $response->json('access_token')];
@@ -164,9 +164,9 @@ test('a redemption fires exactly one creation progress webhook, echoing the rlv_
 
     // Refusals: an unknown token, a disabled link, a closed project.
     $before = WebhookDelivery::withoutGlobalScopes()->count();
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => ReusableLinkTokenGenerator::generate()])->assertNotFound();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody(ReusableLinkTokenGenerator::generate()))->assertNotFound();
     DB::table('projects')->where('id', $world['project']->id)->update(['status' => 'inactive']);
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']])->assertForbidden();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']))->assertForbidden();
 
     expect(WebhookDelivery::withoutGlobalScopes()->count())->toBe($before);
 });

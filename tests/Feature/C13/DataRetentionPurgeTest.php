@@ -231,7 +231,7 @@ test('the participant_pii purge redacts the name and leaves the external referen
  */
 test('a reusable link visitor past the participant_pii window is redacted like any participant and keeps its reference, placeholder address and origin marker', function (): void {
     ['link' => $link, 'token' => $token] = Fx::redeemable(linkAttributes: ['label' => 'Milan fair stand']);
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
     $visitor = Fx::visitorsOf($link)[0];
     DB::table('participants')->where('id', $visitor->id)->update(['created_at' => now()->subDays(90)]);
 

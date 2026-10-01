@@ -65,7 +65,7 @@ function redeemCoreParticipantCount(): int
 test('a redemption answers 200 with exactly one key, a candidate access token', function (): void {
     ['token' => $token] = Fx::redeemable();
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(array_keys($response->json()))->toBe(['access_token'])
         ->and($response->json('access_token'))->toBeString()
@@ -80,7 +80,7 @@ test('five redemptions create five distinct visitors in the link\'s own organisa
 
     $times = [];
     for ($n = 1; $n <= 5; $n++) {
-        $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+        $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
         $times[] = redeemCoreLinkRow($link)->last_used_at;
         $this->travel(1)->minutes();
     }
@@ -127,8 +127,8 @@ test('a link without a label names its visitors with the fallback', function ():
     ['link' => $link, 'token' => $token] = Fx::redeemable();
     expect($link->label)->toBeNull();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(array_map(fn (Participant $p): string => $p->display_name, Fx::visitorsOf($link)))
         ->toBe(['Reusable link #1', 'Reusable link #2']);
@@ -142,7 +142,7 @@ test('a potential project yields a visitor with no role', function (): void {
         projectAttributes: ['assessment_type' => 'potential', 'role_code' => 'ICO'],
     );
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(Fx::visitorsOf($link)[0]->role_code)->toBeNull();
 });
@@ -154,7 +154,7 @@ test('the link\'s stored language wins over a later change of the project langua
     );
     $project->forceFill(['language' => 'it'])->save();
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(Fx::visitorsOf($link)[0]->language)->toBe('en');
 
@@ -170,7 +170,7 @@ test('a link has no expiry of its own: redeemable ten years later while the proj
 
     $this->travel(10)->years();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(Fx::visitorsOf($link))->toHaveCount(1);
 });
@@ -183,7 +183,7 @@ test('a redemption never creates anything in another project or organisation', f
     $siblingLink = Fx::link($siblingProject);
     $other = Fx::redeemable();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(Fx::visitorsOf($link))->toHaveCount(1)
         ->and(Fx::visitorsOf($siblingLink))->toBe([])
@@ -242,10 +242,10 @@ test('the token is read only from the body field link_token', function (string $
     ['link' => $link, 'token' => $token] = Fx::redeemable();
 
     $response = match ($how) {
-        'query link_token' => $this->postJson(Fx::REDEEM_URL.'?link_token='.$token, []),
-        'body token' => $this->postJson(Fx::REDEEM_URL, ['token' => $token]),
-        'X-Link-Token header' => $this->postJson(Fx::REDEEM_URL, [], ['X-Link-Token' => $token]),
-        'Authorization bearer' => $this->postJson(Fx::REDEEM_URL, [], ['Authorization' => 'Bearer '.$token]),
+        'query link_token' => $this->postJson(Fx::REDEEM_URL.'?link_token='.$token, Fx::identity()),
+        'body token' => $this->postJson(Fx::REDEEM_URL, ['token' => $token] + Fx::identity()),
+        'X-Link-Token header' => $this->postJson(Fx::REDEEM_URL, Fx::identity(), ['X-Link-Token' => $token]),
+        'Authorization bearer' => $this->postJson(Fx::REDEEM_URL, Fx::identity(), ['Authorization' => 'Bearer '.$token]),
     };
 
     $response->assertNotFound();
@@ -260,7 +260,7 @@ test('a hostile token input cannot break the endpoint', function (): void {
     // `?token[]=` once made the default guard's parser 500 before the
     // controller ran (the embed-exchange precedent). The outcome depends on
     // `link_token` alone.
-    $this->postJson(Fx::REDEEM_URL.'?token[]=x', ['token' => ['x', 'y'], 'link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL.'?token[]=x', Fx::redeemBody($token) + ['token' => ['x', 'y']])->assertOk();
 
     expect(Fx::visitorsOf($link))->toHaveCount(1);
 });
@@ -268,11 +268,11 @@ test('a hostile token input cannot break the endpoint', function (): void {
 test('an Authorization header is ignored: it never authenticates and never changes the outcome', function (string $bearer): void {
     ['link' => $link, 'token' => $token] = Fx::redeemable();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token], ['Authorization' => $bearer])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token), ['Authorization' => $bearer])->assertOk();
     expect(Fx::visitorsOf($link))->toHaveCount(1);
 
     // The same header with an invalid token is the generic 404, never a 401.
-    $bad = $this->postJson(Fx::REDEEM_URL, ['link_token' => 'beai_rl_'.str_repeat('a', 43)], ['Authorization' => $bearer]);
+    $bad = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody('beai_rl_'.str_repeat('a', 43)), ['Authorization' => $bearer]);
     $bad->assertNotFound();
     expect($bad->getContent())->toBe(Fx::NOT_FOUND_BODY);
 })->with([
@@ -321,11 +321,11 @@ test('ParticipantCreated fires exactly once per redemption, after the commit', f
         $seen[] = ['level' => DB::transactionLevel(), 'participant' => $event->participantId, 'project' => $event->projectId];
     });
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
     expect($seen)->toHaveCount(1)
         ->and($seen[0]['level'])->toBe($baseline);
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
     $visitors = Fx::visitorsOf($link);
     expect($seen)->toHaveCount(2)
         ->and([$seen[0]['participant'], $seen[1]['participant']])->toBe([$visitors[0]->id, $visitors[1]->id])
@@ -339,7 +339,7 @@ test('a failure to mint the credential rolls back the visitor and the counter an
 
     app()->instance(JWTAuth::class, new ThrowingJwtAuth);
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertStatus(500);
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertStatus(500);
 
     $row = redeemCoreLinkRow($link);
     expect($row->uses_count)->toBe(0)
@@ -354,13 +354,13 @@ test('a link that was disabled over the admin API stops redeeming at once', func
     $jwt = authTokenForRole($org, 'admin');
     $id = PublicId::encode($link);
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     resetAuthGuardState();
     $this->withToken($jwt)->deleteJson("/api/projects/{$project->id}/reusable-links/{$id}")->assertNoContent();
 
     resetAuthGuardState();
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $token]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token));
 
     $response->assertNotFound();
     expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY)

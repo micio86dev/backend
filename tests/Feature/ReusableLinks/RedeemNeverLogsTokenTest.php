@@ -175,17 +175,17 @@ test('no log record or reported exception shows the token or its hash, whatever 
 
     $captured = neverLogsCapture(function () use ($scenario, $token, $unknown): void {
         match ($scenario) {
-            'a valid token' => test()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk(),
-            'an unknown token' => test()->postJson(Fx::REDEEM_URL, ['link_token' => $unknown])->assertNotFound(),
-            'a disabled link' => test()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertNotFound(),
-            'a closed project' => test()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertForbidden(),
-            'a malformed token' => test()->postJson(Fx::REDEEM_URL, ['link_token' => $token.'x'])->assertNotFound(),
-            'an array token' => test()->postJson(Fx::REDEEM_URL, ['link_token' => [$token]])->assertNotFound(),
-            'a token in the query string' => test()->postJson(Fx::REDEEM_URL.'?link_token='.$token)->assertNotFound(),
+            'a valid token' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk(),
+            'an unknown token' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($unknown))->assertNotFound(),
+            'a disabled link' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertNotFound(),
+            'a closed project' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertForbidden(),
+            'a malformed token' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token.'x'))->assertNotFound(),
+            'an array token' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody([]))->assertNotFound(),
+            'a token in the query string' => test()->postJson(Fx::REDEEM_URL.'?link_token='.$token, Fx::identity())->assertNotFound(),
             'a throttled request' => (function () use ($token): void {
                 config(['reusable_links.redeem.per_link_per_hour' => 1]);
-                test()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
-                test()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertStatus(429);
+                test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
+                test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertStatus(429);
             })(),
         };
     });
@@ -209,7 +209,7 @@ test('a forced mint failure is a reported 500, and neither the report nor its lo
     app()->instance(JWTAuth::class, new ThrowingJwtAuth);
 
     $captured = neverLogsCapture(
-        fn () => $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertStatus(500),
+        fn () => $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertStatus(500),
     );
 
     // The control: the failure WAS reported and logged, so an empty search below
@@ -241,7 +241,7 @@ test('the audit rows of a create and a disable carry neither, and redemptions wr
     $afterCreate = AuditLog::query()->count();
 
     foreach (range(1, 3) as $n) {
-        $this->postJson(Fx::REDEEM_URL, ['link_token' => $created['token']])->assertOk();
+        $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($created['token']))->assertOk();
     }
     expect(AuditLog::query()->count())->toBe($afterCreate);
 
@@ -267,7 +267,7 @@ test('queued jobs, failed_jobs and the dispatched event carry neither', function
         $events[] = $event;
     });
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $created['token']])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($created['token']))->assertOk();
 
     // Every job pushed, of any class, and every raw payload: not only the
     // webhook delivery this project subscribes to.
@@ -295,9 +295,9 @@ test('no cache key shows the token or its hash', function (): void {
 
     $keys = neverLogsCacheKeys(function () use ($world, $unknown, &$created): void {
         $created = neverLogsCreateLink($world);
-        test()->postJson(Fx::REDEEM_URL, ['link_token' => $created['token']])->assertOk();
-        test()->postJson(Fx::REDEEM_URL, ['link_token' => $unknown])->assertNotFound();
-        test()->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']])->assertOk();
+        test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($created['token']))->assertOk();
+        test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($unknown))->assertNotFound();
+        test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']))->assertOk();
     });
 
     // The control: the rate limiter really did keep per-link counters.
@@ -322,7 +322,7 @@ test('only the 201 creation response contains the raw token: list, disable, rede
     $bodies['list'] = (string) $list->getContent();
     resetAuthGuardState();
 
-    $redeemed = $this->flushHeaders()->postJson(Fx::REDEEM_URL, ['link_token' => $created['token']])->assertOk();
+    $redeemed = $this->flushHeaders()->postJson(Fx::REDEEM_URL, Fx::redeemBody($created['token']))->assertOk();
     $bodies['redeem'] = (string) $redeemed->getContent();
 
     $session = $this->withToken((string) $redeemed->json('access_token'))->getJson('/api/candidate/session')->assertOk();
@@ -337,7 +337,7 @@ test('only the 201 creation response contains the raw token: list, disable, rede
     $bodies['list after disable'] = (string) $relist->getContent();
     resetAuthGuardState();
 
-    $after = $this->flushHeaders()->postJson(Fx::REDEEM_URL, ['link_token' => $created['token']])->assertNotFound();
+    $after = $this->flushHeaders()->postJson(Fx::REDEEM_URL, Fx::redeemBody($created['token']))->assertNotFound();
     $bodies['redeem after disable'] = (string) $after->getContent();
 
     foreach ($bodies as $label => $body) {
@@ -359,7 +359,7 @@ test('after a whole lifecycle the raw token is in no table row, and the hash onl
     $hash = ReusableLinkTokenGenerator::hash($created['token']);
 
     foreach (range(1, 3) as $n) {
-        $this->postJson(Fx::REDEEM_URL, ['link_token' => $created['token']])->assertOk();
+        $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($created['token']))->assertOk();
     }
     $this->withToken($created['admin'])
         ->deleteJson("/api/projects/{$world['project']->id}/reusable-links/{$created['id']}")

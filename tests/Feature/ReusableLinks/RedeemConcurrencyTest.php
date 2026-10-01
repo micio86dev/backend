@@ -48,11 +48,21 @@ afterEach(function (): void {
 /**
  * A redemption request as an actor process sends it.
  *
- * @return array{method: string, uri: string, ip: string, body: array<string, string>}
+ * Every actor carries a DISTINCT identity derived from `$n` unless one is
+ * handed in: the identity helper's counter is per PHP process, and the actor
+ * runs in its own process, so the default would repeat across actors.
+ *
+ * @param  array{display_name: string, email: string}|null  $identity
+ * @return array{method: string, uri: string, ip: string, body: array<string, mixed>}
  */
-function concurrencyRedeem(string $token, int $n): array
+function concurrencyRedeem(string $token, int $n, ?array $identity = null): array
 {
-    return ['method' => 'POST', 'uri' => Fx::REDEEM_URL, 'ip' => '10.30.0.'.$n, 'body' => ['link_token' => $token]];
+    return [
+        'method' => 'POST',
+        'uri' => Fx::REDEEM_URL,
+        'ip' => '10.30.0.'.$n,
+        'body' => Fx::redeemBody($token, $identity ?? Fx::identity('actor-'.$n.'@example.test', 'Actor '.$n)),
+    ];
 }
 
 /**

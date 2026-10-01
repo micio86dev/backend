@@ -129,7 +129,7 @@ test('a redemption reads and writes no sso_jti key, while a real exchange does',
     // The control: the listener sees the single-use key of an exchange, so an
     // empty result below means "not touched", not "not listening".
     $exchange = ssoPinJtiKeys(fn () => $this->getJson('/api/sso/exchange?token='.ssoPinMint($project))->assertOk());
-    $redemption = ssoPinJtiKeys(fn () => $this->postJson(Fx::REDEEM_URL, ['link_token' => $linkToken])->assertOk());
+    $redemption = ssoPinJtiKeys(fn () => $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($linkToken))->assertOk());
 
     expect($exchange)->not->toBe([])
         ->and($redemption)->toBe([])
@@ -170,12 +170,12 @@ test('minting entry links never disables a reusable link', function (): void {
     expect(ReusableInterviewLink::withoutGlobalScopes()->findOrFail($link->id)->disabled_at)->toBeNull();
 
     resetAuthGuardState();
-    $this->flushHeaders()->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->flushHeaders()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 });
 
 test('re-issuing an entry link to a reusable-link visitor keeps the visitor and its origin marker', function (): void {
     ['org' => $org, 'project' => $project, 'link' => $link, 'token' => $token] = Fx::redeemable();
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
     $visitor = Fx::visitorsOf($link)[0];
     $operator = authTokenForRole($org, 'operator');
 
