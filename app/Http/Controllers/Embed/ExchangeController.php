@@ -209,14 +209,12 @@ final class ExchangeController extends Controller
             $accessToken = CandidateTokenFactory::mintCandidateToken($participant);
         });
 
-        // The success response below sets NO `Set-Cookie` (G-32/T-TOK-008): the
-        // access token travels in the body only.
         if ($raceLost) {
             return $this->consumed($request);
         }
 
         // The access token for the candidate. No cookie is set.
-        return response()->json(['access_token' => $accessToken], 200);
+        return response()->json(['access_token' => $accessToken], 200); // No `Set-Cookie` (G-32/T-TOK-008): the token travels in the body only.
     }
 
     // Internal notes, not published (Scramble exports docblock prose as public text):
