@@ -27,10 +27,13 @@ use Illuminate\Support\Facades\Notification;
  * IT REFUSES TO SEND TO A PLACEHOLDER. A participant with no address of a
  * person carries a synthesised `@invalid.beai.local` address (see
  * {@see PlaceholderEmail}): a legacy row that predates the mandatory-email
- * column, or an anonymous reusable-link visitor. `.local` is reserved by RFC
- * 6762 and resolves nowhere, so sending would produce a guaranteed bounce and a
- * candidate who is never told anything — refusing loudly is what puts the
- * operator in a position to fix the row.
+ * column, or a legacy anonymous reusable-link visitor row created before
+ * reusable-link-visitor-identity (a visitor now carries the address it typed,
+ * and the dispatching controller never queues this job for one). `.local` is
+ * reserved by RFC 6762 and resolves nowhere, so sending would produce a
+ * guaranteed bounce and a candidate who is never told anything — refusing
+ * loudly is what puts the operator in a position to fix the row. The refusal
+ * log line carries no address and no name.
  *
  * A failure is LOUD. Nobody watches a queue, and the operator who pressed
  * "invite" was told the link was created — which it was.
@@ -102,11 +105,11 @@ final class SendCandidateInvitationJob implements ShouldQueue
     public function handle(): void
     {
         if (PlaceholderEmail::is($this->email)) {
+            // No context: neither the address nor the name belongs in a log line.
             Log::warning(
                 'candidate invitation NOT sent: the participant carries a synthesised placeholder address, '
-                .'not an address a person gave us (a legacy row, or an anonymous reusable-link visitor). '
+                .'not an address a person gave us (a legacy row created before an address was required). '
                 .'Set a real address on the participant and invite again.',
-                ['email' => $this->email],
             );
 
             return;

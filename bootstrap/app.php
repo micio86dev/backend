@@ -184,7 +184,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // not the route: the visitor's name and email on that same route are
         // trimmed like every enrolment path trims them (and `"   "` then
         // becomes null and fails `required`). Any other reader of that key
-        // silently inherits "never trimmed".
+        // silently inherits "never trimmed", which is why
+        // `tests/Arch/ReusableLinks/LinkTokenKeyArchTest.php` pins the files
+        // that may read it.
         $middleware->trimStrings(except: ['link_token']);
 
         $middleware->appendToGroup('api', TenantContext::class);

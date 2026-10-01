@@ -8,6 +8,7 @@ use App\Actions\ReusableLinks\RedeemReusableInterviewLink;
 use App\Actions\ReusableLinks\RedemptionStatus;
 use App\Actions\ReusableLinks\VisitorIdentity;
 use App\Http\Controllers\Controller;
+use App\Rules\NotPlaceholderEmail;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
@@ -34,7 +35,7 @@ use Illuminate\Support\Facades\Validator;
  * for the same reason: a query string ends up in access logs, and a name and an
  * address are personal data. It is self-declared and NOT verified.
  *
- * Three answers, and the gap between them is the point:
+ * Four refusals, and the gap between them is the point:
  *   - 422 (the framework's standard body) when the name or the email is missing
  *     or invalid. It is decided FIRST and from the identity alone, so it is
  *     byte-identical for any `link_token` (valid, unknown, malformed, disabled
@@ -42,6 +43,10 @@ use Illuminate\Support\Facades\Validator;
  *   - 404 `{"message":"Not found."}` for EVERY token that is not redeemable
  *     (unknown, malformed, disabled, project gone, another credential type),
  *     from ONE helper, so the caller cannot tell which it was.
+ *   - 409 `{"message":"duplicate_enrolment"}` for a valid identity whose email is
+ *     already enrolled in the link's project. Only a holder of a working token
+ *     on an open project can reach it, it carries nothing about the existing
+ *     participant, and the enrolment is never resumed.
  *   - 403 `{"message":"Access denied.","redirect_url":...}` for a valid, enabled
  *     token whose project is closed. Only a holder of a working token can reach
  *     it, so it discloses nothing they lack (the SSO exchange's 403 shape).
@@ -55,6 +60,12 @@ use Illuminate\Support\Facades\Validator;
 final class ReusableLinkRedeemController extends Controller
 {
     private const GENERIC_403 = 'Access denied.';
+
+    /**
+     * The machine code of the refusal of an email already enrolled in the
+     * link's project. The term is the one the public API already publishes.
+     */
+    private const DUPLICATE_ENROLMENT = 'duplicate_enrolment';
 
     public function __construct(
         private readonly RedeemReusableInterviewLink $redeemLink,
@@ -74,7 +85,9 @@ final class ReusableLinkRedeemController extends Controller
      * 422 whatever the token is. A valid name and email beside a token that is
      * unknown, malformed, or disabled is answered with the same 404, so a
      * response never reveals whether a link exists. A 403 means the link is valid
-     * but its project is not open for interviews right now.
+     * but its project is not open for interviews right now. A 409 means the email
+     * is already enrolled in the link's project: nothing is created and the
+     * existing enrolment is never resumed.
      */
     #[BodyParameter(
         'link_token',
@@ -85,6 +98,7 @@ final class ReusableLinkRedeemController extends Controller
     #[Response(200, description: 'A candidate access token for the new candidate in the link\'s project.', type: 'array{access_token: string}')]
     #[Response(403, description: 'The link is valid but its project is not open for interviews. `redirect_url` is the project\'s error redirect, when it has one.', type: 'array{message: string, redirect_url: string|null}')]
     #[Response(404, description: 'No such link: with a valid name and email, the token is unknown, malformed or disabled. The body is identical for every such case.', type: 'array{message: string}')]
+    #[Response(409, description: 'This email is already enrolled in the link\'s project. Nothing was created, and the existing enrolment is neither resumed nor described.', type: 'array{message: string}')]
     #[Response(429, description: 'Too many attempts. Retry after the number of seconds in the `Retry-After` header.', type: 'array{message: string}')]
     public function redeem(Request $request): JsonResponse
     {
@@ -93,7 +107,7 @@ final class ReusableLinkRedeemController extends Controller
         // logs. The BODY is the only carrier.
         $validated = Validator::make($request->post(), [
             'display_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', new NotPlaceholderEmail],
         ])->validate();
 
         $outcome = $this->redeemLink->handle(
@@ -108,6 +122,7 @@ final class ReusableLinkRedeemController extends Controller
                 'redirect_url' => $outcome->project?->error_redirect_url,
             ], 403),
             RedemptionStatus::NotFound => $this->notFound(),
+            RedemptionStatus::Duplicate => response()->json(['message' => self::DUPLICATE_ENROLMENT], 409),
         };
     }
 

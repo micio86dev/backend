@@ -7,9 +7,9 @@ namespace App\Actions\ReusableLinks;
 /**
  * How a redemption attempt ended (reusable-interview-links, design AD-9).
  *
- * Deliberately three values and no more: the public endpoint answers an
- * unknown, a malformed and a disabled token identically, so the action never
- * tells its caller WHICH of those it was.
+ * Deliberately few values: the public endpoint answers an unknown, a malformed
+ * and a disabled token identically, so the action never tells its caller WHICH
+ * of those it was.
  */
 enum RedemptionStatus
 {
@@ -29,4 +29,12 @@ enum RedemptionStatus
      * now. Reachable only by a holder of a working token.
      */
     case Refused;
+
+    /**
+     * The visitor's email is already enrolled in the link's project. Reachable
+     * ONLY with a valid, enabled link on an open project (and a valid identity),
+     * so it cannot be used to probe tokens. Nothing was written, and nothing
+     * about the existing participant is carried: it is never resumed.
+     */
+    case Duplicate;
 }

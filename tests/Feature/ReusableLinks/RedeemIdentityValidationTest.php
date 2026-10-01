@@ -134,6 +134,58 @@ test('an invalid identity writes nothing: no counter, no timestamp, no participa
     Event::assertNotDispatched(ParticipantCreated::class);
 });
 
+// ─── Values that are present but wrong ───────────────────────────────────────
+
+/**
+ * One wrong field beside a valid other field, with the field the 422 must name.
+ *
+ * @return array<string, array{0: array<string, mixed>, 1: list<string>}>
+ */
+function identityValidationWrongValues(): array
+{
+    $name = 'Ada Lovelace';
+    $email = 'ada@example.test';
+
+    return [
+        'a name that is an array' => [['display_name' => ['Ada'], 'email' => $email], ['display_name']],
+        'a name that is an object' => [['display_name' => ['first' => 'Ada'], 'email' => $email], ['display_name']],
+        'a name that is an integer' => [['display_name' => 123, 'email' => $email], ['display_name']],
+        'a name of 256 characters' => [['display_name' => str_repeat('a', 256), 'email' => $email], ['display_name']],
+        'an email that is an array' => [['display_name' => $name, 'email' => ['ada@example.test']], ['email']],
+        'an email that is an integer' => [['display_name' => $name, 'email' => 123], ['email']],
+        'an email of 256 characters' => [['display_name' => $name, 'email' => 'a@'.str_repeat('b', 244).'.example'], ['email']],
+        'an email with no at sign' => [['display_name' => $name, 'email' => 'not-an-email'], ['email']],
+        'an email with no domain' => [['display_name' => $name, 'email' => 'a@'], ['email']],
+        'the reserved placeholder domain' => [['display_name' => $name, 'email' => 'x@invalid.beai.local'], ['email']],
+        'the reserved placeholder domain in capitals' => [['display_name' => $name, 'email' => 'X@INVALID.BEAI.LOCAL'], ['email']],
+    ];
+}
+
+test('a wrong value is a 422 on the offending field only, identical for every class of token', function (array $identity, array $invalidFields): void {
+    $world = Fx::redeemable();
+    $bodies = [];
+
+    foreach ([...identityValidationTokens($world), 'no token' => null] as $class => $token) {
+        $response = $this->postJson(Fx::REDEEM_URL, identityValidationBody($class, $token, $identity));
+
+        $response->assertUnprocessable();
+        expect(array_keys($response->json('errors')))->toBe($invalidFields, $class);
+        $bodies[$class] = (string) $response->getContent();
+    }
+
+    expect(array_unique($bodies))->toHaveCount(1)
+        ->and(Fx::visitorsOf($world['link']))->toBe([]);
+})->with(identityValidationWrongValues());
+
+test('a name of exactly 255 characters is accepted', function (): void {
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+    $name = str_repeat('é', 255);
+
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, Fx::identity(name: $name)))->assertOk();
+
+    expect(Fx::visitorsOf($link)[0]->display_name)->toBe($name);
+});
+
 // ─── Body only ───────────────────────────────────────────────────────────────
 
 test('an identity that arrives only in the query string is a missing identity', function (): void {
