@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.62.0"
+        "version": "0.63.0"
     },
     "servers": [
         {
@@ -9757,6 +9757,369 @@
                 }
             }
         },
+        "/projects/{project}/reusable-links": {
+            "get": {
+                "operationId": "reusableInterviewLink.index",
+                "description": "Returns every link of the project, disabled ones included, so the whole\nset fits in one response. Active links come first, then the newest. A\nlink is described by its metadata only: the secret URL is never returned\nagain, and neither is the secret or anything derived from it.",
+                "summary": "List the reusable interview links of a project",
+                "tags": [
+                    "ReusableInterviewLink"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "description": "The id of the project.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Array of `ReusableInterviewLinkResource`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/ReusableInterviewLinkResource"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "404": {
+                        "description": "The project does not exist, was deleted, or belongs to another organization.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "reusableInterviewLink.store",
+                "description": "Creates one non-expiring, revocable link for the project and returns its\nentry URL. The URL is shown ONCE, in this response only: BEAI stores a\nSHA-256 hash of the secret, never the secret, so it cannot be shown again\nand a lost link means creating a new one. Each call creates a distinct\nlink. Every candidate who opens the URL starts their own interview in the\nproject, in the link's language, which is fixed at creation from the\nproject's language. Disable the link at any time to stop new interviews.\n\nRefused with 403 `entry_link_project_closed` while the project is not\nopen for interviews (not active, not yet live, or past its deadline) and\nwith 422 `PROJECT_NOT_INTERVIEWABLE` while it has no question for a\nselected competency.",
+                "summary": "Create a reusable interview link",
+                "tags": [
+                    "ReusableInterviewLink"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "description": "The id of the project.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "An operator-facing name for the link (for example the trade-fair\nstand it is meant for), shown in the link list and used to name the\ncandidates who open it. Optional; blank means none.",
+                                        "maxLength": 120
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ReusableInterviewLinkResource"
+                                        },
+                                        "entry_url": {
+                                            "type": "string",
+                                            "description": "The one and only carrier of the raw token. Never a bare `token`\nfield, never repeated by any later response."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "entry_url"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "404": {
+                        "description": "The project does not exist, was deleted, or belongs to another organization.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A superadmin must first select the organization to act for (`organization_context_required`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/projects/{project}/reusable-links/{link}": {
+            "delete": {
+                "operationId": "reusableInterviewLink.destroy",
+                "description": "Stops the link from starting new interviews, immediately and for good: a\ndisabled link cannot be re-enabled, and anyone opening its URL is told it\ndoes not exist. The link stays in the list, with its usage. Interviews\nalready started keep working until they finish, and the candidates who\ntook them are untouched. Responds 204 when the link is disabled, and also\nwhen it already was: repeating the request changes nothing.",
+                "summary": "Disable a reusable interview link",
+                "tags": [
+                    "ReusableInterviewLink"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "description": "The id of the project.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "link",
+                        "in": "path",
+                        "required": true,
+                        "description": "The public id of the link (`rlk_` followed by 26 characters).",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "204 whether this call disabled the link or it already was.\n\n\n\nNo content"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "description": "The project or the link does not exist, or belongs to another organization or project.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "409": {
+                        "description": "A superadmin must first select the organization to act for (`organization_context_required`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/reusable-links/redeem": {
+            "post": {
+                "operationId": "reusableLinkRedeem.redeem",
+                "description": "Exchanges the secret of a reusable interview link for a candidate access\ntoken. Every successful call starts a NEW anonymous candidate in the\nlink's project, in the link's language, so one link serves any number of\npeople. The link never expires: it works until it is disabled or its\nproject closes. The token comes only from the `link_token` body field.\n\nA token that is unknown, malformed, or disabled is answered with the same\n404, so a response never reveals whether a link exists. A 403 means the\nlink is valid but its project is not open for interviews right now.",
+                "summary": "Redeem a reusable interview link",
+                "tags": [
+                    "ReusableLinkRedeem"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "link_token": {
+                                        "type": "string",
+                                        "description": "The link token from the reusable link URL: `beai_rl_` followed by 43 URL-safe base64 characters (51 characters in all)."
+                                    }
+                                },
+                                "required": [
+                                    "link_token"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "A candidate access token for a new anonymous candidate in the link's project.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "access_token"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The link is valid but its project is not open for interviews. `redirect_url` is the project's error redirect, when it has one.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "redirect_url": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message",
+                                        "redirect_url"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such link: the token is unknown, malformed or disabled. The body is identical for every such case.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many attempts. Retry after the number of seconds in the `Retry-After` header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/catalogue/revisions/current": {
             "get": {
                 "operationId": "revision.current",
@@ -13741,6 +14104,27 @@
                             "null"
                         ]
                     },
+                    "reusable_link": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "label"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -13957,6 +14341,7 @@
                     "email",
                     "external_id",
                     "source",
+                    "reusable_link",
                     "role_code",
                     "language",
                     "status",
@@ -14176,6 +14561,27 @@
                             "null"
                         ]
                     },
+                    "reusable_link": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "label"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -14233,6 +14639,7 @@
                     "email",
                     "external_id",
                     "source",
+                    "reusable_link",
                     "role_code",
                     "language",
                     "status",
@@ -15210,6 +15617,78 @@
                     "password_confirmation"
                 ],
                 "title": "ResetPasswordRequest"
+            },
+            "ReusableInterviewLinkResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "token_prefix": {
+                        "type": "string"
+                    },
+                    "lang": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "disabled"
+                        ]
+                    },
+                    "uses_count": {
+                        "type": "integer"
+                    },
+                    "last_used_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_by": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "disabled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "label",
+                    "token_prefix",
+                    "lang",
+                    "status",
+                    "uses_count",
+                    "last_used_at",
+                    "created_by",
+                    "created_at",
+                    "disabled_at"
+                ],
+                "title": "ReusableInterviewLinkResource"
             },
             "RoleResource": {
                 "type": "object",

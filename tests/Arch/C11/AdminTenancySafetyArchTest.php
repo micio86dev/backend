@@ -91,7 +91,7 @@ function phpFilesUnder(string $directory): array
  *
  * @var array<string, string>
  */
-$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Listeners', 'Support/AvatarTemplates'];
+$tenantScopeStripGuardedRoots = ['Http', 'Services/ConversationLlm', 'Actions/ConversationLlm', 'Actions/ReusableLinks', 'Listeners', 'Support/AvatarTemplates'];
 
 /**
  * Matches an actual invocation (`::` or `->`) rather than a bare string, so
@@ -187,6 +187,18 @@ $tenantScopeStripAllowlist = [
         .'tenant context exists — the scope cannot be respected because it has not been '
         .'established yet. Strips ONLY the named tenant scope, never the plural no-args form, so '
         .'SoftDeletingScope survives and a deleted project stays unreachable.',
+    'Actions/ReusableLinks/RedeemReusableInterviewLink.php' => 'The PUBLIC reusable-link redemption '
+        .'(reusable-interview-links) finds the link by the SHA-256 of the presented token BEFORE any '
+        .'tenant is known, so the scope cannot be respected because it has not been established yet, '
+        .'exactly like SsoExchangeController above. Two strips, both singular and named: the link '
+        .'lookup (the token hash is unique across the table, so it resolves at most one row and '
+        .'the organisation is read FROM that row), and the project, which is pinned to the LINK\'s '
+        .'organisation_id in the same query and keeps SoftDeletingScope so a deleted project stays '
+        .'unreachable. Everything after the lookup runs inside TenantContextScope::runFor(link '
+        .'organisation), and the locked re-select goes through the ordinary tenant scope. The link '
+        .'strip is additionally pinned to this one file by tests/Arch/ReusableLinks/'
+        .'ReusableLinkArchTest, and Actions/ReusableLinks is a guarded root, so no other action '
+        .'there can strip a scope without its own named entry.',
     'Support/AvatarTemplates/GlobalAvatarTemplateUsage.php' => 'Counts the projects that pin each PLATFORM '
         .'avatar template, across every organization, for the superadmin-only platform list and '
         .'detail. The count is cross-tenant by definition: a scoped count would report "unused" for '

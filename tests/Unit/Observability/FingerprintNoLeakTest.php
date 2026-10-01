@@ -71,6 +71,6 @@ test('no column of a failed ai_requests row contains any substring of the raw re
     foreach ($aiRequest->getAttributes() as $column => $value) {
         $stringValue = is_scalar($value) ? (string) $value : json_encode($value);
 
-        expect($stringValue)->not->toContain($marker, "Column [{$column}] must not contain the raw response marker.");
+        expect(str_contains($stringValue, $marker))->toBeFalse("Column [{$column}] must not contain the raw response marker.");
     }
 });

@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Notifications\CandidateInvitationNotification;
 use App\Support\Mail\EmailBranding;
+use App\Support\Participant\PlaceholderEmail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,11 +24,13 @@ use Illuminate\Support\Facades\Notification;
  * The link itself is already minted and already signed; re-deriving any of it
  * here would mean re-doing an authorization the request already performed.
  *
- * IT REFUSES TO SEND TO A PLACEHOLDER. Rows that predate the mandatory-email
- * column carry a synthesised `@invalid.beai.local` address. `.local` is
- * reserved by RFC 6762 and resolves nowhere, so sending would produce a
- * guaranteed bounce and a candidate who is never told anything — refusing
- * loudly is what puts the operator in a position to fix the row.
+ * IT REFUSES TO SEND TO A PLACEHOLDER. A participant with no address of a
+ * person carries a synthesised `@invalid.beai.local` address (see
+ * {@see PlaceholderEmail}): a legacy row that predates the mandatory-email
+ * column, or an anonymous reusable-link visitor. `.local` is reserved by RFC
+ * 6762 and resolves nowhere, so sending would produce a guaranteed bounce and a
+ * candidate who is never told anything — refusing loudly is what puts the
+ * operator in a position to fix the row.
  *
  * A failure is LOUD. Nobody watches a queue, and the operator who pressed
  * "invite" was told the link was created — which it was.
@@ -35,12 +38,6 @@ use Illuminate\Support\Facades\Notification;
 final class SendCandidateInvitationJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    /**
-     * Marks an address the backfill synthesised rather than one a person gave
-     * us. Reserved by RFC 6762 — it resolves nowhere, by design.
-     */
-    private const PLACEHOLDER_DOMAIN = '@invalid.beai.local';
 
     public function __construct(
         private readonly string $email,
@@ -104,10 +101,11 @@ final class SendCandidateInvitationJob implements ShouldQueue
 
     public function handle(): void
     {
-        if (str_ends_with($this->email, self::PLACEHOLDER_DOMAIN)) {
+        if (PlaceholderEmail::is($this->email)) {
             Log::warning(
-                'candidate invitation NOT sent: this participant predates the mandatory-email column and '
-                .'carries a synthesised placeholder address. Set a real address on the participant and invite again.',
+                'candidate invitation NOT sent: the participant carries a synthesised placeholder address, '
+                .'not an address a person gave us (a legacy row, or an anonymous reusable-link visitor). '
+                .'Set a real address on the participant and invite again.',
                 ['email' => $this->email],
             );
 

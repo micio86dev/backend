@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectQuestionController;
+use App\Http\Controllers\Api\ReusableInterviewLinkController;
 use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\SuperadminController;
 use App\Http\Controllers\Api\UserController;
@@ -63,6 +64,7 @@ use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTok
 use App\Http\Controllers\PublicApi\UsageController as PublicApiUsageController;
 use App\Http\Controllers\PublicApi\WebhookDeliveryController as PublicApiWebhookDeliveryController;
 use App\Http\Controllers\QueueHealthController;
+use App\Http\Controllers\Sso\ReusableLinkRedeemController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
 use App\Http\Middleware\PublicApi\AssignRequestId;
@@ -364,6 +366,16 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::put('projects/{project}/questions/order', [ProjectQuestionController::class, 'reorder']);
     Route::patch('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'update']);
     Route::delete('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'destroy']);
+
+    // Reusable interview links (reusable-interview-links), nested under the
+    // project like the questions above, and resolved the same way: the integer
+    // `{project}` through the tenant scope, so another organization's id is a 404
+    // and never a 403. Admin and operator only (`ParticipantPolicy::create`),
+    // checked BEFORE the project is resolved. The writes demand an organization
+    // in context, so a bare superadmin gets the legible 409 instead of a 500.
+    Route::get('projects/{project}/reusable-links', [ReusableInterviewLinkController::class, 'index']);
+    Route::post('projects/{project}/reusable-links', [ReusableInterviewLinkController::class, 'store'])->middleware('org.context');
+    Route::delete('projects/{project}/reusable-links/{link}', [ReusableInterviewLinkController::class, 'destroy'])->middleware('org.context');
 });
 
 // ─── Superadmin: clients and the acting-organization switch ──────────────────
@@ -778,6 +790,20 @@ Route::prefix('m2m')
 
 Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class]);
+
+// ─── Reusable interview link redemption (PUBLIC) (reusable-interview-links) ───
+// PUBLIC endpoint — no guard, no TenantContext, same isolation as
+// `/sso/exchange` above and for the identical reason.
+// `throttle:reusable-link-redeem` is a NAMED limiter (never the numeric
+// `throttle:N,1`, whose bucket key calls `$request->user()` and 500s on
+// `?token[]=`), registered in `AppServiceProvider::boot()`: it counts EVERY
+// attempt per client IP and per link, whether or not the link exists. This
+// route creates a participant and mints a credential on every success, so it is
+// never registered without it. The token travels in the BODY field `link_token`
+// and nowhere else.
+Route::post('/reusable-links/redeem', [ReusableLinkRedeemController::class, 'redeem'])
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware('throttle:reusable-link-redeem');
 
 // ─── BEAI Public API session-token exchange (PUBLIC) (public-api step 5) ─────
 // PUBLIC endpoint, OUTSIDE /v1 — no API key, no TenantContext (SPEC.md §3.5,

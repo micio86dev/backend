@@ -14,6 +14,7 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
+use App\Models\ReusableInterviewLink;
 use App\Models\User;
 use App\Models\Utterance;
 use App\Support\Tenancy\TenantContextScope;
@@ -130,6 +131,19 @@ final class AuthMatrixResources
         }
 
         return $this->memo['question'];
+    }
+
+    /**
+     * An active reusable link of the project, the target of the disable route.
+     * Disabling an already-disabled link is an idempotent 204, so the one link
+     * serves every actor the matrix sends at it.
+     */
+    public function reusableLink(): ReusableInterviewLink
+    {
+        return $this->memo['reusable_link'] ??= TenantContextScope::runFor(
+            $this->world->orgA->id,
+            fn (): ReusableInterviewLink => ReusableInterviewLink::factory()->forProject($this->project())->create(),
+        );
     }
 
     /**

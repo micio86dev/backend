@@ -42,6 +42,33 @@ final class EntryLinkUrlComposer
     }
 
     /**
+     * Composes the absolute URL of a REUSABLE interview link
+     * (reusable-interview-links, design AD-6).
+     *
+     *   lang === default locale        → {origin}/interview/reusable#{token}
+     *   lang ∈ locales, non-default    → {origin}/{lang}/interview/reusable#{token}
+     *   lang ∉ locales                 → {origin}/interview/reusable#{token} + Log::warning
+     *
+     * The token is carried in the URL FRAGMENT only, never the path or the
+     * query: a fragment is not sent to the server, so it stays out of access
+     * logs, proxies and `Referer` headers. The candidate app reads it in the
+     * browser and strips it from the address bar. Origin and locale prefix are
+     * resolved by the same two methods `compose()` uses, so there is one owner
+     * of both rules.
+     *
+     * @throws EntryLinkUrlNotConfigured When the candidate origin is unset, empty, or not an absolute http(s) URL.
+     */
+    public function composeReusable(string $token, ?string $lang): string
+    {
+        $origin = $this->resolveOrigin();
+        $prefix = $this->resolvePrefix($lang);
+
+        return $prefix === null
+            ? "{$origin}/interview/reusable#{$token}"
+            : "{$origin}/{$prefix}/interview/reusable#{$token}";
+    }
+
+    /**
      * @throws EntryLinkUrlNotConfigured When unset, empty, or not an absolute http(s) URL.
      */
     private function resolveOrigin(): string

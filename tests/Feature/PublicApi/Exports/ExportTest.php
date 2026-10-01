@@ -473,7 +473,7 @@ test('T-EXP-010: exposure parity — export content contains exactly what the pu
         ->all();
 
     foreach (ExposureCatalogue::exclusions()['Interview'] as $excluded) {
-        expect($flatKeys)->not->toContain($excluded, "export leaked excluded Interview field [{$excluded}]");
+        expect(in_array($excluded, $flatKeys, true))->toBeFalse("export leaked excluded Interview field [{$excluded}]");
     }
 
     expect($record['id'])->toBe(PublicId::encode($scored));

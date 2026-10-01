@@ -31,6 +31,7 @@ use App\Support\Tenancy\TenantResolver;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Tests\Helpers\ReusableLinkFixtures as Fx;
 
 function purgeOrg(): Organization
 {
@@ -217,6 +218,39 @@ test('the participant_pii purge redacts the name and leaves the external referen
     // Verbatim: not the sentinel, not nulled.
     expect($fresh->external_id)->toBe(4471);
     expect($fresh->source)->toBe('acme-ats');
+});
+
+/**
+ * reusable-interview-links (B3b.7): a visitor created by a reusable link is an
+ * ordinary participant to the purge. Its `display_name` is the link label and a
+ * number, and the transcript or recording of a visitor is personal data in fact,
+ * so the existing classes apply to it unchanged (the ruling-2 sign-off is to name
+ * visitors as a class it covers). The reference, the placeholder address and the
+ * origin marker are not part of any class: like `candidate_ref`, they identify
+ * nobody, and the marker is what keeps the row recognisable afterwards.
+ */
+test('a reusable link visitor past the participant_pii window is redacted like any participant and keeps its reference, placeholder address and origin marker', function (): void {
+    ['link' => $link, 'token' => $token] = Fx::redeemable(linkAttributes: ['label' => 'Milan fair stand']);
+    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $visitor = Fx::visitorsOf($link)[0];
+    DB::table('participants')->where('id', $visitor->id)->update(['created_at' => now()->subDays(90)]);
+
+    config()->set('retention.enabled', true);
+    config()->set('retention.days.participant_pii', 30);
+
+    expect($visitor->display_name)->toBe('Milan fair stand #1');
+
+    $this->artisan('beai:purge-expired-data')->assertSuccessful();
+
+    // Read raw: a model cast or accessor could hide a coerced value.
+    $row = DB::table('participants')->where('id', $visitor->id)->first();
+
+    expect($row->display_name)->toBe(PurgeExpiredDataCommand::PURGED_NAME)
+        ->and($row->candidate_ref)->toBe($visitor->candidate_ref)
+        ->and($row->candidate_ref)->toStartWith('rlv_')
+        ->and($row->email)->toBe($visitor->email)
+        ->and($row->email)->toBe($visitor->candidate_ref.'@invalid.beai.local')
+        ->and($row->reusable_interview_link_id)->toBe($link->id);
 });
 
 test('NULL is not coerced: a participant without a reference keeps both columns NULL after the purge', function (): void {

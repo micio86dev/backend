@@ -32,6 +32,11 @@ final class AuditRedactor
         'password',
         'password_confirmation',
         'key_hash',
+        // Lookup key of a reusable interview link (reusable-interview-links,
+        // design AD-13). Listed by name, not by a generic `_hash` suffix rule:
+        // other hashes (a content checksum, an idempotency fingerprint) are
+        // not credentials and an auditor may need to read them.
+        'token_hash',
         'api_key',
         'webhook_secret',
         'secret',

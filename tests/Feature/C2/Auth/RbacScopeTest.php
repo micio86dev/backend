@@ -72,7 +72,7 @@ test('Spatie roles table contains only admin/operator/viewer — no superadmin o
     $disallowedNames = ['superadmin', 'ICO', 'FLL', 'MLL', 'BUL', 'SRX'];
 
     foreach ($disallowedNames as $disallowed) {
-        expect($allRoleNames)->not->toContain($disallowed,
+        expect(in_array($disallowed, $allRoleNames, true))->toBeFalse(
             "Spatie roles table must NOT contain '{$disallowed}' — it is either a superadmin role "
             .'or a BEAI framework role (ICO/FLL/MLL/BUL/SRX). These must remain out of Spatie.'
         );
