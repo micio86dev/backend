@@ -20,6 +20,7 @@ use App\Support\Sso\EntryLinkUrlComposer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 /**
  * EntryLinkController (operator-interview-link).
@@ -262,7 +263,18 @@ final class EntryLinkController extends Controller
         // a mail provider is having a good minute, and failing the request
         // would leave the operator believing nothing happened when the token
         // has already been minted and its jti already spent.
-        $emailSent = (bool) ($validated['send_email'] ?? true);
+        //
+        // Never to a reusable-link visitor: its address is whatever the link
+        // holder typed and was never verified, so BEAI does not write to it. The
+        // link is still minted and returned, and `email_sent` stays truthful.
+        $requestedEmail = (bool) ($validated['send_email'] ?? true);
+        $emailSent = (bool) ($requestedEmail && ! $minted->targetsReusableLinkVisitor);
+
+        if ($requestedEmail && ! $emailSent) {
+            // One line, no context: neither the address nor the name belongs in
+            // a log read by people who were never given them.
+            Log::info('candidate invitation not queued: the participant is a reusable-link visitor with a self-declared address that was never verified.');
+        }
 
         // The candidate's own language, formatted in it. A date rendered in
         // the operator's locale inside a message written in the candidate's is

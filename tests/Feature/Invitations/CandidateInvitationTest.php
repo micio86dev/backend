@@ -27,11 +27,13 @@ use App\Models\User;
 use App\Notifications\CandidateInvitationNotification;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Helpers\ReusableLinkFixtures as Fx;
 
 /**
  * @return array{token: string, project: Project, org: Organization}
@@ -228,17 +230,20 @@ test('it REFUSES to mail the placeholder address of a reusable-link visitor', fu
     Notification::assertNothingSent();
 });
 
-test('the refusal log says the address is a placeholder and does not blame the mandatory-email column', function (): void {
+test('the refusal log says the address is a placeholder, blames neither the mandatory-email column nor a visitor, and carries no address', function (): void {
     // The old text claimed the row "predates the mandatory-email column", which
     // is false for a visitor (created long after that column) and would send an
-    // operator looking for a legacy-data problem that does not exist.
+    // operator looking for a legacy-data problem that does not exist. It also
+    // named "an anonymous reusable-link visitor", which a visitor no longer is,
+    // and carried the address in its context: a log is read by people who were
+    // never given it.
     Notification::fake();
     Log::spy();
 
     (new SendCandidateInvitationJob(
         'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0@invalid.beai.local',
         'https://candidate.test/interview/token-123',
-        'Milan fair stand #1',
+        'Giulia Ferrari',
         'Acme',
         'Sales',
         '1 October 2026',
@@ -247,8 +252,14 @@ test('the refusal log says the address is a placeholder and does not blame the m
 
     Log::shouldHaveReceived('warning')
         ->once()
-        ->withArgs(fn (string $message): bool => str_contains(strtolower($message), 'placeholder')
-            && ! str_contains($message, 'predates the mandatory-email column'));
+        ->withArgs(function (string $message, array $context = []): bool {
+            return str_contains(strtolower($message), 'placeholder')
+                && ! str_contains($message, 'predates the mandatory-email column')
+                && ! str_contains($message, 'anonymous reusable-link visitor')
+                && ! str_contains(json_encode($context), 'invalid.beai.local')
+                && ! str_contains(json_encode($context), 'Giulia')
+                && $context === [];
+        });
 });
 
 test('re-issuing a link for a visitor with send_email true returns the link and sends no mail', function (): void {
@@ -311,4 +322,38 @@ test('inviting the same person twice to ONE project is refused at the database',
         'project_id' => $project->id,
         'email' => 'giulia@example.test',
     ]))->toThrow(QueryException::class);
+});
+
+test('an operator re-issue for a reusable-link visitor with send_email true logs one line that names neither the address nor the person', function (): void {
+    Queue::fake();
+    Log::spy();
+    ['token' => $token, 'project' => $project] = invitableProject();
+    $visitor = Participant::factory()->forProject($project)->create([
+        'candidate_ref' => 'rlv_01JABCDEFGHJKMNPQRSTVWXYZ1',
+        'email' => 'ada.lovelace@example.test',
+        'display_name' => 'Ada Lovelace',
+    ]);
+    DB::table('participants')->where('id', $visitor->id)->update([
+        'reusable_interview_link_id' => Fx::link($project)->id,
+    ]);
+
+    $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'rlv_01JABCDEFGHJKMNPQRSTVWXYZ1',
+        'display_name' => 'Ada Lovelace',
+        'email' => 'ada.lovelace@example.test',
+        'send_email' => true,
+    ])->assertCreated()->assertJsonPath('email_sent', false);
+
+    Log::shouldHaveReceived('info')
+        ->once()
+        ->withArgs(function (string $message, array $context = []): bool {
+            return str_contains($message, 'not queued')
+                && str_contains($message, 'reusable-link visitor')
+                && str_contains($message, 'self-declared')
+                && $context === []
+                && ! str_contains($message, 'ada.lovelace')
+                && ! str_contains($message, 'Ada');
+        });
+    Queue::assertNotPushed(SendCandidateInvitationJob::class);
 });

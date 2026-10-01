@@ -72,13 +72,25 @@ final class EntryLinkMinter
         // request carrying a new candidate_ref but an email already tied to a
         // terminal row sail past this guard and die later on the database's
         // own unique-constraint violation when the exchange writes the row.
-        $existingStatuses = Participant::where('organization_id', $project->organization_id)
+        $existingRows = Participant::where('organization_id', $project->organization_id)
             ->where('project_id', $project->id)
             ->where(function ($query) use ($candidateRef, $email): void {
                 $query->where('candidate_ref', $candidateRef)
                     ->orWhere('email', $email);
             })
-            ->pluck('status');
+            ->get(['candidate_ref', 'status', 'reusable_interview_link_id']);
+
+        $existingStatuses = $existingRows->pluck('status');
+
+        // Whether the row this request's `candidate_ref` names was created by a
+        // reusable link: the marker (a foreign key) is the record of origin, not
+        // the spelling of the reference, which an operator can type freely. Only
+        // the `candidate_ref` axis counts, because that is the row the exchange
+        // will upsert; a request whose EMAIL alone matches a visitor row targets
+        // somebody else.
+        $targetsReusableLinkVisitor = $existingRows->contains(
+            fn (Participant $row): bool => $row->candidate_ref === $candidateRef && $row->reusable_interview_link_id !== null,
+        );
 
         // (participant-error-recovery D3) split by which terminal status:
         // 'completato' really is done; 'errore' is now recoverable by an
@@ -133,7 +145,7 @@ final class EntryLinkMinter
         $payload = app(JWTAuth::class)->setToken($token)->getPayload();
         $expiresAt = Carbon::createFromTimestamp((int) $payload->get('exp'));
 
-        return new MintedEntryLink($token, $expiresAt, $resolvedLang);
+        return new MintedEntryLink($token, $expiresAt, $resolvedLang, $targetsReusableLinkVisitor);
     }
 
     /**
