@@ -33,10 +33,12 @@ declare(strict_types=1);
 
 use App\Models\AuditLog;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ReusableInterviewLink;
 use App\Services\ReusableLinkTokenGenerator;
 use App\Support\PublicApi\PublicId;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Carbon;
 use Tests\Helpers\ReusableLinkConcurrency as Concurrent;
 use Tests\Helpers\ReusableLinkFixtures as Fx;
@@ -285,4 +287,150 @@ test('redemptions and disables racing freely never leave a visitor created after
                 ->and($visitors)->toBe([], "link {$n}");
         }
     }
+});
+
+test('a disable that commits while a redemption of an already enrolled email waits for the row is a 404, never a 409', function (): void {
+    Concurrent::open();
+    ['project' => $project, 'link' => $link, 'token' => $token] = Fx::redeemable();
+    TenantContextScope::runFor($project->organization_id, fn () => Participant::factory()
+        ->forProject($project)
+        ->create(['email' => 'ada@example.test']));
+
+    // The disabled re-check outranks the duplicate check: a committed Disable
+    // must answer the generic 404 even for an address that is already taken.
+    $holder = Concurrent::holdUncommittedDisable($link->id);
+    $actor = Concurrent::startRequest(concurrencyRedeem($token, 1, Fx::identity('ada@example.test')));
+    Concurrent::waitForBlocked(1);
+
+    $holder->commit();
+    $result = Concurrent::result($actor);
+
+    expect($result['status'])->toBe(404)
+        ->and($result['body'])->toBe(Fx::NOT_FOUND_BODY);
+});
+
+// ─── The same address, raced ─────────────────────────────────────────────────
+
+/**
+ * A scheduled enrolment as an operator creates it (`POST /api/entry-links` with a
+ * start time): the one admin path that writes the participant row eagerly.
+ *
+ * @param  array{org: Organization, project: Project}  $world
+ * @return array{method: string, uri: string, ip: string, headers: array<string, string>, body: array<string, mixed>}
+ */
+function concurrencyOperatorEnrol(array $world, string $adminJwt, string $email): array
+{
+    return [
+        'method' => 'POST',
+        'uri' => '/api/entry-links',
+        'ip' => '10.50.0.1',
+        'headers' => ['Authorization' => 'Bearer '.$adminJwt],
+        'body' => [
+            'project_id' => $world['project']->id,
+            'candidate_ref' => 'operator-enrolled-1',
+            'display_name' => 'Operator Enrolled',
+            'email' => $email,
+            'lang' => 'en',
+            'scheduled_at' => now('UTC')->addMinutes(30)->toIso8601String(),
+        ],
+    ];
+}
+
+test('two redemptions of one link with one email, queued behind the row lock, make one visitor and one 409', function (): void {
+    Concurrent::open();
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+    $identity = Fx::identity('ada@example.test', 'Ada Lovelace');
+
+    $holder = Concurrent::holdLinkLock($link->id);
+    $actors = [
+        Concurrent::startRequest(concurrencyRedeem($token, 1, $identity)),
+        Concurrent::startRequest(concurrencyRedeem($token, 2, $identity)),
+    ];
+    Concurrent::waitForBlocked(2);
+
+    $holder->commit();
+    $results = array_map(fn (int $actor): array => Concurrent::result($actor), $actors);
+    $statuses = array_column($results, 'status');
+    sort($statuses);
+
+    expect($statuses)->toBe([200, 409])
+        ->and(Fx::visitorsOf($link))->toHaveCount(1)
+        ->and(concurrencyLink($link)->uses_count)->toBe(1);
+});
+
+test('two redemptions of two links of one project with one email, released together, make one visitor and one 409', function (): void {
+    Concurrent::open();
+    $world = Fx::redeemable();
+    ['project' => $project, 'link' => $first, 'token' => $firstToken] = $world;
+    $secondToken = ReusableLinkTokenGenerator::generate();
+    $second = Fx::link($project, [
+        'token_hash' => ReusableLinkTokenGenerator::hash($secondToken),
+        'token_prefix' => ReusableLinkTokenGenerator::prefixOf($secondToken),
+    ]);
+    $identity = Fx::identity('ada@example.test', 'Ada Lovelace');
+
+    // The link-row lock cannot serialise two DIFFERENT links: both requests pass
+    // the duplicate check on an empty table, and only the unique index decides.
+    $holder = Concurrent::holdLinkLocks([$first->id, $second->id]);
+    $actors = [
+        Concurrent::startRequest(concurrencyRedeem($firstToken, 1, $identity)),
+        Concurrent::startRequest(concurrencyRedeem($secondToken, 2, $identity)),
+    ];
+    Concurrent::waitForBlocked(2);
+
+    $holder->commit();
+    $results = array_map(fn (int $actor): array => Concurrent::result($actor), $actors);
+    $statuses = array_column($results, 'status');
+    sort($statuses);
+
+    expect($statuses)->toBe([200, 409])
+        ->and(count(Fx::visitorsOf($first)) + count(Fx::visitorsOf($second)))->toBe(1)
+        ->and(concurrencyLink($first)->uses_count + concurrencyLink($second)->uses_count)->toBe(1);
+
+    $loser = array_values(array_filter($results, fn (array $result): bool => $result['status'] === 409))[0];
+    expect($loser['body'])->toBe('{"message":"duplicate_enrolment"}');
+});
+
+test('an operator enrolment committed while a redemption waits for the row lock makes the redemption a 409, never a 500', function (): void {
+    Concurrent::open();
+    $world = Fx::redeemable();
+    ['link' => $link, 'token' => $token] = $world;
+    $admin = authTokenForRole($world['org'], 'admin');
+
+    // The redemption is already past its checks and queued on the link row; the
+    // operator's enrolment is not on that row, so it commits first. The
+    // redemption then wakes up and must find the address taken.
+    $holder = Concurrent::holdLinkLock($link->id);
+    $redeem = Concurrent::startRequest(concurrencyRedeem($token, 1, Fx::identity('ada@example.test', 'Ada Lovelace')));
+    Concurrent::waitForBlocked(1);
+
+    $operator = Concurrent::result(Concurrent::startRequest(concurrencyOperatorEnrol($world, $admin, 'ada@example.test')));
+    $holder->commit();
+    $result = Concurrent::result($redeem);
+
+    expect($operator['status'])->toBe(201)
+        ->and($result['status'])->toBe(409)
+        ->and($result['body'])->toBe('{"message":"duplicate_enrolment"}')
+        ->and(Participant::query()->where('project_id', $world['project']->id)->where('email', 'ada@example.test')->count())->toBe(1)
+        ->and(Fx::visitorsOf($link))->toBe([])
+        ->and(concurrencyLink($link)->uses_count)->toBe(0);
+});
+
+test('an operator enrolment and a redemption racing freely for one email leave exactly one participant and never a 500', function (): void {
+    Concurrent::open();
+    $world = Fx::redeemable();
+    ['link' => $link, 'token' => $token] = $world;
+    $admin = authTokenForRole($world['org'], 'admin');
+
+    $actors = [
+        'redeem' => Concurrent::startRequest(concurrencyRedeem($token, 1, Fx::identity('ada@example.test', 'Ada Lovelace'))),
+        'operator' => Concurrent::startRequest(concurrencyOperatorEnrol($world, $admin, 'ada@example.test')),
+    ];
+    $redeem = Concurrent::result($actors['redeem']);
+    $operator = Concurrent::result($actors['operator']);
+
+    // Exactly one of them won, in either order; the loser is a refusal, not a 500.
+    expect([$redeem['status'], $operator['status']])->toBeIn([[200, 409], [409, 201]])
+        ->and(Participant::query()->where('project_id', $world['project']->id)->where('email', 'ada@example.test')->count())->toBe(1)
+        ->and(concurrencyLink($link)->uses_count)->toBe($redeem['status'] === 200 ? 1 : 0);
 });

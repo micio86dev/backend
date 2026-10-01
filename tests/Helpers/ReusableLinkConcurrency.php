@@ -156,6 +156,28 @@ final class ReusableLinkConcurrency
     }
 
     /**
+     * One connection that takes the row lock of SEVERAL links in one
+     * transaction: what a burst of in-flight redemptions of different links
+     * holds. Every request aimed at any of those links queues behind it, and
+     * `commit()` releases them all together, so the requests then race each
+     * other for whatever the locks were not protecting (the `(project_id, email)`
+     * unique index).
+     *
+     * @param  list<int>  $linkIds
+     */
+    public static function holdLinkLocks(array $linkIds): PDO
+    {
+        $holder = self::connect();
+        $holder->beginTransaction();
+
+        foreach ($linkIds as $linkId) {
+            $holder->prepare('SELECT id FROM reusable_interview_links WHERE id = ? FOR UPDATE')->execute([$linkId]);
+        }
+
+        return self::$holders[] = $holder;
+    }
+
+    /**
      * The same, but the holder is a Disable that has written its change and not
      * yet committed it.
      */

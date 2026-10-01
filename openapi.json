@@ -10019,7 +10019,7 @@
         "/reusable-links/redeem": {
             "post": {
                 "operationId": "reusableLinkRedeem.redeem",
-                "description": "Exchanges the secret of a reusable interview link for a candidate access\ntoken. Every successful call starts a NEW candidate in the link's project,\nin the link's language, identified by the name and email in the body\n(self-declared, not verified), so one link serves any number of people.\nThe link never expires: it works until it is disabled or its project\ncloses. The token comes only from the `link_token` body field.\n\nThe name and the email are checked first: a missing or invalid one is a\n422 whatever the token is. A valid name and email beside a token that is\nunknown, malformed, or disabled is answered with the same 404, so a\nresponse never reveals whether a link exists. A 403 means the link is valid\nbut its project is not open for interviews right now.",
+                "description": "Exchanges the secret of a reusable interview link for a candidate access\ntoken. Every successful call starts a NEW candidate in the link's project,\nin the link's language, identified by the name and email in the body\n(self-declared, not verified), so one link serves any number of people.\nThe link never expires: it works until it is disabled or its project\ncloses. The token comes only from the `link_token` body field.\n\nThe name and the email are checked first: a missing or invalid one is a\n422 whatever the token is. A valid name and email beside a token that is\nunknown, malformed, or disabled is answered with the same 404, so a\nresponse never reveals whether a link exists. A 403 means the link is valid\nbut its project is not open for interviews right now. A 409 means the email\nis already enrolled in the link's project: nothing is created and the\nexisting enrolment is never resumed.",
                 "summary": "Redeem a reusable interview link",
                 "tags": [
                     "ReusableLinkRedeem"
@@ -10100,6 +10100,24 @@
                     },
                     "404": {
                         "description": "No such link: with a valid name and email, the token is unknown, malformed or disabled. The body is identical for every such case.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "This email is already enrolled in the link's project. Nothing was created, and the existing enrolment is neither resumed nor described.",
                         "content": {
                             "application/json": {
                                 "schema": {

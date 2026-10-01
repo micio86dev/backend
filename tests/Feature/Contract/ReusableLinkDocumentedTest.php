@@ -272,10 +272,10 @@ test('the redeem operation documents the 422 of an invalid identity with its fie
         ->and($schema['required'])->toEqualCanonicalizing(['message', 'errors']);
 });
 
-test('the redeem operation documents 200, 403, 404 and 429 with typed bodies', function (): void {
+test('the redeem operation documents 200, 403, 404, 409, 422 and 429 with typed bodies', function (): void {
     $responses = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['responses'];
 
-    expect(array_map('strval', array_keys($responses)))->toContain('200', '403', '404', '429');
+    expect(array_map('strval', array_keys($responses)))->toContain('200', '403', '404', '409', '422', '429');
 
     $ok = $responses['200']['content']['application/json']['schema'];
     expect(array_keys($ok['properties']))->toBe(['access_token']);
@@ -286,7 +286,7 @@ test('the redeem operation documents 200, 403, 404 and 429 with typed bodies', f
     expect(array_keys($forbidden['properties']))->toEqualCanonicalizing(['message', 'redirect_url']);
     expect(reusableLinkDocumentedTypeIs($forbidden['properties']['redirect_url'], 'string'))->toBeTrue();
 
-    foreach (['404', '429'] as $status) {
+    foreach (['404', '409', '429'] as $status) {
         $schema = $responses[$status]['content']['application/json']['schema'];
         expect(array_keys($schema['properties']))->toBe(['message']);
     }
