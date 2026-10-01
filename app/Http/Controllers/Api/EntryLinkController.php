@@ -12,6 +12,7 @@ use App\Http\Resources\ParticipantEnrolmentResource;
 use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Project;
 use App\Policies\ParticipantPolicy;
+use App\Rules\NotPlaceholderEmail;
 use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
@@ -20,6 +21,7 @@ use App\Support\Sso\EntryLinkUrlComposer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 /**
  * EntryLinkController (operator-interview-link).
@@ -104,7 +106,7 @@ final class EntryLinkController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['required', 'email', 'max:255', new NotPlaceholderEmail('candidate_ref')],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
@@ -262,7 +264,18 @@ final class EntryLinkController extends Controller
         // a mail provider is having a good minute, and failing the request
         // would leave the operator believing nothing happened when the token
         // has already been minted and its jti already spent.
-        $emailSent = (bool) ($validated['send_email'] ?? true);
+        //
+        // Never to a reusable-link visitor: its address is whatever the link
+        // holder typed and was never verified, so BEAI does not write to it. The
+        // link is still minted and returned, and `email_sent` stays truthful.
+        $requestedEmail = (bool) ($validated['send_email'] ?? true);
+        $emailSent = (bool) ($requestedEmail && ! $minted->targetsReusableLinkVisitor);
+
+        if ($requestedEmail && ! $emailSent) {
+            // One line, no context: neither the address nor the name belongs in
+            // a log read by people who were never given them.
+            Log::info('candidate invitation not queued: the participant is a reusable-link visitor with a self-declared address that was never verified.');
+        }
 
         // The candidate's own language, formatted in it. A date rendered in
         // the operator's locale inside a message written in the candidate's is

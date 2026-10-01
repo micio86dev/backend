@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\PublicApi;
 
+use App\Rules\NotPlaceholderEmail;
 use App\Rules\PublicApi\Metadata;
 use App\Support\Participant\ExternalReference;
 use Illuminate\Foundation\Http\FormRequest;
@@ -72,7 +73,7 @@ final class CreateInterviewRequest extends FormRequest
             'candidate' => ['required', 'array'],
             'candidate.candidate_ref' => ['required', 'string', 'max:255'],
             // Valid email address, at most 255 characters.
-            'candidate.email' => ['required', 'email', 'max:255'],
+            'candidate.email' => ['required', 'email', 'max:255', new NotPlaceholderEmail],
             'candidate.display_name' => ['required', 'string', 'max:255'],
             // ISO 639-1 language code: two lowercase letters, for example `it`.
             'candidate.language' => ['sometimes', 'nullable', 'string', 'regex:/^[a-z]{2}$/'],
