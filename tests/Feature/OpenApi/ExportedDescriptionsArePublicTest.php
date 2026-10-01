@@ -32,6 +32,13 @@ declare(strict_types=1);
  * either.
  */
 
+use Dedoc\Scramble\Generator;
+use Dedoc\Scramble\Scramble;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
 /**
  * Review-process and design-document vocabulary, case-insensitive.
  *
@@ -195,3 +202,137 @@ test('a schema property that is itself called description is not mistaken for te
 
     expect(openApiOffences($document))->toBe([]);
 });
+
+// ---------------------------------------------------------------------------
+// The mechanism the whole rewrite depends on
+// ---------------------------------------------------------------------------
+//
+// Moving an internal note out of Scramble's reach only works if we know exactly
+// what Scramble reads. These fixtures pin it, against a tiny controller and
+// FormRequest that exist only in this file, so a Scramble upgrade that changes
+// the rule fails HERE, loudly, instead of silently leaking notes (or silently
+// dropping public text) into the next export.
+//
+// A fixture, not an assertion on two real controllers: a real controller's
+// comments are rewritten by ordinary work, and the test would then fail for the
+// wrong reason or, worse, keep passing on text nobody meant to protect. The
+// markers below are unique tokens that nothing else in the repository uses.
+//
+// What it pins (all observed against the installed Scramble):
+//
+//   exported:      the method docblock; a comment above an array key in rules()
+//                  or in an inline validate() call; a comment above a
+//                  `return response()->json(...)`.
+//   NOT exported:  a `//` block above the method's docblock; the docblock of
+//                  rules() and of a private helper; a comment above an `if`,
+//                  above a `try` and above the `validate()` statement itself.
+
+final class DocMechanismFixtureRequest extends FormRequest
+{
+    /**
+     * MECHANISM-RULES-DOCBLOCK is the docblock of rules(), which is not exported.
+     *
+     * @return array<string, mixed>
+     */
+    public function rules(): array
+    {
+        // MECHANISM-RULES-ABOVE-RETURN lives above the return of rules().
+        return [
+            // MECHANISM-RULES-KEY is the comment above an array key, which is exported.
+            'name' => ['required', 'string'],
+        ];
+    }
+}
+
+final class DocMechanismFixtureController
+{
+    // MECHANISM-ABOVE-METHOD is a // block above the docblock, which is not exported.
+    /**
+     * Fixture summary.
+     *
+     * MECHANISM-METHOD-DOCBLOCK is the method docblock, which is exported.
+     */
+    public function store(DocMechanismFixtureRequest $request): JsonResponse
+    {
+        // MECHANISM-ABOVE-IF is a comment above an if, which is not exported.
+        if ($request->boolean('reject')) {
+            // MECHANISM-ABOVE-RETURN is a comment above a return response()->json, which is exported.
+            return response()->json(['rejected' => true], 409);
+        }
+
+        return response()->json(['ok' => true], 201);
+    }
+
+    public function update(Request $request): JsonResponse
+    {
+        // MECHANISM-ABOVE-VALIDATE is a comment above the validate() statement, which is not exported.
+        $request->validate([
+            // MECHANISM-VALIDATE-KEY is the comment above a key of an inline validate(), which is exported.
+            'title' => ['required', 'string'],
+        ]);
+
+        // MECHANISM-ABOVE-TRY is a comment above a try, which is not exported.
+        try {
+            $payload = self::payload();
+        } catch (Throwable) {
+            return response()->json(['ok' => false], 500);
+        }
+
+        return response()->json($payload);
+    }
+
+    /**
+     * MECHANISM-HELPER-DOCBLOCK is the docblock of a private helper, which is not exported.
+     *
+     * @return array{count: int}
+     */
+    private static function payload(): array
+    {
+        return ['count' => 1];
+    }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function docMechanismDocument(): array
+{
+    // Generated once per run: the document is plain data, and generating it again
+    // would register the same routes and the same API twice.
+    static $document = null;
+
+    if ($document !== null) {
+        return $document;
+    }
+
+    Route::post('doc-mechanism-fixture/things', [DocMechanismFixtureController::class, 'store']);
+    Route::put('doc-mechanism-fixture/things/{id}', [DocMechanismFixtureController::class, 'update']);
+
+    Scramble::registerApi('doc-mechanism', ['api_path' => 'doc-mechanism-fixture', 'export_path' => 'doc-mechanism.json']);
+
+    /** @var array<string, mixed> $decoded */
+    $decoded = json_decode((string) json_encode(app(Generator::class)(Scramble::getGeneratorConfig('doc-mechanism'))), true, 512, JSON_THROW_ON_ERROR);
+    $document = $decoded;
+
+    return $document;
+}
+
+test('Scramble publishes exactly the comments the description rewrite assumes', function (string $marker, bool $exported): void {
+    $json = (string) json_encode(docMechanismDocument(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+    expect(str_contains($json, $marker))->toBe($exported, $exported
+        ? "{$marker} is no longer published: a comment that was meant to reach the API consumer is dropped."
+        : "{$marker} now leaks into the export: a note written to stay out of it is published.");
+})->with([
+    'the method docblock' => ['MECHANISM-METHOD-DOCBLOCK', true],
+    'a comment above an array key in rules()' => ['MECHANISM-RULES-KEY', true],
+    'a comment above a key of an inline validate()' => ['MECHANISM-VALIDATE-KEY', true],
+    'a comment above a return response()->json' => ['MECHANISM-ABOVE-RETURN', true],
+    'a // block above the method docblock' => ['MECHANISM-ABOVE-METHOD', false],
+    'the docblock of rules()' => ['MECHANISM-RULES-DOCBLOCK', false],
+    'a comment above the return of rules()' => ['MECHANISM-RULES-ABOVE-RETURN', false],
+    'the docblock of a private helper' => ['MECHANISM-HELPER-DOCBLOCK', false],
+    'a comment above an if' => ['MECHANISM-ABOVE-IF', false],
+    'a comment above a try' => ['MECHANISM-ABOVE-TRY', false],
+    'a comment above the validate() statement' => ['MECHANISM-ABOVE-VALIDATE', false],
+]);
