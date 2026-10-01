@@ -230,6 +230,28 @@ test('it REFUSES to mail the placeholder address of a reusable-link visitor', fu
     Notification::assertNothingSent();
 });
 
+test('it REFUSES to mail a purged placeholder address exactly like a legacy one', function (string $address): void {
+    // The retention purge replaces a participant's address with
+    // `<sha256 of candidate_ref>@purged.beai.invalid`. Nobody can be written to
+    // there, and a purged participant must never be mailed by a re-issue.
+    Notification::fake();
+
+    (new SendCandidateInvitationJob(
+        $address,
+        'https://candidate.test/interview/token-123',
+        '[purged]',
+        'Acme',
+        'Sales',
+        '1 October 2026',
+        'en',
+    ))->handle();
+
+    Notification::assertNothingSent();
+})->with([
+    'a purged placeholder' => ['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855@purged.beai.invalid'],
+    'the same in capitals' => ['E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855@PURGED.BEAI.INVALID'],
+]);
+
 test('the refusal log says the address is a placeholder, blames neither the mandatory-email column nor a visitor, and carries no address', function (): void {
     // The old text claimed the row "predates the mandatory-email column", which
     // is false for a visitor (created long after that column) and would send an
