@@ -27,6 +27,7 @@ use App\Models\User;
 use App\Notifications\CandidateInvitationNotification;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role as SpatieRole;
@@ -204,6 +205,70 @@ test('it REFUSES to mail a backfilled placeholder address', function (): void {
         '1 October 2026',
         'en',
     ))->handle();
+
+    Notification::assertNothingSent();
+});
+
+test('it REFUSES to mail the placeholder address of a reusable-link visitor', function (): void {
+    // reusable-interview-links: an anonymous visitor carries
+    // `<rlv_ulid>@invalid.beai.local`, the SAME convention the backfill used,
+    // so the same predicate must refuse it. There is no person to write to.
+    Notification::fake();
+
+    (new SendCandidateInvitationJob(
+        'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0@invalid.beai.local',
+        'https://candidate.test/interview/token-123',
+        'Milan fair stand #1',
+        'Acme',
+        'Sales',
+        '1 October 2026',
+        'en',
+    ))->handle();
+
+    Notification::assertNothingSent();
+});
+
+test('the refusal log says the address is a placeholder and does not blame the mandatory-email column', function (): void {
+    // The old text claimed the row "predates the mandatory-email column", which
+    // is false for a visitor (created long after that column) and would send an
+    // operator looking for a legacy-data problem that does not exist.
+    Notification::fake();
+    Log::spy();
+
+    (new SendCandidateInvitationJob(
+        'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0@invalid.beai.local',
+        'https://candidate.test/interview/token-123',
+        'Milan fair stand #1',
+        'Acme',
+        'Sales',
+        '1 October 2026',
+        'en',
+    ))->handle();
+
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->withArgs(fn (string $message): bool => str_contains(strtolower($message), 'placeholder')
+            && ! str_contains($message, 'predates the mandatory-email column'));
+});
+
+test('re-issuing a link for a visitor with send_email true returns the link and sends no mail', function (): void {
+    // The participant detail page sends `send_email: false` for this, but the
+    // API default is TRUE and an integrator may omit it. The request must still
+    // succeed and hand back the link; the mail is refused downstream because
+    // the address is a placeholder.
+    Notification::fake();
+    ['token' => $token, 'project' => $project] = invitableProject();
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0',
+        'display_name' => 'Milan fair stand #1',
+        'email' => 'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0@invalid.beai.local',
+        'send_email' => true,
+    ]);
+
+    $response->assertCreated();
+    expect($response->json('entry_url'))->toBeString()->not->toBeEmpty();
 
     Notification::assertNothingSent();
 });
