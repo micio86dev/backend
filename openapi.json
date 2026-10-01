@@ -2987,7 +2987,7 @@
                                     },
                                     "scheduled_at": {
                                         "type": "string",
-                                        "description": "interview-scheduling (design AD-2/AD-3): optional future start\ntime. The rule object owns the explicit-offset check, the\nfuture check, and the minimum-lead-time check \u2014 the SAME rule\nobject the M2M create and the reschedule endpoint use, never\nre-typed as inline logic three times."
+                                        "description": "Optional start time of a scheduled interview: an ISO 8601 date-time with an explicit offset, in the future and at least the minimum lead time ahead."
                                     },
                                     "send_email": {
                                         "type": "boolean",
@@ -3055,7 +3055,7 @@
                         }
                     },
                     "409": {
-                        "description": "`message` carries the CODE, not a sentence \u2014 same\nconvention this file already documents a few lines below\nfor EntryLinkRefusalReason::Completed/Failed: the response\nbody is machine-facing (CLAUDE.md \"machine-facing\n responses are not localized\"), and the backoffice already\ntranslates codes through `translateServerCode`.",
+                        "description": "The candidate is already enrolled in this project. `message` is `entry_link_participant_duplicate_email` or `entry_link_participant_duplicate_candidate_ref`, and `reason` names the duplicated field.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3171,7 +3171,7 @@
                         }
                     },
                     "409": {
-                        "description": "Redis unavailable -> refuse, not proceed (design D7). Fail\nCLOSED: the cheaper mistake here is a refused request, not a\nduplicate vendor charge for the same evaluation.",
+                        "description": "The audit cannot start. `reason` is `audit_lock_unavailable` when the lock cannot be taken, or `audit_already_running` when an audit of this evaluation is in progress.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3229,8 +3229,8 @@
         "/evaluations/summary": {
             "get": {
                 "operationId": "evaluationIndex.summary",
-                "description": "Aggregates over the identical filter set, sourced from the SAME\n`EvaluationIndexQuery::build()` call as the index \u2014 so the summary\ncan never describe a different population than the table above it.",
-                "summary": "GET /api/evaluations/summary",
+                "description": "Returns the mean score per competency and the number of evaluations per status, over the same\nfiltered set of evaluations as the list, so the summary never describes a different population.",
+                "summary": "Summarize evaluations",
                 "tags": [
                     "EvaluationIndex"
                 ],
@@ -3368,8 +3368,8 @@
         "/evaluations": {
             "get": {
                 "operationId": "evaluationIndex.index",
-                "description": "Two queries total, never per row (D6): the paginated page (via\n`simplePaginate()` \u2014 no separate COUNT query, matching design D6's\n\"two queries per request, never per row\"), plus ONE grouped query\nover `competency_results` for the page's ids to attach each row's\nmean reliability.",
-                "summary": "GET /api/evaluations",
+                "description": "Returns evaluations 20 to a page, each with its mean reliability.",
+                "summary": "List evaluations",
                 "tags": [
                     "EvaluationIndex"
                 ],
@@ -6362,8 +6362,8 @@
             },
             "patch": {
                 "operationId": "organization.update",
-                "description": "`slug` is intentionally never read from the request \u2014 only()\nwhitelists the writable fields, so a `slug` key in the body is\nsilently dropped rather than validated-then-rejected (D2).",
-                "summary": "PATCH /api/organization",
+                "description": "Accepts `name`, the default webhook settings and `primary_color`. Any other field in the body is\nignored.",
+                "summary": "Update the organization",
                 "tags": [
                     "Organization"
                 ],
@@ -6424,7 +6424,7 @@
                                         "type": "string",
                                         "format": "binary",
                                         "contentMediaType": "application/octet-stream",
-                                        "description": "Shape only. `mimes` checks the CLAIM \u2014 a browser sends whatever\nMIME type it likes \u2014 so it is a cheap first filter, never the\ndecision. Step 2 is the decision."
+                                        "description": "A JPEG or PNG image of at most 2 MB."
                                     }
                                 },
                                 "required": [
@@ -6466,7 +6466,7 @@
             },
             "delete": {
                 "operationId": "organizationLogo.destroy",
-                "description": "Absent is a supported state, not a broken one \u2014 DESIGN.md's Quint logo is\nwhat renders when none is configured \u2014 so this is a legitimate action\nrather than an undo.",
+                "description": "Having no logo is a supported state: the product logo is shown when none is configured.",
                 "summary": "Remove the logo, returning the organization to the product's own mark",
                 "tags": [
                     "OrganizationLogo"
@@ -6537,8 +6537,8 @@
         "/participants": {
             "get": {
                 "operationId": "participant.index",
-                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.\n\n`q` matches `candidate_ref`, `display_name` and `source` as a\ncase-insensitive substring, taking `%`, `_` and `\\` literally, and the\ncandidate's `external_id` by exact equality, only when the trimmed term\nis a whole number from 1 to 9007199254740991.",
-                "summary": "GET /api/participants",
+                "description": "Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name` and\n`source` as a case-insensitive substring, and the candidate's `external_id` by exact equality when\nthe trimmed term is a whole number from 1 to 9007199254740991.",
+                "summary": "List participants",
                 "tags": [
                     "Participant"
                 ],
@@ -6691,8 +6691,8 @@
         "/participants/{id}": {
             "get": {
                 "operationId": "participant.show",
-                "description": "Summary scope (D2) \u2014 RBAC only, readable regardless of lifecycle status.",
-                "summary": "GET /api/participants/{id}",
+                "description": "Readable whatever the participant's lifecycle status.",
+                "summary": "Get a participant",
                 "tags": [
                     "Participant"
                 ],
@@ -6734,8 +6734,8 @@
         "/participants/{id}/transcript": {
             "get": {
                 "operationId": "participant.transcript",
-                "description": "Transcript scope (D2) \u2014 requires lifecycle >= in_corso, OR errore\n(operator-participant-visibility D1); a pre-threshold status (in_attesa)\nraises LifecycleNotReadyException -> 409 (D4).",
-                "summary": "GET /api/participants/{id}/transcript",
+                "description": "Available once the interview is in progress, and for an interview that ended in error; before\nthat the response is `409`.",
+                "summary": "Get a participant's transcript",
                 "tags": [
                     "Participant"
                 ],
@@ -6777,8 +6777,8 @@
         "/participants/{id}/evaluation": {
             "get": {
                 "operationId": "participant.evaluation",
-                "description": "Evaluation scope (D2) \u2014 requires lifecycle === completato; anything\nelse raises LifecycleNotReadyException -> 409 (D4).",
-                "summary": "GET /api/participants/{id}/evaluation",
+                "description": "Available only once the interview is completed; otherwise the response is `409`.",
+                "summary": "Get a participant's evaluation",
                 "tags": [
                     "Participant"
                 ],
@@ -8410,8 +8410,8 @@
             },
             "patch": {
                 "operationId": "profile.update",
-                "description": "`role`, `organization_id`, `is_superadmin`, `deactivated_at` are\nnever read from the request at all \u2014 `only()` whitelists the writable\nfields, so any of those keys in the body is silently dropped rather\nthan validated-then-rejected (design D2).",
-                "summary": "PATCH /api/profile",
+                "description": "Accepts `name`, `email` and `locale`. Any other field in the body is ignored.",
+                "summary": "Update the profile",
                 "tags": [
                     "Profile"
                 ],
@@ -8461,8 +8461,8 @@
         "/profile/password": {
             "put": {
                 "operationId": "profile.updatePassword",
-                "description": "The acting session survives by RE-MINTING, not by exemption (design\nD3): sets the password and `password_changed_at`, then\n`$guard->logout()` denylists the ACTING jti (the SAME mechanism\nAuthController::logout() uses), then `$guard->login($user)` mints a\nbrand-new token whose `iat >= password_changed_at`, returned in the\nbody \u2014 the same {access_token, token_type} shape as\nAuthController::refresh().\n\n`iat` is second-precision (design D3): `startOfSecond()` here pairs\nwith RejectStaleCredentials's strict `<` comparison, so a token minted\nin the same wall-clock second as this change is not born dead.",
-                "summary": "PUT /api/profile/password",
+                "description": "Sets the new password and returns a new access token (`access_token`, `token_type`); the token\nused for the request stops working.",
+                "summary": "Change the password",
                 "tags": [
                     "Profile"
                 ],
@@ -8515,8 +8515,8 @@
         "/profile/photo": {
             "post": {
                 "operationId": "profilePhoto.store",
-                "description": "Validation order matters (design D3b) \u2014 the first four steps touch\nonly the PHP temp file, so a rejected upload NEVER reaches the disk:\n  1. UpdateProfilePhotoRequest (required|file|max:2048 KB, shape only\n     \u2014 a fast pre-check against a hardcoded literal, NOT itself\n     config-driven; step 2 below is the real enforcement point).\n  2. Magic-byte verdict (content, never the declared type)\n  3. $file->getSize() > config('profile.photo.max_bytes') \u2014 the ACTUAL\n     byte cap (post-apply verification finding: this step was\n     missing; the FormRequest literal merely coincided with the\n     config default and could not be overridden).\n  4. getimagesize() \u2014 false, or over the configured dimension cap\n  5. Storage::putFileAs(...) \u2014 no disk() argument (SingleStorageDiskArchTest)\n  6. $user->profile_photo_path = $newKey; $user->save();\n     throws \u2192 delete the NEW key in the catch, then re-throw \u2014 never\n     orphan the object the row-write that just failed never pointed to.\n  7. After the row commits, delete the OLD key. Logged, never fatal:\n     at most one stale object per user is preferable to failing a\n     request over a change that already succeeded.",
-                "summary": "POST /api/profile/photo",
+                "description": "The upload is checked by its content rather than its declared type, and against the configured\nsize and dimension limits; a rejected upload is never stored. Errors are returned as codes, for\nexample `photo_invalid_image`.",
+                "summary": "Upload the profile photo",
                 "tags": [
                     "ProfilePhoto"
                 ],
@@ -8565,8 +8565,8 @@
             },
             "delete": {
                 "operationId": "profilePhoto.destroy",
-                "description": "Object-first, then null the column \u2014 exactly purgeSnapshots()'s\nordering (design D5): a failed object delete leaves the row intact\nfor a retryable second call, and S3/R2 deletes are idempotent, so a\nsecond DELETE with nothing left to remove still succeeds (design\nspec: \"Removing a photo twice ... still 200\").",
-                "summary": "DELETE /api/profile/photo",
+                "description": "Removing a photo that is already gone still succeeds.",
+                "summary": "Remove the profile photo",
                 "tags": [
                     "ProfilePhoto"
                 ],
@@ -11427,7 +11427,7 @@
         "/admin/clients": {
             "get": {
                 "operationId": "superadmin.clients",
-                "description": "Reachable ONLY by a superadmin. `ClientOverviewReader` strips the\ntenant scope itself \u2014 an \"Act as\" selection MUST NOT narrow this\nestate to one client (design D2 Trap 1): the superadmin's own ambient\nbypass goes OFF the moment they act as somebody, and a scoped read\nwould then return one organization instead of every client the page\nexists to show.\n\nThe shape is declared for Scramble for the same reason `organizations()`\nand `settings()` already are: `app(ClientOverviewReader::class)->all()`\nis a container call it cannot follow.",
+                "description": "Reachable only by a superadmin. The list is never narrowed by an \"Act as\" selection: it always\ncovers every client.",
                 "summary": "Every client, with the platform-wide statistics the console renders",
                 "tags": [
                     "Superadmin"
@@ -12042,8 +12042,8 @@
         "/users/{id}/deactivate": {
             "post": {
                 "operationId": "user.deactivate",
-                "description": "The guard refusal is RETURNED, not left to `UserGuardException::render()`.\nScramble infers error responses from what a controller visibly answers,\nso a globally-rendered 422 never reached the generated client \u2014 and the\nbackoffice reads `{error}` off exactly this rejection to explain the\nrefusal. A contract the client depends on and the spec does not declare\nis one rename away from silently degrading.\n\nThe 422 body is `{error, message}`: `last_admin` when refusing for a\npeer, `self_deactivation` when the caller is the last one.\n\n204 No Content. Soft deactivation only \u2014 the row survives so\naudit-relevant authorship survives (D5).",
-                "summary": "POST /api/users/{id}/deactivate",
+                "description": "Soft deactivation: the user's record is kept so that authorship in the audit trail survives.\nAnswers `204` on success, or `422` with `{error, message}` when refused: `error` is `last_admin`\nor `self_deactivation`.",
+                "summary": "Deactivate a user",
                 "tags": [
                     "User"
                 ],

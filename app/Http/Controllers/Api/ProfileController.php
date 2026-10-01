@@ -45,13 +45,17 @@ class ProfileController extends Controller
         return new ProfileResource($fresh->load('organization'));
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // PATCH /api/profile
+    //
+    // `role`, `organization_id`, `is_superadmin`, `deactivated_at` are
+    // never read from the request at all — `only()` whitelists the writable
+    // fields, so any of those keys in the body is silently dropped rather
+    // than validated-then-rejected (design D2).
     /**
-     * PATCH /api/profile
+     * Update the profile.
      *
-     * `role`, `organization_id`, `is_superadmin`, `deactivated_at` are
-     * never read from the request at all — `only()` whitelists the writable
-     * fields, so any of those keys in the body is silently dropped rather
-     * than validated-then-rejected (design D2).
+     * Accepts `name`, `email` and `locale`. Any other field in the body is ignored.
      */
     public function update(UpdateProfileRequest $request): JsonResponse
     {
@@ -66,20 +70,25 @@ class ProfileController extends Controller
         return (new ProfileResource($fresh->load('organization')))->response();
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // PUT /api/profile/password
+    //
+    // The acting session survives by RE-MINTING, not by exemption (design
+    // D3): sets the password and `password_changed_at`, then
+    // `$guard->logout()` denylists the ACTING jti (the SAME mechanism
+    // AuthController::logout() uses), then `$guard->login($user)` mints a
+    // brand-new token whose `iat >= password_changed_at`, returned in the
+    // body — the same {access_token, token_type} shape as
+    // AuthController::refresh().
+    //
+    // `iat` is second-precision (design D3): `startOfSecond()` here pairs
+    // with RejectStaleCredentials's strict `<` comparison, so a token minted
+    // in the same wall-clock second as this change is not born dead.
     /**
-     * PUT /api/profile/password
+     * Change the password.
      *
-     * The acting session survives by RE-MINTING, not by exemption (design
-     * D3): sets the password and `password_changed_at`, then
-     * `$guard->logout()` denylists the ACTING jti (the SAME mechanism
-     * AuthController::logout() uses), then `$guard->login($user)` mints a
-     * brand-new token whose `iat >= password_changed_at`, returned in the
-     * body — the same {access_token, token_type} shape as
-     * AuthController::refresh().
-     *
-     * `iat` is second-precision (design D3): `startOfSecond()` here pairs
-     * with RejectStaleCredentials's strict `<` comparison, so a token minted
-     * in the same wall-clock second as this change is not born dead.
+     * Sets the new password and returns a new access token (`access_token`, `token_type`); the token
+     * used for the request stops working.
      */
     public function updatePassword(UpdatePasswordRequest $request): JsonResponse
     {

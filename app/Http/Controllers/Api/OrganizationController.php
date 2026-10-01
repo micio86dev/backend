@@ -56,12 +56,17 @@ class OrganizationController extends Controller
         return response()->json(['data' => new OrganizationResource($organization)]);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // PATCH /api/organization
+    //
+    // `slug` is intentionally never read from the request — only()
+    // whitelists the writable fields, so a `slug` key in the body is
+    // silently dropped rather than validated-then-rejected (D2).
     /**
-     * PATCH /api/organization
+     * Update the organization.
      *
-     * `slug` is intentionally never read from the request — only()
-     * whitelists the writable fields, so a `slug` key in the body is
-     * silently dropped rather than validated-then-rejected (D2).
+     * Accepts `name`, the default webhook settings and `primary_color`. Any other field in the body is
+     * ignored.
      */
     public function update(UpdateOrganizationRequest $request): JsonResponse
     {

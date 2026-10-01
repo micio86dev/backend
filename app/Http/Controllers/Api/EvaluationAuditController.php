@@ -66,6 +66,10 @@ final class EvaluationAuditController extends Controller
         private readonly AdminParticipantReader $reader,
     ) {}
 
+    // Internal notes for the exported description below (not published):
+    // Redis unavailable -> refuse, not proceed (design D7). Fail
+    // CLOSED: the cheaper mistake here is a refused request, not a
+    // duplicate vendor charge for the same evaluation.
     public function store(Request $request, int $id): JsonResponse
     {
         // (1) Kill switch — BEFORE authorization. A viewer/operator gets the
@@ -103,9 +107,7 @@ final class EvaluationAuditController extends Controller
             $lock = Cache::lock("audit:evaluation:{$evaluation->id}", $ttlSeconds);
             $acquired = $lock->get();
         } catch (Throwable) {
-            // Redis unavailable -> refuse, not proceed (design D7). Fail
-            // CLOSED: the cheaper mistake here is a refused request, not a
-            // duplicate vendor charge for the same evaluation.
+            // The audit cannot start. `reason` is `audit_lock_unavailable` when the lock cannot be taken, or `audit_already_running` when an audit of this evaluation is in progress.
             return response()->json(['reason' => 'audit_lock_unavailable'], 409);
         }
 

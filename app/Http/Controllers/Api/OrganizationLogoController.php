@@ -135,6 +135,10 @@ final class OrganizationLogoController extends Controller
         ]);
     }
 
+    // Internal notes for the exported description below (not published):
+    // Shape only. `mimes` checks the CLAIM — a browser sends whatever
+    // MIME type it likes — so it is a cheap first filter, never the
+    // decision. Step 2 is the decision.
     public function store(Request $request): JsonResponse
     {
         // The ACTING org, never `$request->user()->organization_id`
@@ -144,9 +148,7 @@ final class OrganizationLogoController extends Controller
         $this->authorize('update', $organization);
 
         $request->validate([
-            // Shape only. `mimes` checks the CLAIM — a browser sends whatever
-            // MIME type it likes — so it is a cheap first filter, never the
-            // decision. Step 2 is the decision.
+            // A JPEG or PNG image of at most 2 MB.
             'logo' => ['required', 'file', 'mimes:jpg,jpeg,png', 'max:2048'],
         ], [
             // CODES, matching the ones the two checks below already throw. A
@@ -229,12 +231,16 @@ final class OrganizationLogoController extends Controller
         return (new OrganizationResource($organization->fresh()))->response();
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Remove the logo, returning the organization to the product's own mark.
+    //
+    // Absent is a supported state, not a broken one — DESIGN.md's Quint logo is
+    // what renders when none is configured — so this is a legitimate action
+    // rather than an undo.
     /**
      * Remove the logo, returning the organization to the product's own mark.
      *
-     * Absent is a supported state, not a broken one — DESIGN.md's Quint logo is
-     * what renders when none is configured — so this is a legitimate action
-     * rather than an undo.
+     * Having no logo is a supported state: the product logo is shown when none is configured.
      */
     public function destroy(Request $request): JsonResponse
     {

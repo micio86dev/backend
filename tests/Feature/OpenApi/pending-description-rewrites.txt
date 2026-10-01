@@ -33,7 +33,6 @@ openapi.json	components.schemas.UpdateUserRequest.description
 openapi.json	paths./admin/avatar-templates.post.requestBody.content.application/json.schema.properties.llm_model_id.description
 openapi.json	paths./admin/avatar-templates/{id}.patch.description
 openapi.json	paths./admin/avatar-templates/{id}.patch.requestBody.content.application/json.schema.properties.llm_model_id.description
-openapi.json	paths./admin/clients.get.description
 openapi.json	paths./avatar-templates.post.requestBody.content.application/json.schema.properties.llm_model_id.description
 openapi.json	paths./avatar-templates/{id}.patch.requestBody.content.application/json.schema.properties.llm_model_id.description
 openapi.json	paths./avatar-templates/catalogue.get.description
@@ -44,9 +43,6 @@ openapi.json	paths./catalogue/default-questions/{defaultQuestion}.patch.summary
 openapi.json	paths./catalogue/revisions/publish.post.summary
 openapi.json	paths./catalogue/roles/{role}.patch.summary
 openapi.json	paths./catalogue/roles/{role}/competencies.put.summary
-openapi.json	paths./entry-links.post.requestBody.content.application/json.schema.properties.scheduled_at.description
-openapi.json	paths./entry-links.post.responses.409.description
-openapi.json	paths./evaluations.get.description
 openapi.json	paths./framework/versions.get.description
 openapi.json	paths./m2m/clients.get.description
 openapi.json	paths./m2m/clients.post.requestBody.content.application/json.schema.properties.mode.anyOf.0.description
@@ -54,16 +50,3 @@ openapi.json	paths./m2m/participants.post.requestBody.content.application/json.s
 openapi.json	paths./m2m/participants.post.requestBody.content.application/json.schema.properties.scheduled_at.description
 openapi.json	paths./m2m/participants/{id}/schedule.delete.summary
 openapi.json	paths./m2m/participants/{id}/schedule.patch.summary
-openapi.json	paths./organization.patch.description
-openapi.json	paths./organization/logo.delete.description
-openapi.json	paths./organization/logo.post.requestBody.content.multipart/form-data.schema.properties.logo.description
-openapi.json	paths./participants.get.description
-openapi.json	paths./participants/{id}.get.description
-openapi.json	paths./participants/{id}/evaluation.get.description
-openapi.json	paths./participants/{id}/evaluation/audit.post.responses.409.description
-openapi.json	paths./participants/{id}/transcript.get.description
-openapi.json	paths./profile.patch.description
-openapi.json	paths./profile/password.put.description
-openapi.json	paths./profile/photo.delete.description
-openapi.json	paths./profile/photo.post.description
-openapi.json	paths./users/{id}/deactivate.post.description
