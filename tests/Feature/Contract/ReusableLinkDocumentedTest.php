@@ -116,6 +116,61 @@ test('the create operation documents its refusals', function (): void {
     expect(array_map('strval', array_keys($responses)))->toContain('201', '401', '403', '404', '409', '422');
 });
 
+// ─── List ────────────────────────────────────────────────────────────────────
+
+test('the list operation is documented and returns an unpaginated collection of the resource', function (): void {
+    $operation = reusableLinkDocumentedOperation(REUSABLE_LINK_PROJECT_PATH, 'get');
+
+    expect($operation['operationId'])->toBe('reusableInterviewLink.index');
+    expect($operation['summary'] ?? '')->not->toBe('');
+
+    $schema = $operation['responses']['200']['content']['application/json']['schema'];
+
+    expect($schema['properties']['data']['type'])->toBe('array');
+    expect($schema['properties']['data']['items']['$ref'])->toBe('#/components/schemas/ReusableInterviewLinkResource');
+    // Bounded per project, so the whole set is one array and carries no paging.
+    expect(array_keys($schema['properties']))->toBe(['data']);
+    expect(array_map('strval', array_keys($operation['responses'])))->toContain('200', '401', '403', '404');
+});
+
+// ─── Disable ─────────────────────────────────────────────────────────────────
+
+test('the disable operation is documented as an idempotent 204 addressed by the public link id', function (): void {
+    $operation = reusableLinkDocumentedOperation(REUSABLE_LINK_PROJECT_PATH.'/{link}', 'delete');
+
+    expect($operation['operationId'])->toBe('reusableInterviewLink.destroy');
+    expect($operation['summary'] ?? '')->not->toBe('');
+    expect((string) ($operation['description'] ?? ''))->toContain('204');
+
+    $parameters = collect($operation['parameters'])->keyBy('name');
+    expect($parameters['project']['schema']['type'])->toBe('integer');
+    // The public id (`rlk_...`), never the internal integer.
+    expect($parameters['link']['schema']['type'])->toBe('string');
+
+    expect(array_map('strval', array_keys($operation['responses'])))->toContain('204', '401', '403', '404', '409');
+    expect($operation['responses']['204'])->not->toHaveKey('content');
+});
+
+test('the admin surface of a link is exactly create, list and disable', function (): void {
+    $paths = reusableLinkDocumentedSpec()['paths'];
+    $operations = [];
+
+    foreach ($paths as $path => $methods) {
+        if (str_contains($path, 'reusable')) {
+            foreach (array_keys($methods) as $method) {
+                $operations[] = strtoupper($method).' '.$path;
+            }
+        }
+    }
+    sort($operations);
+
+    expect($operations)->toBe([
+        'DELETE /projects/{project}/reusable-links/{link}',
+        'GET /projects/{project}/reusable-links',
+        'POST /projects/{project}/reusable-links',
+    ]);
+});
+
 // ─── Resource ────────────────────────────────────────────────────────────────
 
 test('the resource exposes exactly the metadata of a link and never a secret, an expiry or an internal id', function (): void {

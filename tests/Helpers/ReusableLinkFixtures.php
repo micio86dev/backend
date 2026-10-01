@@ -110,6 +110,21 @@ final class ReusableLinkFixtures
     }
 
     /**
+     * The property names the COMMITTED `openapi.json` declares for a schema,
+     * sorted: what a client generated from the contract is told to expect.
+     *
+     * @return list<string>
+     */
+    public static function exportedKeys(string $schema): array
+    {
+        $spec = json_decode((string) file_get_contents(base_path('openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+        $keys = array_keys($spec['components']['schemas'][$schema]['properties'] ?? []);
+        sort($keys);
+
+        return $keys;
+    }
+
+    /**
      * Every key name at any depth of a decoded JSON document.
      *
      * @param  array<array-key, mixed>  $document

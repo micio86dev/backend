@@ -257,7 +257,9 @@ final class AuthMatrixCatalogue
             'POST api/entry-links' => self::user('entry-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
 
             // ─── reusable interview links (create / list / disable = ParticipantPolicy::create) ──
+            'GET api/projects/{project}/reusable-links' => self::user('reusable-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
             'POST api/projects/{project}/reusable-links' => self::user('reusable-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
+            'DELETE api/projects/{project}/reusable-links/{link}' => self::user('reusable-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
 
             // ─── profile (the caller's own account: any authenticated user) ──
             'GET api/profile' => self::own('profile'),

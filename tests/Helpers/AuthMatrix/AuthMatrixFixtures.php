@@ -6,6 +6,7 @@ namespace Tests\Helpers\AuthMatrix;
 
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
 use Closure;
 use Illuminate\Http\UploadedFile;
@@ -178,8 +179,11 @@ final class AuthMatrixFixtures
             ],
 
             // ─── reusable interview links ────────────────────────────────────
-            // A link is created for an OPEN, interviewable project only; the
-            // origin is configured so an allowed create composes its URL.
+            // Listing and disabling are not gated on the project's state; only
+            // a create needs an OPEN, interviewable project, and an origin so an
+            // allowed create can compose its URL.
+            'GET api/projects/{project}/reusable-links' => ['params' => self::project(...)],
+            'DELETE api/projects/{project}/reusable-links/{link}' => ['params' => self::reusableLink(...)],
             'POST api/projects/{project}/reusable-links' => [
                 'before' => fn () => config(['interview.candidate_app_url' => 'https://interview.example.test']),
                 'params' => fn (AuthMatrixResources $r): array => ['project' => $r->openProject()->id],
@@ -218,6 +222,14 @@ final class AuthMatrixFixtures
     private static function question(AuthMatrixResources $r): array
     {
         return ['project' => $r->project()->id, 'question' => $r->question()->id];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private static function reusableLink(AuthMatrixResources $r): array
+    {
+        return ['project' => $r->project()->id, 'link' => PublicId::encode($r->reusableLink())];
     }
 
     /**

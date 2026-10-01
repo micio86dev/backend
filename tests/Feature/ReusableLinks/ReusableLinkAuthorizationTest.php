@@ -17,7 +17,8 @@ declare(strict_types=1);
  *   a bare superadmin (no org)       -> 409 on the writes
  *
  * A denied request must also leave the table untouched, so each test asserts
- * the row count as well as the status.
+ * the stored link as well as the status: the pre-existing link is neither
+ * disabled nor joined by a new one.
  *
  * REQ: Authorization Matrix For The Admin Operations
  *      (sdd/reusable-interview-links/spec/reusable-interview-links)
@@ -32,6 +33,7 @@ use App\Models\User;
 use App\Services\ApiKeyGenerator;
 use App\Services\ReusableLinkTokenGenerator;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -43,7 +45,7 @@ use Tests\Helpers\ReusableLinkFixtures as Fx;
  *
  * @return TestResponse<Response>
  */
-function reusableLinkAuthCall(string $operation, ?string $bearer, Project $project, ?ReusableInterviewLink $link = null)
+function reusableLinkAuthCall(string $operation, ?string $bearer, Project $project, ReusableInterviewLink $link)
 {
     // One test sends several requests with different credentials; the guard
     // caches the first token it parsed unless it is reset in between.
@@ -54,7 +56,21 @@ function reusableLinkAuthCall(string $operation, ?string $bearer, Project $proje
 
     return match ($operation) {
         'create' => $client->postJson($base, ['label' => 'Stand']),
+        'list' => $client->getJson($base),
+        'disable' => $client->deleteJson($base.'/'.PublicId::encode($link)),
     };
+}
+
+/**
+ * The pre-existing link is untouched and no other link appeared.
+ */
+function reusableLinkAuthAssertUntouched(Project $project, ReusableInterviewLink $link): void
+{
+    $rows = Fx::rowsOf($project);
+
+    expect($rows)->toHaveCount(1);
+    expect($rows[0]->id)->toBe($link->id);
+    expect($rows[0]->disabled_at)->toBeNull();
 }
 
 beforeEach(function (): void {
@@ -63,15 +79,21 @@ beforeEach(function (): void {
 
 // ─── Allowed roles ───────────────────────────────────────────────────────────
 
-test('an admin and an operator are allowed to create', function (string $operation, int $expectedStatus): void {
+test('an admin and an operator are allowed every operation', function (string $operation, int $expectedStatus): void {
     $org = Organization::factory()->create();
     $project = Fx::project($org);
 
     foreach (['admin', 'operator'] as $role) {
-        reusableLinkAuthCall($operation, authTokenForRole($org, $role), $project)->assertStatus($expectedStatus);
+        // A fresh link each round: the first disable would otherwise make the
+        // second an idempotent repeat rather than the operation under test.
+        $link = Fx::link($project);
+
+        reusableLinkAuthCall($operation, authTokenForRole($org, $role), $project, $link)->assertStatus($expectedStatus);
     }
 })->with([
     'create' => ['create', 201],
+    'list' => ['list', 200],
+    'disable' => ['disable', 204],
 ]);
 
 // ─── Denied callers ──────────────────────────────────────────────────────────
@@ -79,41 +101,48 @@ test('an admin and an operator are allowed to create', function (string $operati
 test('a viewer is refused with 403 and nothing is written', function (string $operation): void {
     $org = Organization::factory()->create();
     $project = Fx::project($org);
+    $link = Fx::link($project);
 
-    reusableLinkAuthCall($operation, authTokenForRole($org, 'viewer'), $project)->assertForbidden();
+    reusableLinkAuthCall($operation, authTokenForRole($org, 'viewer'), $project, $link)->assertForbidden();
 
-    expect(Fx::totalRows())->toBe(0);
-})->with(['create']);
+    reusableLinkAuthAssertUntouched($project, $link);
+})->with(['create', 'list', 'disable']);
 
 test('the role check runs before the project is resolved, so a viewer is 403 even for a foreign project', function (string $operation): void {
     $org = Organization::factory()->create();
     $foreignProject = Fx::project(Organization::factory()->create());
+    $foreignLink = Fx::link($foreignProject);
 
-    reusableLinkAuthCall($operation, authTokenForRole($org, 'viewer'), $foreignProject)->assertForbidden();
-})->with(['create']);
+    reusableLinkAuthCall($operation, authTokenForRole($org, 'viewer'), $foreignProject, $foreignLink)->assertForbidden();
+})->with(['create', 'list', 'disable']);
 
-test('an admin of another organization reaches a 404, never a 403', function (string $operation): void {
+test('an admin of another organization reaches a 404, never a 403, and learns nothing', function (string $operation): void {
     $org = Organization::factory()->create();
     $foreignProject = Fx::project(Organization::factory()->create());
+    $foreignLink = Fx::link($foreignProject, ['label' => 'secret foreign label']);
 
-    $response = reusableLinkAuthCall($operation, authTokenForRole($org, 'admin'), $foreignProject);
+    $response = reusableLinkAuthCall($operation, authTokenForRole($org, 'admin'), $foreignProject, $foreignLink);
 
     $response->assertNotFound();
-    expect(Fx::totalRows())->toBe(0);
-    expect((string) $response->getContent())->not->toContain((string) $foreignProject->name);
-})->with(['create']);
+    expect((string) $response->getContent())
+        ->not->toContain('secret foreign label')
+        ->not->toContain((string) $foreignProject->name);
+    reusableLinkAuthAssertUntouched($foreignProject, $foreignLink);
+})->with(['create', 'list', 'disable']);
 
 test('a caller with no credential is 401', function (string $operation): void {
     $project = Fx::project(Organization::factory()->create());
+    $link = Fx::link($project);
 
-    reusableLinkAuthCall($operation, null, $project)->assertUnauthorized();
+    reusableLinkAuthCall($operation, null, $project, $link)->assertUnauthorized();
 
-    expect(Fx::totalRows())->toBe(0);
-})->with(['create']);
+    reusableLinkAuthAssertUntouched($project, $link);
+})->with(['create', 'list', 'disable']);
 
 test('an M2M API key is refused with 401', function (string $operation): void {
     $org = Organization::factory()->create();
     $project = Fx::project($org);
+    $link = Fx::link($project);
     $rawKey = ApiKeyGenerator::generate();
     ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
@@ -121,10 +150,10 @@ test('an M2M API key is refused with 401', function (string $operation): void {
         'abilities' => ['participants:read', 'participants:write', 'projects:read'],
     ]);
 
-    reusableLinkAuthCall($operation, $rawKey, $project)->assertUnauthorized();
+    reusableLinkAuthCall($operation, $rawKey, $project, $link)->assertUnauthorized();
 
-    expect(Fx::totalRows())->toBe(0);
-})->with(['create']);
+    reusableLinkAuthAssertUntouched($project, $link);
+})->with(['create', 'list', 'disable']);
 
 test('a candidate JWT, including one minted for a reusable link visitor, is refused with 401', function (string $operation): void {
     $org = Organization::factory()->create();
@@ -144,31 +173,32 @@ test('a candidate JWT, including one minted for a reusable link visitor, is refu
     });
 
     foreach ([$ordinary, $visitor] as $candidateJwt) {
-        reusableLinkAuthCall($operation, $candidateJwt, $project)->assertUnauthorized();
+        reusableLinkAuthCall($operation, $candidateJwt, $project, $link)->assertUnauthorized();
     }
 
-    expect(Fx::rowsOf($project))->toHaveCount(1);
-})->with(['create']);
+    reusableLinkAuthAssertUntouched($project, $link);
+})->with(['create', 'list', 'disable']);
 
 test('a raw link token is not a credential: presented as a Bearer it is 401', function (string $operation): void {
     $org = Organization::factory()->create();
     $project = Fx::project($org);
     $rawToken = ReusableLinkTokenGenerator::generate();
-    Fx::link($project, [
+    $link = Fx::link($project, [
         'token_hash' => ReusableLinkTokenGenerator::hash($rawToken),
         'token_prefix' => ReusableLinkTokenGenerator::prefixOf($rawToken),
     ]);
 
-    reusableLinkAuthCall($operation, $rawToken, $project)->assertUnauthorized();
+    reusableLinkAuthCall($operation, $rawToken, $project, $link)->assertUnauthorized();
 
-    expect(Fx::rowsOf($project))->toHaveCount(1);
-})->with(['create']);
+    reusableLinkAuthAssertUntouched($project, $link);
+})->with(['create', 'list', 'disable']);
 
 test('a superadmin with no acting organization is refused the writes with 409', function (string $operation): void {
     $project = Fx::project(Organization::factory()->create());
+    $link = Fx::link($project);
     $superadmin = User::factory()->create(['organization_id' => null, 'is_superadmin' => true]);
 
-    reusableLinkAuthCall($operation, auth('api')->login($superadmin), $project)->assertStatus(409);
+    reusableLinkAuthCall($operation, auth('api')->login($superadmin), $project, $link)->assertStatus(409);
 
-    expect(Fx::totalRows())->toBe(0);
-})->with(['create']);
+    reusableLinkAuthAssertUntouched($project, $link);
+})->with(['create', 'disable']);

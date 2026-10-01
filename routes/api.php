@@ -372,7 +372,9 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // and never a 403. Admin and operator only (`ParticipantPolicy::create`),
     // checked BEFORE the project is resolved. The writes demand an organization
     // in context, so a bare superadmin gets the legible 409 instead of a 500.
+    Route::get('projects/{project}/reusable-links', [ReusableInterviewLinkController::class, 'index']);
     Route::post('projects/{project}/reusable-links', [ReusableInterviewLinkController::class, 'store'])->middleware('org.context');
+    Route::delete('projects/{project}/reusable-links/{link}', [ReusableInterviewLinkController::class, 'destroy'])->middleware('org.context');
 });
 
 // ─── Superadmin: clients and the acting-organization switch ──────────────────
