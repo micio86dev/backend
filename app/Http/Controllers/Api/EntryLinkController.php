@@ -15,6 +15,7 @@ use App\Policies\ParticipantPolicy;
 use App\Rules\NotPlaceholderEmail;
 use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Participant\ExternalReference;
+use App\Support\Participant\PlaceholderEmail;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
@@ -266,15 +267,22 @@ final class EntryLinkController extends Controller
         // has already been minted and its jti already spent.
         //
         // Never to a reusable-link visitor: its address is whatever the link
-        // holder typed and was never verified, so BEAI does not write to it. The
-        // link is still minted and returned, and `email_sent` stays truthful.
+        // holder typed and was never verified, so BEAI does not write to it. And
+        // never to a placeholder address (a legacy row, or a participant the
+        // retention purge redacted): nobody can be written to there. The link is
+        // still minted and returned, and `email_sent` stays truthful: the job is
+        // not queued, so the answer is false. The job keeps its own placeholder
+        // refusal as a second line of defence.
         $requestedEmail = (bool) ($validated['send_email'] ?? true);
-        $emailSent = (bool) ($requestedEmail && ! $minted->targetsReusableLinkVisitor);
+        $addressIsPlaceholder = PlaceholderEmail::is($validated['email']);
+        $emailSent = (bool) ($requestedEmail && ! $minted->targetsReusableLinkVisitor && ! $addressIsPlaceholder);
 
         if ($requestedEmail && ! $emailSent) {
             // One line, no context: neither the address nor the name belongs in
             // a log read by people who were never given them.
-            Log::info('candidate invitation not queued: the participant is a reusable-link visitor with a self-declared address that was never verified.');
+            Log::info($addressIsPlaceholder
+                ? 'candidate invitation not queued: the participant holds a placeholder address, not an address a person gave.'
+                : 'candidate invitation not queued: the participant is a reusable-link visitor with a self-declared address that was never verified.');
         }
 
         // The candidate's own language, formatted in it. A date rendered in
@@ -310,8 +318,11 @@ final class EntryLinkController extends Controller
         return response()->json([
             'entry_url' => $entryUrl,
             'expires_at' => $minted->expiresAt->toISOString(),
-            // Reported back so the UI can say "sent to grace@example.test"
-            // rather than leaving the operator to guess whether it went.
+            // Whether an invitation was queued, so the UI can say it was sent
+            // rather than leaving the operator to guess. It is false when no mail
+            // was asked for, and when none will go out: the participant is a
+            // reusable-link visitor with a self-declared address, or holds a
+            // placeholder address.
             'email_sent' => $emailSent,
         ], 201);
     }

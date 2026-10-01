@@ -3038,7 +3038,7 @@
                                                 },
                                                 "email_sent": {
                                                     "type": "boolean",
-                                                    "description": "Reported back so the UI can say \"sent to grace@example.test\"\nrather than leaving the operator to guess whether it went."
+                                                    "description": "Whether an invitation was queued, so the UI can say it was sent\nrather than leaving the operator to guess. It is false when no mail\nwas asked for, and when none will go out: the participant is a\nreusable-link visitor with a self-declared address, or holds a\nplaceholder address."
                                                 }
                                             },
                                             "required": [
