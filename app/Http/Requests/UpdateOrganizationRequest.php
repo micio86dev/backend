@@ -44,12 +44,14 @@ class UpdateOrganizationRequest extends FormRequest
      */
     public function rules(): array
     {
+        // `default_webhook_events`: closed event-type set — mirrors
+        // UpdateProjectRequest.php:94's config-driven Rule::in (never a hardcoded
+        // list, never env-overridable).
         return [
             'name' => ['sometimes', 'string', 'max:255'],
             'default_webhook_url' => ['sometimes', 'nullable', 'url', 'max:2048', new SafeWebhookUrl],
             'default_webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
-            // Closed event-type set — mirrors UpdateProjectRequest.php:94's
-            // config-driven Rule::in (never a hardcoded list, never env-overridable).
+            // The webhook events to subscribe to, from the closed set of event types.
             'default_webhook_events' => ['sometimes', 'nullable', 'array'],
             'default_webhook_events.*' => [Rule::in(config('webhooks.events.types'))],
 

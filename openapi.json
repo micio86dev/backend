@@ -13075,7 +13075,7 @@
             },
             "AvatarVoicePreviewRequest": {
                 "type": "object",
-                "description": "Body of `POST /api/avatar-templates/voice-preview`.\n\nThere is deliberately NO free-text field: the sample sentence lives in\n`config/avatar_preview.php`, so an unknown key such as `text` is simply never\nread. `voice_id` is format-restricted because it is interpolated into a\nprovider URL path (ElevenLabs, LiveAvatar).\n\nAuthorization is done in the controller with the same `create` ability as\nauthoring a template, like the sibling export/import actions.",
+                "description": "Body of `POST /api/avatar-templates/voice-preview`.\n\nThere is deliberately no free-text field: the sample sentence is fixed by the platform, so an\nunknown key such as `text` is simply never read. `voice_id` is format-restricted because it is\ninterpolated into a provider URL path (ElevenLabs, LiveAvatar).\n\nAuthorization is done in the controller with the same `create` ability as authoring a template,\nlike the sibling export/import actions.",
                 "properties": {
                     "provider": {
                         "type": "string",
@@ -16816,7 +16816,7 @@
                             "array",
                             "null"
                         ],
-                        "description": "Closed event-type set \u2014 mirrors UpdateProjectRequest.php:94's\nconfig-driven Rule::in (never a hardcoded list, never env-overridable).",
+                        "description": "The webhook events to subscribe to, from the closed set of event types.",
                         "items": {
                             "type": "string",
                             "enum": [
