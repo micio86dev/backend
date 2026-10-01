@@ -9,22 +9,25 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// StoreUserRequest (backoffice-missing-pages D4).
+//
+// Validates POST /api/users. `organization_id` and `is_superadmin` are
+// deliberately NOT rules here — they are never read from the request at
+// all (the controller only ever passes $request->safe()->only([...]) the
+// four whitelisted fields to User::create()), so a crafted value in either
+// key is ignored, never validated-then-rejected.
+//
+// `role` validates against the code-level OrgRole::values() allow-list —
+// NEVER `Rule::exists('roles', 'name')`, which would make the assignable
+// set DATA (any seeder/migration/future feature that inserts a `roles` row
+// would instantly make it grantable, and it would also accept another
+// tenant's role name). `role_code` is never a rule here at all: it is
+// ignored, not validated-then-rejected — this surface governs authorization
+// roles only, never the BEAI organizational role_code.
 /**
- * StoreUserRequest (backoffice-missing-pages D4).
- *
- * Validates POST /api/users. `organization_id` and `is_superadmin` are
- * deliberately NOT rules here — they are never read from the request at
- * all (the controller only ever passes $request->safe()->only([...]) the
- * four whitelisted fields to User::create()), so a crafted value in either
- * key is ignored, never validated-then-rejected.
- *
- * `role` validates against the code-level OrgRole::values() allow-list —
- * NEVER `Rule::exists('roles', 'name')`, which would make the assignable
- * set DATA (any seeder/migration/future feature that inserts a `roles` row
- * would instantly make it grantable, and it would also accept another
- * tenant's role name). `role_code` is never a rule here at all: it is
- * ignored, not validated-then-rejected — this surface governs authorization
- * roles only, never the BEAI organizational role_code.
+ * The body of `POST /api/users`. The organization and superadmin flag are decided by the endpoint,
+ * not by the caller, so they are not accepted here; `role` must be one of the assignable roles.
  */
 class StoreUserRequest extends FormRequest
 {

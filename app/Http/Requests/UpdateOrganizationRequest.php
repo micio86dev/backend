@@ -10,19 +10,22 @@ use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// UpdateOrganizationRequest (backoffice-missing-pages D2/D3).
+//
+// Validates PATCH /api/organization. Accepts `name` and the three
+// `default_webhook_*` fields; `slug` is deliberately NOT a rule here — it is
+// a tenancy identifier, never editable, and the controller only ever writes
+// `$request->safe()->only([...])`, so a `slug` key in the body is silently
+// dropped rather than validated-then-rejected.
+//
+// `allowed_domains` (public-api step 4) is likewise absent here on purpose
+// — step 11 adds its backoffice editor; until then it is read-only,
+// exposed on `GET /v1/organization` but writable through no endpoint at
+// all.
 /**
- * UpdateOrganizationRequest (backoffice-missing-pages D2/D3).
- *
- * Validates PATCH /api/organization. Accepts `name` and the three
- * `default_webhook_*` fields; `slug` is deliberately NOT a rule here — it is
- * a tenancy identifier, never editable, and the controller only ever writes
- * `$request->safe()->only([...])`, so a `slug` key in the body is silently
- * dropped rather than validated-then-rejected.
- *
- * `allowed_domains` (public-api step 4) is likewise absent here on purpose
- * — step 11 adds its backoffice editor; until then it is read-only,
- * exposed on `GET /v1/organization` but writable through no endpoint at
- * all.
+ * The body of `PATCH /api/organization`: the organization name, the default webhook settings and
+ * the primary colour. Any other field is ignored.
  */
 class UpdateOrganizationRequest extends FormRequest
 {

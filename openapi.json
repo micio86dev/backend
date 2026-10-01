@@ -13795,7 +13795,7 @@
             },
             "ForgotPasswordRequest": {
                 "type": "object",
-                "description": "Validates `POST /api/auth/forgot-password` (self-service-password-reset AD-3).\n\n`exists:users,email` is DELIBERATELY ABSENT and must never be added. It would\nmake the validator itself the account-enumeration oracle this whole flow is\nbuilt to avoid \u2014 a 422 for \"unknown\" and a 202 for \"known\" is a cleaner\nsignal than any timing difference.\n\nOnly the FORMAT is validated. That is safe: it says something about the\nstring the caller typed, never about whether an account exists behind it.",
+                "description": "The body of `POST /api/auth/forgot-password`. Only the format of the email address is\nvalidated, so the response never reveals whether an account exists.",
                 "properties": {
                     "email": {
                         "type": "string",
@@ -15602,7 +15602,7 @@
             },
             "ResetPasswordRequest": {
                 "type": "object",
-                "description": "Validates `POST /api/auth/reset-password` (self-service-password-reset AD-2).\n\nValidation runs BEFORE the token is presented to the broker, so a typo in the\nnew password \u2014 a mismatched confirmation, one character short \u2014 does NOT burn\nthe single-use token. A locked-out user gets one link; spending it on a typo\nwould send them back to the start.\n\n`min:8` matches the floor the admin path (`UpdateUserRequest`) and the\nself-service path (`UpdatePasswordRequest`) already use. A stricter floor\nhere would be theatre: the same account can be given a shorter password\nthrough either of those two routes.\n\n`exists:users,email` is absent here for the same reason as in\n`ForgotPasswordRequest`, though the exposure is smaller \u2014 a caller must also\nhold a valid token. The controller answers unknown-user, deactivated-user and\nbad-token with ONE generic failure.",
+                "description": "The body of `POST /api/auth/reset-password`: the reset token, the account email address and the\nnew password. The password is validated before the single-use token is used, so a typo does not\nspend the reset link.",
                 "properties": {
                     "token": {
                         "type": "string"
@@ -16325,7 +16325,7 @@
             },
             "StorePlatformUserRequest": {
                 "type": "object",
-                "description": "Validates POST /api/admin/platform-users (platform-user-management D2).\n\nThere is no `role` rule and no `organization_id` rule, and their absence is\nthe point rather than an omission: both are DECIDED by the surface, exactly\nas `/api/users` decides them for an organization's people. A field that is\nnever read cannot be crafted.",
+                "description": "The body of `POST /api/admin/platform-users`. The role and the organization are decided by the\nendpoint, not by the caller, so they are not accepted here.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -16559,7 +16559,7 @@
             },
             "StoreUserRequest": {
                 "type": "object",
-                "description": "StoreUserRequest (backoffice-missing-pages D4).\n\nValidates POST /api/users. `organization_id` and `is_superadmin` are\ndeliberately NOT rules here \u2014 they are never read from the request at\nall (the controller only ever passes $request->safe()->only([...]) the\nfour whitelisted fields to User::create()), so a crafted value in either\nkey is ignored, never validated-then-rejected.\n\n`role` validates against the code-level OrgRole::values() allow-list \u2014\nNEVER `Rule::exists('roles', 'name')`, which would make the assignable\nset DATA (any seeder/migration/future feature that inserts a `roles` row\nwould instantly make it grantable, and it would also accept another\ntenant's role name). `role_code` is never a rule here at all: it is\nignored, not validated-then-rejected \u2014 this surface governs authorization\nroles only, never the BEAI organizational role_code.",
+                "description": "The body of `POST /api/users`. The organization and superadmin flag are decided by the endpoint,\nnot by the caller, so they are not accepted here; `role` must be one of the assignable roles.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -16790,7 +16790,7 @@
             },
             "UpdateOrganizationRequest": {
                 "type": "object",
-                "description": "UpdateOrganizationRequest (backoffice-missing-pages D2/D3).\n\nValidates PATCH /api/organization. Accepts `name` and the three\n`default_webhook_*` fields; `slug` is deliberately NOT a rule here \u2014 it is\na tenancy identifier, never editable, and the controller only ever writes\n`$request->safe()->only([...])`, so a `slug` key in the body is silently\ndropped rather than validated-then-rejected.\n\n`allowed_domains` (public-api step 4) is likewise absent here on purpose\n\u2014 step 11 adds its backoffice editor; until then it is read-only,\nexposed on `GET /v1/organization` but writable through no endpoint at\nall.",
+                "description": "The body of `PATCH /api/organization`: the organization name, the default webhook settings and\nthe primary colour. Any other field is ignored.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -16838,7 +16838,7 @@
             },
             "UpdatePasswordRequest": {
                 "type": "object",
-                "description": "UpdatePasswordRequest (user-profile-self-service, design D4).\n\nValidates PUT /api/profile/password. Its OWN request \u2014 the admin\n`UpdateUserRequest` (`['sometimes','string','min:8']`, no current-password\ncheck) MUST NOT be reused for this route.\n\n`current_password:api` is not decoration: the rule resolves\n`auth()->guard($param)`, and the default guard is `env('AUTH_GUARD', 'api')`\n(config/auth.php:19) \u2014 an env change would make the rule read the wrong\nguard and fail closed on every request. `min:8` deliberately matches the\nadmin path floor \u2014 a stricter self-service floor would be theatre.\n\nREQ: Password Change Requires The Current Password\n(openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)",
+                "description": "The body of `PUT /api/profile/password`: the current password and the new one.",
                 "properties": {
                     "current_password": {
                         "type": "string"
@@ -16861,7 +16861,7 @@
             },
             "UpdatePlatformUserRequest": {
                 "type": "object",
-                "description": "Validates PATCH /api/admin/platform-users/{id} (platform-user-management D2).\n\nEvery field is `sometimes`: a partial update must not blank what it does not\nmention. `role` and `organization_id` are absent for the same reason as on\nthe store request \u2014 they are the surface's to decide, not the caller's.",
+                "description": "The body of `PATCH /api/admin/platform-users/{id}`. Every field is optional, so a partial update\nleaves what it does not mention untouched. The role and the organization cannot be changed here.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -16882,7 +16882,7 @@
             },
             "UpdateProfilePhotoRequest": {
                 "type": "object",
-                "description": "UpdateProfilePhotoRequest (user-avatar-image, design D3/D3b).\n\nValidates POST /api/profile/photo. `max:2048` (KB) is the SHAPE check \u2014\n`ValidatePostSize` already returns 413 for anything past nginx's\n`client_max_body_size 8m` / PHP's `post_max_size=8M` before this even\nruns. The REAL enforcement is `config('profile.photo.max_bytes')`\n(2 MiB), checked in ProfilePhotoController against the real byte count,\nnever this literal.\n\nWhat this rule does NOT do, stated plainly, per design D3 \u2014 the residual\nis documented in code, not just in design.md:\n\n- No re-encode: EXIF (including GPS coordinates, camera serial, capture\n  timestamp, and any embedded thumbnail) survives verbatim into every\n  presigned URL served from the stored object.\n- Polyglots and trailing payloads pass every check here \u2014 bytes appended\n  after valid image data are never inspected, so the object is\n  effectively a byte-capped arbitrary-content store keyed to a user id.\n- A 4096\u00d74096 PNG (the dimension cap's own ceiling) is roughly 64 MB\n  decompressed once a browser renders it \u2014 the cap bounds the spike, it\n  does not remove it.\n- Nothing decodes server-side, so a header-valid file crafted to crash a\n  specific image decoder is not detected.\n\nThe only route to closing any of the above is re-encoding, which needs\n`ext-gd` or `ext-imagick` \u2014 neither is installed in either Dockerfile\nstage, and adding one is explicitly out of scope for this change.\nClient-side canvas re-encoding is a UX convenience, never a control: it\nmakes honest uploads fit the cap and incidentally drops EXIF, but an\nattacker posts the multipart request directly and skips it entirely.\n\nREQ: Upload Is Validated By Content, Not By Declared Type\n(openspec/changes/user-avatar-image/specs/user-self-service/spec.md)",
+                "description": "The body of `POST /api/profile/photo`: an image file, checked by its content rather than its\ndeclared type.",
                 "properties": {
                     "photo": {
                         "type": "string",
@@ -16898,7 +16898,7 @@
             },
             "UpdateProfileRequest": {
                 "type": "object",
-                "description": "UpdateProfileRequest (user-profile-self-service, design D2/D8).\n\nValidates PATCH /api/profile. Declares ONLY `name`, `email`, `locale` \u2014\n`role`, `organization_id`, `is_superadmin`, `deactivated_at` are NEVER\ndeclared here, so a FormRequest alone does not strip them (D2 layer 1);\nProfileController's `$request->safe()->only([...])` (D2 layer 2) and\nUser::$fillable (D2 layer 3) are what actually drop them, silently rather\nthan a validated-then-rejected `prohibited` 422 (same discipline as\nUpdateOrganizationRequest.php's `slug`).\n\nREQ: Editable Fields Are An Allow-List; Email Uniqueness On Self-Update\n(openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)",
+                "description": "The body of `PATCH /api/profile`: `name`, `email` and `locale`. Any other field is ignored.",
                 "properties": {
                     "name": {
                         "type": "string",
@@ -17132,7 +17132,7 @@
             },
             "UpdateUserRequest": {
                 "type": "object",
-                "description": "UpdateUserRequest (backoffice-missing-pages D4).\n\nValidates PATCH /api/users/{id}. The target is resolved through\nUserAdminReader (D4) \u2014 the org filter runs BEFORE authorization, so a\ncross-org id 404s before any role is even evaluated (mirrors\nUpdateProjectRequest.php's SubstituteBindings-runs-before-TenantContext\ndiscipline).",
+                "description": "The body of `PATCH /api/users/{id}`.",
                 "properties": {
                     "name": {
                         "type": "string",
