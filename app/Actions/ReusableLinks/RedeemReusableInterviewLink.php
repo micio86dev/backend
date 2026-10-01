@@ -64,6 +64,21 @@ use Illuminate\Support\Str;
  */
 final class RedeemReusableInterviewLink
 {
+    /**
+     * The unique index that backs the duplicate-email guarantee across links,
+     * operators and the API, created by the migration
+     * `2026_09_01_180000_add_email_to_participants` on `(project_id, email)`. It is
+     * a plain, CASE-SENSITIVE index. The redemption always stores the address
+     * lower-cased (see {@see VisitorIdentity}), so two redemptions of one address
+     * in any spelling collide here exactly, while a mixed-case row written by
+     * another path is caught by the case-insensitive check below instead (a
+     * concurrent mixed-case writer is the documented residual, G-43). Its name is
+     * matched in {@see self::isDuplicateEmail()}, and a schema test pins that the
+     * index exists under this name, so a rename fails the suite instead of turning
+     * a race into a 500.
+     */
+    public const DUPLICATE_EMAIL_INDEX = 'participants_project_id_email_unique';
+
     public function __construct(
         private readonly EntryLinkMinter $minter,
         private readonly ProjectInterviewability $projectInterviewability,
@@ -118,6 +133,7 @@ final class RedeemReusableInterviewLink
         }
 
         try {
+            /** @var array{0: Participant, 1: string}|RedemptionStatus $created the visitor and its credential, or why nothing was created */
             $created = DB::transaction(function () use ($link, $hash, $project, $identity): array|RedemptionStatus {
                 // The decision is made on the row as it is NOW, under the same
                 // lock a Disable takes: either this redemption completes before
@@ -145,10 +161,10 @@ final class RedeemReusableInterviewLink
                     return RedemptionStatus::Duplicate;
                 }
 
-                $number = $locked->uses_count + 1;
+                $newUsesCount = $locked->uses_count + 1;
 
                 $locked->forceFill([
-                    'uses_count' => $number,
+                    'uses_count' => $newUsesCount,
                     'last_used_at' => now(),
                 ])->save();
 
@@ -192,6 +208,11 @@ final class RedeemReusableInterviewLink
      * the case another path stored it in (the visitor path stores lower case,
      * the operator and API paths keep what they were given).
      *
+     * Only the stored column is lower-cased in SQL: the bound address is already
+     * lower-case because `VisitorIdentity` has a private constructor and
+     * `fromValidated()` is its only way in, so no identity can reach this method
+     * in another case.
+     *
      * `Participant` has no soft deletes and no global scope, so the query sees
      * every row; the organisation and the project are explicit, as in the public
      * API's enrolment.
@@ -213,7 +234,7 @@ final class RedeemReusableInterviewLink
     private static function isDuplicateEmail(QueryException $e): bool
     {
         return $e->getCode() === '23505'
-            && str_contains($e->getMessage(), 'participants_project_id_email_unique');
+            && str_contains($e->getMessage(), self::DUPLICATE_EMAIL_INDEX);
     }
 
     /**
