@@ -80,6 +80,10 @@ class EvaluationIndexController extends Controller
         return EvaluationIndexResource::collection($page);
     }
 
+    // The summary is sent with JSON_PRESERVE_ZERO_FRACTION: a BARS mean is a float
+    // even when it is whole, and the evaluation resources already say `4.0`, not
+    // `4`. Kept here, not above the `return`: Scramble would publish a comment
+    // there as the description of the response.
     /**
      * GET /api/evaluations/summary
      *
@@ -127,7 +131,7 @@ class EvaluationIndexController extends Controller
                 'by_status' => $byStatus,
                 'competencies' => $competencies,
             ],
-        ]);
+        ], 200, [], JSON_PRESERVE_ZERO_FRACTION);
     }
 
     /**
