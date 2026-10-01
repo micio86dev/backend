@@ -4619,8 +4619,8 @@
         "/v1/health": {
             "get": {
                 "operationId": "public-api.health",
-                "description": "Machine-readable status payloads are exempt from the i18n mandate (D31,\nwrapper CLAUDE.md \"Machine-facing responses are not localized\").",
-                "summary": "Return the literal, non-localized `{\"status\":\"ok\"}` body the contract requires",
+                "description": "Unauthenticated liveness check for client monitors. It always answers `200` with the\nliteral body `{\"status\":\"ok\"}`, whatever the locale.",
+                "summary": "Check that the API answers",
                 "tags": [
                     "Health"
                 ],
@@ -4719,7 +4719,8 @@
         "/v1/interviews": {
             "post": {
                 "operationId": "public-api.interviews.store",
-                "summary": "`interview` documented as the `PublicInterview` object it always is\n(step 5 review follow-up, Part B item 1) \u2014 `response()->json([...])`'s\nown inferred type only ever saw `InterviewResource::resolve()`'s\nloose `array<string, mixed>` return type, so the exported spec\npreviously carried an untyped array here instead of a `$ref`.\n`#[Response(201, ...)]` (not a bare `@response` PHPDoc tag) \u2014 the\nPHPDoc form replaces Scramble's ENTIRE inferred response, collapsing\nthe real `201` this method actually returns down to a default `200`;\nthe attribute form names the status explicitly and overlays onto\nthe response Scramble already inferred at it, leaving the other\nauto-inferred statuses (`404`, `409`, `422`) untouched. `metadata`'s\naccepted shape (Part B item 3) is corrected at its source \u2014\n`App\\Rules\\PublicApi\\Metadata::docs()` \u2014 rather than here, so\n`CreateInterviewRequest`'s own named schema carries the fix\ndirectly instead of an `allOf` overlay fighting the same property's\nwrong type inside it",
+                "description": "Enrols a candidate on an active project. The response carries the new interview, a\nshort-lived session token and the URL of the hosted interview.",
+                "summary": "Create an interview",
                 "tags": [
                     "Interview"
                 ],
@@ -4863,8 +4864,8 @@
             },
             "get": {
                 "operationId": "public-api.interviews.index",
-                "description": "`created_after`/`created_before` documented explicitly (step 6 review\nfollow-up, Part A item 8) \u2014 without a `#[QueryParameter]` override,\nScramble's own inference picked up the nearest preceding CODE COMMENT\nabove `$request->query('created_after')` below as this parameter's\ndescription (an internal implementation note about\n`validateFilterFormats()`/`Validator::validated()`, meaningless to an\nAPI consumer, and `created_before` got no description at all). These\ntwo attributes describe the accepted FORMAT and the `400` a caller\nactually gets on a malformed value, the same contract\n`App\\Rules\\PublicApi\\Iso8601DateTime` enforces.",
-                "summary": "`data[]` documented as a list of `PublicInterview` objects, and\n`next_cursor` as the nullable string it genuinely is (step 5 review\nfollow-up, Part B item 2) \u2014 `CursorPage::paginate()`'s own\n`next_cursor: string|null` PHPDoc did not survive being returned\nthrough `response()->json($rawPage)`, so the exported spec\npreviously typed it as a non-nullable `string` and `data[]`'s items\nas untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item\n6) replace the incorrect auto-inferred `422 {message, errors}` this\nmethod's own `QueryValidationException` throw produced \u2014 see\n`Problem::PROBLEM_SHAPE`'s own docblock (step 6 review follow-up,\nPart A item 6: now shared from `App\\Support\\PublicApi\\Problem`\nrather than a copy of the constant declared on this class)",
+                "description": "Returns the organization's interviews for the mode of the API key, newest first, in\ncursor-paginated pages. Every filter is optional: a filter sent with an empty value is\ntreated as not provided, and the unfiltered list is returned.",
+                "summary": "List interviews",
                 "tags": [
                     "Interview"
                 ],
@@ -5099,7 +5100,8 @@
         "/v1/interviews/{interview}/transcript": {
             "get": {
                 "operationId": "public-api.interviews.transcript",
-                "summary": "`GET /v1/interviews/{id}/transcript` \u2014 SPEC.md \u00a73.3, gate: status\n`under_evaluation` or `completed`, else `409 transcript_not_ready`\n(`error` included \u2014 G-15)",
+                "description": "Readable once the interview is under evaluation or completed. Before that, and for an\ninterview that ended in error, the response is `409 transcript_not_ready`.",
+                "summary": "Get the transcript",
                 "tags": [
                     "Interview"
                 ],
@@ -5238,7 +5240,8 @@
         "/v1/interviews/{interview}/answers": {
             "get": {
                 "operationId": "public-api.interviews.answers",
-                "summary": "`GET /v1/interviews/{id}/answers` \u2014 SPEC.md \u00a73.3, same read gate as\nthe transcript",
+                "description": "Readable under the same conditions as the transcript: once the interview is under\nevaluation or completed, otherwise `409 transcript_not_ready`.",
+                "summary": "Get the answers",
                 "tags": [
                     "Interview"
                 ],
@@ -5379,7 +5382,8 @@
         "/v1/interviews/{interview}/scoring": {
             "get": {
                 "operationId": "public-api.interviews.scoring",
-                "summary": "`GET /v1/interviews/{id}/scoring` \u2014 SPEC.md \u00a73.3, gate: status\n`completed` only, else `409 scoring_not_ready`",
+                "description": "Readable only once the interview is completed, otherwise `409 scoring_not_ready`.",
+                "summary": "Get the scoring",
                 "tags": [
                     "Interview"
                 ],
@@ -5565,8 +5569,8 @@
         "/v1/interviews/{interview}/events": {
             "get": {
                 "operationId": "public-api.interviews.events",
-                "description": "`cursor`/`limit` documented explicitly (step 6 review follow-up,\nfinding 14) \u2014 `CursorPage::paginateAscending()` reads both directly\noff `$request` from INSIDE `App\\Support\\PublicApi\\CursorPage`, one\ncall frame away from this method's own body, which is why\nScramble's own static-analysis auto-detection (which scans a\ncontroller method's own body for `$request->query()`/`$request->\ninteger()` calls) never picked them up \u2014 the exported spec\npreviously documented only the `interview` path parameter for this\noperation.",
-                "summary": "`GET /v1/interviews/{id}/events` \u2014 SPEC.md \u00a73.3, `App\\Support\\\nPublicApi\\CursorPage` in its ASCENDING form (G-12: the one documented\nexception to `created_at desc`). `InterviewEvent.public_id` (`evt_`)\nis what every real row already carries \u2014 see that model's own\ndocblock; no participant special-cases its absence",
+                "description": "Returns the events of one interview in cursor-paginated pages, oldest first. This is the\none list ordered ascending, by the time each event occurred, rather than newest first.",
+                "summary": "List interview events",
                 "tags": [
                     "Interview"
                 ],
@@ -8597,8 +8601,8 @@
         "/v1/projects": {
             "get": {
                 "operationId": "public-api.projects.index",
-                "description": "`data[]` documented as a list of `PublicProject` objects and\n`next_cursor` as nullable (step 5 review follow-up, Part B item 2) \u2014\nsame fix, same reasoning, as `InterviewController::index()`'s own\ndocblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)\nreplace the incorrect auto-inferred `422` this method's own\n`QueryValidationException` throw produced \u2014 the shape now shared\nfrom `Problem::PROBLEM_SHAPE` (step 6 review follow-up, Part A item\n6) rather than a copy of the constant this class used to declare.",
-                "summary": "SPEC.md \u00a73.2 \"Filtering on list endpoints: `status`, ...\". `role_code`\nand `assessment_type` are Public-API-specific additions this\noperation's own contract entry lists (`openapi.yaml` `listProjects`\nparameters). An unrecognised value for any of the three answers `400\nvalidation_failed` via `QueryValidationException` (G-28) \u2014 a\nmalformed QUERY PARAMETER, never `422`",
+                "description": "Returns the organization's projects in cursor-paginated pages, newest first. The `status`,\n`role_code` and `assessment_type` filters are optional: an empty value is treated as not\nprovided, and an unrecognised value answers `400 validation_failed`.",
+                "summary": "List projects",
                 "tags": [
                     "Project"
                 ],
@@ -8741,7 +8745,8 @@
         "/v1/projects/{project}": {
             "get": {
                 "operationId": "public-api.projects.show",
-                "summary": "`$project` is the RAW path segment (`prj_...`), resolved manually\nrather than through implicit Eloquent route-model binding: the\nexisting admin `Route::apiResource('projects', ProjectController::class)`\nalready binds the SAME `{project}` route parameter name to an\ninteger id, and a second, public-id-based binding registered on the\nsame parameter name would either collide with it or require touching\n`App\\Models\\Project::resolveRouteBinding()` globally \u2014 which the\nadmin surface must never see (it keeps using integer ids). Resolving\nby hand here keeps the two surfaces fully independent, and\n`PublicId::decode()` returning `null` on ANY malformed/mismatched-\nprefix input, funnelled into the exact same \"no row\" 404 branch as a\nsyntactically valid but unknown id, is what guarantees a mismatched\nprefix answers `404 not_found`, never `400` (SPEC.md \u00a73.2)",
+                "description": "A project id that is malformed or unknown answers `404 not_found`.",
+                "summary": "Get a project",
                 "tags": [
                     "Project"
                 ],
@@ -12218,7 +12223,8 @@
         "/v1/webhooks/deliveries": {
             "get": {
                 "operationId": "public-api.webhooks.deliveries.index",
-                "summary": "`GET /v1/webhooks/deliveries` \u2014 SPEC.md \u00a73.6 \"Delivery log\"",
+                "description": "Returns the delivery attempts of the organization's webhooks, newest first, in\ncursor-paginated pages. The `status`, `event_type` and `interview_id` filters are\noptional: an empty value is treated as not provided, and an unrecognised `status` or\n`event_type` answers `400 validation_failed`.",
+                "summary": "List webhook deliveries",
                 "tags": [
                     "WebhookDelivery"
                 ],
@@ -12437,7 +12443,8 @@
         "/v1/webhooks/deliveries/{id}/redeliver": {
             "post": {
                 "operationId": "public-api.webhooks.deliveries.redeliver",
-                "summary": "`POST /v1/webhooks/deliveries/{id}/redeliver` \u2014 re-queues one\ndelivery for immediate re-send. Allowed only from a terminal\n`delivered`/`failed_permanent`/`dead` state",
+                "description": "Re-queues one delivery for immediate re-send. Allowed only from a terminal state:\n`delivered`, `failed_permanent` or `dead`.",
+                "summary": "Redeliver a webhook delivery",
                 "tags": [
                     "WebhookDelivery"
                 ],

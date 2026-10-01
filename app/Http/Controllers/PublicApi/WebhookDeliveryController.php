@@ -91,8 +91,15 @@ final class WebhookDeliveryController extends Controller
     // `description`, and a docblock also risks a stray ` * `
     // continuation artifact mid-sentence on export — neither belongs in
     // caller-facing documentation.
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // `GET /v1/webhooks/deliveries` — SPEC.md §3.6 "Delivery log".
     /**
-     * `GET /v1/webhooks/deliveries` — SPEC.md §3.6 "Delivery log".
+     * List webhook deliveries.
+     *
+     * Returns the delivery attempts of the organization's webhooks, newest first, in
+     * cursor-paginated pages. The `status`, `event_type` and `interview_id` filters are
+     * optional: an empty value is treated as not provided, and an unrecognised `status` or
+     * `event_type` answers `400 validation_failed`.
      */
     #[IgnoreResponse(422)]
     #[Response(200, description: 'A page of webhook delivery attempts for the caller\'s organization, newest first.', type: 'array{data: list<array{id: string, event_type: string, status: string, interview_id: string, project_id: string, candidate_ref: string, target_url: string|null, attempt_count: int, max_attempts: int, payload_version: string, last_response_status: int|null, last_attempt_at: string|null, next_attempt_at: string|null, delivered_at: string|null, created_at: string}>, next_cursor: string|null, has_more: bool}')]
@@ -181,10 +188,15 @@ final class WebhookDeliveryController extends Controller
     // never a docblock paragraph (see the identical reasoning above
     // `index()`) — this rationale is for the next maintainer, not for
     // `openapi.json`.
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // `POST /v1/webhooks/deliveries/{id}/redeliver` — re-queues one
+    // delivery for immediate re-send. Allowed only from a terminal
+    // `delivered`/`failed_permanent`/`dead` state.
     /**
-     * `POST /v1/webhooks/deliveries/{id}/redeliver` — re-queues one
-     * delivery for immediate re-send. Allowed only from a terminal
-     * `delivered`/`failed_permanent`/`dead` state.
+     * Redeliver a webhook delivery.
+     *
+     * Re-queues one delivery for immediate re-send. Allowed only from a terminal state:
+     * `delivered`, `failed_permanent` or `dead`.
      */
     #[Response(202, description: 'Re-queued for immediate re-delivery with the frozen payload bytes and a fresh signature timestamp.', type: 'array{id: string, event_type: string, status: string, interview_id: string, project_id: string, candidate_ref: string, target_url: string|null, attempt_count: int, max_attempts: int, payload_version: string, last_response_status: int|null, last_attempt_at: string|null, next_attempt_at: string|null, delivered_at: string|null, created_at: string}')]
     #[Response(409, description: 'The delivery is not in a terminal state (code=invalid_state).', type: Problem::PROBLEM_SHAPE)]
