@@ -29,30 +29,16 @@ use Illuminate\Support\Facades\Schema;
  */
 trait RepairsInvalidUniqueIndex
 {
+    use RepairsInvalidIndex;
+
     /**
-     * Queried directly against `pg_index` — Laravel's `Schema` facade has no
-     * `hasValidIndex()` equivalent. `to_regclass()` (not a bare cast, which
-     * THROWS on a name that does not exist yet) resolves to `NULL` for an
-     * unknown relation, which short-circuits this query to no rows — the
-     * same as "not invalid" for an index that has never been created.
+     * Delegates to `RepairsInvalidIndex::indexIsInvalid()` — the `pg_index`
+     * lookup is identical for a unique and a non-unique index, so there is
+     * one copy of it.
      */
     private function uniqueIndexIsInvalid(string $indexName): bool
     {
-        $row = DB::selectOne(
-            'SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(?)',
-            [$indexName]
-        );
-
-        // `DB::selectOne()` is declared `@return mixed` — narrowed here
-        // (PHPStan `--level=max`'s explicit-mixed checking) with
-        // `is_object()` + `isset()` rather than an `@var`/`assert()`
-        // override, so both branches are genuinely provable from the
-        // variable's own runtime shape.
-        if (! is_object($row) || ! isset($row->indisvalid)) {
-            return false;
-        }
-
-        return ! (bool) $row->indisvalid;
+        return $this->indexIsInvalid($indexName);
     }
 
     /**

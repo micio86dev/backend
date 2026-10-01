@@ -24,6 +24,10 @@ declare(strict_types=1);
  *      Scheduled Start Can Be Cancelled Before It Fires,
  *      A Sent Start Email Makes The Schedule Terminal
  *      (sdd/interview-scheduling/spec, Engram #2221)
+ *
+ * candidate-external-reference (slice A3a): both actions answer with a
+ * `ParticipantEnrolmentResource`, so `external_id` and `source` are always
+ * present (null when the participant has no reference).
  */
 
 use App\Enums\ParticipantSchedulingStatus;
@@ -34,6 +38,7 @@ use App\Models\User;
 use App\Support\Tenancy\TenantResolver;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Helpers\ExternalReferenceCases;
 
 // ---------------------------------------------------------------------------
 // Helpers — uniquely named ("resched*") to avoid collision with the other
@@ -102,6 +107,57 @@ test('PATCH while pending updates scheduled_at and stays pending', function (): 
     $participant->refresh();
     expect($participant->scheduling_status)->toBe(ParticipantSchedulingStatus::Pending);
     expect($participant->scheduled_at->toIso8601String())->toBe($newTime);
+});
+
+test('PATCH and DELETE responses carry the external reference, null when the participant has none', function (?int $externalId, ?string $source): void {
+    $org = Organization::factory()->create();
+    $project = reschedProject($org);
+    $token = reschedToken($org);
+    $participant = reschedParticipant($project, $org, [
+        'scheduled_at' => now('UTC')->addHours(2),
+        'scheduling_status' => ParticipantSchedulingStatus::Pending,
+        'external_id' => $externalId,
+        'source' => $source,
+    ]);
+
+    $patched = $this->withToken($token)->patchJson("/api/participants/{$participant->id}/schedule", [
+        'scheduled_at' => now('UTC')->addHours(5)->toIso8601String(),
+    ]);
+    $patched->assertOk();
+    expect($patched->json())->toHaveKeys(['external_id', 'source']);
+    expect($patched->json('external_id'))->toBe($externalId);
+    expect($patched->json('source'))->toBe($source);
+
+    $deleted = $this->withToken($token)->deleteJson("/api/participants/{$participant->id}/schedule");
+    $deleted->assertOk();
+    expect($deleted->json())->toHaveKeys(['external_id', 'source']);
+    expect($deleted->json('external_id'))->toBe($externalId);
+    expect($deleted->json('source'))->toBe($source);
+})->with(fn () => ExternalReferenceCases::validCombinations());
+
+test('PATCH with a non-zero UTC offset stores the instant, not the local wall-clock digits', function (): void {
+    // `store` paths normalise with ->utc() for a documented reason: Eloquent's
+    // datetime cast formats a Carbon in ITS OWN timezone when writing, so an
+    // un-normalised "+02:00" instant would persist its local digits as if they
+    // were UTC and silently move the interview by the offset. Reschedule takes
+    // the same client-supplied value and must hold the same line.
+    $org = Organization::factory()->create();
+    $project = reschedProject($org);
+    $token = reschedToken($org);
+    $participant = reschedParticipant($project, $org, [
+        'scheduled_at' => now('UTC')->addHours(2),
+        'scheduling_status' => ParticipantSchedulingStatus::Pending,
+    ]);
+    $instant = now('UTC')->addHours(5)->startOfSecond();
+    $withOffset = $instant->copy()->setTimezone('Europe/Rome')->toIso8601String();
+
+    expect($withOffset)->toMatch('/[+-]0[12]:00$/');
+
+    $this->withToken($token)->patchJson("/api/participants/{$participant->id}/schedule", [
+        'scheduled_at' => $withOffset,
+    ])->assertOk();
+
+    expect($participant->refresh()->scheduled_at->getTimestamp())->toBe($instant->getTimestamp());
 });
 
 test('PATCH while pending with a value too close to now is rejected 422 without changing the row', function (): void {

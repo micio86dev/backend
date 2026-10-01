@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.61.0"
+        "version": "0.62.0"
     },
     "servers": [
         {
@@ -778,6 +778,22 @@
                         "description": "Page size, 1-100 (default 25). Out of range answers 400 validation_failed.",
                         "schema": {
                             "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "external_id",
+                        "in": "query",
+                        "description": "Exact match on the external_id supplied as candidate.external_id when the interview was created. An integer from 1 to 9007199254740991; any other value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "in": "query",
+                        "description": "Exact, case-sensitive match on the source supplied as candidate.source when the interview was created. At most 180 characters; a longer value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     {
@@ -2683,6 +2699,21 @@
                                 ],
                                 "description": "ISO 639-1, matching `openapi.yaml`'s `Language` schema pattern\nexactly (`^[a-z]{2}$`) \u2014 no further allow-list check: the\ncontract does not restrict `candidate.language` to a\nper-project or per-platform locale set, and this endpoint has\nno such catalogue to validate against (unlike\n`config/translatable.php`'s `supported_locales`, which is a\nBACKOFFICE UI concept).",
                                 "pattern": "^[a-z]{2}$"
+                            },
+                            "external_id": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ],
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                            },
+                            "source": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 180
                             }
                         },
                         "required": [
@@ -2835,6 +2866,20 @@
                     "updated_at": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given."
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The calling system the candidate came from, as supplied when the interview was created; `null` when none was given."
+                    },
                     "project": {
                         "type": "object",
                         "properties": {
@@ -2953,6 +2998,8 @@
                     "recording_ready",
                     "created_at",
                     "updated_at",
+                    "external_id",
+                    "source",
                     "project"
                 ],
                 "title": "PublicInterview"

@@ -64,7 +64,7 @@ final class InterviewResource extends JsonResource
      * InterviewHostedUrlNullableExtension` — see that class's own docblock
      * for why a docblock alone was empirically proven not to work here.
      *
-     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string}
+     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string, external_id: int|null, source: string|null}
      */
     public function toArray(Request $request): array
     {

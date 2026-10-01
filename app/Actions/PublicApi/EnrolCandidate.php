@@ -12,6 +12,7 @@ use App\Models\InterviewEvent;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Support\Participant\ExternalReference;
 use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\SessionTokenMinter;
 use App\Support\Sso\EntryLinkMinter;
@@ -52,6 +53,7 @@ final class EnrolCandidate
         ?array $metadata,
         ?string $exitRedirectUrl,
         ApiKeyMode $mode,
+        ExternalReference $externalReference = new ExternalReference,
     ): EnrolmentResult {
         if (! $this->entryLinkMinter->projectIsAccessible($project)) {
             throw new EnrolmentRefused(EnrolmentRefusalReason::ProjectNotActive);
@@ -126,6 +128,7 @@ final class EnrolCandidate
             'metadata' => $metadata,
             'exit_redirect_url' => $exitRedirectUrl,
             'mode' => $mode,
+            ...$externalReference->toAttributes(),
         ]);
 
         // gga finding 3: minting the session token and stamping

@@ -25,6 +25,10 @@ use Illuminate\Http\Request;
  * Security: participant is loaded via auth:api-candidate guard.
  * No internal-id leaks (organization_id excluded from candidate-facing resource).
  *
+ * Serialised with `ParticipantResource`, which is candidate-facing ONLY:
+ * operator and integration responses use `ParticipantEnrolmentResource`, so the
+ * calling system's `external_id` and `source` never reach this endpoint.
+ *
  * REQ: Candidate Session Endpoint
  */
 final class SessionController extends Controller

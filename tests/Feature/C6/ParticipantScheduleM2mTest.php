@@ -182,6 +182,27 @@ test('an M2M client with participants:schedule can reschedule and cancel', funct
 // Transitions — terminal and not-scheduled parity with the backoffice surface
 // ---------------------------------------------------------------------------
 
+test('PATCH with a non-zero UTC offset stores the instant on the M2M surface too', function (): void {
+    // Same defect class as `store()`'s documented ->utc(): an un-normalised
+    // "+02:00" instant would be written as its local wall-clock digits and move
+    // the interview by the offset. Both surfaces share RescheduleParticipant.
+    $org = Organization::factory()->create();
+    $project = pschedM2mProject($org);
+    $m2m = pschedM2mClient($org, ['participants:schedule']);
+    $participant = pschedM2mParticipant($project, $org, [
+        'scheduled_at' => now('UTC')->addHours(2),
+        'scheduling_status' => ParticipantSchedulingStatus::Pending,
+    ]);
+    $instant = now('UTC')->addHours(5)->startOfSecond();
+    $withOffset = $instant->copy()->setTimezone('Europe/Rome')->toIso8601String();
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$m2m['key']])
+        ->patchJson("/api/m2m/participants/{$participant->id}/schedule", ['scheduled_at' => $withOffset])
+        ->assertOk();
+
+    expect($participant->refresh()->scheduled_at->getTimestamp())->toBe($instant->getTimestamp());
+});
+
 test('PATCH after start is refused 409 terminal on the M2M surface too', function (): void {
     $org = Organization::factory()->create();
     $project = pschedM2mProject($org);

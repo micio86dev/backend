@@ -17,6 +17,15 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * (id, role_code, language, assessment_type) and exit_redirect_url
  * for candidate session responses.
  *
+ * CANDIDATE-FACING ONLY. `Candidate\SessionController` is the one controller
+ * that returns this class directly. Every operator, M2M and integration
+ * response serialises through `ParticipantEnrolmentResource`, which builds on
+ * this shape and adds the calling system's identifiers (`external_id`,
+ * `source`). Do not add a field here that a candidate should not see, and do
+ * not reach for this class from another controller: `ParticipantArchTest`
+ * pins its usage to the candidate session controller and the enrolment
+ * resource.
+ *
  * SECURITY INVARIANTS:
  * - organization_id is intentionally excluded from candidate-facing responses
  *   (no internal-id leak to candidates).

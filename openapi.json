@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.61.0"
+        "version": "0.62.0"
     },
     "servers": [
         {
@@ -2992,6 +2992,21 @@
                                     "send_email": {
                                         "type": "boolean",
                                         "description": "Defaults to TRUE. The operator pressed \"invite a candidate\";\nproducing a link and silently not sending it is the behaviour\nthat made this feature necessary in the first place. An operator\nwho wants to deliver the link some other way opts out explicitly."
+                                    },
+                                    "external_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                    },
+                                    "source": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 180
                                     }
                                 },
                                 "required": [
@@ -3006,7 +3021,7 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3032,7 +3047,7 @@
                                             ]
                                         },
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         }
                                     ]
                                 }
@@ -4922,6 +4937,22 @@
                         }
                     },
                     {
+                        "name": "external_id",
+                        "in": "query",
+                        "description": "Exact match on the external_id supplied as candidate.external_id when the interview was created. An integer from 1 to 9007199254740991; any other value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "in": "query",
+                        "description": "Exact, case-sensitive match on the source supplied as candidate.source when the interview was created. At most 180 characters; a longer value answers 400 validation_failed. An empty value is ignored.",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
                         "name": "expand",
                         "in": "query",
                         "description": "Comma-separated related resources to inline. Supported: project.",
@@ -6502,7 +6533,7 @@
         "/participants": {
             "get": {
                 "operationId": "participant.index",
-                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.",
+                "description": "Server-paginated (D5 \u2014 a fresh authorized query per page, never\nfetch-all + client filter). Sort is fixed (created_at desc, id desc):\nno client-specified sort column reaches the query builder.\n\n`q` matches `candidate_ref`, `display_name` and `source` as a\ncase-insensitive substring, taking `%`, `_` and `\\` literally, and the\ncandidate's `external_id` by exact equality, only when the trimmed term\nis a whole number from 1 to 9007199254740991.",
                 "summary": "GET /api/participants",
                 "tags": [
                     "Participant"
@@ -6831,6 +6862,21 @@
                                     "scheduled_at": {
                                         "type": "string",
                                         "description": "interview-scheduling (design AD-2/AD-3, T-C1): optional future\nstart time, validated by the SAME rule object PR-B's\n`EntryLinkController` already uses \u2014 the explicit-offset\ncheck, the future check, and the minimum-lead-time check all\nlive in ONE place, never re-typed per surface."
+                                    },
+                                    "external_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                    },
+                                    "source": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 180
                                     }
                                 },
                                 "required": [
@@ -6845,11 +6891,11 @@
                 },
                 "responses": {
                     "201": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                    "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                 }
                             }
                         }
@@ -6920,7 +6966,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Paginated set of `App.Http.Resources.ParticipantResource`",
+                        "description": "Paginated set of `ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -6929,7 +6975,7 @@
                                         "data": {
                                             "type": "array",
                                             "items": {
-                                                "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                                "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                             }
                                         },
                                         "links": {
@@ -7084,14 +7130,14 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         }
                                     },
                                     "required": [
@@ -7145,13 +7191,13 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -7191,13 +7237,13 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -7440,13 +7486,13 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -7488,13 +7534,13 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "`App.Http.Resources.ParticipantResource`",
+                        "description": "`ParticipantEnrolmentResource`",
                         "content": {
                             "application/json": {
                                 "schema": {
                                     "anyOf": [
                                         {
-                                            "$ref": "#/components/schemas/App.Http.Resources.ParticipantResource"
+                                            "$ref": "#/components/schemas/ParticipantEnrolmentResource"
                                         },
                                         {
                                             "type": "string"
@@ -10891,6 +10937,21 @@
                                             "null"
                                         ],
                                         "maxLength": 10
+                                    },
+                                    "external_id": {
+                                        "type": [
+                                            "integer",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                    },
+                                    "source": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 180
                                     }
                                 },
                                 "required": [
@@ -13046,6 +13107,21 @@
                                 ],
                                 "description": "ISO 639-1, matching `openapi.yaml`'s `Language` schema pattern\nexactly (`^[a-z]{2}$`) \u2014 no further allow-list check: the\ncontract does not restrict `candidate.language` to a\nper-project or per-platform locale set, and this endpoint has\nno such catalogue to validate against (unlike\n`config/translatable.php`'s `supported_locales`, which is a\nBACKOFFICE UI concept).",
                                 "pattern": "^[a-z]{2}$"
+                            },
+                            "external_id": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ],
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                            },
+                            "source": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "maxLength": 180
                             }
                         },
                         "required": [
@@ -13653,6 +13729,18 @@
                     "email": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -13867,6 +13955,8 @@
                     "candidate_ref",
                     "display_name",
                     "email",
+                    "external_id",
+                    "source",
                     "role_code",
                     "language",
                     "status",
@@ -13880,6 +13970,184 @@
                     "created_at"
                 ],
                 "title": "ParticipantDetailResource"
+            },
+            "ParticipantEnrolmentResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "candidate_ref": {
+                        "type": "string"
+                    },
+                    "display_name": {
+                        "type": "string"
+                    },
+                    "role_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "language": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "in_attesa",
+                            "in_corso",
+                            "in_valutazione",
+                            "completato",
+                            "errore"
+                        ]
+                    },
+                    "started_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "completed_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "scheduled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "scheduling_status": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "pending",
+                            "notice_sent",
+                            "started",
+                            "cancelled",
+                            null
+                        ]
+                    },
+                    "branding": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "primary_color": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "logo_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "name",
+                            "primary_color",
+                            "logo_url"
+                        ]
+                    },
+                    "project": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "role_code": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "language": {
+                                "type": "string"
+                            },
+                            "assessment_type": {
+                                "type": "string",
+                                "enum": [
+                                    "standard",
+                                    "potential"
+                                ]
+                            },
+                            "exit_redirect_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "error_redirect_url": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "role_code",
+                            "language",
+                            "assessment_type",
+                            "exit_redirect_url",
+                            "error_redirect_url"
+                        ]
+                    },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "candidate_ref",
+                    "display_name",
+                    "role_code",
+                    "language",
+                    "status",
+                    "started_at",
+                    "completed_at",
+                    "created_at",
+                    "scheduled_at",
+                    "scheduling_status",
+                    "branding",
+                    "project",
+                    "external_id",
+                    "source"
+                ],
+                "title": "ParticipantEnrolmentResource"
             },
             "ParticipantResource": {
                 "type": "object",
@@ -13895,6 +14163,18 @@
                     },
                     "email": {
                         "type": "string"
+                    },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     },
                     "role_code": {
                         "type": [
@@ -13951,6 +14231,8 @@
                     "candidate_ref",
                     "display_name",
                     "email",
+                    "external_id",
+                    "source",
                     "role_code",
                     "language",
                     "status",
@@ -14635,6 +14917,20 @@
                     "updated_at": {
                         "type": "string"
                     },
+                    "external_id": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "description": "The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given."
+                    },
+                    "source": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The calling system the candidate came from, as supplied when the interview was created; `null` when none was given."
+                    },
                     "project": {
                         "type": "object",
                         "properties": {
@@ -14753,6 +15049,8 @@
                     "recording_ready",
                     "created_at",
                     "updated_at",
+                    "external_id",
+                    "source",
                     "project"
                 ],
                 "title": "PublicInterview"

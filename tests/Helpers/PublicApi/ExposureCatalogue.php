@@ -97,6 +97,16 @@ final class ExposureCatalogue
             // diffs PATHS, never value types — admin's `id` is a bigint,
             // public's is a `int_…` string, exactly like Project's own `id`)
             // and so are absent from both lists below.
+            //
+            // `external_id`/`source` are shared names on both sides too, so
+            // they cancel out of BOTH lists and need no entry here — adding
+            // one would break the diff. Reviewed classification
+            // (candidate-external-reference, 2026-09-30): PUBLIC. They are the
+            // calling system's own identifiers, supplied by it when it
+            // creates the enrolment, carrying no BEAI-derived data, and only
+            // ever returned to the organization that owns the row. Exposed
+            // on admin, M2M and /v1 alike, and never on the candidate
+            // session. A new admin-only field still needs an entry here.
             'Interview' => [
                 // admin-only: a flat convenience field (list view) and the
                 // full nested Project object (detail view) — the public

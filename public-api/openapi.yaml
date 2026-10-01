@@ -159,7 +159,9 @@ paths:
       operationId: listInterviews
       description: |
         Lists interviews with cursor pagination and filters. `email` and `candidate_ref` replace a
-        candidate lookup: they match enrolments of **this organization only**. Requires `interviews:read`.
+        candidate lookup: they match enrolments of **this organization only**. `external_id` and `source`
+        match the external reference supplied when the interview was created, within this organization and
+        the key's live/test mode. Requires `interviews:read`.
       parameters:
         - { $ref: "#/components/parameters/limit" }
         - { $ref: "#/components/parameters/cursor" }
@@ -167,6 +169,8 @@ paths:
         - { name: project_id, in: query, description: Filter by project., schema: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" } }
         - { name: email, in: query, description: "Exact, case-insensitive match on the candidate email.", schema: { type: string, format: email } }
         - { name: candidate_ref, in: query, description: Exact match on the calling system's opaque candidate identifier., schema: { type: string, maxLength: 255 } }
+        - { name: external_id, in: query, description: "Exact match on the `external_id` supplied as `candidate.external_id` when the interview was created. An integer from 1 to 9007199254740991; any other value answers `400 validation_failed`. An empty value is ignored.", schema: { type: integer, minimum: 1, maximum: 9007199254740991 } }
+        - { name: source, in: query, description: "Exact, case-sensitive match on the `source` supplied as `candidate.source` when the interview was created. At most 180 characters; a longer value answers `400 validation_failed`. An empty value is ignored.", schema: { type: string, maxLength: 180 } }
         - { name: created_after, in: query, description: Inclusive lower bound on `created_at`., schema: { type: string, format: date-time } }
         - { name: created_before, in: query, description: Exclusive upper bound on `created_at`., schema: { type: string, format: date-time } }
         - name: metadata
@@ -835,7 +839,7 @@ components:
     Interview:
       type: object
       description: A participant enrolment — one candidate in one project.
-      required: [id, project_id, candidate_ref, email, display_name, language, status, livemode, metadata, progress, transcript_ready, scoring_ready, recording_ready, created_at, updated_at]
+      required: [id, project_id, candidate_ref, email, display_name, language, status, livemode, metadata, progress, transcript_ready, scoring_ready, recording_ready, created_at, updated_at, external_id, source]
       properties:
         id: { type: string, pattern: "^int_[0-9A-HJKMNP-TV-Z]{26}$" }
         project_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$" }
@@ -861,6 +865,8 @@ components:
         recording_ready: { type: boolean, description: Audio recording availability. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        external_id: { type: [integer, "null"], minimum: 1, maximum: 9007199254740991, description: "The calling system's own numeric identifier for this candidate, as supplied when the interview was created; `null` when none was given." }
+        source: { type: [string, "null"], maxLength: 180, description: "The calling system the candidate came from, as supplied when the interview was created; `null` when none was given." }
 
     CreateInterviewRequest:
       type: object
@@ -875,6 +881,8 @@ components:
             email: { type: string, format: email, description: Mandatory. Unique per project. }
             display_name: { type: string, minLength: 1, maxLength: 255, description: Shown in the UI and used in the interview context. }
             language: { $ref: "#/components/schemas/Language", description: Defaults to the project's language. }
+            external_id: { type: [integer, "null"], minimum: 1, maximum: 9007199254740991, description: "Optional. Your own numeric identifier for this candidate, stored on the interview and returned as `external_id`. Not unique: the same value may be used on several interviews. A JSON integer is required; a string, a fractional number or a boolean answers `422 validation_failed`." }
+            source: { type: [string, "null"], maxLength: 180, description: "Optional. The name of the system the candidate came from (for example your ATS), stored on the interview and returned as `source`. Not unique. Surrounding whitespace is trimmed and a blank value is stored as `null`." }
         metadata: { $ref: "#/components/schemas/Metadata" }
         exit_redirect_url:
           type: string

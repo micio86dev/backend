@@ -31,6 +31,8 @@ use App\Jobs\PublicApi\GenerateExportJob;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
 use App\Models\Export;
+use App\Models\Organization;
+use App\Models\Project;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Contracts\Queue\Job as QueueJobContract;
 use Illuminate\Support\Facades\Log;
@@ -575,4 +577,156 @@ test('a CSV cell value starting with a carriage return is prefixed with a leadin
 
     $csv = Storage::get($fresh->object_key);
     expect($csv)->toContain("'\r=1+1");
+});
+
+// ─── External reference (candidate-external-reference, slice A3a-ii) ─────────
+
+/**
+ * The four combinations the reference can take, stamped onto four interviews of
+ * one organization. Returns the candidate_ref of each, keyed by combination.
+ *
+ * @return array<string, string>
+ */
+function exportReferenceFixture(Organization $org, Project $project): array
+{
+    $combinations = [
+        'both' => [4471, 'acme-ats'],
+        'only external_id' => [4472, null],
+        'only source' => [null, '=HYPERLINK("http://x")'],
+        'neither' => [null, null],
+    ];
+
+    $refs = [];
+
+    foreach ($combinations as $name => [$externalId, $source]) {
+        $participant = Step6Fixtures::participantWithTranscript($org, $project, 'in_corso');
+        TenantContextScope::runFor($org->id, function () use ($participant, $externalId, $source): void {
+            $participant->forceFill(['external_id' => $externalId, 'source' => $source])->save();
+        });
+        $refs[$name] = $participant->candidate_ref;
+    }
+
+    return $refs;
+}
+
+test('the CSV header carries external_id and source right after updated_at, before any transcript or scoring column', function (): void {
+    Storage::fake();
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+    $project = Step6Fixtures::project($org);
+    exportReferenceFixture($org, $project);
+    // A completed, scored interview carries the optional columns, which must
+    // land AFTER the two new ones so every base column keeps its position.
+    Step6Fixtures::buildCompletedScoredParticipant($org, $project);
+
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->create(['format' => ExportFormat::Csv]));
+    GenerateExportJob::dispatch($export->id);
+
+    $fresh = TenantContextScope::runFor($org->id, fn () => Export::find($export->id));
+    expect($fresh->status)->toBe(ExportStatus::Ready);
+
+    $header = str_getcsv(explode("\n", trim(Storage::get($fresh->object_key)))[0]);
+    $updatedAt = array_search('updated_at', $header, true);
+
+    expect($updatedAt)->not->toBeFalse();
+    expect($header[$updatedAt + 1])->toBe('external_id');
+    expect($header[$updatedAt + 2])->toBe('source');
+    expect(array_search('transcript', $header, true))->toBeGreaterThan($updatedAt + 2);
+});
+
+test('CSV cells hold the reference, an absent value is an empty cell, external_id is plain digits', function (): void {
+    Storage::fake();
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+    $refs = exportReferenceFixture($org, Step6Fixtures::project($org));
+
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->create(['format' => ExportFormat::Csv]));
+    GenerateExportJob::dispatch($export->id);
+
+    $fresh = TenantContextScope::runFor($org->id, fn () => Export::find($export->id));
+    $lines = array_values(array_filter(explode("\n", trim(Storage::get($fresh->object_key)))));
+    $header = str_getcsv($lines[0]);
+    $rows = [];
+    foreach (array_slice($lines, 1) as $line) {
+        $row = array_combine($header, str_getcsv($line));
+        $rows[$row['candidate_ref']] = $row;
+    }
+
+    expect($rows[$refs['both']]['external_id'])->toBe('4471');
+    expect($rows[$refs['both']]['source'])->toBe('acme-ats');
+    expect($rows[$refs['only external_id']]['external_id'])->toBe('4472');
+    expect($rows[$refs['only external_id']]['source'])->toBe('');
+    expect($rows[$refs['only source']]['external_id'])->toBe('');
+    expect($rows[$refs['neither']]['external_id'])->toBe('');
+    expect($rows[$refs['neither']]['source'])->toBe('');
+    // Never the text "null", and never an exponent or a thousands separator.
+    foreach ($rows as $row) {
+        expect($row['external_id'])->not->toBe('null')->and($row['source'])->not->toBe('null');
+        expect($row['external_id'])->toMatch('/^(\d+)?$/');
+    }
+});
+
+test('a source that looks like a formula is neutralised like every other CSV cell', function (): void {
+    Storage::fake();
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+    $refs = exportReferenceFixture($org, Step6Fixtures::project($org));
+
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->create(['format' => ExportFormat::Csv]));
+    GenerateExportJob::dispatch($export->id);
+
+    $fresh = TenantContextScope::runFor($org->id, fn () => Export::find($export->id));
+    $lines = array_values(array_filter(explode("\n", trim(Storage::get($fresh->object_key)))));
+    $header = str_getcsv($lines[0]);
+    $byRef = [];
+    foreach (array_slice($lines, 1) as $line) {
+        $row = array_combine($header, str_getcsv($line));
+        $byRef[$row['candidate_ref']] = $row;
+    }
+
+    expect($byRef[$refs['only source']]['source'])->toBe("'=HYPERLINK(\"http://x\")");
+});
+
+test('JSONL carries external_id as a number or null and source as a string or null', function (): void {
+    Storage::fake();
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+    $refs = exportReferenceFixture($org, Step6Fixtures::project($org));
+
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->create(['format' => ExportFormat::Jsonl]));
+    GenerateExportJob::dispatch($export->id);
+
+    $fresh = TenantContextScope::runFor($org->id, fn () => Export::find($export->id));
+    $records = [];
+    foreach (explode("\n", trim(Storage::get($fresh->object_key))) as $line) {
+        $record = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+        $records[$record['candidate_ref']] = $record;
+    }
+
+    expect($records[$refs['both']])->toMatchArray(['external_id' => 4471, 'source' => 'acme-ats']);
+    expect($records[$refs['only external_id']])->toMatchArray(['external_id' => 4472, 'source' => null]);
+    expect($records[$refs['only source']])->toHaveKey('external_id')->and($records[$refs['only source']]['external_id'])->toBeNull();
+    expect($records[$refs['neither']])->toMatchArray(['external_id' => null, 'source' => null]);
+});
+
+test('an export stays inside its organization: another organization\'s reference never appears', function (): void {
+    Storage::fake();
+
+    ['org' => $orgA] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+    ['org' => $orgB] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+
+    $participantA = Step6Fixtures::participantWithTranscript($orgA, Step6Fixtures::project($orgA), 'in_corso');
+    $participantB = Step6Fixtures::participantWithTranscript($orgB, Step6Fixtures::project($orgB), 'in_corso');
+    TenantContextScope::runFor($orgA->id, fn () => $participantA->forceFill(['external_id' => 4471, 'source' => 'acme-ats'])->save());
+    TenantContextScope::runFor($orgB->id, fn () => $participantB->forceFill(['external_id' => 4471, 'source' => 'other-org-ats'])->save());
+
+    $export = TenantContextScope::runFor($orgA->id, fn () => Export::factory()->create(['format' => ExportFormat::Jsonl]));
+    GenerateExportJob::dispatch($export->id);
+
+    $fresh = TenantContextScope::runFor($orgA->id, fn () => Export::find($export->id));
+    $content = Storage::get($fresh->object_key);
+
+    expect($content)->toContain('acme-ats');
+    expect($content)->not->toContain('other-org-ats');
+    expect($content)->not->toContain($participantB->candidate_ref);
 });
