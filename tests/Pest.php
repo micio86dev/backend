@@ -674,6 +674,15 @@ pest()->use(RefreshDatabase::class)
 pest()->use(RefreshDatabase::class)
     ->in('Feature/Invitations');
 
+// Feature/ReusableLinks (reusable-interview-links) — RefreshDatabase: schema,
+// model, factory and (later slices) endpoint tests create real
+// Organization/Project/ReusableInterviewLink rows and assert real Postgres
+// constraints. Covers Feature/ReusableLinks/Schema too, one level down, which
+// FeatureDirectoriesRegisteredArchTest's glob does not reach, so it is
+// registered here on purpose rather than left to that guard.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/ReusableLinks');
+
 // PRE-EXISTING, found by the arch test above rather than by anyone noticing:
 // `Feature/Admin/EvaluationMetaTest.php` creates rows with factories and was
 // registered nowhere, so its rows survived every run.

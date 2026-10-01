@@ -13,6 +13,7 @@ use App\Services\Admin\AdminEvaluationSerializer;
 use App\Services\Admin\AdminTranscriptSerializer;
 use App\Support\Admin\AdminParticipantReader;
 use App\Support\Admin\ParticipantReadScope;
+use App\Support\Admin\ReusableLinkOrigin;
 use App\Support\Participant\ExternalReference;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -128,6 +129,11 @@ final class ParticipantController extends Controller
     public function show(int $id): ParticipantDetailResource
     {
         $participant = $this->reader->read($id, ParticipantReadScope::Summary);
+
+        // Only the detail resource shows the reusable link origin, so it is
+        // loaded here and not in the reader, which also serves the transcript
+        // and evaluation reads.
+        $participant->loadMissing(ReusableLinkOrigin::EAGER_LOAD);
 
         return new ParticipantDetailResource($participant);
     }

@@ -27,6 +27,7 @@ use App\Models\InterviewRecording;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Models\ReusableInterviewLink;
 use App\Models\WebhookDelivery;
 use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\OrganizationSerializer;
@@ -169,7 +170,12 @@ test('T-EXPOSE-001: Interview — admin (list ∪ detail) minus public equals ex
             ?? Competency::factory()->create(['code' => 'COM']);
         $project->competencies()->attach($competency->id, ['position' => 1]);
 
-        $participant = Participant::factory()->forProject($project)->create([
+        // A visitor of a reusable link, not an ordinary participant: with no
+        // link the admin `reusable_link` is null and flattens to one bare leaf,
+        // which would hide the `id`/`label` shape this test exists to classify.
+        $link = ReusableInterviewLink::factory()->forProject($project)->create(['label' => 'Fair stand']);
+
+        $participant = Participant::factory()->forProject($project)->fromReusableLink($link)->create([
             'organization_id' => $org->id,
             // Empty metadata flattens to the bare `metadata` leaf — see
             // ExposureCatalogue's own "list of scalars/empty list" rule.

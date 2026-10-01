@@ -26,6 +26,7 @@ use App\Policies\ProjectPolicy;
 use App\Policies\UserPolicy;
 use App\Services\Audit\TypesafeJevJudge;
 use App\Services\LLM\AnthropicLLMProvider;
+use App\Services\ReusableLinkTokenGenerator;
 use App\Services\Scoring\AssessableFractionReliability;
 use App\Services\Scoring\Contracts\ReliabilityStrategy;
 use App\Services\Scoring\Contracts\ValidityPredicate;
@@ -451,6 +452,55 @@ class AppServiceProvider extends ServiceProvider
         // `?token=`, not a per-account one).
         RateLimiter::for('embed-exchange', function (Request $request) {
             return Limit::perMinute(30)->by($request->ip() ?? 'unknown');
+        });
+
+        // `reusable-link-redeem` — POST /api/reusable-links/redeem
+        // (reusable-interview-links, design AD-11). PUBLIC, and every success
+        // creates a participant and mints a candidate credential, so it is
+        // throttled from its first commit.
+        //
+        // NAMED for the same reason `embed-exchange` is: the numeric
+        // `throttle:N,1` form resolves its key through `$request->user()` on
+        // the default guard, whose token parser reads a `token` input and 500s
+        // on `?token[]=` before the controller can answer. A named limiter owns
+        // its key outright. The body field is `link_token` for the same reason.
+        //
+        // Two buckets, both checked before either is hit (Laravel's
+        // `ThrottleRequests` evaluates every limit first):
+        //   - per client IP, per minute: counts EVERY request, including
+        //     malformed input, which therefore costs the sender attempts
+        //     without ever reaching the database;
+        //   - per link, per hour, keyed by the SHA-256 of the presented token
+        //     (never the token itself, so no log or cache key can leak it):
+        //     only for a WELL-FORMED token, and for every such token whether
+        //     or not a link exists. A bucket that existed only for real links
+        //     would make the rate-limit headers an existence oracle.
+        //
+        // EVERY attempt counts. There is deliberately no `->after()` success
+        // filter: counting only successes would make `X-RateLimit-Remaining`
+        // differ between a real and an unknown token for the same reason.
+        // The per-link bucket does not depend on the client address at all, so
+        // it still binds when a proxy collapses every caller onto one IP.
+        RateLimiter::for('reusable-link-redeem', function (Request $request): array {
+            $limits = [
+                Limit::perMinute((int) config('reusable_links.redeem.per_ip_per_minute', 10))
+                    ->by('ip:'.($request->ip() ?? 'unknown')),
+            ];
+
+            // `post()`, not `input()`: the controller redeems the BODY field
+            // only, and `input()` also merges the query string. The limiter
+            // must see exactly the token the controller will use, so a value
+            // presented in a URL (which an access log would keep) neither
+            // opens a link bucket nor is treated differently from what is
+            // redeemed.
+            $hash = ReusableLinkTokenGenerator::hashIfWellFormed($request->post('link_token'));
+
+            if ($hash !== null) {
+                $limits[] = Limit::perHour((int) config('reusable_links.redeem.per_link_per_hour', 100))
+                    ->by('link:'.$hash);
+            }
+
+            return $limits;
         });
     }
 

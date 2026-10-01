@@ -256,6 +256,11 @@ final class AuthMatrixCatalogue
             // Bypass resolves the project across tenants, so a bare superadmin mints a link like anyone else.
             'POST api/entry-links' => self::user('entry-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
 
+            // ─── reusable interview links (create / list / disable = ParticipantPolicy::create) ──
+            'GET api/projects/{project}/reusable-links' => self::user('reusable-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
+            'POST api/projects/{project}/reusable-links' => self::user('reusable-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
+            'DELETE api/projects/{project}/reusable-links/{link}' => self::user('reusable-links', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
+
             // ─── profile (the caller's own account: any authenticated user) ──
             'GET api/profile' => self::own('profile'),
             'PATCH api/profile' => self::own('profile'),
@@ -293,6 +298,9 @@ final class AuthMatrixCatalogue
             'GET api/embed/exchange' => self::open('embed'),
             'GET api/embed/frame-policy' => self::open('embed'),
             'GET api/sso/exchange' => self::open('sso'),
+            // reusable-interview-links: public, throttled by the named `reusable-link-redeem`
+            // limiter, and authorised by the secret in the BODY, never by a credential.
+            'POST api/reusable-links/redeem' => self::open('reusable-links'),
             'GET api/health' => self::open('health'),
             'GET api/health/queue' => self::open('health'),
             'GET api/v1/health' => self::open('public-api-v1'),

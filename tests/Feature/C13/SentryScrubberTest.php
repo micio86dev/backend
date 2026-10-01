@@ -16,6 +16,7 @@ declare(strict_types=1);
  */
 
 use App\Enums\EvaluationStatus;
+use App\Services\ReusableLinkTokenGenerator;
 use App\Support\Observability\SentryScrubber;
 use Carbon\CarbonImmutable;
 use Sentry\Breadcrumb;
@@ -153,6 +154,280 @@ test('source is NOT a denied key: it names a system, not a person, and is a gene
     $encoded = json_encode($event->getExtra());
 
     expect($encoded)->toContain('acme-ats')->toContain('route')->toContain('project_id');
+});
+
+// ─── Reusable interview link tokens (reusable-interview-links, B3b.4) ─────────
+//
+// A link token is a bearer secret that never expires: whoever reads one in an
+// error report can start interviews on its project until an admin disables the
+// link. It is stored only as a hash and shown once, so the places it can reach a
+// third-party index are the strings an error happens to be carrying: a message
+// that interpolated it, a URL it was pasted into, a log line, a breadcrumb.
+// Neither the key `link_token` (denied as a `token`) nor `token_hash` is enough
+// on its own, because the dangerous carrier has no key at all. Hence a VALUE
+// pattern, lenient on length (`{16,}`) so a truncated token still goes.
+
+/**
+ * Run a string carrying `$text` through one named sink of the scrubber and
+ * return what that sink would send.
+ */
+function sentryLinkTokenThrough(string $sink, string $text): string
+{
+    switch ($sink) {
+        case 'exception message':
+            $event = Event::createEvent();
+            $event->setExceptions([new ExceptionDataBag(new RuntimeException($text))]);
+
+            return SentryScrubber::handle($event)->getExceptions()[0]->getValue();
+
+        case 'event message':
+            $event = Event::createEvent();
+            $event->setMessage($text);
+
+            return (string) SentryScrubber::handle($event)->getMessage();
+
+        case 'event message param':
+            $event = Event::createEvent();
+            $event->setMessage('redeem failed for %s', [$text]);
+
+            return json_encode(SentryScrubber::handle($event)->getMessageParams(), JSON_THROW_ON_ERROR);
+
+        case 'extra under a neutral key':
+            return json_encode(scrubbedEvent(['note' => $text])->getExtra(), JSON_THROW_ON_ERROR);
+
+        case 'extra nested three deep':
+            return json_encode(scrubbedEvent(['context' => ['detail' => ['note' => $text]]])->getExtra(), JSON_THROW_ON_ERROR);
+
+        case 'extra KEY':
+            return json_encode(array_keys(scrubbedEvent([$text => 'x'])->getExtra()), JSON_THROW_ON_ERROR);
+
+        case 'a JSON document embedded in a message':
+            $event = Event::createEvent();
+            $event->setMessage('422 response: '.json_encode(['note' => $text, 'status' => 'refused'], JSON_THROW_ON_ERROR));
+
+            return (string) SentryScrubber::handle($event)->getMessage();
+
+        case 'tag':
+            $event = Event::createEvent();
+            $event->setTags(['note' => $text]);
+
+            return json_encode(SentryScrubber::handle($event)->getTags(), JSON_THROW_ON_ERROR);
+
+        case 'context':
+            $event = Event::createEvent();
+            $event->setContext('delivery', ['note' => $text]);
+
+            return json_encode(SentryScrubber::handle($event)->getContexts(), JSON_THROW_ON_ERROR);
+
+        case 'http context url path':
+            $event = Event::createEvent();
+            $event->setContext('http', ['url' => 'https://api.beai.test/api/x/'.$text, 'method' => 'GET']);
+
+            return json_encode(SentryScrubber::handle($event)->getContexts(), JSON_THROW_ON_ERROR);
+
+        case 'request url path':
+            return (string) scrubbedEvent([], ['url' => 'https://api.beai.test/api/x/'.$text])->getRequest()['url'];
+
+        case 'request url fragment':
+            return (string) scrubbedEvent([], ['url' => 'https://app.beai.test/en/interview/reusable#'.$text])->getRequest()['url'];
+
+        case 'request url query':
+            return (string) scrubbedEvent([], ['url' => 'https://api.beai.test/api/reusable-links/redeem?link_token='.$text])->getRequest()['url'];
+
+        case 'request data':
+            return json_encode(scrubbedEvent([], ['data' => ['note' => $text, 'project_id' => 7]])->getRequest(), JSON_THROW_ON_ERROR);
+
+        case 'breadcrumb message':
+            $event = Event::createEvent();
+            $event->setBreadcrumb([new Breadcrumb(Breadcrumb::LEVEL_ERROR, Breadcrumb::TYPE_DEFAULT, 'log', $text)]);
+
+            return (string) SentryScrubber::handle($event)->getBreadcrumbs()[0]->getMessage();
+
+        case 'breadcrumb metadata':
+            $event = Event::createEvent();
+            $event->setBreadcrumb([new Breadcrumb(Breadcrumb::LEVEL_ERROR, Breadcrumb::TYPE_DEFAULT, 'log', 'redeem failed', ['note' => $text])]);
+
+            return json_encode(SentryScrubber::handle($event)->getBreadcrumbs()[0]->getMetadata(), JSON_THROW_ON_ERROR);
+
+        case 'span description':
+            $span = new Span;
+            $span->setDescription('POST /api/x/'.$text);
+            $transaction = Event::createTransaction();
+            $transaction->setSpans([$span]);
+
+            return (string) SentryScrubber::handle($transaction)->getSpans()[0]->getDescription();
+
+        case 'span data':
+            $span = new Span;
+            $span->setData(['note' => $text]);
+            $transaction = Event::createTransaction();
+            $transaction->setSpans([$span]);
+
+            return json_encode(SentryScrubber::handle($transaction)->getSpans()[0]->getData(), JSON_THROW_ON_ERROR);
+
+        case 'transaction name':
+            $transaction = Event::createTransaction();
+            $transaction->setTransaction('/interview/'.$text);
+
+            return (string) SentryScrubber::handle($transaction)->getTransaction();
+
+        case 'fingerprint':
+            $event = Event::createEvent();
+            $event->setFingerprint([$text]);
+
+            return json_encode(SentryScrubber::handle($event)->getFingerprint(), JSON_THROW_ON_ERROR);
+
+        case 'log body':
+            $log = new Log(CarbonImmutable::now()->getTimestamp(), '00000000000000000000000000000000', LogLevel::info(), 'redeem failed for '.$text);
+
+            return SentryScrubber::handleLog($log)->getBody();
+
+        case 'log attribute':
+            $log = new Log(CarbonImmutable::now()->getTimestamp(), '00000000000000000000000000000000', LogLevel::info(), 'redeem failed');
+            $log->setAttribute('note', $text);
+
+            return json_encode(SentryScrubber::handleLog($log)->attributes()->toSimpleArray(), JSON_THROW_ON_ERROR);
+    }
+
+    throw new InvalidArgumentException($sink);
+}
+
+const SENTRY_LINK_TOKEN_SINKS = [
+    'exception message',
+    'event message',
+    'event message param',
+    'extra under a neutral key',
+    'extra nested three deep',
+    'extra KEY',
+    'a JSON document embedded in a message',
+    'tag',
+    'context',
+    'http context url path',
+    'request url path',
+    'request url fragment',
+    'request url query',
+    'request data',
+    'breadcrumb message',
+    'breadcrumb metadata',
+    'span description',
+    'span data',
+    'transaction name',
+    'fingerprint',
+    'log body',
+    'log attribute',
+];
+
+test('a reusable link token never reaches the sink, whichever string carries it', function (string $sink): void {
+    $token = ReusableLinkTokenGenerator::generate();
+    $random = substr($token, strlen(ReusableLinkTokenGenerator::MARKER));
+
+    $sent = sentryLinkTokenThrough($sink, "while redeeming {$token} for the stand");
+
+    // Neither the whole token nor any run of its random part is on the wire:
+    // checked by a 16-character window, so a half-redacted token fails too.
+    expect($sent)->not->toContain($token);
+    foreach (range(0, strlen($random) - 16) as $start) {
+        expect($sent)->not->toContain(substr($random, $start, 16));
+    }
+})->with(SENTRY_LINK_TOKEN_SINKS);
+
+test('the text around a token survives, so the report stays usable', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $message = sentryLinkTokenThrough('exception message', "redeem failed for {$token} on the stand, attempt 3");
+
+    expect($message)->toContain('redeem failed for')->toContain('on the stand, attempt 3')->not->toContain($token);
+});
+
+test('a TRUNCATED token is still redacted from 16 random characters on; the visible prefix and a near miss are not', function (): void {
+    $random = substr(ReusableLinkTokenGenerator::generate(), strlen(ReusableLinkTokenGenerator::MARKER));
+    $marker = ReusableLinkTokenGenerator::MARKER;
+
+    // 16 random characters or more: a truncated copy of a real token.
+    foreach ([16, 20, 43] as $length) {
+        $cut = $marker.substr($random, 0, $length);
+        expect(sentryLinkTokenThrough('exception message', "got {$cut} here"))->toBe('got [redacted] here');
+    }
+
+    // The 16-character DISPLAY prefix the admin list shows (marker + 8), a
+    // 10-character near miss and 15 characters: all below the pattern's floor.
+    foreach ([8, 10, 15] as $length) {
+        $kept = $marker.substr($random, 0, $length);
+        expect(sentryLinkTokenThrough('exception message', "got {$kept} here"))->toBe("got {$kept} here");
+    }
+});
+
+test('a token is redacted whole whatever its alphabet edge: leading, trailing and inner - and _', function (string $random): void {
+    // Hand-built, because a random token only sometimes contains `-` or `_` and
+    // a pattern that forgot them would then pass by luck.
+    expect(strlen($random))->toBe(43);
+    $token = ReusableLinkTokenGenerator::MARKER.$random;
+
+    expect(sentryLinkTokenThrough('exception message', "got {$token} here"))->toBe('got [redacted] here')
+        ->and(sentryLinkTokenThrough('exception message', "got {$token}"))->toBe('got [redacted]')
+        ->and(sentryLinkTokenThrough('request url path', $token))->toBe('https://api.beai.test/api/x/[redacted]');
+})->with([
+    'leading dash' => ['-'.str_repeat('Ab9', 14)],
+    'leading underscore' => ['_'.str_repeat('Ab9', 14)],
+    'trailing dash' => [str_repeat('Ab9', 14).'-'],
+    'trailing underscore' => [str_repeat('Ab9', 14).'_'],
+    'inner dashes and underscores' => [str_repeat('Ab_9-', 8).'Ab9'],
+    'digits only' => [str_repeat('0123456789', 4).'012'],
+]);
+
+test('the visible token prefix survives as a value, and ordinary text containing rl_ is untouched', function (): void {
+    $prefix = ReusableLinkTokenGenerator::prefixOf(ReusableLinkTokenGenerator::generate());
+
+    expect(sentryLinkTokenThrough('extra under a neutral key', "link {$prefix} was disabled"))->toContain($prefix);
+
+    foreach (['url_rl_state', 'perl_rl_module', 'beai_rl', 'beai_rk_'.str_repeat('a', 43), 'my_beai_rl'] as $text) {
+        expect(sentryLinkTokenThrough('exception message', "see {$text} please"))->toBe("see {$text} please");
+    }
+});
+
+test('unrelated keys and values next to a token are untouched', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $extra = scrubbedEvent(['note' => "token {$token}", 'project_id' => 7, 'attempt' => 3, 'route' => '/api/reusable-links/redeem'])->getExtra();
+
+    expect($extra['project_id'])->toBe(7)
+        ->and($extra['attempt'])->toBe(3)
+        ->and($extra['route'])->toBe('/api/reusable-links/redeem');
+});
+
+test('the link_token key is denied wherever it appears, including the request body', function (): void {
+    // Already denied as a `token` (last segment); pinned because the field name
+    // is the contract of the public redeem endpoint.
+    $event = scrubbedEvent(
+        ['link_token' => 'LEAK-A', 'context' => ['deep' => ['link_token' => 'LEAK-B']]],
+        ['data' => ['link_token' => 'LEAK-C', 'project_id' => 7]],
+    );
+
+    expect(json_encode([$event->getExtra(), $event->getRequest()]))->not->toContain('LEAK');
+    expect($event->getRequest()['data']['project_id'])->toBe(7);
+});
+
+test('token_hash and token_hashes are denied at any depth', function (): void {
+    $event = scrubbedEvent([
+        'token_hash' => 'HASH-LEAK-A',
+        'token_hashes' => ['HASH-LEAK-B'],
+        'link' => ['token_hash' => 'HASH-LEAK-C'],
+        'detail' => ['links' => [['token_hash' => 'HASH-LEAK-D']]],
+        'tokenHash' => 'HASH-LEAK-E',
+    ]);
+
+    expect(json_encode($event->getExtra()))->not->toContain('HASH-LEAK');
+});
+
+test('token_hash and token_hashes are NAMED in the denylist, not only caught by the token word', function (): void {
+    // The any-position `token` word already denies them today. They are listed
+    // so the rule survives a future narrowing of that word list: a hash of a
+    // bearer secret is the next thing to look at after the secret.
+    $source = (string) file_get_contents(app_path('Support/Observability/SentryScrubber.php'));
+    preg_match('/private const DENIED_KEYS = \[(.*?)\];/s', $source, $listMatch);
+    preg_match_all("/'([^']+)'/", (string) preg_replace('#//[^\n]*#', '', $listMatch[1] ?? ''), $keyMatch);
+
+    expect($keyMatch[1] ?? [])->toContain('token_hash', 'token_hashes');
 });
 
 test('secrets nested at any depth are scrubbed', function (): void {
@@ -2085,11 +2360,11 @@ test('the denylist carries BOTH spellings of every entry that has a plural', fun
     preg_match_all("/'([^']+)'/", (string) preg_replace('#//[^\n]*#', '', $listMatch[1] ?? ''), $keyMatch);
 
     $keys = $keyMatch[1] ?? [];
-    $irregular = ['key_hash' => 'key_hashes', 'query' => 'queries', 'search' => 'searches'];
+    $irregular = ['key_hash' => 'key_hashes', 'token_hash' => 'token_hashes', 'query' => 'queries', 'search' => 'searches'];
     // No plural anyone emits: `q` is a query PARAMETER name, `to_json` a method
-    // name, `messages` already the plural, and the last two are irregular
-    // plurals the `+s` rule cannot recognise as such.
-    $noPlural = ['q', 'to_json', 'messages', 'key_hashes', 'queries', 'searches'];
+    // name, `messages` already the plural, and the rest are irregular plurals
+    // the `+s` rule cannot recognise as such.
+    $noPlural = ['q', 'to_json', 'messages', 'key_hashes', 'token_hashes', 'queries', 'searches'];
     $missing = [];
 
     foreach ($keys as $key) {

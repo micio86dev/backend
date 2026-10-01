@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Admin;
 
 use App\Models\Participant;
+use App\Support\Admin\ReusableLinkOrigin;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -43,9 +44,18 @@ class ParticipantResource extends JsonResource
      * `ParticipantDetailResource`'s `firstOrFail()`: one bad row must not
      * blank the whole list page.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
+     * `reusable_link` (reusable-interview-links, B4): where the participant came
+     * from when it was created by redeeming a reusable link. Always present: an
+     * object with exactly the link's public id (`rlk_...`) and its label (null
+     * when the link has none), or `null` for every other origin. Resolved by the
+     * eager load on `AdminParticipantReader::listQuery()`, never a per-row
+     * query, and shaped by `ReusableLinkOrigin` so the list row and the detail
+     * agree. Admin-only: no candidate, M2M or public `/v1` surface carries it.
+     * Moves in lockstep across BOTH docblocks, or the exported schema lies.
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project_name: string|null, started_at: string|null, completed_at: string|null, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -69,6 +79,7 @@ class ParticipantResource extends JsonResource
             // Scramble would otherwise type a DB bigint as a string.
             'external_id' => $participant->external_id,
             'source' => $participant->source,
+            'reusable_link' => ReusableLinkOrigin::of($participant),
             'role_code' => $participant->role_code,
             'language' => $participant->language,
             'status' => $participant->status,

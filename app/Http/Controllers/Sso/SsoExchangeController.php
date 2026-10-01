@@ -12,6 +12,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Participant\ExternalReference;
+use App\Support\Participant\PlaceholderEmail;
 use App\Support\Project\ProjectInterviewability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -294,7 +295,7 @@ final class SsoExchangeController extends Controller
         // because the link in their inbox predates a schema change.
         // `.local` is reserved by RFC 6762 and resolves nowhere, so the
         // placeholder can never reach a real person, and it is greppable.
-        $email = (string) ($payload->get('email') ?? $candidateRef.'@invalid.beai.local');
+        $email = (string) ($payload->get('email') ?? PlaceholderEmail::for($candidateRef));
 
         // The optional external reference. The token is HS256-signed by our own
         // minter, so a malformed claim is not an attack; `fromClaims()` narrows

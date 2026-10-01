@@ -7,6 +7,7 @@ namespace App\Http\Resources\Admin;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Services\Admin\ParticipantInterviewAggregator;
+use App\Support\Admin\ReusableLinkOrigin;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -49,6 +50,13 @@ class ParticipantDetailResource extends JsonResource
      * `deadline_at` move in lockstep across BOTH this docblock and the
      * `@scramble-return` below, or the exported schema lies (design D5).
      *
+     * `reusable_link` (reusable-interview-links, B4): as `Admin\ParticipantResource`,
+     * an object with exactly the link's public id and label, or `null` for a
+     * participant that did not come from a reusable link. Moves in lockstep
+     * across BOTH docblocks, or the exported schema lies. Loaded by
+     * `ParticipantController::show()`, not by the shared reader, which also
+     * serves the transcript and evaluation reads.
+     *
      * `progress`/`elapsed`/`cost` (operator-participant-visibility D3/D4/D6):
      * the five missing facts, derived once by `ParticipantInterviewAggregator`
      * over one pass of the participant's InterviewSession rows.
@@ -57,9 +65,9 @@ class ParticipantDetailResource extends JsonResource
      * `sessions_*` coverage counts because cost and elapsed genuinely
      * exclude different sessions.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -91,6 +99,7 @@ class ParticipantDetailResource extends JsonResource
             // docblocks above, or the exported schema lies.
             'external_id' => $participant->external_id,
             'source' => $participant->source,
+            'reusable_link' => ReusableLinkOrigin::of($participant),
             'role_code' => $participant->role_code,
             'language' => $participant->language,
             'status' => $participant->status,

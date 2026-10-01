@@ -244,6 +244,9 @@ test('GET /api/participants rows return exactly what the admin ParticipantResour
 
     expect($actual)->toBe(specProperties('ParticipantResource'));
     expect($actual)->toContain('external_id')->toContain('source');
+    // The reusable link origin (reusable-interview-links, B4): always present,
+    // so a typed client generated from the spec has a key to read.
+    expect($actual)->toContain('reusable_link');
 });
 
 test('GET /api/participants/{id} returns exactly what ParticipantDetailResource declares', function (): void {
@@ -260,4 +263,5 @@ test('GET /api/participants/{id} returns exactly what ParticipantDetailResource 
 
     expect($actual)->toBe(specProperties('ParticipantDetailResource'));
     expect($actual)->toContain('external_id')->toContain('source');
+    expect($actual)->toContain('reusable_link');
 });

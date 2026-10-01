@@ -112,6 +112,41 @@ test('attributes ending in _token or _secret are redacted by convention', functi
     expect($encoded)->not->toContain('CS-LEAK');
 });
 
+test('a reusable link token_hash never reaches the trail, at the top level or nested', function (): void {
+    auditOrg();
+
+    // `token_hash` names no `_token`/`_secret` suffix (it ends in `_hash`), so
+    // the convention rule does not catch it: it has to be on the denylist
+    // explicitly, like `key_hash`. It is the lookup key of a live credential.
+    app(AuditRecorder::class)->record('reusable_link.created', 'reusable_interview_link', 1, after: [
+        'label' => 'Campus drive',
+        'token_hash' => 'TOP-LEVEL-HASH-LEAK',
+        'nested' => ['deeper' => ['token_hash' => 'NESTED-HASH-LEAK']],
+    ]);
+
+    $row = AuditLog::withoutGlobalScopes()->firstOrFail();
+    $encoded = json_encode($row->after);
+
+    // The name is kept and the value is gone: "a link was created" is what an
+    // auditor needs, the hash is what they must not get.
+    expect($row->after)->toHaveKey('token_hash');
+    expect($row->after['token_hash'])->toBe('[redacted]');
+    expect($row->after['nested']['deeper'])->toHaveKey('token_hash');
+    expect($encoded)->not->toContain('TOP-LEVEL-HASH-LEAK');
+    expect($encoded)->not->toContain('NESTED-HASH-LEAK');
+    expect($row->after['label'])->toBe('Campus drive');
+});
+
+test('a reusable link token_prefix is kept: it identifies the link and is not a credential', function (): void {
+    auditOrg();
+
+    app(AuditRecorder::class)->record('reusable_link.created', 'reusable_interview_link', 1, after: [
+        'token_prefix' => 'beai_rl_AbCdEfGh',
+    ]);
+
+    expect(AuditLog::withoutGlobalScopes()->firstOrFail()->after['token_prefix'])->toBe('beai_rl_AbCdEfGh');
+});
+
 // ─── Containment ─────────────────────────────────────────────────────────────
 
 test('a failing audit write never breaks the mutation it records', function (): void {
