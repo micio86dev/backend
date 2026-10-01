@@ -146,6 +146,12 @@ final class SentryScrubber
      * `candidate_ref` an address is directly identifying with no calling system
      * needed to resolve it.
      *
+     * `token_hash` and `token_hashes` (reusable-interview-links) are the stored
+     * SHA-256 of a reusable link token. The any-position `token` word on
+     * `DENIED_CONTENT_WORDS` already catches them; they are NAMED here so the
+     * rule is stated once and survives a narrowing of that word list. The token
+     * ITSELF has no key to deny: see `REUSABLE_LINK_TOKEN_PATTERN`.
+     *
      * `external_id` and `external_ids` (candidate-external-reference) are the
      * same class as `candidate_ref`: the calling system's own record id for a
      * named person, which is what links an error report back to a candidate.
@@ -172,6 +178,7 @@ final class SentryScrubber
         'refresh_token',
         'api_key',
         'key_hash',
+        'token_hash',
         'password',
         'secret',
         'webhook_secret',
@@ -224,6 +231,7 @@ final class SentryScrubber
         'fragments',
         'envs',
         'key_hashes',
+        'token_hashes',
         'access_tokens',
         'refresh_tokens',
         'webhook_secrets',
@@ -232,6 +240,24 @@ final class SentryScrubber
     ];
 
     private const REDACTED = '[redacted]';
+
+    /**
+     * A reusable interview link token, wherever it appears in a string.
+     *
+     * The token is `beai_rl_` followed by 43 URL-safe base64 characters, a bearer
+     * secret that never expires, and it is the one datum here with no KEY to deny:
+     * it travels in a URL fragment, in a message that interpolated it, in a log
+     * line. So it is matched by VALUE, in `redactFreeText()` and in the path of
+     * `redactUrl()`.
+     *
+     * `{16,}`, not `{43}`: a superset on purpose, so a TRUNCATED copy (a token cut
+     * by a log line width or a pasted prefix of the real thing) is still taken.
+     * What stays outside it is what is not a secret: the 16-character display
+     * prefix the admin list shows (the marker plus 8 characters) and a short near
+     * miss. The frontend and backoffice mirrors use the stricter `{43}` form: a
+     * browser holds only whole tokens, so there nothing is truncated.
+     */
+    private const REUSABLE_LINK_TOKEN_PATTERN = '/beai_rl_[A-Za-z0-9_-]{16,}/';
 
     /**
      * A relative path carrying a query or fragment, anywhere in the text.
@@ -601,6 +627,15 @@ final class SentryScrubber
             $withoutQuery = $scheme.($parts['host'] ?? '').($parts['path'] ?? '');
         }
 
+        // A link token pasted into a PATH segment: the fragment and the query
+        // are already gone above, and a client-controlled path is the one carrier
+        // of it left. Failing closed on a PCRE error, like the other passes.
+        $withoutToken = preg_replace(
+            self::REUSABLE_LINK_TOKEN_PATTERN,
+            self::REDACTED,
+            $withoutQuery
+        ) ?? self::REDACTED;
+
         // The address pass, which every other string in this class already gets.
         // Cutting `?`, `#` and userinfo left
         // `/api/participants/jane.doe@acme.test/transcript` whole — and a URL is
@@ -610,7 +645,7 @@ final class SentryScrubber
         return (string) preg_replace(
             self::EMAIL_PATTERN,
             self::REDACTED,
-            $withoutQuery
+            $withoutToken
         );
     }
 
@@ -1204,6 +1239,11 @@ final class SentryScrubber
      */
     private function redactFreeText(string $text): string
     {
+        // A reusable link token goes before anything else touches the text, so no
+        // later pass can cut around it and leave a piece. Fails CLOSED: a PCRE
+        // error blanks the string rather than returning it untouched.
+        $text = preg_replace(self::REUSABLE_LINK_TOKEN_PATTERN, self::REDACTED, $text) ?? self::REDACTED;
+
         // The EMBEDDED passes run FIRST and therefore on every branch below,
         // because a denied key can ride inside any of them — a bare route, a
         // prose message, an exception value. Running them once here is what
