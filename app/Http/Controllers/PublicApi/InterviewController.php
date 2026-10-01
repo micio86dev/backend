@@ -666,7 +666,7 @@ final class InterviewController extends Controller
     private function validateFilterFormats(Request $request): void
     {
         // An empty filter is "not provided": see `QueryFilters`.
-        $validator = Validator::make(QueryFilters::provided($request), [
+        $validator = Validator::make(QueryFilters::provided($request, ['metadata']), [
             'status' => ['sometimes', 'string', Rule::in(InterviewStatus::values())],
             'project_id' => ['sometimes', 'string'],
             'email' => ['sometimes', 'string', 'email'],

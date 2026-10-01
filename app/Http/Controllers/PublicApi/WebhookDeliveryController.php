@@ -294,6 +294,8 @@ final class WebhookDeliveryController extends Controller
         $validator = Validator::make(QueryFilters::provided($request), [
             'status' => ['sometimes', 'string', Rule::in(WebhookDeliveryStatus::values())],
             'event_type' => ['sometimes', 'string', Rule::in(WebhookEventType::values())],
+            // Shape only: an id that matches nothing is not an error (see index()).
+            'interview_id' => ['sometimes', 'string'],
         ]);
 
         if ($validator->fails()) {

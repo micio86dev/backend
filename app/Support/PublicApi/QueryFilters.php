@@ -18,12 +18,19 @@ use Illuminate\Http\Request;
  * value, and the `!== ''` guards that read the filters were unreachable.
  *
  * Validating this array instead of `$request->query()` makes the rule one
- * decision in one place, not a `nullable` to remember on every new filter:
- * a key whose value is `null`, empty or only whitespace is removed, at any
- * depth, and an array left with nothing in it is removed too (`?metadata[a]=`
- * names no metadata filter, and four of them do not trip a "three at most"
- * cap). A value that IS provided is passed through untouched, so a non-empty
- * invalid one still fails its rule.
+ * decision in one place, not a `nullable` to remember on every new filter: a
+ * key whose value is `null`, empty or only whitespace is removed. A value that
+ * IS provided is passed through untouched, so a non-empty invalid one still
+ * fails its rule.
+ *
+ * Only an empty SCALAR is "not provided". `?status[]=` is an array, and a
+ * scalar-only filter refuses an array whatever it holds, exactly as it refuses
+ * `?status[]=1`: dropping the first would make the same wrong shape succeed or
+ * fail on the value inside it. A parameter that legitimately takes a map
+ * (`metadata`) is named by the caller in `$mapFields`; there, empty scalar
+ * entries are dropped (`?metadata[a]=`), the map is dropped when nothing is
+ * left, and an entry that is itself an array (`?metadata[a][]=`) is kept so its
+ * rule can refuse it.
  *
  * It only shapes what is validated. Tenant and mode scoping live in the
  * controllers' base query and are not read from here.
@@ -31,31 +38,21 @@ use Illuminate\Http\Request;
 final class QueryFilters
 {
     /**
+     * @param  list<string>  $mapFields  parameters that legitimately take a map of scalars
      * @return array<array-key, mixed>
      */
-    public static function provided(Request $request): array
-    {
-        return self::withoutEmpty($request->query());
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $values
-     * @return array<array-key, mixed>
-     */
-    private static function withoutEmpty(array $values): array
+    public static function provided(Request $request, array $mapFields = []): array
     {
         $kept = [];
 
-        foreach ($values as $key => $value) {
-            if (is_array($value)) {
-                $value = self::withoutEmpty($value);
+        foreach ($request->query() as $key => $value) {
+            if (is_array($value) && in_array($key, $mapFields, true)) {
+                $value = array_filter($value, static fn (mixed $entry): bool => is_array($entry) || ! self::isEmpty($entry));
 
                 if ($value === []) {
                     continue;
                 }
-            }
-
-            if ($value === null || (is_string($value) && trim($value) === '')) {
+            } elseif (! is_array($value) && self::isEmpty($value)) {
                 continue;
             }
 
@@ -63,5 +60,10 @@ final class QueryFilters
         }
 
         return $kept;
+    }
+
+    private static function isEmpty(mixed $value): bool
+    {
+        return $value === null || (is_string($value) && trim($value) === '');
     }
 }
