@@ -487,7 +487,13 @@ class AppServiceProvider extends ServiceProvider
                     ->by('ip:'.($request->ip() ?? 'unknown')),
             ];
 
-            $hash = ReusableLinkTokenGenerator::hashIfWellFormed($request->input('link_token'));
+            // `post()`, not `input()`: the controller redeems the BODY field
+            // only, and `input()` also merges the query string. The limiter
+            // must see exactly the token the controller will use, so a value
+            // presented in a URL (which an access log would keep) neither
+            // opens a link bucket nor is treated differently from what is
+            // redeemed.
+            $hash = ReusableLinkTokenGenerator::hashIfWellFormed($request->post('link_token'));
 
             if ($hash !== null) {
                 $limits[] = Limit::perHour((int) config('reusable_links.redeem.per_link_per_hour', 100))

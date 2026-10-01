@@ -22,10 +22,12 @@ declare(strict_types=1);
  * `RateLimiter::limiter()`, the same entry point `ThrottleRequests` uses.
  */
 
+use App\Models\ReusableInterviewLink;
 use App\Services\ReusableLinkTokenGenerator;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Tests\Helpers\ReusableLinkFixtures as Fx;
 
 /**
@@ -36,7 +38,10 @@ use Tests\Helpers\ReusableLinkFixtures as Fx;
  */
 function redeemLimits(array $body, string $ip = '203.0.113.7'): array
 {
-    $request = Request::create(
+    // Built the way the HTTP kernel builds it (`createFromBase`), because that
+    // is what moves a JSON body into the bag `post()` reads. A bare
+    // `Request::create()` would leave that bag empty.
+    $request = Request::createFromBase(SymfonyRequest::create(
         '/api/reusable-links/redeem',
         'POST',
         [],
@@ -44,7 +49,7 @@ function redeemLimits(array $body, string $ip = '203.0.113.7'): array
         [],
         ['CONTENT_TYPE' => 'application/json', 'REMOTE_ADDR' => $ip],
         (string) json_encode($body),
-    );
+    ));
 
     $limiter = RateLimiter::limiter('reusable-link-redeem');
     expect($limiter)->not->toBeNull();
@@ -207,4 +212,88 @@ test('the route throttles per link whatever the client address: a new IP does no
         ->assertStatus(429);
 
     expect(Fx::visitorsOf($link))->toHaveCount(2);
+});
+
+// ─── The limiter reads the SAME source as the controller: the body ───────────
+//
+// The controller redeems `$request->post('link_token')` (the BODY only). If the
+// limiter read `$request->input('link_token')` instead, which also merges the
+// QUERY STRING, a token presented in a URL would open a per-link bucket for a
+// request the controller treats as having no token at all: two parts of one
+// endpoint disagreeing about what was presented. A token in a URL ends up in
+// access logs, so it must also never be given any standing.
+
+test('a well-formed token in the query string builds no link bucket', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $request = Request::createFromBase(SymfonyRequest::create(
+        '/api/reusable-links/redeem?link_token='.$token,
+        'POST',
+        [],
+        [],
+        [],
+        ['CONTENT_TYPE' => 'application/json', 'REMOTE_ADDR' => '203.0.113.7'],
+        '{}',
+    ));
+
+    $limits = RateLimiter::limiter('reusable-link-redeem')($request);
+
+    expect($limits)->toHaveCount(1)
+        ->and($limits[0]->key)->toBe('ip:203.0.113.7');
+});
+
+test('a token in the query string with an empty body opens no per-link bucket and gets the generic 404', function (): void {
+    config([
+        'reusable_links.redeem.per_ip_per_minute' => 1000,
+        'reusable_links.redeem.per_link_per_hour' => 1,
+    ]);
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+
+    // Three requests, three clients, the one real token in the URL each time.
+    // A link bucket of ONE per hour would answer the second with 429 if the
+    // limiter had given the URL token any standing.
+    foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33'] as $ip) {
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $ip])
+            ->postJson(Fx::REDEEM_URL.'?link_token='.$token);
+
+        $response->assertNotFound();
+        expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY);
+    }
+
+    expect(Fx::visitorsOf($link))->toBe([])
+        ->and(ReusableInterviewLink::withoutGlobalScopes()->findOrFail($link->id)->uses_count)->toBe(0);
+
+    // ...and the same link is still redeemable from the body: its bucket was
+    // never touched by the three URL attempts.
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.34'])
+        ->postJson(Fx::REDEEM_URL, ['link_token' => $token])
+        ->assertOk();
+});
+
+test('the limiter buckets the token the controller redeems, not the one in the URL', function (): void {
+    config([
+        'reusable_links.redeem.per_ip_per_minute' => 1000,
+        'reusable_links.redeem.per_link_per_hour' => 1,
+    ]);
+    ['link' => $link, 'token' => $realToken] = Fx::redeemable();
+    $otherToken = ReusableLinkTokenGenerator::generate();
+
+    // Body: an unknown token (what the controller looks up). URL: the real one.
+    // The first request spends the UNKNOWN token's single hourly attempt...
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.41'])
+        ->postJson(Fx::REDEEM_URL.'?link_token='.$realToken, ['link_token' => $otherToken])
+        ->assertNotFound();
+
+    // ...so the second request for it is throttled,
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])
+        ->postJson(Fx::REDEEM_URL.'?link_token='.$realToken, ['link_token' => $otherToken])
+        ->assertStatus(429);
+
+    // ...while the real token, which only ever appeared in a URL, has spent
+    // nothing and redeems.
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.43'])
+        ->postJson(Fx::REDEEM_URL, ['link_token' => $realToken])
+        ->assertOk();
+
+    expect(Fx::visitorsOf($link))->toHaveCount(1);
 });
