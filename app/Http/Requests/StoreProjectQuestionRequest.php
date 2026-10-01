@@ -79,25 +79,23 @@ class StoreProjectQuestionRequest extends FormRequest
     }
 
     /**
-     * Internal notes for the exported description below (not published):
-     * Scoped to the catalogue, not to the project's own SELECTED
-     * competencies: the cross-check that the competency actually
-     * belongs to this project's type happens below, where the reason
-     * can be stated. Scoped to the PROJECT'S OWN pinned revision,
-     * though (framework-catalogue-authoring PR3b, H1) — an unscoped
-     * `exists` would accept a competency id from an open draft's
-     * clone of the same catalogue, letting an operator author a
-     * question against content nobody has published yet.
-     * `tryForProject()`, never `forProject()`: this runs inside
-     * `rules()`, before validation — an unresolvable pin must
-     * degrade to "match nothing" (`null` → `whereNull`), never an
-     * uncaught 500 (gga review finding, same doctrine as
-     * `StoreProjectRequest`/`UpdateProjectRequest`).
-     *
      * @return array<string, mixed>
      */
     public function rules(): array
     {
+        // `competency_id`: Scoped to the catalogue, not to the project's own SELECTED
+        // competencies: the cross-check that the competency actually
+        // belongs to this project's type happens below, where the reason
+        // can be stated. Scoped to the PROJECT'S OWN pinned revision,
+        // though (framework-catalogue-authoring PR3b, H1) — an unscoped
+        // `exists` would accept a competency id from an open draft's
+        // clone of the same catalogue, letting an operator author a
+        // question against content nobody has published yet.
+        // `tryForProject()`, never `forProject()`: this runs inside
+        // `rules()`, before validation — an unresolvable pin must
+        // degrade to "match nothing" (`null` → `whereNull`), never an
+        // uncaught 500 (gga review finding, same doctrine as
+        // `StoreProjectRequest`/`UpdateProjectRequest`).
         return [
             // A competency the project has selected, from the catalogue revision the project is pinned to.
             'competency_id' => [

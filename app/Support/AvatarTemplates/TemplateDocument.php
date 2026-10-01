@@ -24,11 +24,6 @@ final class TemplateDocument
     public const SCHEMA = 'beai.avatar-template/1';
 
     /**
-     * Internal notes for the exported description below (not published):
-     * The binding travels by NAME, never by id or key material
-     * (design D13) — an id is meaningless in another org, and a
-     * fingerprint is key-derived material with no import use.
-     *
      * @param  Collection<int, AvatarTemplate>  $templates
      * @return array<string, mixed>
      */
@@ -38,6 +33,9 @@ final class TemplateDocument
         // collection here is exactly the set the caller is about to iterate.
         $templates->loadMissing(['llmModel:id,key', 'llmCredential:id,name']);
 
+        // `llm`: The binding travels by NAME, never by id or key material
+        // (design D13) — an id is meaningless in another org, and a
+        // fingerprint is key-derived material with no import use.
         return [
             'schema' => self::SCHEMA,
             'exported_at' => now()->toIso8601String(),

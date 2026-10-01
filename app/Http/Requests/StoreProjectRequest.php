@@ -65,19 +65,6 @@ class StoreProjectRequest extends FormRequest
     }
 
     /**
-     * Internal notes for the exported description below (not published):
-     * `exists` is load-bearing: `validateStandard` iterates
-     * `whereIn(...)->get()`, so an unknown id is never looped over and
-     * reached the foreign key as a 500. Scoped to this project's own
-     * target revision (framework-catalogue-authoring PR3b, H1) — an
-     * unscoped `exists` would accept a competency id from ANY
-     * revision, including an open draft's clone of the same catalog.
-     *
-     *
-     * Internal notes for the exported description below (not published):
-     * Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
-     * the config, never a hardcoded list.
-     *
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -96,6 +83,15 @@ class StoreProjectRequest extends FormRequest
         /** @var list<string> $supportedLocales */
         $supportedLocales = config('app.supported_locales', ['en', 'it']);
 
+        // `competency_ids.*`: `exists` is load-bearing: `validateStandard` iterates
+        // `whereIn(...)->get()`, so an unknown id is never looped over and
+        // reached the foreign key as a 500. Scoped to this project's own
+        // target revision (framework-catalogue-authoring PR3b, H1) — an
+        // unscoped `exists` would accept a competency id from ANY
+        // revision, including an open draft's clone of the same catalog.
+        //
+        // `webhook_events`: Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
+        // the config, never a hardcoded list.
         return [
             'framework_version_id' => [
                 'required',

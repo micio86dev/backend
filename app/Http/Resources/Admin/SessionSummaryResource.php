@@ -21,19 +21,6 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class SessionSummaryResource extends JsonResource
 {
     /**
-     * Internal notes for the exported description below (not published):
-     * (pluggable-conversation-llm PR P6b) A separate line, never
-     * combined with any avatar-minute figure. `actual_cost_usd` is
-     * preferred when non-null (permanently null in managed mode;
-     * reserved for a future native_duplex change). `null` — never
-     * `0` — when the session was never billed (no usage row: it
-     * resolved unbound/degraded).
-     *
-     *
-     * Internal notes for the exported description below (not published):
-     * (interview-session-started-at, D3) Accumulated LIVE time, never the
-     * wall-clock span. The caller MUST eager-load `livePeriods`.
-     *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
@@ -41,6 +28,15 @@ final class SessionSummaryResource extends JsonResource
         // Accumulated live time of the session in seconds, not the wall-clock span between start and end.
         $duration = $this->liveSeconds();
 
+        // `llm_cost_usd`: (pluggable-conversation-llm PR P6b) A separate line, never
+        // combined with any avatar-minute figure. `actual_cost_usd` is
+        // preferred when non-null (permanently null in managed mode;
+        // reserved for a future native_duplex change). `null` — never
+        // `0` — when the session was never billed (no usage row: it
+        // resolved unbound/degraded).
+        //
+        // `duration_seconds`: (interview-session-started-at, D3) Accumulated LIVE time, never the
+        // wall-clock span. The caller MUST eager-load `livePeriods`.
         return [
             'id' => $this->id,
             'competency_code' => $this->competency_code,

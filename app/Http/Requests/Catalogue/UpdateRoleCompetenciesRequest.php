@@ -46,17 +46,6 @@ class UpdateRoleCompetenciesRequest extends FormRequest
     }
 
     /**
-     * Internal notes for the exported description below (not published):
-     * `type = 'standard'` only — a `potential` competency (MTG/LAT)
-     * belongs to no role by rule (design.md row
-     * `CI_NON_ROLE_BARS_FILES`, mirrored by `PublishRevision::
-     * potentialInPivotViolations()`'s own blocking publish-sweep
-     * check): refusing it here is the SAME rule, enforced earlier.
-     * `distinct` refuses a duplicate id in the payload with a 422 —
-     * `sync()` would otherwise silently collapse the duplicate keys,
-     * and a raw pivot INSERT racing itself is exactly the "422, not
-     * 500" this rule exists to prevent.
-     *
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -64,6 +53,15 @@ class UpdateRoleCompetenciesRequest extends FormRequest
         $draftId = $this->existingOpenDraftRevisionId();
         $roleId = (int) $this->route('role');
 
+        // `competency_ids.*`: `type = 'standard'` only — a `potential` competency (MTG/LAT)
+        // belongs to no role by rule (design.md row
+        // `CI_NON_ROLE_BARS_FILES`, mirrored by `PublishRevision::
+        // potentialInPivotViolations()`'s own blocking publish-sweep
+        // check): refusing it here is the SAME rule, enforced earlier.
+        // `distinct` refuses a duplicate id in the payload with a 422 —
+        // `sync()` would otherwise silently collapse the duplicate keys,
+        // and a raw pivot INSERT racing itself is exactly the "422, not
+        // 500" this rule exists to prevent.
         return [
             // `present`, not `required` — an EMPTY array is a legal payload
             // (detach every competency from the role) and Laravel's

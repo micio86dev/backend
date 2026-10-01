@@ -55,11 +55,6 @@ final class SessionReviewResource extends JsonResource
     }
 
     /**
-     * Internal notes for the exported description below (not published):
-     * TWO SEPARATE labelled lines, never one combined total — the
-     * same refusal already ratified at `SessionCostEstimator.php:20-22`
-     * for avatar-vs-LLM spend: different vendors, different meters.
-     *
      * `avatar`: minutes only. `ai_requests` has no interview_session_id,
      * so LLM spend cannot be attributed to one session without
      * inventing the link — and a plausible number with no basis is
@@ -75,6 +70,9 @@ final class SessionReviewResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // `cost`: TWO SEPARATE labelled lines, never one combined total — the
+        // same refusal already ratified at `SessionCostEstimator.php:20-22`
+        // for avatar-vs-LLM spend: different vendors, different meters.
         return [
             'id' => $this->id,
             'participant_id' => $this->participant_id,

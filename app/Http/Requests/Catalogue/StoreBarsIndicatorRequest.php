@@ -33,18 +33,16 @@ class StoreBarsIndicatorRequest extends FormRequest
     }
 
     /**
-     * Internal notes for the exported description below (not published):
-     * Nullable: a `potential` competency's indicators MUST carry
-     * `role_id = null` (PublishRevision's own sweep, D3) — the
-     * FormRequest does not refuse null here, only validates the
-     * value's shape when present.
-     *
      * @return array<string, mixed>
      */
     public function rules(): array
     {
         $draftId = $this->openDraftRevisionId();
 
+        // `role_id`: Nullable: a `potential` competency's indicators MUST carry
+        // `role_id = null` (PublishRevision's own sweep, D3) — the
+        // FormRequest does not refuse null here, only validates the
+        // value's shape when present.
         return [
             ...$this->localeMapRules('text'),
             ...$this->localeMapRules('anchor_5'),
