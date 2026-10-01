@@ -13,10 +13,10 @@ declare(strict_types=1);
  * exchange fallback, the redemption action) and the reader (the invitation
  * job's refusal) can never drift apart.
  *
- * Pure logic, no database. The matching rules are the ones the invitation job
- * used before this class existed (`str_ends_with` on the lowercase suffix: case
- * sensitive, no trimming) and are pinned as they were, so extracting the
- * predicate changes no behaviour.
+ * Pure logic, no database. The predicate started as exactly the check the
+ * invitation job used before this class existed, and was then widened to ignore
+ * case and surrounding whitespace (reusable-link-visitor-identity): it now also
+ * guards validation, where refusing more is the safe direction.
  */
 
 use App\Support\Participant\PlaceholderEmail;
@@ -53,12 +53,15 @@ test('is() is false for a real address', function (string $address): void {
     'an empty string' => '',
 ]);
 
-test('is() keeps the case and whitespace semantics the invitation job had', function (): void {
-    // `str_ends_with()` is case sensitive and does not trim. Pinned rather
-    // than "improved": a looser predicate would be a behaviour change in a
-    // refactor commit, and a placeholder that resolves nowhere is harmless to
-    // mail either way (`.local` is reserved by RFC 6762).
-    expect(PlaceholderEmail::is('x@INVALID.BEAI.LOCAL'))->toBeFalse()
-        ->and(PlaceholderEmail::is('x@invalid.beai.local '))->toBeFalse()
-        ->and(PlaceholderEmail::is(" x@invalid.beai.local\n"))->toBeFalse();
+test('is() is case- and whitespace-insensitive', function (): void {
+    // The predicate used to be exactly the invitation job's check, a case
+    // sensitive, untrimmed `str_ends_with()`. It now also guards validation (a
+    // visitor must not be able to type a placeholder) and, later, personal-data
+    // deletion, so a placeholder spelled in another case or with padding must
+    // still be recognised: refusing more is the safe direction for the mail
+    // guard, and the reserved domain resolves nowhere in any spelling.
+    expect(PlaceholderEmail::is('x@INVALID.BEAI.LOCAL'))->toBeTrue()
+        ->and(PlaceholderEmail::is('x@invalid.beai.local '))->toBeTrue()
+        ->and(PlaceholderEmail::is(" x@invalid.beai.local\n"))->toBeTrue()
+        ->and(PlaceholderEmail::is('X@Invalid.Beai.Local'))->toBeTrue();
 });

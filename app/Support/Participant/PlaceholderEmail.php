@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Participant;
 
+use Illuminate\Support\Str;
+
 /**
  * The placeholder email convention (reusable-interview-links, design AD-10).
  *
@@ -26,9 +28,11 @@ namespace App\Support\Participant;
  * `for()`, and the READER that must never mail one (the invitation job) calls
  * `is()`, so the two can never drift apart.
  *
- * `is()` is deliberately exactly the check the invitation job always made, a
- * case-sensitive, untrimmed `str_ends_with()`: this class was extracted without
- * changing behaviour.
+ * `is()` started as exactly the check the invitation job always made, a
+ * case-sensitive, untrimmed `str_ends_with()`. It is now case- and
+ * whitespace-insensitive, because it also guards validation (a visitor must not
+ * be able to type a placeholder) and refusing more is the safe direction for the
+ * mail guard: the reserved domain resolves nowhere in any spelling.
  */
 final class PlaceholderEmail
 {
@@ -47,10 +51,10 @@ final class PlaceholderEmail
 
     /**
      * Whether `$email` is a synthesised placeholder rather than an address a
-     * person gave us.
+     * person gave us, whatever its case or surrounding whitespace.
      */
     public static function is(string $email): bool
     {
-        return str_ends_with($email, self::DOMAIN);
+        return str_ends_with(mb_strtolower(Str::trim($email)), self::DOMAIN);
     }
 }

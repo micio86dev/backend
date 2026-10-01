@@ -8,6 +8,7 @@ use App\Actions\ReusableLinks\RedeemReusableInterviewLink;
 use App\Actions\ReusableLinks\RedemptionStatus;
 use App\Actions\ReusableLinks\VisitorIdentity;
 use App\Http\Controllers\Controller;
+use App\Rules\NotPlaceholderEmail;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
@@ -93,7 +94,7 @@ final class ReusableLinkRedeemController extends Controller
         // logs. The BODY is the only carrier.
         $validated = Validator::make($request->post(), [
             'display_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', new NotPlaceholderEmail],
         ])->validate();
 
         $outcome = $this->redeemLink->handle(
