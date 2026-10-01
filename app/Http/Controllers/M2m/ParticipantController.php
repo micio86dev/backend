@@ -14,6 +14,7 @@ use App\Http\Resources\ParticipantEnrolmentResource;
 use App\Models\ApiClient;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Rules\NotPlaceholderEmail;
 use App\Rules\ScheduledStartWithinLeadTime;
 use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
@@ -103,7 +104,7 @@ final class ParticipantController extends Controller
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
             // Required. The candidate's email address.
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['required', 'email', 'max:255', new NotPlaceholderEmail],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'language' => ['nullable', 'string', 'max:10'],

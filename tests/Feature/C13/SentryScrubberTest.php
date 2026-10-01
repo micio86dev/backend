@@ -2612,3 +2612,17 @@ test('the denylist still names email and display_name', function (): void {
     expect($denied)->toContain('email')
         ->toContain('display_name');
 });
+
+test('an address in the request URL query string and in the query_string field never reaches the sink', function (): void {
+    // The admin participants search sends the operator's term as `?q=`, and a term
+    // is often somebody's email address. Both the URL and the query string field
+    // are cut at the query, and the free-text address pattern is the second net.
+    $event = scrubbedEvent([], [
+        'url' => 'https://api.beai.test/api/participants?q=ada@example.com&project_id=7',
+        'query_string' => 'q=ada@example.com&project_id=7',
+    ]);
+
+    $encoded = (string) json_encode($event->getRequest());
+    expect($encoded)->not->toContain('ada@example.com')
+        ->not->toContain('example.com');
+});

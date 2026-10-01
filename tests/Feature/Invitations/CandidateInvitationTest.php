@@ -25,6 +25,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
 use App\Notifications\CandidateInvitationNotification;
+use App\Support\Participant\PlaceholderEmail;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -230,6 +231,28 @@ test('it REFUSES to mail the placeholder address of a reusable-link visitor', fu
     Notification::assertNothingSent();
 });
 
+test('it REFUSES to mail a purged placeholder address exactly like a legacy one', function (string $address): void {
+    // The retention purge replaces a participant's address with
+    // `<sha256 of candidate_ref>@purged.beai.invalid`. Nobody can be written to
+    // there, and a purged participant must never be mailed by a re-issue.
+    Notification::fake();
+
+    (new SendCandidateInvitationJob(
+        $address,
+        'https://candidate.test/interview/token-123',
+        '[purged]',
+        'Acme',
+        'Sales',
+        '1 October 2026',
+        'en',
+    ))->handle();
+
+    Notification::assertNothingSent();
+})->with([
+    'a purged placeholder' => ['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855@purged.beai.invalid'],
+    'the same in capitals' => ['E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855@PURGED.BEAI.INVALID'],
+]);
+
 test('the refusal log says the address is a placeholder, blames neither the mandatory-email column nor a visitor, and carries no address', function (): void {
     // The old text claimed the row "predates the mandatory-email column", which
     // is false for a visitor (created long after that column) and would send an
@@ -356,4 +379,33 @@ test('an operator re-issue for a reusable-link visitor with send_email true logs
                 && ! str_contains($message, 'Ada');
         });
     Queue::assertNotPushed(SendCandidateInvitationJob::class);
+});
+
+test('re-issuing a link for a purged participant keeps its placeholder and its redacted name, and no mail goes out', function (): void {
+    // The backoffice participant-detail re-issue sends the stored values back:
+    // `[purged]` and the participant's own `<sha256>@purged.beai.invalid`. They are
+    // accepted (the own-placeholder exception), the link is minted, and nothing is
+    // restored or sent: the shared placeholder guard refuses the invitation.
+    Notification::fake();
+    ['token' => $token, 'project' => $project] = invitableProject();
+    $purged = Participant::factory()->forProject($project)->create([
+        'candidate_ref' => 'ref-1',
+        'display_name' => '[purged]',
+        'email' => PlaceholderEmail::forPurged('ref-1'),
+    ]);
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'ref-1',
+        'display_name' => '[purged]',
+        'email' => PlaceholderEmail::forPurged('ref-1'),
+        'send_email' => true,
+    ]);
+
+    $response->assertCreated();
+    expect($response->json('entry_url'))->toBeString()->not->toBeEmpty();
+    Notification::assertNothingSent();
+    expect(DB::table('participants')->where('id', $purged->id)->first())
+        ->display_name->toBe('[purged]')
+        ->email->toBe(PlaceholderEmail::forPurged('ref-1'));
 });

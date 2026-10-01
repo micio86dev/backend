@@ -21,6 +21,7 @@ declare(strict_types=1);
  */
 
 use App\Rules\NotPlaceholderEmail;
+use App\Support\Participant\PlaceholderEmail;
 use Illuminate\Support\Facades\Validator;
 use Tests\TestCase;
 
@@ -70,3 +71,55 @@ test('a value that is not a string is left to the other rules and never throws',
     'an integer' => [123],
     'a boolean' => [true],
 ]);
+
+// ─── The request's OWN placeholder (re-issue paths) ──────────────────────────
+
+/**
+ * Validate `$email` beside a `candidate_ref`, with the rule told where the
+ * reference is (`$referenceKey`), or strict when it is null.
+ */
+function notPlaceholderEmailFailsBeside(string $email, string $candidateRef, ?string $referenceKey): bool
+{
+    return Validator::make(
+        ['candidate_ref' => $candidateRef, 'email' => $email],
+        ['email' => [new NotPlaceholderEmail($referenceKey)]],
+    )->fails();
+}
+
+test('with a reference key, the reference\'s own legacy and purged placeholders pass', function (): void {
+    expect(notPlaceholderEmailFailsBeside(PlaceholderEmail::for('ref-1'), 'ref-1', 'candidate_ref'))->toBeFalse()
+        ->and(notPlaceholderEmailFailsBeside(PlaceholderEmail::forPurged('ref-1'), 'ref-1', 'candidate_ref'))->toBeFalse();
+});
+
+test('with a reference key, another reference\'s placeholder and any other reserved address still fail, in any case', function (string $address): void {
+    expect(notPlaceholderEmailFailsBeside($address, 'ref-1', 'candidate_ref'))->toBeTrue();
+})->with([
+    'another reference legacy' => 'ref-2@invalid.beai.local',
+    'another reference purged' => 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc@purged.beai.invalid',
+    'any address under the legacy domain' => 'x@invalid.beai.local',
+    'any address under the purged domain' => 'x@purged.beai.invalid',
+    'the own placeholder in another case' => 'REF-1@INVALID.BEAI.LOCAL',
+    'the own placeholder padded' => ' ref-1@invalid.beai.local ',
+]);
+
+test('without a reference key the rule is strict: not even the own placeholder passes', function (): void {
+    expect(notPlaceholderEmailFailsBeside(PlaceholderEmail::for('ref-1'), 'ref-1', null))->toBeTrue()
+        ->and(notPlaceholderEmailFailsBeside(PlaceholderEmail::forPurged('ref-1'), 'ref-1', null))->toBeTrue();
+});
+
+test('the reference is read from the validated data, and a missing or non-string one grants nothing', function (): void {
+    $own = PlaceholderEmail::for('ref-1');
+
+    expect(Validator::make(['email' => $own], ['email' => [new NotPlaceholderEmail('candidate_ref')]])->fails())->toBeTrue()
+        ->and(Validator::make(['candidate_ref' => ['ref-1'], 'email' => $own], ['email' => [new NotPlaceholderEmail('candidate_ref')]])->fails())->toBeTrue()
+        ->and(Validator::make(['candidate_ref' => 123, 'email' => $own], ['email' => [new NotPlaceholderEmail('candidate_ref')]])->fails())->toBeTrue();
+});
+
+test('a nested reference key is read with dot notation', function (): void {
+    $own = PlaceholderEmail::for('ref-1');
+
+    expect(Validator::make(
+        ['candidate' => ['candidate_ref' => 'ref-1', 'email' => $own]],
+        ['candidate.email' => [new NotPlaceholderEmail('candidate.candidate_ref')]],
+    )->fails())->toBeFalse();
+});
