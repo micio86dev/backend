@@ -234,18 +234,42 @@ test('the redeem operation is documented as the one public reusable link operati
     expect($others)->toBe(['POST /reusable-links/redeem']);
 });
 
-test('the redeem request documents link_token as a required string and no field named token', function (): void {
+test('the redeem request documents the link token and the visitor identity as required, and no field named token', function (): void {
     $schema = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['requestBody']['content']['application/json']['schema'];
 
-    expect(array_keys($schema['properties']))->toBe(['link_token']);
+    expect(array_keys($schema['properties']))->toEqualCanonicalizing(['link_token', 'display_name', 'email']);
     expect($schema['properties']['link_token']['type'])->toBe('string');
-    expect($schema['required'])->toBe(['link_token']);
+    expect($schema['required'])->toEqualCanonicalizing(['link_token', 'display_name', 'email']);
 
     // The format is described in words: Scramble's `BodyParameter` has no way to
     // state a `pattern`, so the contract carries the shape in the description
     // rather than pretending to enforce it (recorded for the spec reconciliation).
     $description = (string) ($schema['properties']['link_token']['description'] ?? '');
     expect($description)->toContain('beai_rl_')->toContain('43');
+});
+
+test('the redeem request bounds the visitor identity: an email address and a name, 255 characters each', function (): void {
+    $properties = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['requestBody']['content']['application/json']['schema']['properties'];
+
+    expect($properties['email']['type'])->toBe('string')
+        ->and($properties['email']['format'])->toBe('email')
+        ->and($properties['email']['maxLength'])->toBe(255)
+        ->and($properties['display_name']['type'])->toBe('string')
+        ->and($properties['display_name']['maxLength'])->toBe(255);
+});
+
+test('the redeem operation documents the 422 of an invalid identity with its field errors', function (): void {
+    $responses = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['responses'];
+
+    expect(array_map('strval', array_keys($responses)))->toContain('422');
+
+    // Scramble documents the framework's standard validation body once, as a
+    // shared component, and points every validating operation at it.
+    expect($responses['422']['$ref'])->toBe('#/components/responses/ValidationException');
+
+    $schema = reusableLinkDocumentedSpec()['components']['responses']['ValidationException']['content']['application/json']['schema'];
+    expect(array_keys($schema['properties']))->toEqualCanonicalizing(['message', 'errors'])
+        ->and($schema['required'])->toEqualCanonicalizing(['message', 'errors']);
 });
 
 test('the redeem operation documents 200, 403, 404 and 429 with typed bodies', function (): void {

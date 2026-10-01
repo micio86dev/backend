@@ -180,11 +180,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // `TrimStrings` would turn `<token>\n` or `  <token>  ` into the valid
         // token, a second spelling of the same credential that the format check
         // (`\z`, never `$`) exists to refuse and that every other
-        // non-redeemable value gets the generic 404 for. Skipped for this one
-        // route only; every other endpoint keeps trimming.
-        $middleware->trimStrings(except: [
-            fn (Request $request): bool => $request->is('api/reusable-links/redeem'),
-        ]);
+        // non-redeemable value gets the generic 404 for. So the KEY is excepted,
+        // not the route: the visitor's name and email on that same route are
+        // trimmed like every enrolment path trims them (and `"   "` then
+        // becomes null and fails `required`). Any other reader of that key
+        // silently inherits "never trimmed".
+        $middleware->trimStrings(except: ['link_token']);
 
         $middleware->appendToGroup('api', TenantContext::class);
 

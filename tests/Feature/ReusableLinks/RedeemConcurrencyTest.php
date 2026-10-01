@@ -104,13 +104,18 @@ function concurrencyAssertRedeemed(ReusableInterviewLink $link, array $results, 
     $visitors = Fx::visitorsOf($link);
     $names = array_map(fn ($visitor): string => $visitor->display_name, $visitors);
     sort($names, SORT_NATURAL);
-    $expected = array_map(fn (int $n): string => 'Reusable link #'.$n, range(1, $count));
+    $expected = array_map(fn (int $n): string => 'Actor '.$n, range(1, $count));
     sort($expected, SORT_NATURAL);
+    $emails = array_map(fn ($visitor): string => $visitor->email, $visitors);
+    sort($emails, SORT_NATURAL);
+    $expectedEmails = array_map(fn (int $n): string => 'actor-'.$n.'@example.test', range(1, $count));
+    sort($expectedEmails, SORT_NATURAL);
 
     expect($visitors)->toHaveCount($count)
         ->and(array_unique(array_map(fn ($visitor): string => $visitor->candidate_ref, $visitors)))->toHaveCount($count)
         ->and(array_unique(array_map(fn ($visitor): string => $visitor->email, $visitors)))->toHaveCount($count)
         ->and($names)->toBe($expected)
+        ->and($emails)->toBe($expectedEmails)
         ->and(array_unique($tokens))->toHaveCount($count)
         ->and(concurrencyLink($link)->uses_count)->toBe($count)
         ->and(concurrencyLink($link)->last_used_at)->not->toBeNull();

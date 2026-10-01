@@ -222,23 +222,27 @@ test('the participant_pii purge redacts the name and leaves the external referen
 
 /**
  * reusable-interview-links (B3b.7): a visitor created by a reusable link is an
- * ordinary participant to the purge. Its `display_name` is the link label and a
- * number, and the transcript or recording of a visitor is personal data in fact,
+ * ordinary participant to the purge. Its `display_name` is the name the visitor
+ * typed, and the transcript or recording of a visitor is personal data in fact,
  * so the existing classes apply to it unchanged (the ruling-2 sign-off is to name
- * visitors as a class it covers). The reference, the placeholder address and the
- * origin marker are not part of any class: like `candidate_ref`, they identify
- * nobody, and the marker is what keeps the row recognisable afterwards.
+ * visitors as a class it covers). The reference and the origin marker are not
+ * part of any class: like `candidate_ref`, they identify nobody, and the marker
+ * is what keeps the row recognisable afterwards.
+ *
+ * `participants.email` is in NO purge class yet: the typed address is retained
+ * here, and the slice that redacts the email together with the name rewrites
+ * this assertion.
  */
-test('a reusable link visitor past the participant_pii window is redacted like any participant and keeps its reference, placeholder address and origin marker', function (): void {
+test('a reusable link visitor past the participant_pii window has its name redacted and keeps its reference and origin marker', function (): void {
     ['link' => $link, 'token' => $token] = Fx::redeemable(linkAttributes: ['label' => 'Milan fair stand']);
-    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, Fx::identity('ada.lovelace@example.com', 'Ada Lovelace')))->assertOk();
     $visitor = Fx::visitorsOf($link)[0];
     DB::table('participants')->where('id', $visitor->id)->update(['created_at' => now()->subDays(90)]);
 
     config()->set('retention.enabled', true);
     config()->set('retention.days.participant_pii', 30);
 
-    expect($visitor->display_name)->toBe('Milan fair stand #1');
+    expect($visitor->display_name)->toBe('Ada Lovelace');
 
     $this->artisan('beai:purge-expired-data')->assertSuccessful();
 
@@ -248,8 +252,7 @@ test('a reusable link visitor past the participant_pii window is redacted like a
     expect($row->display_name)->toBe(PurgeExpiredDataCommand::PURGED_NAME)
         ->and($row->candidate_ref)->toBe($visitor->candidate_ref)
         ->and($row->candidate_ref)->toStartWith('rlv_')
-        ->and($row->email)->toBe($visitor->email)
-        ->and($row->email)->toBe($visitor->candidate_ref.'@invalid.beai.local')
+        ->and($row->email)->toBe('ada.lovelace@example.com')
         ->and($row->reusable_interview_link_id)->toBe($link->id);
 });
 

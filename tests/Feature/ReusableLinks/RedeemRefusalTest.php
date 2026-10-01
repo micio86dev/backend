@@ -84,7 +84,7 @@ function redeemRefusalBody(string $case, array $world): array
     $unknownWellFormed = ReusableLinkTokenGenerator::generate();
 
     return match ($case) {
-        'no body' => Fx::identity(),
+        'no link_token' => Fx::identity(),
         'null' => Fx::redeemBody(null),
         'an integer' => Fx::redeemBody(123),
         'an array' => Fx::redeemBody(['x']),
@@ -106,7 +106,7 @@ function redeemRefusalBody(string $case, array $world): array
 }
 
 const REDEEM_REFUSAL_CASES = [
-    'no body',
+    'no link_token',
     'null',
     'an integer',
     'an array',

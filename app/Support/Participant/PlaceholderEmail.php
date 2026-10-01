@@ -15,12 +15,14 @@ namespace App\Support\Participant;
  *   - rows backfilled when the column was introduced;
  *   - an sso-link minted before the column existed, which carries no `email`
  *     claim, so the exchange falls back to it;
- *   - the anonymous visitor a reusable interview link creates on every
- *     redemption, who has no name or address to give.
+ *   - visitors redeemed BEFORE reusable-link-visitor-identity (legacy, kept as
+ *     they are): a reusable link used to create an anonymous visitor with no
+ *     name or address to give. A redemption now stores the address the visitor
+ *     typed and never writes a placeholder.
  *
  * `.local` is reserved by RFC 6762 and resolves nowhere, so such an address can
  * never reach a real person, and it is greppable. The spelling lives here and
- * only here: the WRITERS (the exchange fallback, the redemption action) call
+ * only here: the WRITER (the sso exchange fallback, now its only one) calls
  * `for()`, and the READER that must never mail one (the invitation job) calls
  * `is()`, so the two can never drift apart.
  *

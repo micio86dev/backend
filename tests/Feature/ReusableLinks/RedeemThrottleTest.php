@@ -128,7 +128,7 @@ test('every outcome counts against the IP: unknown, malformed and refused attemp
     $bodies = [
         Fx::redeemBody(ReusableLinkTokenGenerator::generate()),
         Fx::redeemBody('not-a-token'),
-        [],
+        Fx::identity(),
         Fx::redeemBody(['x']),
         Fx::redeemBody(null),
     ];
@@ -245,7 +245,7 @@ test('malformed input never touches a link bucket', function (): void {
     // With a link limit of ONE, a single malformed value landing in any link
     // bucket would be visible as a 429 on the repeats or on the real token.
     $malformed = [
-        [],
+        Fx::identity(),
         Fx::redeemBody(null),
         Fx::redeemBody(''),
         Fx::redeemBody(123),
