@@ -77,6 +77,17 @@ final class ParticipantController extends Controller
         private readonly CancelParticipantSchedule $cancelParticipantSchedule,
     ) {}
 
+    // Internal notes for the exported description below (not published):
+    // Required: the email IS the candidate's identity across projects
+    // and organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and
+    // the column is NOT NULL. There is no legacy contract to keep —
+    // this product is greenfield by ruling.
+    // Internal notes for the exported description below (not published):
+    // interview-scheduling (design AD-2/AD-3, T-C1): optional future
+    // start time, validated by the SAME rule object PR-B's
+    // `EntryLinkController` already uses — the explicit-offset
+    // check, the future check, and the minimum-lead-time check all
+    // live in ONE place, never re-typed per surface.
     /**
      * Create a new participant for a project in the caller's org.
      *
@@ -92,19 +103,12 @@ final class ParticipantController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
-            // Required: the email IS the candidate's identity across projects
-            // and organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and
-            // the column is NOT NULL. There is no legacy contract to keep —
-            // this product is greenfield by ruling.
+            // Required. The candidate's email address.
             'email' => ['required', 'email', 'max:255'],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'language' => ['nullable', 'string', 'max:10'],
-            // interview-scheduling (design AD-2/AD-3, T-C1): optional future
-            // start time, validated by the SAME rule object PR-B's
-            // `EntryLinkController` already uses — the explicit-offset
-            // check, the future check, and the minimum-lead-time check all
-            // live in ONE place, never re-typed per surface.
+            // Optional start time of a scheduled interview: an ISO 8601 date-time with an explicit offset, in the future and at least the minimum lead time ahead.
             'scheduled_at' => ['sometimes', new ScheduledStartWithinLeadTime],
             // candidate-external-reference: the calling system's own id and
             // name, validated by the shared rules. Spread INTO the inline call,
@@ -292,12 +296,18 @@ final class ParticipantController extends Controller
         return new ParticipantEnrolmentResource($participant);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Reschedule a participant's scheduled interview (interview-scheduling,
+    // design AD-7, tasks T-E4).
+    //
+    // PATCH /api/m2m/participants/{id}/schedule
+    // Auth: auth:api-m2m + ability:participants:schedule
     /**
-     * Reschedule a participant's scheduled interview (interview-scheduling,
-     * design AD-7, tasks T-E4).
+     * Reschedule a participant's scheduled interview.
      *
-     * PATCH /api/m2m/participants/{id}/schedule
-     * Auth: auth:api-m2m + ability:participants:schedule
+     * Requires the `participants:schedule` ability. `scheduled_at` is an ISO 8601 date-time with an
+     * explicit offset, in the future and at least the minimum lead time ahead. A refusal answers with
+     * a `reason`.
      */
     public function updateSchedule(Request $request, int $id): JsonResponse
     {
@@ -321,12 +331,16 @@ final class ParticipantController extends Controller
         return response()->json(new ParticipantEnrolmentResource($updated), 200);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Cancel a participant's scheduled interview (interview-scheduling,
+    // design AD-7, tasks T-E4).
+    //
+    // DELETE /api/m2m/participants/{id}/schedule
+    // Auth: auth:api-m2m + ability:participants:schedule
     /**
-     * Cancel a participant's scheduled interview (interview-scheduling,
-     * design AD-7, tasks T-E4).
+     * Cancel a participant's scheduled interview.
      *
-     * DELETE /api/m2m/participants/{id}/schedule
-     * Auth: auth:api-m2m + ability:participants:schedule
+     * Requires the `participants:schedule` ability.
      */
     public function cancelSchedule(Request $request, int $id): JsonResponse
     {

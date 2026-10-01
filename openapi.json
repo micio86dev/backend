@@ -303,7 +303,7 @@
                                     "mode": {
                                         "anyOf": [
                                             {
-                                                "description": "public-api step 2 (SPEC.md \u00a73.7 test mode): optional, defaults\nto 'live' \u2014 every client issued before this field existed IS a\nlive client, so defaulting new ones the same way keeps one\nbehaviour rather than a silent split. Rule::enum() validates\nagainst App\\Enums\\ApiKeyMode's own backed values \u2014 the single\nsource of truth for the mode literal (review follow-up finding 3).",
+                                                "description": "Optional; defaults to `live`.",
                                                 "$ref": "#/components/schemas/ApiKeyMode"
                                             },
                                             {
@@ -375,7 +375,7 @@
             },
             "get": {
                 "operationId": "apiClient.index",
-                "description": "GET /api/m2m/clients\nAuth: auth:api (admin only via ApiClientPolicy)\n\nUnpaginated (generated-client-truth-and-session-safety D5) \u2014 the panel\nanswers a whole-set question: what can authenticate against my org,\nand what did I revoke. Not a page-at-a-time one; `UserController::index`\nalready returns an unpaginated org-scoped `->get()` for the same class\nof operator-managed collection. `is_active` first so the rows that\nmatter most stay first even at unusual scale.\n\nNever returns key_hash or raw api_key.",
+                "description": "Admin only. The whole set is returned, not a page, with the active clients first. The key hash and\nthe raw API key are never returned.",
                 "summary": "List M2M API clients for the authenticated admin's organization",
                 "tags": [
                     "ApiClient"
@@ -1054,8 +1054,8 @@
         "/avatar-templates/catalogue": {
             "get": {
                 "operationId": "avatarTemplate.catalogue",
-                "description": "Gated by the SAME `viewAny` ability as `fieldSpecs()` above: this\nendpoint proxies a platform-level provider account (no tenant data of\nits own), but it carries provider-side identifiers the picker will let\nan admin select \u2014 the same \"closer to credentials than to settings\"\nreasoning `AvatarTemplatePolicy` already applies to `config`.\n\nNever a 500: `AvatarProviderCatalogue::fetch()` degrades a provider\nfailure to `{status: 'unavailable', items: []}` on its own (D3); this\naction's only failure mode is a 422 for an unrecognized\n`provider`/`resource` pair, checked BEFORE ever calling the provider.",
-                "summary": "A provider's real inventory for one resource type \u2014 the picker's data\nsource (avatar-template-catalogue PR1, design D1/D3/D4)",
+                "description": "Returns what the provider offers for one resource type (voices, avatars, replicas or\npersonas), as the data source of the template picker. A provider failure is reported as\n`{status: \"unavailable\", items: []}`, not as an error; an unrecognized `provider`/`resource`\npair answers `422`.",
+                "summary": "List a provider's catalogue",
                 "tags": [
                     "AvatarTemplate"
                 ],
@@ -1064,7 +1064,7 @@
                         "name": "provider",
                         "in": "query",
                         "required": true,
-                        "description": "Literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS) \u2014 Scramble's\nstatic analyzer cannot evaluate implode() over a class constant and was\nemitting an empty-string-only enum for `provider` in openapi.json, making\nthe documented endpoint unreachable and poisoning the generated TS client\nwith `provider: \"\"` (avatar-template-catalogue, caught by native review).",
+                        "description": "The provider to query: `heygen`, `tavus`, `cartesia` or `elevenlabs`.",
                         "schema": {
                             "type": "string",
                             "enum": [
@@ -1316,7 +1316,7 @@
                                             "integer",
                                             "null"
                                         ],
-                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4)."
+                                        "description": "Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null."
                                     },
                                     "llm_credential_id": {
                                         "type": [
@@ -1451,7 +1451,7 @@
                                             "integer",
                                             "null"
                                         ],
-                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4). Both null\nclears the binding (see \"Unbinding a template clears only\n that template's binding\")."
+                                        "description": "Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null; sending both as null clears the binding."
                                     },
                                     "llm_credential_id": {
                                         "type": [
@@ -1725,7 +1725,7 @@
                                                             "object",
                                                             "null"
                                                         ],
-                                                        "description": "The binding travels by NAME, never by id or key material\n(design D13) \u2014 an id is meaningless in another org, and a\nfingerprint is key-derived material with no import use.",
+                                                        "description": "The language model binding, by model key and credential name; `null` when the template has none.",
                                                         "properties": {
                                                             "model_key": {
                                                                 "type": "string"
@@ -2753,7 +2753,8 @@
         "/catalogue/default-questions/{defaultQuestion}": {
             "patch": {
                 "operationId": "defaultQuestion.update",
-                "summary": "Never opens a draft (gga review finding on the sibling controllers,\napplied here from the start) \u2014 the target `$defaultQuestion` either\nalready belongs to an existing open draft or it does not exist to\nupdate at all",
+                "description": "Only a question that belongs to the open draft can be updated; with no open draft, or for\nan unknown question, the response is `404`.",
+                "summary": "Update a default question",
                 "tags": [
                     "DefaultQuestion"
                 ],
@@ -4528,8 +4529,8 @@
         "/framework/versions": {
             "get": {
                 "operationId": "framework.versions",
-                "description": "Returns all FrameworkVersions belonging to the authenticated org.\nTenantScoped global scope limits results to own-org versions only.\nUsed by clients when creating a Project to choose which FV to pin.\n\nAdded by C4.",
-                "summary": "GET /api/framework/versions",
+                "description": "Returns the organization's framework versions, to choose the one to pin when creating a project.",
+                "summary": "List framework versions",
                 "tags": [
                     "Framework"
                 ],
@@ -6842,7 +6843,7 @@
                                     "email": {
                                         "type": "string",
                                         "format": "email",
-                                        "description": "Required: the email IS the candidate's identity across projects\nand organizations (CLAUDE.md ruling 8, reversed 2026-09-01), and\nthe column is NOT NULL. There is no legacy contract to keep \u2014\nthis product is greenfield by ruling.",
+                                        "description": "Required. The candidate's email address.",
                                         "maxLength": 255
                                     },
                                     "display_name": {
@@ -6865,7 +6866,7 @@
                                     },
                                     "scheduled_at": {
                                         "type": "string",
-                                        "description": "interview-scheduling (design AD-2/AD-3, T-C1): optional future\nstart time, validated by the SAME rule object PR-B's\n`EntryLinkController` already uses \u2014 the explicit-offset\ncheck, the future check, and the minimum-lead-time check all\nlive in ONE place, never re-typed per surface."
+                                        "description": "Optional start time of a scheduled interview: an ISO 8601 date-time with an explicit offset, in the future and at least the minimum lead time ahead."
                                     },
                                     "external_id": {
                                         "type": [
@@ -7160,8 +7161,8 @@
         "/m2m/participants/{id}/schedule": {
             "patch": {
                 "operationId": "participant.updateSchedule",
-                "description": "PATCH /api/m2m/participants/{id}/schedule\nAuth: auth:api-m2m + ability:participants:schedule",
-                "summary": "Reschedule a participant's scheduled interview (interview-scheduling,\ndesign AD-7, tasks T-E4)",
+                "description": "Requires the `participants:schedule` ability. `scheduled_at` is an ISO 8601 date-time with an\nexplicit offset, in the future and at least the minimum lead time ahead. A refusal answers with\na `reason`.",
+                "summary": "Reschedule a participant's scheduled interview",
                 "tags": [
                     "Participant"
                 ],
@@ -7224,8 +7225,8 @@
             },
             "delete": {
                 "operationId": "participant.cancelSchedule",
-                "description": "DELETE /api/m2m/participants/{id}/schedule\nAuth: auth:api-m2m + ability:participants:schedule",
-                "summary": "Cancel a participant's scheduled interview (interview-scheduling,\ndesign AD-7, tasks T-E4)",
+                "description": "Requires the `participants:schedule` ability.",
+                "summary": "Cancel a participant's scheduled interview",
                 "tags": [
                     "Participant"
                 ],
@@ -7648,7 +7649,7 @@
                                             "integer",
                                             "null"
                                         ],
-                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4)."
+                                        "description": "Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null."
                                     },
                                     "llm_credential_id": {
                                         "type": [
@@ -7743,7 +7744,7 @@
             },
             "patch": {
                 "operationId": "platformAvatarTemplate.update",
-                "description": "An edit reaches EVERY project that pins this template, in every\norganization, on the next read (live edit, design D1) \u2014 which is why the\naudit row carries the usage at edit time: the reach of the change is part\nof what happened. It records field NAMES, never config values.",
+                "description": "An edit reaches every project that pins this template, in every organization, on the next read.\nThe audit trail records the usage at edit time and the names of the changed fields, never the\nconfig values.",
                 "summary": "Edit a platform avatar template",
                 "tags": [
                     "PlatformAvatarTemplate"
@@ -7786,7 +7787,7 @@
                                             "integer",
                                             "null"
                                         ],
-                                        "description": "Both-or-neither is enforced by the DB CHECK (I1) and by\nAvatarTemplate::booted()'s I2/I3/I4 guards \u2014 never re-checked\nhere (pluggable-conversation-llm PR P3a, design D4). Both null\nclears the binding (see \"Unbinding a template clears only\n that template's binding\")."
+                                        "description": "Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null; sending both as null clears the binding."
                                     },
                                     "llm_credential_id": {
                                         "type": [
@@ -10366,7 +10367,8 @@
         "/catalogue/revisions/publish": {
             "post": {
                 "operationId": "revision.publish",
-                "summary": "`422` with the FULL violations list on a failing sweep \u2014 one response\nnaming every problem, `state` left `draft` (design D3)",
+                "description": "Publishes the open draft of the catalogue. A failing check answers `422` with the full list of\nviolations and the draft stays a draft. With no open draft the response is `404`.",
+                "summary": "Publish the draft revision",
                 "tags": [
                     "Revision"
                 ],
@@ -10603,7 +10605,8 @@
         "/catalogue/roles/{role}": {
             "patch": {
                 "operationId": "role.update",
-                "summary": "Never opens a draft (gga review finding) \u2014 the target `$role` either\nalready belongs to an existing open draft or it does not exist to\nupdate at all; opening a fresh clone here would copy ~450 rows only\nto 404 immediately after, since a freshly-cloned row's id can never\nequal the id named in the URL",
+                "description": "Only a role that belongs to the open draft can be updated; with no open draft, or for an unknown\nrole, the response is `404`.",
+                "summary": "Update a role",
                 "tags": [
                     "Role"
                 ],
@@ -10795,7 +10798,8 @@
         "/catalogue/roles/{role}/competencies": {
             "put": {
                 "operationId": "role.updateCompetencies",
-                "summary": "`PUT /catalogue/roles/{role}/competencies` (framework-catalogue-authoring\nPR8b). Replaces the role's ENTIRE competency set in one locked write \u2014\nattach, detach and reorder are the same `sync()` call against a pivot\nthat already carries a `position` column, never three endpoints. Never\nauto-opens a draft \u2014 see `UpdateRoleCompetenciesRequest`'s own\nno-auto-open rationale, identical to `update()` above",
+                "description": "Replaces the role's whole competency set in one write, so attaching, detaching and reordering are\nthe same operation. Only a role that belongs to the open draft can be updated; with no open draft,\nor for an unknown role, the response is `404`.",
+                "summary": "Replace a role's competencies",
                 "tags": [
                     "Role"
                 ],

@@ -147,31 +147,40 @@ final class AvatarTemplateController extends Controller
         return response()->json(['data' => $specs]);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // A provider's real inventory for one resource type — the picker's data
+    // source (avatar-template-catalogue PR1, design D1/D3/D4).
+    //
+    // Gated by the SAME `viewAny` ability as `fieldSpecs()` above: this
+    // endpoint proxies a platform-level provider account (no tenant data of
+    // its own), but it carries provider-side identifiers the picker will let
+    // an admin select — the same "closer to credentials than to settings"
+    // reasoning `AvatarTemplatePolicy` already applies to `config`.
+    //
+    // Never a 500: `AvatarProviderCatalogue::fetch()` degrades a provider
+    // failure to `{status: 'unavailable', items: []}` on its own (D3); this
+    // action's only failure mode is a 422 for an unrecognized
+    // `provider`/`resource` pair, checked BEFORE ever calling the provider.
+    // Internal notes for the exported description below (not published):
+    // Literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS) — Scramble's
+    // static analyzer cannot evaluate implode() over a class constant and was
+    // emitting an empty-string-only enum for `provider` in openapi.json, making
+    // the documented endpoint unreachable and poisoning the generated TS client
+    // with `provider: ""` (avatar-template-catalogue, caught by native review).
     /**
-     * A provider's real inventory for one resource type — the picker's data
-     * source (avatar-template-catalogue PR1, design D1/D3/D4).
+     * List a provider's catalogue.
      *
-     * Gated by the SAME `viewAny` ability as `fieldSpecs()` above: this
-     * endpoint proxies a platform-level provider account (no tenant data of
-     * its own), but it carries provider-side identifiers the picker will let
-     * an admin select — the same "closer to credentials than to settings"
-     * reasoning `AvatarTemplatePolicy` already applies to `config`.
-     *
-     * Never a 500: `AvatarProviderCatalogue::fetch()` degrades a provider
-     * failure to `{status: 'unavailable', items: []}` on its own (D3); this
-     * action's only failure mode is a 422 for an unrecognized
-     * `provider`/`resource` pair, checked BEFORE ever calling the provider.
+     * Returns what the provider offers for one resource type (voices, avatars, replicas or
+     * personas), as the data source of the template picker. A provider failure is reported as
+     * `{status: "unavailable", items: []}`, not as an error; an unrecognized `provider`/`resource`
+     * pair answers `422`.
      */
     public function catalogue(Request $request): JsonResponse
     {
         $this->authorize('viewAny', AvatarTemplate::class);
 
         $validated = $request->validate([
-            // Literal 'in:' list, not 'in:'.implode(',', self::PROVIDERS) — Scramble's
-            // static analyzer cannot evaluate implode() over a class constant and was
-            // emitting an empty-string-only enum for `provider` in openapi.json, making
-            // the documented endpoint unreachable and poisoning the generated TS client
-            // with `provider: ""` (avatar-template-catalogue, caught by native review).
+            // The provider to query: `heygen`, `tavus`, `cartesia` or `elevenlabs`.
             'provider' => ['required', 'string', 'in:heygen,tavus,cartesia,elevenlabs'],
             'resource' => ['required', 'string', 'in:voice,avatar,replica,pal'],
             // Keep only genuinely Italian voices (`italian` = native). The

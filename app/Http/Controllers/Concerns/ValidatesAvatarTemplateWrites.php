@@ -26,6 +26,11 @@ use Illuminate\Validation\ValidationException;
 trait ValidatesAvatarTemplateWrites
 {
     /**
+     * Internal notes for the exported description below (not published):
+     * Both-or-neither is enforced by the DB CHECK (I1) and by
+     * AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+     * here (pluggable-conversation-llm PR P3a, design D4).
+     *
      * @return array<string, list<string>>
      */
     private function templateStoreRules(): array
@@ -36,15 +41,20 @@ trait ValidatesAvatarTemplateWrites
             // Literal list — see catalogue()'s validation for why implode(self::PROVIDERS) is not used.
             'provider' => ['required', 'string', 'in:heygen,tavus'],
             'config' => ['required', 'array'],
-            // Both-or-neither is enforced by the DB CHECK (I1) and by
-            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
-            // here (pluggable-conversation-llm PR P3a, design D4).
+            // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null.
             'llm_model_id' => ['sometimes', 'nullable', 'integer'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
         ];
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * Both-or-neither is enforced by the DB CHECK (I1) and by
+     * AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
+     * here (pluggable-conversation-llm PR P3a, design D4). Both null
+     * clears the binding (see "Unbinding a template clears only
+     * that template's binding").
+     *
      * @return array<string, list<string>>
      */
     private function templateUpdateRules(): array
@@ -53,11 +63,7 @@ trait ValidatesAvatarTemplateWrites
             'name' => ['sometimes', 'string', 'max:120'],
             'description' => ['sometimes', 'nullable', 'string', 'max:500'],
             'config' => ['sometimes', 'array'],
-            // Both-or-neither is enforced by the DB CHECK (I1) and by
-            // AvatarTemplate::booted()'s I2/I3/I4 guards — never re-checked
-            // here (pluggable-conversation-llm PR P3a, design D4). Both null
-            // clears the binding (see "Unbinding a template clears only
-            // that template's binding").
+            // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null; sending both as null clears the binding.
             'llm_model_id' => ['sometimes', 'nullable', 'integer'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
         ];

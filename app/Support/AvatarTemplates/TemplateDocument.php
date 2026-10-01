@@ -24,6 +24,11 @@ final class TemplateDocument
     public const SCHEMA = 'beai.avatar-template/1';
 
     /**
+     * Internal notes for the exported description below (not published):
+     * The binding travels by NAME, never by id or key material
+     * (design D13) — an id is meaningless in another org, and a
+     * fingerprint is key-derived material with no import use.
+     *
      * @param  Collection<int, AvatarTemplate>  $templates
      * @return array<string, mixed>
      */
@@ -43,9 +48,7 @@ final class TemplateDocument
                 'config' => $t->config,
                 // Persona is optional: a template may be pure provider config.
                 'persona' => $t->persona ?? null,
-                // The binding travels by NAME, never by id or key material
-                // (design D13) — an id is meaningless in another org, and a
-                // fingerprint is key-derived material with no import use.
+                // The language model binding, by model key and credential name; `null` when the template has none.
                 'llm' => $t->llm_model_id === null ? null : [
                     'model_key' => $t->llmModel?->key,
                     'credential_name' => $t->llmCredential?->name,

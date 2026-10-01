@@ -149,12 +149,17 @@ class RoleController extends Controller
         return (new CatalogueRoleResource($role))->response()->setStatusCode(Response::HTTP_CREATED);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Never opens a draft (gga review finding) — the target `$role` either
+    // already belongs to an existing open draft or it does not exist to
+    // update at all; opening a fresh clone here would copy ~450 rows only
+    // to 404 immediately after, since a freshly-cloned row's id can never
+    // equal the id named in the URL.
     /**
-     * Never opens a draft (gga review finding) — the target `$role` either
-     * already belongs to an existing open draft or it does not exist to
-     * update at all; opening a fresh clone here would copy ~450 rows only
-     * to 404 immediately after, since a freshly-cloned row's id can never
-     * equal the id named in the URL.
+     * Update a role.
+     *
+     * Only a role that belongs to the open draft can be updated; with no open draft, or for an unknown
+     * role, the response is `404`.
      */
     public function update(UpdateRoleRequest $request, int $role): JsonResponse
     {
@@ -204,13 +209,19 @@ class RoleController extends Controller
         return (new CatalogueRoleResource($target->fresh()))->response();
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // `PUT /catalogue/roles/{role}/competencies` (framework-catalogue-authoring
+    // PR8b). Replaces the role's ENTIRE competency set in one locked write —
+    // attach, detach and reorder are the same `sync()` call against a pivot
+    // that already carries a `position` column, never three endpoints. Never
+    // auto-opens a draft — see `UpdateRoleCompetenciesRequest`'s own
+    // no-auto-open rationale, identical to `update()` above.
     /**
-     * `PUT /catalogue/roles/{role}/competencies` (framework-catalogue-authoring
-     * PR8b). Replaces the role's ENTIRE competency set in one locked write —
-     * attach, detach and reorder are the same `sync()` call against a pivot
-     * that already carries a `position` column, never three endpoints. Never
-     * auto-opens a draft — see `UpdateRoleCompetenciesRequest`'s own
-     * no-auto-open rationale, identical to `update()` above.
+     * Replace a role's competencies.
+     *
+     * Replaces the role's whole competency set in one write, so attaching, detaching and reordering are
+     * the same operation. Only a role that belongs to the open draft can be updated; with no open draft,
+     * or for an unknown role, the response is `404`.
      */
     public function updateCompetencies(UpdateRoleCompetenciesRequest $request, int $role): JsonResponse
     {

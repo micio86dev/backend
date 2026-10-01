@@ -216,14 +216,18 @@ class FrameworkController extends Controller
         return BarsIndicatorResource::collection($indicators)->response();
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/framework/versions
+    //
+    // Returns all FrameworkVersions belonging to the authenticated org.
+    // TenantScoped global scope limits results to own-org versions only.
+    // Used by clients when creating a Project to choose which FV to pin.
+    //
+    // Added by C4.
     /**
-     * GET /api/framework/versions
+     * List framework versions.
      *
-     * Returns all FrameworkVersions belonging to the authenticated org.
-     * TenantScoped global scope limits results to own-org versions only.
-     * Used by clients when creating a Project to choose which FV to pin.
-     *
-     * Added by C4.
+     * Returns the organization's framework versions, to choose the one to pin when creating a project.
      */
     public function versions(): AnonymousResourceCollection
     {

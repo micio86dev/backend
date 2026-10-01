@@ -146,13 +146,19 @@ final class PlatformAvatarTemplateController extends Controller
             ->setStatusCode(Response::HTTP_CREATED);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Edit a platform avatar template.
+    //
+    // An edit reaches EVERY project that pins this template, in every
+    // organization, on the next read (live edit, design D1) — which is why the
+    // audit row carries the usage at edit time: the reach of the change is part
+    // of what happened. It records field NAMES, never config values.
     /**
      * Edit a platform avatar template.
      *
-     * An edit reaches EVERY project that pins this template, in every
-     * organization, on the next read (live edit, design D1) — which is why the
-     * audit row carries the usage at edit time: the reach of the change is part
-     * of what happened. It records field NAMES, never config values.
+     * An edit reaches every project that pins this template, in every organization, on the next read.
+     * The audit trail records the usage at edit time and the names of the changed fields, never the
+     * config values.
      *
      * @throws AuthorizationException
      */

@@ -38,6 +38,13 @@ use Illuminate\Validation\Rule;
  */
 final class ApiClientController extends Controller
 {
+    // Internal notes for the exported description below (not published):
+    // public-api step 2 (SPEC.md §3.7 test mode): optional, defaults
+    // to 'live' — every client issued before this field existed IS a
+    // live client, so defaulting new ones the same way keeps one
+    // behaviour rather than a silent split. Rule::enum() validates
+    // against App\Enums\ApiKeyMode's own backed values — the single
+    // source of truth for the mode literal (review follow-up finding 3).
     /**
      * Create a new M2M API client.
      *
@@ -73,12 +80,7 @@ final class ApiClientController extends Controller
             'abilities' => ['required', 'array'],
             'abilities.*' => ['required', 'string'],
             'expires_at' => ['nullable', 'date', 'after:now'],
-            // public-api step 2 (SPEC.md §3.7 test mode): optional, defaults
-            // to 'live' — every client issued before this field existed IS a
-            // live client, so defaulting new ones the same way keeps one
-            // behaviour rather than a silent split. Rule::enum() validates
-            // against App\Enums\ApiKeyMode's own backed values — the single
-            // source of truth for the mode literal (review follow-up finding 3).
+            // Optional; defaults to `live`.
             'mode' => ['nullable', 'string', Rule::enum(ApiKeyMode::class)],
         ]);
 
@@ -134,20 +136,25 @@ final class ApiClientController extends Controller
         ], 201);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // List M2M API clients for the authenticated admin's organization.
+    //
+    // GET /api/m2m/clients
+    // Auth: auth:api (admin only via ApiClientPolicy)
+    //
+    // Unpaginated (generated-client-truth-and-session-safety D5) — the panel
+    // answers a whole-set question: what can authenticate against my org,
+    // and what did I revoke. Not a page-at-a-time one; `UserController::index`
+    // already returns an unpaginated org-scoped `->get()` for the same class
+    // of operator-managed collection. `is_active` first so the rows that
+    // matter most stay first even at unusual scale.
+    //
+    // Never returns key_hash or raw api_key.
     /**
      * List M2M API clients for the authenticated admin's organization.
      *
-     * GET /api/m2m/clients
-     * Auth: auth:api (admin only via ApiClientPolicy)
-     *
-     * Unpaginated (generated-client-truth-and-session-safety D5) — the panel
-     * answers a whole-set question: what can authenticate against my org,
-     * and what did I revoke. Not a page-at-a-time one; `UserController::index`
-     * already returns an unpaginated org-scoped `->get()` for the same class
-     * of operator-managed collection. `is_active` first so the rows that
-     * matter most stay first even at unusual scale.
-     *
-     * Never returns key_hash or raw api_key.
+     * Admin only. The whole set is returned, not a page, with the active clients first. The key hash and
+     * the raw API key are never returned.
      */
     public function index(): AnonymousResourceCollection
     {
