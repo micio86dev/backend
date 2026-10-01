@@ -13,8 +13,10 @@ declare(strict_types=1);
  * the reusable-link marker of the row the request's `candidate_ref` names, never
  * by the address and never by the spelling of the reference.
  *
- * The redemption itself never queues anything, and the legacy placeholder rows
- * stay refused by the job's own guard.
+ * The same holds for ANY participant whose stored address is a placeholder (a
+ * legacy row, or one the retention purge redacted): no mail is queued and
+ * `email_sent` says so, while the job keeps its own placeholder refusal as a
+ * second line of defence. The redemption itself never queues anything.
  *
  * REQ: No Mail Is Ever Sent To A Visitor Address
  *      (sdd/reusable-link-visitor-identity/spec/reusable-interview-links)
@@ -22,7 +24,9 @@ declare(strict_types=1);
 
 use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Participant;
+use App\Support\Participant\PlaceholderEmail;
 use App\Support\Tenancy\TenantContextScope;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
@@ -118,22 +122,50 @@ test('a manual candidate_ref that merely starts with rlv_ is not a visitor', fun
     Queue::assertPushed(SendCandidateInvitationJob::class, 1);
 });
 
-test('a legacy placeholder row is still dispatched to the job, which refuses it itself', function (): void {
+test('re-issuing a link for ANY participant that holds a placeholder address queues no invitation and reports email_sent false', function (string $spelling): void {
     Queue::fake();
+    Log::spy();
     $world = Fx::redeemable();
     $admin = authTokenForRole($world['org'], 'admin');
-    $legacyRef = 'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0';
+    // A plain participant, not a reusable-link visitor: only its address says it
+    // is synthesised (a legacy row, or a participant the retention purge redacted).
+    $ref = 'rlv_01JABCDEFGHJKMNPQRSTVWXYZ0';
+    $email = $spelling === 'legacy' ? PlaceholderEmail::for($ref) : PlaceholderEmail::forPurged($ref);
     TenantContextScope::runFor($world['project']->organization_id, fn () => Participant::factory()
         ->forProject($world['project'])
-        ->create(['candidate_ref' => $legacyRef, 'email' => $legacyRef.'@invalid.beai.local']));
+        ->create(['candidate_ref' => $ref, 'email' => $email, 'display_name' => '[purged]']));
 
-    $this->withToken($admin)->postJson('/api/entry-links', visitorInvitationReissue($world['project']->id, $legacyRef, $legacyRef.'@invalid.beai.local'))
-        ->assertCreated();
+    $response = $this->withToken($admin)->postJson('/api/entry-links', visitorInvitationReissue($world['project']->id, $ref, $email, ['send_email' => true]));
 
-    // No marker on a legacy row: the dispatch site cannot tell, and does not
-    // need to. The job's own placeholder guard (CandidateInvitationTest) is what
-    // keeps the mail from going out.
-    Queue::assertPushed(SendCandidateInvitationJob::class, 1);
+    // The link is still minted and returned; the answer says no mail was queued
+    // because none will be: the job's own placeholder refusal stays as the second
+    // line of defence (CandidateInvitationTest).
+    $response->assertCreated();
+    expect($response->json('email_sent'))->toBeFalse()
+        ->and($response->json('entry_url'))->toBeString()->not->toBeEmpty();
+    Queue::assertNotPushed(SendCandidateInvitationJob::class);
+    Log::shouldHaveReceived('info')
+        ->once()
+        ->withArgs(fn (string $message, array $context = []): bool => str_contains($message, 'not queued')
+            && str_contains($message, 'placeholder')
+            && $context === []
+            && ! str_contains($message, 'rlv_')
+            && ! str_contains($message, 'invalid'));
+})->with(['legacy', 'purged']);
+
+test('a placeholder address with send_email false asks for no mail and logs nothing about one', function (): void {
+    Queue::fake();
+    Log::spy();
+    $world = Fx::redeemable();
+    $admin = authTokenForRole($world['org'], 'admin');
+    $email = PlaceholderEmail::forPurged('ref-1');
+
+    $response = $this->withToken($admin)->postJson('/api/entry-links', visitorInvitationReissue($world['project']->id, 'ref-1', $email, ['send_email' => false]));
+
+    $response->assertCreated();
+    expect($response->json('email_sent'))->toBeFalse();
+    Queue::assertNotPushed(SendCandidateInvitationJob::class);
+    Log::shouldNotHaveReceived('info');
 });
 
 // ─── The redemption queues nothing ───────────────────────────────────────────

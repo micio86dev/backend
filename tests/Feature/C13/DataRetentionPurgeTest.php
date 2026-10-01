@@ -781,7 +781,11 @@ test('a placeholder that collides with another address of the project is reporte
     purgeEnrol($project, ['candidate_ref' => 'holder', 'email' => PlaceholderEmail::forPurged('ref-a')], daysAgo: 5);
 
     $this->artisan('beai:purge-expired-data')
-        ->expectsOutputToContain("participant {$colliding->id} skipped")
+        // The placeholder is derived from the reference, so the same collision
+        // repeats on every pass: the warning must say an operator has to act,
+        // never promise a retry. One expectation: each one consumes one output line.
+        ->expectsOutputToContain("participant {$colliding->id} skipped, needs operator action")
+        ->doesntExpectOutputToContain('retried')
         ->expectsOutputToContain('Purged [participant_pii]: 1')
         ->assertSuccessful();
 
