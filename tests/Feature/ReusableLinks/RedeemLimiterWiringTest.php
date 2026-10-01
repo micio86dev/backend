@@ -26,6 +26,7 @@ use App\Services\ReusableLinkTokenGenerator;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Tests\Helpers\ReusableLinkFixtures as Fx;
 
 /**
  * Resolve the limits the named limiter builds for a JSON body from an IP.
@@ -164,4 +165,46 @@ test('overriding the configuration changes both limits without a code change', f
 
     expect($limits[0]->maxAttempts)->toBe(2)
         ->and($limits[1]->maxAttempts)->toBe(3);
+});
+
+// ─── Wired to the route ──────────────────────────────────────────────────────
+//
+// The tests above pin the limiter's DEFINITION. These two prove the route
+// actually runs it: a registered limiter that no route uses protects nothing.
+// The full matrix (ordering, header shapes, windows) lives with the throttle
+// tests; here a lowered limit and one request past it is enough.
+
+test('the route throttles per IP: past the limit it answers 429 with Retry-After and creates nothing', function (): void {
+    config(['reusable_links.redeem.per_ip_per_minute' => 2]);
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+
+    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+
+    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $token]);
+
+    $response->assertStatus(429);
+    expect($response->headers->get('Retry-After'))->not->toBeNull()
+        ->and($response->json('message'))->toBeString()
+        ->and(Fx::visitorsOf($link))->toHaveCount(2);
+});
+
+test('the route throttles per link whatever the client address: a new IP does not reset the link bucket', function (): void {
+    config([
+        'reusable_links.redeem.per_ip_per_minute' => 1000,
+        'reusable_links.redeem.per_link_per_hour' => 2,
+    ]);
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+
+    foreach (['203.0.113.21', '203.0.113.22'] as $ip) {
+        $this->withServerVariables(['REMOTE_ADDR' => $ip])
+            ->postJson(Fx::REDEEM_URL, ['link_token' => $token])
+            ->assertOk();
+    }
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.23'])
+        ->postJson(Fx::REDEEM_URL, ['link_token' => $token])
+        ->assertStatus(429);
+
+    expect(Fx::visitorsOf($link))->toHaveCount(2);
 });

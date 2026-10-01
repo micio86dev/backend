@@ -64,6 +64,7 @@ use App\Http\Controllers\PublicApi\SessionTokenController as PublicApiSessionTok
 use App\Http\Controllers\PublicApi\UsageController as PublicApiUsageController;
 use App\Http\Controllers\PublicApi\WebhookDeliveryController as PublicApiWebhookDeliveryController;
 use App\Http\Controllers\QueueHealthController;
+use App\Http\Controllers\Sso\ReusableLinkRedeemController;
 use App\Http\Controllers\Sso\SsoExchangeController;
 use App\Http\Middleware\ParticipantStatusGuard;
 use App\Http\Middleware\PublicApi\AssignRequestId;
@@ -789,6 +790,20 @@ Route::prefix('m2m')
 
 Route::get('/sso/exchange', [SsoExchangeController::class, 'exchange'])
     ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class]);
+
+// ─── Reusable interview link redemption (PUBLIC) (reusable-interview-links) ───
+// PUBLIC endpoint — no guard, no TenantContext, same isolation as
+// `/sso/exchange` above and for the identical reason.
+// `throttle:reusable-link-redeem` is a NAMED limiter (never the numeric
+// `throttle:N,1`, whose bucket key calls `$request->user()` and 500s on
+// `?token[]=`), registered in `AppServiceProvider::boot()`: it counts EVERY
+// attempt per client IP and per link, whether or not the link exists. This
+// route creates a participant and mints a credential on every success, so it is
+// never registered without it. The token travels in the BODY field `link_token`
+// and nowhere else.
+Route::post('/reusable-links/redeem', [ReusableLinkRedeemController::class, 'redeem'])
+    ->withoutMiddleware([TenantContext::class, RejectStaleCredentials::class])
+    ->middleware('throttle:reusable-link-redeem');
 
 // ─── BEAI Public API session-token exchange (PUBLIC) (public-api step 5) ─────
 // PUBLIC endpoint, OUTSIDE /v1 — no API key, no TenantContext (SPEC.md §3.5,

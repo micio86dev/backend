@@ -6,8 +6,10 @@ namespace Tests\Helpers;
 
 use App\Models\FrameworkVersion;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ReusableInterviewLink;
+use App\Services\ReusableLinkTokenGenerator;
 use App\Support\Tenancy\TenantContextScope;
 
 /**
@@ -26,6 +28,16 @@ use App\Support\Tenancy\TenantContextScope;
 final class ReusableLinkFixtures
 {
     public const CANDIDATE_ORIGIN = 'https://interview.example.com';
+
+    /**
+     * The public redemption endpoint.
+     */
+    public const REDEEM_URL = '/api/reusable-links/redeem';
+
+    /**
+     * The one body every non-redeemable token is answered with, byte for byte.
+     */
+    public const NOT_FOUND_BODY = '{"message":"Not found."}';
 
     /**
      * Point the entry URL composer at a known candidate app origin.
@@ -74,6 +86,45 @@ final class ReusableLinkFixtures
             $project->organization_id,
             fn (): ReusableInterviewLink => ReusableInterviewLink::factory()->forProject($project)->create($attributes),
         );
+    }
+
+    /**
+     * An organisation with an open project and an ENABLED link whose raw token
+     * is known, so a test can redeem it. The row stores only the hash and the
+     * prefix, exactly as a created link does.
+     *
+     * @param  array<string, mixed>  $projectAttributes  overrides for the project
+     * @param  array<string, mixed>  $linkAttributes  overrides for the link, e.g. `['label' => 'Stand']`
+     * @param  bool  $interviewable  false leaves the project with no competency
+     * @return array{org: Organization, project: Project, link: ReusableInterviewLink, token: string}
+     */
+    public static function redeemable(array $projectAttributes = [], array $linkAttributes = [], bool $interviewable = true): array
+    {
+        $org = Organization::factory()->create();
+        $project = self::project($org, $projectAttributes, $interviewable);
+        $token = ReusableLinkTokenGenerator::generate();
+
+        $link = self::link($project, array_merge([
+            'token_hash' => ReusableLinkTokenGenerator::hash($token),
+            'token_prefix' => ReusableLinkTokenGenerator::prefixOf($token),
+        ], $linkAttributes));
+
+        return ['org' => $org, 'project' => $project, 'link' => $link, 'token' => $token];
+    }
+
+    /**
+     * The visitors a link produced, oldest first (`participants` is not a
+     * tenant-scoped model, so this reads the table as it is).
+     *
+     * @return list<Participant>
+     */
+    public static function visitorsOf(ReusableInterviewLink $link): array
+    {
+        return Participant::query()
+            ->where('reusable_interview_link_id', $link->id)
+            ->orderBy('id')
+            ->get()
+            ->all();
     }
 
     /**

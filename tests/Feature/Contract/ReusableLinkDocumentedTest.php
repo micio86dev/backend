@@ -156,7 +156,7 @@ test('the admin surface of a link is exactly create, list and disable', function
     $operations = [];
 
     foreach ($paths as $path => $methods) {
-        if (str_contains($path, 'reusable')) {
+        if (str_starts_with($path, REUSABLE_LINK_PROJECT_PATH)) {
             foreach (array_keys($methods) as $method) {
                 $operations[] = strtoupper($method).' '.$path;
             }
@@ -211,6 +211,69 @@ test('the resource documents status as active or disabled and the creator as a n
 
     expect(reusableLinkDocumentedTypeIs($properties['created_by'], 'object'))->toBeTrue('created_by must be an object or null');
     expect(array_keys($properties['created_by']['properties']))->toBe(['name']);
+});
+
+// ─── Redeem ──────────────────────────────────────────────────────────────────
+
+const REUSABLE_LINK_REDEEM_PATH = '/reusable-links/redeem';
+
+test('the redeem operation is documented as the one public reusable link operation', function (): void {
+    $operation = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post');
+
+    expect($operation['operationId'])->toBe('reusableLinkRedeem.redeem');
+    expect($operation['summary'] ?? '')->not->toBe('');
+    // The only other reusable path is the admin surface; redeem is not part of it.
+    $others = [];
+    foreach (reusableLinkDocumentedSpec()['paths'] as $path => $methods) {
+        if (str_contains($path, 'reusable') && ! str_starts_with($path, REUSABLE_LINK_PROJECT_PATH)) {
+            foreach (array_keys($methods) as $method) {
+                $others[] = strtoupper($method).' '.$path;
+            }
+        }
+    }
+    expect($others)->toBe(['POST /reusable-links/redeem']);
+});
+
+test('the redeem request documents link_token as a required string and no field named token', function (): void {
+    $schema = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['requestBody']['content']['application/json']['schema'];
+
+    expect(array_keys($schema['properties']))->toBe(['link_token']);
+    expect($schema['properties']['link_token']['type'])->toBe('string');
+    expect($schema['required'])->toBe(['link_token']);
+
+    // The format is described in words: Scramble's `BodyParameter` has no way to
+    // state a `pattern`, so the contract carries the shape in the description
+    // rather than pretending to enforce it (recorded for the spec reconciliation).
+    $description = (string) ($schema['properties']['link_token']['description'] ?? '');
+    expect($description)->toContain('beai_rl_')->toContain('43');
+});
+
+test('the redeem operation documents 200, 403, 404 and 429 with typed bodies', function (): void {
+    $responses = reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['responses'];
+
+    expect(array_map('strval', array_keys($responses)))->toContain('200', '403', '404', '429');
+
+    $ok = $responses['200']['content']['application/json']['schema'];
+    expect(array_keys($ok['properties']))->toBe(['access_token']);
+    expect($ok['properties']['access_token']['type'])->toBe('string');
+    expect($ok['required'])->toBe(['access_token']);
+
+    $forbidden = $responses['403']['content']['application/json']['schema'];
+    expect(array_keys($forbidden['properties']))->toEqualCanonicalizing(['message', 'redirect_url']);
+    expect(reusableLinkDocumentedTypeIs($forbidden['properties']['redirect_url'], 'string'))->toBeTrue();
+
+    foreach (['404', '429'] as $status) {
+        $schema = $responses[$status]['content']['application/json']['schema'];
+        expect(array_keys($schema['properties']))->toBe(['message']);
+    }
+});
+
+test('the redeem operation never documents the secret as anything but the request field', function (): void {
+    $encoded = json_encode(reusableLinkDocumentedOperation(REUSABLE_LINK_REDEEM_PATH, 'post')['responses'], JSON_THROW_ON_ERROR);
+
+    foreach (['link_token', 'token_hash', 'entry_url', 'rlk_', 'reusable_interview_link'] as $forbidden) {
+        expect($encoded)->not->toContain($forbidden);
+    }
 });
 
 // ─── The public API is untouched ─────────────────────────────────────────────

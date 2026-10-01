@@ -298,6 +298,9 @@ final class AuthMatrixCatalogue
             'GET api/embed/exchange' => self::open('embed'),
             'GET api/embed/frame-policy' => self::open('embed'),
             'GET api/sso/exchange' => self::open('sso'),
+            // reusable-interview-links: public, throttled by the named `reusable-link-redeem`
+            // limiter, and authorised by the secret in the BODY, never by a credential.
+            'POST api/reusable-links/redeem' => self::open('reusable-links'),
             'GET api/health' => self::open('health'),
             'GET api/health/queue' => self::open('health'),
             'GET api/v1/health' => self::open('public-api-v1'),

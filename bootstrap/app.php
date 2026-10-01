@@ -175,6 +175,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // remembering to call a private method is not a rule.
         $middleware->prependToGroup('api', SetLocaleFromRequest::class);
 
+        // reusable-interview-links: the redemption endpoint reads a SECRET from
+        // `link_token`, and a secret has exactly one spelling. Laravel's global
+        // `TrimStrings` would turn `<token>\n` or `  <token>  ` into the valid
+        // token, a second spelling of the same credential that the format check
+        // (`\z`, never `$`) exists to refuse and that every other
+        // non-redeemable value gets the generic 404 for. Skipped for this one
+        // route only; every other endpoint keeps trimming.
+        $middleware->trimStrings(except: [
+            fn (Request $request): bool => $request->is('api/reusable-links/redeem'),
+        ]);
+
         $middleware->appendToGroup('api', TenantContext::class);
 
         // user-profile-self-service (design D3): registered AFTER TenantContext,

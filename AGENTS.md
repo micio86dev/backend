@@ -22,7 +22,10 @@ made in this codebase, not because it is good practice in the abstract.
   **One ratified exception, and it is enumerated rather than described** — the named
   allowlist in `tests/Arch/C11/AdminTenancySafetyArchTest.php` is the authority, and adding
   to it is a reviewable act. Today it carries `Sso/SsoExchangeController` (resolves a project
-  before any tenant context exists) and, since 2026-09-14,
+  before any tenant context exists), `Actions/ReusableLinks/RedeemReusableInterviewLink` (the
+  public reusable-link redemption: it finds the link by token hash before any tenant is known,
+  then runs inside `TenantContextScope::runFor()` and pins the project to the link's
+  organisation) and, since 2026-09-14,
   `Api/LlmCredentialController::destroy()`: `llm_credentials` became a platform table while
   `avatar_templates` stayed tenant-scoped, so its in-use guard has to count across every
   tenant to agree with a foreign key that is `ON DELETE RESTRICT` platform-wide. A scoped
