@@ -13,24 +13,28 @@ use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `PUT /api/catalogue/roles/{role}/competencies` (framework-catalogue-authoring
+// PR8b, `catalogue-authoring/spec.md`'s pivot CRUD requirement — PR3 shipped
+// role/competency/indicator CRUD with no way to change a role's competency
+// SET, so a newly created role could never be made usable).
+//
+// ONE idempotent PUT replaces the whole set — attach, detach and reorder are
+// the same operation on a pivot that already carries a `position` column
+// (D1's `framework_role_competency` shape: PK `(revision_id, role_id,
+// competency_id)` + `position`), not three endpoints that could each apply
+// only partially and leave the set in a state no single request asked for.
+//
+// Read-only draft resolution (`existingOpenDraftRevisionId()`), matching
+// `UpdateRoleRequest`'s own no-auto-open rationale: the role named in the
+// URL either already belongs to an existing open draft or it does not exist
+// to update at all — auto-opening a fresh clone here would copy ~450 rows
+// only to 404 immediately after, since a freshly-cloned role's id can never
+// equal the id in the URL.
 /**
- * `PUT /api/catalogue/roles/{role}/competencies` (framework-catalogue-authoring
- * PR8b, `catalogue-authoring/spec.md`'s pivot CRUD requirement — PR3 shipped
- * role/competency/indicator CRUD with no way to change a role's competency
- * SET, so a newly created role could never be made usable).
- *
- * ONE idempotent PUT replaces the whole set — attach, detach and reorder are
- * the same operation on a pivot that already carries a `position` column
- * (D1's `framework_role_competency` shape: PK `(revision_id, role_id,
- * competency_id)` + `position`), not three endpoints that could each apply
- * only partially and leave the set in a state no single request asked for.
- *
- * Read-only draft resolution (`existingOpenDraftRevisionId()`), matching
- * `UpdateRoleRequest`'s own no-auto-open rationale: the role named in the
- * URL either already belongs to an existing open draft or it does not exist
- * to update at all — auto-opening a fresh clone here would copy ~450 rows
- * only to 404 immediately after, since a freshly-cloned role's id can never
- * equal the id in the URL.
+ * The body of `PUT /api/catalogue/roles/{role}/competencies`: the whole, ordered set of competencies
+ * of the role. One idempotent request replaces the set, so attaching, detaching and reordering are
+ * the same operation.
  */
 class UpdateRoleCompetenciesRequest extends FormRequest
 {
@@ -42,6 +46,17 @@ class UpdateRoleCompetenciesRequest extends FormRequest
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * `type = 'standard'` only — a `potential` competency (MTG/LAT)
+     * belongs to no role by rule (design.md row
+     * `CI_NON_ROLE_BARS_FILES`, mirrored by `PublishRevision::
+     * potentialInPivotViolations()`'s own blocking publish-sweep
+     * check): refusing it here is the SAME rule, enforced earlier.
+     * `distinct` refuses a duplicate id in the payload with a 422 —
+     * `sync()` would otherwise silently collapse the duplicate keys,
+     * and a raw pivot INSERT racing itself is exactly the "422, not
+     * 500" this rule exists to prevent.
+     *
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -77,15 +92,7 @@ class UpdateRoleCompetenciesRequest extends FormRequest
                     $this->refuseDetachWithLiveIndicators($draftId, $roleId, $value, $fail);
                 },
             ],
-            // `type = 'standard'` only — a `potential` competency (MTG/LAT)
-            // belongs to no role by rule (design.md row
-            // `CI_NON_ROLE_BARS_FILES`, mirrored by `PublishRevision::
-            // potentialInPivotViolations()`'s own blocking publish-sweep
-            // check): refusing it here is the SAME rule, enforced earlier.
-            // `distinct` refuses a duplicate id in the payload with a 422 —
-            // `sync()` would otherwise silently collapse the duplicate keys,
-            // and a raw pivot INSERT racing itself is exactly the "422, not
-            // 500" this rule exists to prevent.
+            // A `standard` competency id. A `potential` competency belongs to no role, so it is refused, and an id may appear only once.
             'competency_ids.*' => [
                 'integer',
                 'distinct',

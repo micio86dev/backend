@@ -13,29 +13,33 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// Validates a predefined question
+// (potential-competencies-and-authored-questions, AD-4).
+//
+// HOW MANY questions are allowed is a function of the project's assessment
+// type, and that rule lives HERE rather than in the model or the table: it is
+// the same kind of invariant as `competencies ⊆ {MTG, LAT}` and `role_code
+// must be null`, which already live in the project FormRequests.
+//
+//   standard  — at most ONE per competency by default
+//               ("the first question per competency may be predefined")
+//   potential — at most FOUR per competency by default
+//               ("4 predefined questions per competency", SA-08)
+//
+// Those two numbers are now PLATFORM SETTINGS (`App\Support\Settings\
+// PlatformSettings`) rather than a constant here, so a superadmin can move
+// them without a release. They remain platform-level and not tenant-level:
+// the cap describes the assessment method, not a client's preference.
+//
+// The cap is a maximum, never a minimum. A `standard` project with no authored
+// question is the normal case — the AI opens the competency itself, exactly as
+// it does today — and a half-configured `potential` project must be savable
+// while the operator is still writing the other three.
 /**
- * Validates a predefined question
- * (potential-competencies-and-authored-questions, AD-4).
- *
- * HOW MANY questions are allowed is a function of the project's assessment
- * type, and that rule lives HERE rather than in the model or the table: it is
- * the same kind of invariant as `competencies ⊆ {MTG, LAT}` and `role_code
- * must be null`, which already live in the project FormRequests.
- *
- *   standard  — at most ONE per competency by default
- *               ("the first question per competency may be predefined")
- *   potential — at most FOUR per competency by default
- *               ("4 predefined questions per competency", SA-08)
- *
- * Those two numbers are now PLATFORM SETTINGS (`App\Support\Settings\
- * PlatformSettings`) rather than a constant here, so a superadmin can move
- * them without a release. They remain platform-level and not tenant-level:
- * the cap describes the assessment method, not a client's preference.
- *
- * The cap is a maximum, never a minimum. A `standard` project with no authored
- * question is the normal case — the AI opens the competency itself, exactly as
- * it does today — and a half-configured `potential` project must be savable
- * while the operator is still writing the other three.
+ * A predefined question for a competency of a project. How many questions a competency may have
+ * depends on the project's assessment type and is a platform setting: by default at most one for
+ * `standard` and at most four for `potential`. The cap is a maximum, never a minimum.
  */
 class StoreProjectQuestionRequest extends FormRequest
 {
@@ -75,24 +79,27 @@ class StoreProjectQuestionRequest extends FormRequest
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * Scoped to the catalogue, not to the project's own SELECTED
+     * competencies: the cross-check that the competency actually
+     * belongs to this project's type happens below, where the reason
+     * can be stated. Scoped to the PROJECT'S OWN pinned revision,
+     * though (framework-catalogue-authoring PR3b, H1) — an unscoped
+     * `exists` would accept a competency id from an open draft's
+     * clone of the same catalogue, letting an operator author a
+     * question against content nobody has published yet.
+     * `tryForProject()`, never `forProject()`: this runs inside
+     * `rules()`, before validation — an unresolvable pin must
+     * degrade to "match nothing" (`null` → `whereNull`), never an
+     * uncaught 500 (gga review finding, same doctrine as
+     * `StoreProjectRequest`/`UpdateProjectRequest`).
+     *
      * @return array<string, mixed>
      */
     public function rules(): array
     {
         return [
-            // Scoped to the catalogue, not to the project's own SELECTED
-            // competencies: the cross-check that the competency actually
-            // belongs to this project's type happens below, where the reason
-            // can be stated. Scoped to the PROJECT'S OWN pinned revision,
-            // though (framework-catalogue-authoring PR3b, H1) — an unscoped
-            // `exists` would accept a competency id from an open draft's
-            // clone of the same catalogue, letting an operator author a
-            // question against content nobody has published yet.
-            // `tryForProject()`, never `forProject()`: this runs inside
-            // `rules()`, before validation — an unresolvable pin must
-            // degrade to "match nothing" (`null` → `whereNull`), never an
-            // uncaught 500 (gga review finding, same doctrine as
-            // `StoreProjectRequest`/`UpdateProjectRequest`).
+            // A competency the project has selected, from the catalogue revision the project is pinned to.
             'competency_id' => [
                 'required',
                 'integer',

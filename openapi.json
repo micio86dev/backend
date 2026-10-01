@@ -16351,11 +16351,11 @@
             },
             "StoreProjectQuestionRequest": {
                 "type": "object",
-                "description": "Validates a predefined question\n(potential-competencies-and-authored-questions, AD-4).\n\nHOW MANY questions are allowed is a function of the project's assessment\ntype, and that rule lives HERE rather than in the model or the table: it is\nthe same kind of invariant as `competencies \u2286 {MTG, LAT}` and `role_code\nmust be null`, which already live in the project FormRequests.\n\n  standard  \u2014 at most ONE per competency by default\n              (\"the first question per competency may be predefined\")\n  potential \u2014 at most FOUR per competency by default\n              (\"4 predefined questions per competency\", SA-08)\n\nThose two numbers are now PLATFORM SETTINGS (`App\\Support\\Settings\\\nPlatformSettings`) rather than a constant here, so a superadmin can move\nthem without a release. They remain platform-level and not tenant-level:\nthe cap describes the assessment method, not a client's preference.\n\nThe cap is a maximum, never a minimum. A `standard` project with no authored\nquestion is the normal case \u2014 the AI opens the competency itself, exactly as\nit does today \u2014 and a half-configured `potential` project must be savable\nwhile the operator is still writing the other three.",
+                "description": "A predefined question for a competency of a project. How many questions a competency may have\ndepends on the project's assessment type and is a platform setting: by default at most one for\n`standard` and at most four for `potential`. The cap is a maximum, never a minimum.",
                 "properties": {
                     "competency_id": {
                         "type": "integer",
-                        "description": "Scoped to the catalogue, not to the project's own SELECTED\ncompetencies: the cross-check that the competency actually\nbelongs to this project's type happens below, where the reason\ncan be stated. Scoped to the PROJECT'S OWN pinned revision,\nthough (framework-catalogue-authoring PR3b, H1) \u2014 an unscoped\n`exists` would accept a competency id from an open draft's\nclone of the same catalogue, letting an operator author a\nquestion against content nobody has published yet.\n`tryForProject()`, never `forProject()`: this runs inside\n`rules()`, before validation \u2014 an unresolvable pin must\ndegrade to \"match nothing\" (`null` \u2192 `whereNull`), never an\nuncaught 500 (gga review finding, same doctrine as\n`StoreProjectRequest`/`UpdateProjectRequest`)."
+                        "description": "A competency the project has selected, from the catalogue revision the project is pinned to."
                     },
                     "text": {
                         "type": "object",
@@ -16386,7 +16386,7 @@
             },
             "StoreProjectRequest": {
                 "type": "object",
-                "description": "StoreProjectRequest (C4 Project Configuration).\n\nValidates POST /api/projects payload.\n\nValidation layers:\n1. Basic rules (assessment_type, framework_version_id org-scoped, slug unique per org,\n   language \u2208 supported_locales, webhook_url url)\n2. withValidator cross-field (assessment_type invariants + gap 422):\n   a. For potential: POTENTIAL_CATALOG_INCOMPLETE check FIRST, then subset validation\n   b. For standard: role_code \u2208 {ICO,FLL,MLL,BUL,SRX}, competencies \u2286 role's pivot, all type=standard\n   c. For potential: role_code must be null, competencies \u2286 {MTG,LAT}, all type=potential",
+                "description": "The body of `POST /api/projects`. Which competencies, and which role, a project may have depends on\nits assessment type: a `standard` project takes a role and competencies of that role, a `potential`\nproject takes no role and only the `MTG` and `LAT` competencies.",
                 "properties": {
                     "framework_version_id": {
                         "type": "integer"
@@ -16426,7 +16426,7 @@
                         ],
                         "items": {
                             "type": "integer",
-                            "description": "`exists` is load-bearing: `validateStandard` iterates\n`whereIn(...)->get()`, so an unknown id is never looped over and\nreached the foreign key as a 500. Scoped to this project's own\ntarget revision (framework-catalogue-authoring PR3b, H1) \u2014 an\nunscoped `exists` would accept a competency id from ANY\nrevision, including an open draft's clone of the same catalog."
+                            "description": "A competency id from the catalogue revision of the project. Each id may appear once."
                         }
                     },
                     "pause_every_n_competencies": {
@@ -16482,7 +16482,7 @@
                     },
                     "webhook_events": {
                         "type": "array",
-                        "description": "Closed event-type set (C10 D10) \u2014 not env-overridable, so Rule::in reads\nthe config, never a hardcoded list.",
+                        "description": "The webhook events the project subscribes to, from the closed set of event types.",
                         "items": {
                             "type": "string",
                             "enum": [
@@ -16950,7 +16950,7 @@
             },
             "UpdateProjectRequest": {
                 "type": "object",
-                "description": "UpdateProjectRequest (C4 Project Configuration).\n\nValidates PATCH /api/projects/{id} payload.\n\nKey invariants:\n- framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).\n  Any PATCH that includes this field is rejected with 422 \u2014 even the same value, even on draft.\n- slug: self-ignoring unique rule (->ignore) with soft-delete exclusion\n- Immutability: changing assessment_type or role_code when the resulting status is 'active' or\n  'archived' \u2192 422\n- Lifecycle: allowed transitions are draft\u2192active and active\u2192archived only.\n  Forbidden (active\u2192draft, archived\u2192active, archived\u2192draft) \u2192 422.\n\nSubstituteBindings note: the route parameter 'project' is an int (no implicit model binding \u2014\nSubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding\nwould resolve Project before the tenant scope is set). Manual findOrFail() inside controller\nand FormRequest methods ensures the TenantScoped global scope is active at resolution time.",
+                "description": "The body of `PATCH /api/projects/{id}`. The framework version can never be changed. The assessment\ntype and role code cannot change once the project is `active` or `archived`, and the status moves\nonly from `draft` to `active` and from `active` to `archived`; anything else answers `422`.",
                 "properties": {
                     "slug": {
                         "type": "string",
@@ -16996,7 +16996,7 @@
                         ],
                         "items": {
                             "type": "integer",
-                            "description": "`exists` is load-bearing: `validateStandard` iterates\n`whereIn(...)->get()`, so an unknown id is never looped over and\nreached the foreign key as a 500. Scoped to this project's own\npinned revision (framework-catalogue-authoring PR3b, H1) \u2014 see\n`compositionRevisionId()`."
+                            "description": "A competency id from the catalogue revision of the project. Each id may appear once."
                         }
                     },
                     "pause_every_n_competencies": {
@@ -17052,7 +17052,7 @@
                     },
                     "webhook_events": {
                         "type": "array",
-                        "description": "Closed event-type set (C10 D10) \u2014 not env-overridable, so Rule::in reads\nthe config, never a hardcoded list.",
+                        "description": "The webhook events the project subscribes to, from the closed set of event types.",
                         "items": {
                             "type": "string",
                             "enum": [
@@ -17080,14 +17080,14 @@
             },
             "UpdateRoleCompetenciesRequest": {
                 "type": "object",
-                "description": "`PUT /api/catalogue/roles/{role}/competencies` (framework-catalogue-authoring\nPR8b, `catalogue-authoring/spec.md`'s pivot CRUD requirement \u2014 PR3 shipped\nrole/competency/indicator CRUD with no way to change a role's competency\nSET, so a newly created role could never be made usable).\n\nONE idempotent PUT replaces the whole set \u2014 attach, detach and reorder are\nthe same operation on a pivot that already carries a `position` column\n(D1's `framework_role_competency` shape: PK `(revision_id, role_id,\ncompetency_id)` + `position`), not three endpoints that could each apply\nonly partially and leave the set in a state no single request asked for.\n\nRead-only draft resolution (`existingOpenDraftRevisionId()`), matching\n`UpdateRoleRequest`'s own no-auto-open rationale: the role named in the\nURL either already belongs to an existing open draft or it does not exist\nto update at all \u2014 auto-opening a fresh clone here would copy ~450 rows\nonly to 404 immediately after, since a freshly-cloned role's id can never\nequal the id in the URL.",
+                "description": "The body of `PUT /api/catalogue/roles/{role}/competencies`: the whole, ordered set of competencies\nof the role. One idempotent request replaces the set, so attaching, detaching and reordering are\nthe same operation.",
                 "properties": {
                     "competency_ids": {
                         "type": "array",
                         "description": "`present`, not `required` \u2014 an EMPTY array is a legal payload\n(detach every competency from the role) and Laravel's\n`required` rule treats an empty array as \"absent\", which\nwould wrongly refuse the exact \"detach everything\" case this\nendpoint exists to support.",
                         "items": {
                             "type": "integer",
-                            "description": "`type = 'standard'` only \u2014 a `potential` competency (MTG/LAT)\nbelongs to no role by rule (design.md row\n`CI_NON_ROLE_BARS_FILES`, mirrored by `PublishRevision::\npotentialInPivotViolations()`'s own blocking publish-sweep\ncheck): refusing it here is the SAME rule, enforced earlier.\n`distinct` refuses a duplicate id in the payload with a 422 \u2014\n`sync()` would otherwise silently collapse the duplicate keys,\nand a raw pivot INSERT racing itself is exactly the \"422, not\n 500\" this rule exists to prevent."
+                            "description": "A `standard` competency id. A `potential` competency belongs to no role, so it is refused, and an id may appear only once."
                         }
                     }
                 },

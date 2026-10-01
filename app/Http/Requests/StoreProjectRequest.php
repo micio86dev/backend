@@ -15,18 +15,22 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// StoreProjectRequest (C4 Project Configuration).
+//
+// Validates POST /api/projects payload.
+//
+// Validation layers:
+// 1. Basic rules (assessment_type, framework_version_id org-scoped, slug unique per org,
+//    language ∈ supported_locales, webhook_url url)
+// 2. withValidator cross-field (assessment_type invariants + gap 422):
+//    a. For potential: POTENTIAL_CATALOG_INCOMPLETE check FIRST, then subset validation
+//    b. For standard: role_code ∈ {ICO,FLL,MLL,BUL,SRX}, competencies ⊆ role's pivot, all type=standard
+//    c. For potential: role_code must be null, competencies ⊆ {MTG,LAT}, all type=potential
 /**
- * StoreProjectRequest (C4 Project Configuration).
- *
- * Validates POST /api/projects payload.
- *
- * Validation layers:
- * 1. Basic rules (assessment_type, framework_version_id org-scoped, slug unique per org,
- *    language ∈ supported_locales, webhook_url url)
- * 2. withValidator cross-field (assessment_type invariants + gap 422):
- *    a. For potential: POTENTIAL_CATALOG_INCOMPLETE check FIRST, then subset validation
- *    b. For standard: role_code ∈ {ICO,FLL,MLL,BUL,SRX}, competencies ⊆ role's pivot, all type=standard
- *    c. For potential: role_code must be null, competencies ⊆ {MTG,LAT}, all type=potential
+ * The body of `POST /api/projects`. Which competencies, and which role, a project may have depends on
+ * its assessment type: a `standard` project takes a role and competencies of that role, a `potential`
+ * project takes no role and only the `MTG` and `LAT` competencies.
  */
 class StoreProjectRequest extends FormRequest
 {
@@ -61,6 +65,19 @@ class StoreProjectRequest extends FormRequest
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * `exists` is load-bearing: `validateStandard` iterates
+     * `whereIn(...)->get()`, so an unknown id is never looped over and
+     * reached the foreign key as a 500. Scoped to this project's own
+     * target revision (framework-catalogue-authoring PR3b, H1) — an
+     * unscoped `exists` would accept a competency id from ANY
+     * revision, including an open draft's clone of the same catalog.
+     *
+     *
+     * Internal notes for the exported description below (not published):
+     * Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
+     * the config, never a hardcoded list.
+     *
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -101,12 +118,7 @@ class StoreProjectRequest extends FormRequest
             'role_code' => ['nullable', 'string'],
             'language' => ['required', 'string', Rule::in($supportedLocales)],
             'competency_ids' => ['nullable', 'array', 'list'],
-            // `exists` is load-bearing: `validateStandard` iterates
-            // `whereIn(...)->get()`, so an unknown id is never looped over and
-            // reached the foreign key as a 500. Scoped to this project's own
-            // target revision (framework-catalogue-authoring PR3b, H1) — an
-            // unscoped `exists` would accept a competency id from ANY
-            // revision, including an open draft's clone of the same catalog.
+            // A competency id from the catalogue revision of the project. Each id may appear once.
             'competency_ids.*' => [
                 'integer',
                 'distinct',
@@ -121,8 +133,7 @@ class StoreProjectRequest extends FormRequest
             // trait for why, and for the soft-delete clause.
             'avatar_template_id' => $this->avatarTemplateRule($orgId, 'required'),
             'webhook_secret' => ['nullable', 'string', 'max:1024'],
-            // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
-            // the config, never a hardcoded list.
+            // The webhook events the project subscribes to, from the closed set of event types.
             'webhook_events' => ['sometimes', 'array'],
             'webhook_events.*' => [Rule::in(config('webhooks.events.types'))],
             'deadline_at' => ['nullable', 'date'],
