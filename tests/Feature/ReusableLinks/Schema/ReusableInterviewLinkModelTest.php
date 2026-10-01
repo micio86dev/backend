@@ -198,7 +198,10 @@ test('withRawToken() stores the hash and the prefix of that token, and never the
     // Hash-only persistence: the raw token is in no column of the stored row.
     $stored = (array) DB::table('reusable_interview_links')->where('id', $link->id)->first();
     foreach ($stored as $column => $value) {
-        expect((string) $value)->not->toContain($raw, "column {$column} holds the raw token");
+        // One needle: Pest's `not->toContain($a, $b)` is "not (a AND b)", so the
+        // message that used to be passed here as a second needle was never in the
+        // value and the assertion could not fail.
+        expect(str_contains((string) $value, $raw))->toBeFalse("column {$column} holds the raw token");
     }
 });
 
