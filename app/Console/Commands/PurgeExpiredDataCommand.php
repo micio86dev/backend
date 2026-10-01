@@ -229,8 +229,10 @@ final class PurgeExpiredDataCommand extends Command
      * time because a single set-based statement would abort as a whole on one
      * collision (a placeholder equal to an address another participant of the
      * project literally holds), and leave every other due row unredacted.
-     * Such a row is reported by id (never by address) and retried by the next
-     * pass. Any other database error propagates, as before.
+     * Such a row is reported by id (never by address) and skipped. The placeholder
+     * is derived from the row's own reference, so the same collision repeats on
+     * every pass until an operator resolves it: the warning says so. Any other
+     * database error propagates, as before.
      */
     private function redactParticipantPii(Carbon $cutoff, int $batch, bool $dryRun): int
     {
@@ -272,7 +274,7 @@ final class PurgeExpiredDataCommand extends Command
                     throw $e;
                 }
 
-                $this->warn("participant_pii: participant {$id} skipped, its placeholder collides with another address in the same project; retried next run.");
+                $this->warn("participant_pii: participant {$id} skipped, needs operator action: its placeholder collides with another address in the same project, and the collision repeats on every pass.");
 
                 continue;
             }
