@@ -9,11 +9,16 @@ use Illuminate\Http\JsonResponse;
 
 class HealthController extends Controller
 {
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Return a machine-readable health status.
+    //
+    // This endpoint is NOT localized — it returns the literal string "ok" in every locale.
+    // Machine-readable status payloads are exempt from the i18n mandate (D31).
     /**
-     * Return a machine-readable health status.
+     * Check the platform health.
      *
-     * This endpoint is NOT localized — it returns the literal string "ok" in every locale.
-     * Machine-readable status payloads are exempt from the i18n mandate (D31).
+     * Answers `200` with `{"status":"ok"}`, or `503` when the platform is misconfigured. The
+     * payload is machine-readable and is not localized.
      */
     public function __invoke(): JsonResponse
     {

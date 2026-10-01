@@ -91,42 +91,50 @@ class InterviewController extends Controller
     // POST /api/candidate/interview/start
     // =========================================================================
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Create or resume a provider session for the next competency interview.
+    //
+    // Sequence (from design data flow — CRITICAL: provider call is OUTSIDE any DB txn):
+    // (1) Resolve next competency by project_competencies.position ASC.
+    // (1b) `ProjectInterviewability` gate (framework-catalogue-authoring PR6,
+    //      D5/D6) — 422 `project_not_interviewable`, skipped when a session
+    //      already exists for THIS competency; see the gate's own inline
+    //      comment for the whole-project vs. per-competency distinction.
+    // (2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException → re-query.
+    // (3) ProviderSessionService.issue() — OUTSIDE any DB transaction.
+    // (4a) Provider success → short DB txn: UPDATE session + participant (FIX-8).
+    // (4b) Provider 5xx → session error + participant errore + 502.
+    // (4c) Provider 429 → session stays pending + 429 provider_busy (NOT errore).
+    // (4d) DB failure after provider success → teardown(in-memory token) + 500.
+    //
+    // RESUME in_corso:
+    //   - Harvest the outgoing transcript, then compose: the opening re-asks the
+    //     pending primary verbatim. A composition failure answers 422, as on a
+    //     fresh start, and ends the outgoing provider session on its way out —
+    //     nothing else would, and it bills until the provider's own ceiling.
+    //   - issue() FRESH token.
+    //   - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).
+    //   - Persist new ref.
+    //
+    // RESUME pending:
+    //   - Retry issue(). On success, persist ref and flip to in_corso.
+    //
+    // FIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.
+    //
+    // The 201 shape is spelled out for Scramble because it cannot follow
+    // `buildSuccessResponse()` — a private helper two call sites deep, whose
+    // fields come from method calls on `$this`. Left inferred, it produced a
+    // shape MISSING `audio_only` entirely, and the candidate app generates its
+    // client from this spec: the field existed on the wire, was absent from the
+    // type, and reading it was a compile error in the app that needs it.
     /**
      * Create or resume a provider session for the next competency interview.
      *
-     * Sequence (from design data flow — CRITICAL: provider call is OUTSIDE any DB txn):
-     * (1) Resolve next competency by project_competencies.position ASC.
-     * (1b) `ProjectInterviewability` gate (framework-catalogue-authoring PR6,
-     *      D5/D6) — 422 `project_not_interviewable`, skipped when a session
-     *      already exists for THIS competency; see the gate's own inline
-     *      comment for the whole-project vs. per-competency distinction.
-     * (2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException → re-query.
-     * (3) ProviderSessionService.issue() — OUTSIDE any DB transaction.
-     * (4a) Provider success → short DB txn: UPDATE session + participant (FIX-8).
-     * (4b) Provider 5xx → session error + participant errore + 502.
-     * (4c) Provider 429 → session stays pending + 429 provider_busy (NOT errore).
-     * (4d) DB failure after provider success → teardown(in-memory token) + 500.
-     *
-     * RESUME in_corso:
-     *   - Harvest the outgoing transcript, then compose: the opening re-asks the
-     *     pending primary verbatim. A composition failure answers 422, as on a
-     *     fresh start, and ends the outgoing provider session on its way out —
-     *     nothing else would, and it bills until the provider's own ceiling.
-     *   - issue() FRESH token.
-     *   - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).
-     *   - Persist new ref.
-     *
-     * RESUME pending:
-     *   - Retry issue(). On success, persist ref and flip to in_corso.
-     *
-     * FIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.
-     *
-     * The 201 shape is spelled out for Scramble because it cannot follow
-     * `buildSuccessResponse()` — a private helper two call sites deep, whose
-     * fields come from method calls on `$this`. Left inferred, it produced a
-     * shape MISSING `audio_only` entirely, and the candidate app generates its
-     * client from this spec: the field existed on the wire, was absent from the
-     * type, and reading it was a compile error in the app that needs it.
+     * Starts the interview of the next competency, or resumes it: the provider session is created, or,
+     * for an interview already in progress, replaced by a fresh one. The response carries the session and
+     * the context of its first question. `422 project_not_interviewable` means the project cannot be
+     * interviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`
+     * means the provider failed.
      *
      * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}}
      *
@@ -627,41 +635,48 @@ class InterviewController extends Controller
     // POST /api/candidate/interview/end
     // =========================================================================
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // End a provider session, reconcile the transcript, and (on last question) dispatch scoring.
+    //
+    // Sequence (CRITICAL-3 atomicity boundary = steps 3–6 in ONE explicit txn):
+    // (1) resolveOwnedSession → 404 if not owned.
+    // (2) Validate ended_reason ∈ {completed, timeout, skipped}; reject 'error' → 422 (FIX-11).
+    // (3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.
+    // (4) FIX-3 guard: if session.status !== 'in_corso' → ROLLBACK → 409.
+    // (5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.
+    // (6) UPDATE session status = ended_reason, ended_at = now().
+    // (7) Count ended sessions for this participant+project, via CompetencyTally::ended():
+    //     status ∈ {completed, timeout, skipped}, OR status = 'error' with
+    //     error_count >= MAX_ERROR_ATTEMPTS. That last disjunct is not optional —
+    //     settleCompletionIfFinished()'s docblock below explains at length that a
+    //     tally disagreeing with resolveNextCompetency() is what stranded participants.
+    // (8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).
+    //     Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().
+    // (9) COMMIT. Return 200.
+    //
+    // PR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS
+    // `ProviderTranscriptShapeException` on a shape-mismatched transcript response
+    // instead of silently degrading to `[]`. Because the throw happens BEFORE
+    // `replaceUtterances()` runs its DELETE, and propagates out of THIS transaction
+    // closure, `DB::transaction()` rolls back the ENTIRE txn automatically — the
+    // DELETE never commits, ended_at is never stamped, and FinalizeInterview is
+    // never dispatched. Caught below and surfaced as 502 (Upstream classification).
+    //
+    // The 200 body is spelled out for Scramble, which could not follow it
+    // through `buildDirective()` and therefore published this endpoint as
+    // returning NOTHING. That is not a cosmetic gap: the candidate app's whole
+    // directive state machine — continue / pause / done — plus the progress
+    // readout on the end-of-question and transition screens all read these three
+    // fields, so the generated client said the body was empty while the app
+    // depended on it. The drift check stayed green because it compares the spec
+    // to the generated types and cannot see a hand-written inline generic.
     /**
      * End a provider session, reconcile the transcript, and (on last question) dispatch scoring.
      *
-     * Sequence (CRITICAL-3 atomicity boundary = steps 3–6 in ONE explicit txn):
-     * (1) resolveOwnedSession → 404 if not owned.
-     * (2) Validate ended_reason ∈ {completed, timeout, skipped}; reject 'error' → 422 (FIX-11).
-     * (3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.
-     * (4) FIX-3 guard: if session.status !== 'in_corso' → ROLLBACK → 409.
-     * (5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.
-     * (6) UPDATE session status = ended_reason, ended_at = now().
-     * (7) Count ended sessions for this participant+project, via CompetencyTally::ended():
-     *     status ∈ {completed, timeout, skipped}, OR status = 'error' with
-     *     error_count >= MAX_ERROR_ATTEMPTS. That last disjunct is not optional —
-     *     settleCompletionIfFinished()'s docblock below explains at length that a
-     *     tally disagreeing with resolveNextCompetency() is what stranded participants.
-     * (8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).
-     *     Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().
-     * (9) COMMIT. Return 200.
-     *
-     * PR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS
-     * `ProviderTranscriptShapeException` on a shape-mismatched transcript response
-     * instead of silently degrading to `[]`. Because the throw happens BEFORE
-     * `replaceUtterances()` runs its DELETE, and propagates out of THIS transaction
-     * closure, `DB::transaction()` rolls back the ENTIRE txn automatically — the
-     * DELETE never commits, ended_at is never stamped, and FinalizeInterview is
-     * never dispatched. Caught below and surfaced as 502 (Upstream classification).
-     *
-     * The 200 body is spelled out for Scramble, which could not follow it
-     * through `buildDirective()` and therefore published this endpoint as
-     * returning NOTHING. That is not a cosmetic gap: the candidate app's whole
-     * directive state machine — continue / pause / done — plus the progress
-     * readout on the end-of-question and transition screens all read these three
-     * fields, so the generated client said the body was empty while the app
-     * depended on it. The drift check stayed green because it compares the spec
-     * to the generated types and cannot see a hand-written inline generic.
+     * Ends the current competency with an `ended_reason` of `completed`, `timeout` or `skipped` (`error`
+     * is refused with `422`). The response says whether the interview continues, pauses or is done.
+     * `404` means the session does not belong to the candidate, `409` that it is no longer in progress,
+     * and `502` that the provider returned a transcript in an unexpected shape.
      *
      * @scramble-return array{ended_competencies: int, total_competencies: int, next_action: 'continue'|'pause'|'done'}
      */

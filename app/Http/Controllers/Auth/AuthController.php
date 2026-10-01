@@ -90,13 +90,19 @@ final class AuthController extends Controller
         ])->withCookie(RefreshTokenCookie::build($issue));
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Refresh the access token via the httpOnly refresh cookie.
+    //
+    // POST /api/auth/refresh
+    // PUBLIC — authenticated by cookie + RequireRefreshCsrfHeader, NEVER
+    // auth:api (D8): an expired access token is exactly when this endpoint
+    // must still work.
     /**
-     * Refresh the access token via the httpOnly refresh cookie.
+     * Refresh the access token.
      *
-     * POST /api/auth/refresh
-     * PUBLIC — authenticated by cookie + RequireRefreshCsrfHeader, NEVER
-     * auth:api (D8): an expired access token is exactly when this endpoint
-     * must still work.
+     * Authenticated by the refresh cookie and the refresh CSRF header rather than by an access
+     * token, so it still works once the access token has expired. A missing, unknown, revoked,
+     * expired or reused refresh token answers `401` with the matching `refresh_token_*` code.
      */
     public function refresh(Request $request): JsonResponse
     {

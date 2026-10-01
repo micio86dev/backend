@@ -529,8 +529,8 @@
         "/auth/refresh": {
             "post": {
                 "operationId": "auth.refresh",
-                "description": "POST /api/auth/refresh\nPUBLIC \u2014 authenticated by cookie + RequireRefreshCsrfHeader, NEVER\nauth:api (D8): an expired access token is exactly when this endpoint\nmust still work.",
-                "summary": "Refresh the access token via the httpOnly refresh cookie",
+                "description": "Authenticated by the refresh cookie and the refresh CSRF header rather than by an access\ntoken, so it still works once the access token has expired. A missing, unknown, revoked,\nexpired or reused refresh token answers `401` with the matching `refresh_token_*` code.",
+                "summary": "Refresh the access token",
                 "tags": [
                     "Auth"
                 ],
@@ -3551,8 +3551,8 @@
         "/embed/exchange": {
             "get": {
                 "operationId": "exchange.exchange",
-                "description": "`#[Response(200, type: 'array{access_token: string}')]` (step 6\nreview follow-up, Part A item 5) \u2014 `$accessToken` starts its life\nassigned a literal `null` below (so it has a value for the\n`$raceLost` early-return branch, which never reads it), and is only\never reassigned inside the `DB::transaction()` closure it is passed\ninto BY REFERENCE. Scramble's static inference does not follow a\nby-reference mutation through a closure call boundary, so without\nthis attribute it read only the INITIAL `null` assignment and\nexported this operation's `200` body as `{access_token: null}` \u2014\ntrue about the variable's DECLARED starting value, never about what\na real response actually contains: every code path that reaches\n`response()->json(['access_token' => $accessToken], 200)` below has\nalready returned early (`$this->invalid()`/`$this->consumed()`) for\nevery case where a candidate JWT was NOT minted, so `$accessToken`\nis always the `string` `CandidateTokenFactory::mintCandidateToken()`\nreturns by the time this line runs.",
-                "summary": "`?token=` documented as REQUIRED (step 5 review follow-up, Part B\nitem 5) \u2014 Scramble's own inference read\n`$request->query('token', '')`'s literal default and rendered the\nparameter as optional with a `\"\"` default, which is accurate about\nthis METHOD'S defensive handling of a missing value (never a 500)\nbut not about the CONTRACT: SPEC.md \u00a73.5 names `token` as the one\nparameter this operation accepts, and a caller who omits it always\ngets `401 token_invalid`, never a meaningful 200 \u2014 the same\n\"required in the contract, defended in code\" distinction\n`CreateInterviewRequest`'s own required fields already draw",
+                "description": "Exchanges the single-use session token of an interview for a short-lived access token for the\ncandidate. A missing, malformed, mis-signed or expired token answers `401 token_invalid`;\na token that was already used, or superseded by a later one, answers `410 token_consumed`.",
+                "summary": "Exchange a session token",
                 "tags": [
                     "Exchange"
                 ],
@@ -3569,7 +3569,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "No `Set-Cookie` \u2014 G-32/T-TOK-008.",
+                        "description": "The access token for the candidate. No cookie is set.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -3682,8 +3682,8 @@
         "/embed/frame-policy": {
             "get": {
                 "operationId": "exchange.framePolicy",
-                "description": "PUBLIC, deliberately NOT `exchange()` reused: `exchange()` atomically\nCONSUMES the session token (the compare-and-clear UPDATE against\n`session_token_jti`) \u2014 calling it from `frontend`'s per-request Nitro\nCSP middleware, ahead of the candidate's OWN later `/embed/exchange`\ncall, would burn the single-use token before the candidate ever\nreaches it, or race it into a `410` the candidate never caused. This\naction reads only the token's OWN claims and the organization they\nresolve to \u2014 no participant lookup, no write, callable any number of\ntimes without affecting the token's single-use state.\n\nSame `401 token_invalid` shape as `exchange()` for a malformed,\nexpired, mis-signed, wrong-audience, or unresolvable-organization\ntoken \u2014 the caller (the CSP middleware) treats ANY non-200 as \"cannot\n     * resolve a policy\", which is the trigger for its own fail-safe\n`frame-ancestors 'none'` default (never \"no restriction\").",
-                "summary": "`GET /api/embed/frame-policy?token=<session_token>` \u2014 read-only\n`allowed_domains` lookup for the embed page's `Content-Security-Policy:\nframe-ancestors` header (public-api step 10, SPEC.md \u00a74.4)",
+                "description": "Read-only lookup of the organization's allowed domains for the embed page's\n`frame-ancestors` policy. Unlike the exchange, it does not consume the session token, so it\ncan be called any number of times. A missing, malformed or expired token, or one that names\nno organization, answers `401 token_invalid`.",
+                "summary": "Get the frame policy",
                 "tags": [
                     "Exchange"
                 ],
@@ -4564,8 +4564,8 @@
         "/health": {
             "get": {
                 "operationId": "health",
-                "description": "This endpoint is NOT localized \u2014 it returns the literal string \"ok\" in every locale.\nMachine-readable status payloads are exempt from the i18n mandate (D31).",
-                "summary": "Return a machine-readable health status",
+                "description": "Answers `200` with `{\"status\":\"ok\"}`, or `503` when the platform is misconfigured. The\npayload is machine-readable and is not localized.",
+                "summary": "Check the platform health",
                 "tags": [
                     "Health"
                 ],
@@ -5724,7 +5724,7 @@
         "/candidate/interview/start": {
             "post": {
                 "operationId": "interview.start",
-                "description": "Sequence (from design data flow \u2014 CRITICAL: provider call is OUTSIDE any DB txn):\n(1) Resolve next competency by project_competencies.position ASC.\n(1b) `ProjectInterviewability` gate (framework-catalogue-authoring PR6,\n     D5/D6) \u2014 422 `project_not_interviewable`, skipped when a session\n     already exists for THIS competency; see the gate's own inline\n     comment for the whole-project vs. per-competency distinction.\n(2) Create-or-RESUME: INSERT or catch UniqueConstraintViolationException \u2192 re-query.\n(3) ProviderSessionService.issue() \u2014 OUTSIDE any DB transaction.\n(4a) Provider success \u2192 short DB txn: UPDATE session + participant (FIX-8).\n(4b) Provider 5xx \u2192 session error + participant errore + 502.\n(4c) Provider 429 \u2192 session stays pending + 429 provider_busy (NOT errore).\n(4d) DB failure after provider success \u2192 teardown(in-memory token) + 500.\n\nRESUME in_corso:\n  - Harvest the outgoing transcript, then compose: the opening re-asks the\n    pending primary verbatim. A composition failure answers 422, as on a\n    fresh start, and ends the outgoing provider session on its way out \u2014\n    nothing else would, and it bills until the provider's own ceiling.\n  - issue() FRESH token.\n  - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).\n  - Persist new ref.\n\nRESUME pending:\n  - Retry issue(). On success, persist ref and flip to in_corso.\n\nFIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.\n\nThe 201 shape is spelled out for Scramble because it cannot follow\n`buildSuccessResponse()` \u2014 a private helper two call sites deep, whose\nfields come from method calls on `$this`. Left inferred, it produced a\nshape MISSING `audio_only` entirely, and the candidate app generates its\nclient from this spec: the field existed on the wire, was absent from the\ntype, and reading it was a compile error in the app that needs it.",
+                "description": "Starts the interview of the next competency, or resumes it: the provider session is created, or,\nfor an interview already in progress, replaced by a fresh one. The response carries the session and\nthe context of its first question. `422 project_not_interviewable` means the project cannot be\ninterviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`\nmeans the provider failed.",
                 "summary": "Create or resume a provider session for the next competency interview",
                 "tags": [
                     "Interview"
@@ -5881,7 +5881,7 @@
         "/candidate/interview/end": {
             "post": {
                 "operationId": "interview.end",
-                "description": "Sequence (CRITICAL-3 atomicity boundary = steps 3\u20136 in ONE explicit txn):\n(1) resolveOwnedSession \u2192 404 if not owned.\n(2) Validate ended_reason \u2208 {completed, timeout, skipped}; reject 'error' \u2192 422 (FIX-11).\n(3) BEGIN EXPLICIT DB TRANSACTION + SELECT FOR UPDATE on session.\n(4) FIX-3 guard: if session.status !== 'in_corso' \u2192 ROLLBACK \u2192 409.\n(5) HeyGen: replaceUtterances inside txn. Tavus: no reconcile.\n(6) UPDATE session status = ended_reason, ended_at = now().\n(7) Count ended sessions for this participant+project, via CompetencyTally::ended():\n    status \u2208 {completed, timeout, skipped}, OR status = 'error' with\n    error_count >= MAX_ERROR_ATTEMPTS. That last disjunct is not optional \u2014\n    settleCompletionIfFinished()'s docblock below explains at length that a\n    tally disagreeing with resolveNextCompetency() is what stranded participants.\n(8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).\n    Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().\n(9) COMMIT. Return 200.\n\nPR4 (design D7, F1 fix): step (5)'s `reconcileTranscript()` now THROWS\n`ProviderTranscriptShapeException` on a shape-mismatched transcript response\ninstead of silently degrading to `[]`. Because the throw happens BEFORE\n`replaceUtterances()` runs its DELETE, and propagates out of THIS transaction\nclosure, `DB::transaction()` rolls back the ENTIRE txn automatically \u2014 the\nDELETE never commits, ended_at is never stamped, and FinalizeInterview is\nnever dispatched. Caught below and surfaced as 502 (Upstream classification).\n\nThe 200 body is spelled out for Scramble, which could not follow it\nthrough `buildDirective()` and therefore published this endpoint as\nreturning NOTHING. That is not a cosmetic gap: the candidate app's whole\ndirective state machine \u2014 continue / pause / done \u2014 plus the progress\nreadout on the end-of-question and transition screens all read these three\nfields, so the generated client said the body was empty while the app\ndepended on it. The drift check stayed green because it compares the spec\nto the generated types and cannot see a hand-written inline generic.",
+                "description": "Ends the current competency with an `ended_reason` of `completed`, `timeout` or `skipped` (`error`\nis refused with `422`). The response says whether the interview continues, pauses or is done.\n`404` means the session does not belong to the candidate, `409` that it is no longer in progress,\nand `502` that the provider returned a transcript in an unexpected shape.",
                 "summary": "End a provider session, reconcile the transcript, and (on last question) dispatch scoring",
                 "tags": [
                     "Interview"
@@ -9738,7 +9738,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "A CODE, not a sentence. A response body is machine-facing (CLAUDE.md:\nmachine-readable values \"are NOT user-facing and are returned\n literally in every locale\"), and only the UI knows the reader's\nlocale. The English prose that used to be here was rendered verbatim\nby the backoffice, so an Italian operator on an Italian page read\nEnglish.",
+                        "description": "The password was reset. `message` is the code `password_reset`.",
                         "content": {
                             "application/json": {
                                 "schema": {
