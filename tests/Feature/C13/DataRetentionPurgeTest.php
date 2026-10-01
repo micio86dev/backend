@@ -918,3 +918,92 @@ test('a database error that is not the email collision is not swallowed: the pas
 
     expect(fn () => Artisan::call('beai:purge-expired-data'))->toThrow(QueryException::class);
 });
+
+// ─── Re-entry for a purged reference (design VD-24) ──────────────────────────
+
+/**
+ * A single-use sso-link token for `$project`, as the calling system would send it.
+ */
+function purgeSsoLink(Project $project, string $candidateRef, string $name, string $email): string
+{
+    return CandidateTokenFactory::mintSsoLink([
+        'candidate_ref' => $candidateRef,
+        'display_name' => $name,
+        'email' => $email,
+        'project_id' => $project->id,
+        'org_id' => $project->organization_id,
+        'role_code' => $project->role_code,
+        'lang' => 'en',
+    ]);
+}
+
+test('an exchange of a REAL re-sent identity for an in_attesa purged row is a new collection, and the next pass redacts it again', function (): void {
+    $project = purgeProject();
+    $project->forceFill(['status' => 'active'])->save();
+    makeProjectInterviewable($project);
+    $participant = purgeEnrol($project, ['candidate_ref' => 'ref-1', 'display_name' => '[purged]', 'email' => PlaceholderEmail::forPurged('ref-1'), 'status' => 'in_attesa']);
+
+    $this->getJson('/api/sso/exchange?token='.purgeSsoLink($project, 'ref-1', 'Ada Lovelace', 'ada@example.com'))->assertOk();
+
+    // The calling system sent a real identity for the same reference: the
+    // exchange writes what the signed token says. The purge left no copy and the
+    // exchange never reads the old address, so nothing is "resurrected".
+    expect(purgeRow($participant)->display_name)->toBe('Ada Lovelace')
+        ->and(purgeRow($participant)->email)->toBe('ada@example.com');
+
+    // `created_at` is unchanged, so the row is still past the window: the next
+    // pass redacts it again.
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [participant_pii]: 1')->assertSuccessful();
+
+    expect(purgeRow($participant)->display_name)->toBe('[purged]')
+        ->and(purgeRow($participant)->email)->toBe(PlaceholderEmail::forPurged('ref-1'));
+});
+
+test('an exchange for a purged row that is not in_attesa is a 403 and writes nothing', function (string $status): void {
+    $project = purgeProject();
+    $project->forceFill(['status' => 'active'])->save();
+    makeProjectInterviewable($project);
+    $participant = purgeEnrol($project, ['candidate_ref' => 'ref-1', 'display_name' => '[purged]', 'email' => PlaceholderEmail::forPurged('ref-1'), 'status' => $status]);
+    $before = purgeRow($participant);
+
+    $this->getJson('/api/sso/exchange?token='.purgeSsoLink($project, 'ref-1', 'Ada Lovelace', 'ada@example.com'))->assertForbidden();
+
+    expect(purgeRow($participant))->toEqual($before);
+})->with(['completato', 'errore', 'in_corso']);
+
+test('a row deleted between the selection and its update is not counted, and writes no audit row', function (): void {
+    $project = purgeProject();
+    $vanishing = purgeEnrol($project, ['candidate_ref' => 'ref-1', 'email' => 'ada@example.com']);
+
+    // Another process deletes the participant after the pass selected it and
+    // before the pass writes it: the UPDATE then affects zero rows. The count
+    // reports rows actually redacted, so nothing is claimed or audited.
+    $deleted = false;
+    DB::beforeExecuting(function (string $query) use ($vanishing, &$deleted): void {
+        if (! $deleted && str_starts_with($query, 'update "participants"')) {
+            $deleted = true;
+            DB::table('participants')->where('id', $vanishing->id)->delete();
+        }
+    });
+
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [participant_pii]: 0')->assertSuccessful();
+
+    expect($deleted)->toBeTrue()
+        ->and(AuditLog::withoutGlobalScopes()->where('action', 'data.purged')->count())->toBe(0);
+});
+
+test('a legacy placeholder is kept only when it is exactly the row\'s own: a differently cased spelling is not its own and becomes the purged placeholder', function (): void {
+    $project = purgeProject();
+    $exact = purgeEnrol($project, ['candidate_ref' => 'ref-1', 'email' => 'ref-1@invalid.beai.local']);
+    $recased = purgeEnrol($project, ['candidate_ref' => 'ref-2', 'email' => 'REF-2@INVALID.BEAI.LOCAL']);
+
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [participant_pii]: 2')->assertSuccessful();
+
+    // `PlaceholderEmail::isOwn()` compares exactly, so the purge does too: the
+    // exact own placeholder is already non-identifying and stays as it is; any
+    // other spelling is rewritten to the purged placeholder (non-identifying
+    // either way, and never mailed: `is()` recognises both).
+    expect(purgeRow($exact)->email)->toBe('ref-1@invalid.beai.local')
+        ->and(purgeRow($recased)->email)->toBe(PlaceholderEmail::forPurged('ref-2'));
+    $this->artisan('beai:purge-expired-data')->expectsOutputToContain('Purged [participant_pii]: 0')->assertSuccessful();
+});

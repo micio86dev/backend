@@ -220,7 +220,7 @@ final class PurgeExpiredDataCommand extends Command
      * redacted in full": the name is not the sentinel, OR the email is not the
      * participant's own placeholder. The second branch is what makes the pass a
      * backfill for rows an earlier version redacted by name only, and what lets a
-     * legacy anonymous row (`<ref>@invalid.beai.local`, already non-identifying)
+     * legacy anonymous row (exactly `<ref>@invalid.beai.local`, already non-identifying)
      * settle without its email being rewritten. A second pass finds nothing.
      *
      * Each row is written alone, in its own transaction, from ITS OWN
@@ -255,18 +255,18 @@ final class PurgeExpiredDataCommand extends Command
 
         foreach ($ids as $id) {
             try {
-                DB::transaction(function () use ($id): void {
-                    Participant::withoutGlobalScopes()->whereKey($id)->update([
-                        'display_name' => self::PURGED_NAME,
-                        // An own legacy placeholder is already non-identifying
-                        // and is kept as it is; anything else becomes the purged
-                        // placeholder of this row's own reference.
-                        'email' => DB::raw(
-                            "CASE WHEN email = candidate_ref || '".PlaceholderEmail::DOMAIN."' THEN email ELSE "
-                            .PlaceholderEmail::purgedSqlExpression().' END',
-                        ),
-                    ]);
-                });
+                $affected = DB::transaction(fn (): int => Participant::withoutGlobalScopes()->whereKey($id)->update([
+                    'display_name' => self::PURGED_NAME,
+                    // The row's OWN legacy placeholder (exactly `<ref>@invalid.beai.local`,
+                    // the spelling `PlaceholderEmail::isOwn()` accepts) is already
+                    // non-identifying and is kept as it is; anything else, in any
+                    // other spelling, becomes the purged placeholder of this row's
+                    // own reference.
+                    'email' => DB::raw(
+                        "CASE WHEN email = candidate_ref || '".PlaceholderEmail::DOMAIN."' THEN email ELSE "
+                        .PlaceholderEmail::purgedSqlExpression().' END',
+                    ),
+                ]));
             } catch (QueryException $e) {
                 if (! self::isDuplicateEmail($e)) {
                     throw $e;
@@ -277,7 +277,9 @@ final class PurgeExpiredDataCommand extends Command
                 continue;
             }
 
-            $redacted++;
+            // The rows actually written: a participant deleted since the
+            // selection updates nothing and is not counted (nor audited).
+            $redacted += $affected;
         }
 
         return $redacted;

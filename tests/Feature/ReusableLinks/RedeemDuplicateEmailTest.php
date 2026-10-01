@@ -25,6 +25,7 @@ declare(strict_types=1);
  *      /spec/participant-sso)
  */
 
+use App\Actions\ReusableLinks\RedeemReusableInterviewLink;
 use App\Events\ParticipantCreated;
 use App\Models\Participant;
 use App\Models\Project;
@@ -204,8 +205,8 @@ test('a 409 spends an attempt like any other outcome: the eleventh request from 
  * Arm a ONE-SHOT listener that runs just before the visitor is inserted. The
  * `creating` event is where a concurrent writer would land between the
  * duplicate check and the insert; hooking it makes that interleaving
- * deterministic. It is one-shot because `HasPublicId` and `TenantScoped` mint in
- * `creating` too, and flushing the model's listeners would break both.
+ * deterministic. It is one-shot because `HasPublicId` mints the public id in
+ * `creating` too, and flushing the model's listeners would break that.
  *
  * @param  callable(Participant): void  $interleave
  */
@@ -304,3 +305,18 @@ test('a violation of another constraint is not mapped: it is rethrown, a 500', f
         ->and(ReusableInterviewLink::withoutGlobalScopes()->findOrFail($link->id)->uses_count)->toBe(0);
     Event::assertNotDispatched(ParticipantCreated::class);
 })->with(['the candidate reference index', 'another SQLSTATE naming the email index']);
+
+// ─── The index the race guarantee rests on ───────────────────────────────────
+
+test('the unique index the action maps exists under that name, on (project_id, email), and is case-sensitive', function (): void {
+    $definition = (string) DB::table('pg_indexes')
+        ->where('tablename', 'participants')
+        ->where('indexname', RedeemReusableInterviewLink::DUPLICATE_EMAIL_INDEX)
+        ->value('indexdef');
+
+    // A rename, a drop, or a switch to an expression index would turn a race into
+    // a 500 (or change what the redemption's lower-casing guarantees): fail here.
+    expect($definition)->toContain('CREATE UNIQUE INDEX')
+        ->toContain('(project_id, email)')
+        ->not->toContain('lower(');
+});

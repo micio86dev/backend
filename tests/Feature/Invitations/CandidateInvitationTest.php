@@ -25,6 +25,7 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
 use App\Notifications\CandidateInvitationNotification;
+use App\Support\Participant\PlaceholderEmail;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -378,4 +379,33 @@ test('an operator re-issue for a reusable-link visitor with send_email true logs
                 && ! str_contains($message, 'Ada');
         });
     Queue::assertNotPushed(SendCandidateInvitationJob::class);
+});
+
+test('re-issuing a link for a purged participant keeps its placeholder and its redacted name, and no mail goes out', function (): void {
+    // The backoffice participant-detail re-issue sends the stored values back:
+    // `[purged]` and the participant's own `<sha256>@purged.beai.invalid`. They are
+    // accepted (the own-placeholder exception), the link is minted, and nothing is
+    // restored or sent: the shared placeholder guard refuses the invitation.
+    Notification::fake();
+    ['token' => $token, 'project' => $project] = invitableProject();
+    $purged = Participant::factory()->forProject($project)->create([
+        'candidate_ref' => 'ref-1',
+        'display_name' => '[purged]',
+        'email' => PlaceholderEmail::forPurged('ref-1'),
+    ]);
+
+    $response = $this->withToken($token)->postJson('/api/entry-links', [
+        'project_id' => $project->id,
+        'candidate_ref' => 'ref-1',
+        'display_name' => '[purged]',
+        'email' => PlaceholderEmail::forPurged('ref-1'),
+        'send_email' => true,
+    ]);
+
+    $response->assertCreated();
+    expect($response->json('entry_url'))->toBeString()->not->toBeEmpty();
+    Notification::assertNothingSent();
+    expect(DB::table('participants')->where('id', $purged->id)->first())
+        ->display_name->toBe('[purged]')
+        ->email->toBe(PlaceholderEmail::forPurged('ref-1'));
 });
