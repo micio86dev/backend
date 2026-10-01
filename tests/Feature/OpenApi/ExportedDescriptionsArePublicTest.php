@@ -59,6 +59,9 @@ const OPENAPI_INTERNAL_WORDS = [
     'ruling' => '\bruling [0-9]+',
     'ratified' => '\bratified\b',
     'owner' => '\bowner\b',
+    // A file name, with or without a `:line`, is a pointer for a maintainer and
+    // never public prose: `config/x.php`, `FooRequest.php:94`.
+    'source file pointer' => '[\w\/.-]*[\w-]\.php\b(:[0-9]+)?',
 ];
 
 /**
@@ -183,6 +186,8 @@ test('the scanner flags a planted internal phrase, whatever the form', function 
     'TODO' => ['TODO: describe the 409.'],
     'owner' => ['The owner decided to ignore it.'],
     'a slice id' => ['The wire format of C10, reused verbatim.'],
+    'a file path' => ['The sample sentence lives in `config/avatar_preview.php`.'],
+    'a file and line' => ["Closed event-type set — mirrors UpdateProjectRequest.php:94's rule."],
 ]);
 
 test('the scanner leaves ordinary public prose alone', function (string $prose): void {
@@ -195,6 +200,8 @@ test('the scanner leaves ordinary public prose alone', function (string $prose):
     'a round-trip' => ['Safe to retry: the request round-trips unchanged.'],
     'a date' => ['Strict ISO 8601 date-time, for example 2026-01-01T00:00:00Z.'],
     'a code' => ['Answers `409 transcript_not_ready` before the interview completes.'],
+    'php mentioned as a language' => ['Runs on PHP 8.5; a script that is not a .phpt file is ignored by the example.'],
+    'a php.ini setting' => ['The upload limit follows the php.ini value.'],
 ]);
 
 test('a schema property that is itself called description is not mistaken for text', function (): void {
