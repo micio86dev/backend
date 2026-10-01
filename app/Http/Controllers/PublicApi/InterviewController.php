@@ -32,6 +32,7 @@ use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\QueryFilters;
 use App\Support\Tenancy\TenantResolver;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
 use Dedoc\Scramble\Attributes\QueryParameter;
@@ -664,7 +665,8 @@ final class InterviewController extends Controller
 
     private function validateFilterFormats(Request $request): void
     {
-        $validator = Validator::make($request->query(), [
+        // An empty filter is "not provided": see `QueryFilters`.
+        $validator = Validator::make(QueryFilters::provided($request), [
             'status' => ['sometimes', 'string', Rule::in(InterviewStatus::values())],
             'project_id' => ['sometimes', 'string'],
             'email' => ['sometimes', 'string', 'email'],
@@ -673,13 +675,9 @@ final class InterviewController extends Controller
             // the SAME bounds as the create body, but `integer` is NOT
             // strict here — every query-string value arrives as a string, so
             // `integer:strict` would refuse them all. A malformed value is a
-            // 400 (a query parameter), not the 422 a body gets. `nullable`
-            // because `ConvertEmptyStringsToNull` turns `?source=` into null
-            // before this runs, and without it `sometimes` alone would refuse
-            // that null with a 400: the contract says an EMPTY reference
-            // filter is simply not applied.
-            'external_id' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:'.ExternalReference::MAX_EXTERNAL_ID],
-            'source' => ['sometimes', 'nullable', 'string', 'max:'.ExternalReference::SOURCE_MAX_LENGTH],
+            // 400 (a query parameter), not the 422 a body gets.
+            'external_id' => ['sometimes', 'integer', 'min:1', 'max:'.ExternalReference::MAX_EXTERNAL_ID],
+            'source' => ['sometimes', 'string', 'max:'.ExternalReference::SOURCE_MAX_LENGTH],
             // Strict ISO 8601 (step 5 review follow-up, item 6) — see
             // `Iso8601DateTime`'s own docblock for why the plain `'date'`
             // rule this replaces was too permissive (relative phrases, a

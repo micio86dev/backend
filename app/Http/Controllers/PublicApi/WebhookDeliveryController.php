@@ -18,6 +18,7 @@ use App\Support\PublicApi\IncludeTrashed;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicApiJson;
 use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\QueryFilters;
 use App\Support\PublicApi\WebhookDeliveryId;
 use App\Support\Tenancy\TenantResolver;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
@@ -289,7 +290,8 @@ final class WebhookDeliveryController extends Controller
 
     private function validateFilters(Request $request): void
     {
-        $validator = Validator::make($request->query(), [
+        // An empty filter is "not provided": see `QueryFilters`.
+        $validator = Validator::make(QueryFilters::provided($request), [
             'status' => ['sometimes', 'string', Rule::in(WebhookDeliveryStatus::values())],
             'event_type' => ['sometimes', 'string', Rule::in(WebhookEventType::values())],
         ]);

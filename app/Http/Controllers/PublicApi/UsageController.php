@@ -12,6 +12,7 @@ use App\Rules\PublicApi\Iso8601DateTime;
 use App\Support\PublicApi\ApiMode;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicApiJson;
+use App\Support\PublicApi\QueryFilters;
 use App\Support\PublicApi\UsageAggregator;
 use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
@@ -150,7 +151,8 @@ final class UsageController extends Controller
      */
     private function validateFilters(Request $request): void
     {
-        $validator = Validator::make($request->query(), [
+        // An empty bound is "not provided": see `QueryFilters`.
+        $validator = Validator::make(QueryFilters::provided($request), [
             'from' => ['sometimes', 'string', new Iso8601DateTime],
             'to' => ['sometimes', 'string', new Iso8601DateTime],
         ]);

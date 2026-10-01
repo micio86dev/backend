@@ -14,6 +14,7 @@ use App\Models\Project;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\QueryFilters;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
@@ -121,7 +122,8 @@ final class ProjectController extends Controller
 
     private function validateFilters(Request $request): void
     {
-        $validator = Validator::make($request->query(), [
+        // An empty filter is "not provided": see `QueryFilters`.
+        $validator = Validator::make(QueryFilters::provided($request), [
             'status' => ['sometimes', 'string', Rule::in(ProjectStatus::values())],
             'role_code' => ['sometimes', 'string', Rule::in(RoleCode::values())],
             'assessment_type' => ['sometimes', 'string', Rule::in(AssessmentType::values())],
