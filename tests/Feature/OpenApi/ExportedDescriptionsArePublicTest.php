@@ -37,6 +37,7 @@ use Dedoc\Scramble\Scramble;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -251,6 +252,24 @@ final class DocMechanismFixtureRequest extends FormRequest
     }
 }
 
+final class DocMechanismFixtureResource extends JsonResource
+{
+    /**
+     * MECHANISM-RESOURCE-DOCBLOCK is the docblock of toArray(), which is not exported.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        // MECHANISM-RESOURCE-ABOVE-RETURN is a note above the bare return [...] of a JsonResource::toArray(),
+        // the shape the session resources use.
+        return [
+            'id' => $this->resource['id'],
+            'label' => 'fixture',
+        ];
+    }
+}
+
 final class DocMechanismFixtureController
 {
     // MECHANISM-ABOVE-METHOD is a // block above the docblock, which is not exported.
@@ -268,6 +287,16 @@ final class DocMechanismFixtureController
         }
 
         return response()->json(['ok' => true], 201);
+    }
+
+    public function show(int $id): DocMechanismFixtureResource
+    {
+        return new DocMechanismFixtureResource(['id' => $id]);
+    }
+
+    public function consume(Request $request): JsonResponse
+    {
+        return response()->json(['token' => 'fixture'], 200); // MECHANISM-TRAILING-AFTER-RETURN is a comment on the line of a return, which is not exported.
     }
 
     public function update(Request $request): JsonResponse
@@ -314,6 +343,8 @@ function docMechanismDocument(): array
 
     Route::post('doc-mechanism-fixture/things', [DocMechanismFixtureController::class, 'store']);
     Route::put('doc-mechanism-fixture/things/{id}', [DocMechanismFixtureController::class, 'update']);
+    Route::get('doc-mechanism-fixture/things/{id}', [DocMechanismFixtureController::class, 'show']);
+    Route::post('doc-mechanism-fixture/consume', [DocMechanismFixtureController::class, 'consume']);
 
     Scramble::registerApi('doc-mechanism', ['api_path' => 'doc-mechanism-fixture', 'export_path' => 'doc-mechanism.json']);
 
@@ -342,7 +373,19 @@ test('Scramble publishes exactly the comments the description rewrite assumes', 
     'a comment above an if' => ['MECHANISM-ABOVE-IF', false],
     'a comment above a try' => ['MECHANISM-ABOVE-TRY', false],
     'a comment above the validate() statement' => ['MECHANISM-ABOVE-VALIDATE', false],
+    'a comment on the line of a return' => ['MECHANISM-TRAILING-AFTER-RETURN', false],
+    'the docblock of a JsonResource toArray()' => ['MECHANISM-RESOURCE-DOCBLOCK', false],
+    'a note above the bare return of a JsonResource toArray()' => ['MECHANISM-RESOURCE-ABOVE-RETURN', false],
 ]);
+
+// A control: the "not published" cases above are only meaningful if the fixture
+// resource and the trailing-comment method were really documented.
+test('the fixture documents the resource and the trailing-comment method, so their "not published" cases mean something', function (): void {
+    $document = docMechanismDocument();
+
+    expect(array_keys($document['components']['schemas']['DocMechanismFixtureResource']['properties'] ?? []))->toBe(['id', 'label']);
+    expect(array_keys($document['paths']['/consume']['post']['responses']['200']['content']['application/json']['schema']['properties'] ?? []))->toBe(['token']);
+});
 
 /*
  * The mechanism test above pins the comment positions on a fixture. The session
