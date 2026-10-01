@@ -38,12 +38,13 @@ use Tests\Helpers\PublicApi\Step6Fixtures;
 /**
  * @return array{org: Organization, key: string}
  */
-function elfOrgWithKey(): array
+function elfOrgWithKey(ApiKeyMode $mode = ApiKeyMode::Live, ?Organization $org = null): array
 {
-    $org = Organization::factory()->create();
-    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $org ??= Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate($mode);
     ApiClient::factory()->withRawKey($rawKey)->create([
         'organization_id' => $org->id,
+        'mode' => $mode,
         'abilities' => ['interviews:read', 'projects:read', 'webhooks:read', 'usage:read', 'exports:read'],
     ]);
 
@@ -86,11 +87,15 @@ function elfParticipant(Organization $org, Project $project, array $attributes =
  * Two organizations, each with interviews of every filterable shape. Returns
  * the caller's key and the public ids of what the caller may read.
  *
- * @return array{key: string, ids: list<string>, foreign: list<string>}
+ * The same organization also holds Test-mode interviews, which a Live key must
+ * never see (and a Test key must never see the Live ones).
+ *
+ * @return array{key: string, testKey: string, ids: list<string>, testIds: list<string>, foreign: list<string>}
  */
 function elfInterviewWorld(): array
 {
     ['org' => $org, 'key' => $key] = elfOrgWithKey();
+    ['key' => $testKey] = elfOrgWithKey(ApiKeyMode::Test, $org);
     ['org' => $other] = elfOrgWithKey();
 
     $project = elfProject($org);
@@ -101,6 +106,12 @@ function elfInterviewWorld(): array
         elfParticipant($org, $project, ['status' => 'in_attesa', 'candidate_ref' => 'elf-a', 'email' => 'elf-a@example.test', 'metadata' => ['ats_application_id' => 'A-1'], 'external_id' => 11, 'source' => 'acme-ats']),
         elfParticipant($org, $project, ['status' => 'in_corso', 'candidate_ref' => 'elf-b', 'email' => 'elf-b@example.test', 'metadata' => ['ats_application_id' => 'B-2']]),
         elfParticipant($org, $second, ['status' => 'errore', 'candidate_ref' => 'elf-c', 'email' => 'elf-c@example.test']),
+    ];
+
+    // Same organization, other mode: shapes that match the live ones.
+    $test = [
+        elfParticipant($org, $project, ['mode' => ApiKeyMode::Test, 'status' => 'in_attesa', 'candidate_ref' => 'elf-t1', 'email' => 'elf-t1@example.test', 'metadata' => ['ats_application_id' => 'A-1']]),
+        elfParticipant($org, $second, ['mode' => ApiKeyMode::Test, 'status' => 'in_corso', 'candidate_ref' => 'elf-t2', 'email' => 'elf-t2@example.test']),
     ];
 
     // Same shapes in another organization: an empty filter must never reach them.
@@ -116,7 +127,7 @@ function elfInterviewWorld(): array
         return $ids;
     };
 
-    return ['key' => $key, 'ids' => $ids($own), 'foreign' => $ids($foreign)];
+    return ['key' => $key, 'testKey' => $testKey, 'ids' => $ids($own), 'testIds' => $ids($test), 'foreign' => $ids($foreign)];
 }
 
 /**
@@ -251,12 +262,26 @@ test('a non-empty invalid interview filter still answers 400 validation_failed',
 
 test('an empty interview filter never reaches another organization or the other mode', function (): void {
     $world = elfInterviewWorld();
+    $query = '?status=&email=&candidate_ref=&project_id=&external_id=&source=&created_after=&created_before=&metadata=';
 
-    $response = $this->withHeaders(['Authorization' => 'Bearer '.$world['key']])
-        ->getJson('/api/v1/interviews?status=&email=&candidate_ref=&project_id=&external_id=&source=');
+    // A Live key: its own Live interviews, and not one Test-mode interview of the
+    // SAME organization, nor anything of another organization.
+    $live = $this->withHeaders(['Authorization' => 'Bearer '.$world['key']])->getJson('/api/v1/interviews'.$query);
 
-    $response->assertOk();
-    expect(array_intersect(elfSortedIds($response->json('data')), $world['foreign']))->toBe([]);
+    $live->assertOk();
+    $liveIds = elfSortedIds($live->json('data'));
+    expect($liveIds)->toBe($world['ids'])
+        ->and(array_intersect($liveIds, $world['testIds']))->toBe([])
+        ->and(array_intersect($liveIds, $world['foreign']))->toBe([]);
+
+    // And the reverse: a Test key sees only the Test-mode interviews.
+    $test = $this->withHeaders(['Authorization' => 'Bearer '.$world['testKey']])->getJson('/api/v1/interviews'.$query);
+
+    $test->assertOk();
+    $testIds = elfSortedIds($test->json('data'));
+    expect($testIds)->toBe($world['testIds'])
+        ->and(array_intersect($testIds, $world['ids']))->toBe([])
+        ->and(array_intersect($testIds, $world['foreign']))->toBe([]);
 });
 
 // ---------------------------------------------------------------------------
