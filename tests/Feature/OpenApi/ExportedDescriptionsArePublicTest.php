@@ -147,44 +147,14 @@ function openApiExport(string $file): array
     return $decoded;
 }
 
-/**
- * TEMPORARY, while the descriptions are rewritten in reviewable steps: the
- * offences listed in `pending-description-rewrites.txt` ("file<TAB>json path")
- * are not yet fixed at their PHP source. Each step shrinks the list, and the
- * last one deletes the list and this helper.
- *
- * @param  list<string>  $offences
- * @return list<string>
- */
-function openApiWithoutPending(string $file, array $offences): array
-{
-    $list = __DIR__.'/pending-description-rewrites.txt';
-    $pending = [];
-
-    if (file_exists($list)) {
-        foreach (explode("\n", (string) file_get_contents($list)) as $line) {
-            [$pendingFile, $pendingPath] = array_pad(explode("\t", $line, 2), 2, '');
-
-            if ($pendingFile === $file) {
-                $pending[] = $pendingPath;
-            }
-        }
-    }
-
-    return array_values(array_filter(
-        $offences,
-        fn (string $offence): bool => ! in_array(explode(' => ', $offence, 2)[0], $pending, true),
-    ));
-}
-
 test('openapi.json carries no internal review notes', function (): void {
-    $offences = openApiWithoutPending('openapi.json', openApiOffences(openApiExport('openapi.json')));
+    $offences = openApiOffences(openApiExport('openapi.json'));
 
     expect($offences)->toBe([], "Internal notes reached the exported API descriptions. Rewrite them at the PHP source, then re-export:\n".implode("\n", $offences));
 });
 
 test('openapi.v1.json carries no internal review notes, class names or doc-tooling talk', function (): void {
-    $offences = openApiWithoutPending('openapi.v1.json', openApiOffences(openApiExport('openapi.v1.json'), extra: OPENAPI_PUBLIC_ONLY));
+    $offences = openApiOffences(openApiExport('openapi.v1.json'), extra: OPENAPI_PUBLIC_ONLY);
 
     expect($offences)->toBe([], "Internal notes reached the public API descriptions. Rewrite them at the PHP source, then re-export:\n".implode("\n", $offences));
 });
