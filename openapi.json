@@ -11786,7 +11786,7 @@
                                                 },
                                                 "pending": {
                                                     "type": "integer",
-                                                    "description": "'processing' folded into 'pending' \u2014 see class doc, point 2. The\nouter cast is not redundant: Scramble's static analyzer typed\nthis `+` expression's result as `string` in the exported\nOpenAPI schema (`pending` documented `int` everywhere in this\nfile, but shipped `string` to every SDK) despite both operands\nalready being cast \u2014 wrapping the whole sum is what actually\nfixed the export."
+                                                    "description": "Evaluations that have not completed yet: those pending and those being processed."
                                                 }
                                             },
                                             "required": [
@@ -12743,7 +12743,7 @@
             },
             "ApiKeyMode": {
                 "type": "string",
-                "description": "`live`/`test` mode of a BEAI M2M / public-API key (C5, public-api step 2 \u2014 SPEC.md \u00a73.7 \"Test mode\"). Review follow-up on step 2: the marker string (`beai_live_`/`beai_test_`), the DB column value (`live`/`test`) and the mode literal used across `App\\Services\\ApiKeyGenerator`, `App\\Support\\PublicApi\\ApiMode`, `App\\Http\\Middleware\\PublicApi\\AuthenticatePublicApi`, `App\\Http\\Controllers\\M2m\\ApiClientController` and `App\\Models\\ApiClient` used to be five independent string literals that happened to agree. This enum is the single source of truth all of them now read from.\n",
+                "description": "The mode of an API key: `live` or `test`. A key only ever reads and writes data of its own mode, so live and test data are kept apart.\n",
                 "enum": [
                     "live",
                     "test"
@@ -13402,7 +13402,7 @@
             },
             "CreateExportRequest": {
                 "type": "object",
-                "description": "`POST /v1/exports` request validation (public-api step 8, SPEC.md \u00a73.3\n\"Exports\", `openapi.yaml`'s `CreateExportRequest` schema).\n\nFORMAT only \u2014 the \"one active export per organization\" concurrency gate\nneeds the resolved `Organization` and lives in\n`App\\Http\\Controllers\\PublicApi\\ExportController::store()`, mirroring\n`CreateInterviewRequest`'s own division of labour.\n\n`authorize()` returns `true` unconditionally \u2014 scope enforcement\n(`scope:exports:write`) is `App\\Http\\Middleware\\PublicApi\\RequireScope`'s\njob, applied per-route in `routes/api.php`.",
+                "description": "The body of `POST /v1/exports`: what to export, in which format, and an optional\ntime window.",
                 "properties": {
                     "scope": {
                         "type": "string",
@@ -13448,7 +13448,7 @@
             },
             "CreateInterviewRequest": {
                 "type": "object",
-                "description": "`POST /v1/interviews` request validation (public-api step 5, SPEC.md \u00a73.3\n\"Create interview \u2014 request\", `CreateInterviewRequest` schema).\n\nFORMAT only \u2014 `project_id`'s prefix/existence/tenancy, the project-active\ngate, the `exit_redirect_url` allowed-domain check and the duplicate-\nenrolment check all need the resolved `Project`/`Organization` and live\nin `App\\Http\\Controllers\\PublicApi\\InterviewController::store()` and\n`App\\Actions\\PublicApi\\EnrolCandidate` \u2014 mirroring\n`App\\Http\\Controllers\\PublicApi\\ProjectController::show()`'s own \"decode,\n * never bind\" discipline for a public-id path/body field (G-36).\n\n`authorize()` returns `true` unconditionally: scope enforcement is\n`App\\Http\\Middleware\\PublicApi\\RequireScope`'s job, applied per-route in\n`routes/api.php` (`scope:interviews:write`) \u2014 the SAME division of labour\nevery other `/v1` write endpoint follows.",
+                "description": "The body of `POST /v1/interviews`: the candidate to enrol, the project to\nenrol them on, and optional metadata and redirect URL.",
                 "properties": {
                     "project_id": {
                         "type": "string"
@@ -13463,7 +13463,7 @@
                             "email": {
                                 "type": "string",
                                 "format": "email",
-                                "description": "max:255 (gga round 3 finding 2) \u2014 matches participants.email's\nown column width; without it a caller-supplied value long\nenough to overflow that column reaches the database as a\ntruncation error (500) instead of the intended 422 here.",
+                                "description": "Valid email address, at most 255 characters.",
                                 "maxLength": 255
                             },
                             "display_name": {
@@ -13475,7 +13475,7 @@
                                     "string",
                                     "null"
                                 ],
-                                "description": "ISO 639-1, matching `openapi.yaml`'s `Language` schema pattern\nexactly (`^[a-z]{2}$`) \u2014 no further allow-list check: the\ncontract does not restrict `candidate.language` to a\nper-project or per-platform locale set, and this endpoint has\nno such catalogue to validate against (unlike\n`config/translatable.php`'s `supported_locales`, which is a\nBACKOFFICE UI concept).",
+                                "description": "ISO 639-1 language code: two lowercase letters, for example `it`.",
                                 "pattern": "^[a-z]{2}$"
                             },
                             "external_id": {
@@ -13516,7 +13516,7 @@
                             "null"
                         ],
                         "format": "uri",
-                        "description": "https-only (SPEC.md \u00a73.3 \"It must be https\") \u2014 `url` alone\naccepts http too, so the scheme is checked separately.\nmax:2048 (gga round 3 finding 2) \u2014 matches the migration's own\n`varchar(2048)` column width for this field, and the admin\n`StoreProjectRequest`/`UpdateProjectRequest` validation rule\nfor the same-shaped `exit_redirect_url` field.",
+                        "description": "Must be an https URL of at most 2048 characters.",
                         "maxLength": 2048
                     }
                 },
@@ -15261,7 +15261,7 @@
                             "string",
                             "null"
                         ],
-                        "description": "ALWAYS null here \u2014 a plain read never has a fresh session\ntoken to embed one for. Exported as `string|null` (not the\nliteral `null` this line alone would infer) by\n`App\\Support\\Scramble\\InterviewHostedUrlNullableExtension` \u2014\nsee that class's own docblock; step 6 review follow-up, Part\nA item 4 removed the runtime config hack this used to\nroute through."
+                        "description": "Always `null` on a read: the hosted interview URL is returned only together with a freshly issued session token."
                     },
                     "progress": {
                         "anyOf": [
@@ -15323,7 +15323,7 @@
                     },
                     "recording_ready": {
                         "type": "boolean",
-                        "description": "G-01: true iff an `interview_recordings` row exists for this\nparticipant (audio only \u2014 video is never exposed, see\n`App\\Http\\Controllers\\PublicApi\\RecordingController`'s own\ndocblock). gga review, step 6 follow-up, finding 5: this used\nto be a hardcoded `false` left over from before step 6 built\nthe recording pipeline.\n(bool) cast \u2014 `self::recordingReady()`'s return flows through\na loop-populated array (`recordingReadyForMany()`'s own\n`$result[...] = true;`), which Scramble's export could not\nnarrow precisely and rendered as `anyOf: [string, boolean]`\nwithout this cast, despite the method's own native `: bool`\nreturn type. Caught via the `scramble:export` diff, not a\ntest \u2014 same class of fix as\n`App\\Support\\Scramble\\InterviewHostedUrlNullableExtension`."
+                        "description": "`true` when an audio recording of the interview is available. Audio only: video is never exposed."
                     },
                     "created_at": {
                         "type": "string"
@@ -15377,7 +15377,7 @@
                                 "properties": {
                                     "version": {
                                         "type": "string",
-                                        "description": "`framework_version_id` is NOT NULL, but the relation\naccessor's static type is still nullable (an unloaded\nrelation renders null rather than fatal, the same\ndiscipline `Project::avatarTemplate()`'s own docblock\ndocuments) \u2014 an empty string/null pair is the honest\nanswer when the caller forgot to eager-load it, never a\nfatal error on a read-only endpoint."
+                                        "description": "The version of the framework the project is pinned to."
                                     },
                                     "label": {
                                         "type": [
@@ -15480,7 +15480,7 @@
                     },
                     "mode": {
                         "type": "string",
-                        "description": "\"mode (of the key)\" \u2014 SPEC.md \u00a73.3 \u2014 the AUTHENTICATED KEY's\nmode, never an organization column (there isn't one): the\nsame organization answers `live` through a live key and\n`test` through a test key."
+                        "description": "The mode of the API key making the request, not a property of the organization: the same organization answers `live` through a live key and `test` through a test key."
                     },
                     "allowed_domains": {
                         "type": "array",
@@ -15531,7 +15531,7 @@
                         "properties": {
                             "version": {
                                 "type": "string",
-                                "description": "`framework_version_id` is NOT NULL, but the relation\naccessor's static type is still nullable (an unloaded\nrelation renders null rather than fatal, the same\ndiscipline `Project::avatarTemplate()`'s own docblock\ndocuments) \u2014 an empty string/null pair is the honest\nanswer when the caller forgot to eager-load it, never a\nfatal error on a read-only endpoint."
+                                "description": "The version of the framework the project is pinned to."
                             },
                             "label": {
                                 "type": [

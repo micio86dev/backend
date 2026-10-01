@@ -1,12 +1,4 @@
-openapi.json	components.schemas.ApiKeyMode.description
-openapi.json	components.schemas.CreateExportRequest.description
-openapi.json	components.schemas.CreateInterviewRequest.description
-openapi.json	components.schemas.CreateInterviewRequest.properties.candidate.properties.email.description
-openapi.json	components.schemas.CreateInterviewRequest.properties.exit_redirect_url.description
 openapi.json	components.schemas.ForgotPasswordRequest.description
-openapi.json	components.schemas.PublicInterview.properties.hosted_url.description
-openapi.json	components.schemas.PublicInterview.properties.recording_ready.description
-openapi.json	components.schemas.PublicOrganization.properties.mode.description
 openapi.json	components.schemas.ResetPasswordRequest.description
 openapi.json	components.schemas.SessionReviewResource.properties.cost.description
 openapi.json	components.schemas.SessionReviewResource.properties.duration_seconds.description
@@ -84,13 +76,3 @@ openapi.json	paths./profile/password.put.description
 openapi.json	paths./profile/photo.delete.description
 openapi.json	paths./profile/photo.post.description
 openapi.json	paths./users/{id}/deactivate.post.description
-openapi.v1.json	components.schemas.CreateExportRequest.description
-openapi.v1.json	components.schemas.CreateInterviewRequest.description
-openapi.v1.json	components.schemas.CreateInterviewRequest.properties.candidate.properties.email.description
-openapi.v1.json	components.schemas.CreateInterviewRequest.properties.exit_redirect_url.description
-openapi.v1.json	components.schemas.PublicInterview.properties.hosted_url.description
-openapi.v1.json	components.schemas.PublicInterview.properties.project.properties.framework_version.properties.version.description
-openapi.v1.json	components.schemas.PublicInterview.properties.recording_ready.description
-openapi.v1.json	components.schemas.PublicOrganization.properties.mode.description
-openapi.v1.json	components.schemas.PublicProject.properties.framework_version.properties.version.description
-openapi.v1.json	paths./usage.get.responses.200.content.application/json.schema.properties.evaluations.properties.pending.description

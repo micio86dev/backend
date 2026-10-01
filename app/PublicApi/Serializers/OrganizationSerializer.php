@@ -26,6 +26,9 @@ use App\Support\PublicApi\PublicId;
 final class OrganizationSerializer
 {
     /**
+     * `mode` is "mode (of the key)" per SPEC.md §3.3 — the AUTHENTICATED KEY's
+     * mode, never an organization column (there isn't one).
+     *
      * @return array{id: string, name: string, mode: 'live'|'test', allowed_domains: list<string>, created_at: string}
      */
     public static function toArray(Organization $organization, ApiKeyMode $mode): array
@@ -33,10 +36,7 @@ final class OrganizationSerializer
         return [
             'id' => PublicId::encode($organization),
             'name' => $organization->name,
-            // "mode (of the key)" — SPEC.md §3.3 — the AUTHENTICATED KEY's
-            // mode, never an organization column (there isn't one): the
-            // same organization answers `live` through a live key and
-            // `test` through a test key.
+            // The mode of the API key making the request, not a property of the organization: the same organization answers `live` through a live key and `test` through a test key.
             'mode' => $mode->value,
             'allowed_domains' => $organization->allowed_domains ?? [],
             'created_at' => (string) $organization->created_at?->toISOString(),
