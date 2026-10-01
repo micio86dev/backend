@@ -150,40 +150,42 @@ const ELF_INTERVIEW_FILTERS = [
     'cursor',
 ];
 
-test('an empty interview filter answers 200 with the list the request without it returns', function (string $filter): void {
+// One world per test, looped over the filters: each world inserts rows that the
+// transaction then rolls back, and the dead tuples they leave bloat the
+// `participants` heap for every test that runs after. A dataset of one case per
+// filter multiplied that by the number of filters for no extra proof.
+test('an empty interview filter answers 200 with the list the request without it returns', function (): void {
     $world = elfInterviewWorld();
     $headers = ['Authorization' => 'Bearer '.$world['key']];
 
     $baseline = $this->withHeaders($headers)->getJson('/api/v1/interviews');
     $baseline->assertOk();
 
-    $response = $this->withHeaders($headers)->getJson('/api/v1/interviews?'.$filter.'=');
+    foreach (ELF_INTERVIEW_FILTERS as $filter) {
+        $response = $this->withHeaders($headers)->getJson('/api/v1/interviews?'.$filter.'=');
 
-    $response->assertOk();
-    $this->assertMatchesContract($response, 'GET', '/interviews');
-    expect($response->json())->toBe($baseline->json())
-        ->and(elfSortedIds($response->json('data')))->toBe($world['ids']);
-})->with(ELF_INTERVIEW_FILTERS);
+        expect($response->status())->toBe(200, "?{$filter}= answered {$response->status()}");
+        expect($response->json())->toBe($baseline->json(), "?{$filter}= changed the list");
+        expect(elfSortedIds($response->json('data')))->toBe($world['ids']);
+    }
 
-test('a whitespace-only interview filter behaves like an empty one', function (string $filter, string $whitespace): void {
+    $this->assertMatchesContract($this->withHeaders($headers)->getJson('/api/v1/interviews?status='), 'GET', '/interviews');
+});
+
+test('a whitespace-only interview filter behaves like an empty one', function (): void {
     $world = elfInterviewWorld();
     $headers = ['Authorization' => 'Bearer '.$world['key']];
 
     $baseline = $this->withHeaders($headers)->getJson('/api/v1/interviews');
 
-    $response = $this->withHeaders($headers)->getJson('/api/v1/interviews?'.$filter.'='.$whitespace);
-
-    $response->assertOk();
-    expect($response->json())->toBe($baseline->json());
-})->with(function (): array {
-    $cases = [];
-
     foreach (ELF_INTERVIEW_FILTERS as $filter) {
-        $cases["{$filter} with spaces"] = [$filter, '%20%20%20'];
-        $cases["{$filter} with a tab and a newline"] = [$filter, '%09%0A'];
-    }
+        foreach (['%20%20%20' => 'spaces', '%09%0A' => 'a tab and a newline'] as $whitespace => $name) {
+            $response = $this->withHeaders($headers)->getJson('/api/v1/interviews?'.$filter.'='.$whitespace);
 
-    return $cases;
+            expect($response->status())->toBe(200, "?{$filter}= ({$name}) answered {$response->status()}");
+            expect($response->json())->toBe($baseline->json(), "?{$filter}= ({$name}) changed the list");
+        }
+    }
 });
 
 test('every interview filter empty at once is the unfiltered list', function (): void {
@@ -261,7 +263,7 @@ test('an empty interview filter never reaches another organization or the other 
 // GET /v1/projects
 // ---------------------------------------------------------------------------
 
-test('an empty project filter answers 200 with the list the request without it returns', function (string $filter): void {
+test('an empty project filter answers 200 with the list the request without it returns', function (): void {
     ['org' => $org, 'key' => $key] = elfOrgWithKey();
     ['org' => $other] = elfOrgWithKey();
     elfProject($org, 'ICO', 'active');
@@ -273,13 +275,15 @@ test('an empty project filter answers 200 with the list the request without it r
     $baseline->assertOk();
     expect($baseline->json('data'))->toHaveCount(2);
 
-    foreach (['', '%20%20', '%09%0A'] as $value) {
-        $response = $this->withHeaders($headers)->getJson('/api/v1/projects?'.$filter.'='.$value);
+    foreach (['status', 'role_code', 'assessment_type', 'limit', 'cursor'] as $filter) {
+        foreach (['', '%20%20', '%09%0A'] as $value) {
+            $response = $this->withHeaders($headers)->getJson('/api/v1/projects?'.$filter.'='.$value);
 
-        $response->assertOk();
-        expect($response->json())->toBe($baseline->json());
+            expect($response->status())->toBe(200, "?{$filter}={$value} answered {$response->status()}");
+            expect($response->json())->toBe($baseline->json(), "?{$filter}={$value} changed the list");
+        }
     }
-})->with(['status', 'role_code', 'assessment_type', 'limit', 'cursor']);
+});
 
 test('a non-empty invalid project filter still answers 400 validation_failed', function (string $query): void {
     ['key' => $key] = elfOrgWithKey();
@@ -298,7 +302,7 @@ test('a non-empty invalid project filter still answers 400 validation_failed', f
 // GET /v1/webhooks/deliveries
 // ---------------------------------------------------------------------------
 
-test('an empty webhook delivery filter answers 200 with the list the request without it returns', function (string $filter): void {
+test('an empty webhook delivery filter answers 200 with the list the request without it returns', function (): void {
     ['org' => $org, 'key' => $key] = elfOrgWithKey();
     ['org' => $other] = elfOrgWithKey();
     $project = Step6Fixtures::project($org);
@@ -318,13 +322,15 @@ test('an empty webhook delivery filter answers 200 with the list the request wit
     $baseline->assertOk();
     expect($baseline->json('data'))->toHaveCount(2);
 
-    foreach (['', '%20%20', '%09%0A'] as $value) {
-        $response = $this->withHeaders($headers)->getJson('/api/v1/webhooks/deliveries?'.$filter.'='.$value);
+    foreach (['status', 'event_type', 'interview_id', 'limit', 'cursor'] as $filter) {
+        foreach (['', '%20%20', '%09%0A'] as $value) {
+            $response = $this->withHeaders($headers)->getJson('/api/v1/webhooks/deliveries?'.$filter.'='.$value);
 
-        $response->assertOk();
-        expect($response->json())->toBe($baseline->json());
+            expect($response->status())->toBe(200, "?{$filter}={$value} answered {$response->status()}");
+            expect($response->json())->toBe($baseline->json(), "?{$filter}={$value} changed the list");
+        }
     }
-})->with(['status', 'event_type', 'interview_id', 'limit', 'cursor']);
+});
 
 test('a non-empty invalid webhook delivery filter still answers 400 validation_failed', function (string $query): void {
     ['key' => $key] = elfOrgWithKey();
