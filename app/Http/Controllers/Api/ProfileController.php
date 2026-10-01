@@ -45,13 +45,6 @@ class ProfileController extends Controller
         return new ProfileResource($fresh->load('organization'));
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // PATCH /api/profile
-    //
-    // `role`, `organization_id`, `is_superadmin`, `deactivated_at` are
-    // never read from the request at all — `only()` whitelists the writable
-    // fields, so any of those keys in the body is silently dropped rather
-    // than validated-then-rejected (design D2).
     /**
      * Update the profile.
      *
@@ -62,6 +55,10 @@ class ProfileController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        // `role`, `organization_id`, `is_superadmin`, `deactivated_at` are never read
+        // from the request at all — `only()` whitelists the writable fields, so any of
+        // those keys in the body is silently dropped rather than
+        // validated-then-rejected (design D2).
         $user->update($request->safe()->only(['name', 'email', 'locale']));
 
         $fresh = $user->fresh();
@@ -70,20 +67,6 @@ class ProfileController extends Controller
         return (new ProfileResource($fresh->load('organization')))->response();
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // PUT /api/profile/password
-    //
-    // The acting session survives by RE-MINTING, not by exemption (design
-    // D3): sets the password and `password_changed_at`, then
-    // `$guard->logout()` denylists the ACTING jti (the SAME mechanism
-    // AuthController::logout() uses), then `$guard->login($user)` mints a
-    // brand-new token whose `iat >= password_changed_at`, returned in the
-    // body — the same {access_token, token_type} shape as
-    // AuthController::refresh().
-    //
-    // `iat` is second-precision (design D3): `startOfSecond()` here pairs
-    // with RejectStaleCredentials's strict `<` comparison, so a token minted
-    // in the same wall-clock second as this change is not born dead.
     /**
      * Change the password.
      *
@@ -95,7 +78,16 @@ class ProfileController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        // The acting session survives by RE-MINTING, not by exemption (design D3):
+        // set the password and `password_changed_at`, then `$guard->logout()`
+        // denylists the ACTING jti (the SAME mechanism AuthController::logout()
+        // uses), then `$guard->login($user)` mints a brand-new token whose
+        // `iat >= password_changed_at`, returned in the body — the same
+        // {access_token, token_type} shape as AuthController::refresh().
         $user->password = (string) $request->validated('password');
+        // `iat` is second-precision (design D3): `startOfSecond()` here pairs with
+        // RejectStaleCredentials's strict `<` comparison, so a token minted in the
+        // same wall-clock second as this change is not born dead.
         $user->password_changed_at = now()->startOfSecond();
         $user->save();
 

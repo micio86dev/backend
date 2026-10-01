@@ -149,12 +149,6 @@ class RoleController extends Controller
         return (new CatalogueRoleResource($role))->response()->setStatusCode(Response::HTTP_CREATED);
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // Never opens a draft (gga review finding) — the target `$role` either
-    // already belongs to an existing open draft or it does not exist to
-    // update at all; opening a fresh clone here would copy ~450 rows only
-    // to 404 immediately after, since a freshly-cloned row's id can never
-    // equal the id named in the URL.
     /**
      * Update a role.
      *
@@ -168,6 +162,11 @@ class RoleController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
+        // Never opens a draft (gga review finding) — the target `$role` either already
+        // belongs to an existing open draft or it does not exist to update at all;
+        // opening a fresh clone here would copy ~450 rows only to 404 immediately
+        // after, since a freshly-cloned row's id can never equal the id named in the
+        // URL.
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)

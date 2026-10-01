@@ -152,14 +152,6 @@ class ProfilePhotoController extends Controller
         return (new ProfileResource($fresh->load('organization')))->response();
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // DELETE /api/profile/photo
-    //
-    // Object-first, then null the column — exactly purgeSnapshots()'s
-    // ordering (design D5): a failed object delete leaves the row intact
-    // for a retryable second call, and S3/R2 deletes are idempotent, so a
-    // second DELETE with nothing left to remove still succeeds (design
-    // spec: "Removing a photo twice ... still 200").
     /**
      * Remove the profile photo.
      *
@@ -172,6 +164,11 @@ class ProfilePhotoController extends Controller
 
         $key = $user->profile_photo_path;
 
+        // Object-first, then null the column — exactly purgeSnapshots()'s ordering
+        // (design D5): a failed object delete leaves the row intact for a retryable
+        // second call, and S3/R2 deletes are idempotent, so a second DELETE with
+        // nothing left to remove still succeeds (design spec: "Removing a photo
+        // twice ... still 200").
         if ($key !== null) {
             Storage::delete($key);
             $user->profile_photo_path = null;

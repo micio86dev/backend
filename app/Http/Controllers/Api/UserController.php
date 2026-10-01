@@ -187,21 +187,6 @@ class UserController extends Controller
         return (new UserResource($target->fresh()))->response();
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // POST /api/users/{id}/deactivate
-    //
-    // The guard refusal is RETURNED, not left to `UserGuardException::render()`.
-    // Scramble infers error responses from what a controller visibly answers,
-    // so a globally-rendered 422 never reached the generated client — and the
-    // backoffice reads `{error}` off exactly this rejection to explain the
-    // refusal. A contract the client depends on and the spec does not declare
-    // is one rename away from silently degrading.
-    //
-    // The 422 body is `{error, message}`: `last_admin` when refusing for a
-    // peer, `self_deactivation` when the caller is the last one.
-    //
-    // 204 No Content. Soft deactivation only — the row survives so
-    // audit-relevant authorship survives (D5).
     /**
      * Deactivate a user.
      *
@@ -218,6 +203,14 @@ class UserController extends Controller
         /** @var User $currentUser */
         $currentUser = request()->user();
 
+        // The guard refusal is RETURNED by the catch below, not left to
+        // `UserGuardException::render()`. Scramble infers error responses from what a
+        // controller visibly answers, so a globally-rendered 422 never reached the
+        // generated client — and the backoffice reads `{error}` off exactly this
+        // rejection to explain the refusal. A contract the client depends on and the
+        // spec does not declare is one rename away from silently degrading. The 422
+        // body is `{error, message}`: `last_admin` when refusing for a peer,
+        // `self_deactivation` when the caller is the last one.
         try {
             $this->guards->ensureAdminSurvivesThenMutate(
                 actor: $currentUser,
@@ -225,6 +218,8 @@ class UserController extends Controller
                 targetLosesAdminStatus: $target->hasRole('admin'),
                 selfErrorCode: 'self_deactivation',
                 mutate: function () use ($target): void {
+                    // Soft deactivation only — the row survives so audit-relevant
+                    // authorship survives (D5).
                     $target->deactivated_at = now();
                     $target->save();
                 },

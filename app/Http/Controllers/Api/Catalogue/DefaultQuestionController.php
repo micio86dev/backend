@@ -118,11 +118,6 @@ class DefaultQuestionController extends Controller
         return (new CatalogueDefaultQuestionResource($question))->response()->setStatusCode(Response::HTTP_CREATED);
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // Never opens a draft (gga review finding on the sibling controllers,
-    // applied here from the start) — the target `$defaultQuestion` either
-    // already belongs to an existing open draft or it does not exist to
-    // update at all.
     /**
      * Update a default question.
      *
@@ -136,6 +131,9 @@ class DefaultQuestionController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
+        // Never opens a draft (gga review finding on the sibling controllers, applied
+        // here from the start) — the target `$defaultQuestion` either already belongs
+        // to an existing open draft or it does not exist to update at all.
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)
