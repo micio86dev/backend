@@ -34,6 +34,7 @@ use App\Models\WebhookDelivery;
 use App\Services\ApiKeyGenerator;
 use App\Services\ReusableLinkTokenGenerator;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -84,29 +85,29 @@ function redeemRefusalBody(string $case, array $world): array
     $unknownWellFormed = ReusableLinkTokenGenerator::generate();
 
     return match ($case) {
-        'no body' => [],
-        'null' => ['link_token' => null],
-        'an integer' => ['link_token' => 123],
-        'an array' => ['link_token' => ['x']],
-        'an array holding a valid token' => ['link_token' => [$world['token']]],
-        'an empty string' => ['link_token' => ''],
-        'a 10 KB string' => ['link_token' => str_repeat('a', 10 * 1024)],
-        'the marker and 42 characters' => ['link_token' => 'beai_rl_'.str_repeat('a', 42)],
-        'the marker and 44 characters' => ['link_token' => 'beai_rl_'.str_repeat('a', 44)],
-        'the visible prefix of a real token' => ['link_token' => $world['link']->token_prefix],
-        'a real token truncated by one character' => ['link_token' => substr($world['token'], 0, -1)],
-        'a real token extended by one character' => ['link_token' => $world['token'].'a'],
-        'a real token with a trailing newline' => ['link_token' => $world['token']."\n"],
-        'a real token with surrounding spaces' => ['link_token' => '  '.$world['token'].'  '],
-        'a well-formed unknown token' => ['link_token' => $unknownWellFormed],
-        'a live api key' => ['link_token' => ApiKeyGenerator::generate(ApiKeyMode::Live)],
-        'a test api key' => ['link_token' => ApiKeyGenerator::generate(ApiKeyMode::Test)],
+        'no link_token' => Fx::identity(),
+        'null' => Fx::redeemBody(null),
+        'an integer' => Fx::redeemBody(123),
+        'an array' => Fx::redeemBody(['x']),
+        'an array holding a valid token' => Fx::redeemBody([$world['token']]),
+        'an empty string' => Fx::redeemBody(''),
+        'a 10 KB string' => Fx::redeemBody(str_repeat('a', 10 * 1024)),
+        'the marker and 42 characters' => Fx::redeemBody('beai_rl_'.str_repeat('a', 42)),
+        'the marker and 44 characters' => Fx::redeemBody('beai_rl_'.str_repeat('a', 44)),
+        'the visible prefix of a real token' => Fx::redeemBody($world['link']->token_prefix),
+        'a real token truncated by one character' => Fx::redeemBody(substr($world['token'], 0, -1)),
+        'a real token extended by one character' => Fx::redeemBody($world['token'].'a'),
+        'a real token with a trailing newline' => Fx::redeemBody($world['token']."\n"),
+        'a real token with surrounding spaces' => Fx::redeemBody('  '.$world['token'].'  '),
+        'a well-formed unknown token' => Fx::redeemBody($unknownWellFormed),
+        'a live api key' => Fx::redeemBody(ApiKeyGenerator::generate(ApiKeyMode::Live)),
+        'a test api key' => Fx::redeemBody(ApiKeyGenerator::generate(ApiKeyMode::Test)),
         default => throw new InvalidArgumentException($case),
     };
 }
 
 const REDEEM_REFUSAL_CASES = [
-    'no body',
+    'no link_token',
     'null',
     'an integer',
     'an array',
@@ -129,7 +130,7 @@ const REDEEM_REFUSAL_CASES = [
 
 test('every token that is not redeemable gets the same 404, byte for byte', function (string $case): void {
     $world = Fx::redeemable();
-    $baseline = $this->postJson(Fx::REDEEM_URL, ['link_token' => ReusableLinkTokenGenerator::generate()]);
+    $baseline = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody(ReusableLinkTokenGenerator::generate()));
 
     $body = redeemRefusalBody($case, $world);
     $response = $this->postJson(Fx::REDEEM_URL, $body);
@@ -158,11 +159,11 @@ test('a disabled link, a soft-deleted project and an unknown token cannot be tol
     // outcome could influence, rate-limit headers included.
     $responses = [
         'disabled' => $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.11'])
-            ->postJson(Fx::REDEEM_URL, ['link_token' => $disabled['token']]),
+            ->postJson(Fx::REDEEM_URL, Fx::redeemBody($disabled['token'])),
         'project soft-deleted' => $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.12'])
-            ->postJson(Fx::REDEEM_URL, ['link_token' => $deleted['token']]),
+            ->postJson(Fx::REDEEM_URL, Fx::redeemBody($deleted['token'])),
         'unknown' => $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.13'])
-            ->postJson(Fx::REDEEM_URL, ['link_token' => $unknown]),
+            ->postJson(Fx::REDEEM_URL, Fx::redeemBody($unknown)),
     ];
 
     foreach ($responses as $label => $response) {
@@ -195,7 +196,7 @@ test('a disabled link on a closed project is still the generic 404, never the 40
         linkAttributes: ['disabled_at' => now()],
     );
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']));
 
     $response->assertNotFound();
     expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY);
@@ -219,7 +220,7 @@ test('another credential kind submitted as a link token is the same 404', functi
         'an admin user jwt' => authTokenForRole($world['org'], 'admin'),
     };
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $credential]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($credential));
 
     $response->assertNotFound();
     expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY);
@@ -238,7 +239,7 @@ test('an sso-link submitted as a link token is not spent and can still be exchan
     ]);
     $jti = json_decode((string) base64_decode(strtr(explode('.', $link)[1], '-_', '+/')), true)['jti'];
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $link])->assertNotFound();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($link))->assertNotFound();
 
     expect(Cache::has('sso_jti:'.$jti))->toBeFalse();
 
@@ -259,7 +260,7 @@ test('a link whose project belongs to another organisation is not redeemable', f
         ->where('id', $world['link']->id)
         ->update(['organization_id' => $stranger['org']->id]);
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']));
 
     $response->assertNotFound();
     expect($response->getContent())->toBe(Fx::NOT_FOUND_BODY)
@@ -291,7 +292,7 @@ test('a valid token on a closed project gets the generic 403 with the project\'s
         interviewable: $interviewable,
     );
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']));
 
     $response->assertForbidden();
     expect($response->json())->toBe(['message' => 'Access denied.', 'redirect_url' => 'https://x.example/err']);
@@ -307,7 +308,7 @@ test('all four closed-project refusals are byte-identical, so none discloses whi
             interviewable: $interviewable,
         );
 
-        $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']])->assertForbidden();
+        $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']))->assertForbidden();
         $bodies[$case] = $response->getContent();
         $headers[$case] = redeemRefusalStableHeaders($response);
     }
@@ -319,7 +320,7 @@ test('all four closed-project refusals are byte-identical, so none discloses whi
 test('the redirect is null when the project has none', function (): void {
     $world = Fx::redeemable(projectAttributes: ['status' => 'inactive', 'error_redirect_url' => null]);
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $world['token']])->assertForbidden();
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token']))->assertForbidden();
 
     expect($response->getContent())->toBe('{"message":"Access denied.","redirect_url":null}');
 });
@@ -332,12 +333,29 @@ test('a refusal leaves the counter, the participants, the events and the webhook
     $world = match ($kind) {
         'closed project' => Fx::redeemable(['status' => 'inactive']),
         'disabled link' => Fx::redeemable(linkAttributes: ['disabled_at' => now()]),
-        'unknown token' => Fx::redeemable(),
+        default => Fx::redeemable(),
     };
     $token = $kind === 'unknown token' ? ReusableLinkTokenGenerator::generate() : $world['token'];
-    $participants = Participant::query()->count();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token]);
+    if ($kind === 'duplicate email') {
+        TenantContextScope::runFor($world['project']->organization_id, fn () => Participant::factory()
+            ->forProject($world['project'])
+            ->create(['email' => 'ada@example.test']));
+    }
+
+    $participants = Participant::query()->count();
+    $body = $kind === 'invalid identity' ? ['link_token' => $token] : Fx::redeemBody($token, Fx::identity('ada@example.test'));
+
+    $response = $this->postJson(Fx::REDEEM_URL, $body);
+
+    // The refusal is the one this case names, not an unrelated failure that
+    // happens to leave the same side effects.
+    $response->assertStatus(match ($kind) {
+        'closed project' => 403,
+        'invalid identity' => 422,
+        'duplicate email' => 409,
+        default => 404,
+    });
 
     $row = ReusableInterviewLink::withoutGlobalScopes()->findOrFail($world['link']->id);
     expect($row->uses_count)->toBe(0)
@@ -345,20 +363,20 @@ test('a refusal leaves the counter, the participants, the events and the webhook
         ->and(Participant::query()->count())->toBe($participants)
         ->and(WebhookDelivery::withoutGlobalScopes()->count())->toBe(0);
     Event::assertNotDispatched(ParticipantCreated::class);
-})->with(['closed project', 'disabled link', 'unknown token']);
+})->with(['closed project', 'disabled link', 'unknown token', 'invalid identity', 'duplicate email']);
 
 test('project state is re-checked on every redemption: a closure applies at once and a reopening too', function (): void {
     ['project' => $project, 'link' => $link, 'token' => $token] = Fx::redeemable();
 
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     // A direct update: the model's status guard forbids this transition, which
     // is about operators, not about what the endpoint must do when it happens.
     DB::table('projects')->where('id', $project->id)->update(['status' => 'inactive']);
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertForbidden();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertForbidden();
 
     DB::table('projects')->where('id', $project->id)->update(['status' => 'active']);
-    $this->postJson(Fx::REDEEM_URL, ['link_token' => $token])->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
 
     expect(Fx::visitorsOf($link))->toHaveCount(2)
         ->and(ReusableInterviewLink::withoutGlobalScopes()->findOrFail($link->id)->uses_count)->toBe(2);
@@ -383,7 +401,7 @@ test('a disable committed after the lookup but before the locked write wins: 404
         DB::table('reusable_interview_links')->where('id', $link->id)->update(['disabled_at' => now()]);
     });
 
-    $response = $this->postJson(Fx::REDEEM_URL, ['link_token' => $token]);
+    $response = $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token));
 
     expect($fired)->toBeTrue();
     $response->assertNotFound();

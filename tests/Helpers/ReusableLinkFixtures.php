@@ -40,6 +40,48 @@ final class ReusableLinkFixtures
     public const NOT_FOUND_BODY = '{"message":"Not found."}';
 
     /**
+     * Per-process sequence behind {@see self::identity()}: it never repeats
+     * inside one PHP process, so two calls never produce the same address.
+     */
+    private static int $identitySequence = 0;
+
+    /**
+     * The identity a visitor types before a redemption: a name and an email.
+     *
+     * Defaults to a fresh `visitor-{n}@example.test` / `Visitor {n}` per call,
+     * so a test that redeems several times never trips the duplicate-email
+     * rule by accident. The counter is per PHP process: an actor that runs in
+     * its own process (the concurrency harness) must be handed an explicit
+     * identity instead of relying on the default.
+     *
+     * @return array{display_name: string, email: string}
+     */
+    public static function identity(?string $email = null, ?string $name = null): array
+    {
+        $number = ++self::$identitySequence;
+
+        return [
+            'display_name' => $name ?? 'Visitor '.$number,
+            'email' => $email ?? 'visitor-'.$number.'@example.test',
+        ];
+    }
+
+    /**
+     * The one place that builds a redemption request body: the raw token plus
+     * the visitor identity (a fresh one unless the test supplies its own).
+     *
+     * `$token` is `mixed` on purpose: the refusal tests submit arrays, integers
+     * and null in the token position.
+     *
+     * @param  array{display_name: string, email: string}|null  $identity
+     * @return array{link_token: mixed, display_name: string, email: string}
+     */
+    public static function redeemBody(mixed $token, ?array $identity = null): array
+    {
+        return ['link_token' => $token] + ($identity ?? self::identity());
+    }
+
+    /**
      * Point the entry URL composer at a known candidate app origin.
      */
     public static function configureOrigin(): void

@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.64.0"
+        "version": "0.65.0"
     },
     "servers": [
         {
@@ -6538,7 +6538,7 @@
         "/participants": {
             "get": {
                 "operationId": "participant.index",
-                "description": "Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name` and\n`source` as a case-insensitive substring, and the candidate's `external_id` by exact equality when\nthe trimmed term is a whole number from 1 to 9007199254740991.",
+                "description": "Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name`,\n`email` and `source` as a case-insensitive substring, and the candidate's `external_id` by exact\nequality when the trimmed term is a whole number from 1 to 9007199254740991.",
                 "summary": "List participants",
                 "tags": [
                     "Participant"
@@ -10019,7 +10019,7 @@
         "/reusable-links/redeem": {
             "post": {
                 "operationId": "reusableLinkRedeem.redeem",
-                "description": "Exchanges the secret of a reusable interview link for a candidate access\ntoken. Every successful call starts a NEW anonymous candidate in the\nlink's project, in the link's language, so one link serves any number of\npeople. The link never expires: it works until it is disabled or its\nproject closes. The token comes only from the `link_token` body field.\n\nA token that is unknown, malformed, or disabled is answered with the same\n404, so a response never reveals whether a link exists. A 403 means the\nlink is valid but its project is not open for interviews right now.",
+                "description": "Exchanges the secret of a reusable interview link for a candidate access\ntoken. Every successful call starts a NEW candidate in the link's project,\nin the link's language, identified by the name and email in the body\n(self-declared, not verified), so one link serves any number of people.\nThe link never expires: it works until it is disabled or its project\ncloses. The token comes only from the `link_token` body field.\n\nThe name and the email are checked first: a missing or invalid one is a\n422 whatever the token is. A valid name and email beside a token that is\nunknown, malformed, or disabled is answered with the same 404, so a\nresponse never reveals whether a link exists. A 403 means the link is valid\nbut its project is not open for interviews right now. A 409 means the email\nis already enrolled in the link's project: nothing is created and the\nexisting enrolment is never resumed.",
                 "summary": "Redeem a reusable interview link",
                 "tags": [
                     "ReusableLinkRedeem"
@@ -10031,12 +10031,23 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
+                                    "display_name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "format": "email",
+                                        "maxLength": 255
+                                    },
                                     "link_token": {
                                         "type": "string",
                                         "description": "The link token from the reusable link URL: `beai_rl_` followed by 43 URL-safe base64 characters (51 characters in all)."
                                     }
                                 },
                                 "required": [
+                                    "display_name",
+                                    "email",
                                     "link_token"
                                 ]
                             }
@@ -10045,7 +10056,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "A candidate access token for a new anonymous candidate in the link's project.",
+                        "description": "A candidate access token for the new candidate in the link's project.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -10088,7 +10099,7 @@
                         }
                     },
                     "404": {
-                        "description": "No such link: the token is unknown, malformed or disabled. The body is identical for every such case.",
+                        "description": "No such link: with a valid name and email, the token is unknown, malformed or disabled. The body is identical for every such case.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -10104,6 +10115,27 @@
                                 }
                             }
                         }
+                    },
+                    "409": {
+                        "description": "This email is already enrolled in the link's project. Nothing was created, and the existing enrolment is neither resumed nor described.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "429": {
                         "description": "Too many attempts. Retry after the number of seconds in the `Retry-After` header.",

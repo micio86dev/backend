@@ -9,6 +9,7 @@ use App\Exceptions\Sso\EntryLinkRefused;
 use App\Http\Controllers\Controller;
 use App\Models\ApiClient;
 use App\Models\Project;
+use App\Rules\NotPlaceholderEmail;
 use App\Support\Participant\ExternalReference;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
@@ -92,7 +93,7 @@ final class SsoLinkController extends Controller
         $validated = $request->validate([
             'project_id' => ['required', 'integer'],
             'candidate_ref' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
+            'email' => ['required', 'email', 'max:255', new NotPlaceholderEmail('candidate_ref')],
             'display_name' => ['required', 'string', 'max:255'],
             'role_code' => ['nullable', 'string', 'max:50'],
             'lang' => ['nullable', 'string', 'max:10'],
