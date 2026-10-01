@@ -57,16 +57,18 @@ class OrganizationController extends Controller
     }
 
     /**
-     * PATCH /api/organization
+     * Update the organization.
      *
-     * `slug` is intentionally never read from the request — only()
-     * whitelists the writable fields, so a `slug` key in the body is
-     * silently dropped rather than validated-then-rejected (D2).
+     * Accepts `name`, the default webhook settings and `primary_color`. Any other field in the body is
+     * ignored.
      */
     public function update(UpdateOrganizationRequest $request): JsonResponse
     {
         $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());
 
+        // `slug` is intentionally never read from the request — only() whitelists the
+        // writable fields, so a `slug` key in the body is silently dropped rather than
+        // validated-then-rejected (D2).
         $organization->update($request->safe()->only([
             'name',
             'default_webhook_url',

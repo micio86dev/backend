@@ -25,10 +25,18 @@ final class SessionSummaryResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        // (interview-session-started-at, D3) Accumulated LIVE time, never the
-        // wall-clock span. The caller MUST eager-load `livePeriods`.
+        // Accumulated live time of the session in seconds, not the wall-clock span between start and end.
         $duration = $this->liveSeconds();
 
+        // `llm_cost_usd`: (pluggable-conversation-llm PR P6b) A separate line, never
+        // combined with any avatar-minute figure. `actual_cost_usd` is
+        // preferred when non-null (permanently null in managed mode;
+        // reserved for a future native_duplex change). `null` — never
+        // `0` — when the session was never billed (no usage row: it
+        // resolved unbound/degraded).
+        //
+        // `duration_seconds`: (interview-session-started-at, D3) Accumulated LIVE time, never the
+        // wall-clock span. The caller MUST eager-load `livePeriods`.
         return [
             'id' => $this->id,
             'competency_code' => $this->competency_code,
@@ -40,12 +48,7 @@ final class SessionSummaryResource extends JsonResource
             'ended_at' => $this->ended_at?->toIso8601String(),
             'duration_seconds' => $duration,
             'integrity_event_count' => $this->integrity_events_count ?? 0,
-            // (pluggable-conversation-llm PR P6b) A separate line, never
-            // combined with any avatar-minute figure. `actual_cost_usd` is
-            // preferred when non-null (permanently null in managed mode;
-            // reserved for a future native_duplex change). `null` — never
-            // `0` — when the session was never billed (no usage row: it
-            // resolved unbound/degraded).
+            // Language model cost of the session, in USD, as a line separate from any avatar figure; `null` when the session was never billed.
             'llm_cost_usd' => $this->llmCostUsd(),
         ];
     }

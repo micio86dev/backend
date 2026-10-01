@@ -12,14 +12,16 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// UpdateUserRequest (backoffice-missing-pages D4).
+//
+// Validates PATCH /api/users/{id}. The target is resolved through
+// UserAdminReader (D4) — the org filter runs BEFORE authorization, so a
+// cross-org id 404s before any role is even evaluated (mirrors
+// UpdateProjectRequest.php's SubstituteBindings-runs-before-TenantContext
+// discipline).
 /**
- * UpdateUserRequest (backoffice-missing-pages D4).
- *
- * Validates PATCH /api/users/{id}. The target is resolved through
- * UserAdminReader (D4) — the org filter runs BEFORE authorization, so a
- * cross-org id 404s before any role is even evaluated (mirrors
- * UpdateProjectRequest.php's SubstituteBindings-runs-before-TenantContext
- * discipline).
+ * The body of `PATCH /api/users/{id}`.
  */
 class UpdateUserRequest extends FormRequest
 {

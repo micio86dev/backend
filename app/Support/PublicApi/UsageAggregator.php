@@ -133,6 +133,15 @@ final class UsageAggregator
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * 'processing' folded into 'pending' — see class doc, point 2. The
+     * outer cast is not redundant: Scramble's static analyzer typed
+     * this `+` expression's result as `string` in the exported
+     * OpenAPI schema (`pending` documented `int` everywhere in this
+     * file, but shipped `string` to every SDK) despite both operands
+     * already being cast — wrapping the whole sum is what actually
+     * fixed the export.
+     *
      * @return array{completed: int, pending: int}
      */
     private static function evaluationCounts(Organization $organization, ApiKeyMode $mode, CarbonImmutable $from, CarbonImmutable $to): array
@@ -147,13 +156,7 @@ final class UsageAggregator
 
         return [
             'completed' => (int) ($byStatus->get('completed') ?? 0),
-            // 'processing' folded into 'pending' — see class doc, point 2. The
-            // outer cast is not redundant: Scramble's static analyzer typed
-            // this `+` expression's result as `string` in the exported
-            // OpenAPI schema (`pending` documented `int` everywhere in this
-            // file, but shipped `string` to every SDK) despite both operands
-            // already being cast — wrapping the whole sum is what actually
-            // fixed the export.
+            // Evaluations that have not completed yet: those pending and those being processed.
             'pending' => (int) ((int) ($byStatus->get('pending') ?? 0) + (int) ($byStatus->get('processing') ?? 0)),
         ];
     }

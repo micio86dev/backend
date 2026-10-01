@@ -14,24 +14,28 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// UpdateProjectRequest (C4 Project Configuration).
+//
+// Validates PATCH /api/projects/{id} payload.
+//
+// Key invariants:
+// - framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).
+//   Any PATCH that includes this field is rejected with 422 — even the same value, even on draft.
+// - slug: self-ignoring unique rule (->ignore) with soft-delete exclusion
+// - Immutability: changing assessment_type or role_code when the resulting status is 'active' or
+//   'archived' → 422
+// - Lifecycle: allowed transitions are draft→active and active→archived only.
+//   Forbidden (active→draft, archived→active, archived→draft) → 422.
+//
+// SubstituteBindings note: the route parameter 'project' is an int (no implicit model binding —
+// SubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding
+// would resolve Project before the tenant scope is set). Manual findOrFail() inside controller
+// and FormRequest methods ensures the TenantScoped global scope is active at resolution time.
 /**
- * UpdateProjectRequest (C4 Project Configuration).
- *
- * Validates PATCH /api/projects/{id} payload.
- *
- * Key invariants:
- * - framework_version_id: blanket-prohibited in ALL PATCH requests (immutable from creation).
- *   Any PATCH that includes this field is rejected with 422 — even the same value, even on draft.
- * - slug: self-ignoring unique rule (->ignore) with soft-delete exclusion
- * - Immutability: changing assessment_type or role_code when the resulting status is 'active' or
- *   'archived' → 422
- * - Lifecycle: allowed transitions are draft→active and active→archived only.
- *   Forbidden (active→draft, archived→active, archived→draft) → 422.
- *
- * SubstituteBindings note: the route parameter 'project' is an int (no implicit model binding —
- * SubstituteBindings runs BEFORE TenantContext in the api middleware group, so route model binding
- * would resolve Project before the tenant scope is set). Manual findOrFail() inside controller
- * and FormRequest methods ensures the TenantScoped global scope is active at resolution time.
+ * The body of `PATCH /api/projects/{id}`. The framework version can never be changed. The assessment
+ * type and role code cannot change once the project is `active` or `archived`, and the status moves
+ * only from `draft` to `active` and from `active` to `archived`; anything else answers `422`.
  */
 class UpdateProjectRequest extends FormRequest
 {
@@ -146,11 +150,7 @@ class UpdateProjectRequest extends FormRequest
             // Approved status enum: draft|active|archived (no gone_live)
             'status' => ['sometimes', 'string', Rule::in(ProjectStatus::values())],
             'competency_ids' => ['sometimes', 'nullable', 'array', 'list'],
-            // `exists` is load-bearing: `validateStandard` iterates
-            // `whereIn(...)->get()`, so an unknown id is never looped over and
-            // reached the foreign key as a 500. Scoped to this project's own
-            // pinned revision (framework-catalogue-authoring PR3b, H1) — see
-            // `compositionRevisionId()`.
+            // A competency id from the catalogue revision of the project. Each id may appear once.
             'competency_ids.*' => [
                 'integer',
                 'distinct',
@@ -164,8 +164,7 @@ class UpdateProjectRequest extends FormRequest
             // `sometimes` WITHOUT `nullable`: see `avatarTemplateRule()`.
             'avatar_template_id' => $this->avatarTemplateRule($orgId, 'sometimes', $project?->avatar_template_id),
             'webhook_secret' => ['sometimes', 'nullable', 'string', 'max:1024'],
-            // Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
-            // the config, never a hardcoded list.
+            // The webhook events the project subscribes to, from the closed set of event types.
             'webhook_events' => ['sometimes', 'array'],
             'webhook_events.*' => [Rule::in(config('webhooks.events.types'))],
             'deadline_at' => ['sometimes', 'nullable', 'date'],
@@ -181,6 +180,14 @@ class UpdateProjectRequest extends FormRequest
             $rules['framework_version_id'] = ['prohibited'];
         }
 
+        // `competency_ids.*`: `exists` is load-bearing: `validateStandard` iterates
+        // `whereIn(...)->get()`, so an unknown id is never looped over and
+        // reached the foreign key as a 500. Scoped to this project's own
+        // pinned revision (framework-catalogue-authoring PR3b, H1) — see
+        // `compositionRevisionId()`.
+        //
+        // `webhook_events`: Closed event-type set (C10 D10) — not env-overridable, so Rule::in reads
+        // the config, never a hardcoded list.
         return $rules;
     }
 

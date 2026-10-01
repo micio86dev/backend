@@ -6,21 +6,23 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// UpdatePasswordRequest (user-profile-self-service, design D4).
+//
+// Validates PUT /api/profile/password. Its OWN request — the admin
+// `UpdateUserRequest` (`['sometimes','string','min:8']`, no current-password
+// check) MUST NOT be reused for this route.
+//
+// `current_password:api` is not decoration: the rule resolves
+// `auth()->guard($param)`, and the default guard is `env('AUTH_GUARD', 'api')`
+// (config/auth.php:19) — an env change would make the rule read the wrong
+// guard and fail closed on every request. `min:8` deliberately matches the
+// admin path floor — a stricter self-service floor would be theatre.
+//
+// REQ: Password Change Requires The Current Password
+// (openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)
 /**
- * UpdatePasswordRequest (user-profile-self-service, design D4).
- *
- * Validates PUT /api/profile/password. Its OWN request — the admin
- * `UpdateUserRequest` (`['sometimes','string','min:8']`, no current-password
- * check) MUST NOT be reused for this route.
- *
- * `current_password:api` is not decoration: the rule resolves
- * `auth()->guard($param)`, and the default guard is `env('AUTH_GUARD', 'api')`
- * (config/auth.php:19) — an env change would make the rule read the wrong
- * guard and fail closed on every request. `min:8` deliberately matches the
- * admin path floor — a stricter self-service floor would be theatre.
- *
- * REQ: Password Change Requires The Current Password
- * (openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)
+ * The body of `PUT /api/profile/password`: the current password and the new one.
  */
 class UpdatePasswordRequest extends FormRequest
 {

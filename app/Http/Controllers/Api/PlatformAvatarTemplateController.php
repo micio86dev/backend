@@ -149,10 +149,9 @@ final class PlatformAvatarTemplateController extends Controller
     /**
      * Edit a platform avatar template.
      *
-     * An edit reaches EVERY project that pins this template, in every
-     * organization, on the next read (live edit, design D1) — which is why the
-     * audit row carries the usage at edit time: the reach of the change is part
-     * of what happened. It records field NAMES, never config values.
+     * An edit reaches every project that pins this template, in every organization, on the next read.
+     * The audit trail records the usage at edit time and the names of the changed fields, never the
+     * config values.
      *
      * @throws AuthorizationException
      */
@@ -186,6 +185,10 @@ final class PlatformAvatarTemplateController extends Controller
         $before = ['name' => $template->name];
         $originals = $template->only(array_keys($validated));
         $beforeBinding = $this->bindingNames($template);
+        // An edit reaches EVERY project that pins this template, in every organization,
+        // on the next read (live edit, design D1) — which is why the audit row carries
+        // the usage at edit time: the reach of the change is part of what happened. It
+        // records field NAMES, never config values.
         $usage = $this->usage->for([$template->id])[$template->id];
 
         $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {

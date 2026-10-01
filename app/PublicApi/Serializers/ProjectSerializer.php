@@ -36,6 +36,16 @@ final class ProjectSerializer
      * absent, never fatal" discipline `ProjectResource::avatar_template`
      * already documents) rather than triggering a lazy-load.
      *
+     *
+     * Internal notes for the exported description below (not published):
+     * `framework_version_id` is NOT NULL, but the relation
+     * accessor's static type is still nullable (an unloaded
+     * relation renders null rather than fatal, the same
+     * discipline `Project::avatarTemplate()`'s own docblock
+     * documents) — an empty string/null pair is the honest
+     * answer when the caller forgot to eager-load it, never a
+     * fatal error on a read-only endpoint.
+     *
      * @return array{id: string, name: string, slug: string, role_code: string|null, assessment_type: 'standard'|'potential', language: string, status: 'draft'|'active'|'archived', framework_version: array{version: string, label: string|null}, competencies: list<array{code: string, name: string, type: string}>, pause_every_n_competencies: int|null, nudge_min_chars: int|null, exit_redirect_url: string|null, avatar_display_name: string|null, created_at: string, updated_at: string}
      */
     public static function toArray(Project $project): array
@@ -49,13 +59,7 @@ final class ProjectSerializer
             'language' => $project->language,
             'status' => $project->status,
             'framework_version' => [
-                // `framework_version_id` is NOT NULL, but the relation
-                // accessor's static type is still nullable (an unloaded
-                // relation renders null rather than fatal, the same
-                // discipline `Project::avatarTemplate()`'s own docblock
-                // documents) — an empty string/null pair is the honest
-                // answer when the caller forgot to eager-load it, never a
-                // fatal error on a read-only endpoint.
+                // The version of the framework the project is pinned to.
                 'version' => $project->frameworkVersion->version ?? '',
                 'label' => $project->frameworkVersion->label ?? null,
             ],

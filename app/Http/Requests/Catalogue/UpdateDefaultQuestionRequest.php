@@ -10,12 +10,15 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `PATCH /api/catalogue/default-questions/{defaultQuestion}` (framework-
+// catalogue-authoring PR4). No `competency_id` re-scoping on PATCH — moving
+// an existing default to another competency is out of scope for this PR,
+// same doctrine as `UpdateBarsIndicatorRequest`'s own note about
+// reassigning `role_id`/`competency_id`.
 /**
- * `PATCH /api/catalogue/default-questions/{defaultQuestion}` (framework-
- * catalogue-authoring PR4). No `competency_id` re-scoping on PATCH — moving
- * an existing default to another competency is out of scope for this PR,
- * same doctrine as `UpdateBarsIndicatorRequest`'s own note about
- * reassigning `role_id`/`competency_id`.
+ * The body of `PATCH /api/catalogue/default-questions/{defaultQuestion}`. The question cannot be
+ * moved to another competency.
  */
 class UpdateDefaultQuestionRequest extends FormRequest
 {

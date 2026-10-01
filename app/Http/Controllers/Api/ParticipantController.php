@@ -52,17 +52,23 @@ final class ParticipantController extends Controller
         private readonly AdminEvaluationSerializer $evaluationSerializer,
     ) {}
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/participants
+    //
+    // Server-paginated (D5 — a fresh authorized query per page, never
+    // fetch-all + client filter). Sort is fixed (created_at desc, id desc):
+    // no client-specified sort column reaches the query builder.
+    //
+    // `q` matches `candidate_ref`, `display_name` and `source` as a
+    // case-insensitive substring, taking `%`, `_` and `\` literally, and the
+    // candidate's `external_id` by exact equality, only when the trimmed term
+    // is a whole number from 1 to 9007199254740991.
     /**
-     * GET /api/participants
+     * List participants.
      *
-     * Server-paginated (D5 — a fresh authorized query per page, never
-     * fetch-all + client filter). Sort is fixed (created_at desc, id desc):
-     * no client-specified sort column reaches the query builder.
-     *
-     * `q` matches `candidate_ref`, `display_name` and `source` as a
-     * case-insensitive substring, taking `%`, `_` and `\` literally, and the
-     * candidate's `external_id` by exact equality, only when the trimmed term
-     * is a whole number from 1 to 9007199254740991.
+     * Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name` and
+     * `source` as a case-insensitive substring, and the candidate's `external_id` by exact equality when
+     * the trimmed term is a whole number from 1 to 9007199254740991.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -121,10 +127,14 @@ final class ParticipantController extends Controller
         return addcslashes($term, '\\%_');
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/participants/{id}
+    //
+    // Summary scope (D2) — RBAC only, readable regardless of lifecycle status.
     /**
-     * GET /api/participants/{id}
+     * Get a participant.
      *
-     * Summary scope (D2) — RBAC only, readable regardless of lifecycle status.
+     * Readable whatever the participant's lifecycle status.
      */
     public function show(int $id): ParticipantDetailResource
     {
@@ -138,12 +148,17 @@ final class ParticipantController extends Controller
         return new ParticipantDetailResource($participant);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/participants/{id}/transcript
+    //
+    // Transcript scope (D2) — requires lifecycle >= in_corso, OR errore
+    // (operator-participant-visibility D1); a pre-threshold status (in_attesa)
+    // raises LifecycleNotReadyException -> 409 (D4).
     /**
-     * GET /api/participants/{id}/transcript
+     * Get a participant's transcript.
      *
-     * Transcript scope (D2) — requires lifecycle >= in_corso, OR errore
-     * (operator-participant-visibility D1); a pre-threshold status (in_attesa)
-     * raises LifecycleNotReadyException -> 409 (D4).
+     * Available once the interview is in progress, and for an interview that ended in error; before
+     * that the response is `409`.
      */
     public function transcript(int $id): TranscriptResource
     {
@@ -152,11 +167,15 @@ final class ParticipantController extends Controller
         return new TranscriptResource($this->transcriptSerializer->serialize($participant));
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/participants/{id}/evaluation
+    //
+    // Evaluation scope (D2) — requires lifecycle === completato; anything
+    // else raises LifecycleNotReadyException -> 409 (D4).
     /**
-     * GET /api/participants/{id}/evaluation
+     * Get a participant's evaluation.
      *
-     * Evaluation scope (D2) — requires lifecycle === completato; anything
-     * else raises LifecycleNotReadyException -> 409 (D4).
+     * Available only once the interview is completed; otherwise the response is `409`.
      */
     public function evaluation(int $id): EvaluationResource
     {

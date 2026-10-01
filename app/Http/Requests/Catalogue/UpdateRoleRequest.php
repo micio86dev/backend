@@ -10,10 +10,12 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `PATCH /api/catalogue/roles/{role}` (framework-catalogue-authoring PR3).
+// No sixth-role check here — that only applies to creating a NEW role;
+// renaming an existing one never changes the count.
 /**
- * `PATCH /api/catalogue/roles/{role}` (framework-catalogue-authoring PR3).
- * No sixth-role check here — that only applies to creating a NEW role;
- * renaming an existing one never changes the count.
+ * The body of `PATCH /api/catalogue/roles/{role}`.
  */
 class UpdateRoleRequest extends FormRequest
 {

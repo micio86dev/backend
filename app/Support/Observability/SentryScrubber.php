@@ -254,8 +254,12 @@ final class SentryScrubber
      * by a log line width or a pasted prefix of the real thing) is still taken.
      * What stays outside it is what is not a secret: the 16-character display
      * prefix the admin list shows (the marker plus 8 characters) and a short near
-     * miss. The frontend and backoffice mirrors use the stricter `{43}` form: a
-     * browser holds only whole tokens, so there nothing is truncated.
+     * miss. It is neither end-anchored nor capped at 43, so an over-long run is
+     * taken whole too. The frontend and backoffice scrubbers carry this SAME
+     * pattern, not a stricter one, and this constant is the only definition in
+     * the api (the redemption format check in `ReusableLinkTokenGenerator` is
+     * the one other regex naming the marker, and it validates, it does not
+     * scrub).
      */
     private const REUSABLE_LINK_TOKEN_PATTERN = '/beai_rl_[A-Za-z0-9_-]{16,}/';
 

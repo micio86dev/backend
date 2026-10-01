@@ -77,19 +77,24 @@ class SuperadminController extends Controller
         ]);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Every client, with the platform-wide statistics the console renders.
+    //
+    // Reachable ONLY by a superadmin. `ClientOverviewReader` strips the
+    // tenant scope itself — an "Act as" selection MUST NOT narrow this
+    // estate to one client (design D2 Trap 1): the superadmin's own ambient
+    // bypass goes OFF the moment they act as somebody, and a scoped read
+    // would then return one organization instead of every client the page
+    // exists to show.
+    //
+    // The shape is declared for Scramble for the same reason `organizations()`
+    // and `settings()` already are: `app(ClientOverviewReader::class)->all()`
+    // is a container call it cannot follow.
     /**
      * Every client, with the platform-wide statistics the console renders.
      *
-     * Reachable ONLY by a superadmin. `ClientOverviewReader` strips the
-     * tenant scope itself — an "Act as" selection MUST NOT narrow this
-     * estate to one client (design D2 Trap 1): the superadmin's own ambient
-     * bypass goes OFF the moment they act as somebody, and a scoped read
-     * would then return one organization instead of every client the page
-     * exists to show.
-     *
-     * The shape is declared for Scramble for the same reason `organizations()`
-     * and `settings()` already are: `app(ClientOverviewReader::class)->all()`
-     * is a container call it cannot follow.
+     * Reachable only by a superadmin. The list is never narrowed by an "Act as" selection: it always
+     * covers every client.
      *
      * @scramble-return array{
      *     data: list<array{

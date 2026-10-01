@@ -8,19 +8,21 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// UpdateProfileRequest (user-profile-self-service, design D2/D8).
+//
+// Validates PATCH /api/profile. Declares ONLY `name`, `email`, `locale` —
+// `role`, `organization_id`, `is_superadmin`, `deactivated_at` are NEVER
+// declared here, so a FormRequest alone does not strip them (D2 layer 1);
+// ProfileController's `$request->safe()->only([...])` (D2 layer 2) and
+// User::$fillable (D2 layer 3) are what actually drop them, silently rather
+// than a validated-then-rejected `prohibited` 422 (same discipline as
+// UpdateOrganizationRequest.php's `slug`).
+//
+// REQ: Editable Fields Are An Allow-List; Email Uniqueness On Self-Update
+// (openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)
 /**
- * UpdateProfileRequest (user-profile-self-service, design D2/D8).
- *
- * Validates PATCH /api/profile. Declares ONLY `name`, `email`, `locale` —
- * `role`, `organization_id`, `is_superadmin`, `deactivated_at` are NEVER
- * declared here, so a FormRequest alone does not strip them (D2 layer 1);
- * ProfileController's `$request->safe()->only([...])` (D2 layer 2) and
- * User::$fillable (D2 layer 3) are what actually drop them, silently rather
- * than a validated-then-rejected `prohibited` 422 (same discipline as
- * UpdateOrganizationRequest.php's `slug`).
- *
- * REQ: Editable Fields Are An Allow-List; Email Uniqueness On Self-Update
- * (openspec/changes/user-profile-self-service/specs/user-self-service/spec.md)
+ * The body of `PATCH /api/profile`: `name`, `email` and `locale`. Any other field is ignored.
  */
 class UpdateProfileRequest extends FormRequest
 {

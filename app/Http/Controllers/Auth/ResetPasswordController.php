@@ -103,14 +103,15 @@ final class ResetPasswordController extends Controller
             $this->fail();
         }
 
+        // The success response below is a CODE, not a sentence. A response body is
+        // machine-facing (CLAUDE.md: machine-readable values "are NOT user-facing and
+        // are returned literally in every locale"), and only the UI knows the
+        // reader's locale. The English prose that used to be here was rendered
+        // verbatim by the backoffice, so an Italian operator on an Italian page read
+        // English.
         $this->recordAudit($user);
 
-        // A CODE, not a sentence. A response body is machine-facing (CLAUDE.md:
-        // machine-readable values "are NOT user-facing and are returned
-        // literally in every locale"), and only the UI knows the reader's
-        // locale. The English prose that used to be here was rendered verbatim
-        // by the backoffice, so an Italian operator on an Italian page read
-        // English.
+        // The password was reset. `message` is the code `password_reset`.
         return response()->json(['message' => 'password_reset']);
     }
 

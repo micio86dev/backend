@@ -33,6 +33,9 @@ final class TemplateDocument
         // collection here is exactly the set the caller is about to iterate.
         $templates->loadMissing(['llmModel:id,key', 'llmCredential:id,name']);
 
+        // `llm`: The binding travels by NAME, never by id or key material
+        // (design D13) — an id is meaningless in another org, and a
+        // fingerprint is key-derived material with no import use.
         return [
             'schema' => self::SCHEMA,
             'exported_at' => now()->toIso8601String(),
@@ -43,9 +46,7 @@ final class TemplateDocument
                 'config' => $t->config,
                 // Persona is optional: a template may be pure provider config.
                 'persona' => $t->persona ?? null,
-                // The binding travels by NAME, never by id or key material
-                // (design D13) — an id is meaningless in another org, and a
-                // fingerprint is key-derived material with no import use.
+                // The language model binding, by model key and credential name; `null` when the template has none.
                 'llm' => $t->llm_model_id === null ? null : [
                     'model_key' => $t->llmModel?->key,
                     'credential_name' => $t->llmCredential?->name,

@@ -14,6 +14,7 @@ use App\Models\Project;
 use App\Support\PublicApi\CursorPage;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\QueryFilters;
 use Dedoc\Scramble\Attributes\IgnoreResponse;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
@@ -40,22 +41,28 @@ final class ProjectController extends Controller
 {
     private const EAGER_LOAD = ['frameworkVersion', 'avatarTemplate', 'competencies'];
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // SPEC.md §3.2 "Filtering on list endpoints: `status`, ...". `role_code`
+    // and `assessment_type` are Public-API-specific additions this
+    // operation's own contract entry lists (`openapi.yaml` `listProjects`
+    // parameters). An unrecognised value for any of the three answers `400
+    // validation_failed` via `QueryValidationException` (G-28) — a
+    // malformed QUERY PARAMETER, never `422`.
+    //
+    // `data[]` documented as a list of `PublicProject` objects and
+    // `next_cursor` as nullable (step 5 review follow-up, Part B item 2) —
+    // same fix, same reasoning, as `InterviewController::index()`'s own
+    // docblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)
+    // replace the incorrect auto-inferred `422` this method's own
+    // `QueryValidationException` throw produced — the shape now shared
+    // from `Problem::PROBLEM_SHAPE` (step 6 review follow-up, Part A item
+    // 6) rather than a copy of the constant this class used to declare.
     /**
-     * SPEC.md §3.2 "Filtering on list endpoints: `status`, ...". `role_code`
-     * and `assessment_type` are Public-API-specific additions this
-     * operation's own contract entry lists (`openapi.yaml` `listProjects`
-     * parameters). An unrecognised value for any of the three answers `400
-     * validation_failed` via `QueryValidationException` (G-28) — a
-     * malformed QUERY PARAMETER, never `422`.
+     * List projects.
      *
-     * `data[]` documented as a list of `PublicProject` objects and
-     * `next_cursor` as nullable (step 5 review follow-up, Part B item 2) —
-     * same fix, same reasoning, as `InterviewController::index()`'s own
-     * docblock. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item 6)
-     * replace the incorrect auto-inferred `422` this method's own
-     * `QueryValidationException` throw produced — the shape now shared
-     * from `Problem::PROBLEM_SHAPE` (step 6 review follow-up, Part A item
-     * 6) rather than a copy of the constant this class used to declare.
+     * Returns the organization's projects in cursor-paginated pages, newest first. The `status`,
+     * `role_code` and `assessment_type` filters are optional: an empty value is treated as not
+     * provided, and an unrecognised value answers `400 validation_failed`.
      *
      * @response array{data: list<\App\Http\Resources\PublicApi\ProjectResource>, next_cursor: string|null, has_more: bool}
      */
@@ -89,20 +96,24 @@ final class ProjectController extends Controller
         return response()->json($page);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // `$project` is the RAW path segment (`prj_...`), resolved manually
+    // rather than through implicit Eloquent route-model binding: the
+    // existing admin `Route::apiResource('projects', ProjectController::class)`
+    // already binds the SAME `{project}` route parameter name to an
+    // integer id, and a second, public-id-based binding registered on the
+    // same parameter name would either collide with it or require touching
+    // `App\Models\Project::resolveRouteBinding()` globally — which the
+    // admin surface must never see (it keeps using integer ids). Resolving
+    // by hand here keeps the two surfaces fully independent, and
+    // `PublicId::decode()` returning `null` on ANY malformed/mismatched-
+    // prefix input, funnelled into the exact same "no row" 404 branch as a
+    // syntactically valid but unknown id, is what guarantees a mismatched
+    // prefix answers `404 not_found`, never `400` (SPEC.md §3.2).
     /**
-     * `$project` is the RAW path segment (`prj_...`), resolved manually
-     * rather than through implicit Eloquent route-model binding: the
-     * existing admin `Route::apiResource('projects', ProjectController::class)`
-     * already binds the SAME `{project}` route parameter name to an
-     * integer id, and a second, public-id-based binding registered on the
-     * same parameter name would either collide with it or require touching
-     * `App\Models\Project::resolveRouteBinding()` globally — which the
-     * admin surface must never see (it keeps using integer ids). Resolving
-     * by hand here keeps the two surfaces fully independent, and
-     * `PublicId::decode()` returning `null` on ANY malformed/mismatched-
-     * prefix input, funnelled into the exact same "no row" 404 branch as a
-     * syntactically valid but unknown id, is what guarantees a mismatched
-     * prefix answers `404 not_found`, never `400` (SPEC.md §3.2).
+     * Get a project.
+     *
+     * A project id that is malformed or unknown answers `404 not_found`.
      */
     public function show(Request $request, string $project): JsonResponse
     {
@@ -121,7 +132,8 @@ final class ProjectController extends Controller
 
     private function validateFilters(Request $request): void
     {
-        $validator = Validator::make($request->query(), [
+        // An empty filter is "not provided": see `QueryFilters`.
+        $validator = Validator::make(QueryFilters::provided($request), [
             'status' => ['sometimes', 'string', Rule::in(ProjectStatus::values())],
             'role_code' => ['sometimes', 'string', Rule::in(RoleCode::values())],
             'assessment_type' => ['sometimes', 'string', Rule::in(AssessmentType::values())],

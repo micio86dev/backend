@@ -40,14 +40,18 @@ class EvaluationIndexController extends Controller
         private readonly ReliabilityRenderer $reliabilityRenderer = new ReliabilityRenderer,
     ) {}
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/evaluations
+    //
+    // Two queries total, never per row (D6): the paginated page (via
+    // `simplePaginate()` — no separate COUNT query, matching design D6's
+    // "two queries per request, never per row"), plus ONE grouped query
+    // over `competency_results` for the page's ids to attach each row's
+    // mean reliability.
     /**
-     * GET /api/evaluations
+     * List evaluations.
      *
-     * Two queries total, never per row (D6): the paginated page (via
-     * `simplePaginate()` — no separate COUNT query, matching design D6's
-     * "two queries per request, never per row"), plus ONE grouped query
-     * over `competency_results` for the page's ids to attach each row's
-     * mean reliability.
+     * Returns evaluations 20 to a page, each with its mean reliability.
      */
     public function index(EvaluationIndexRequest $request): AnonymousResourceCollection
     {
@@ -80,12 +84,21 @@ class EvaluationIndexController extends Controller
         return EvaluationIndexResource::collection($page);
     }
 
+    // The summary is sent with JSON_PRESERVE_ZERO_FRACTION: a BARS mean is a float
+    // even when it is whole, and the evaluation resources already say `4.0`, not
+    // `4`. Kept here, not above the `return`: Scramble would publish a comment
+    // there as the description of the response.
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/evaluations/summary
+    //
+    // Aggregates over the identical filter set, sourced from the SAME
+    // `EvaluationIndexQuery::build()` call as the index — so the summary
+    // can never describe a different population than the table above it.
     /**
-     * GET /api/evaluations/summary
+     * Summarize evaluations.
      *
-     * Aggregates over the identical filter set, sourced from the SAME
-     * `EvaluationIndexQuery::build()` call as the index — so the summary
-     * can never describe a different population than the table above it.
+     * Returns the mean score per competency and the number of evaluations per status, over the same
+     * filtered set of evaluations as the list, so the summary never describes a different population.
      */
     public function summary(EvaluationIndexRequest $request): JsonResponse
     {
@@ -127,7 +140,7 @@ class EvaluationIndexController extends Controller
                 'by_status' => $byStatus,
                 'competencies' => $competencies,
             ],
-        ]);
+        ], 200, [], JSON_PRESERVE_ZERO_FRACTION);
     }
 
     /**
