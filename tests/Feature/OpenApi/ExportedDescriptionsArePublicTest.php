@@ -336,3 +336,27 @@ test('Scramble publishes exactly the comments the description rewrite assumes', 
     'a comment above a try' => ['MECHANISM-ABOVE-TRY', false],
     'a comment above the validate() statement' => ['MECHANISM-ABOVE-VALIDATE', false],
 ]);
+
+/*
+ * The mechanism test above pins the comment positions on a fixture. The session
+ * resources use a third position it does not model: a note directly above the
+ * bare `return [...]` of a JsonResource::toArray(). Pin that shape on the REAL
+ * export, with phrases that exist only in those notes, so a Scramble upgrade (or
+ * a move of the note) that starts publishing them fails here by name.
+ */
+test('the notes above the return of the session resources toArray() are not published', function (string $file, string $phrase): void {
+    $json = (string) file_get_contents(base_path($file));
+
+    expect($json)->not->toBe('', "{$file} is not committed.");
+    expect(str_contains($json, $phrase))->toBeFalse("\"{$phrase}\" from a session resource toArray() note is published in {$file}.");
+})->with(function (): array {
+    $cases = [];
+
+    foreach (['openapi.json', 'openapi.v1.json'] as $file) {
+        foreach (['SessionCostEstimator', 'TWO SEPARATE labelled lines', 'pluggable-conversation-llm', 'interview-session-started-at', 'eager-load `livePeriods`'] as $phrase) {
+            $cases["{$file}: {$phrase}"] = [$file, $phrase];
+        }
+    }
+
+    return $cases;
+});
