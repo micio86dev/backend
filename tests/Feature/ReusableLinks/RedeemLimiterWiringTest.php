@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * RED - reusable-interview-links B3a.3: the named `reusable-link-redeem`
+ * limiter (design AD-11, tasks C-T9).
+ *
+ * The redemption endpoint is PUBLIC and mints a credential, so it must never
+ * exist unthrottled, not even for one commit. This file pins the limiter's
+ * DEFINITION: the buckets it builds and the configuration that sizes them. The
+ * request-level behaviour (429 shape, ordering, bucket independence from the
+ * client IP) is exercised through the route in the redemption tests and in the
+ * throttle matrix.
+ *
+ * The limiter is a NAMED one (never the numeric `throttle:N,1` form) because
+ * Laravel's numeric form resolves its bucket key through `$request->user()` on
+ * the default guard, whose token parser reads a `token` input and 500s on
+ * `?token[]=` before the controller runs. A named limiter owns its key outright.
+ *
+ * It is invoked here with real `Request` objects through
+ * `RateLimiter::limiter()`, the same entry point `ThrottleRequests` uses.
+ */
+
+use App\Services\ReusableLinkTokenGenerator;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+
+/**
+ * Resolve the limits the named limiter builds for a JSON body from an IP.
+ *
+ * @param  array<string, mixed>  $body
+ * @return list<Limit>
+ */
+function redeemLimits(array $body, string $ip = '203.0.113.7'): array
+{
+    $request = Request::create(
+        '/api/reusable-links/redeem',
+        'POST',
+        [],
+        [],
+        [],
+        ['CONTENT_TYPE' => 'application/json', 'REMOTE_ADDR' => $ip],
+        (string) json_encode($body),
+    );
+
+    $limiter = RateLimiter::limiter('reusable-link-redeem');
+    expect($limiter)->not->toBeNull();
+
+    $limits = $limiter($request);
+
+    return array_values(is_array($limits) ? $limits : [$limits]);
+}
+
+test('the redeem limiter is registered under its name', function (): void {
+    expect(RateLimiter::limiter('reusable-link-redeem'))->toBeInstanceOf(Closure::class);
+});
+
+test('the limits default to 10 per minute per IP and 100 per hour per link', function (): void {
+    expect(config('reusable_links.redeem.per_ip_per_minute'))->toBe(10)
+        ->and(config('reusable_links.redeem.per_link_per_hour'))->toBe(100);
+});
+
+test('both limits are environment-overridable and documented in .env.example', function (): void {
+    $config = (string) file_get_contents(config_path('reusable_links.php'));
+    $example = (string) file_get_contents(base_path('.env.example'));
+
+    foreach ([
+        'REUSABLE_LINK_REDEEM_PER_IP_PER_MINUTE',
+        'REUSABLE_LINK_REDEEM_PER_LINK_PER_HOUR',
+    ] as $variable) {
+        expect($config)->toContain("env('{$variable}'")
+            ->and($example)->toContain($variable.'=');
+    }
+});
+
+test('a well-formed token yields two limits: the IP per minute and the link per hour', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $limits = redeemLimits(['link_token' => $token], ip: '203.0.113.7');
+
+    expect($limits)->toHaveCount(2);
+
+    [$perIp, $perLink] = $limits;
+
+    expect($perIp->key)->toBe('ip:203.0.113.7')
+        ->and($perIp->maxAttempts)->toBe(10)
+        ->and($perIp->decaySeconds)->toBe(60)
+        ->and($perLink->key)->toBe('link:'.ReusableLinkTokenGenerator::hash($token))
+        ->and($perLink->maxAttempts)->toBe(100)
+        ->and($perLink->decaySeconds)->toBe(3600);
+});
+
+test('malformed input still counts against the IP and never builds a link bucket', function (mixed $linkToken): void {
+    $limits = redeemLimits(['link_token' => $linkToken], ip: '203.0.113.7');
+
+    expect($limits)->toHaveCount(1)
+        ->and($limits[0]->key)->toBe('ip:203.0.113.7')
+        ->and($limits[0]->maxAttempts)->toBe(10)
+        ->and($limits[0]->decaySeconds)->toBe(60);
+})->with([
+    'null' => [null],
+    'an integer' => [123],
+    'an array' => [['x']],
+    'an empty string' => [''],
+    'a 42-character body' => ['beai_rl_'.str_repeat('a', 42)],
+    'a 44-character body' => ['beai_rl_'.str_repeat('a', 44)],
+    'the wrong marker' => ['beai_rk_'.str_repeat('a', 43)],
+    'a trailing newline' => [ReusableLinkTokenGenerator::MARKER.str_repeat('a', 43)."\n"],
+]);
+
+test('a request with no body still counts against the IP', function (): void {
+    $request = Request::create('/api/reusable-links/redeem', 'POST', [], [], [], ['REMOTE_ADDR' => '198.51.100.4']);
+
+    $limits = RateLimiter::limiter('reusable-link-redeem')($request);
+
+    expect($limits)->toHaveCount(1)
+        ->and($limits[0]->key)->toBe('ip:198.51.100.4');
+});
+
+test('the token is read only from link_token, never from a field named token', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    // A well-formed value under the wrong name must not open a link bucket.
+    expect(redeemLimits(['token' => $token]))->toHaveCount(1);
+});
+
+test('no bucket key contains the raw token', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    foreach (redeemLimits(['link_token' => $token]) as $limit) {
+        expect($limit->key)->not->toContain($token)
+            ->and($limit->key)->not->toContain(substr($token, strlen(ReusableLinkTokenGenerator::MARKER)));
+    }
+});
+
+test('two well-formed tokens get independent link buckets', function (): void {
+    $first = redeemLimits(['link_token' => ReusableLinkTokenGenerator::generate()]);
+    $second = redeemLimits(['link_token' => ReusableLinkTokenGenerator::generate()]);
+
+    expect($first[1]->key)->not->toBe($second[1]->key)
+        // ...while the IP bucket is shared by both.
+        ->and($first[0]->key)->toBe($second[0]->key);
+});
+
+test('the same token from two IPs shares one link bucket and has two IP buckets', function (): void {
+    $token = ReusableLinkTokenGenerator::generate();
+
+    $a = redeemLimits(['link_token' => $token], ip: '203.0.113.1');
+    $b = redeemLimits(['link_token' => $token], ip: '203.0.113.2');
+
+    expect($a[1]->key)->toBe($b[1]->key)
+        ->and($a[0]->key)->not->toBe($b[0]->key);
+});
+
+test('overriding the configuration changes both limits without a code change', function (): void {
+    config([
+        'reusable_links.redeem.per_ip_per_minute' => 2,
+        'reusable_links.redeem.per_link_per_hour' => 3,
+    ]);
+
+    $limits = redeemLimits(['link_token' => ReusableLinkTokenGenerator::generate()]);
+
+    expect($limits[0]->maxAttempts)->toBe(2)
+        ->and($limits[1]->maxAttempts)->toBe(3);
+});
