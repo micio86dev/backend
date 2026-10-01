@@ -176,6 +176,15 @@ final class AuthMatrixFixtures
                     ];
                 },
             ],
+
+            // ─── reusable interview links ────────────────────────────────────
+            // A link is created for an OPEN, interviewable project only; the
+            // origin is configured so an allowed create composes its URL.
+            'POST api/projects/{project}/reusable-links' => [
+                'before' => fn () => config(['interview.candidate_app_url' => 'https://interview.example.test']),
+                'params' => fn (AuthMatrixResources $r): array => ['project' => $r->openProject()->id],
+                'payload' => fn (): array => ['label' => 'Matrix link'],
+            ],
         ];
     }
 

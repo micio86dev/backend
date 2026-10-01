@@ -9757,6 +9757,115 @@
                 }
             }
         },
+        "/projects/{project}/reusable-links": {
+            "post": {
+                "operationId": "reusableInterviewLink.store",
+                "description": "Creates one non-expiring, revocable link for the project and returns its\nentry URL. The URL is shown ONCE, in this response only: BEAI stores a\nSHA-256 hash of the secret, never the secret, so it cannot be shown again\nand a lost link means creating a new one. Each call creates a distinct\nlink. Every candidate who opens the URL starts their own interview in the\nproject, in the link's language, which is fixed at creation from the\nproject's language. Disable the link at any time to stop new interviews.\n\nRefused with 403 `entry_link_project_closed` while the project is not\nopen for interviews (not active, not yet live, or past its deadline) and\nwith 422 `PROJECT_NOT_INTERVIEWABLE` while it has no question for a\nselected competency.",
+                "summary": "Create a reusable interview link",
+                "tags": [
+                    "ReusableInterviewLink"
+                ],
+                "parameters": [
+                    {
+                        "name": "project",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "An operator-facing name for the link (for example the trade-fair\nstand it is meant for), shown in the link list and used to name the\ncandidates who open it. Optional; blank means none.",
+                                        "maxLength": 120
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ReusableInterviewLinkResource"
+                                        },
+                                        "entry_url": {
+                                            "type": "string",
+                                            "description": "The one and only carrier of the raw token. Never a bare `token`\nfield, never repeated by any later response."
+                                        }
+                                    },
+                                    "required": [
+                                        "data",
+                                        "entry_url"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "404": {
+                        "description": "The project does not exist, was deleted, or belongs to another organization.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "A superadmin must first select the organization to act for (`organization_context_required`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/catalogue/revisions/current": {
             "get": {
                 "operationId": "revision.current",
@@ -15210,6 +15319,78 @@
                     "password_confirmation"
                 ],
                 "title": "ResetPasswordRequest"
+            },
+            "ReusableInterviewLinkResource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "label": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "token_prefix": {
+                        "type": "string"
+                    },
+                    "lang": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "disabled"
+                        ]
+                    },
+                    "uses_count": {
+                        "type": "integer"
+                    },
+                    "last_used_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "created_by": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "disabled_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "label",
+                    "token_prefix",
+                    "lang",
+                    "status",
+                    "uses_count",
+                    "last_used_at",
+                    "created_by",
+                    "created_at",
+                    "disabled_at"
+                ],
+                "title": "ReusableInterviewLinkResource"
             },
             "RoleResource": {
                 "type": "object",

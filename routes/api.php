@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectQuestionController;
+use App\Http\Controllers\Api\ReusableInterviewLinkController;
 use App\Http\Controllers\Api\SessionReviewController;
 use App\Http\Controllers\Api\SuperadminController;
 use App\Http\Controllers\Api\UserController;
@@ -364,6 +365,14 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::put('projects/{project}/questions/order', [ProjectQuestionController::class, 'reorder']);
     Route::patch('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'update']);
     Route::delete('projects/{project}/questions/{question}', [ProjectQuestionController::class, 'destroy']);
+
+    // Reusable interview links (reusable-interview-links), nested under the
+    // project like the questions above, and resolved the same way: the integer
+    // `{project}` through the tenant scope, so another organization's id is a 404
+    // and never a 403. Admin and operator only (`ParticipantPolicy::create`),
+    // checked BEFORE the project is resolved. The writes demand an organization
+    // in context, so a bare superadmin gets the legible 409 instead of a 500.
+    Route::post('projects/{project}/reusable-links', [ReusableInterviewLinkController::class, 'store'])->middleware('org.context');
 });
 
 // ─── Superadmin: clients and the acting-organization switch ──────────────────
