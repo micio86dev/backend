@@ -186,12 +186,12 @@ final class RedeemReusableInterviewLink
             throw $e;
         }
 
-        if ($created === RedemptionStatus::NotFound) {
-            return RedemptionOutcome::notFound();
-        }
-
-        if ($created === RedemptionStatus::Duplicate) {
-            return RedemptionOutcome::duplicate();
+        // Nothing was created: the transaction said why. (It returns only these
+        // two statuses; the array is the success branch.)
+        if (! is_array($created)) {
+            return $created === RedemptionStatus::Duplicate
+                ? RedemptionOutcome::duplicate()
+                : RedemptionOutcome::notFound();
         }
 
         [$participant, $accessToken] = $created;
