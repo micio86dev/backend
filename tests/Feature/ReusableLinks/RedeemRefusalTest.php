@@ -346,7 +346,16 @@ test('a refusal leaves the counter, the participants, the events and the webhook
     $participants = Participant::query()->count();
     $body = $kind === 'invalid identity' ? ['link_token' => $token] : Fx::redeemBody($token, Fx::identity('ada@example.test'));
 
-    $this->postJson(Fx::REDEEM_URL, $body);
+    $response = $this->postJson(Fx::REDEEM_URL, $body);
+
+    // The refusal is the one this case names, not an unrelated failure that
+    // happens to leave the same side effects.
+    $response->assertStatus(match ($kind) {
+        'closed project' => 403,
+        'invalid identity' => 422,
+        'duplicate email' => 409,
+        default => 404,
+    });
 
     $row = ReusableInterviewLink::withoutGlobalScopes()->findOrFail($world['link']->id);
     expect($row->uses_count)->toBe(0)

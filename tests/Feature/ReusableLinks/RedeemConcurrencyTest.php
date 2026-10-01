@@ -391,6 +391,33 @@ test('two redemptions of two links of one project with one email, released toget
     expect($loser['body'])->toBe('{"message":"duplicate_enrolment"}');
 });
 
+test('two redemptions of two links with case-variant spellings of one address, released together, still make one visitor and one 409', function (): void {
+    Concurrent::open();
+    ['project' => $project, 'link' => $first, 'token' => $firstToken] = Fx::redeemable();
+    $secondToken = ReusableLinkTokenGenerator::generate();
+    $second = Fx::link($project, [
+        'token_hash' => ReusableLinkTokenGenerator::hash($secondToken),
+        'token_prefix' => ReusableLinkTokenGenerator::prefixOf($secondToken),
+    ]);
+
+    // Both spellings are normalised to one lower-case address before any write,
+    // so the case-sensitive unique index sees the same value and decides.
+    $holder = Concurrent::holdLinkLocks([$first->id, $second->id]);
+    $actors = [
+        Concurrent::startRequest(concurrencyRedeem($firstToken, 1, Fx::identity('Ada@Example.test', 'Ada Lovelace'))),
+        Concurrent::startRequest(concurrencyRedeem($secondToken, 2, Fx::identity('ada@EXAMPLE.TEST', 'Ada Lovelace'))),
+    ];
+    Concurrent::waitForBlocked(2);
+
+    $holder->commit();
+    $statuses = array_map(fn (int $actor): int => Concurrent::result($actor)['status'], $actors);
+    sort($statuses);
+
+    expect($statuses)->toBe([200, 409])
+        ->and(count(Fx::visitorsOf($first)) + count(Fx::visitorsOf($second)))->toBe(1)
+        ->and(Participant::query()->where('project_id', $project->id)->pluck('email')->all())->toBe(['ada@example.test']);
+});
+
 test('an operator enrolment committed while a redemption waits for the row lock makes the redemption a 409, never a 500', function (): void {
     Concurrent::open();
     $world = Fx::redeemable();
