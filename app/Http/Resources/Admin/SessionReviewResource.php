@@ -55,6 +55,22 @@ final class SessionReviewResource extends JsonResource
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * TWO SEPARATE labelled lines, never one combined total — the
+     * same refusal already ratified at `SessionCostEstimator.php:20-22`
+     * for avatar-vs-LLM spend: different vendors, different meters.
+     *
+     * `avatar`: minutes only. `ai_requests` has no interview_session_id,
+     * so LLM spend cannot be attributed to one session without
+     * inventing the link — and a plausible number with no basis is
+     * worse than an absent one (D5).
+     *
+     * `llm`: null when the session was never billed (unbound/degraded —
+     * no vendor default is priced). When present, `actual_usd`
+     * renders ONLY when non-null (pluggable-conversation-llm PR P6b,
+     * design D5: permanently null in managed mode, reserved for a
+     * future native_duplex change).
+     *
      * @return array<string, mixed>
      */
     public function toArray(Request $request): array
@@ -73,20 +89,7 @@ final class SessionReviewResource extends JsonResource
             'duration_seconds' => $this->durationSeconds(),
             'integrity' => $this->integrity,
             'snapshots' => $this->snapshots,
-            // TWO SEPARATE labelled lines, never one combined total — the
-            // same refusal already ratified at `SessionCostEstimator.php:20-22`
-            // for avatar-vs-LLM spend: different vendors, different meters.
-            //
-            // `avatar`: minutes only. `ai_requests` has no interview_session_id,
-            // so LLM spend cannot be attributed to one session without
-            // inventing the link — and a plausible number with no basis is
-            // worse than an absent one (D5).
-            //
-            // `llm`: null when the session was never billed (unbound/degraded —
-            // no vendor default is priced). When present, `actual_usd`
-            // renders ONLY when non-null (pluggable-conversation-llm PR P6b,
-            // design D5: permanently null in managed mode, reserved for a
-            // future native_duplex change).
+            // Cost of the session as two separate lines, never one combined total: `avatar` is in minutes only, and `llm` is `null` when the session was never billed.
             'cost' => [
                 'avatar' => $this->avatarCost,
                 'llm' => $this->llmCostLine(),
@@ -163,10 +166,14 @@ final class SessionReviewResource extends JsonResource
         ];
     }
 
+    /**
+     * Internal notes for the exported description below (not published):
+     * (interview-session-started-at, D3) Accumulated LIVE time, never
+     * the wall-clock span. The caller MUST eager-load `livePeriods`.
+     */
     private function durationSeconds(): ?int
     {
-        // (interview-session-started-at, D3) Accumulated LIVE time, never
-        // the wall-clock span. The caller MUST eager-load `livePeriods`.
+        // Accumulated live time of the session in seconds, not the wall-clock span between start and end.
         return $this->liveSeconds();
     }
 

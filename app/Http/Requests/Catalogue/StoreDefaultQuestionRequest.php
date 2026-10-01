@@ -12,20 +12,22 @@ use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `POST /api/catalogue/default-questions` (framework-catalogue-authoring
+// PR4, catalogue-authoring spec — "Catalogue-Level Default Questions Per
+// Competency").
+//
+// Both `en` AND `it` are mandatory here — deliberately stricter than every
+// other catalogue FormRequest's `localeMapRules()` default (`en` mandatory,
+// `it` optional-but-non-blank-when-present, `StoreRoleRequest`/
+// `StoreCompetencyRequest`/`StoreBarsIndicatorRequest`'s own shape). A
+// default question is a TEMPLATE `ApplyCompetencySelection` (PR5) copies
+// verbatim into `project_questions` the moment a project first selects the
+// competency, in whatever language that project runs in — an operator
+// authoring one in `en` only would silently ship an Italian project a blank
+// question the day it is first selected, with no later gate to catch it.
 /**
- * `POST /api/catalogue/default-questions` (framework-catalogue-authoring
- * PR4, catalogue-authoring spec — "Catalogue-Level Default Questions Per
- * Competency").
- *
- * Both `en` AND `it` are mandatory here — deliberately stricter than every
- * other catalogue FormRequest's `localeMapRules()` default (`en` mandatory,
- * `it` optional-but-non-blank-when-present, `StoreRoleRequest`/
- * `StoreCompetencyRequest`/`StoreBarsIndicatorRequest`'s own shape). A
- * default question is a TEMPLATE `ApplyCompetencySelection` (PR5) copies
- * verbatim into `project_questions` the moment a project first selects the
- * competency, in whatever language that project runs in — an operator
- * authoring one in `en` only would silently ship an Italian project a blank
- * question the day it is first selected, with no later gate to catch it.
+ * The body of `POST /api/catalogue/default-questions`. The question is required in both `en` and `it`.
  */
 class StoreDefaultQuestionRequest extends FormRequest
 {

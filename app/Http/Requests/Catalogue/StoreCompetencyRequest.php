@@ -10,8 +10,10 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `POST /api/catalogue/competencies` (framework-catalogue-authoring PR3).
 /**
- * `POST /api/catalogue/competencies` (framework-catalogue-authoring PR3).
+ * The body of `POST /api/catalogue/competencies`.
  */
 class StoreCompetencyRequest extends FormRequest
 {

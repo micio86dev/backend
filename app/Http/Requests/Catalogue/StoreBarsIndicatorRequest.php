@@ -12,12 +12,15 @@ use App\Support\Catalogue\CatalogueRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `POST /api/catalogue/bars-indicators` (framework-catalogue-authoring
+// PR3, D3). Refuses a 4th indicator for `(revision, role, competency)` —
+// `catalogue-authoring` spec: "Each BARS indicator write MUST enforce
+// exactly 3 indicators per role×competency pair ... at the FormRequest and
+// DB-constraint layer, not only at seed time."
 /**
- * `POST /api/catalogue/bars-indicators` (framework-catalogue-authoring
- * PR3, D3). Refuses a 4th indicator for `(revision, role, competency)` —
- * `catalogue-authoring` spec: "Each BARS indicator write MUST enforce
- * exactly 3 indicators per role×competency pair ... at the FormRequest and
- * DB-constraint layer, not only at seed time."
+ * The body of `POST /api/catalogue/bars-indicators`. A role and competency pair holds exactly three
+ * indicators, so a fourth one is refused.
  */
 class StoreBarsIndicatorRequest extends FormRequest
 {
@@ -30,6 +33,12 @@ class StoreBarsIndicatorRequest extends FormRequest
     }
 
     /**
+     * Internal notes for the exported description below (not published):
+     * Nullable: a `potential` competency's indicators MUST carry
+     * `role_id = null` (PublishRevision's own sweep, D3) — the
+     * FormRequest does not refuse null here, only validates the
+     * value's shape when present.
+     *
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -114,10 +123,7 @@ class StoreBarsIndicatorRequest extends FormRequest
                     }
                 },
             ],
-            // Nullable: a `potential` competency's indicators MUST carry
-            // `role_id = null` (PublishRevision's own sweep, D3) — the
-            // FormRequest does not refuse null here, only validates the
-            // value's shape when present.
+            // Nullable: the indicators of a `potential` competency carry no role.
             'role_id' => [
                 'nullable', 'integer',
                 Rule::exists('framework_roles', 'id')->where('revision_id', $draftId),

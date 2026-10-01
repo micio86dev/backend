@@ -15775,7 +15775,7 @@
                             "integer",
                             "null"
                         ],
-                        "description": "(interview-session-started-at, D3) Accumulated LIVE time, never\nthe wall-clock span. The caller MUST eager-load `livePeriods`."
+                        "description": "Accumulated live time of the session in seconds, not the wall-clock span between start and end."
                     },
                     "integrity": {
                         "type": "object",
@@ -15895,7 +15895,7 @@
                     },
                     "cost": {
                         "type": "object",
-                        "description": "TWO SEPARATE labelled lines, never one combined total \u2014 the\nsame refusal already ratified at `SessionCostEstimator.php:20-22`\nfor avatar-vs-LLM spend: different vendors, different meters. `avatar`: minutes only. `ai_requests` has no interview_session_id,\nso LLM spend cannot be attributed to one session without\ninventing the link \u2014 and a plausible number with no basis is\nworse than an absent one (D5).\n\n`llm`: null when the session was never billed (unbound/degraded \u2014\nno vendor default is priced). When present, `actual_usd`\nrenders ONLY when non-null (pluggable-conversation-llm PR P6b,\ndesign D5: permanently null in managed mode, reserved for a\nfuture native_duplex change).",
+                        "description": "Cost of the session as two separate lines, never one combined total: `avatar` is in minutes only, and `llm` is `null` when the session was never billed.",
                         "properties": {
                             "avatar": {
                                 "type": [
@@ -16113,7 +16113,7 @@
                             "number",
                             "null"
                         ],
-                        "description": "(pluggable-conversation-llm PR P6b) A separate line, never\ncombined with any avatar-minute figure. `actual_cost_usd` is\npreferred when non-null (permanently null in managed mode;\nreserved for a future native_duplex change). `null` \u2014 never\n`0` \u2014 when the session was never billed (no usage row: it\nresolved unbound/degraded)."
+                        "description": "Language model cost of the session, in USD, as a line separate from any avatar figure; `null` when the session was never billed."
                     }
                 },
                 "required": [
@@ -16133,7 +16133,7 @@
             },
             "StoreBarsIndicatorRequest": {
                 "type": "object",
-                "description": "`POST /api/catalogue/bars-indicators` (framework-catalogue-authoring\nPR3, D3). Refuses a 4th indicator for `(revision, role, competency)` \u2014\n`catalogue-authoring` spec: \"Each BARS indicator write MUST enforce\n * exactly 3 indicators per role\u00d7competency pair ... at the FormRequest and\n * DB-constraint layer, not only at seed time.\"",
+                "description": "The body of `POST /api/catalogue/bars-indicators`. A role and competency pair holds exactly three\nindicators, so a fourth one is refused.",
                 "properties": {
                     "text": {
                         "type": "object",
@@ -16203,7 +16203,7 @@
                             "integer",
                             "null"
                         ],
-                        "description": "Nullable: a `potential` competency's indicators MUST carry\n`role_id = null` (PublishRevision's own sweep, D3) \u2014 the\nFormRequest does not refuse null here, only validates the\nvalue's shape when present."
+                        "description": "Nullable: the indicators of a `potential` competency carry no role."
                     }
                 },
                 "required": [
@@ -16218,7 +16218,7 @@
             },
             "StoreCompetencyRequest": {
                 "type": "object",
-                "description": "`POST /api/catalogue/competencies` (framework-catalogue-authoring PR3).",
+                "description": "The body of `POST /api/catalogue/competencies`.",
                 "properties": {
                     "name": {
                         "type": "object",
@@ -16271,7 +16271,7 @@
             },
             "StoreDefaultQuestionRequest": {
                 "type": "object",
-                "description": "`POST /api/catalogue/default-questions` (framework-catalogue-authoring\nPR4, catalogue-authoring spec \u2014 \"Catalogue-Level Default Questions Per\n * Competency\").\n\nBoth `en` AND `it` are mandatory here \u2014 deliberately stricter than every\nother catalogue FormRequest's `localeMapRules()` default (`en` mandatory,\n`it` optional-but-non-blank-when-present, `StoreRoleRequest`/\n`StoreCompetencyRequest`/`StoreBarsIndicatorRequest`'s own shape). A\ndefault question is a TEMPLATE `ApplyCompetencySelection` (PR5) copies\nverbatim into `project_questions` the moment a project first selects the\ncompetency, in whatever language that project runs in \u2014 an operator\nauthoring one in `en` only would silently ship an Italian project a blank\nquestion the day it is first selected, with no later gate to catch it.",
+                "description": "The body of `POST /api/catalogue/default-questions`. The question is required in both `en` and `it`.",
                 "properties": {
                     "text": {
                         "type": "object",
@@ -16518,7 +16518,7 @@
             },
             "StoreRoleRequest": {
                 "type": "object",
-                "description": "`POST /api/catalogue/roles` (framework-catalogue-authoring PR3, D3/D12).\n\nThe five roles are a closed set (ICO/FLL/MLL/BUL/SRX) \u2014 `catalogue-\nauthoring` spec: \"Creating a sixth role MUST be rejected\". `authorize()`\nstill repeats the superadmin check (`StorePlatformUserRequest`'s own\nprecedent): a FormRequest validates BEFORE the controller runs, so an\nunauthorized caller must get 403 before 422 enumerates this endpoint's\nfield rules.",
+                "description": "The body of `POST /api/catalogue/roles`. The five roles are a closed set, so creating another one\nis refused.",
                 "properties": {
                     "name": {
                         "type": "object",
@@ -16654,7 +16654,7 @@
             },
             "UpdateBarsIndicatorRequest": {
                 "type": "object",
-                "description": "`PATCH /api/catalogue/bars-indicators/{indicator}` (framework-catalogue-\nauthoring PR3). No 4th-indicator check here \u2014 editing text/anchors on an\nEXISTING row never changes the count for its pair. Reassigning\n`role_id`/`competency_id` on an existing indicator is out of scope for\nthis PR (D3's twin scopes the count check to creation).",
+                "description": "The body of `PATCH /api/catalogue/bars-indicators/{indicator}`: edits the text and anchors of an\nexisting indicator.",
                 "properties": {
                     "text": {
                         "type": "object",
@@ -16709,7 +16709,7 @@
             },
             "UpdateCompetencyRequest": {
                 "type": "object",
-                "description": "`PATCH /api/catalogue/competencies/{competency}` (framework-catalogue-\nauthoring PR3).",
+                "description": "The body of `PATCH /api/catalogue/competencies/{competency}`.",
                 "properties": {
                     "name": {
                         "type": "object",
@@ -16750,7 +16750,7 @@
             },
             "UpdateDefaultQuestionRequest": {
                 "type": "object",
-                "description": "`PATCH /api/catalogue/default-questions/{defaultQuestion}` (framework-\ncatalogue-authoring PR4). No `competency_id` re-scoping on PATCH \u2014 moving\nan existing default to another competency is out of scope for this PR,\nsame doctrine as `UpdateBarsIndicatorRequest`'s own note about\nreassigning `role_id`/`competency_id`.",
+                "description": "The body of `PATCH /api/catalogue/default-questions/{defaultQuestion}`. The question cannot be\nmoved to another competency.",
                 "properties": {
                     "text": {
                         "type": "object",
@@ -17098,7 +17098,7 @@
             },
             "UpdateRoleRequest": {
                 "type": "object",
-                "description": "`PATCH /api/catalogue/roles/{role}` (framework-catalogue-authoring PR3).\nNo sixth-role check here \u2014 that only applies to creating a NEW role;\nrenaming an existing one never changes the count.",
+                "description": "The body of `PATCH /api/catalogue/roles/{role}`.",
                 "properties": {
                     "name": {
                         "type": "object",
