@@ -10,12 +10,15 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `PATCH /api/catalogue/bars-indicators/{indicator}` (framework-catalogue-
+// authoring PR3). No 4th-indicator check here — editing text/anchors on an
+// EXISTING row never changes the count for its pair. Reassigning
+// `role_id`/`competency_id` on an existing indicator is out of scope for
+// this PR (D3's twin scopes the count check to creation).
 /**
- * `PATCH /api/catalogue/bars-indicators/{indicator}` (framework-catalogue-
- * authoring PR3). No 4th-indicator check here — editing text/anchors on an
- * EXISTING row never changes the count for its pair. Reassigning
- * `role_id`/`competency_id` on an existing indicator is out of scope for
- * this PR (D3's twin scopes the count check to creation).
+ * The body of `PATCH /api/catalogue/bars-indicators/{indicator}`: edits the text and anchors of an
+ * existing indicator.
  */
 class UpdateBarsIndicatorRequest extends FormRequest
 {

@@ -119,10 +119,10 @@ class DefaultQuestionController extends Controller
     }
 
     /**
-     * Never opens a draft (gga review finding on the sibling controllers,
-     * applied here from the start) — the target `$defaultQuestion` either
-     * already belongs to an existing open draft or it does not exist to
-     * update at all.
+     * Update a default question.
+     *
+     * Only a question that belongs to the open draft can be updated; with no open draft, or for
+     * an unknown question, the response is `404`.
      */
     public function update(UpdateDefaultQuestionRequest $request, int $defaultQuestion): JsonResponse
     {
@@ -131,6 +131,9 @@ class DefaultQuestionController extends Controller
         /** @var User $actor */
         $actor = $request->user();
 
+        // Never opens a draft (gga review finding on the sibling controllers, applied
+        // here from the start) — the target `$defaultQuestion` either already belongs
+        // to an existing open draft or it does not exist to update at all.
         $draft = FrameworkCatalogRevision::openDraft();
         $target = $draft === null
             ? abort(Response::HTTP_NOT_FOUND)

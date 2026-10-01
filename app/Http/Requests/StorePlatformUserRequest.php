@@ -8,13 +8,16 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// Validates POST /api/admin/platform-users (platform-user-management D2).
+//
+// There is no `role` rule and no `organization_id` rule, and their absence is
+// the point rather than an omission: both are DECIDED by the surface, exactly
+// as `/api/users` decides them for an organization's people. A field that is
+// never read cannot be crafted.
 /**
- * Validates POST /api/admin/platform-users (platform-user-management D2).
- *
- * There is no `role` rule and no `organization_id` rule, and their absence is
- * the point rather than an omission: both are DECIDED by the surface, exactly
- * as `/api/users` decides them for an organization's people. A field that is
- * never read cannot be crafted.
+ * The body of `POST /api/admin/platform-users`. The role and the organization are decided by the
+ * endpoint, not by the caller, so they are not accepted here.
  */
 class StorePlatformUserRequest extends FormRequest
 {

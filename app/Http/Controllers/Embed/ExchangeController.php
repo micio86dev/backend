@@ -59,38 +59,26 @@ final class ExchangeController extends Controller
     ) {}
 
     /**
-     * `?token=` documented as REQUIRED (step 5 review follow-up, Part B
-     * item 5) — Scramble's own inference read
-     * `$request->query('token', '')`'s literal default and rendered the
-     * parameter as optional with a `""` default, which is accurate about
-     * this METHOD'S defensive handling of a missing value (never a 500)
-     * but not about the CONTRACT: SPEC.md §3.5 names `token` as the one
-     * parameter this operation accepts, and a caller who omits it always
-     * gets `401 token_invalid`, never a meaningful 200 — the same
-     * "required in the contract, defended in code" distinction
-     * `CreateInterviewRequest`'s own required fields already draw.
+     * Exchange a session token.
      *
-     * `#[Response(200, type: 'array{access_token: string}')]` (step 6
-     * review follow-up, Part A item 5) — `$accessToken` starts its life
-     * assigned a literal `null` below (so it has a value for the
-     * `$raceLost` early-return branch, which never reads it), and is only
-     * ever reassigned inside the `DB::transaction()` closure it is passed
-     * into BY REFERENCE. Scramble's static inference does not follow a
-     * by-reference mutation through a closure call boundary, so without
-     * this attribute it read only the INITIAL `null` assignment and
-     * exported this operation's `200` body as `{access_token: null}` —
-     * true about the variable's DECLARED starting value, never about what
-     * a real response actually contains: every code path that reaches
-     * `response()->json(['access_token' => $accessToken], 200)` below has
-     * already returned early (`$this->invalid()`/`$this->consumed()`) for
-     * every case where a candidate JWT was NOT minted, so `$accessToken`
-     * is always the `string` `CandidateTokenFactory::mintCandidateToken()`
-     * returns by the time this line runs.
+     * Exchanges the single-use session token of an interview for a short-lived access token for the
+     * candidate. A missing, malformed, mis-signed or expired token answers `401 token_invalid`;
+     * a token that was already used, or superseded by a later one, answers `410 token_consumed`.
      */
     #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
     #[Response(200, type: 'array{access_token: string}')]
     public function exchange(Request $request): JsonResponse
     {
+        // `?token=` is documented as REQUIRED by the #[QueryParameter] above, not
+        // inferred (step 5 review follow-up, Part B item 5): Scramble reads
+        // `$request->query('token', '')`'s literal default and would render the
+        // parameter as optional with a `""` default. That is accurate about this
+        // METHOD'S defensive handling of a missing value (never a 500) but not
+        // about the CONTRACT: SPEC.md §3.5 names `token` as the one parameter this
+        // operation accepts, and a caller who omits it always gets
+        // `401 token_invalid`, never a meaningful 200 — the same "required in the
+        // contract, defended in code" distinction `CreateInterviewRequest`'s own
+        // required fields already draw.
         $raw = $request->query('token', '');
 
         if (! is_string($raw) || $raw === '') {
@@ -144,6 +132,20 @@ final class ExchangeController extends Controller
         // AND the event insert back together: the token is still set,
         // `status` is untouched, and the caller sees a real 500 to retry
         // against, instead of a silently unrecoverable interview.
+        //
+        // `$accessToken` starts its life assigned a literal `null` (so it has a
+        // value for the `$raceLost` early-return branch, which never reads it), and
+        // is only ever reassigned inside the `DB::transaction()` closure it is
+        // passed into BY REFERENCE (step 6 review follow-up, Part A item 5).
+        // Scramble's static inference does not follow a by-reference mutation
+        // through a closure call boundary, so without the #[Response(200, ...)]
+        // attribute it read only the INITIAL `null` assignment and exported this
+        // operation's `200` body as `{access_token: null}` — true about the
+        // variable's DECLARED starting value, never about what a real response
+        // contains: every path that reaches the final `response()->json(...)` has
+        // already returned early (`$this->invalid()`/`$this->consumed()`) for every
+        // case where a candidate JWT was NOT minted, so `$accessToken` is always the
+        // `string` `CandidateTokenFactory::mintCandidateToken()` returns by then.
         $accessToken = null;
         $raceLost = false;
 
@@ -211,30 +213,37 @@ final class ExchangeController extends Controller
             return $this->consumed($request);
         }
 
-        // No `Set-Cookie` — G-32/T-TOK-008.
-        return response()->json(['access_token' => $accessToken], 200);
+        // The access token for the candidate. No cookie is set.
+        return response()->json(['access_token' => $accessToken], 200); // No `Set-Cookie` (G-32/T-TOK-008): the token travels in the body only.
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // `GET /api/embed/frame-policy?token=<session_token>` — read-only
+    // `allowed_domains` lookup for the embed page's `Content-Security-Policy:
+    // frame-ancestors` header (public-api step 10, SPEC.md §4.4).
+    //
+    // PUBLIC, deliberately NOT `exchange()` reused: `exchange()` atomically
+    // CONSUMES the session token (the compare-and-clear UPDATE against
+    // `session_token_jti`) — calling it from `frontend`'s per-request Nitro
+    // CSP middleware, ahead of the candidate's OWN later `/embed/exchange`
+    // call, would burn the single-use token before the candidate ever
+    // reaches it, or race it into a `410` the candidate never caused. This
+    // action reads only the token's OWN claims and the organization they
+    // resolve to — no participant lookup, no write, callable any number of
+    // times without affecting the token's single-use state.
+    //
+    // Same `401 token_invalid` shape as `exchange()` for a malformed,
+    // expired, mis-signed, wrong-audience, or unresolvable-organization
+    // token — the caller (the CSP middleware) treats ANY non-200 as "cannot
+    // resolve a policy", which is the trigger for its own fail-safe
+    // `frame-ancestors 'none'` default (never "no restriction").
     /**
-     * `GET /api/embed/frame-policy?token=<session_token>` — read-only
-     * `allowed_domains` lookup for the embed page's `Content-Security-Policy:
-     * frame-ancestors` header (public-api step 10, SPEC.md §4.4).
+     * Get the frame policy.
      *
-     * PUBLIC, deliberately NOT `exchange()` reused: `exchange()` atomically
-     * CONSUMES the session token (the compare-and-clear UPDATE against
-     * `session_token_jti`) — calling it from `frontend`'s per-request Nitro
-     * CSP middleware, ahead of the candidate's OWN later `/embed/exchange`
-     * call, would burn the single-use token before the candidate ever
-     * reaches it, or race it into a `410` the candidate never caused. This
-     * action reads only the token's OWN claims and the organization they
-     * resolve to — no participant lookup, no write, callable any number of
-     * times without affecting the token's single-use state.
-     *
-     * Same `401 token_invalid` shape as `exchange()` for a malformed,
-     * expired, mis-signed, wrong-audience, or unresolvable-organization
-     * token — the caller (the CSP middleware) treats ANY non-200 as "cannot
-     * resolve a policy", which is the trigger for its own fail-safe
-     * `frame-ancestors 'none'` default (never "no restriction").
+     * Read-only lookup of the organization's allowed domains for the embed page's
+     * `frame-ancestors` policy. Unlike the exchange, it does not consume the session token, so it
+     * can be called any number of times. A missing, malformed or expired token, or one that names
+     * no organization, answers `401 token_invalid`.
      */
     #[QueryParameter('token', description: 'The session token from POST /v1/interviews or POST /v1/interviews/{id}/session-tokens.', required: true, type: 'string')]
     #[Response(200, type: 'array{allowed_domains: list<string>}')]

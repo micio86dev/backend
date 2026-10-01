@@ -6,16 +6,25 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// Body of `POST /api/avatar-templates/voice-preview`.
+//
+// There is deliberately NO free-text field: the sample sentence lives in
+// `config/avatar_preview.php`, so an unknown key such as `text` is simply never
+// read. `voice_id` is format-restricted because it is interpolated into a
+// provider URL path (ElevenLabs, LiveAvatar).
+//
+// Authorization is done in the controller with the same `create` ability as
+// authoring a template, like the sibling export/import actions.
 /**
  * Body of `POST /api/avatar-templates/voice-preview`.
  *
- * There is deliberately NO free-text field: the sample sentence lives in
- * `config/avatar_preview.php`, so an unknown key such as `text` is simply never
- * read. `voice_id` is format-restricted because it is interpolated into a
- * provider URL path (ElevenLabs, LiveAvatar).
+ * There is deliberately no free-text field: the sample sentence is fixed by the platform, so an
+ * unknown key such as `text` is simply never read. `voice_id` is format-restricted because it is
+ * interpolated into a provider URL path (ElevenLabs, LiveAvatar).
  *
- * Authorization is done in the controller with the same `create` ability as
- * authoring a template, like the sibling export/import actions.
+ * Authorization is done in the controller with the same `create` ability as authoring a template,
+ * like the sibling export/import actions.
  */
 class AvatarVoicePreviewRequest extends FormRequest
 {

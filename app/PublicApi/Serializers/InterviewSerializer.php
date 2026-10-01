@@ -73,6 +73,23 @@ final class InterviewSerializer
      * field description, so it is written for the API consumer, not for a
      * maintainer — rationale belongs here.
      *
+     * Rationale for the inline comments on `hosted_url` and `recording_ready`:
+     * `hosted_url` is ALWAYS null here — a plain read never has a fresh session
+     * token to embed one for — and is exported as `string|null` (not the
+     * literal `null` its line alone would infer) by
+     * `App\Support\Scramble\InterviewHostedUrlNullableExtension`; see that
+     * class's own docblock. `recording_ready` (G-01) is true iff an
+     * `interview_recordings` row exists for the participant (audio only, see
+     * `App\Http\Controllers\PublicApi\RecordingController`'s own docblock;
+     * gga review, step 6 follow-up, finding 5: it used to be a hardcoded
+     * `false` left over from before step 6 built the recording pipeline). Its
+     * `(bool)` cast is deliberate: `self::recordingReady()`'s return flows
+     * through a loop-populated array (`recordingReadyForMany()`'s own
+     * `$result[...] = true;`), which Scramble's export could not narrow
+     * precisely and rendered as `anyOf: [string, boolean]` without it, despite
+     * the method's own native `: bool` return type. Caught via the
+     * `scramble:export` diff, not a test.
+     *
      * @param  list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>|null  $progress
      * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string, external_id: int|null, source: string|null}
      */
@@ -93,33 +110,14 @@ final class InterviewSerializer
             'livemode' => $participant->mode === ApiKeyMode::Live,
             'metadata' => $participant->metadata ?? [],
             'exit_redirect_url' => $participant->exit_redirect_url,
-            // ALWAYS null here — a plain read never has a fresh session
-            // token to embed one for. Exported as `string|null` (not the
-            // literal `null` this line alone would infer) by
-            // `App\Support\Scramble\InterviewHostedUrlNullableExtension` —
-            // see that class's own docblock; step 6 review follow-up, Part
-            // A item 4 removed the runtime config hack this used to
-            // route through.
+            // Always `null` on a read: the hosted interview URL is returned only together with a freshly issued session token.
             'hosted_url' => null,
             'progress' => $progress ?? self::progress($participant),
             'started_at' => $participant->started_at?->toISOString(),
             'completed_at' => $participant->completed_at?->toISOString(),
             'transcript_ready' => in_array($status, [InterviewStatus::UnderEvaluation, InterviewStatus::Completed], true),
             'scoring_ready' => $status === InterviewStatus::Completed,
-            // G-01: true iff an `interview_recordings` row exists for this
-            // participant (audio only — video is never exposed, see
-            // `App\Http\Controllers\PublicApi\RecordingController`'s own
-            // docblock). gga review, step 6 follow-up, finding 5: this used
-            // to be a hardcoded `false` left over from before step 6 built
-            // the recording pipeline.
-            // (bool) cast — `self::recordingReady()`'s return flows through
-            // a loop-populated array (`recordingReadyForMany()`'s own
-            // `$result[...] = true;`), which Scramble's export could not
-            // narrow precisely and rendered as `anyOf: [string, boolean]`
-            // without this cast, despite the method's own native `: bool`
-            // return type. Caught via the `scramble:export` diff, not a
-            // test — same class of fix as
-            // `App\Support\Scramble\InterviewHostedUrlNullableExtension`.
+            // `true` when an audio recording of the interview is available. Audio only: video is never exposed.
             'recording_ready' => (bool) ($recordingReady ?? self::recordingReady($participant)),
             'created_at' => (string) $participant->created_at->toISOString(),
             'updated_at' => (string) $participant->updated_at->toISOString(),

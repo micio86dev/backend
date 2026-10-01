@@ -57,6 +57,10 @@ test('summary computes the mean per competency code across the filtered set', fu
     expect((float) $competencies['COL']['mean_score'])->toBe(4.0);
     expect($competencies['COL']['scored_count'])->toBe(3);
     expect($competencies['COL']['result_count'])->toBe(3);
+
+    // A BARS mean is a float even when it is whole: the wire says `4.0`, as the
+    // evaluation report does, never `4`.
+    expect((string) $response->getContent())->toContain('"mean_score":4.0');
 });
 
 test('an all-NULL-score competency is excluded from the mean, not averaged as 0', function (): void {

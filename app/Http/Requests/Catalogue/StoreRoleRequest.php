@@ -12,15 +12,18 @@ use App\Support\Catalogue\CatalogueRules;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `POST /api/catalogue/roles` (framework-catalogue-authoring PR3, D3/D12).
+//
+// The five roles are a closed set (ICO/FLL/MLL/BUL/SRX) — `catalogue-
+// authoring` spec: "Creating a sixth role MUST be rejected". `authorize()`
+// still repeats the superadmin check (`StorePlatformUserRequest`'s own
+// precedent): a FormRequest validates BEFORE the controller runs, so an
+// unauthorized caller must get 403 before 422 enumerates this endpoint's
+// field rules.
 /**
- * `POST /api/catalogue/roles` (framework-catalogue-authoring PR3, D3/D12).
- *
- * The five roles are a closed set (ICO/FLL/MLL/BUL/SRX) — `catalogue-
- * authoring` spec: "Creating a sixth role MUST be rejected". `authorize()`
- * still repeats the superadmin check (`StorePlatformUserRequest`'s own
- * precedent): a FormRequest validates BEFORE the controller runs, so an
- * unauthorized caller must get 403 before 422 enumerates this endpoint's
- * field rules.
+ * The body of `POST /api/catalogue/roles`. The five roles are a closed set, so creating another one
+ * is refused.
  */
 class StoreRoleRequest extends FormRequest
 {

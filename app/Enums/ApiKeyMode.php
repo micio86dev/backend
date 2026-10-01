@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+// Internal notes, not published (Scramble exports an enum docblock as the schema description):
+// `live`/`test` mode of a BEAI M2M / public-API key (C5, public-api step 2 —
+// SPEC.md §3.7 "Test mode").
+//
+// Review follow-up on step 2: the marker string (`beai_live_`/`beai_test_`),
+// the DB column value (`live`/`test`) and the mode literal used across
+// `App\Services\ApiKeyGenerator`, `App\Support\PublicApi\ApiMode`,
+// `App\Http\Middleware\PublicApi\AuthenticatePublicApi`,
+// `App\Http\Controllers\M2m\ApiClientController` and `App\Models\ApiClient`
+// used to be five independent string literals that happened to agree. This
+// enum is the single source of truth all of them now read from.
 /**
- * `live`/`test` mode of a BEAI M2M / public-API key (C5, public-api step 2 —
- * SPEC.md §3.7 "Test mode").
- *
- * Review follow-up on step 2: the marker string (`beai_live_`/`beai_test_`),
- * the DB column value (`live`/`test`) and the mode literal used across
- * `App\Services\ApiKeyGenerator`, `App\Support\PublicApi\ApiMode`,
- * `App\Http\Middleware\PublicApi\AuthenticatePublicApi`,
- * `App\Http\Controllers\M2m\ApiClientController` and `App\Models\ApiClient`
- * used to be five independent string literals that happened to agree. This
- * enum is the single source of truth all of them now read from.
+ * The mode of an API key: `live` or `test`. A key only ever reads and writes data of
+ * its own mode, so live and test data are kept apart.
  */
 enum ApiKeyMode: string
 {

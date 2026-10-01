@@ -25,11 +25,16 @@ use Illuminate\Http\JsonResponse;
  */
 class HealthController extends Controller
 {
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // Return the literal, non-localized `{"status":"ok"}` body the contract requires.
+    //
+    // Machine-readable status payloads are exempt from the i18n mandate (D31,
+    // wrapper CLAUDE.md "Machine-facing responses are not localized").
     /**
-     * Return the literal, non-localized `{"status":"ok"}` body the contract requires.
+     * Check that the API answers.
      *
-     * Machine-readable status payloads are exempt from the i18n mandate (D31,
-     * wrapper CLAUDE.md "Machine-facing responses are not localized").
+     * Unauthenticated liveness check for client monitors. It always answers `200` with the
+     * literal body `{"status":"ok"}`, whatever the locale.
      */
     public function __invoke(): JsonResponse
     {

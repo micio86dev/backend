@@ -35,27 +35,33 @@ use Throwable;
  */
 class ProfilePhotoController extends Controller
 {
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // POST /api/profile/photo
+    //
+    // Validation order matters (design D3b) — the first four steps touch
+    // only the PHP temp file, so a rejected upload NEVER reaches the disk:
+    //   1. UpdateProfilePhotoRequest (required|file|max:2048 KB, shape only
+    //      — a fast pre-check against a hardcoded literal, NOT itself
+    //      config-driven; step 2 below is the real enforcement point).
+    //   2. Magic-byte verdict (content, never the declared type)
+    //   3. $file->getSize() > config('profile.photo.max_bytes') — the ACTUAL
+    //      byte cap (post-apply verification finding: this step was
+    //      missing; the FormRequest literal merely coincided with the
+    //      config default and could not be overridden).
+    //   4. getimagesize() — false, or over the configured dimension cap
+    //   5. Storage::putFileAs(...) — no disk() argument (SingleStorageDiskArchTest)
+    //   6. $user->profile_photo_path = $newKey; $user->save();
+    //      throws → delete the NEW key in the catch, then re-throw — never
+    //      orphan the object the row-write that just failed never pointed to.
+    //   7. After the row commits, delete the OLD key. Logged, never fatal:
+    //      at most one stale object per user is preferable to failing a
+    //      request over a change that already succeeded.
     /**
-     * POST /api/profile/photo
+     * Upload the profile photo.
      *
-     * Validation order matters (design D3b) — the first four steps touch
-     * only the PHP temp file, so a rejected upload NEVER reaches the disk:
-     *   1. UpdateProfilePhotoRequest (required|file|max:2048 KB, shape only
-     *      — a fast pre-check against a hardcoded literal, NOT itself
-     *      config-driven; step 2 below is the real enforcement point).
-     *   2. Magic-byte verdict (content, never the declared type)
-     *   3. $file->getSize() > config('profile.photo.max_bytes') — the ACTUAL
-     *      byte cap (post-apply verification finding: this step was
-     *      missing; the FormRequest literal merely coincided with the
-     *      config default and could not be overridden).
-     *   4. getimagesize() — false, or over the configured dimension cap
-     *   5. Storage::putFileAs(...) — no disk() argument (SingleStorageDiskArchTest)
-     *   6. $user->profile_photo_path = $newKey; $user->save();
-     *      throws → delete the NEW key in the catch, then re-throw — never
-     *      orphan the object the row-write that just failed never pointed to.
-     *   7. After the row commits, delete the OLD key. Logged, never fatal:
-     *      at most one stale object per user is preferable to failing a
-     *      request over a change that already succeeded.
+     * The upload is checked by its content rather than its declared type, and against the configured
+     * size and dimension limits; a rejected upload is never stored. Errors are returned as codes, for
+     * example `photo_invalid_image`.
      */
     public function store(UpdateProfilePhotoRequest $request): JsonResponse
     {
@@ -147,13 +153,9 @@ class ProfilePhotoController extends Controller
     }
 
     /**
-     * DELETE /api/profile/photo
+     * Remove the profile photo.
      *
-     * Object-first, then null the column — exactly purgeSnapshots()'s
-     * ordering (design D5): a failed object delete leaves the row intact
-     * for a retryable second call, and S3/R2 deletes are idempotent, so a
-     * second DELETE with nothing left to remove still succeeds (design
-     * spec: "Removing a photo twice ... still 200").
+     * Removing a photo that is already gone still succeeds.
      */
     public function destroy(): JsonResponse
     {
@@ -162,6 +164,11 @@ class ProfilePhotoController extends Controller
 
         $key = $user->profile_photo_path;
 
+        // Object-first, then null the column — exactly purgeSnapshots()'s ordering
+        // (design D5): a failed object delete leaves the row intact for a retryable
+        // second call, and S3/R2 deletes are idempotent, so a second DELETE with
+        // nothing left to remove still succeeds (design spec: "Removing a photo
+        // twice ... still 200").
         if ($key !== null) {
             Storage::delete($key);
             $user->profile_photo_path = null;

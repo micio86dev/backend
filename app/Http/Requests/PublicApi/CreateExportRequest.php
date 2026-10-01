@@ -10,18 +10,21 @@ use App\Rules\PublicApi\Iso8601DateTime;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// `POST /v1/exports` request validation (public-api step 8, SPEC.md §3.3
+// "Exports", `openapi.yaml`'s `CreateExportRequest` schema).
+//
+// FORMAT only — the "one active export per organization" concurrency gate
+// needs the resolved `Organization` and lives in
+// `App\Http\Controllers\PublicApi\ExportController::store()`, mirroring
+// `CreateInterviewRequest`'s own division of labour.
+//
+// `authorize()` returns `true` unconditionally — scope enforcement
+// (`scope:exports:write`) is `App\Http\Middleware\PublicApi\RequireScope`'s
+// job, applied per-route in `routes/api.php`.
 /**
- * `POST /v1/exports` request validation (public-api step 8, SPEC.md §3.3
- * "Exports", `openapi.yaml`'s `CreateExportRequest` schema).
- *
- * FORMAT only — the "one active export per organization" concurrency gate
- * needs the resolved `Organization` and lives in
- * `App\Http\Controllers\PublicApi\ExportController::store()`, mirroring
- * `CreateInterviewRequest`'s own division of labour.
- *
- * `authorize()` returns `true` unconditionally — scope enforcement
- * (`scope:exports:write`) is `App\Http\Middleware\PublicApi\RequireScope`'s
- * job, applied per-route in `routes/api.php`.
+ * The body of `POST /v1/exports`: what to export, in which format, and an optional
+ * time window.
  */
 final class CreateExportRequest extends FormRequest
 {

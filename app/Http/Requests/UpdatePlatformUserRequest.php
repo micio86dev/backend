@@ -8,12 +8,15 @@ use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+// Internal notes, not published (Scramble exports a request class docblock as the schema description):
+// Validates PATCH /api/admin/platform-users/{id} (platform-user-management D2).
+//
+// Every field is `sometimes`: a partial update must not blank what it does not
+// mention. `role` and `organization_id` are absent for the same reason as on
+// the store request — they are the surface's to decide, not the caller's.
 /**
- * Validates PATCH /api/admin/platform-users/{id} (platform-user-management D2).
- *
- * Every field is `sometimes`: a partial update must not blank what it does not
- * mention. `role` and `organization_id` are absent for the same reason as on
- * the store request — they are the surface's to decide, not the caller's.
+ * The body of `PATCH /api/admin/platform-users/{id}`. Every field is optional, so a partial update
+ * leaves what it does not mention untouched. The role and the organization cannot be changed here.
  */
 class UpdatePlatformUserRequest extends FormRequest
 {

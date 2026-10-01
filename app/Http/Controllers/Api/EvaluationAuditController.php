@@ -94,6 +94,10 @@ final class EvaluationAuditController extends Controller
 
         $ttlSeconds = AuditEvaluationJob::TIMEOUT_SECONDS + 120;
 
+        // Redis unavailable -> refuse, not proceed (design D7). Fail CLOSED: when the
+        // lock store cannot be reached, the catch below answers 409
+        // `audit_lock_unavailable`, because the cheaper mistake here is a refused
+        // request, not a duplicate vendor charge for the same evaluation.
         try {
             // `Cache::lock()` itself, not only the returned Lock's `get()`,
             // can throw: `RedisStore::lock()` resolves a connection before
@@ -103,9 +107,7 @@ final class EvaluationAuditController extends Controller
             $lock = Cache::lock("audit:evaluation:{$evaluation->id}", $ttlSeconds);
             $acquired = $lock->get();
         } catch (Throwable) {
-            // Redis unavailable -> refuse, not proceed (design D7). Fail
-            // CLOSED: the cheaper mistake here is a refused request, not a
-            // duplicate vendor charge for the same evaluation.
+            // The audit cannot start. `reason` is `audit_lock_unavailable` when the lock cannot be taken, or `audit_already_running` when an audit of this evaluation is in progress.
             return response()->json(['reason' => 'audit_lock_unavailable'], 409);
         }
 

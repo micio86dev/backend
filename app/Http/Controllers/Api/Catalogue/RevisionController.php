@@ -132,9 +132,14 @@ class RevisionController extends Controller
         return response()->json(['data' => $latest === null ? null : new CatalogueRevisionResource($latest)]);
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // `422` with the FULL violations list on a failing sweep — one response
+    // naming every problem, `state` left `draft` (design D3).
     /**
-     * `422` with the FULL violations list on a failing sweep — one response
-     * naming every problem, `state` left `draft` (design D3).
+     * Publish the draft revision.
+     *
+     * Publishes the open draft of the catalogue. A failing check answers `422` with the full list of
+     * violations and the draft stays a draft. With no open draft the response is `404`.
      */
     public function publish(Request $request, PublishRevision $action): JsonResponse
     {

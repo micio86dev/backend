@@ -9,8 +9,8 @@ info:
     is managed in the BEAI backoffice; this API is read-only for configuration.
 
     **Contract governance.** This file is the design reference every `/v1` integration test validates
-    against. Step 11 exports the Scramble-generated specification filtered to `/v1`, and CI asserts the
-    two are equivalent (`T-CONTRACT-001`). Neither may change without the other.
+    against. The specification generated from the API and filtered to `/v1` is checked against it in CI,
+    and the two must stay equivalent: neither may change without the other.
   x-api-version-date: "2026-09-01"
   contact: { name: BEAI Developer Support, url: https://developers.beai.example }
 servers:
@@ -346,7 +346,7 @@ paths:
       operationId: listInterviewEvents
       description: |
         Returns the interview timeline **oldest first** — the one documented exception to the
-        `created_at desc` ordering of every other list (G-12). Requires `interviews:read`.
+        `created_at desc` ordering of every other list. Requires `interviews:read`.
       parameters: [ { $ref: "#/components/parameters/interviewId" }, { $ref: "#/components/parameters/limit" }, { $ref: "#/components/parameters/cursor" } ]
       responses:
         "200":
@@ -531,7 +531,7 @@ webhooks:
       summary: Candidate progress
       operationId: onProgress
       description: |
-        Sent on enrolment and after every recorded answer. Existing C10 wire format, reused verbatim.
+        Sent on enrolment and after every recorded answer.
         Verify `X-BEAI-Signature` as `v1=<hex HMAC-SHA256(secret, "<X-BEAI-Timestamp>.<raw_body>")>`;
         reject when `|now - X-BEAI-Timestamp| > 300`. Ordering is not guaranteed; deduplicate on `delivery_id`.
       parameters:
@@ -550,7 +550,7 @@ webhooks:
       summary: Evaluation completed
       operationId: onEvaluation
       description: |
-        Sent when the asynchronous scoring job ends. Existing C10 wire format, reused verbatim.
+        Sent when the asynchronous scoring job ends.
         Same signature and deduplication rules as `progress`.
       parameters:
         - { $ref: "#/components/parameters/webhookSignature" }
@@ -1082,7 +1082,7 @@ components:
       properties:
         id: { type: integer, description: "The project numeric identifier as carried by the progress and evaluation payloads." }
         slug: { type: string }
-        public_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$", description: Additive in step 7. Correlates with `/v1/projects`. }
+        public_id: { type: string, pattern: "^prj_[0-9A-HJKMNP-TV-Z]{26}$", description: Correlates with `/v1/projects`. }
     WebhookEnvelope:
       type: object
       required: [version, event, delivery_id, occurred_at, livemode, candidate_ref, project]
@@ -1091,7 +1091,7 @@ components:
         event: { $ref: "#/components/schemas/WebhookEventType" }
         delivery_id: { type: string, format: uuid }
         occurred_at: { type: string, format: date-time }
-        livemode: { type: boolean, description: Additive in step 9. `false` for test-mode deliveries. }
+        livemode: { type: boolean, description: "`false` for test-mode deliveries." }
         candidate_ref: { type: string, description: "The opaque candidate identifier, unchanged." }
         project: { $ref: "#/components/schemas/WebhookProject" }
     ProgressWebhookPayload:
