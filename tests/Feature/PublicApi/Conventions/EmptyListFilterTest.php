@@ -393,3 +393,71 @@ test('a non-empty invalid usage window bound still answers 400 validation_failed
 
     $response->assertStatus(400)->assertJsonPath('code', 'validation_failed');
 });
+
+// ---------------------------------------------------------------------------
+// An array is an invalid shape for a scalar-only filter, empty or not
+// ---------------------------------------------------------------------------
+//
+// `?field=` is "not provided", but `?field[]=` is not an empty value: it is an
+// array, and a scalar-only filter refuses an array exactly as it refuses
+// `?field[]=1`. Treating the first as "not provided" while the second answers
+// 400 would make the same wrong shape succeed or fail on the value inside it.
+
+test('an array sent to a scalar-only filter answers 400 validation_failed, empty or not', function (): void {
+    ['key' => $key] = elfOrgWithKey();
+    $headers = ['Authorization' => 'Bearer '.$key];
+
+    $endpoints = [
+        '/api/v1/interviews' => ['status', 'project_id', 'email', 'candidate_ref', 'created_after', 'created_before', 'external_id', 'source'],
+        '/api/v1/projects' => ['status', 'role_code', 'assessment_type'],
+        '/api/v1/webhooks/deliveries' => ['status', 'event_type', 'interview_id'],
+        '/api/v1/usage' => ['from', 'to'],
+    ];
+
+    // Collected, not asserted one by one, so a failure names EVERY filter that
+    // lets an array through instead of stopping at the first.
+    $accepted = [];
+
+    foreach ($endpoints as $path => $filters) {
+        foreach ($filters as $filter) {
+            foreach (['[]=' => 'an empty element', '[]=1' => 'a value', '[]=%20' => 'whitespace'] as $suffix => $name) {
+                $response = $this->withHeaders($headers)->getJson($path.'?'.$filter.$suffix);
+
+                if ($response->status() !== 400 || $response->json('code') !== 'validation_failed') {
+                    $accepted[] = "{$path}?{$filter}{$suffix} ({$name}) answered {$response->status()}";
+                }
+            }
+        }
+    }
+
+    expect($accepted)->toBe([]);
+});
+
+test('an array sent to a pagination or expand parameter answers 400, empty or not', function (): void {
+    ['key' => $key] = elfOrgWithKey();
+    $headers = ['Authorization' => 'Bearer '.$key];
+
+    foreach (['limit', 'cursor', 'expand'] as $parameter) {
+        foreach (['[]=', '[]=1'] as $suffix) {
+            $response = $this->withHeaders($headers)->getJson('/api/v1/interviews?'.$parameter.$suffix);
+
+            expect($response->status())->toBe(400, "?{$parameter}{$suffix} answered {$response->status()}");
+        }
+    }
+});
+
+test('a metadata entry that is an array answers 400, empty or not; an empty scalar entry is not provided', function (): void {
+    ['key' => $key] = elfOrgWithKey();
+    $headers = ['Authorization' => 'Bearer '.$key];
+
+    foreach (['metadata[a][]=', 'metadata[a][]=1', 'metadata[a][b]='] as $query) {
+        $response = $this->withHeaders($headers)->getJson('/api/v1/interviews?'.$query);
+
+        expect($response->status())->toBe(400, "?{$query} answered {$response->status()}");
+    }
+
+    // The map itself, and an empty scalar entry inside it, stay "not provided".
+    foreach (['metadata=', 'metadata[a]=', 'metadata[a]=&metadata[b]='] as $query) {
+        expect($this->withHeaders($headers)->getJson('/api/v1/interviews?'.$query)->status())->toBe(200, "?{$query}");
+    }
+});
