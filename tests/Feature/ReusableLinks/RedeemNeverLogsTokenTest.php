@@ -27,8 +27,10 @@ use App\Events\ParticipantCreated;
 use App\Jobs\DeliverWebhookJob;
 use App\Models\AuditLog;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Services\ReusableLinkTokenGenerator;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyForgotten;
@@ -203,6 +205,58 @@ test('no log record or reported exception shows the token or its hash, whatever 
     'a token in the query string',
     'a throttled request',
 ]);
+
+test('no log record or reported exception shows the name or the email a visitor typed, whatever the redemption does', function (string $scenario): void {
+    $name = 'Zz Sentinel Name';
+    $email = 'zz-sentinel@example.test';
+    ['project' => $project, 'token' => $token] = Fx::redeemable(
+        projectAttributes: $scenario === '403' ? ['status' => 'inactive'] : [],
+    );
+    $unknown = ReusableLinkTokenGenerator::generate();
+    $identity = Fx::identity($email, $name);
+
+    if ($scenario === '409') {
+        TenantContextScope::runFor($project->organization_id, fn () => Participant::factory()
+            ->forProject($project)
+            ->create(['email' => $email]));
+    }
+
+    if ($scenario === 'mint failure') {
+        app()->instance(JWTAuth::class, new ThrowingJwtAuth);
+    }
+
+    $captured = neverLogsCapture(function () use ($scenario, $token, $unknown, $identity, $name): void {
+        match ($scenario) {
+            '200', '409' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, $identity))->assertStatus((int) $scenario),
+            '403' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, $identity))->assertForbidden(),
+            '404' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($unknown, $identity))->assertNotFound(),
+            '422' => test()->postJson(Fx::REDEEM_URL, ['link_token' => $token, 'display_name' => $name, 'email' => 'zz-sentinel-not-an-address'])->assertUnprocessable(),
+            '429' => (function () use ($token, $identity): void {
+                config(['reusable_links.redeem.per_link_per_hour' => 1]);
+                test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, Fx::identity('zz-sentinel@example.test', 'Zz Sentinel Name')))->assertOk();
+                test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, $identity))->assertStatus(429);
+            })(),
+            'mint failure' => test()->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, $identity))->assertStatus(500),
+        };
+    });
+
+    $everything = [...$captured['records'], ...$captured['reported']];
+    foreach ($everything as $haystack) {
+        expect($haystack)->not->toContain($name)
+            ->not->toContain('zz-sentinel')
+            ->not->toContain($email);
+    }
+
+    neverLogsAssertClean($everything, $token, $scenario);
+    neverLogsAssertClean($everything, $unknown, $scenario);
+
+    // The failure scenario is the control: it DID log and report, so "clean"
+    // above is not "nothing was captured".
+    if ($scenario === 'mint failure') {
+        expect($captured['reported'])->not->toBe([])
+            ->and($captured['records'])->not->toBe([]);
+    }
+})->with(['200', '403', '404', '409', '422', '429', 'mint failure']);
 
 test('a forced mint failure is a reported 500, and neither the report nor its log line shows the token or its hash', function (): void {
     ['link' => $link, 'token' => $token] = Fx::redeemable();

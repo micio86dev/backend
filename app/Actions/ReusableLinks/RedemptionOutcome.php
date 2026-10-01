@@ -45,4 +45,14 @@ final readonly class RedemptionOutcome
     {
         return new self(RedemptionStatus::Refused, project: $project);
     }
+
+    /**
+     * The email is already enrolled in the link's project. Payload-free on
+     * purpose: nothing about the existing participant is carried, so nothing
+     * can leak and nothing can be resumed.
+     */
+    public static function duplicate(): self
+    {
+        return new self(RedemptionStatus::Duplicate);
+    }
 }

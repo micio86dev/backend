@@ -128,7 +128,7 @@ test('every outcome counts against the IP: unknown, malformed and refused attemp
     $bodies = [
         Fx::redeemBody(ReusableLinkTokenGenerator::generate()),
         Fx::redeemBody('not-a-token'),
-        [],
+        Fx::identity(),
         Fx::redeemBody(['x']),
         Fx::redeemBody(null),
     ];
@@ -245,7 +245,7 @@ test('malformed input never touches a link bucket', function (): void {
     // With a link limit of ONE, a single malformed value landing in any link
     // bucket would be visible as a 429 on the repeats or on the real token.
     $malformed = [
-        [],
+        Fx::identity(),
         Fx::redeemBody(null),
         Fx::redeemBody(''),
         Fx::redeemBody(123),
@@ -379,4 +379,54 @@ test('the IP limiter also answers before any database read', function (): void {
     redeemThrottleFrom('203.0.113.95', Fx::redeemBody($token))->assertStatus(429);
 
     expect($queries)->toBe([]);
+});
+
+// ─── An invalid identity is an attempt like any other ────────────────────────
+
+test('an invalid identity spends an IP attempt like any other outcome: five refused and five redeemed, then the eleventh is throttled', function (): void {
+    ['token' => $token] = Fx::redeemable();
+
+    foreach (range(1, 5) as $attempt) {
+        redeemThrottleFrom('203.0.113.120', ['link_token' => $token, 'email' => 'ada@example.test'])->assertUnprocessable();
+    }
+
+    foreach (range(1, 5) as $attempt) {
+        redeemThrottleFrom('203.0.113.120', Fx::redeemBody($token))->assertOk();
+    }
+
+    redeemThrottleFrom('203.0.113.120', Fx::redeemBody($token))->assertStatus(429);
+});
+
+test('an invalid identity beside a well-formed token spends the per-link bucket: a hundred refused, then the valid one is throttled', function (): void {
+    config(['reusable_links.redeem.per_ip_per_minute' => 100000]);
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+
+    foreach (range(1, 100) as $attempt) {
+        redeemThrottleFrom(redeemThrottleIp($attempt), ['link_token' => $token])->assertUnprocessable();
+    }
+
+    redeemThrottleFrom(redeemThrottleIp(101), Fx::redeemBody($token))->assertStatus(429);
+
+    expect(Fx::visitorsOf($link))->toBe([])
+        ->and(redeemThrottleUses($link))->toBe(0);
+});
+
+test('an invalid identity beside a malformed token spends only the IP bucket', function (): void {
+    config([
+        'reusable_links.redeem.per_ip_per_minute' => 3,
+        'reusable_links.redeem.per_link_per_hour' => 1,
+    ]);
+    ['link' => $link, 'token' => $token] = Fx::redeemable();
+
+    foreach (range(1, 3) as $attempt) {
+        redeemThrottleFrom('203.0.113.130', ['link_token' => 'not-a-token'])->assertUnprocessable();
+    }
+
+    // The IP bucket was spent...
+    redeemThrottleFrom('203.0.113.130', ['link_token' => 'not-a-token'])->assertStatus(429);
+
+    // ...and no link bucket was touched: with a link limit of ONE, the real
+    // token still redeems from another address.
+    redeemThrottleFrom('203.0.113.131', Fx::redeemBody($token))->assertOk();
+    expect(Fx::visitorsOf($link))->toHaveCount(1);
 });

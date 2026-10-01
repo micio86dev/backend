@@ -6,8 +6,8 @@ declare(strict_types=1);
  * POST /api/reusable-links/redeem (reusable-interview-links, B3a): the success
  * path of the public redemption endpoint.
  *
- * Every redemption creates ONE fresh, anonymous visitor participant in the
- * link's own organisation and project and returns the standard candidate JWT,
+ * Every redemption creates ONE fresh visitor participant, carrying the name and
+ * email the visitor typed, in the link's own organisation and project and returns the standard candidate JWT,
  * in the same `{access_token}` shape as `GET /api/sso/exchange`. The endpoint is
  * public: it has no user, no tenant context and no bearer credential, so
  * everything below proves the organisation and the project come from the LINK,
@@ -28,7 +28,6 @@ use App\Http\Middleware\TenantContext;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\ReusableInterviewLink;
-use App\Support\Participant\PlaceholderEmail;
 use App\Support\PublicApi\PublicId;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Routing\Route;
@@ -80,7 +79,7 @@ test('five redemptions create five distinct visitors in the link\'s own organisa
 
     $times = [];
     for ($n = 1; $n <= 5; $n++) {
-        $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
+        $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, Fx::identity("person-{$n}@example.test", "Person {$n}")))->assertOk();
         $times[] = redeemCoreLinkRow($link)->last_used_at;
         $this->travel(1)->minutes();
     }
@@ -89,13 +88,12 @@ test('five redemptions create five distinct visitors in the link\'s own organisa
     expect($visitors)->toHaveCount(5);
 
     $refs = [];
-    $emails = [];
     foreach ($visitors as $index => $visitor) {
         $number = $index + 1;
 
         expect($visitor->candidate_ref)->toMatch('/^rlv_[0-9A-Za-z]{26}$/')
-            ->and($visitor->email)->toBe(PlaceholderEmail::for($visitor->candidate_ref))
-            ->and($visitor->display_name)->toBe("Milan fair stand #{$number}")
+            ->and($visitor->email)->toBe("person-{$number}@example.test")
+            ->and($visitor->display_name)->toBe("Person {$number}")
             ->and($visitor->mode)->toBe(ApiKeyMode::Live)
             ->and($visitor->status)->toBe('in_attesa')
             ->and($visitor->scheduling_status)->toBeNull()
@@ -107,11 +105,9 @@ test('five redemptions create five distinct visitors in the link\'s own organisa
             ->and($visitor->role_code)->toBe($project->role_code);
 
         $refs[] = $visitor->candidate_ref;
-        $emails[] = $visitor->email;
     }
 
-    expect(array_unique($refs))->toHaveCount(5)
-        ->and(array_unique($emails))->toHaveCount(5);
+    expect(array_unique($refs))->toHaveCount(5);
 
     $row = redeemCoreLinkRow($link);
     expect($row->uses_count)->toBe(5)
@@ -123,16 +119,15 @@ test('five redemptions create five distinct visitors in the link\'s own organisa
     }
 });
 
-test('a link without a label names its visitors with the fallback', function (): void {
-    ['link' => $link, 'token' => $token] = Fx::redeemable();
-    expect($link->label)->toBeNull();
+test('the link label never becomes a visitor name: the typed name is stored with or without a label', function (?string $label): void {
+    ['link' => $link, 'token' => $token] = Fx::redeemable(linkAttributes: ['label' => $label]);
 
-    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
-    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token))->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, Fx::identity('first@example.test', 'First Typed')))->assertOk();
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token, Fx::identity('second@example.test', 'Second Typed')))->assertOk();
 
     expect(array_map(fn (Participant $p): string => $p->display_name, Fx::visitorsOf($link)))
-        ->toBe(['Reusable link #1', 'Reusable link #2']);
-});
+        ->toBe(['First Typed', 'Second Typed']);
+})->with(['a labelled link' => 'Milan fair stand', 'an unlabelled link' => null]);
 
 test('a potential project yields a visitor with no role', function (): void {
     // The project row still carries a role code (the column is not cleared when a
@@ -194,19 +189,17 @@ test('a redemption never creates anything in another project or organisation', f
         ->and(redeemCoreLinkRow($other['link'])->uses_count)->toBe(0);
 });
 
-test('the request body never decides what is created', function (): void {
+test('the request body decides only the identity: nothing else it carries is stored', function (): void {
     ['org' => $org, 'project' => $project, 'link' => $link, 'token' => $token] = Fx::redeemable(
         linkAttributes: ['label' => 'Stand'],
     );
     $other = Fx::redeemable();
 
     $this->postJson(Fx::REDEEM_URL, [
-        'link_token' => $token,
+        ...Fx::redeemBody($token, Fx::identity('typed@example.test', 'Typed Name')),
         'project_id' => $other['project']->id,
         'organization_id' => $other['org']->id,
         'candidate_ref' => 'EXT-1',
-        'display_name' => 'Mallory',
-        'email' => 'mallory@example.test',
         'role_code' => 'SRX',
         'lang' => 'it',
         'mode' => 'test',
@@ -223,8 +216,8 @@ test('the request body never decides what is created', function (): void {
     expect($visitor->project_id)->toBe($project->id)
         ->and($visitor->organization_id)->toBe($org->id)
         ->and($visitor->candidate_ref)->toStartWith('rlv_')
-        ->and($visitor->display_name)->toBe('Stand #1')
-        ->and($visitor->email)->toEndWith(PlaceholderEmail::DOMAIN)
+        ->and($visitor->display_name)->toBe('Typed Name')
+        ->and($visitor->email)->toBe('typed@example.test')
         ->and($visitor->role_code)->toBe($project->role_code)
         ->and($visitor->language)->toBe($link->lang)
         ->and($visitor->mode)->toBe(ApiKeyMode::Live)

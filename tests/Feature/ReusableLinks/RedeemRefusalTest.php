@@ -34,6 +34,7 @@ use App\Models\WebhookDelivery;
 use App\Services\ApiKeyGenerator;
 use App\Services\ReusableLinkTokenGenerator;
 use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -84,7 +85,7 @@ function redeemRefusalBody(string $case, array $world): array
     $unknownWellFormed = ReusableLinkTokenGenerator::generate();
 
     return match ($case) {
-        'no body' => Fx::identity(),
+        'no link_token' => Fx::identity(),
         'null' => Fx::redeemBody(null),
         'an integer' => Fx::redeemBody(123),
         'an array' => Fx::redeemBody(['x']),
@@ -106,7 +107,7 @@ function redeemRefusalBody(string $case, array $world): array
 }
 
 const REDEEM_REFUSAL_CASES = [
-    'no body',
+    'no link_token',
     'null',
     'an integer',
     'an array',
@@ -332,12 +333,29 @@ test('a refusal leaves the counter, the participants, the events and the webhook
     $world = match ($kind) {
         'closed project' => Fx::redeemable(['status' => 'inactive']),
         'disabled link' => Fx::redeemable(linkAttributes: ['disabled_at' => now()]),
-        'unknown token' => Fx::redeemable(),
+        default => Fx::redeemable(),
     };
     $token = $kind === 'unknown token' ? ReusableLinkTokenGenerator::generate() : $world['token'];
-    $participants = Participant::query()->count();
 
-    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($token));
+    if ($kind === 'duplicate email') {
+        TenantContextScope::runFor($world['project']->organization_id, fn () => Participant::factory()
+            ->forProject($world['project'])
+            ->create(['email' => 'ada@example.test']));
+    }
+
+    $participants = Participant::query()->count();
+    $body = $kind === 'invalid identity' ? ['link_token' => $token] : Fx::redeemBody($token, Fx::identity('ada@example.test'));
+
+    $response = $this->postJson(Fx::REDEEM_URL, $body);
+
+    // The refusal is the one this case names, not an unrelated failure that
+    // happens to leave the same side effects.
+    $response->assertStatus(match ($kind) {
+        'closed project' => 403,
+        'invalid identity' => 422,
+        'duplicate email' => 409,
+        default => 404,
+    });
 
     $row = ReusableInterviewLink::withoutGlobalScopes()->findOrFail($world['link']->id);
     expect($row->uses_count)->toBe(0)
@@ -345,7 +363,7 @@ test('a refusal leaves the counter, the participants, the events and the webhook
         ->and(Participant::query()->count())->toBe($participants)
         ->and(WebhookDelivery::withoutGlobalScopes()->count())->toBe(0);
     Event::assertNotDispatched(ParticipantCreated::class);
-})->with(['closed project', 'disabled link', 'unknown token']);
+})->with(['closed project', 'disabled link', 'unknown token', 'invalid identity', 'duplicate email']);
 
 test('project state is re-checked on every redemption: a closure applies at once and a reopening too', function (): void {
     ['project' => $project, 'link' => $link, 'token' => $token] = Fx::redeemable();

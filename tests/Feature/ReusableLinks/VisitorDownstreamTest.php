@@ -280,32 +280,24 @@ test('the admin participant list and the dashboard count visitors like any other
         ->and($metrics->json('data.participants_by_status.in_attesa'))->toBe(5);
 });
 
-test('searching the admin list by a person name or email returns no visitor', function (): void {
+test('the admin list finds a visitor by the name it declared', function (): void {
     $world = visitorDownstreamWorld();
     $admin = authTokenForRole($world['org'], 'admin');
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token'], Fx::identity('ada.lovelace@example.com', 'Ada Lovelace')))->assertOk();
     visitorDownstreamRedeem($world);
-    visitorDownstreamRedeem($world);
 
-    foreach (['Ada Lovelace', 'ada.lovelace@example.com', 'ada@acme.test'] as $term) {
-        resetAuthGuardState();
-        $found = $this->flushHeaders()->withToken($admin)->getJson('/api/participants?q='.urlencode($term))->assertOk();
+    $found = $this->flushHeaders()->withToken($admin)->getJson('/api/participants?q='.urlencode('Ada Lovelace'))->assertOk();
 
-        expect($found->json('data'))->toBe([], $term);
-    }
-
-    // The control: the same list does find a visitor by what it IS (its label
-    // and number), so an empty result above means "no person match", not "the
-    // search finds nothing".
-    resetAuthGuardState();
-    $byName = $this->flushHeaders()->withToken($admin)->getJson('/api/participants?q='.urlencode('Reusable link #1'))->assertOk();
-    expect($byName->json('data'))->toHaveCount(1);
+    expect($found->json('data'))->toHaveCount(1)
+        ->and($found->json('data.0.display_name'))->toBe('Ada Lovelace');
 });
 
-test('a visitor holds no personal identity: a placeholder address and a numbered display name', function (): void {
+test('a visitor holds exactly the identity it typed, never a placeholder address or a numbered name', function (): void {
     $world = visitorDownstreamWorld();
 
-    ['visitor' => $visitor] = visitorDownstreamRedeem($world);
+    $this->postJson(Fx::REDEEM_URL, Fx::redeemBody($world['token'], Fx::identity('ada.lovelace@example.com', 'Ada Lovelace')))->assertOk();
+    $visitor = Fx::visitorsOf($world['link'])[0];
 
-    expect($visitor->email)->toBe($visitor->candidate_ref.'@invalid.beai.local')
-        ->and($visitor->display_name)->toBe('Reusable link #1');
+    expect($visitor->email)->toBe('ada.lovelace@example.com')
+        ->and($visitor->display_name)->toBe('Ada Lovelace');
 });

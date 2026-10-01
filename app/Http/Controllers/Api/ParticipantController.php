@@ -59,16 +59,16 @@ final class ParticipantController extends Controller
     // fetch-all + client filter). Sort is fixed (created_at desc, id desc):
     // no client-specified sort column reaches the query builder.
     //
-    // `q` matches `candidate_ref`, `display_name` and `source` as a
+    // `q` matches `candidate_ref`, `display_name`, `email` and `source` as a
     // case-insensitive substring, taking `%`, `_` and `\` literally, and the
     // candidate's `external_id` by exact equality, only when the trimmed term
     // is a whole number from 1 to 9007199254740991.
     /**
      * List participants.
      *
-     * Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name` and
-     * `source` as a case-insensitive substring, and the candidate's `external_id` by exact equality when
-     * the trimmed term is a whole number from 1 to 9007199254740991.
+     * Paginated on the server, newest first. The `q` filter matches `candidate_ref`, `display_name`,
+     * `email` and `source` as a case-insensitive substring, and the candidate's `external_id` by exact
+     * equality when the trimmed term is a whole number from 1 to 9007199254740991.
      */
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -95,6 +95,7 @@ final class ParticipantController extends Controller
             $query->where(function ($sub) use ($term, $externalId): void {
                 $sub->where('candidate_ref', 'ilike', $term)
                     ->orWhere('display_name', 'ilike', $term)
+                    ->orWhere('email', 'ilike', $term)
                     ->orWhere('source', 'ilike', $term);
 
                 if ($externalId !== null) {
