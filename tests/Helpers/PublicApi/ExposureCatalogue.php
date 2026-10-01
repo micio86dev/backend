@@ -150,6 +150,19 @@ final class ExposureCatalogue
                 'files.evaluation_raw.type',
                 'files.evaluation_raw.ref',
                 'files.evaluation_raw.url',
+                // admin-only origin marker (reusable-interview-links, B4;
+                // reviewed classification 2026-10-01): which reusable link a
+                // visitor came through, the link's public id and its label.
+                // The label is an operator's own note ("Milan fair stand"), not
+                // the calling system's data, and the id names an admin-managed
+                // resource that has no public surface. Never on /v1, exports,
+                // webhooks, the M2M API or the candidate session; an
+                // integration tells a visitor apart by the `rlv_` prefix of its
+                // `candidate_ref`. The ExposureTest fixture is a visitor WITH a
+                // link, because a null marker flattens to one bare
+                // `reusable_link` leaf and would hide this shape.
+                'reusable_link.id',
+                'reusable_link.label',
             ],
 
             // Transcript (public-api step 6) — admin `Admin\TranscriptResource`

@@ -78,6 +78,11 @@ final class AdminParticipantReader
      * cannot forget it and silently lazy-load per row (N+1). Kept here
      * rather than duplicated at every future list caller.
      *
+     * `ReusableLinkOrigin::EAGER_LOAD` (reusable-interview-links, B4): the same
+     * reasoning for the `reusable_link` origin marker. The relation is
+     * tenant-scoped, so a key pointing at another organization's link loads as
+     * null instead of leaking that link's label.
+     *
      * @return Builder<Participant>
      */
     public function listQuery(): Builder
@@ -85,6 +90,6 @@ final class AdminParticipantReader
         Gate::authorize('viewAny', Participant::class);
 
         return Participant::where('organization_id', $this->resolver->getOrgId())
-            ->with('project:id,name');
+            ->with('project:id,name', ReusableLinkOrigin::EAGER_LOAD);
     }
 }

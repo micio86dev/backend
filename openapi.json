@@ -14104,6 +14104,27 @@
                             "null"
                         ]
                     },
+                    "reusable_link": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "label"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -14320,6 +14341,7 @@
                     "email",
                     "external_id",
                     "source",
+                    "reusable_link",
                     "role_code",
                     "language",
                     "status",
@@ -14539,6 +14561,27 @@
                             "null"
                         ]
                     },
+                    "reusable_link": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "label": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "label"
+                        ]
+                    },
                     "role_code": {
                         "type": [
                             "string",
@@ -14596,6 +14639,7 @@
                     "email",
                     "external_id",
                     "source",
+                    "reusable_link",
                     "role_code",
                     "language",
                     "status",

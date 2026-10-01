@@ -287,3 +287,49 @@ test('the public v1 export names no reusable link path', function (): void {
     expect(array_keys(reusableLinkDocumentedSpec('openapi.v1.json')['components']['schemas']))
         ->not->toContain('ReusableInterviewLinkResource');
 });
+
+// ─── The admin participant origin marker (B4) ────────────────────────────────
+
+/**
+ * The admin participant resources that carry the reusable link origin, keyed by
+ * a readable name: the schema each is exported under.
+ *
+ * @return array<string, array{0: string}>
+ */
+function reusableLinkDocumentedMarkerSchemas(): array
+{
+    return [
+        'admin list row' => ['ParticipantResource'],
+        'admin detail' => ['ParticipantDetailResource'],
+    ];
+}
+
+test('the admin participant schemas document reusable_link as an object with an id and a nullable label, or null, always present', function (string $schemaName): void {
+    $schema = reusableLinkDocumentedSchema($schemaName);
+    $marker = $schema['properties']['reusable_link'] ?? null;
+
+    expect($marker)->not->toBeNull("{$schemaName} does not document reusable_link");
+    expect(reusableLinkDocumentedTypeIs($marker, 'object'))->toBeTrue("{$schemaName}.reusable_link must be object|null");
+    // Exactly the two keys the admin read exposes, nothing about the link's internals.
+    expect(array_keys($marker['properties']))->toBe(['id', 'label']);
+    expect($marker['properties']['id']['type'])->toBe('string');
+    expect(reusableLinkDocumentedTypeIs($marker['properties']['label'], 'string'))->toBeTrue("{$schemaName}.reusable_link.label must be string|null");
+    expect($marker['required'])->toEqualCanonicalizing(['id', 'label']);
+    // Present on every row (null for an ordinary participant), so a consumer
+    // tells "not from a link" from "a server that predates the field" by the key.
+    expect($schema['required'])->toContain('reusable_link');
+})->with(fn () => reusableLinkDocumentedMarkerSchemas());
+
+test('the marker is documented on the admin participant schemas only, never on a candidate, M2M or public schema', function (): void {
+    $schemas = reusableLinkDocumentedSpec()['components']['schemas'];
+
+    foreach (['App.Http.Resources.ParticipantResource', 'ParticipantEnrolmentResource'] as $name) {
+        expect($schemas[$name]['properties'])->not->toHaveKey('reusable_link');
+    }
+
+    $public = reusableLinkDocumentedSpec('openapi.v1.json')['components']['schemas'];
+    foreach ($public as $name => $schema) {
+        expect($schema['properties'] ?? [])->not->toHaveKey('reusable_link');
+        expect($schema['properties'] ?? [])->not->toHaveKey('reusable_interview_link_id');
+    }
+});
