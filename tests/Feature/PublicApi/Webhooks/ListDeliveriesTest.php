@@ -127,6 +127,45 @@ test('T-WHD-004: filters by interview_id', function (): void {
     expect($body['data'][0]['id'])->toBe(WebhookDeliveryId::encode($forA->fresh()));
 });
 
+test('T-WHD-004: interview_id narrows to that interview only; an empty one is the unfiltered list; an id that matches nothing is an empty page', function (): void {
+    ['org' => $org, 'key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['webhooks:read']);
+    $project = Step6Fixtures::project($org);
+    $participantA = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+    $participantB = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+
+    ['org' => $other, 'key' => $otherKey] = Step6Fixtures::orgWithScopedKey(['webhooks:read']);
+    $participantOther = Step6Fixtures::participantWithTranscript($other, Step6Fixtures::project($other), 'completato');
+
+    [$a1, $a2, $b1, $foreign] = [
+        TenantContextScope::runFor($org->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantA)->create(['created_at' => now()->subMinutes(3)])),
+        TenantContextScope::runFor($org->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantA)->create(['created_at' => now()->subMinutes(2)])),
+        TenantContextScope::runFor($org->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantB)->create(['created_at' => now()->subMinute()])),
+        TenantContextScope::runFor($other->id, fn (): WebhookDelivery => WebhookDelivery::factory()->forParticipant($participantOther)->create()),
+    ];
+    $ids = fn (array $deliveries): array => collect($deliveries)->map(fn (WebhookDelivery $d): string => WebhookDeliveryId::encode($d->fresh()))->sort()->values()->all();
+    $headers = ['Authorization' => 'Bearer '.$rawKey];
+    $listed = fn (string $query): array => collect($this->withHeaders($headers)->getJson('/api/v1/webhooks/deliveries'.$query)->assertOk()->json('data'))->pluck('id')->sort()->values()->all();
+
+    // One interview: its deliveries, and nobody else's.
+    expect($listed('?interview_id='.PublicId::encode($participantA)))->toBe($ids([$a1, $a2]));
+    expect($listed('?interview_id='.PublicId::encode($participantB)))->toBe($ids([$b1]));
+
+    // Empty or whitespace: not provided, so every delivery of the organization and none of the other one's.
+    expect($listed('?interview_id='))->toBe($ids([$a1, $a2, $b1]));
+    expect($listed('?interview_id=%20%20'))->toBe($ids([$a1, $a2, $b1]));
+
+    // An id that matches nothing is an empty page, never a 400 (an id filter behaves like a path
+    // parameter): another organization's interview, a well-formed id nobody holds, and a malformed one.
+    expect($listed('?interview_id='.PublicId::encode($participantOther)))->toBe([]);
+    expect($listed('?interview_id=int_'.str_repeat('0', 26)))->toBe([]);
+    expect($listed('?interview_id=not-an-id'))->toBe([]);
+
+    // And the other organization's key: its own interview narrows to its own delivery, ours to nothing.
+    $otherListed = fn (string $query): array => collect($this->withHeaders(['Authorization' => 'Bearer '.$otherKey])->getJson('/api/v1/webhooks/deliveries'.$query)->assertOk()->json('data'))->pluck('id')->all();
+    expect($otherListed('?interview_id='.PublicId::encode($participantOther)))->toBe($ids([$foreign]));
+    expect($otherListed('?interview_id='.PublicId::encode($participantA)))->toBe([]);
+});
+
 test('T-WHD-005: an unrecognised status or event_type filter answers 400 validation_failed, never 422', function (): void {
     ['key' => $rawKey] = Step6Fixtures::orgWithScopedKey(['webhooks:read']);
 
