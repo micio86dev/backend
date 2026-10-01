@@ -65,3 +65,50 @@ test('is() is case- and whitespace-insensitive', function (): void {
         ->and(PlaceholderEmail::is(" x@invalid.beai.local\n"))->toBeTrue()
         ->and(PlaceholderEmail::is('X@Invalid.Beai.Local'))->toBeTrue();
 });
+
+// ─── The purged placeholder (reusable-link-visitor-identity) ─────────────────
+
+test('the purged placeholder is the SHA-256 of the candidate reference at the purged domain, 84 characters for any reference', function (): void {
+    expect(PlaceholderEmail::PURGED_DOMAIN)->toBe('@purged.beai.invalid')
+        ->and(PlaceholderEmail::forPurged('ref-1'))->toBe(hash('sha256', 'ref-1').'@purged.beai.invalid')
+        ->and(strlen(PlaceholderEmail::forPurged('ref-1')))->toBe(84)
+        ->and(strlen(PlaceholderEmail::forPurged(str_repeat('r', 255))))->toBe(84)
+        ->and(PlaceholderEmail::forPurged('ref-1'))->not->toBe(PlaceholderEmail::forPurged('ref-2'));
+});
+
+test('is() recognises BOTH reserved domains in any case, with or without padding', function (string $address): void {
+    expect(PlaceholderEmail::is($address))->toBeTrue();
+})->with([
+    'the legacy domain' => 'x@invalid.beai.local',
+    'the purged domain' => 'x@purged.beai.invalid',
+    'the purged domain in capitals' => 'X@PURGED.BEAI.INVALID',
+    'the purged domain padded' => "  x@purged.beai.invalid\n",
+    'a purged placeholder' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@purged.beai.invalid',
+]);
+
+test('is() is still false for a real address and for a domain that merely contains the purged one', function (string $address): void {
+    expect(PlaceholderEmail::is($address))->toBeFalse();
+})->with([
+    'an ordinary address' => 'giulia@example.test',
+    'the purged domain as a subdomain label' => 'x@purged.beai.invalid.example.test',
+    'a lookalike' => 'x@xpurged.beai.invalid',
+]);
+
+test('isOwn() is true only for the reference\'s own legacy or purged placeholder', function (): void {
+    $ref = 'ref-1';
+
+    expect(PlaceholderEmail::isOwn(PlaceholderEmail::for($ref), $ref))->toBeTrue()
+        ->and(PlaceholderEmail::isOwn(PlaceholderEmail::forPurged($ref), $ref))->toBeTrue()
+        ->and(PlaceholderEmail::isOwn(PlaceholderEmail::for('ref-2'), $ref))->toBeFalse()
+        ->and(PlaceholderEmail::isOwn(PlaceholderEmail::forPurged('ref-2'), $ref))->toBeFalse()
+        ->and(PlaceholderEmail::isOwn('x@invalid.beai.local', $ref))->toBeFalse()
+        ->and(PlaceholderEmail::isOwn('x@purged.beai.invalid', $ref))->toBeFalse()
+        ->and(PlaceholderEmail::isOwn('ada@example.com', $ref))->toBeFalse();
+});
+
+test('the SQL twin of the purged placeholder hashes the named column and appends the same domain', function (): void {
+    expect(PlaceholderEmail::purgedSqlExpression())
+        ->toBe("encode(sha256(convert_to(candidate_ref, 'UTF8')), 'hex') || '@purged.beai.invalid'")
+        ->and(PlaceholderEmail::purgedSqlExpression('p.candidate_ref'))
+        ->toBe("encode(sha256(convert_to(p.candidate_ref, 'UTF8')), 'hex') || '@purged.beai.invalid'");
+});
