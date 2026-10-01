@@ -148,7 +148,7 @@ test('T-PRJ-003: hidden fields never appear in list or detail responses', functi
 
     $body = json_encode($detail->json());
     foreach ($forbidden as $field) {
-        expect($body)->not->toContain('"'.$field.'"', "detail response must not expose {$field}");
+        expect(str_contains($body, '"'.$field.'"'))->toBeFalse("detail response must not expose {$field}");
     }
 
     expect($detail->json('id'))->toBeString();
@@ -157,7 +157,7 @@ test('T-PRJ-003: hidden fields never appear in list or detail responses', functi
     $list = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/projects');
     $listBody = json_encode($list->json());
     foreach ($forbidden as $field) {
-        expect($listBody)->not->toContain('"'.$field.'"', "list response must not expose {$field}");
+        expect(str_contains($listBody, '"'.$field.'"'))->toBeFalse("list response must not expose {$field}");
     }
 });
 
