@@ -4648,6 +4648,63 @@
                 }
             }
         },
+        "/health/ready": {
+            "get": {
+                "operationId": "healthReady",
+                "description": "Answers `200` with `{\"status\":\"ok\"}` when the database is reachable and its schema is\ncurrent, or `503` with `{\"status\":\"down\",\"reason\":\"...\"}` where the reason is\n`pending_migrations` or `database_unavailable`. The payload is machine-readable and is\nnot localized.",
+                "summary": "Check that the platform is ready to serve",
+                "tags": [
+                    "HealthReady"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "ok"
+                                        }
+                                    },
+                                    "required": [
+                                        "status"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "down"
+                                        },
+                                        "reason": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "reason"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/candidate/interview/integrity": {
             "post": {
                 "operationId": "integrity.store",

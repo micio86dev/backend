@@ -303,6 +303,7 @@ final class AuthMatrixCatalogue
             'POST api/reusable-links/redeem' => self::open('reusable-links'),
             'GET api/health' => self::open('health'),
             'GET api/health/queue' => self::open('health'),
+            'GET api/health/ready' => self::open('health'),
             'GET api/v1/health' => self::open('public-api-v1'),
 
             // ─── public API v1 (API key + scope) ─────────────────────────────

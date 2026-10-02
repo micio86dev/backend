@@ -49,6 +49,7 @@ use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
 use App\Http\Controllers\Embed\ExchangeController as EmbedExchangeController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\HealthReadyController;
 use App\Http\Controllers\M2m\AbilityCatalogController;
 use App\Http\Controllers\M2m\ApiClientController;
 use App\Http\Controllers\M2m\ParticipantController;
@@ -81,6 +82,11 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
+
+// stack-schema-drift-guard: readiness, the DB-touching sibling of the liveness
+// probe above (which stays DB-free on purpose). 503 when the schema is behind
+// the code or the database is unreachable. Unauthenticated like /health.
+Route::get('/health/ready', HealthReadyController::class);
 
 // queue-worker-scheduler PR4 (design.md D7): unauthenticated so Docker/
 // Railway probes can reach it without credentials — the body carries

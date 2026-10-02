@@ -418,7 +418,7 @@ test('the public logo redirects to a signed URL of exactly the organization\'s o
 test('every public surface is reachable with no credential at all', function (): void {
     // The catalogue lists these as `open`; a guard added by mistake would turn
     // one into a 401 for the very callers it exists for (probes, the embedded frame).
-    foreach (['/api/health', '/api/health/queue', '/api/v1/health', '/api/embed/exchange', '/api/embed/frame-policy', '/api/sso/exchange'] as $uri) {
+    foreach (['/api/health', '/api/health/queue', '/api/health/ready', '/api/v1/health', '/api/embed/exchange', '/api/embed/frame-policy', '/api/sso/exchange'] as $uri) {
         $status = $this->getJson($uri)->getStatusCode();
 
         // Answers about the request, never about the (absent) credential:
