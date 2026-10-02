@@ -16,6 +16,7 @@ declare(strict_types=1);
  */
 
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
+use App\Exceptions\Scoring\RoleNoBarsException;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\FrameworkVersion;
@@ -24,6 +25,7 @@ use App\Models\Project;
 use App\Models\Role;
 use App\Services\Scoring\PromptBuilder;
 use App\Support\Tenancy\TenantResolver;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -631,4 +633,58 @@ test('an unmapped locale is never silently called English', function (): void {
         // Precise: the prompt DOES say its own instructions are written in
         // English. What must not appear is the instruction to ANSWER in it.
         ->and($prompt->systemPrompt)->not->toContain('`explanation` in English');
+});
+
+// ─── critical-zone coverage (T8) ─────────────────────────────────────────────
+
+test('the output language is named in English for every supported project locale, never as a bare ISO code', function (string $locale, string $name): void {
+    $org = promptBuilderOrg();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $fv = FrameworkVersion::create(['version' => '1.0', 'label' => 'V1', 'organization_id' => $org->id]);
+    $role = Role::factory()->create(['code' => 'LANG_ROLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'LANG_'.uniqid()]);
+    createFullIndicator($role->id, $competency->id, 0, [
+        'text' => ['en' => 'EN text', $locale => 'localized text'],
+        'anchor_5' => ['en' => 'EN a5', $locale => 'localized anchor 5'],
+        'anchor_3' => ['en' => 'EN a3', $locale => 'localized anchor 3'],
+        'anchor_1' => ['en' => 'EN a1', $locale => 'localized anchor 1'],
+    ]);
+
+    $prompt = (new PromptBuilder)->build(
+        evaluation: (object) ['framework_version_id' => $fv->id],
+        competencyCode: $competency->code,
+        competencyId: $competency->id,
+        roleId: $role->id,
+        projectLocale: $locale,
+        indicators: BarsIndicator::where('role_id', $role->id)
+            ->where('competency_id', $competency->id)
+            ->orderBy('position')
+            ->get(),
+        transcript: 'Candidate: Answer.',
+    );
+
+    expect($prompt->systemPrompt)->toContain('Write every `explanation` in '.$name.'.')
+        ->and($prompt->systemPrompt)->not->toContain('Write every `explanation` in '.$locale.'.');
+})->with([
+    'spanish' => ['es', 'Spanish'],
+    'french' => ['fr', 'French'],
+    'german' => ['de', 'German'],
+    'portuguese' => ['pt', 'Portuguese'],
+]);
+
+test('building a prompt with no indicators throws RoleNoBarsException naming the competency', function (): void {
+    $builder = new PromptBuilder;
+
+    expect(fn () => $builder->build(
+        evaluation: (object) ['framework_version_id' => 1],
+        competencyCode: 'NOBARS_X',
+        competencyId: 1,
+        roleId: 1,
+        projectLocale: 'en',
+        indicators: new Collection,
+        transcript: 'Candidate: Answer.',
+    ))->toThrow(RoleNoBarsException::class, 'NOBARS_X');
 });

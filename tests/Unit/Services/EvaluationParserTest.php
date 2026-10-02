@@ -271,3 +271,35 @@ test('an absent score stays 0 and is left for IndicatorValidator to reject', fun
 
     expect($parser->parse($response, $indicators)[0]->score)->toBe(0);
 });
+
+// ─── critical-zone coverage (T8) ─────────────────────────────────────────────
+
+test('a "behaviors" value that is not an array is a JsonParseException, never a count mismatch', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    expect(fn () => $parser->parse('{"behaviors":"not-a-list"}', $indicators))
+        ->toThrow(JsonParseException::class, 'behaviors');
+});
+
+test('a behavior without an excerpts key parses with an empty excerpts list and keeps its score', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $dtos = $parser->parse('{"behaviors":[{"indicator":"A","score":3,"explanation":"E"}]}', $indicators);
+
+    expect($dtos[0]->excerpts)->toBe([])
+        ->and($dtos[0]->score)->toBe(3);
+});
+
+test('non-string excerpts are dropped and string ones kept in order', function (): void {
+    $parser = new EvaluationParser;
+    $indicators = [new IndicatorRef(position: 0, text: 'Indicator A')];
+
+    $dtos = $parser->parse(
+        '{"behaviors":[{"indicator":"A","score":3,"explanation":"E","excerpts":["first",42,null,"second"]}]}',
+        $indicators,
+    );
+
+    expect($dtos[0]->excerpts)->toBe(['first', 'second']);
+});
