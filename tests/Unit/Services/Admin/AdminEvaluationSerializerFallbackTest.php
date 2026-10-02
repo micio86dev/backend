@@ -50,7 +50,7 @@ function fallbackScoredParticipant(Organization $org): array
 {
     $fv = FrameworkVersion::factory()->create(['organization_id' => $org->id]);
     $role = Role::factory()->create(['code' => 'FBROLE_'.uniqid()]);
-    $competency = Competency::factory()->create(['code' => 'SLF']);
+    $competency = Competency::query()->where('code', 'SLF')->first() ?? Competency::factory()->create(['code' => 'SLF']);
     BarsIndicator::factory()->create([
         'role_id' => $role->id,
         'competency_id' => $competency->id,
