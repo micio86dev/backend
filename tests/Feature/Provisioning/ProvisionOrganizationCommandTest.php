@@ -20,6 +20,7 @@ declare(strict_types=1);
  */
 
 use App\Console\Commands\ProvisionOrganizationCommand;
+use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
@@ -280,4 +281,18 @@ test('runs with no interaction at all', function (): void {
     ])->assertExitCode(0);
 
     expect(Organization::where('slug', 'acme-corp')->exists())->toBeTrue();
+});
+
+test('leaves the new organization with exactly one default framework version', function (): void {
+    $this->artisan('beai:provision-organization', [
+        '--name' => 'Acme Corp',
+        '--admin-email' => 'admin@acme.test',
+    ])->assertExitCode(0);
+
+    $org = Organization::where('slug', 'acme-corp')->firstOrFail();
+    $versions = FrameworkVersion::withoutGlobalScopes()->where('organization_id', $org->id)->get();
+
+    expect($versions)->toHaveCount(1);
+    expect($versions->first()->is_locked)->toBeFalse();
+    expect($versions->first()->revision_id)->not->toBeNull();
 });
