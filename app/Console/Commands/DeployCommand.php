@@ -59,7 +59,7 @@ class DeployCommand extends Command
 {
     protected $signature = 'beai:deploy';
 
-    protected $description = 'Run the release steps a deploy must perform: migrations (fatal), then the framework catalogue seed and the LLM registry sync (both non-fatal).';
+    protected $description = 'Run the release steps a deploy must perform: migrations (fatal), then the framework catalogue seed, the default framework version backfill and the LLM registry sync (all non-fatal).';
 
     public function handle(): int
     {
@@ -80,6 +80,15 @@ class DeployCommand extends Command
         } else {
             $this->warn('[deploy] WARNING: framework catalogue seed failed — continuing anyway.');
             $this->warn('[deploy] Projects cannot be created against an empty or stale catalogue. Run `php artisan db:seed --class=FrameworkCatalogSeeder --force`.');
+        }
+
+        $this->line('[deploy] ensuring every organization has a framework version…');
+
+        if ($this->ensureFrameworkVersions()) {
+            $this->info('[deploy] framework versions OK');
+        } else {
+            $this->warn('[deploy] WARNING: framework version backfill failed — continuing anyway.');
+            $this->warn('[deploy] Organizations without a version cannot create projects. Run `php artisan beai:ensure-framework-versions`.');
         }
 
         $this->line('[deploy] provisioning the platform superadmin…');
@@ -160,6 +169,27 @@ class DeployCommand extends Command
                 '--class' => FrameworkCatalogSeeder::class,
                 '--force' => true,
             ]) === self::SUCCESS;
+        } catch (Throwable $e) {
+            $this->warn('[deploy] '.$e::class.': '.$e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
+     * Give every organization that has no FrameworkVersion a default one.
+     *
+     * MUST run after `seedFrameworkCatalog()`: the version is pinned to the
+     * latest PUBLISHED catalogue revision, which a fresh database only has
+     * once the seed has run. Idempotent, so safe on every deploy.
+     *
+     * NON-FATAL, same rule as the other data steps: it fixes data, not schema,
+     * and the warning names the recovery command.
+     */
+    private function ensureFrameworkVersions(): bool
+    {
+        try {
+            return $this->call('beai:ensure-framework-versions') === self::SUCCESS;
         } catch (Throwable $e) {
             $this->warn('[deploy] '.$e::class.': '.$e->getMessage());
 

@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.65.1"
+        "version": "0.66.0"
     },
     "servers": [
         {
@@ -4493,8 +4493,8 @@
         "/framework/potential-competencies": {
             "get": {
                 "operationId": "framework.potentialCompetencies",
-                "description": "The competencies a `potential` assessment scores: MTG and LAT.\n\nThey belong to NO role \u2014 that is what makes them the potential set \u2014\nso `roleCompetencies` above cannot serve them, and the backoffice was\nbuilding them locally from two hardcoded codes with no `id`. Without an\nid `CompetencyPicker` refuses to tick a box, so a `potential` project\ncould not have its competencies selected at all: both boxes rendered,\nneither responded, and an already-persisted set rendered unchecked.\n\nDriven by `type`, never by a hardcoded code list: the catalogue decides\nwhich competencies are potential, and a third one must appear here the\nday it is authored rather than the day someone edits this method.\n\n`bars_available` is deliberately false for every row. Coverage is a\nquestion about a role\u00d7competency pair, and these belong to no role \u2014\nthe same reason the frontend's local list answered `null` for it.",
-                "summary": "GET /api/framework/potential-competencies",
+                "description": "Returns the competencies a `potential` assessment scores. `bars_available`\nis true when a competency has behavioural anchors and can therefore be scored.",
+                "summary": "List potential competencies",
                 "tags": [
                     "Framework"
                 ],
@@ -4640,6 +4640,63 @@
                                     },
                                     "required": [
                                         "status"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "operationId": "healthReady",
+                "description": "Answers `200` with `{\"status\":\"ok\"}` when the database is reachable and its schema is\ncurrent, or `503` with `{\"status\":\"down\",\"reason\":\"...\"}` where the reason is\n`pending_migrations` or `database_unavailable`. The payload is machine-readable and is\nnot localized.",
+                "summary": "Check that the platform is ready to serve",
+                "tags": [
+                    "HealthReady"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "ok"
+                                        }
+                                    },
+                                    "required": [
+                                        "status"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "down"
+                                        },
+                                        "reason": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "reason"
                                     ]
                                 }
                             }

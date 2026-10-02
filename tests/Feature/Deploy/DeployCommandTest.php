@@ -348,3 +348,104 @@ test('a failed superadmin provisioning warns but still exits 0', function (): vo
         ->expectsOutputToContain('[deploy] WARNING: superadmin provisioning failed')
         ->assertExitCode(Command::SUCCESS);
 });
+
+// ─── Default framework versions ──────────────────────────────────────────────
+
+final class RecordingEnsureVersionsStub extends Command
+{
+    /** @var list<string> Shared step log, appended to by the seed stub too. */
+    public static array $order = [];
+
+    protected $signature = 'beai:ensure-framework-versions {--org=} {--dry-run}';
+
+    protected $description = 'Stub that records invocation.';
+
+    public function handle(): int
+    {
+        self::$order[] = 'ensure-versions';
+
+        return self::SUCCESS;
+    }
+}
+
+final class OrderedSeedStub extends Command
+{
+    protected $signature = 'db:seed {--class=} {--force} {--database=}';
+
+    protected $description = 'Stub that records the order of seeds.';
+
+    public function handle(): int
+    {
+        if ($this->option('class') === FrameworkCatalogSeeder::class) {
+            RecordingEnsureVersionsStub::$order[] = 'catalogue-seed';
+        }
+
+        return self::SUCCESS;
+    }
+}
+
+final class FailingEnsureVersionsStub extends Command
+{
+    protected $signature = 'beai:ensure-framework-versions {--org=} {--dry-run}';
+
+    protected $description = 'Stub that always fails.';
+
+    public function handle(): int
+    {
+        return self::FAILURE;
+    }
+}
+
+final class ThrowingEnsureVersionsStub extends Command
+{
+    protected $signature = 'beai:ensure-framework-versions {--org=} {--dry-run}';
+
+    protected $description = 'Stub that always throws.';
+
+    public function handle(): int
+    {
+        throw new RuntimeException('SQLSTATE[08006]: connection refused');
+    }
+}
+
+test('the deploy backfills default framework versions AFTER the catalogue seed', function (): void {
+    // The backfill pins to the latest PUBLISHED revision, which only exists
+    // once the catalogue seed has run: the reverse order skips every
+    // organization on a fresh database.
+    RecordingEnsureVersionsStub::$order = [];
+    registerDeployStub(new OrderedSeedStub);
+    registerDeployStub(new RecordingEnsureVersionsStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] framework versions OK')
+        ->assertExitCode(Command::SUCCESS);
+
+    expect(RecordingEnsureVersionsStub::$order)->toBe(['catalogue-seed', 'ensure-versions']);
+});
+
+test('a failed framework-version backfill warns but still exits 0', function (): void {
+    registerDeployStub(new FailingEnsureVersionsStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] WARNING: framework version backfill failed')
+        ->expectsOutputToContain('[deploy] done')
+        ->assertExitCode(Command::SUCCESS);
+});
+
+test('a framework-version backfill that throws is caught and still exits 0', function (): void {
+    registerDeployStub(new ThrowingEnsureVersionsStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] WARNING: framework version backfill failed')
+        ->assertExitCode(Command::SUCCESS);
+});
+
+test('a failed migration never reaches the framework-version backfill', function (): void {
+    RecordingEnsureVersionsStub::$order = [];
+    registerDeployStub(new FailingMigrateStub);
+    registerDeployStub(new RecordingEnsureVersionsStub);
+
+    $this->artisan('beai:deploy')->assertFailed();
+
+    expect(RecordingEnsureVersionsStub::$order)->toBe([]);
+});

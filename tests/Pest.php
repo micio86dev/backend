@@ -872,3 +872,10 @@ function makeProjectInterviewable(Project $project, ?string $competencyCode = nu
 
     return $competency;
 }
+
+// ─── Schema readiness (stack-schema-drift-guard) ──────────────────────────────
+
+// Unit/Support/Health — SchemaStatus is exercised against a mocked Migrator;
+// TestCase is only needed so Mockery is closed and app() helpers resolve.
+pest()->extend(TestCase::class)
+    ->in('Unit/Support/Health');
