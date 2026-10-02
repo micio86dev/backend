@@ -152,25 +152,30 @@ class FrameworkController extends Controller
         return CompetencyResource::collection($resources)->response();
     }
 
+    // Internal notes, not published (Scramble exports docblock prose as public text):
+    // GET /api/framework/potential-competencies
+    //
+    // MTG and LAT belong to NO role, so `roleCompetencies` cannot serve them, and
+    // the backoffice was building them locally from two hardcoded codes with no
+    // `id`. Without an id `CompetencyPicker` refuses to tick a box, so a
+    // `potential` project could not have its competencies selected at all.
+    //
+    // Driven by `type`, never by a hardcoded code list: the catalogue decides
+    // which competencies are potential, and a third one must appear here the day
+    // it is authored rather than the day someone edits this method.
+    //
+    // `bars_available` is NOT hardcoded false. This used to claim coverage is
+    // only a role x competency question, but a potential competency is scored
+    // from its role-less indicators (`role_id IS NULL`), and `CompetencyPicker`
+    // disables any option reporting false, so a false here made both boxes
+    // unselectable. Coverage is "has at least one role-less indicator row"; the
+    // composite FK (competency_id, revision_id) keeps that within the
+    // competency's own revision. One query, no N+1.
     /**
-     * GET /api/framework/potential-competencies
+     * List potential competencies.
      *
-     * The competencies a `potential` assessment scores: MTG and LAT.
-     *
-     * They belong to NO role — that is what makes them the potential set —
-     * so `roleCompetencies` above cannot serve them, and the backoffice was
-     * building them locally from two hardcoded codes with no `id`. Without an
-     * id `CompetencyPicker` refuses to tick a box, so a `potential` project
-     * could not have its competencies selected at all: both boxes rendered,
-     * neither responded, and an already-persisted set rendered unchecked.
-     *
-     * Driven by `type`, never by a hardcoded code list: the catalogue decides
-     * which competencies are potential, and a third one must appear here the
-     * day it is authored rather than the day someone edits this method.
-     *
-     * `bars_available` is deliberately false for every row. Coverage is a
-     * question about a role×competency pair, and these belong to no role —
-     * the same reason the frontend's local list answered `null` for it.
+     * Returns the competencies a `potential` assessment scores. `bars_available`
+     * is true when a competency has behavioural anchors and can therefore be scored.
      */
     public function potentialCompetencies(Request $request): JsonResponse
     {
@@ -182,9 +187,16 @@ class FrameworkController extends Controller
             ->orderBy('code')
             ->get();
 
+        $barsCoveredIds = BarsIndicator::query()
+            ->whereNull('role_id')
+            ->whereIn('competency_id', $competencies->modelKeys())
+            ->distinct()
+            ->pluck('competency_id')
+            ->all();
+
         $resources = $competencies->map(
             fn (Competency $competency): CompetencyResource => (new CompetencyResource($competency))
-                ->additional(['bars_covered_ids' => []])
+                ->additional(['bars_covered_ids' => $barsCoveredIds])
         );
 
         return CompetencyResource::collection($resources)->response();

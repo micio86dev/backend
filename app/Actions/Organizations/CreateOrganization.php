@@ -8,6 +8,7 @@ use App\Models\Organization;
 use App\Models\User;
 use App\Support\Superadmin\PlatformAuditWriter;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -30,6 +31,7 @@ final class CreateOrganization
 
     public function __construct(
         private readonly PlatformAuditWriter $auditWriter,
+        private readonly EnsureDefaultFrameworkVersion $ensureDefaultFrameworkVersion,
     ) {}
 
     /**
@@ -49,6 +51,16 @@ final class CreateOrganization
                 Role::firstOrCreate(
                     ['name' => $roleName, 'guard_name' => 'api', 'team_id' => $organization->id],
                 );
+            }
+
+            // Without a version the organization cannot create a project.
+            // `false` here means no catalogue revision is published yet: the
+            // organization is still created, and `beai:ensure-framework-versions`
+            // (run by every deploy) gives it a version once one exists.
+            if (! $this->ensureDefaultFrameworkVersion->ensure($organization)) {
+                Log::warning('Organization created without a default framework version: no published catalogue revision.', [
+                    'organization_id' => $organization->id,
+                ]);
             }
 
             if ($actor !== null) {
