@@ -77,9 +77,11 @@ test('is idempotent: a second call adds nothing', function (): void {
 
 test('reports false and creates nothing when no revision is published yet', function (): void {
     $org = Organization::factory()->create();
-    DB::statement('ALTER TABLE framework_catalog_revisions DISABLE TRIGGER USER');
+    // Bypasses the immutability triggers for this transaction only, without
+    // the table-level lock of DISABLE TRIGGER (which would block parallel workers).
+    DB::statement('SET LOCAL session_replication_role = replica');
     DB::table('framework_catalog_revisions')->update(['state' => 'draft']);
-    DB::statement('ALTER TABLE framework_catalog_revisions ENABLE TRIGGER USER');
+    DB::statement('SET LOCAL session_replication_role = DEFAULT');
     expect(FrameworkCatalogRevision::latestPublished())->toBeNull();
 
     $created = app(EnsureDefaultFrameworkVersion::class)->ensure($org);
