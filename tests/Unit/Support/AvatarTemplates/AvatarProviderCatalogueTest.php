@@ -43,6 +43,7 @@ function catalogueItem(string $provider, string $id, string $name, array $overri
         'italian' => null,
         'preview_image_url' => null,
         'preview_audio_url' => null,
+        'preview_audio_via_api' => false,
         'preview_video_url' => null,
     ], $overrides);
 }
