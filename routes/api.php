@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\AvatarCatalogueSampleController;
 use App\Http\Controllers\AvatarTemplateController;
 use App\Http\Controllers\AvatarTemplateDuplicateController;
 use App\Http\Controllers\AvatarTemplatePortabilityController;
@@ -609,6 +610,10 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // row, so a bare superadmin works), throttled per user because every miss is
     // a paid provider call. Declared BEFORE /{id} like the literal paths above.
     Route::post('/avatar-templates/voice-preview', AvatarVoicePreviewController::class)->middleware('throttle:avatar-voice-preview');
+    // cartesia-catalogue-sample-proxy: Cartesia's own catalogue clip needs the platform key, so the SERVER
+    // downloads it and serves the bytes. Same `create` gate and no org.context as the route above; its own
+    // per-user bucket (a miss is a free download, not a paid synthesis, but it is still an outbound call).
+    Route::get('/avatar-templates/catalogue-sample', AvatarCatalogueSampleController::class)->middleware('throttle:avatar-catalogue-sample');
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
     Route::post('/avatar-templates/{id}/duplicate', AvatarTemplateDuplicateController::class);

@@ -53,6 +53,16 @@ return [
 
     'timeout_seconds' => 20,
 
+    // `GET /api/avatar-templates/catalogue-sample`: Cartesia's own free catalogue clip, downloaded by the
+    // SERVER (the file host needs the platform key, which the browser must never hold) and cached on the
+    // default disk under `catalogue-samples/`. The clips are ~1 MB WAV (largest seen live: 1.46 MB), so the
+    // cap leaves headroom without letting a misbehaving host fill the disk or the response.
+    'catalogue_sample' => [
+        'max_bytes' => 5 * 1024 * 1024,
+        // A clip changes rarely; a week bounds both its age and (per voice) the disk it takes.
+        'cache_seconds' => 7 * 86400,
+    ],
+
     // Browser cache lifetime of a successful response.
     'browser_max_age' => 86400,
 

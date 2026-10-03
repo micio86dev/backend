@@ -182,6 +182,8 @@ final class AuthMatrixCatalogue
             'POST api/avatar-templates/import' => self::user('avatar-templates', self::superadminWrite(bare: AuthMatrix::CONFLICT)),
             // No org.context: it touches no tenant row, so a bare superadmin is served.
             'POST api/avatar-templates/voice-preview' => self::user('avatar-templates', self::superadminWrite()),
+            // Same gate as the synthesised sample, and no org.context for the same reason.
+            'GET api/avatar-templates/catalogue-sample' => self::user('avatar-templates', self::superadminWrite()),
             'GET api/avatar-templates/options' => self::user('avatar-templates', self::orgScoped([self::A, self::O, self::V])),
             'GET api/avatar-templates/{id}' => self::user('avatar-templates', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND)),
             'PATCH api/avatar-templates/{id}' => self::user('avatar-templates', self::superadminWrite(cross: AuthMatrix::NOT_FOUND)),

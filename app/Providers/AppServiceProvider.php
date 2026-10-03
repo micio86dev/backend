@@ -429,6 +429,13 @@ class AppServiceProvider extends ServiceProvider
                 ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()));
         });
 
+        // `avatar-catalogue-sample` — GET /api/avatar-templates/catalogue-sample. Per USER, like the
+        // synthesised sample's bucket, and deliberately NOT shared with it.
+        RateLimiter::for('avatar-catalogue-sample', function (Request $request) {
+            return Limit::perMinute((int) config('avatar_preview.throttle_per_minute', 10))
+                ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()));
+        });
+
         // `embed-exchange` — GET /api/embed/exchange (public-api step 5,
         // SPEC.md §3.5, G-32). A NAMED limiter (step 5 review follow-up,
         // item 2), not the numeric `throttle:30,1` this route used before:
