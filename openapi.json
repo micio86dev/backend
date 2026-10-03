@@ -1026,7 +1026,123 @@
                         "$ref": "#/components/responses/AuthenticationException"
                     },
                     "422": {
-                        "$ref": "#/components/responses/ValidationException"
+                        "description": "Either the request failed validation (the standard validation body) or the voice has no catalogue clip (`voice_preview_unavailable`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "voice_preview_unavailable"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "errors": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "errors"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The provider does not know this voice.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_voice_not_found"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Throttled. Retry after the number of seconds in the `Retry-After` header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The provider failed or was unreachable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_error"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The provider is not configured on the platform.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_not_configured"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1934,11 +2050,37 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The audio clip.",
                         "content": {
-                            "application/json": {
+                            "audio/wav": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/ogg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/mpeg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
                                 "schema": {
                                     "type": "string"
+                                }
+                            },
+                            "X-Content-Type-Options": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "nosniff"
                                 }
                             }
                         }
@@ -1950,7 +2092,132 @@
                         "$ref": "#/components/responses/AuthenticationException"
                     },
                     "422": {
-                        "$ref": "#/components/responses/ValidationException"
+                        "description": "Either the request failed validation (the standard validation body) or no voice can be previewed (`voice_preview_unavailable`, with a `reason`: `tavus_stock_voice`, `pal_uses_tavus_voice`, `pal_azure_engine` or `pal_no_voice_configured`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "voice_preview_unavailable"
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "tavus_stock_voice",
+                                                        "pal_uses_tavus_voice",
+                                                        "pal_azure_engine",
+                                                        "pal_no_voice_configured"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "errors": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "errors"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The provider does not know this voice.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_voice_not_found"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Throttled. Retry after the number of seconds in the `Retry-After` header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The provider failed or was unreachable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_error"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The provider is not configured on the platform.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_not_configured"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }

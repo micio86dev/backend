@@ -33,6 +33,11 @@ final class AvatarCatalogueSampleController extends Controller
     #[ResponseDoc(200, description: 'The audio clip.', mediaType: 'audio/wav', type: 'string', format: 'binary')]
     #[ResponseDoc(200, description: 'The audio clip.', mediaType: 'audio/ogg', type: 'string', format: 'binary')]
     #[ResponseDoc(200, description: 'The audio clip.', mediaType: 'audio/mpeg', type: 'string', format: 'binary')]
+    #[ResponseDoc(404, description: 'The provider does not know this voice.', type: "array{message: 'voice_preview_voice_not_found'}")]
+    #[ResponseDoc(422, description: 'Either the request failed validation (the standard validation body) or the voice has no catalogue clip (`voice_preview_unavailable`).', type: "array{message: 'voice_preview_unavailable'}|array{message: string, errors: array<string, list<string>>}")]
+    #[ResponseDoc(429, description: 'Throttled. Retry after the number of seconds in the `Retry-After` header.', type: 'array{message: string}')]
+    #[ResponseDoc(502, description: 'The provider failed or was unreachable.', type: "array{message: 'voice_preview_provider_error'}")]
+    #[ResponseDoc(503, description: 'The provider is not configured on the platform.', type: "array{message: 'voice_preview_provider_not_configured'}")]
     public function __invoke(AvatarCatalogueSampleRequest $request): Response|JsonResponse
     {
         $this->authorize('create', AvatarTemplate::class);
