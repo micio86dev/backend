@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 use Dedoc\Scramble\Generator;
 use Dedoc\Scramble\Scramble;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
+
+// Generating the document introspects request classes whose rules() can open a draft catalogue revision;
+// without this the draft outlives the test and breaks every later test that seeds the baseline
+// (framework_catalog_revisions_one_draft) when the suite runs serially in one database.
+uses(DatabaseTransactions::class);
 
 /**
  * The document transformer in `AppServiceProvider` is what turns Scramble's inferred JSON-string 200 of the two
