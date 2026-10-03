@@ -335,9 +335,12 @@ test('the endpoint is throttled per user', function (): void {
         $this->withToken($token)->postJson(VOICE_PREVIEW_URI, ['provider' => 'cartesia', 'voice_id' => "v{$i}"])->assertOk();
     }
 
-    $this->withToken($token)
+    $throttled = $this->withToken($token)
         ->postJson(VOICE_PREVIEW_URI, ['provider' => 'cartesia', 'voice_id' => 'v4'])
         ->assertStatus(429);
+
+    // The openapi.json declares this header on the 429, so the throttle must really send it.
+    expect((int) $throttled->headers->get('Retry-After'))->toBeGreaterThan(0)->toBeLessThanOrEqual(60);
 });
 
 // ─── Tavus persona (PAL) variant ────────────────────────────────────────────

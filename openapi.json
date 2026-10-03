@@ -1104,6 +1104,15 @@
                                     ]
                                 }
                             }
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before retrying.",
+                                "required": true,
+                                "schema": {
+                                    "type": "integer"
+                                }
+                            }
                         }
                     },
                     "502": {
@@ -2177,6 +2186,15 @@
                                     "required": [
                                         "message"
                                     ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before retrying.",
+                                "required": true,
+                                "schema": {
+                                    "type": "integer"
                                 }
                             }
                         }

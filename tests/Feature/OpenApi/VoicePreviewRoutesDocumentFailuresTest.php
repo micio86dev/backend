@@ -46,5 +46,35 @@ test('every fixed failure code is documented with its status', function (string 
     }
 
     expect($responses)->toHaveKeys(['401', '403', '429']);
-    expect(json_encode($responses['422']))->toContain('voice_preview_unavailable');
+})->with('voice preview routes');
+
+test('the 422 is exactly the unavailable body or the standard validation body', function (string $path, string $method): void {
+    $branches = voicePreviewOperation($path, $method)['responses']['422']['content']['application/json']['schema']['anyOf'] ?? [];
+
+    expect($branches)->toHaveCount(2);
+
+    [$unavailable, $validation] = $branches;
+
+    expect($unavailable['properties']['message'])->toMatchArray(['type' => 'string', 'const' => 'voice_preview_unavailable']);
+    expect($unavailable['required'])->toBe(['message']);
+
+    // Only the synthesised sample can name a reason: the catalogue clip has a single way to be missing.
+    if ($path === '/avatar-templates/voice-preview') {
+        expect($unavailable['properties']['reason']['enum'])->toEqualCanonicalizing([
+            'tavus_stock_voice', 'pal_uses_tavus_voice', 'pal_azure_engine', 'pal_no_voice_configured',
+        ]);
+    } else {
+        expect($unavailable['properties'])->not->toHaveKey('reason');
+    }
+
+    expect($validation['properties'])->toHaveKeys(['message', 'errors']);
+    expect($validation['required'])->toEqualCanonicalizing(['message', 'errors']);
+})->with('voice preview routes');
+
+test('the 429 declares the Retry-After header its description promises', function (string $path, string $method): void {
+    $header = voicePreviewOperation($path, $method)['responses']['429']['headers']['Retry-After'] ?? null;
+
+    expect($header)->not->toBeNull('429 declares no Retry-After');
+    expect($header['schema']['type'])->toBe('integer');
+    expect($header['required'])->toBeTrue();
 })->with('voice preview routes');

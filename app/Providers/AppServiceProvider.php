@@ -37,8 +37,11 @@ use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
 use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\Header;
 use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\Schema;
 use Dedoc\Scramble\Support\Generator\SecuritySchemes\HttpSecurityScheme;
+use Dedoc\Scramble\Support\Generator\Types\IntegerType;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -145,8 +148,22 @@ class AppServiceProvider extends ServiceProvider
 
                 foreach ($path->operations as $operation) {
                     foreach ($operation->responses ?? [] as $response) {
-                        if ($response instanceof \Dedoc\Scramble\Support\Generator\Response && (string) $response->code === '200') {
+                        if (! $response instanceof \Dedoc\Scramble\Support\Generator\Response) {
+                            continue;
+                        }
+
+                        if ((string) $response->code === '200') {
                             unset($response->content['application/json']);
+                        }
+
+                        // Laravel's throttle middleware sends `Retry-After` (integer seconds) on every 429; the attribute
+                        // description promises it, so the spec must declare it (the generated clients read it from here).
+                        if ((string) $response->code === '429') {
+                            $response->addHeader('Retry-After', new Header(
+                                description: 'Seconds to wait before retrying.',
+                                required: true,
+                                schema: Schema::fromType(new IntegerType),
+                            ));
                         }
                     }
                 }
