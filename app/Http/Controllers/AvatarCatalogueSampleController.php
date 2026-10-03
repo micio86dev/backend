@@ -8,6 +8,7 @@ use App\Http\Requests\AvatarCatalogueSampleRequest;
 use App\Models\AvatarTemplate;
 use App\Services\AvatarPreview\CatalogueSampleService;
 use App\Services\AvatarPreview\VoicePreviewException;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 
@@ -28,9 +29,10 @@ final class AvatarCatalogueSampleController extends Controller
      * `{message: <code>}` with one of `voice_preview_unavailable` (422, the voice has no catalogue
      * clip), `voice_preview_provider_not_configured` (503), `voice_preview_voice_not_found` (404)
      * and `voice_preview_provider_error` (502).
-     *
-     * @response string
      */
+    #[ResponseDoc(200, description: 'The audio clip.', mediaType: 'audio/wav', type: 'string', format: 'binary')]
+    #[ResponseDoc(200, description: 'The audio clip.', mediaType: 'audio/ogg', type: 'string', format: 'binary')]
+    #[ResponseDoc(200, description: 'The audio clip.', mediaType: 'audio/mpeg', type: 'string', format: 'binary')]
     public function __invoke(AvatarCatalogueSampleRequest $request): Response|JsonResponse
     {
         $this->authorize('create', AvatarTemplate::class);

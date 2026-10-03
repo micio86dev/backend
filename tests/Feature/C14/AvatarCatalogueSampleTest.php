@@ -16,6 +16,11 @@ declare(strict_types=1);
 
 use App\Models\Organization;
 use App\Models\User;
+use GuzzleHttp\Exception\TransferException;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\Response as PsrResponse;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
@@ -186,6 +191,53 @@ test('a download that is not audio is rejected and not cached', function (?strin
 
     expect(Storage::allFiles())->toBe([]);
 })->with(['html' => ['text/html'], 'json' => ['application/json'], 'octet-stream' => ['application/octet-stream']]);
+
+test('a body of exactly max_bytes is served and one byte more is refused', function (): void {
+    config(['avatar_preview.catalogue_sample.max_bytes' => 16]);
+    $token = catalogueSampleSuperadmin();
+
+    fakeCartesiaSample(download: Http::response(str_repeat('x', 16), 200, ['Content-Type' => 'audio/mpeg']));
+    $this->withToken($token)->get(CATALOGUE_SAMPLE_URI.'?provider=cartesia&voice_id=v1')->assertOk();
+
+    Cache::flush();
+    Storage::fake();
+    fakeCartesiaSample(download: Http::response(str_repeat('x', 17), 200, ['Content-Type' => 'audio/mpeg']));
+    $this->withToken($token)->get(CATALOGUE_SAMPLE_URI.'?provider=cartesia&voice_id=v1')
+        ->assertStatus(502)
+        ->assertExactJson(['message' => 'voice_preview_provider_error']);
+    expect(Storage::allFiles())->toBe([]);
+});
+
+test('a body that fails while it is being read is a clean provider error, with nothing leaked or cached', function (Throwable $failure): void {
+    $logged = [];
+    Log::listen(function ($event) use (&$logged): void {
+        $logged[] = $event->message.json_encode($event->context);
+    });
+    fakeCartesiaSample(download: function () use ($failure) {
+        $body = FnStream::decorate(Utils::streamFor('RIFF-partial'), [
+            'read' => function () use ($failure): never {
+                throw $failure;
+            },
+            'eof' => fn (): bool => false,
+        ]);
+
+        return Create::promiseFor(new PsrResponse(200, ['Content-Type' => 'audio/wav'], $body));
+    });
+
+    $response = $this->withToken(catalogueSampleSuperadmin())->get(CATALOGUE_SAMPLE_URI.'?provider=cartesia&voice_id=v1');
+
+    $response->assertStatus(502)->assertExactJson(['message' => 'voice_preview_provider_error']);
+    expect(Storage::allFiles())->toBe([])
+        ->and(Cache::has('catalogue-sample:v1:'.hash('sha256', 'cartesia|v1')))->toBeFalse()
+        ->and($response->getContent().implode('', $logged))
+        ->not->toContain(CATALOGUE_SAMPLE_KEY)
+        ->not->toContain('SECRETFILEID')
+        ->not->toContain('files.cartesia.ai')
+        ->not->toContain('mid-body');
+})->with([
+    'guzzle transfer error' => [fn () => new TransferException('mid-body '.CATALOGUE_SAMPLE_KEY.CATALOGUE_SAMPLE_FILE_URL)],
+    'stream runtime error' => [fn () => new RuntimeException('mid-body '.CATALOGUE_SAMPLE_KEY.CATALOGUE_SAMPLE_FILE_URL)],
+]);
 
 // ─── Cache ──────────────────────────────────────────────────────────────────
 

@@ -134,6 +134,25 @@ class AppServiceProvider extends ServiceProvider
             }
         });
 
+        // `GET /api/avatar-templates/catalogue-sample` returns raw audio. Scramble infers a JSON string 200
+        // from `response($bytes, ...)` and the `#[Response]` attributes can only ADD media types, so the
+        // inferred `application/json` is dropped here: the backoffice client is generated from this file.
+        Scramble::configure()->withDocumentTransformers(function (OpenApi $document): void {
+            foreach ($document->paths as $path) {
+                if (ltrim($path->path, '/') !== 'avatar-templates/catalogue-sample') {
+                    continue;
+                }
+
+                foreach ($path->operations as $operation) {
+                    foreach ($operation->responses ?? [] as $response) {
+                        if ($response instanceof \Dedoc\Scramble\Support\Generator\Response && (string) $response->code === '200') {
+                            unset($response->content['application/json']);
+                        }
+                    }
+                }
+            }
+        });
+
         // C4 — Register ProjectPolicy for Gate-based authorization.
         /**
          * A superadmin passes every gate.

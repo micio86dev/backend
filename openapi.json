@@ -984,11 +984,37 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The audio clip.",
                         "content": {
-                            "application/json": {
+                            "audio/wav": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/ogg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/mpeg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
                                 "schema": {
                                     "type": "string"
+                                }
+                            },
+                            "X-Content-Type-Options": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "nosniff"
                                 }
                             }
                         }

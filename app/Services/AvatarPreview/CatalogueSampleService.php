@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AvatarPreview;
 
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -136,7 +137,10 @@ final class CatalogueSampleService
                 ->get($url);
 
             $audio = $response->successful() ? $this->boundedBody($response, $max) : null;
-        } catch (ConnectionException|RequestException) {
+        } catch (ConnectionException|RequestException|GuzzleException|\RuntimeException) {
+            // Also covers the manual stream read in boundedBody(): it runs after the headers arrived, so a
+            // transfer that dies mid-body surfaces as a Guzzle/Runtime exception, not an Illuminate one.
+            // Programmer errors (TypeError, LogicException...) are deliberately NOT caught.
             Log::warning('CatalogueSampleService: file download unreachable');
 
             throw new VoicePreviewException(VoicePreviewException::PROVIDER_ERROR);
