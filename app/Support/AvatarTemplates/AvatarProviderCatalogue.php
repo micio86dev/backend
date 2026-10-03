@@ -24,9 +24,12 @@ use Throwable;
  * guessed. In particular:
  * - Neither Tavus resource carries a `language` field at all — the
  *   normalizer never infers one; it is always `null` (D4).
- * - Preview media: Cartesia voices carry `preview_file_url` (only when asked
- *   with `expand[]=preview_file_url`) and ElevenLabs voices `preview_url`;
- *   both surface as `preview_audio_url`. Tavus voices carry none, and HeyGen's
+ * - Preview media: ElevenLabs voices carry a public CDN `preview_url`, which
+ *   surfaces as `preview_audio_url`. Cartesia voices carry `preview_file_url`
+ *   (only when asked with `expand[]=preview_file_url`), but that file host
+ *   answers 401 without the platform key, so its url is NEVER surfaced: the
+ *   entry says `preview_audio_via_api: true` and the clip is served by
+ *   `GET /api/avatar-templates/catalogue-sample`. Tavus voices carry none, and HeyGen's
  *   voice list carries none either (its sample is a per-voice base64 endpoint,
  *   deliberately NOT fetched here — that would be one call per voice — and is
  *   served by `POST /api/avatar-templates/voice-preview`). Tavus's replica
@@ -78,8 +81,11 @@ final class AvatarProviderCatalogue
      * live 24h, so a deploy that changes the shape would otherwise keep serving
      * the old one — e.g. personas without `editable` read as "unknown".
      * v2: Tavus persona items gained `editable`.
+     * v3: every item gained `preview_audio_via_api`, and Cartesia items stopped
+     *     carrying the raw `preview_file_url` in `preview_audio_url` (a v2 entry
+     *     would keep serving that url to the browser for up to 24h).
      */
-    public const CACHE_VERSION = 2;
+    public const CACHE_VERSION = 3;
 
     private const PAGE_SIZE = 100;
 
@@ -392,7 +398,9 @@ final class AvatarProviderCatalogue
      * with `limit` / `starting_after`. Older API versions answer a bare list;
      * both are accepted. Cartesia carries no accent field, so `accent` is
      * always null. `preview_file_url` is only present with
-     * `expand[]=preview_file_url`. UNVERIFIED against a live account.
+     * `expand[]=preview_file_url`. Verified live 2026-10-03: the list, the
+     * per-voice `GET /voices/{id}?expand[]=preview_file_url` and the file
+     * download (Bearer or `X-API-Key`, answers `audio/wav`; 401 without a key).
      *
      * @return list<array<string, mixed>>
      */
@@ -436,7 +444,8 @@ final class AvatarProviderCatalogue
                     id: self::stringOrEmpty($row['id'] ?? null),
                     label: self::stringOrEmpty($row['name'] ?? null),
                     language: $language,
-                    previewAudioUrl: self::stringOrNull($row['preview_file_url'] ?? null),
+                    // Only WHETHER a clip exists: the url needs the key (see the class docblock).
+                    previewAudioViaApi: self::stringOrNull($row['preview_file_url'] ?? null) !== null,
                     locale: $language,
                     italian: self::isItalianCode($language) ? 'native' : null,
                 );
@@ -748,6 +757,7 @@ final class AvatarProviderCatalogue
         ?string $accent = null,
         ?string $italian = null,
         ?string $previewVideoUrl = null,
+        bool $previewAudioViaApi = false,
     ): array {
         return [
             'id' => $id,
@@ -760,6 +770,7 @@ final class AvatarProviderCatalogue
             'italian' => $italian,
             'preview_image_url' => $previewImageUrl,
             'preview_audio_url' => $previewAudioUrl,
+            'preview_audio_via_api' => $previewAudioViaApi,
             'preview_video_url' => $previewVideoUrl,
         ];
     }

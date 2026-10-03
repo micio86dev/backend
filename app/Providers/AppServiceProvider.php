@@ -37,8 +37,11 @@ use App\Support\PublicApi\ApiMode;
 use App\Testing\FakeAuditJudge;
 use App\Testing\FakeLLMProvider;
 use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\Header;
 use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\Schema;
 use Dedoc\Scramble\Support\Generator\SecuritySchemes\HttpSecurityScheme;
+use Dedoc\Scramble\Support\Generator\Types\IntegerType;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -129,6 +132,39 @@ class AppServiceProvider extends ServiceProvider
                 if (ltrim($path->path, '/') === 'health') {
                     foreach ($path->operations as $operation) {
                         $operation->security = [];
+                    }
+                }
+            }
+        });
+
+        // The two voice-preview routes (`GET .../catalogue-sample`, `POST .../voice-preview`) return raw audio. Scramble infers a JSON string 200
+        // from `response($bytes, ...)` and the `#[Response]` attributes can only ADD media types, so the
+        // inferred `application/json` is dropped here: the backoffice client is generated from this file.
+        Scramble::configure()->withDocumentTransformers(function (OpenApi $document): void {
+            foreach ($document->paths as $path) {
+                if (! in_array(ltrim($path->path, '/'), ['avatar-templates/catalogue-sample', 'avatar-templates/voice-preview'], true)) {
+                    continue;
+                }
+
+                foreach ($path->operations as $operation) {
+                    foreach ($operation->responses ?? [] as $response) {
+                        if (! $response instanceof \Dedoc\Scramble\Support\Generator\Response) {
+                            continue;
+                        }
+
+                        if ((string) $response->code === '200') {
+                            unset($response->content['application/json']);
+                        }
+
+                        // Laravel's throttle middleware sends `Retry-After` (integer seconds) on every 429; the attribute
+                        // description promises it, so the spec must declare it (the generated clients read it from here).
+                        if ((string) $response->code === '429') {
+                            $response->addHeader('Retry-After', new Header(
+                                description: 'Seconds to wait before retrying.',
+                                required: true,
+                                schema: Schema::fromType(new IntegerType),
+                            ));
+                        }
                     }
                 }
             }
@@ -425,6 +461,13 @@ class AppServiceProvider extends ServiceProvider
         // Every cache miss is a paid TTS call on the platform's provider key, so
         // the bucket is per USER (the route sits behind auth:api).
         RateLimiter::for('avatar-voice-preview', function (Request $request) {
+            return Limit::perMinute((int) config('avatar_preview.throttle_per_minute', 10))
+                ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()));
+        });
+
+        // `avatar-catalogue-sample` — GET /api/avatar-templates/catalogue-sample. Per USER, like the
+        // synthesised sample's bucket, and deliberately NOT shared with it.
+        RateLimiter::for('avatar-catalogue-sample', function (Request $request) {
             return Limit::perMinute((int) config('avatar_preview.throttle_per_minute', 10))
                 ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()));
         });

@@ -140,7 +140,7 @@ test('the item key set per resource matches the snapshot tied to CACHE_VERSION',
     // Bump AvatarProviderCatalogue::CACHE_VERSION AND this snapshot together
     // whenever an item gains or loses a key; a stale cached shape is otherwise
     // served for 24h after the deploy.
-    $base = ['id', 'provider', 'label', 'name', 'language', 'locale', 'accent', 'italian', 'preview_image_url', 'preview_audio_url', 'preview_video_url'];
+    $base = ['id', 'provider', 'label', 'name', 'language', 'locale', 'accent', 'italian', 'preview_image_url', 'preview_audio_url', 'preview_audio_via_api', 'preview_video_url'];
     Http::fake([
         '*persona_type=*' => Http::response(palPage([]), 200),
         'tavusapi.com/v2/pals*' => Http::response(palPage(['p1']), 200),
@@ -152,7 +152,7 @@ test('the item key set per resource matches the snapshot tied to CACHE_VERSION',
         'pal' => array_keys(AvatarProviderCatalogue::fetch('tavus', 'pal')['items'][0]),
         'voice' => array_keys(AvatarProviderCatalogue::fetch('tavus', 'voice')['items'][0]),
     ])->toBe([
-        'version' => 2,
+        'version' => 3,
         'pal' => [...$base, 'editable'],
         'voice' => $base,
     ]);
