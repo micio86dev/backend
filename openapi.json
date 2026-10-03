@@ -1222,7 +1222,7 @@
         "/avatar-templates/field-specs": {
             "get": {
                 "operationId": "avatarTemplate.fieldSpecs",
-                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives.",
+                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives. Platform-only fields (the external HeyGen voice) are not listed:\nan organization's template cannot carry them.",
                 "summary": "The field specs both providers accept",
                 "tags": [
                     "AvatarTemplate"
@@ -7981,6 +7981,42 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/field-specs": {
+            "get": {
+                "operationId": "platformAvatarTemplate.fieldSpecs",
+                "description": "Machine-facing and NOT localized, like the organization route's.",
+                "summary": "The field specs a platform template accepts, including the platform-only\nones (the external HeyGen voice) that the organization route leaves out",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"

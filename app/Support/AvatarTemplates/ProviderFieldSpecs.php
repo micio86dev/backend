@@ -88,7 +88,48 @@ final class ProviderFieldSpecs
         'elevenlabs' => 'eleven_multilingual_v2',
     ];
 
-    /** @return list<FieldSpec> */
+    /**
+     * External TTS engines a HeyGen (LiveAvatar) template can bind
+     * (`ttsEngine`): the vendors whose voices LiveAvatar can import through
+     * `POST /v1/voices/third_party`. `none` means the native LiveAvatar voice.
+     *
+     * @var list<string>
+     */
+    public const HEYGEN_EXTERNAL_ENGINES = ['cartesia', 'elevenlabs'];
+
+    /**
+     * The model sent in `avatar_persona.voice_settings.model` for a bound voice,
+     * pinned rather than left to LiveAvatar's own default so a future vendor
+     * default cannot move a live template. `sonic-2` has NO Italian and is never
+     * offered.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json `CartesiaVoiceSettings.model`
+     * default `sonic-3.5`; `ElevenLabsVoiceSettings.model` default `eleven_flash_v2_5`.
+     * The discriminated shape is documented, NOT yet exercised on a live session.
+     *
+     * @var array<string, string>
+     */
+    public const HEYGEN_TTS_DEFAULT_MODEL = [
+        'cartesia' => 'sonic-3.5',
+        'elevenlabs' => 'eleven_flash_v2_5',
+    ];
+
+    /**
+     * Voice knobs an engine's LiveAvatar settings object does not have:
+     * `CartesiaVoiceSettings` carries `speed` and `model` only, so the other four
+     * would be accepted, stored and never sent (a dead knob) and are refused.
+     *
+     * @var array<string, list<string>>
+     */
+    public const HEYGEN_ENGINE_UNSUPPORTED_KNOBS = [
+        'cartesia' => ['voiceStability', 'voiceSimilarityBoost', 'voiceStyle', 'voiceUseSpeakerBoost'],
+    ];
+
+    /**
+     * Every field of a provider, platform-only ones included.
+     *
+     * @return list<FieldSpec>
+     */
     public static function for(string $provider): array
     {
         return match ($provider) {
@@ -100,6 +141,17 @@ final class ProviderFieldSpecs
             // politely helps nobody.
             default => [],
         };
+    }
+
+    /**
+     * The fields an ORGANIZATION's template may carry: every field minus the
+     * platform-only ones.
+     *
+     * @return list<FieldSpec>
+     */
+    public static function forOrganization(string $provider): array
+    {
+        return array_values(array_filter(self::for($provider), fn (FieldSpec $field): bool => ! $field->platformOnly));
     }
 
     /** @return list<FieldSpec> */
@@ -116,7 +168,15 @@ final class ProviderFieldSpecs
             // operator pick a language and hear no difference — the exact failure
             // the comments in TemplatePayload already warn about.
             new FieldSpec('avatarId', FieldType::Text, $l('avatarId'), required: true, hintKey: $h('avatarId'), catalogueResource: 'avatar'),
-            new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId'), catalogueResource: 'voice'),
+            // Required UNLESS an external engine supplies the voice: the two are
+            // alternatives, and a native id beside an external one would be sent
+            // nowhere (superseded, see FieldSpec).
+            new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId'), catalogueResource: 'voice', supersededByKey: 'ttsEngine', supersededByValues: self::HEYGEN_EXTERNAL_ENGINES),
+            // PLATFORM templates only (heygen-third-party-voices). The voice is
+            // bound on LiveAvatar at save time; the bound id is derived from the
+            // ledger when a session starts, never stored on the template.
+            new FieldSpec('ttsEngine', FieldType::Select, $l('ttsEngine'), options: ['none', ...self::HEYGEN_EXTERNAL_ENGINES], hintKey: $h('heygenTtsEngine'), platformOnly: true),
+            new FieldSpec('ttsExternalVoiceId', FieldType::Text, $l('ttsExternalVoiceId'), hintKey: $h('heygenTtsExternalVoiceId'), platformOnly: true),
             new FieldSpec('interactivityType', FieldType::Select, $l('interactivityType'), options: ['CONVERSATIONAL', 'PUSH_TO_TALK'], hintKey: $h('interactivityType')),
             new FieldSpec('maxSessionDurationSec', FieldType::Number, $l('maxSessionDurationSec'), min: 30, max: self::HEYGEN_MAX_SECONDS, hintKey: $h('maxSessionDurationSec')),
             new FieldSpec('videoQuality', FieldType::Select, $l('videoQuality'), options: ['very_high', 'high', 'medium', 'low'], hintKey: $h('videoQuality')),

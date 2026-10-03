@@ -26,14 +26,31 @@ final class TemplatePayload
     /**
      * HeyGen's session body fragment.
      *
+     * `$boundVoiceId` is the LiveAvatar voice id the ledger holds for the
+     * template's external voice (`HeygenVoiceRegistrar::boundVoiceId`); it is
+     * passed IN, never stored on the template, so the config has one source of
+     * truth (the vendor voice id) and the bound id cannot drift from it. It is
+     * ignored unless `ttsEngine` names an external engine.
+     *
+     * For an external engine `avatar_persona.voice_id` is that bound id and
+     * `voice_settings` is LiveAvatar's provider-DISCRIMINATED object (`provider`
+     * cartesia | elevenLabs, plus the knobs that engine has and a pinned
+     * model). For everything else the body is unchanged to the byte.
+     *
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
-    public static function heygen(array $config): array
+    public static function heygen(array $config, ?string $boundVoiceId = null): array
     {
         $payload = [];
 
         self::put($payload, 'avatar_id', $config['avatarId'] ?? null);
+
+        $engine = $config['ttsEngine'] ?? null;
+
+        if (is_string($engine) && in_array($engine, ProviderFieldSpecs::HEYGEN_EXTERNAL_ENGINES, true)) {
+            return self::heygenExternalVoice($payload, $config, $engine, $boundVoiceId);
+        }
 
         // Nesting matters. HeyGen accepts flat keys and silently ignores them —
         // the worst failure available, because the operator sees a saved
@@ -73,6 +90,53 @@ final class TemplatePayload
         self::put($payload, 'voice_settings.similarity_boost', $config['voiceSimilarityBoost'] ?? null);
         self::put($payload, 'voice_settings.style', $config['voiceStyle'] ?? null);
         self::put($payload, 'voice_settings.use_speaker_boost', $config['voiceUseSpeakerBoost'] ?? null);
+
+        return $payload;
+    }
+
+    /**
+     * The rest of a HeyGen body for an external voice. No native `voiceId`
+     * (it is superseded and refused beside an engine), no `language` (the
+     * project's, see `heygen()`), and none of the flat knobs: LiveAvatar's
+     * `voice_settings` is a union discriminated by `provider`, and flat keys
+     * without it are exactly what it ignores.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json
+     * `AvatarPersonaSchema.voice_settings` (`CartesiaVoiceSettings`:
+     * provider/speed/model; `ElevenLabsVoiceSettings`: provider/speed/stability/
+     * similarity_boost/style/use_speaker_boost/model). Documented, NOT yet
+     * exercised on a live session.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private static function heygenExternalVoice(array $payload, array $config, string $engine, ?string $boundVoiceId): array
+    {
+        self::put($payload, 'avatar_persona.voice_id', $boundVoiceId);
+
+        self::put($payload, 'interactivity_type', $config['interactivityType'] ?? null);
+
+        $duration = $config['maxSessionDurationSec'] ?? null;
+
+        if (is_int($duration)) {
+            self::put($payload, 'max_session_duration', min($duration, ProviderFieldSpecs::HEYGEN_MAX_SECONDS));
+        }
+
+        self::put($payload, 'video_settings.quality', $config['videoQuality'] ?? null);
+        self::put($payload, 'video_settings.encoding', $config['videoEncoding'] ?? null);
+
+        self::put($payload, 'voice_settings.provider', $engine === 'elevenlabs' ? 'elevenLabs' : 'cartesia');
+        self::put($payload, 'voice_settings.speed', $config['voiceSpeed'] ?? null);
+
+        if ($engine === 'elevenlabs') {
+            self::put($payload, 'voice_settings.stability', $config['voiceStability'] ?? null);
+            self::put($payload, 'voice_settings.similarity_boost', $config['voiceSimilarityBoost'] ?? null);
+            self::put($payload, 'voice_settings.style', $config['voiceStyle'] ?? null);
+            self::put($payload, 'voice_settings.use_speaker_boost', $config['voiceUseSpeakerBoost'] ?? null);
+        }
+
+        self::put($payload, 'voice_settings.model', ProviderFieldSpecs::HEYGEN_TTS_DEFAULT_MODEL[$engine]);
 
         return $payload;
     }

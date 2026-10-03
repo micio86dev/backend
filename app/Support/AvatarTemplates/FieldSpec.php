@@ -63,6 +63,22 @@ final readonly class FieldSpec
         public ?string $optionsDependOn = null,
         /** @var array<string, list<string>>|null */
         public ?array $optionsByValue = null,
+        /**
+         * The field belongs to PLATFORM templates only (heygen-third-party-voices):
+         * an organization's template routes refuse it (`platform_only`) and the
+         * organization field-spec route does not list it. A first cut deliberately
+         * not opened to organization admins.
+         */
+        public bool $platformOnly = false,
+        /**
+         * The field is REPLACED by another field's value: when `supersededByKey`
+         * holds one of `supersededByValues` this field is not required and must
+         * be absent (`superseded_by_*`), so a native HeyGen voice id cannot sit
+         * beside an external voice that overrides it (a dead knob).
+         */
+        public ?string $supersededByKey = null,
+        /** @var list<string>|null */
+        public ?array $supersededByValues = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -81,6 +97,9 @@ final readonly class FieldSpec
             'catalogue_resource' => $this->catalogueResource,
             'options_depend_on' => $this->optionsDependOn,
             'options_by_value' => $this->optionsByValue,
+            'platform_only' => $this->platformOnly,
+            'superseded_by_key' => $this->supersededByKey,
+            'superseded_by_values' => $this->supersededByValues,
         ], fn (mixed $v): bool => $v !== null && $v !== false);
     }
 }

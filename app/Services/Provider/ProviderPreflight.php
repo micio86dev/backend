@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Provider;
 
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplateReferenceValidator;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -115,7 +116,12 @@ final class ProviderPreflight
             $errors[] = ['key' => 'avatarId', 'code' => 'avatar_missing'];
         }
 
-        if ($this->blank($templateConfig['voiceId'] ?? config('interview.heygen.voice_id'))) {
+        // An external engine supplies the voice (bound on LiveAvatar at save time),
+        // so the native voice id is legitimately absent for it.
+        $externalVoice = in_array($templateConfig['ttsEngine'] ?? null, ProviderFieldSpecs::HEYGEN_EXTERNAL_ENGINES, true)
+            && ! $this->blank($templateConfig['ttsExternalVoiceId'] ?? null);
+
+        if (! $externalVoice && $this->blank($templateConfig['voiceId'] ?? config('interview.heygen.voice_id'))) {
             $errors[] = ['key' => 'voiceId', 'code' => 'voice_missing'];
         }
 

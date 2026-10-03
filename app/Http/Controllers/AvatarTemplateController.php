@@ -129,7 +129,8 @@ final class AvatarTemplateController extends Controller
      * validation and the provider payload cannot disagree — which is the whole
      * reason the spec is declarative. Machine-facing and NOT localized: it
      * carries label keys, and translation happens where the operator's locale
-     * lives.
+     * lives. Platform-only fields (the external HeyGen voice) are not listed:
+     * an organization's template cannot carry them.
      */
     public function fieldSpecs(): JsonResponse
     {
@@ -140,7 +141,7 @@ final class AvatarTemplateController extends Controller
         foreach (self::PROVIDERS as $provider) {
             $specs[$provider] = array_map(
                 fn ($field): array => $field->toArray(),
-                ProviderFieldSpecs::for($provider),
+                ProviderFieldSpecs::forOrganization($provider),
             );
         }
 

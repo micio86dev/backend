@@ -67,10 +67,12 @@ trait ValidatesAvatarTemplateWrites
 
     /**
      * @param  array<string, mixed>  $config
+     * @param  bool  $platform  true only on the superadmin platform-template routes, the one
+     *                          place the platform-only fields (the external HeyGen voice) are accepted.
      */
-    private function assertConfigValid(string $provider, array $config): void
+    private function assertConfigValid(string $provider, array $config, bool $platform = false): void
     {
-        $errors = ConfigValidator::validate($provider, $config);
+        $errors = ConfigValidator::validate($provider, $config, $platform);
 
         // References are checked only once the shape is sound: a missing or
         // mistyped id would otherwise be reported twice.

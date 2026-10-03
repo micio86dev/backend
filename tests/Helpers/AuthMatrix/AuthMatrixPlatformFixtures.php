@@ -228,6 +228,7 @@ final class AuthMatrixPlatformFixtures
         $global = fn (AuthMatrixResources $r): array => ['id' => $r->platform()->globalTemplate()->id];
 
         return [
+            'GET api/admin/avatar-templates/field-specs' => [],
             'GET api/admin/avatar-templates' => [],
             'POST api/admin/avatar-templates' => [
                 'payload' => fn (): array => [

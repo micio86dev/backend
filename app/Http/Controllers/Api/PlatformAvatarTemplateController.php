@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
@@ -15,6 +16,7 @@ use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Superadmin\PlatformAuditWriter;
 use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -73,6 +75,30 @@ final class PlatformAvatarTemplateController extends Controller
     }
 
     /**
+     * The field specs a platform template accepts, including the platform-only
+     * ones (the external HeyGen voice) that the organization route leaves out.
+     *
+     * Machine-facing and NOT localized, like the organization route's.
+     *
+     * @throws AuthorizationException
+     */
+    public function fieldSpecs(Request $request): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $specs = [];
+
+        foreach (['heygen', 'tavus'] as $provider) {
+            $specs[$provider] = array_map(
+                fn ($field): array => $field->toArray(),
+                ProviderFieldSpecs::for($provider),
+            );
+        }
+
+        return response()->json(['data' => $specs]);
+    }
+
+    /**
      * List platform avatar templates with their usage.
      *
      * @response array{data: list<\App\Http\Resources\PlatformAvatarTemplateResource>}
@@ -122,7 +148,8 @@ final class PlatformAvatarTemplateController extends Controller
 
         $validated = $request->validate($this->templateStoreRules());
 
-        $this->assertConfigValid($validated['provider'], $validated['config']);
+        $this->assertConfigValid($validated['provider'], $validated['config'], platform: true);
+        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
 
         $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
@@ -175,7 +202,8 @@ final class PlatformAvatarTemplateController extends Controller
         }
 
         if (array_key_exists('config', $validated)) {
-            $this->assertConfigValid($template->provider, $validated['config']);
+            $this->assertConfigValid($template->provider, $validated['config'], platform: true);
+            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         if (array_key_exists('name', $validated)) {
@@ -251,7 +279,7 @@ final class PlatformAvatarTemplateController extends Controller
         $template = AvatarTemplate::platformOnly()->findOrFail($id);
 
         if (! $template->is_active) {
-            $this->assertConfigValid($template->provider, $template->config);
+            $this->assertConfigValid($template->provider, $template->config, platform: true);
             $this->setOffered($actor, $template, true);
 
             return $this->present($template)->additional($this->recordSync($template));
