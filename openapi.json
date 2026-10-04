@@ -1222,7 +1222,7 @@
         "/avatar-templates/field-specs": {
             "get": {
                 "operationId": "avatarTemplate.fieldSpecs",
-                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives. Platform-only fields (the external HeyGen voice) are not listed:\nan organization's template cannot carry them.",
+                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives. The superadmin-only fields (the external HeyGen voice) are listed\nfor a superadmin and for nobody else.",
                 "summary": "The field specs both providers accept",
                 "tags": [
                     "AvatarTemplate"
@@ -7992,7 +7992,7 @@
             "get": {
                 "operationId": "platformAvatarTemplate.fieldSpecs",
                 "description": "Machine-facing and NOT localized, like the organization route's.",
-                "summary": "The field specs a platform template accepts, including the platform-only\nones (the external HeyGen voice) that the organization route leaves out",
+                "summary": "The field specs a platform template accepts, including the superadmin-only\nones (the external HeyGen voice). The organization route lists those for a\nsuperadmin too and for nobody else",
                 "tags": [
                     "PlatformAvatarTemplate"
                 ],

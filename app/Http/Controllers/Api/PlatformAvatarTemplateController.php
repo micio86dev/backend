@@ -75,8 +75,9 @@ final class PlatformAvatarTemplateController extends Controller
     }
 
     /**
-     * The field specs a platform template accepts, including the platform-only
-     * ones (the external HeyGen voice) that the organization route leaves out.
+     * The field specs a platform template accepts, including the superadmin-only
+     * ones (the external HeyGen voice). The organization route lists those for a
+     * superadmin too and for nobody else.
      *
      * Machine-facing and NOT localized, like the organization route's.
      *
@@ -91,7 +92,7 @@ final class PlatformAvatarTemplateController extends Controller
         foreach (['heygen', 'tavus'] as $provider) {
             $specs[$provider] = array_map(
                 fn ($field): array => $field->toArray(),
-                ProviderFieldSpecs::for($provider),
+                ProviderFieldSpecs::forCaller($provider, true),
             );
         }
 
@@ -148,7 +149,7 @@ final class PlatformAvatarTemplateController extends Controller
 
         $validated = $request->validate($this->templateStoreRules());
 
-        $this->assertConfigValid($validated['provider'], $validated['config'], platform: true);
+        $this->assertConfigValid($validated['provider'], $validated['config']);
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
 
@@ -202,7 +203,7 @@ final class PlatformAvatarTemplateController extends Controller
         }
 
         if (array_key_exists('config', $validated)) {
-            $this->assertConfigValid($template->provider, $validated['config'], platform: true);
+            $this->assertConfigValid($template->provider, $validated['config']);
             app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
@@ -279,7 +280,7 @@ final class PlatformAvatarTemplateController extends Controller
         $template = AvatarTemplate::platformOnly()->findOrFail($id);
 
         if (! $template->is_active) {
-            $this->assertConfigValid($template->provider, $template->config, platform: true);
+            $this->assertConfigValid($template->provider, $template->config);
             $this->setOffered($actor, $template, true);
 
             return $this->present($template)->additional($this->recordSync($template));
@@ -400,7 +401,7 @@ final class PlatformAvatarTemplateController extends Controller
 
         // A copy of a template that no longer validates would just move the
         // problem into another organization.
-        if (ConfigValidator::validate($template->provider, $template->config) !== []) {
+        if (ConfigValidator::validate($template->provider, $template->config, true) !== []) {
             throw ValidationException::withMessages(['template' => 'source_config_invalid']);
         }
 

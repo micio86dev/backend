@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
 use App\Http\Resources\AvatarTemplateResource;
 use App\Models\AvatarTemplate;
@@ -129,8 +130,8 @@ final class AvatarTemplateController extends Controller
      * validation and the provider payload cannot disagree — which is the whole
      * reason the spec is declarative. Machine-facing and NOT localized: it
      * carries label keys, and translation happens where the operator's locale
-     * lives. Platform-only fields (the external HeyGen voice) are not listed:
-     * an organization's template cannot carry them.
+     * lives. The superadmin-only fields (the external HeyGen voice) are listed
+     * for a superadmin and for nobody else.
      */
     public function fieldSpecs(): JsonResponse
     {
@@ -141,7 +142,7 @@ final class AvatarTemplateController extends Controller
         foreach (self::PROVIDERS as $provider) {
             $specs[$provider] = array_map(
                 fn ($field): array => $field->toArray(),
-                ProviderFieldSpecs::forOrganization($provider),
+                ProviderFieldSpecs::forCaller($provider, $this->callerIsSuperadmin()),
             );
         }
 
@@ -224,6 +225,10 @@ final class AvatarTemplateController extends Controller
         $validated = $request->validate($this->templateStoreRules());
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
+        // A superadmin's external voice is bound here, before the row is written,
+        // exactly as on the platform route: the ledger and secrets are platform
+        // tables, the template row below still belongs to the acting organization.
+        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::query(), $validated['name'], null);
 
         // is_active is deliberately absent from the accepted fields. Creating a
@@ -265,6 +270,7 @@ final class AvatarTemplateController extends Controller
 
         if (array_key_exists('config', $validated)) {
             $this->assertConfigValid($template->provider, $validated['config']);
+            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         if (array_key_exists('name', $validated)) {

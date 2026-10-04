@@ -115,6 +115,22 @@ final class ProviderFieldSpecs
     ];
 
     /**
+     * The LiveAvatar models offered per engine (`voice_settings.model`), the
+     * Italian-capable subset of `CartesiaModelEnum` / `ElevenLabsModelEnum`:
+     * `sonic-2` and `sonic-turbo` are not offered (no Italian guarantee);
+     * `eleven_v3*` honour only `stability` of the voice settings, so they would
+     * make the other knobs dead and are left out.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json
+     *
+     * @var array<string, list<string>>
+     */
+    public const HEYGEN_TTS_MODELS = [
+        'cartesia' => ['sonic-3.5', 'sonic-3'],
+        'elevenlabs' => ['eleven_flash_v2_5', 'eleven_multilingual_v2'],
+    ];
+
+    /**
      * Voice knobs an engine's LiveAvatar settings object does not have:
      * `CartesiaVoiceSettings` carries `speed` and `model` only, so the other four
      * would be accepted, stored and never sent (a dead knob) and are refused.
@@ -126,7 +142,7 @@ final class ProviderFieldSpecs
     ];
 
     /**
-     * Every field of a provider, platform-only ones included.
+     * Every field of a provider, superadmin-only ones included.
      *
      * @return list<FieldSpec>
      */
@@ -144,14 +160,16 @@ final class ProviderFieldSpecs
     }
 
     /**
-     * The fields an ORGANIZATION's template may carry: every field minus the
-     * platform-only ones.
+     * The fields a caller may set: every field for a superadmin, minus the
+     * superadmin-only ones for anyone else.
      *
      * @return list<FieldSpec>
      */
-    public static function forOrganization(string $provider): array
+    public static function forCaller(string $provider, bool $superadmin): array
     {
-        return array_values(array_filter(self::for($provider), fn (FieldSpec $field): bool => ! $field->platformOnly));
+        return $superadmin
+            ? self::for($provider)
+            : array_values(array_filter(self::for($provider), fn (FieldSpec $field): bool => ! $field->superadminOnly));
     }
 
     /** @return list<FieldSpec> */
@@ -172,11 +190,14 @@ final class ProviderFieldSpecs
             // alternatives, and a native id beside an external one would be sent
             // nowhere (superseded, see FieldSpec).
             new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId'), catalogueResource: 'voice', supersededByKey: 'ttsEngine', supersededByValues: self::HEYGEN_EXTERNAL_ENGINES),
-            // PLATFORM templates only (heygen-third-party-voices). The voice is
-            // bound on LiveAvatar at save time; the bound id is derived from the
+            // SUPERADMIN only, on either template page (heygen-third-party-voices).
+            // The voice is bound on LiveAvatar at save time; the bound id is derived from the
             // ledger when a session starts, never stored on the template.
-            new FieldSpec('ttsEngine', FieldType::Select, $l('ttsEngine'), options: ['none', ...self::HEYGEN_EXTERNAL_ENGINES], hintKey: $h('heygenTtsEngine'), platformOnly: true),
-            new FieldSpec('ttsExternalVoiceId', FieldType::Text, $l('ttsExternalVoiceId'), hintKey: $h('heygenTtsExternalVoiceId'), platformOnly: true),
+            new FieldSpec('ttsEngine', FieldType::Select, $l('ttsEngine'), options: ['none', ...self::HEYGEN_EXTERNAL_ENGINES], hintKey: $h('heygenTtsEngine'), superadminOnly: true),
+            // The same "voice model" control Tavus has. Only models that speak Italian
+            // are offered; unset sends the pinned default (HEYGEN_TTS_DEFAULT_MODEL).
+            new FieldSpec('ttsModelName', FieldType::Select, $l('ttsModelName'), options: array_merge(...array_values(self::HEYGEN_TTS_MODELS)), hintKey: $h('heygenTtsModelName'), optionsDependOn: 'ttsEngine', optionsByValue: self::HEYGEN_TTS_MODELS, superadminOnly: true),
+            new FieldSpec('ttsExternalVoiceId', FieldType::Text, $l('ttsExternalVoiceId'), hintKey: $h('heygenTtsExternalVoiceId'), superadminOnly: true),
             new FieldSpec('interactivityType', FieldType::Select, $l('interactivityType'), options: ['CONVERSATIONAL', 'PUSH_TO_TALK'], hintKey: $h('interactivityType')),
             new FieldSpec('maxSessionDurationSec', FieldType::Number, $l('maxSessionDurationSec'), min: 30, max: self::HEYGEN_MAX_SECONDS, hintKey: $h('maxSessionDurationSec')),
             new FieldSpec('videoQuality', FieldType::Select, $l('videoQuality'), options: ['very_high', 'high', 'medium', 'low'], hintKey: $h('videoQuality')),

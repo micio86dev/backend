@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
@@ -14,6 +15,7 @@ use App\Support\AvatarTemplates\TemplateDocument;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 /**
  * JSON export / import of avatar template configuration (C14 portability).
@@ -126,9 +128,16 @@ final class AvatarTemplatePortabilityController extends Controller
         // already refuses unknown keys, so this must not grow a second check:
         // two validators drift, and the divergence would let a file install a
         // config the form would have rejected.
-        $failures = ConfigValidator::validate($record['provider'], $record['config']);
+        $failures = ConfigValidator::validate($record['provider'], $record['config'], auth()->user()?->is_superadmin === true);
 
         if ($failures === []) {
+            // A superadmin's external voice is verified and bound here, like on save.
+            try {
+                app(BindHeygenTemplateVoice::class)->run($record['provider'], $record['config']);
+            } catch (ValidationException $e) {
+                return implode(' ', array_merge(...array_values($e->errors())));
+            }
+
             return null;
         }
 

@@ -25,6 +25,7 @@ use App\Models\Organization;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderPreflight;
 use App\Services\Provider\QuestionContext;
+use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplatePayload;
 use App\Support\Tenancy\TenantContextScope;
@@ -94,21 +95,28 @@ beforeEach(function (): void {
 
 // ─── Field specs ─────────────────────────────────────────────────────────────
 
-test('the platform field specs carry the platform-only voice fields and the organization specs do not', function (): void {
+test('the superadmin sees the external voice fields on BOTH spec routes and an organization admin on neither', function (): void {
     $org = Organization::factory()->create();
 
     $platform = collect($this->withToken(hevPlatformToken())->getJson('/api/admin/avatar-templates/field-specs')->assertOk()->json('data.heygen'))->keyBy('key');
-    $organization = collect($this->withToken(TemplateActors::token('admin', $org))->getJson('/api/avatar-templates/field-specs')->assertOk()->json('data.heygen'))->keyBy('key');
+    $acting = collect($this->withToken(TemplateActors::token('acting', $org))->getJson('/api/avatar-templates/field-specs')->assertOk()->json('data.heygen'))->keyBy('key');
+    $admin = collect($this->withToken(TemplateActors::token('admin', $org))->getJson('/api/avatar-templates/field-specs')->assertOk()->json('data.heygen'))->keyBy('key');
 
-    expect($platform->has('ttsEngine'))->toBeTrue()
-        ->and($platform['ttsEngine']['options'])->toBe(['none', 'cartesia', 'elevenlabs'])
-        ->and($platform['ttsEngine']['platform_only'])->toBeTrue()
-        ->and($platform['ttsExternalVoiceId']['platform_only'])->toBeTrue()
-        ->and($platform['voiceId']['superseded_by_key'])->toBe('ttsEngine')
-        ->and($platform['voiceId']['superseded_by_values'])->toBe(['cartesia', 'elevenlabs'])
-        ->and($organization->has('ttsEngine'))->toBeFalse()
-        ->and($organization->has('ttsExternalVoiceId'))->toBeFalse()
-        ->and($organization->has('voiceId'))->toBeTrue();
+    foreach ([$platform, $acting] as $specs) {
+        expect($specs->keys()->all())->toContain('ttsEngine', 'ttsModelName', 'ttsExternalVoiceId')
+            ->and($specs['ttsEngine']['options'])->toBe(['none', 'cartesia', 'elevenlabs'])
+            ->and($specs['ttsEngine']['superadmin_only'])->toBeTrue()
+            ->and($specs['ttsModelName']['options_depend_on'])->toBe('ttsEngine')
+            ->and($specs['ttsModelName']['options_by_value'])->toBe(ProviderFieldSpecs::HEYGEN_TTS_MODELS)
+            ->and($specs['ttsExternalVoiceId']['superadmin_only'])->toBeTrue()
+            ->and($specs['voiceId']['superseded_by_key'])->toBe('ttsEngine')
+            ->and($specs['voiceId']['superseded_by_values'])->toBe(['cartesia', 'elevenlabs']);
+    }
+
+    expect($admin->has('ttsEngine'))->toBeFalse()
+        ->and($admin->has('ttsModelName'))->toBeFalse()
+        ->and($admin->has('ttsExternalVoiceId'))->toBeFalse()
+        ->and($admin->has('voiceId'))->toBeTrue();
 });
 
 test('the platform field specs are superadmin only', function (): void {
@@ -246,66 +254,124 @@ test('a template without an external engine never touches LiveAvatar voices', fu
 
 // ─── Authorization: platform only ────────────────────────────────────────────
 
-test('the organization routes refuse the platform-only voice fields, even for a superadmin acting as the organization', function (): void {
+test('a superadmin acting as an organization sets and binds the voice on the ORGANIZATION routes too', function (): void {
     hevFake();
     $org = Organization::factory()->create();
     $token = TemplateActors::token('acting', $org);
 
-    $create = $this->withToken($token)->postJson('/api/avatar-templates', hevPayload(hevConfig()));
+    $id = $this->withToken($token)->postJson('/api/avatar-templates', hevPayload(hevConfig()))->assertCreated()->json('data.id');
 
-    expect($create->assertUnprocessable()->json('errors'))->toBe([
-        'config.ttsEngine' => ['platform_only'],
-        'config.ttsExternalVoiceId' => ['platform_only'],
-    ]);
+    // Tenancy is unchanged: the row belongs to the acting organization; the ledger is a platform table.
+    $stored = AvatarTemplate::withoutGlobalScopes()->findOrFail($id);
 
+    expect($stored->organization_id)->toBe($org->id)
+        ->and($stored->config)->toBe(hevConfig())
+        ->and(hevCalls('POST', '/voices/third_party'))->toBe(1);
+
+    $this->withToken($token)->patchJson("/api/avatar-templates/{$id}", ['config' => hevConfig(['ttsModelName' => 'sonic-3'])])->assertOk();
+
+    expect(hevCalls('POST', '/voices/third_party'))->toBe(1)
+        ->and(AvatarTemplate::withoutGlobalScopes()->findOrFail($id)->config['ttsModelName'])->toBe('sonic-3');
+
+    $this->withToken($token)->patchJson("/api/avatar-templates/{$id}", ['config' => hevConfig(['ttsExternalVoiceId' => 'nope'])])
+        ->assertUnprocessable();
+
+    expect(hevCalls('POST', '/voices/third_party'))->toBe(1);
+});
+
+test('the organization route verifies the voice before binding for a superadmin, as the platform route does', function (): void {
+    hevFake();
+    $org = Organization::factory()->create();
+
+    $response = $this->withToken(TemplateActors::token('acting', $org))->postJson('/api/avatar-templates', hevPayload(hevConfig(['ttsExternalVoiceId' => 'not-a-real-voice-id'])));
+
+    expect($response->assertUnprocessable()->json('errors'))->toBe(['config.ttsExternalVoiceId' => ['tts_voice_not_found']])
+        ->and(hevLiveAvatarWrites())->toBe(0);
+});
+
+test('anyone who is not a superadmin is refused the fields: the validator answers superadmin_only', function (): void {
+    expect(ConfigValidator::validate('heygen', hevConfig()))->toBe([
+        ['key' => 'ttsEngine', 'code' => 'superadmin_only'],
+        ['key' => 'ttsExternalVoiceId', 'code' => 'superadmin_only'],
+    ])
+        ->and(ConfigValidator::validate('heygen', hevConfig(), true))->toBe([])
+        ->and(ConfigValidator::validate('heygen', ['avatarId' => 'a', 'voiceId' => 'v']))->toBe([]);
+});
+
+test('an organization admin cannot write templates at all, on any route, so cannot reach the voice fields', function (): void {
+    hevFake();
+    $org = Organization::factory()->create();
+    $token = TemplateActors::token('admin', $org);
     $own = TenantContextScope::runFor($org->id, fn () => AvatarTemplate::create([
         'name' => 'Own', 'provider' => 'heygen', 'config' => ['avatarId' => 'av_ok', 'voiceId' => 'native'],
     ]));
 
-    $update = $this->withToken($token)->patchJson("/api/avatar-templates/{$own->id}", ['config' => hevConfig()]);
-
-    expect($update->assertUnprocessable()->json('errors'))->toHaveKey('config.ttsEngine')
-        ->and(hevLiveAvatarWrites())->toBe(0)
-        ->and(HeygenBoundVoice::query()->count())->toBe(0);
-});
-
-test('an organization admin cannot write templates at all, so cannot reach the voice fields', function (): void {
-    hevFake();
-    $org = Organization::factory()->create();
-    $token = TemplateActors::token('admin', $org);
-
     $this->withToken($token)->postJson('/api/avatar-templates', hevPayload(hevConfig()))->assertForbidden();
+    $this->withToken($token)->patchJson("/api/avatar-templates/{$own->id}", ['config' => hevConfig()])->assertForbidden();
+    $this->withToken($token)->postJson('/api/avatar-templates/import', ['schema' => 'beai.avatar-template/1', 'templates' => [['name' => 'I', 'provider' => 'heygen', 'config' => hevConfig()]]])->assertForbidden();
+    $this->withToken($token)->postJson("/api/avatar-templates/{$own->id}/duplicate", ['target_organization_ids' => [Organization::factory()->create()->id]])->assertForbidden();
 
     expect(hevLiveAvatarWrites())->toBe(0)
         ->and(HeygenBoundVoice::query()->count())->toBe(0);
 });
 
-test('importing a template with the platform-only voice fields into an organization is refused', function (): void {
+test('a superadmin can import a template with an external voice, which is verified and bound; a bad voice is refused', function (): void {
     hevFake();
     $org = Organization::factory()->create();
+    $token = TemplateActors::token('acting', $org);
 
-    $response = $this->withToken(TemplateActors::token('acting', $org))->postJson('/api/avatar-templates/import', [
+    $this->withToken($token)->postJson('/api/avatar-templates/import', [
         'schema' => 'beai.avatar-template/1',
         'templates' => [['name' => 'Imported', 'provider' => 'heygen', 'config' => hevConfig()]],
-    ]);
+    ])->assertCreated();
 
-    $response->assertUnprocessable();
-    expect(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::where('name', 'Imported')->count()))->toBe(0)
-        ->and(hevLiveAvatarWrites())->toBe(0);
+    expect(hevCalls('POST', '/voices/third_party'))->toBe(1)
+        ->and(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::where('name', 'Imported')->count()))->toBe(1);
+
+    $this->withToken($token)->postJson('/api/avatar-templates/import', [
+        'schema' => 'beai.avatar-template/1',
+        'templates' => [['name' => 'Bad', 'provider' => 'heygen', 'config' => hevConfig(['ttsExternalVoiceId' => 'nope'])]],
+    ])->assertUnprocessable();
+
+    expect(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::where('name', 'Bad')->count()))->toBe(0);
 });
 
-test('a platform template that uses an external voice cannot be copied into an organization', function (): void {
+test('a superadmin copies a template with an external voice into an organization: config kept, nothing bound again', function (): void {
     hevFake();
     $org = Organization::factory()->create();
     $token = hevPlatformToken();
 
     $id = $this->withToken($token)->postJson('/api/admin/avatar-templates', hevPayload(hevConfig()))->assertCreated()->json('data.id');
+    $writes = hevLiveAvatarWrites();
 
-    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$id}/duplicate", ['target_organization_ids' => [$org->id]])
-        ->assertUnprocessable()
-        ->assertJsonPath('errors.template.0', 'source_config_invalid');
+    $this->withToken($token)->postJson("/api/admin/avatar-templates/{$id}/duplicate", ['target_organization_ids' => [$org->id]])->assertCreated();
 
-    expect(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::count()))->toBe(0);
+    expect(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::first()->config))->toBe(hevConfig())
+        ->and(hevLiveAvatarWrites())->toBe($writes);
+});
+
+// ─── The voice model ─────────────────────────────────────────────────────────
+
+test('the voice model must belong to the chosen engine and sonic-2 is never accepted', function (): void {
+    hevFake();
+    $token = hevPlatformToken();
+
+    $sonic2 = $this->withToken($token)->postJson('/api/admin/avatar-templates', hevPayload(hevConfig(['ttsModelName' => 'sonic-2'])));
+    $crossed = $this->withToken($token)->postJson('/api/admin/avatar-templates', hevPayload(hevConfig(['ttsModelName' => 'eleven_flash_v2_5'])));
+    $noEngine = $this->withToken($token)->postJson('/api/admin/avatar-templates', hevPayload(['avatarId' => 'av_ok', 'voiceId' => 'native', 'ttsModelName' => 'sonic-3']));
+
+    expect($sonic2->assertUnprocessable()->json('errors'))->toBe(['config.ttsModelName' => ['enum']])
+        ->and($crossed->assertUnprocessable()->json('errors'))->toBe(['config.ttsModelName' => ['tts_model_engine_mismatch']])
+        ->and($noEngine->assertUnprocessable()->json('errors'))->toBe(['config.ttsModelName' => ['tts_model_engine_mismatch']])
+        ->and(hevLiveAvatarWrites())->toBe(0);
+
+    $this->withToken($token)->postJson('/api/admin/avatar-templates', hevPayload(hevConfig(['ttsModelName' => 'sonic-3'])))->assertCreated();
+});
+
+test('the chosen voice model is what is sent, and the pinned default when none is chosen', function (): void {
+    expect(TemplatePayload::heygen(['avatarId' => 'a', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => 'v', 'ttsModelName' => 'sonic-3'], 'b')['voice_settings']['model'])->toBe('sonic-3')
+        ->and(TemplatePayload::heygen(['avatarId' => 'a', 'ttsEngine' => 'elevenlabs', 'ttsExternalVoiceId' => 'v', 'ttsModelName' => 'eleven_multilingual_v2'], 'b')['voice_settings']['model'])->toBe('eleven_multilingual_v2')
+        ->and(TemplatePayload::heygen(['avatarId' => 'a', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => 'v'], 'b')['voice_settings']['model'])->toBe('sonic-3.5');
 });
 
 // ─── Deleting keeps what was bound ───────────────────────────────────────────

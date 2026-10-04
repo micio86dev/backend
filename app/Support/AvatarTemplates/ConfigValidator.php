@@ -20,12 +20,13 @@ final class ConfigValidator
 {
     /**
      * @param  array<string, mixed>  $config
-     * @param  bool  $platform  true only for the superadmin platform-template routes: a
-     *                          platform-only field in any other context is refused
-     *                          (`platform_only`), never silently stored.
+     * @param  bool  $superadmin  true only when the caller is a superadmin (cost control: an
+     *                            external voice is a paid vendor call): a superadmin-only field
+     *                            from anyone else is refused (`superadmin_only`), never
+     *                            silently stored. The page it is written from does not matter.
      * @return list<array{key: string, code: string}>
      */
-    public static function validate(string $provider, array $config, bool $platform = false): array
+    public static function validate(string $provider, array $config, bool $superadmin = false): array
     {
         $fields = ProviderFieldSpecs::for($provider);
 
@@ -75,7 +76,7 @@ final class ConfigValidator
                 continue;
             }
 
-            $error = ($field->platformOnly && ! $platform ? 'platform_only' : null)
+            $error = ($field->superadminOnly && ! $superadmin ? 'superadmin_only' : null)
                 ?? self::checkValue($field, $config[$field->key])
                 ?? self::checkDependentOption($field, $config)
                 ?? self::checkEngineSupport($field, $config);

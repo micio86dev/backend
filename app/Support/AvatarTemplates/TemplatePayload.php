@@ -136,7 +136,7 @@ final class TemplatePayload
             self::put($payload, 'voice_settings.use_speaker_boost', $config['voiceUseSpeakerBoost'] ?? null);
         }
 
-        self::put($payload, 'voice_settings.model', ProviderFieldSpecs::HEYGEN_TTS_DEFAULT_MODEL[$engine]);
+        self::put($payload, 'voice_settings.model', $config['ttsModelName'] ?? ProviderFieldSpecs::HEYGEN_TTS_DEFAULT_MODEL[$engine]);
 
         return $payload;
     }
