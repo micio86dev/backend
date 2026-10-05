@@ -12,8 +12,10 @@ use App\Models\Project;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\Audit\AuditRecorder;
 use App\Support\AvatarTemplates\AvatarProviderCatalogue;
+use App\Support\AvatarTemplates\FieldSpec;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -133,6 +135,7 @@ final class AvatarTemplateController extends Controller
      * lives. The superadmin-only fields (the external HeyGen voice) are listed
      * for a superadmin and for nobody else.
      */
+    #[ResponseDoc(200, type: 'array{data: array{heygen: list<'.FieldSpec::DOC_SHAPE.'>, tavus: list<'.FieldSpec::DOC_SHAPE.'>}}')]
     public function fieldSpecs(): JsonResponse
     {
         $this->authorize('viewAny', AvatarTemplate::class);

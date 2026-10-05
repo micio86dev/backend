@@ -362,3 +362,41 @@ test('a source whose config no longer validates is refused rather than copied', 
 
     expect(dupTemplatesOf($target))->toBeEmpty();
 });
+
+test('a superadmin duplicates a HeyGen template carrying an external voice and the copy keeps it', function (): void {
+    $source = Organization::factory()->create();
+    $target = Organization::factory()->create();
+    $config = [
+        'avatarId' => 'av_1',
+        'ttsEngine' => 'cartesia',
+        'ttsExternalVoiceId' => '00e9ec78-2002-41dd-8d19-6b1d3b17a461',
+    ];
+    $template = dupTemplate($source, ['config' => $config]);
+
+    $this->withToken(dupBareSuperadminToken())
+        ->postJson("/api/avatar-templates/{$template->id}/duplicate", ['target_organization_ids' => [$target->id]])
+        ->assertCreated();
+
+    $copies = dupTemplatesOf($target);
+
+    expect($copies)->toHaveCount(1)
+        ->and($copies[0]->config)->toEqualCanonicalizing($config);
+});
+
+test('a caller that is not a superadmin cannot duplicate a template carrying an external voice', function (): void {
+    $source = Organization::factory()->create();
+    $target = Organization::factory()->create();
+    $template = dupTemplate($source, ['config' => [
+        'avatarId' => 'av_1',
+        'ttsEngine' => 'cartesia',
+        'ttsExternalVoiceId' => '00e9ec78-2002-41dd-8d19-6b1d3b17a461',
+    ]]);
+
+    // The `create` policy denies every organization role, so the 403 is the refusal
+    // before the config check is reached.
+    $this->withToken(authTokenForRole($source, 'admin'))
+        ->postJson("/api/avatar-templates/{$template->id}/duplicate", ['target_organization_ids' => [$target->id]])
+        ->assertForbidden();
+
+    expect(dupTemplatesOf($target))->toBeEmpty();
+});

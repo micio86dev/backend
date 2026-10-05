@@ -14,6 +14,7 @@ use App\Models\AvatarTemplate;
 use App\Models\User;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\AvatarTemplates\ConfigValidator;
+use App\Support\AvatarTemplates\FieldSpec;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
@@ -83,6 +84,7 @@ final class PlatformAvatarTemplateController extends Controller
      *
      * @throws AuthorizationException
      */
+    #[ResponseDoc(200, type: 'array{data: array{heygen: list<'.FieldSpec::DOC_SHAPE.'>, tavus: list<'.FieldSpec::DOC_SHAPE.'>}}')]
     public function fieldSpecs(Request $request): JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
