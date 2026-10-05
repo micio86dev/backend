@@ -238,3 +238,95 @@ test('a blank conversation.prompt_version is refused on the authored and the fal
     expect(fn () => $composer->compose('first', 'X', 'en', 'Authored?'))->toThrow(CompositionException::class)
         ->and(fn () => $composer->compose('first', 'X', 'en'))->toThrow(CompositionException::class);
 });
+
+// ─── 'reinterview' (scoring-retry-rt-b, PR2c) ────────────────────────────────
+//
+// A competency asked again because an evaluation retry reset it. Nothing broke
+// and the candidate did nothing wrong, so unlike `retry` there is no apology;
+// unlike `first` it must not read as a first-time greeting.
+
+test("compose('reinterview') continues the interview and ends on the authored question, in both locales", function (string $locale, string $question): void {
+    $composer = new OpeningTextComposer;
+
+    $text = $composer->compose('reinterview', 'Networking', $locale, $question)->text;
+    $template = (string) trans('interview.opening.reinterview_authored', ['question' => $question], $locale);
+
+    expect($text)->toBe($template)
+        ->and($text)->not->toBe($question)
+        ->and($text)->toEndWith($question)
+        ->and($text)->not->toContain(':question');
+})->with([
+    'it' => ['it', 'Parlami di un conflitto in team.'],
+    'en' => ['en', 'Tell me about a team conflict.'],
+]);
+
+test("compose('reinterview') says we continue with the remaining topics, in the language of the project", function (): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose('reinterview', 'X', 'it', 'Q?')->text)->toContain('argomenti')
+        ->and($composer->compose('reinterview', 'X', 'en', 'Q?')->text)->toContain('remaining topics');
+});
+
+test("compose('reinterview') neither apologises nor mentions scores, results or failures", function (): void {
+    $composer = new OpeningTextComposer;
+
+    foreach (['it', 'en'] as $locale) {
+        $text = mb_strtolower($composer->compose('reinterview', 'Networking', $locale, 'Q?')->text);
+
+        foreach (['scus', 'sorry', 'problema', 'technical', 'errore', 'error', 'punteggi', 'score', 'risultat', 'result', 'valut', 'evaluat', 'invalid', 'non valid', 'failed', 'fallit', 'sbagli', 'incorrect', 'again', 'da capo', 'start over'] as $forbidden) {
+            expect($text)->not->toContain($forbidden);
+        }
+    }
+});
+
+test("compose('reinterview') differs from retry and does not read as a first-time greeting", function (): void {
+    $composer = new OpeningTextComposer;
+
+    foreach (['it', 'en'] as $locale) {
+        $reinterview = $composer->compose('reinterview', 'X', $locale, 'Q?')->text;
+
+        expect($reinterview)->not->toBe($composer->compose('retry', 'X', $locale, 'Q?')->text)
+            ->and($reinterview)->not->toBe($composer->compose('first', 'X', $locale, 'Q?')->text)
+            ->and(mb_strtolower($reinterview))->not->toContain('benvenut')
+            ->and(mb_strtolower($reinterview))->not->toContain('welcome');
+    }
+});
+
+test("compose('reinterview') without an authored question ends on the gate-off fallback", function (): void {
+    $composer = new OpeningTextComposer;
+    $fallback = trans('interview.opening.fallback', ['competency' => 'Networking'], 'en');
+
+    $text = $composer->compose('reinterview', 'Networking', 'en')->text;
+
+    expect($text)->toEndWith($fallback)
+        ->and($text)->not->toBe($fallback);
+});
+
+test("compose('reinterview') falls back to English for a locale without its own phrase file", function (): void {
+    $composer = new OpeningTextComposer;
+
+    $text = $composer->compose('reinterview', 'X', 'pt', 'Conte-me sobre um conflito.')->text;
+
+    expect($text)->toBe(trans('interview.opening.reinterview_authored', ['question' => 'Conte-me sobre um conflito.'], 'en'))
+        ->and($text)->not->toContain(':question');
+});
+
+test("compose('reinterview') carries the shared prompt_version and contains no BARS anchor text", function (): void {
+    config(['conversation.prompt_version' => 'conv-test-reinterview']);
+    $composer = new OpeningTextComposer;
+
+    $result = $composer->compose('reinterview', 'Strategic Thinking', 'en', 'Q?');
+
+    expect($result->version)->toBe('conv-test-reinterview')
+        ->and($result->text)->not->toContain('Excellent:')
+        ->and($result->text)->not->toContain('Adequate:')
+        ->and($result->text)->not->toContain('Insufficient:')
+        ->and($result->text)->not->toContain('COVERAGE TOPICS');
+});
+
+test('the unknown-variant message still names the offending variant', function (): void {
+    $composer = new OpeningTextComposer;
+
+    expect(fn () => $composer->compose('reinterviews', 'X', 'en'))
+        ->toThrow(InvalidArgumentException::class, 'OpeningTextComposer: unknown variant [reinterviews].');
+});

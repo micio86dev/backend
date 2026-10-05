@@ -26,6 +26,9 @@ declare(strict_types=1);
  *     `:competency` is the competency's display name.
  *   - `retry_authored` wraps the question (`:question`) the retry re-asks in
  *     an apology for a failure on our side.
+ *   - `reinterview_authored` wraps the question (`:question`) a competency
+ *     asked again by an evaluation retry opens with. Neutral: no apology, and
+ *     no mention of scores, results or failures.
  *
  * Interim/replaceable wording — changing it is a lang-file +
  * `conversation.prompt_version` bump, never a provider wire-contract change.
@@ -37,5 +40,6 @@ return [
     'opening' => [
         'fallback' => "Let's talk about :competency. Tell me about one specific episode from your work where this came up: what happened?",
         'retry_authored' => "Sorry, we had a technical problem on our side. Let's start over. :question",
+        'reinterview_authored' => "Let's continue the interview with the remaining topics. :question",
     ],
 ];

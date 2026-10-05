@@ -28,16 +28,23 @@ test('the fallback opening ends in a question and asks for a specific episode', 
         ->and($text)->toContain(':competency');
 })->with('locales');
 
-test('only the fallback and the retry apology remain as opening templates', function (string $locale): void {
+test('only the fallback, the retry apology and the reinterview cue remain as opening templates', function (string $locale): void {
     $keys = array_keys((array) Lang::get('interview.opening', [], $locale));
 
     sort($keys);
 
-    expect($keys)->toBe(['fallback', 'retry_authored']);
+    expect($keys)->toBe(['fallback', 'reinterview_authored', 'retry_authored']);
 })->with('locales');
 
 test('the retry apology ends on the question it wraps', function (string $locale): void {
     $text = (string) Lang::get('interview.opening.retry_authored', ['question' => 'Q?'], $locale);
 
     expect($text)->toEndWith('Q?');
+})->with('locales');
+
+test('the reinterview cue ends on the question it wraps', function (string $locale): void {
+    $text = (string) Lang::get('interview.opening.reinterview_authored', ['question' => 'Q?'], $locale);
+
+    expect($text)->toEndWith('Q?')
+        ->and($text)->not->toContain(':question');
 })->with('locales');
