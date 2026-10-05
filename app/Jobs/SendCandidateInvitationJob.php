@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Notifications\CandidateInvitationNotification;
+use App\Support\Mail\CandidateInvitationKind;
 use App\Support\Mail\EmailBranding;
 use App\Support\Participant\PlaceholderEmail;
 use Illuminate\Bus\Queueable;
@@ -66,6 +67,12 @@ final class SendCandidateInvitationJob implements ShouldQueue
          * rather than rendering a broken image.
          */
         private readonly ?string $brandLogoUrl = null,
+        /**
+         * Which invitation this is. A string-backed enum, so it serializes as
+         * a scalar like the rest of the payload. A job queued before this
+         * parameter existed unserializes without it and is an `Initial`.
+         */
+        private readonly CandidateInvitationKind $kind = CandidateInvitationKind::Initial,
     ) {}
 
     /**
@@ -132,16 +139,22 @@ final class SendCandidateInvitationJob implements ShouldQueue
         // a user of this system and must never become one — giving it a
         // `routeNotification` method would make every future `notify()` call a
         // candidate-facing send by default.
-        Notification::route('mail', $this->email)->notify(
-            (new CandidateInvitationNotification(
-                $this->entryUrl,
-                $this->displayName,
-                $this->organizationName,
-                $this->projectName,
-                $this->expiresAtLabel,
-            ))->locale($this->locale)
-        );
-
-        $branding->forget();
+        //
+        // `finally`: a failed send is retried by the queue on the same long-lived
+        // worker, and the colour, name and logo set above must not outlive it.
+        try {
+            Notification::route('mail', $this->email)->notify(
+                (new CandidateInvitationNotification(
+                    $this->entryUrl,
+                    $this->displayName,
+                    $this->organizationName,
+                    $this->projectName,
+                    $this->expiresAtLabel,
+                    $this->kind,
+                ))->locale($this->locale)
+            );
+        } finally {
+            $branding->forget();
+        }
     }
 }

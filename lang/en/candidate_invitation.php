@@ -47,4 +47,18 @@ return [
 
     'salutation' => 'Good luck',
 
+    /*
+     * The single re-interview of a pending evaluation (scoring-retry-rt-b).
+     *
+     * Static and neutral, like everything above: it says part of the interview
+     * is asked again and nothing else. No score, no competency, no outcome and
+     * no word of why. Only these three lines differ from the first invitation.
+     */
+    'retry' => [
+        'subject' => 'Please complete part of your interview for :project',
+        'intro' => ':organization invites you to retake part of the interview for :project. '
+            .'You will only be asked about a few topics, not the whole interview.',
+        'expiry' => 'This link can be used only once, is personal to you and stops working on :date.',
+    ],
+
 ];

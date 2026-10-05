@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Admin;
 
+use App\Enums\ApiKeyMode;
+use App\Enums\EvaluationStatus;
+use App\Models\Evaluation;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Services\Admin\ParticipantInterviewAggregator;
@@ -65,9 +68,18 @@ class ParticipantDetailResource extends JsonResource
      * `sessions_*` coverage counts because cost and elapsed genuinely
      * exclude different sessions.
      *
-     * @return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * `retry_attempt`/`retry_authorized_at`/`retry_available` (scoring-retry-rt-b):
+     * the read-only state of the single evaluation re-interview, from the
+     * participant's own Evaluation. Machine values, never localized, and never
+     * anything of the pending evaluation itself (it stays unreadable until the
+     * participant is back at `completato`). The phase of an authorized retry is
+     * derived by the client from the literal `status`. `retry_available` is the
+     * eligibility the action enforces, minus the project's entry gates, which the
+     * action's 409 reports. Moves in lockstep across BOTH docblocks.
      *
-     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null}
+     * @return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null, retry_attempt: bool, retry_authorized_at: string|null, retry_available: bool}
+     *
+     * @scramble-return array{id: int, candidate_ref: string, display_name: string, email: string, external_id: int|null, source: string|null, reusable_link: array{id: string, label: string|null}|null, role_code: string|null, language: string|null, status: 'in_attesa'|'in_corso'|'in_valutazione'|'completato'|'errore', project_id: int, project: array{id: int, name: string, status: 'draft'|'active'|'archived', goes_live_at: string|null, deadline_at: string|null}, timeline: array{started_at: string|null, completed_at: string|null, session_count: int}, progress: array{done: int, total: int}, elapsed: array{seconds: int|null, sessions_counted: int, sessions_total: int}, cost: array{amount: float|null, currency: string, is_estimate: bool, sessions_estimated: int, sessions_total: int}, files: array{transcript: array{type: string, ref: string, url: string}, evaluation_raw: array{type: string, ref: string, url: string}}, created_at: string|null, retry_attempt: bool, retry_authorized_at: string|null, retry_available: bool}
      */
     public function toArray(Request $request): array
     {
@@ -82,6 +94,10 @@ class ParticipantDetailResource extends JsonResource
         $project = $participant->project()->firstOrFail();
 
         $interview = (new ParticipantInterviewAggregator)->aggregate($participant);
+
+        // Tenant-scoped by the ambient TenantContext, like every other read here.
+        $evaluation = Evaluation::where('participant_id', $participant->id)->first();
+        $retryAttempt = $evaluation?->retry_attempt === true;
 
         return [
             'id' => (int) $participant->id,
@@ -132,6 +148,14 @@ class ParticipantDetailResource extends JsonResource
                 ],
             ],
             'created_at' => $participant->created_at->toISOString(),
+            'retry_attempt' => $retryAttempt,
+            'retry_authorized_at' => $evaluation?->retry_authorized_at?->toISOString(),
+            // The action's own guards, in one expression: a test-mode participant
+            // is never scored by the real job, so the action refuses it.
+            'retry_available' => ! $retryAttempt
+                && $participant->status === 'completato'
+                && $participant->mode !== ApiKeyMode::Test
+                && $evaluation?->status === EvaluationStatus::Pending,
         ];
     }
 }

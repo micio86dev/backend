@@ -163,6 +163,23 @@ final class ExposureCatalogue
                 // `reusable_link` leaf and would hide this shape.
                 'reusable_link.id',
                 'reusable_link.label',
+                // admin-only evaluation-retry state (scoring-retry-rt-b, PR3a;
+                // reviewed classification 2026-10-05): whether the single
+                // re-interview of a `pending` evaluation was authorized
+                // (`retry_attempt`), when (`retry_authorized_at`) and whether an
+                // operator may still authorize it (`retry_available`). They drive
+                // the backoffice panel only: `retry_available` is a decision aid
+                // for an operator holding the `participants.retry` ability, and
+                // the first two reveal that an operator re-opened a candidate's
+                // interview, internal handling the calling system learns about
+                // through its own channels (the second `evaluation` webhook).
+                // They carry nothing of the pending evaluation, whose read gate is
+                // unchanged. The public retry surface is deferred (design A4).
+                // Never on /v1, exports, webhooks, the M2M API or the candidate
+                // session.
+                'retry_attempt',
+                'retry_authorized_at',
+                'retry_available',
             ],
 
             // Transcript (public-api step 6) — admin `Admin\TranscriptResource`
