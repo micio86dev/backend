@@ -24,6 +24,7 @@ use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -213,4 +214,71 @@ test('alt unscorable policy (count_unscorable_against_total=false) excludes unsc
     // Excluded from denominator: totalCount = 1 (only $valid), validCount = 1 → 100% → completed.
     $freshEval = Evaluation::withoutGlobalScopes()->findOrFail($evaluation->id);
     expect($freshEval->status)->toBe(EvaluationStatus::Completed);
+});
+
+// ─── scoring-retry-rt-b (design D9, slice PR2a): a retry run is definitive ────
+
+test('retry: a ratio below the gate is persisted completed, never pending, and counts are still logged', function (): void {
+    Event::fake([EvaluationCompleted::class]);
+    Log::spy();
+
+    [, $project, $participant, $evaluation] = resolveFixtures();
+    Evaluation::withoutGlobalScopes()->where('id', $evaluation->id)->update(['retry_attempt' => true]);
+
+    $valid = Competency::factory()->create(['code' => 'RETS_RV_'.uniqid()]);
+    $invalid = Competency::factory()->create(['code' => 'RETS_RI_'.uniqid()]);
+    $project->competencies()->syncWithoutDetaching([
+        $valid->id => ['position' => 0],
+        $invalid->id => ['position' => 1],
+    ]);
+    CompetencyResult::create([
+        'evaluation_id' => $evaluation->id, 'competency_code' => $valid->code,
+        'score' => 4.0, 'reliability' => 1.0, 'valid' => true, 'unscorable_reason' => null,
+    ]);
+    CompetencyResult::create([
+        'evaluation_id' => $evaluation->id, 'competency_code' => $invalid->code,
+        'score' => null, 'reliability' => 0.0, 'valid' => false, 'unscorable_reason' => 'role_no_bars',
+    ]);
+
+    (new ResolveEvaluationTerminalState)->resolve($evaluation, $participant, $project);
+
+    $fresh = Evaluation::withoutGlobalScopes()->findOrFail($evaluation->id);
+    expect($fresh->status)->toBe(EvaluationStatus::Completed)
+        ->and($fresh->evaluated_at)->not->toBeNull()
+        ->and($fresh->retry_attempt)->toBeTrue()
+        ->and(Participant::withoutGlobalScopes()->findOrFail($participant->id)->status)->toBe('completato');
+    Event::assertDispatchedTimes(EvaluationCompleted::class, 1);
+    Log::shouldHaveReceived('info')
+        ->withArgs(fn (string $message, array $context = []): bool => $message === 'ScoreEvaluationJob: evaluation finalized'
+            && $context['status'] === 'completed'
+            && $context['valid_count'] === 1
+            && $context['total_count'] === 2
+            && $context['retry'] === true)
+        ->once();
+});
+
+test('retry: a project with zero competencies is completed and completato, never errore', function (): void {
+    Event::fake([EvaluationCompleted::class]);
+
+    [, $project, $participant, $evaluation] = resolveFixtures();
+    Evaluation::withoutGlobalScopes()->where('id', $evaluation->id)->update(['retry_attempt' => true]);
+
+    (new ResolveEvaluationTerminalState)->resolve($evaluation, $participant, $project);
+
+    expect(Evaluation::withoutGlobalScopes()->findOrFail($evaluation->id)->status)->toBe(EvaluationStatus::Completed)
+        ->and(Participant::withoutGlobalScopes()->findOrFail($participant->id)->status)->toBe('completato');
+    Event::assertDispatchedTimes(EvaluationCompleted::class, 1);
+});
+
+test('retry: the persisted row decides, not the in-memory model handed in', function (): void {
+    Event::fake([EvaluationCompleted::class]);
+
+    [, $project, $participant, $evaluation] = resolveFixtures();
+    // The model instance still says retry_attempt=false; only the database row was authorized.
+    Evaluation::withoutGlobalScopes()->where('id', $evaluation->id)->update(['retry_attempt' => true]);
+    expect($evaluation->retry_attempt)->toBeFalse();
+
+    (new ResolveEvaluationTerminalState)->resolve($evaluation, $participant, $project);
+
+    expect(Evaluation::withoutGlobalScopes()->findOrFail($evaluation->id)->status)->toBe(EvaluationStatus::Completed);
 });
