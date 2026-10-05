@@ -30,7 +30,9 @@ use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplatePayload;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
 
@@ -571,4 +573,34 @@ test('the interview pre-flight accepts a template whose voice is external and re
     });
 
     expect($errors)->toBe([]);
+});
+
+test('an already bound voice is not re-verified against the vendor, so a vendor outage cannot block an unrelated edit', function (): void {
+    hevFake();
+    $token = hevPlatformToken();
+    $id = $this->withToken($token)->postJson('/api/admin/avatar-templates', hevPayload(hevConfig()))->assertCreated()->json('data.id');
+
+    // The vendor catalogue is now down and its 24h cache has expired. The voice is already in the
+    // ledger, which only holds voices that were verified and bound, so changing an unrelated knob
+    // must still save (native review R3-ALWAYS-REVERIFY on feature/heygen-third-party-voices).
+    // A second Http::fake() would APPEND stubs after the working ones (first match wins), so the
+    // outage would never apply: start from a fresh factory, which also resets the recorder.
+    Cache::flush();
+    Http::swap(new HttpFactory);
+    hevFake(['api.cartesia.ai/voices*' => Http::response(['error' => 'down'], 503)]);
+
+    $this->withToken($token)->patchJson("/api/admin/avatar-templates/{$id}", ['config' => hevConfig(['voiceSpeed' => 1.05])])->assertOk();
+
+    expect(AvatarTemplate::platformOnly()->find($id)->config['voiceSpeed'])->toBe(1.05)
+        ->and(hevLiveAvatarWrites())->toBe(0)
+        ->and(HeygenBoundVoice::query()->count())->toBe(1);
+});
+
+test('a voice that is NOT in the ledger is still verified against the vendor when the catalogue is down', function (): void {
+    hevFake(['api.cartesia.ai/voices*' => Http::response(['error' => 'down'], 503)]);
+
+    $response = $this->withToken(hevPlatformToken())->postJson('/api/admin/avatar-templates', hevPayload(hevConfig()));
+
+    expect($response->assertUnprocessable()->json('errors'))->toBe(['config.ttsExternalVoiceId' => ['tts_voice_unverifiable']])
+        ->and(HeygenBoundVoice::query()->count())->toBe(0);
 });

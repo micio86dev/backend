@@ -23,8 +23,9 @@ use Illuminate\Validation\ValidationException;
  * Every refusal is a 422 on `config.ttsExternalVoiceId` with a stable code
  * (`tts_voice_not_found`, `tts_voice_unverifiable`, or one of
  * `HeygenVoiceRegistrar::FAILURES`), never a 500 and never a silently wrong
- * template. Binding the same voice again is free: the registrar's ledger
- * answers without calling LiveAvatar.
+ * template. A voice the ledger already knows is neither re-verified nor
+ * re-bound: it was verified when it was bound, and no vendor or LiveAvatar
+ * call is made.
  */
 final class BindHeygenTemplateVoice
 {
@@ -45,6 +46,13 @@ final class BindHeygenTemplateVoice
         }
 
         $voiceId = trim($voiceId);
+
+        // The ledger only holds voices that were verified against the vendor and bound, so a voice it
+        // already knows needs neither a second catalogue lookup nor a bind: a vendor outage must not
+        // block editing an unrelated field of an already bound template.
+        if ($this->registrar->boundVoiceId($engine, $voiceId) !== null) {
+            return;
+        }
 
         $problem = TemplateReferenceValidator::externalVoiceProblem($engine, $voiceId);
 
