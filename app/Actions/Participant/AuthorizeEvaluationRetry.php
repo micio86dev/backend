@@ -11,6 +11,7 @@ use App\Exceptions\Participant\EvaluationRetryRefusalReason;
 use App\Exceptions\Participant\EvaluationRetryRefused;
 use App\Exceptions\Sso\EntryLinkRefusalReason;
 use App\Exceptions\Sso\EntryLinkRefused;
+use App\Jobs\SendCandidateInvitationJob;
 use App\Models\Competency;
 use App\Models\CompetencyResult;
 use App\Models\Evaluation;
@@ -18,6 +19,7 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Support\Audit\AuditRecorder;
+use App\Support\Mail\CandidateInvitationKind;
 use App\Support\Participant\PlaceholderEmail;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
@@ -60,8 +62,10 @@ use Throwable;
  * a reusable-link visitor. A retry for a placeholder or purged address or a
  * visitor is returned to the authorizer only and stays at 30 minutes, exactly
  * like every other returned link. `EntryLinkMinter` downgrades a visitor itself.
- * No email is queued by this slice (`emailSent` is false); the retry email will be
- * queued under the same two conditions (real address, not a visitor).
+ * The retry email (kind `Retry` of the candidate invitation job) is queued under
+ * those same two conditions, after commit, and `emailSent` reports whether it was.
+ * It carries the link and nothing about the evaluation; a mail failure happens on
+ * the queue and cannot undo the authorization (spec: notifications).
  *
  * The finalize trigger dedup key is attempt-scoped (`finalize:{pid}:retry`, read
  * from the Evaluation row by `FinalizeInterview`), so this action never touches
@@ -157,15 +161,62 @@ final class AuthorizeEvaluationRetry
 
         $minted = $this->mintLink($participant, $project);
 
+        // The minter owns "can BEAI email this link": it hands back `Emailed`
+        // only for a real address that is not a reusable-link visitor's, so the
+        // 24 h lifetime, the queued mail and `emailSent` cannot disagree.
+        $emailSent = $minted->delivery === LinkDelivery::Emailed;
+
         $authorization = new RetryAuthorization(
             status: 'in_attesa',
             entryUrl: $this->urlComposer->compose($minted->token, $minted->lang),
             expiresAt: $minted->expiresAt,
-            emailSent: false,
+            emailSent: $emailSent,
             competenciesReset: $competenciesReset,
         );
 
+        if ($emailSent) {
+            $this->queueInvitation($participant, $project, $authorization, $minted);
+        }
+
         return ['authorization' => $authorization, 'participant' => $participant, 'evaluation' => $evaluation];
+    }
+
+    /**
+     * Queue the retry invitation once the authorization has COMMITTED.
+     *
+     * `DB::afterCommit` rather than a dispatch in the body: a rollback after this
+     * point (or in an enclosing transaction) discards the callback, so a mail can
+     * never announce a retry that did not happen. Everything the job needs is
+     * captured here as scalars, so it reads no row and crosses no tenant boundary
+     * when it runs. A mail-provider failure happens on the queue, long after the
+     * authorization committed: it can neither fail nor undo it.
+     *
+     * The entry URL is passed to the job and nowhere else: it is not logged here
+     * and the job's own log lines never carry it.
+     */
+    private function queueInvitation(Participant $participant, Project $project, RetryAuthorization $authorization, MintedEntryLink $minted): void
+    {
+        $organization = $project->organization;
+
+        // The candidate's own language, formatted in it: a date in the operator's
+        // locale inside a message in the candidate's reads as machine-assembled.
+        $expiresAt = $authorization->expiresAt->copy();
+        $expiresAt->locale($minted->lang);
+
+        $job = new SendCandidateInvitationJob(
+            $participant->email,
+            $authorization->entryUrl,
+            $participant->display_name,
+            (string) $organization?->name,
+            $project->name,
+            $expiresAt->isoFormat('LLL'),
+            $minted->lang,
+            $organization?->primary_color,
+            $organization?->absoluteLogoUrl(),
+            CandidateInvitationKind::Retry,
+        );
+
+        DB::afterCommit(fn () => dispatch($job));
     }
 
     /**

@@ -42,4 +42,19 @@ return [
 
     'salutation' => 'In bocca al lupo',
 
+    /*
+     * La ripetizione unica di una parte del colloquio con valutazione pending
+     * (scoring-retry-rt-b).
+     *
+     * Statica e neutra come il resto: dice che una parte del colloquio viene
+     * riproposta e nient'altro. Nessun punteggio, nessuna competenza, nessun
+     * esito e nessun motivo. Solo queste tre righe differiscono dal primo invito.
+     */
+    'retry' => [
+        'subject' => 'Completa una parte del tuo colloquio per :project',
+        'intro' => ':organization ti invita a ripetere una parte del colloquio per :project. '
+            .'Ti verranno poste domande solo su alcuni argomenti, non sull\'intero colloquio.',
+        'expiry' => 'Questo link può essere usato una sola volta, è personale e smette di funzionare il :date.',
+    ],
+
 ];

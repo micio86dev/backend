@@ -47,10 +47,14 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     config(['interview.candidate_app_url' => 'https://candidate.test']);
+    // A deliverable address now queues the retry email (PR3a). The email itself is
+    // covered by tests/Feature/Retry/RetryEmailTest.php; here it must not run.
+    Queue::fake();
 });
 
 /**
@@ -510,7 +514,7 @@ test('a success emits the interim participant.retry_authorized line with no cont
         'previous_status' => 'completato',
         'new_status' => 'in_attesa',
         'reason' => 'candidate lost connection',
-        'email_queued' => false,
+        'email_queued' => true,
     ]);
     expect($context['competencies_reset'])->toEqualCanonicalizing($world['invalidCodes']);
     expect(Carbon::parse($context['at'])->isValid())->toBeTrue();
