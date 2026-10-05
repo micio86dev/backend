@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * AuthorizeEvaluationRetry (scoring-retry-rt-b, design D4/D5).
@@ -113,7 +114,14 @@ final class AuthorizeEvaluationRetry
         return TenantContextScope::runFor($organizationId, function () use ($participantId, $organizationId, $actor, $reason): RetryAuthorization {
             $outcome = DB::transaction(fn (): array => $this->authorize($participantId, $organizationId));
 
-            $this->record($outcome, $actor, $reason);
+            // The retry is committed by now. A failing log sink or audit write must be
+            // reported, never raised: the caller would see an error while the participant
+            // is already re-opened and the single retry already consumed.
+            try {
+                $this->record($outcome, $actor, $reason);
+            } catch (Throwable $e) {
+                report($e);
+            }
 
             return $outcome['authorization'];
         });

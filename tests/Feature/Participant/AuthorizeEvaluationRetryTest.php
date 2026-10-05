@@ -699,3 +699,24 @@ test('no webhook delivery is created by an authorization', function (): void {
 
     expect(WebhookDelivery::withoutGlobalScopes()->count())->toBe($before);
 });
+
+test('a failure while writing the log line after the commit neither undoes nor disguises the authorization', function (): void {
+    $world = retryWorld();
+    $failed = false;
+    Log::listen(function ($message) use (&$failed): void {
+        if (! $failed && str_contains((string) $message->message, 'participant.retry_authorized')) {
+            $failed = true;
+
+            throw new RuntimeException('log sink down');
+        }
+    });
+
+    $result = retryAuthorize($world, reason: 'log sink down after commit');
+
+    // The retry is committed: the caller must learn it, not see an error while the participant is already re-opened.
+    expect($result)->toBeInstanceOf(RetryAuthorization::class)
+        ->and($result->status)->toBe('in_attesa')
+        ->and($world['participant']->fresh()->status)->toBe('in_attesa')
+        ->and(Evaluation::withoutGlobalScopes()->find($world['evaluation']->id)->retry_attempt)->toBeTrue()
+        ->and($failed)->toBeTrue();
+});
