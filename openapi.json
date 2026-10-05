@@ -14796,6 +14796,18 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "retry_attempt": {
+                        "type": "boolean"
+                    },
+                    "retry_authorized_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "retry_available": {
+                        "type": "boolean"
                     }
                 },
                 "required": [
@@ -14816,7 +14828,10 @@
                     "elapsed",
                     "cost",
                     "files",
-                    "created_at"
+                    "created_at",
+                    "retry_attempt",
+                    "retry_authorized_at",
+                    "retry_available"
                 ],
                 "title": "ParticipantDetailResource"
             },
