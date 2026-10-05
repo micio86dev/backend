@@ -116,6 +116,17 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Unit/C7a');
 
+// Feature/Participant — RefreshDatabase: the `completato` terminal-assumption
+// audit and the evaluation-retry authorization action write real rows.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Participant');
+
+// Unit/Participant — needs TestCase + RefreshDatabase (the transition guard is a
+// model `updating` hook, so the matrix tests write real participant rows).
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
+    ->in('Unit/Participant');
+
 // Feature/C7a — RefreshDatabase for schema, model, lifecycle, and isolation tests.
 pest()->use(RefreshDatabase::class)
     ->in('Feature/C7a');
