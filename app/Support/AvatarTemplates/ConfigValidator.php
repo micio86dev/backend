@@ -59,7 +59,9 @@ final class ConfigValidator
             $superseded = self::isSuperseded($field, $config);
 
             if ($superseded && $present) {
-                $errors[] = ['key' => $field->key, 'code' => 'superseded_by_'.Str::snake((string) $field->supersededByKey)];
+                // A voice knob the engine's settings object lacks keeps its own refusal: the operator
+                // is told to pick another engine, not that a native HeyGen voice is in the way.
+                $errors[] = ['key' => $field->key, 'code' => self::checkEngineSupport($provider, $field, $config) ?? 'superseded_by_'.Str::snake((string) $field->supersededByKey)];
 
                 continue;
             }
@@ -78,8 +80,7 @@ final class ConfigValidator
 
             $error = ($field->superadminOnly && ! $superadmin ? 'superadmin_only' : null)
                 ?? self::checkValue($field, $config[$field->key])
-                ?? self::checkDependentOption($field, $config)
-                ?? self::checkEngineSupport($provider, $field, $config);
+                ?? self::checkDependentOption($field, $config);
 
             if ($error !== null) {
                 $errors[] = ['key' => $field->key, 'code' => $error];

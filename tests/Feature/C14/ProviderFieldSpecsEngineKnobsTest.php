@@ -34,3 +34,30 @@ test('a heygen cartesia template still refuses an ElevenLabs-only knob', functio
 
     expect($errors)->toContain(['key' => 'voiceStability', 'code' => 'tts_setting_unsupported']);
 });
+
+test('the Cartesia-unsupported knobs tell the form which engine replaces them, so it can hide them', function (): void {
+    $byKey = [];
+
+    foreach (ProviderFieldSpecs::for('heygen') as $field) {
+        $byKey[$field->key] = $field->toArray();
+    }
+
+    foreach (['voiceStability', 'voiceSimilarityBoost', 'voiceStyle', 'voiceUseSpeakerBoost'] as $key) {
+        expect($byKey[$key])->toMatchArray(['superseded_by_key' => 'ttsEngine', 'superseded_by_values' => ['cartesia']]);
+    }
+
+    // Speed is a Cartesia setting and the native voice id keeps its own rule: neither is hidden by the Cartesia knob rule.
+    expect($byKey['voiceSpeed'])->not->toHaveKey('superseded_by_key')
+        ->and($byKey['voiceId']['superseded_by_values'])->toBe(['cartesia', 'elevenlabs']);
+});
+
+test('a hidden knob that still arrives keeps the engine-specific refusal, not the native-voice one', function (): void {
+    $errors = ConfigValidator::validate('heygen', [
+        'avatarId' => 'a',
+        'ttsEngine' => 'cartesia',
+        'ttsExternalVoiceId' => 'voice-id',
+        'voiceStyle' => 0.2,
+    ], true);
+
+    expect($errors)->toBe([['key' => 'voiceStyle', 'code' => 'tts_setting_unsupported']]);
+});

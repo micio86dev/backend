@@ -153,6 +153,17 @@ final class ProviderFieldSpecs
     }
 
     /**
+     * The HeyGen engines whose settings object has no such knob. Declared on the field as the engines
+     * that REPLACE it, so the form hides it exactly when the engine could only refuse it.
+     *
+     * @return list<string>
+     */
+    private static function enginesWithoutKnob(string $key): array
+    {
+        return array_keys(array_filter(self::HEYGEN_ENGINE_UNSUPPORTED_KNOBS, fn (array $knobs): bool => in_array($key, $knobs, true)));
+    }
+
+    /**
      * Every field of a provider, superadmin-only ones included.
      *
      * @return list<FieldSpec>
@@ -214,10 +225,10 @@ final class ProviderFieldSpecs
             new FieldSpec('videoQuality', FieldType::Select, $l('videoQuality'), options: ['very_high', 'high', 'medium', 'low'], hintKey: $h('videoQuality')),
             new FieldSpec('videoEncoding', FieldType::Select, $l('videoEncoding'), options: ['H264', 'VP8'], hintKey: $h('videoEncoding')),
             new FieldSpec('voiceSpeed', FieldType::Number, $l('voiceSpeed'), min: 0.8, max: 1.2, step: 0.01, hintKey: $h('voiceSpeed')),
-            new FieldSpec('voiceStability', FieldType::Number, $l('voiceStability'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStability')),
-            new FieldSpec('voiceSimilarityBoost', FieldType::Number, $l('voiceSimilarityBoost'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceSimilarityBoost')),
-            new FieldSpec('voiceStyle', FieldType::Number, $l('voiceStyle'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStyle')),
-            new FieldSpec('voiceUseSpeakerBoost', FieldType::Checkbox, $l('voiceUseSpeakerBoost'), hintKey: $h('voiceUseSpeakerBoost')),
+            new FieldSpec('voiceStability', FieldType::Number, $l('voiceStability'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStability'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceStability')),
+            new FieldSpec('voiceSimilarityBoost', FieldType::Number, $l('voiceSimilarityBoost'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceSimilarityBoost'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceSimilarityBoost')),
+            new FieldSpec('voiceStyle', FieldType::Number, $l('voiceStyle'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStyle'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceStyle')),
+            new FieldSpec('voiceUseSpeakerBoost', FieldType::Checkbox, $l('voiceUseSpeakerBoost'), hintKey: $h('voiceUseSpeakerBoost'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceUseSpeakerBoost')),
         ];
     }
 
