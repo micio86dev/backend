@@ -842,4 +842,5 @@ test('webhooks: an evaluation row stamped with another organization never makes 
         ->toBe(["competency-ended:{$a['participant']->id}:{$code}"]);
 });
 
-test('PR2b: RecoverFailedParticipant admits an interview-stage errore during an in-flight retry')->todo();
+// The RecoverFailedParticipant guard exception (task 7.3) is exercised in
+// tests/Feature/ParticipantRecovery/RecoverFailedParticipantTest.php ("in-flight evaluation retry").
