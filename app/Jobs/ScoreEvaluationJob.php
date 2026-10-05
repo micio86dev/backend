@@ -338,6 +338,14 @@ class ScoreEvaluationJob implements ShouldQueue
     private function mergeRetryResults(Evaluation $evaluation): ?Evaluation
     {
         return DB::transaction(function () use ($evaluation): ?Evaluation {
+            // Participant first, evaluation second: the same order as AuthorizeEvaluationRetry, so
+            // the two can never wait on each other. The status the guard read earlier may be stale.
+            $participant = Participant::withoutGlobalScope('tenant')->lockForUpdate()->find($this->participantId);
+
+            if ($participant === null || $participant->status !== 'in_valutazione') {
+                return null;
+            }
+
             $locked = Evaluation::withoutGlobalScope('tenant')->lockForUpdate()->find($evaluation->id);
 
             if ($locked === null || $locked->status !== EvaluationStatus::Pending || ! $locked->retry_attempt) {

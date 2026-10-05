@@ -501,6 +501,41 @@ test('the retry merge runs only when the evaluation is still pending under the r
     Event::assertNotDispatched(EvaluationCompleted::class);
 });
 
+test('the retry merge runs only while the participant is still in_valutazione under its row lock', function (): void {
+    // The candidate (or an operator) moved the participant between the guard and the merge:
+    // nothing may be deleted, and the participant is locked BEFORE the evaluation, the order the
+    // authorization action uses, so the two can never deadlock each other.
+    Event::fake([EvaluationCompleted::class]);
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 6]);
+    $cassette = retryScoringCassette([]);
+    $before = retryScoringSnapshot($w['evaluation']->id, $w['codes']);
+
+    $flipped = false;
+    $lockOrder = [];
+    DB::listen(function ($query) use (&$flipped, &$lockOrder, $w): void {
+        if (! $flipped
+            && str_starts_with($query->sql, 'select')
+            && str_contains($query->sql, 'from "evaluations"')
+            && ! str_contains($query->sql, 'for update')) {
+            $flipped = true;
+            DB::table('participants')->where('id', $w['participant']->id)->update(['status' => 'in_corso']);
+        }
+
+        if (str_contains($query->sql, 'for update')) {
+            $lockOrder[] = str_contains($query->sql, 'from "participants"') ? 'participants' : (str_contains($query->sql, 'from "evaluations"') ? 'evaluations' : 'other');
+        }
+    });
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->handle();
+
+    expect($flipped)->toBeTrue()
+        ->and($cassette->callCount())->toBe(0)
+        ->and(retryScoringSnapshot($w['evaluation']->id, $w['codes']))->toEqual($before)
+        ->and(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Pending)
+        ->and($lockOrder[0] ?? null)->toBe('participants');
+    Event::assertNotDispatched(EvaluationCompleted::class);
+});
+
 // ─── 6.5  forced completed on an emptied composition (D9) ────────────────────
 
 test('a retry on a project with zero scorable competencies ends completed, never errore', function (): void {
