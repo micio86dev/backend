@@ -82,8 +82,15 @@ class SendEvaluationWebhook
         $participant = Participant::where('organization_id', $evaluation->organization_id)->findOrFail($evaluation->participant_id);
 
         // dedupe_key for evaluation events IS the evaluation_id (spec: "For evaluation
-        // events, dedupe_key MUST be the evaluation_id").
-        $dedupeKey = (string) $evaluation->id;
+        // events, dedupe_key MUST be the evaluation_id"), EXCEPT for the event produced
+        // by an authorized retry (RT-B, design D12): its key is "{evaluation_id}:retry".
+        // One Evaluation row yields two deliveries (the first run's `pending` one and the
+        // definitive retry one); without the suffix the second would collapse into the
+        // first on the unique index and never reach the integrating system. The row
+        // decides, not the event: the same evaluation keeps one key per attempt.
+        $dedupeKey = $evaluation->retry_attempt
+            ? $evaluation->id.':retry'
+            : (string) $evaluation->id;
 
         $delivery = $this->recorder->record(
             $participant->project_id,

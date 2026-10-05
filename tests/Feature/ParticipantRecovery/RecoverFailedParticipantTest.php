@@ -27,6 +27,7 @@ use App\Exceptions\ParticipantTransitionException;
 use App\Jobs\FinalizeInterview;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
+use App\Models\Evaluation;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
@@ -477,4 +478,126 @@ test('recover racing /start: a stale in-memory errore participant still cannot s
         $staleInstance->status = 'in_corso';
         $staleInstance->save();
     })->toThrow(ParticipantTransitionException::class);
+});
+
+// ─── In-flight evaluation retry (scoring-retry-rt-b, design D11) ─────────────
+
+/**
+ * An `errore` participant with one `error` session, as left by an interview-stage failure, whose
+ * Evaluation is the given state. `$deliveryKeys` are the `evaluation` delivery rows already recorded.
+ *
+ * @param  list<string>  $deliveryKeys  dedupe keys, `{id}` and/or `{id}:retry`
+ * @return array{0: Organization, 1: Participant, 2: Evaluation}
+ */
+function recoveryRetryWorld(string $evaluationStatus, bool $retryAttempt, array $deliveryKeys): array
+{
+    $org = recoveryOrg();
+    [$project, $comps] = recoveryProjectWithCompetencies($org, 1);
+    $participant = recoveryParticipant($org, $project, 'in_attesa');
+    DB::table('participants')->where('id', $participant->id)->update(['status' => 'errore']);
+
+    InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'status' => 'error',
+    ]);
+
+    $factory = Evaluation::factory();
+    $factory = $evaluationStatus === 'completed' ? $factory->completed() : $factory->pending();
+    $evaluation = $factory->create([
+        'participant_id' => $participant->id,
+        'framework_version_id' => $project->framework_version_id,
+        'retry_attempt' => $retryAttempt,
+    ]);
+
+    foreach ($deliveryKeys as $suffix) {
+        WebhookDelivery::factory()->forParticipant($participant)->create([
+            'event_type' => WebhookEventType::Evaluation,
+            'dedupe_key' => $evaluation->id.$suffix,
+        ]);
+    }
+
+    return [$org, $participant, $evaluation];
+}
+
+test('an interview-stage errore during an in-flight retry is recovered although the first-run evaluation webhook exists', function (): void {
+    [$org, $participant] = recoveryRetryWorld('pending', true, ['']);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertOk();
+
+    expect(DB::table('participants')->where('id', $participant->id)->value('status'))->toBe('in_attesa')
+        ->and(DB::table('interview_sessions')->where('participant_id', $participant->id)->value('status'))->toBe('pending');
+});
+
+test('an in-flight retry without any delivery row is recovered too', function (): void {
+    [$org, $participant] = recoveryRetryWorld('pending', true, []);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertOk();
+});
+
+test('recovery is refused with evaluation_already_delivered once the retry-era evaluation webhook exists', function (): void {
+    [$org, $participant] = recoveryRetryWorld('pending', true, ['', ':retry']);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertStatus(409)
+        ->assertJson(['reason' => 'evaluation_already_delivered']);
+
+    expect(DB::table('participants')->where('id', $participant->id)->value('status'))->toBe('errore');
+});
+
+test('recovery is refused once the retried evaluation is completed, whatever the delivery rows', function (): void {
+    [$org, $participant] = recoveryRetryWorld('completed', true, ['']);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertStatus(409)
+        ->assertJson(['reason' => 'evaluation_already_delivered']);
+});
+
+test('a pending evaluation without a retry authorization keeps the unchanged any-delivery refusal', function (): void {
+    [$org, $participant] = recoveryRetryWorld('pending', false, ['']);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertStatus(409)
+        ->assertJson(['reason' => 'evaluation_already_delivered']);
+});
+
+test('an in-flight retry with no error session still reports nothing_to_recover', function (): void {
+    [$org, $participant] = recoveryRetryWorld('pending', true, ['']);
+    DB::table('interview_sessions')->where('participant_id', $participant->id)->update(['status' => 'completed']);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertStatus(409)
+        ->assertJson(['reason' => 'nothing_to_recover']);
+});
+
+test('the in-flight retry exception looks only at the participant\'s own evaluation deliveries', function (): void {
+    [$org, $participant, $evaluation] = recoveryRetryWorld('pending', true, ['']);
+    // Another participant of the same project has its OWN retry-era delivery; it must not block this one.
+    $project = Project::withoutGlobalScopes()->findOrFail($participant->project_id);
+    $other = recoveryParticipant($org, $project, 'completato');
+    $otherEvaluation = Evaluation::factory()->completed()->create([
+        'participant_id' => $other->id,
+        'framework_version_id' => $project->framework_version_id,
+        'retry_attempt' => true,
+    ]);
+    WebhookDelivery::factory()->forParticipant($other)->create([
+        'event_type' => WebhookEventType::Evaluation,
+        'dedupe_key' => $otherEvaluation->id.':retry',
+    ]);
+
+    $this->withToken(recoveryOperatorToken($org))
+        ->postJson("/api/participants/{$participant->id}/recover")
+        ->assertOk();
 });

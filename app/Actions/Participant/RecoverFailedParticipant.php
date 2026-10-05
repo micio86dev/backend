@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Participant;
 
 use App\Actions\InterviewSession\ResetSessionForRetry;
+use App\Enums\EvaluationStatus;
 use App\Enums\WebhookEventType;
 use App\Exceptions\Participant\RecoveryRefusalReason;
 use App\Exceptions\Participant\RecoveryRefused;
+use App\Models\Evaluation;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\WebhookDelivery;
@@ -98,9 +100,26 @@ final class RecoverFailedParticipant
             // BEAI already told the calling system this assessment is over.
             // No scoring-stage failure ever leaves an error session (guard 2
             // below), so this is the sole detection rule needed.
-            $evaluationAlreadyDelivered = WebhookDelivery::where('participant_id', $participant->id)
-                ->where('event_type', WebhookEventType::Evaluation)
-                ->exists();
+            //
+            // RT-B (scoring-retry-rt-b, design D11): while the participant's Evaluation
+            // is an in-flight retry (`pending` + `retry_attempt = true`), the first run's
+            // delivery belongs to the PREVIOUS attempt, so it no longer proves that BEAI
+            // closed this one. Only the current attempt's delivery counts then, the one
+            // keyed '{evaluation_id}:retry'. Guard 2 below still confines this to an
+            // interview-stage failure: a scoring-stage failure leaves no error session
+            // and a retried scoring failure finalizes `completed`, never `errore`.
+            $evaluation = Evaluation::where('organization_id', $participant->organization_id)
+                ->where('participant_id', $participant->id)
+                ->first();
+
+            $deliveries = WebhookDelivery::where('participant_id', $participant->id)
+                ->where('event_type', WebhookEventType::Evaluation);
+
+            if ($evaluation !== null && $evaluation->retry_attempt && $evaluation->status === EvaluationStatus::Pending) {
+                $deliveries->where('dedupe_key', $evaluation->id.':retry');
+            }
+
+            $evaluationAlreadyDelivered = $deliveries->exists();
 
             if ($evaluationAlreadyDelivered) {
                 throw new RecoveryRefused(RecoveryRefusalReason::EvaluationAlreadyDelivered);
