@@ -23,8 +23,10 @@ declare(strict_types=1);
 
 use App\Contracts\LLMProvider;
 use App\Enums\EvaluationStatus;
+use App\Events\CompetencySessionEnded;
 use App\Events\EvaluationCompleted;
 use App\Events\EvaluationFailed;
+use App\Events\ParticipantCreated;
 use App\Jobs\ScoreEvaluationJob;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
@@ -40,9 +42,11 @@ use App\Models\Utterance;
 use App\Support\Tenancy\TenantResolver;
 use App\Testing\CassetteLLMProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
 
@@ -682,6 +686,160 @@ test('failed(): a first-attempt evaluation is unchanged, participant errore and 
 
 // ─── 7.2 / 7.3 are below and in ParticipantRecovery/RecoverFailedParticipantTest.php ─────
 
-test('PR2b: the retry completion webhook is delivered under the {evaluation_id}:retry dedupe key')->todo();
-test('PR2b: retry-era progress webhooks use the :retry dedupe suffix')->todo();
+// ─── 7.2  webhook dedupe keys of the retry era (design D12) ──────────────────
+
+/** Points the world's project at a receiver that accepts both event types; Queue is faked by the caller. */
+function retryScoringWebhookProject(array $w): void
+{
+    $project = Project::withoutGlobalScopes()->findOrFail($w['project']->id);
+    $project->forceFill([
+        'webhook_url' => 'https://receiver.example.test/hook',
+        'webhook_secret' => 'whsec_retry_dedupe_secret',
+        'webhook_events' => ['progress', 'evaluation'],
+    ])->save();
+}
+
+/** @return Collection<int, object> delivery rows of one event type, oldest first */
+function retryScoringDeliveries(int $participantId, string $eventType)
+{
+    return DB::table('webhook_deliveries')
+        ->where('participant_id', $participantId)
+        ->where('event_type', $eventType)
+        ->orderBy('id')
+        ->get();
+}
+
+test('webhooks: the retry run delivers a second evaluation webhook under {evaluation_id}:retry, the first row untouched', function (): void {
+    Queue::fake();
+    // First run: pending evaluation (6/10), its webhook recorded under the bare evaluation id.
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 6, 'retryAttempt' => false]);
+    retryScoringWebhookProject($w);
+    event(new EvaluationCompleted($w['evaluation']->id));
+
+    $first = retryScoringDeliveries($w['participant']->id, 'evaluation');
+    expect($first)->toHaveCount(1)
+        ->and($first[0]->dedupe_key)->toBe((string) $w['evaluation']->id);
+    $firstSnapshot = (array) $first[0];
+
+    // The retry is authorized (flag set by AuthorizeEvaluationRetry) and then scored to the end.
+    DB::table('evaluations')->where('id', $w['evaluation']->id)->update(['retry_attempt' => true]);
+    retryScoringCassette($w['invalidCodes']);
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->handle();
+
+    $rows = retryScoringDeliveries($w['participant']->id, 'evaluation');
+    expect($rows)->toHaveCount(2)
+        ->and((array) $rows[0])->toEqual($firstSnapshot)
+        ->and($rows[1]->dedupe_key)->toBe($w['evaluation']->id.':retry')
+        ->and($rows[1]->delivery_id)->not->toBe($rows[0]->delivery_id)
+        ->and(json_decode($rows[1]->payload, true)['data']['status'])->toBe('completed')
+        ->and(json_decode($rows[0]->payload, true)['data']['status'])->toBe('pending');
+});
+
+test('webhooks: replaying the retry-era evaluation event leaves exactly one :retry row', function (): void {
+    Queue::fake();
+    $w = retryScoringWorld(['evaluation' => 'completed', 'participant' => 'completato']);
+    retryScoringWebhookProject($w);
+
+    event(new EvaluationCompleted($w['evaluation']->id));
+    event(new EvaluationCompleted($w['evaluation']->id));
+
+    $rows = retryScoringDeliveries($w['participant']->id, 'evaluation');
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->dedupe_key)->toBe($w['evaluation']->id.':retry');
+});
+
+test('webhooks: a first-run evaluation keeps the bare evaluation id as its key', function (): void {
+    Queue::fake();
+    $w = retryScoringWorld(['evaluation' => 'pending', 'retryAttempt' => false]);
+    retryScoringWebhookProject($w);
+
+    event(new EvaluationCompleted($w['evaluation']->id));
+
+    $rows = retryScoringDeliveries($w['participant']->id, 'evaluation');
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->dedupe_key)->toBe((string) $w['evaluation']->id);
+});
+
+test('webhooks: re-interview progress rows carry the :retry suffix and never collide with the first-run rows', function (): void {
+    Queue::fake();
+    $w = retryScoringWorld(['evaluation' => 'pending', 'retryAttempt' => false]);
+    retryScoringWebhookProject($w);
+    $pid = $w['participant']->id;
+    $code = $w['invalidCodes'][0];
+
+    // First interview: the evaluation row exists but is not a retry.
+    event(new CompetencySessionEnded($pid, $w['project']->id, $code));
+    $firstRows = retryScoringDeliveries($pid, 'progress');
+    expect($firstRows)->toHaveCount(1)
+        ->and($firstRows[0]->dedupe_key)->toBe("competency-ended:{$pid}:{$code}");
+    $firstSnapshot = (array) $firstRows[0];
+
+    // Re-interview of the same competency after the authorization.
+    DB::table('evaluations')->where('id', $w['evaluation']->id)->update(['retry_attempt' => true]);
+    event(new CompetencySessionEnded($pid, $w['project']->id, $code));
+    event(new CompetencySessionEnded($pid, $w['project']->id, $code));
+
+    $rows = retryScoringDeliveries($pid, 'progress');
+    expect($rows)->toHaveCount(2)
+        ->and((array) $rows[0])->toEqual($firstSnapshot)
+        ->and($rows[1]->dedupe_key)->toBe("competency-ended:{$pid}:{$code}:retry")
+        ->and($rows[1]->delivery_id)->not->toBe($rows[0]->delivery_id);
+});
+
+test('webhooks: before any evaluation exists the progress keys are the first-run keys', function (): void {
+    Queue::fake();
+    $w = retryScoringWorld(['evaluation' => 'pending', 'retryAttempt' => false]);
+    retryScoringWebhookProject($w);
+    DB::table('evaluations')->where('id', $w['evaluation']->id)->delete();
+    $pid = $w['participant']->id;
+
+    event(new CompetencySessionEnded($pid, $w['project']->id, $w['codes'][0]));
+    event(new ParticipantCreated($pid, $w['project']->id));
+
+    expect(retryScoringDeliveries($pid, 'progress')->pluck('dedupe_key')->all())
+        ->toEqualCanonicalizing(["competency-ended:{$pid}:{$w['codes'][0]}", "participant-created:{$pid}"]);
+});
+
+test('webhooks: the retry progress suffix reads only the participant\'s own evaluation, never a sibling\'s in the same organization', function (): void {
+    Queue::fake();
+    $w = retryScoringWorld(['evaluation' => 'pending', 'retryAttempt' => false]);
+    retryScoringWebhookProject($w);
+
+    // A sibling candidate of the same project whose retry is in flight must not turn this participant's keys into :retry keys.
+    $sibling = new Participant;
+    $sibling->forceFill([
+        'organization_id' => $w['org']->id,
+        'project_id' => $w['project']->id,
+        'candidate_ref' => 'rs-sibling-'.uniqid(),
+        'display_name' => 'Sibling',
+        'email' => uniqid('sib-').'@example.test',
+        'status' => 'in_valutazione',
+    ])->save();
+    Evaluation::factory()->pending()->create([
+        'participant_id' => $sibling->id,
+        'framework_version_id' => $w['project']->framework_version_id,
+        'retry_attempt' => true,
+    ]);
+
+    $code = $w['codes'][0];
+    event(new CompetencySessionEnded($w['participant']->id, $w['project']->id, $code));
+
+    expect(retryScoringDeliveries($w['participant']->id, 'progress')->pluck('dedupe_key')->all())
+        ->toBe(["competency-ended:{$w['participant']->id}:{$code}"]);
+});
+
+test('webhooks: an evaluation row stamped with another organization never makes the progress keys retry-era keys', function (): void {
+    Queue::fake();
+    $a = retryScoringWorld(['evaluation' => 'pending', 'retryAttempt' => true]);
+    retryScoringWebhookProject($a);
+    $other = Organization::factory()->create();
+    DB::table('evaluations')->where('id', $a['evaluation']->id)->update(['organization_id' => $other->id]);
+
+    $code = $a['codes'][0];
+    event(new CompetencySessionEnded($a['participant']->id, $a['project']->id, $code));
+
+    expect(retryScoringDeliveries($a['participant']->id, 'progress')->pluck('dedupe_key')->all())
+        ->toBe(["competency-ended:{$a['participant']->id}:{$code}"]);
+});
+
 test('PR2b: RecoverFailedParticipant admits an interview-stage errore during an in-flight retry')->todo();
