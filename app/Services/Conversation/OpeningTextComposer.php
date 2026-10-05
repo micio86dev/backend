@@ -21,7 +21,9 @@ use Illuminate\Support\Facades\Lang;
  * The opening is the operator's primary question, verbatim, for `first`,
  * `next` and `resume` — the controller decides WHICH primary (primary 1 on a
  * fresh start, the pending one on a resume). `retry` wraps it in an apology,
- * because those words explain a failure on our side. When there is no
+ * because those words explain a failure on our side. `reinterview` wraps it in
+ * a neutral continuation cue for a competency asked again by an evaluation
+ * retry: nothing broke, so there is no apology. When there is no
  * authored question — a competency with zero primaries, reachable only while
  * the interviewability gate is off — every variant speaks the one gate-off
  * fallback, `interview.opening.fallback`, which is a question in its own
@@ -53,15 +55,21 @@ final class OpeningTextComposer
      *   'retry'  — a competency that ended in `error` and is being OFFERED AGAIN
      *              (interview-continuous-flow, D10). Its apology is the only
      *              wording that differs from the other variants.
+     *   'reinterview' — a competency asked again because an evaluation retry
+     *              (RT-B) reset it. Neutral: it says the interview continues
+     *              with the remaining topics, never apologises, and never
+     *              mentions scores, results or failures. A resumed session
+     *              ('resume') and a provider-error re-offer ('retry') both
+     *              outrank it; the controller owns that precedence.
      */
-    private const VARIANTS = ['first', 'next', 'resume', 'retry'];
+    private const VARIANTS = ['first', 'next', 'resume', 'retry', 'reinterview'];
 
     /**
      * Compose the opening greeting for a single competency.
      *
      * Pure — no HTTP, no DB, no LLM. Same inputs always produce the same output.
      *
-     * @param  string  $variant  One of 'first' | 'next' | 'resume' | 'retry'.
+     * @param  string  $variant  One of 'first' | 'next' | 'resume' | 'retry' | 'reinterview'.
      * @param  string  $competencyName  The competency's display name, in the target locale
      *                                  (caller resolves translation — this class only interpolates).
      * @param  string  $locale  The project's language (design D9 — matches SystemPromptComposer).
@@ -97,9 +105,11 @@ final class OpeningTextComposer
             );
         }
 
-        $text = $variant === 'retry'
-            ? (string) Lang::get('interview.opening.retry_authored', ['question' => $question], $locale)
-            : $question;
+        $text = match ($variant) {
+            'retry' => (string) Lang::get('interview.opening.retry_authored', ['question' => $question], $locale),
+            'reinterview' => (string) Lang::get('interview.opening.reinterview_authored', ['question' => $question], $locale),
+            default => $question,
+        };
 
         return new ComposedOpening($text, $this->resolveVersion());
     }

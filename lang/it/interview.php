@@ -24,6 +24,9 @@ declare(strict_types=1);
  *     `:competency` is the competency's display name.
  *   - `retry_authored` wraps the question (`:question`) the retry re-asks in
  *     an apology for a failure on our side.
+ *   - `reinterview_authored` wraps the question (`:question`) a competency
+ *     asked again by an evaluation retry opens with. Neutral: no apology, and
+ *     no mention of punteggi, risultati or errori.
  */
 return [
     'end_phrase' => 'Passiamo alla prossima domanda.',
@@ -32,5 +35,6 @@ return [
     'opening' => [
         'fallback' => 'Parliamo di :competency. Raccontami un episodio specifico del tuo lavoro in cui questo è emerso: cosa è successo?',
         'retry_authored' => 'Scusami, c\'è stato un problema tecnico da parte nostra. Riprendiamo da capo. :question',
+        'reinterview_authored' => 'Proseguiamo il colloquio con gli argomenti rimanenti. :question',
     ],
 ];

@@ -23,6 +23,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\PublicApi\RunMockInterviewJob;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
+use App\Models\Evaluation;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
@@ -358,9 +359,15 @@ class InterviewController extends Controller
         // `$spokenOpening` below, so the composed prompt and the spoken
         // opening describe the same turn.
         $isReoffer = ($nextCompetency['reoffer'] ?? false) === true;
+
+        // Precedence (scoring-retry-rt-b PR2c): a live session re-issued at the
+        // provider ('resume') and a provider-error re-offer ('retry') both outrank
+        // 'reinterview', the neutral greeting of a competency an evaluation retry
+        // reset. The retry read runs only when neither applies.
         $openingVariant = match (true) {
             $isResumeInCorso => 'resume',
             $isReoffer => 'retry',
+            $this->isInEvaluationRetryRun($participant) => 'reinterview',
             $isFirst => 'first',
             default => 'next',
         };
@@ -943,6 +950,23 @@ class InterviewController extends Controller
         } catch (CompositionException) {
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+    }
+
+    /**
+     * Whether an evaluation retry (RT-B) was authorized for this participant.
+     *
+     * Read from the persisted evaluation row. This route runs behind
+     * TenantContextCandidate, so the ambient `tenant` scope is already pinned to
+     * the participant's organization and is left in place (no scope strip, so no
+     * tenant-strip allowlist entry); the explicit organization_id filter is kept
+     * as a second, independent pin. No evaluation row (the first interview)
+     * means false.
+     */
+    private function isInEvaluationRetryRun(Participant $participant): bool
+    {
+        return (bool) Evaluation::where('organization_id', $participant->organization_id)
+            ->where('participant_id', $participant->id)
+            ->value('retry_attempt');
     }
 
     /**
