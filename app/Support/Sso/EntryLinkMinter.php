@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Participant\ExternalReference;
 use Illuminate\Support\Carbon;
+use RuntimeException;
 use Tymon\JWTAuth\JWTAuth;
 
 /**
@@ -35,6 +36,12 @@ use Tymon\JWTAuth\JWTAuth;
  */
 final class EntryLinkMinter
 {
+    /** Shortest emailed-link lifetime accepted: below this a candidate cannot reasonably open it. */
+    private const EMAILED_TTL_MIN_MINUTES = 15;
+
+    /** Longest emailed-link lifetime accepted: 7 days, the outer bound of a bearer token in an inbox. */
+    private const EMAILED_TTL_MAX_MINUTES = 10080;
+
     /**
      * `$externalReference` is optional and trailing so every existing caller
      * (notably the scheduled-invitation sweep, which calls this positionally
@@ -43,8 +50,21 @@ final class EntryLinkMinter
      * exchange; they are readable by whoever holds the link, so callers must
      * not put a secret in `source`.
      *
+     * `$delivery` is how the link will reach the candidate, and it decides the
+     * lifetime: `Emailed` lives `candidate_invitations.emailed_link_ttl_minutes`
+     * (24 hours by default), `Returned` keeps the 30-minute
+     * `CandidateTokenFactory::SSO_LINK_TTL_MINUTES`. It is the LAST parameter so
+     * every positional caller stays valid, and it defaults to the short
+     * lifetime so a caller that never opted in cannot lengthen a link. An
+     * `Emailed` request for a reusable-link visitor is downgraded to `Returned`
+     * (a visitor's address is self-declared and never mailed); the channel
+     * actually used is on `MintedEntryLink::$delivery`.
+     *
      * @throws EntryLinkRefused When the project's entry gates, the role_code,
      *                          or a terminal-status participant refuses the mint.
+     * @throws RuntimeException When an `Emailed` mint finds the lifetime
+     *                          configuration outside [15, 10080] or not an
+     *                          integer: refused, never clamped.
      */
     public function mint(
         Project $project,
@@ -54,6 +74,7 @@ final class EntryLinkMinter
         ?string $roleCode,
         ?string $lang,
         ExternalReference $externalReference = new ExternalReference,
+        LinkDelivery $delivery = LinkDelivery::Returned,
     ): MintedEntryLink {
         if (! $this->projectIsAccessible($project)) {
             throw new EntryLinkRefused(EntryLinkRefusalReason::Gates);
@@ -105,6 +126,9 @@ final class EntryLinkMinter
             throw new EntryLinkRefused(EntryLinkRefusalReason::Failed);
         }
 
+        $effectiveDelivery = $targetsReusableLinkVisitor ? LinkDelivery::Returned : $delivery;
+        $ttlMinutes = $this->ttlMinutesFor($effectiveDelivery);
+
         $resolvedLang = $lang ?? $project->language ?? config('app.fallback_locale', 'en');
 
         // An omitted role_code is INHERITED from the project, for standard
@@ -130,7 +154,7 @@ final class EntryLinkMinter
             'role_code' => $resolvedRoleCode,
             'lang' => $resolvedLang,
             ...$externalReference->toClaims(),
-        ]);
+        ], $ttlMinutes);
 
         // expires_at is read back from the token's OWN exp claim — never
         // independently recomputed — so it can never drift from what the
@@ -145,7 +169,40 @@ final class EntryLinkMinter
         $payload = app(JWTAuth::class)->setToken($token)->getPayload();
         $expiresAt = Carbon::createFromTimestamp((int) $payload->get('exp'));
 
-        return new MintedEntryLink($token, $expiresAt, $resolvedLang, $targetsReusableLinkVisitor);
+        return new MintedEntryLink($token, $expiresAt, $resolvedLang, $targetsReusableLinkVisitor, $effectiveDelivery);
+    }
+
+    /**
+     * The one place a delivery channel becomes a lifetime.
+     *
+     * The configured value is read raw and validated here, at mint time, so a
+     * typo in an environment variable fails the mint loudly instead of becoming
+     * a different lifetime: `(int) 'abc'` is 0, and clamping would hide the
+     * mistake. `Returned` never reads the setting, so a broken value cannot
+     * affect the links that are not emailed.
+     *
+     * @throws RuntimeException
+     */
+    private function ttlMinutesFor(LinkDelivery $delivery): int
+    {
+        if ($delivery === LinkDelivery::Returned) {
+            return CandidateTokenFactory::SSO_LINK_TTL_MINUTES;
+        }
+
+        $configured = config('candidate_invitations.emailed_link_ttl_minutes');
+        $minutes = is_int($configured) || is_string($configured)
+            ? filter_var($configured, FILTER_VALIDATE_INT)
+            : false;
+
+        if ($minutes === false || $minutes < self::EMAILED_TTL_MIN_MINUTES || $minutes > self::EMAILED_TTL_MAX_MINUTES) {
+            throw new RuntimeException(sprintf(
+                'candidate_invitations.emailed_link_ttl_minutes must be an integer between %d and %d. Refusing to mint an emailed link.',
+                self::EMAILED_TTL_MIN_MINUTES,
+                self::EMAILED_TTL_MAX_MINUTES,
+            ));
+        }
+
+        return $minutes;
     }
 
     /**
