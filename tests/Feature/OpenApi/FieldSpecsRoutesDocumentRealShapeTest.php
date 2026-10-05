@@ -5,12 +5,12 @@ declare(strict_types=1);
 use App\Models\Organization;
 use Dedoc\Scramble\Generator;
 use Dedoc\Scramble\Scramble;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
 
 // Generating the document introspects request classes whose rules() can open a draft catalogue revision;
 // roll it back so a serial run does not leak it (see VoicePreviewTransformerTest).
-uses(DatabaseTransactions::class);
+uses(RefreshDatabase::class);
 
 /**
  * Both field-spec routes answer `{data: {heygen: [FieldSpec...], tavus: [FieldSpec...]}}`, but Scramble infers
