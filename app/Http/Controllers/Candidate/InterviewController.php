@@ -12,6 +12,7 @@ use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\ApiKeyMode;
+use App\Enums\AssessmentType;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
@@ -167,12 +168,22 @@ class InterviewController extends Controller
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // (FIX W1) Guard: only 'standard' assessment type is supported by the composition engine.
-        // 'potential' and any future types must not reach composition.
-        // This check applies on BOTH the fresh-start AND the resume in_corso path.
-        // ($project is guaranteed non-null here: the project_not_found early return above
-        // narrows it, and project_id is a non-nullable FK.)
-        if ($project->assessment_type !== 'standard') {
+        // Default-deny on the assessment type: only a value the AssessmentType enum
+        // knows ('standard' | 'potential') reaches composition. The column is an
+        // unconstrained string, so a corrupt or legacy value answers
+        // `assessment_type_not_supported` here, before the template preflight, the
+        // interviewability gate, the transcript harvest, any session write and any
+        // provider call. This applies on BOTH the fresh-start AND the resume
+        // in_corso path. The resolved enum is handed to composition; it is never
+        // re-parsed. ($project is guaranteed non-null here: the project_not_found
+        // early return above narrows it, and project_id is a non-nullable FK.)
+        // Read from the raw attribute: the model documents the column as the literal
+        // union 'standard'|'potential', which static analysis would narrow to a value
+        // that can never be unknown — but the column is an unconstrained string.
+        $storedType = $project->getAttributes()['assessment_type'] ?? null;
+        $assessmentType = is_string($storedType) ? AssessmentType::tryFrom($storedType) : null;
+
+        if ($assessmentType === null) {
             return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -195,8 +206,8 @@ class InterviewController extends Controller
         // only a FRESH start. A session row already existing for THIS exact
         // (participant, competency) pair is a continuation — a pending
         // retry, an in-progress conversation, or a re-offer — and is never
-        // re-evaluated. Placed AFTER the assessment_type guard: a `potential`
-        // project (unsupported by composition at all) must still answer
+        // re-evaluated. Placed AFTER the assessment_type guard: a project whose
+        // stored type is outside the enum must still answer
         // `assessment_type_not_supported` first.
         $hasExistingSession = InterviewSession::where('participant_id', $pid)
             ->where('competency_code', $nextCompetency['competency_code'])
@@ -380,6 +391,7 @@ class InterviewController extends Controller
 
         $compositionResult = $this->composePromptForCompetency(
             $project,
+            $assessmentType,
             $nextCompetency['competency_code'],
             $revisionId,
             $nextCompetencyRow,
@@ -826,7 +838,8 @@ class InterviewController extends Controller
      * a composition failure leaves zero InterviewSession rows and makes zero provider calls.
      *
      * Failure codes (machine-readable, not localized per BEAI machine-facing response policy):
-     *   - 'composition_error'           → CompositionException (empty indicators / bad role)
+     *   - 'composition_error'           → CompositionException (empty indicators / bad role; for
+     *                                     `potential`, no role-less BARS rows for the competency)
      *   - 'anchor_translation_missing'  → AnchorTranslationMissingException (missing locale text)
      *
      * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
@@ -855,6 +868,7 @@ class InterviewController extends Controller
      */
     private function composePromptForCompetency(
         Project $project,
+        AssessmentType $assessmentType,
         string $competencyCode,
         ?int $revisionId,
         ?Competency $competency,
@@ -874,17 +888,23 @@ class InterviewController extends Controller
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Resolve role_id from project.role_code, scoped to the project's OWN
-        // pinned revision (framework-catalogue-authoring PR3b, H1) — a bare
-        // `where('code', ...)` would resolve whichever of the baseline/draft
-        // pair Postgres happens to return first once a draft sharing this
-        // code exists. role_code is required for standard assessments; null
-        // for potential (deferred — not in C8).
-        $role = Role::where('code', $project->role_code)
-            ->where('revision_id', $revisionId)
-            ->first();
+        // Resolve the role from the assessment type, never from whether role_code
+        // happens to be null. `standard` resolves project.role_code scoped to the
+        // project's OWN pinned revision (framework-catalogue-authoring PR3b, H1) —
+        // a bare `where('code', ...)` would resolve whichever of the baseline/draft
+        // pair Postgres happens to return first once a draft sharing this code
+        // exists. `potential` carries no role by rule and composes against the
+        // role-less BARS rows (`role_id IS NULL`). The match has NO default arm on
+        // purpose: a new AssessmentType case must fail here, loudly, instead of
+        // silently composing against the wrong indicator set.
+        $roleId = match ($assessmentType) {
+            AssessmentType::Standard => Role::where('code', $project->role_code)
+                ->where('revision_id', $revisionId)
+                ->first()?->id,
+            AssessmentType::Potential => null,
+        };
 
-        if ($role === null) {
+        if ($assessmentType === AssessmentType::Standard && $roleId === null) {
             // role_code set on project but not found in catalog → composition failure.
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
@@ -898,7 +918,7 @@ class InterviewController extends Controller
         try {
             return $this->composer->compose(
                 competencyCode: $competencyCode,
-                roleId: $role->id,
+                roleId: $roleId,
                 competencyId: $competency->id,
                 projectLocale: $project->language,
                 followUpBudget: $followUpBudget,
