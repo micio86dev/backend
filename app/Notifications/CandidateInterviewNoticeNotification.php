@@ -17,9 +17,10 @@ use Illuminate\Notifications\Notification;
  * `App\Console\Commands\DispatchScheduledInterviewInvitations`'s start-due
  * branch fires, never here. Sending a link this early would let it sit
  * unused for up to `App\Support\Scheduling\ScheduledInterviewWindow::NOTICE_LEAD_MINUTES`
- * minutes against its fixed 30-minute TTL
- * (`App\Support\Jwt\CandidateTokenFactory::SSO_LINK_TTL_MINUTES`), which
- * could expire before the candidate ever opens it (design AD-6).
+ * minutes before the interview is due, which is no longer a risk of expiry
+ * (an emailed link lives `candidate_invitations.emailed_link_ttl_minutes`, 24
+ * hours by default) but would still deliver a link before the interview is
+ * meant to start (design AD-6).
  *
  * A PURE RENDERER, exactly like `CandidateInvitationNotification` — MUST NOT
  * implement `ShouldQueue`: `tests/Arch/Tenancy/NotificationNeverQueuedArchTest.php`

@@ -12,6 +12,7 @@ use App\Models\Participant;
 use App\Support\Scheduling\ScheduledInterviewWindow;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
+use App\Support\Sso\LinkDelivery;
 use App\Support\Tenancy\TenantContextScope;
 use Closure;
 use Illuminate\Console\Command;
@@ -363,6 +364,10 @@ final class DispatchScheduledInterviewInvitations extends Command
                     $locked->email,
                     $locked->role_code,
                     $locked->language,
+                    // The link is emailed straight after this mint, so it
+                    // lives the configured invitation lifetime (24 hours by
+                    // default) rather than the 30 minutes of a returned link.
+                    delivery: LinkDelivery::Emailed,
                 );
             } catch (EntryLinkRefused $e) {
                 // A structural refusal (closed gates, a mismatched role_code,
