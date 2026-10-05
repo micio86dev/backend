@@ -142,6 +142,17 @@ final class ProviderFieldSpecs
     ];
 
     /**
+     * The voice knobs an external engine does not support on a PROVIDER. Only HeyGen has the rule:
+     * another provider that spells a field the same way is never affected by it.
+     *
+     * @return list<string>
+     */
+    public static function unsupportedKnobs(string $provider, string $engine): array
+    {
+        return $provider === 'heygen' ? (self::HEYGEN_ENGINE_UNSUPPORTED_KNOBS[$engine] ?? []) : [];
+    }
+
+    /**
      * Every field of a provider, superadmin-only ones included.
      *
      * @return list<FieldSpec>

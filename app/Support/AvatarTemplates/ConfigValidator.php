@@ -79,7 +79,7 @@ final class ConfigValidator
             $error = ($field->superadminOnly && ! $superadmin ? 'superadmin_only' : null)
                 ?? self::checkValue($field, $config[$field->key])
                 ?? self::checkDependentOption($field, $config)
-                ?? self::checkEngineSupport($field, $config);
+                ?? self::checkEngineSupport($provider, $field, $config);
 
             if ($error !== null) {
                 $errors[] = ['key' => $field->key, 'code' => $error];
@@ -111,7 +111,7 @@ final class ConfigValidator
      *
      * @param  array<string, mixed>  $config
      */
-    private static function checkEngineSupport(FieldSpec $field, array $config): ?string
+    private static function checkEngineSupport(string $provider, FieldSpec $field, array $config): ?string
     {
         $engine = $config['ttsEngine'] ?? null;
 
@@ -119,7 +119,7 @@ final class ConfigValidator
             return null;
         }
 
-        return in_array($field->key, ProviderFieldSpecs::HEYGEN_ENGINE_UNSUPPORTED_KNOBS[$engine] ?? [], true)
+        return in_array($field->key, ProviderFieldSpecs::unsupportedKnobs($provider, $engine), true)
             ? 'tts_setting_unsupported'
             : null;
     }
