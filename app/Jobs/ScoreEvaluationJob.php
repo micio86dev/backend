@@ -349,6 +349,11 @@ class ScoreEvaluationJob implements ShouldQueue
                 ->where('valid', false)
                 ->delete();
 
+            // The retry re-scores under TODAY's model and prompt, so the row records those
+            // (owner decision, 2026-10-05); the framework version stays the one pinned at
+            // project creation. Per-call detail remains in `ai_requests`.
+            $locked->model_version = config('scoring.model_version');
+            $locked->prompt_version = config('scoring.prompt_version');
             $locked->status = EvaluationStatus::Processing;
             $locked->save();
 

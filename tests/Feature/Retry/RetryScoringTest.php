@@ -268,6 +268,22 @@ test('merge: only the invalid competencies are re-scored, valid results and the 
     Event::assertDispatched(EvaluationCompleted::class, fn (EvaluationCompleted $e): bool => $e->evaluationId === $w['evaluation']->id);
 });
 
+test('versions: a retry records the model and prompt versions of the retry run and keeps the pinned framework version', function (): void {
+    Event::fake([EvaluationCompleted::class]);
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 6]);
+    retryScoringCassette($w['invalidCodes']);
+    DB::table('evaluations')->where('id', $w['evaluation']->id)->update(['model_version' => 'model-first-run', 'prompt_version' => 'prompt-first-run']);
+    $frameworkBefore = (int) DB::table('evaluations')->where('id', $w['evaluation']->id)->value('framework_version_id');
+    config(['scoring.model_version' => 'model-retry-run', 'scoring.prompt_version' => 'prompt-retry-run']);
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->handle();
+
+    $evaluation = retryScoringEvaluation($w['participant']->id);
+    expect($evaluation->model_version)->toBe('model-retry-run')
+        ->and($evaluation->prompt_version)->toBe('prompt-retry-run')
+        ->and((int) $evaluation->framework_version_id)->toBe($frameworkBefore);
+});
+
 test('definitive outcome: a retry below the 90 percent gate still ends completed, never pending', function (): void {
     Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
     $w = retryScoringWorld(['competencies' => 10, 'valid' => 6]);
