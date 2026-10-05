@@ -377,6 +377,34 @@ test('nothing is queued before the transaction commits and nothing at all when i
     Queue::assertNotPushed(SendCandidateInvitationJob::class);
 });
 
+test('the email is queued exactly when the enclosing transaction really commits', function (): void {
+    Queue::fake();
+    $world = retryMailWorld();
+
+    DB::beginTransaction();
+    retryMailAuthorize($world);
+    Queue::assertNotPushed(SendCandidateInvitationJob::class);
+    DB::commit();
+
+    Queue::assertPushed(SendCandidateInvitationJob::class, 1);
+});
+
+test('the suite exercises the real after-commit path: a callback registered inside a transaction fires once, when it closes', function (): void {
+    // RefreshDatabase wraps every test in a transaction that never commits; Laravel's test transaction
+    // manager ignores that wrapper, so a callback registered inside the code under test still fires.
+    $fired = 0;
+
+    DB::transaction(function () use (&$fired): void {
+        DB::afterCommit(function () use (&$fired): void {
+            $fired++;
+        });
+
+        expect($fired)->toBe(0);
+    });
+
+    expect($fired)->toBe(1);
+});
+
 test('a refused authorization queues nothing', function (): void {
     Queue::fake();
     $world = retryMailWorld();
