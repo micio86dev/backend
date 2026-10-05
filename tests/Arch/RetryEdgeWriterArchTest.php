@@ -13,10 +13,19 @@ declare(strict_types=1);
  * operation. The model's transition map cannot tell the two callers apart (it
  * only knows the edge exists), so the guard lives here.
  *
- * Detection is textual, in the convention of the sibling arch tests (no
- * pest-plugin-arch dependency): every statement under `app/` that WRITES the
- * status value `in_attesa` (an assignment or a column => value pair) must sit
- * in the action or in the closed allowlist below. Every allowlisted file is a
+ * Detection reads PHP TOKENS, not lines of text (no pest-plugin-arch
+ * dependency, in the convention of the sibling arch tests): every place under
+ * `app/` where the literal `in_attesa` is ASSIGNED, returned, picked by a
+ * ternary or `??`, passed as a named argument, used as an array/match value or
+ * handed to a model write call (`update`, `fill`, `create`, `transitionTo` ...)
+ * counts as a writer, whatever the shape of the statement. So an intermediate
+ * variable (`$next = 'in_attesa'; $p->status = $next;`) and a constant or enum
+ * case (`const X = 'in_attesa'`) are caught where the literal is introduced,
+ * and that file must sit in the action or in the closed allowlist below.
+ * Comparisons (`=== 'in_attesa'`), array membership and array KEYS are reads.
+ * It is still syntactic: a value assembled at runtime ('in_'.'attesa') is out
+ * of reach, which is why the transition map and the action carry their own
+ * guards as well. Every allowlisted file is a
  * place that is not the `completato` edge: it CREATES a participant at
  * `in_attesa`, or is the `errore -> in_attesa` recovery. Adding a file to that
  * list is a reviewed decision with a written reason, never a way to silence
@@ -44,12 +53,56 @@ function retryEdgeAllowedWriters(): array
         'Http/Controllers/M2m/ParticipantController.php' => 'creates a participant at in_attesa',
         'Http/Controllers/Sso/SsoExchangeController.php' => 'upsert guarded by WHERE status = in_attesa; never touches another status',
         'Support/Demo/DemoDataset.php' => 'demo seed data created at in_attesa',
+        'Support/PublicApi/InterviewStatus.php' => 'maps the public status enum to its stored label (`self::Pending => in_attesa`); writes no participant',
     ];
 }
 
 /**
- * The relative paths (under app/) of every file with a statement that writes
- * the status `in_attesa`, comment lines excluded.
+ * Whether a PHP source WRITES the literal `in_attesa`, decided on its tokens
+ * (comments and docblocks never reach the decision).
+ */
+function retryEdgeSourceWrites(string $source): bool
+{
+    $writeCalls = ['transitionTo', 'forceFill', 'fill', 'update', 'create', 'updateOrCreate', 'firstOrCreate', 'upsert', 'setAttribute', 'setStatus'];
+    $kind = static fn (mixed $token): mixed => is_array($token) ? $token[0] : $token;
+    $previous = [];
+
+    foreach (token_get_all($source) as $token) {
+        if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+            continue;
+        }
+
+        // A raw SQL write (INSERT / UPDATE ... SET / ON CONFLICT DO UPDATE) that names the
+        // value inside a string or heredoc is a writer too.
+        if (is_array($token) && in_array($token[0], [T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE], true)
+            && str_contains($token[1], 'in_attesa')
+            && preg_match('/\b(insert\s+into|update\s+\w+\s+set|do\s+update)\b/i', $token[1]) === 1) {
+            return true;
+        }
+
+        if (is_array($token) && $token[0] === T_CONSTANT_ENCAPSED_STRING && trim($token[1], '\'"') === 'in_attesa') {
+            $last = $kind($previous[0] ?? null);
+
+            if (in_array($last, ['=', '?', ':', T_DOUBLE_ARROW, T_RETURN, T_COALESCE], true)) {
+                return true;
+            }
+
+            $call = $previous[1] ?? null;
+            if ($last === '(' && is_array($call) && $call[0] === T_STRING && in_array($call[1], $writeCalls, true)) {
+                return true;
+            }
+        }
+
+        array_unshift($previous, $token);
+        $previous = array_slice($previous, 0, 2);
+    }
+
+    return false;
+}
+
+/**
+ * The relative paths (under app/) of every file where the literal `in_attesa`
+ * is written, per retryEdgeSourceWrites().
  *
  * @return list<string>
  */
@@ -65,17 +118,8 @@ function retryEdgeWriters(): array
             continue;
         }
 
-        foreach (file($file->getPathname(), FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-            $trimmed = ltrim($line);
-            if (str_starts_with($trimmed, '*') || str_starts_with($trimmed, '//') || str_starts_with($trimmed, '/*') || str_starts_with($trimmed, '#')) {
-                continue;
-            }
-
-            if (preg_match('/[\'"]status[\'"]\s*=>\s*[\'"]in_attesa[\'"]|->status\s*=\s*[\'"]in_attesa[\'"]|\bstatus\s*=\s*\'in_attesa\'/', $line) === 1) {
-                $writers[] = str_replace(app_path().'/', '', $file->getPathname());
-
-                break;
-            }
+        if (retryEdgeSourceWrites((string) file_get_contents($file->getPathname()))) {
+            $writers[] = str_replace(app_path().'/', '', $file->getPathname());
         }
     }
 
@@ -97,6 +141,37 @@ test('the completato -> in_attesa edge is written only by AuthorizeEvaluationRet
         implode(', ', $strangers),
     ));
 });
+
+test('the detector catches every way of writing in_attesa the old textual guard missed', function (string $source): void {
+    expect(retryEdgeSourceWrites("<?php\n".$source))->toBeTrue();
+})->with([
+    'an intermediate variable' => ['$next = \'in_attesa\'; $participant->status = $next;'],
+    'a class constant' => ['final class A { public const STATUS_IN_ATTESA = \'in_attesa\'; }'],
+    'an enum case' => ['enum S: string { case InAttesa = \'in_attesa\'; }'],
+    'a ternary' => ['$next = $flag ? \'in_attesa\' : \'completato\';'],
+    'a null-coalesce' => ['$next = $maybe ?? \'in_attesa\';'],
+    'a return from a helper' => ['function next(): string { return \'in_attesa\'; }'],
+    'a named argument' => ['$p->forceFill(status: \'in_attesa\');'],
+    'a column pair' => ['$p->update([\'status\' => \'in_attesa\']);'],
+    'an arrow function value' => ['$f = fn () => \'in_attesa\';'],
+    'a model write call' => ['$p->transitionTo(\'in_attesa\');'],
+    'a raw SQL insert' => ['$sql = "INSERT INTO participants (status) VALUES (\'in_attesa\')";'],
+    'a raw SQL conflict update' => ['$sql = "... ON CONFLICT (id) DO UPDATE SET status = \'in_attesa\'";'],
+    'the shapes the old guard knew' => ['$p->status = \'in_attesa\';'],
+]);
+
+test('the detector leaves reads alone: comparisons, membership, keys, comments and docblocks', function (string $source): void {
+    expect(retryEdgeSourceWrites("<?php\n".$source))->toBeFalse();
+})->with([
+    'a strict comparison' => ['if ($p->status === \'in_attesa\') { return 1; }'],
+    'a loose inequality' => ['if ($p->status != \'in_attesa\') { return 1; }'],
+    'array membership' => ['in_array($status, [\'in_attesa\', \'in_corso\'], true);'],
+    'an array key' => ['$labels = [\'in_attesa\' => \'waiting\'];'],
+    'a raw SQL select' => ['$sql = "SELECT id FROM participants WHERE status = \'in_attesa\'";'],
+    'a where clause' => ['$q->where(\'status\', \'in_attesa\');'],
+    'a line comment' => ['// $p->status = \'in_attesa\';'],
+    'a docblock' => ['/** $next = \'in_attesa\'; */ function f() {}'],
+]);
 
 test('every allowlisted writer still exists and still writes in_attesa', function (): void {
     $writers = retryEdgeWriters();
