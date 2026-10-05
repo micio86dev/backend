@@ -684,6 +684,37 @@ test('failed(): a first-attempt evaluation is unchanged, participant errore and 
     Event::assertNotDispatched(EvaluationCompleted::class);
 });
 
+test('endParticipantUnresolvable(): a first-attempt run whose role cannot be resolved is unchanged, participant errore and EvaluationFailed', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    $w = retryScoringWorld(['competencies' => 4, 'valid' => 2, 'evaluation' => 'processing', 'retryAttempt' => false]);
+    retryScoringCassette([]);
+    DB::table('projects')->where('id', $w['project']->id)->update(['role_code' => 'NOT_A_REAL_ROLE']);
+
+    (new ScoreEvaluationJob($w['participant']->id))->handle();
+
+    expect(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('errore');
+    Event::assertDispatchedTimes(EvaluationFailed::class, 1);
+    Event::assertNotDispatched(EvaluationCompleted::class);
+});
+
+test('the retry merge skips an evaluation stamped with another organization than its participant', function (): void {
+    // The participant lookup under the merge lock is organization-scoped: a row that does not belong to the
+    // evaluation's organization is "nothing to merge", never a cross-tenant delete.
+    Event::fake([EvaluationCompleted::class]);
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 6]);
+    $cassette = retryScoringCassette([]);
+    $other = Organization::factory()->create();
+    DB::table('evaluations')->where('id', $w['evaluation']->id)->update(['organization_id' => $other->id]);
+    $before = retryScoringSnapshot($w['evaluation']->id, $w['codes']);
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->handle();
+
+    expect($cassette->callCount())->toBe(0)
+        ->and(retryScoringSnapshot($w['evaluation']->id, $w['codes']))->toEqual($before)
+        ->and(DB::table('evaluations')->where('id', $w['evaluation']->id)->value('status'))->toBe('pending');
+    Event::assertNotDispatched(EvaluationCompleted::class);
+});
+
 // ─── 7.2 / 7.3 are below and in ParticipantRecovery/RecoverFailedParticipantTest.php ─────
 
 // ─── 7.2  webhook dedupe keys of the retry era (design D12) ──────────────────
