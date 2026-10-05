@@ -243,6 +243,16 @@ $tenantScopeStripAllowlist = [
         .'org id ScoreEvaluationJob itself already derived. Both Evaluation reads use '
         .'withoutGlobalScope(\'tenant\') ONLY, never the plural form, extended to this file '
         .'when the guarded roots grew to include Listeners (pre-commit gate round 6).',
+    'Listeners/DispatchScoringJob.php' => 'Reads evaluations.retry_attempt for the participant a '
+        .'ScoringRequested event names (scoring-retry-rt-b, design D8). The listener runs off '
+        .'FinalizeInterview, a QUEUED job whose Queue::before hook has reset the tenant resolver to '
+        .'null, so there is no ambient tenant context for the scope to respect. The read is instead '
+        .'pinned EXPLICITLY by organization_id = the event\'s own organizationId — the value '
+        .'FinalizeInterview sourced from SettleParticipantCompletion\'s Project-derived org, the '
+        .'same independent value this listener already uses to org-filter its Participant read — '
+        .'and by participant_id. Strips ONLY the named tenant scope, never the plural no-args '
+        .'form, and selects a single boolean column, so a row of another organization is never '
+        .'visible here (pinned by a foreign-organization test in FinalizeInterviewHookTest).',
 ];
 
 /**
