@@ -383,20 +383,25 @@ test('a superadmin duplicates a HeyGen template carrying an external voice and t
         ->and($copies[0]->config)->toEqualCanonicalizing($config);
 });
 
-test('a caller that is not a superadmin cannot duplicate a template carrying an external voice', function (): void {
+// What this proves is the blanket `create` policy denial, NOT an external-voice-specific restriction: the 403 is
+// identical for a template with and without an external voice, because the policy refuses before the config is read.
+// A narrower claim would need the superadmin path (covered above, where the voice is copied verbatim).
+dataset('duplicated template configs', [
+    'native voice' => [['avatarId' => 'av_1', 'voiceId' => 'vo_1']],
+    'external voice' => [['avatarId' => 'av_1', 'ttsEngine' => 'cartesia', 'ttsExternalVoiceId' => '00e9ec78-2002-41dd-8d19-6b1d3b17a461']],
+]);
+
+test('an organization admin is refused duplication by the create policy whatever the template carries, with no copy and no vendor call', function (array $config): void {
     $source = Organization::factory()->create();
     $target = Organization::factory()->create();
-    $template = dupTemplate($source, ['config' => [
-        'avatarId' => 'av_1',
-        'ttsEngine' => 'cartesia',
-        'ttsExternalVoiceId' => '00e9ec78-2002-41dd-8d19-6b1d3b17a461',
-    ]]);
+    $template = dupTemplate($source, ['config' => $config]);
 
-    // The `create` policy denies every organization role, so the 403 is the refusal
-    // before the config check is reached.
-    $this->withToken(authTokenForRole($source, 'admin'))
+    $response = $this->withToken(authTokenForRole($source, 'admin'))
         ->postJson("/api/avatar-templates/{$template->id}/duplicate", ['target_organization_ids' => [$target->id]])
         ->assertForbidden();
 
-    expect(dupTemplatesOf($target))->toBeEmpty();
-});
+    expect($response->json('data'))->toBeNull()
+        ->and(dupTemplatesOf($target))->toBeEmpty()
+        ->and(dupTemplatesOf($source))->toHaveCount(1)
+        ->and(Http::recorded())->toHaveCount(0);
+})->with('duplicated template configs');
