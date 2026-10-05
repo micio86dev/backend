@@ -754,17 +754,9 @@ class ScoreEvaluationJob implements ShouldQueue
                 $evaluation = $merged;
             }
 
-            $project = $participant->project()->withoutGlobalScopes()->first();
-
-            if ($project === null) {
-                Log::error('ScoreEvaluationJob: retry finalization failed — participant left in_valutazione', [
-                    'participant_id' => $this->participantId,
-                    'evaluation_id' => $evaluation->id,
-                    'error' => 'project not found for participant',
-                ]);
-
-                return true;
-            }
+            // participants.project_id is a NOT NULL foreign key and soft-deleted projects are
+            // included here, so a missing project is a corrupted row: the throw is handled below.
+            $project = $participant->project()->withoutGlobalScopes()->firstOrFail();
 
             DB::transaction(fn () => (new ResolveEvaluationTerminalState)->resolve($evaluation, $participant, $project));
         } catch (\Throwable $finalizationException) {
