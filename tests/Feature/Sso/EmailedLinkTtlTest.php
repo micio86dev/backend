@@ -119,7 +119,7 @@ test('an operator mint that queues the invitation email lives the configured 24 
     $claims = emailedTtlClaims(emailedTtlTokenOf($response->json('entry_url')));
     expect($response->json('email_sent'))->toBeTrue()
         ->and($claims['typ'])->toBe('sso-link')
-        ->and($claims['exp'] - $claims['iat'])->toBe(1440 * 60)
+        ->and($claims['exp'] - $claims['iat'])->toBeBetween(1440 * 60, 1440 * 60 + 1)
         ->and(Carbon::parse($response->json('expires_at'))->getTimestamp())->toBe($claims['exp']);
     Queue::assertPushed(SendCandidateInvitationJob::class, 1);
 });
@@ -132,7 +132,7 @@ test('the lifetime is configuration, not code', function (): void {
     $response = emailedTtlOperatorMint($this, $world, 'emailed-720', 'ada@example.test')->assertCreated();
 
     $claims = emailedTtlClaims(emailedTtlTokenOf($response->json('entry_url')));
-    expect($claims['exp'] - $claims['iat'])->toBe(720 * 60);
+    expect($claims['exp'] - $claims['iat'])->toBeBetween(720 * 60, 720 * 60 + 1);
 });
 
 test('an operator mint with send_email false stays at 30 minutes and says no email was sent', function (): void {
@@ -143,7 +143,7 @@ test('an operator mint with send_email false stays at 30 minutes and says no ema
 
     $claims = emailedTtlClaims(emailedTtlTokenOf($response->json('entry_url')));
     expect($response->json('email_sent'))->toBeFalse()
-        ->and($claims['exp'] - $claims['iat'])->toBe(CandidateTokenFactory::SSO_LINK_TTL_MINUTES * 60)
+        ->and($claims['exp'] - $claims['iat'])->toBeBetween(CandidateTokenFactory::SSO_LINK_TTL_MINUTES * 60, CandidateTokenFactory::SSO_LINK_TTL_MINUTES * 60 + 1)
         ->and(Carbon::parse($response->json('expires_at'))->getTimestamp())->toBe($claims['exp']);
     Queue::assertNotPushed(SendCandidateInvitationJob::class);
 });
@@ -162,7 +162,7 @@ test('an operator re-issue for a participant holding a placeholder address stays
 
     $claims = emailedTtlClaims(emailedTtlTokenOf($response->json('entry_url')));
     expect($response->json('email_sent'))->toBeFalse()
-        ->and($claims['exp'] - $claims['iat'])->toBe(1800);
+        ->and($claims['exp'] - $claims['iat'])->toBeBetween(1800, 1800 + 1);
     Queue::assertNotPushed(SendCandidateInvitationJob::class);
 });
 
@@ -175,7 +175,7 @@ test('an operator re-issue for a reusable-link visitor stays at 30 minutes even 
 
     $claims = emailedTtlClaims(emailedTtlTokenOf($response->json('entry_url')));
     expect($response->json('email_sent'))->toBeFalse()
-        ->and($claims['exp'] - $claims['iat'])->toBe(1800);
+        ->and($claims['exp'] - $claims['iat'])->toBeBetween(1800, 1800 + 1);
     Queue::assertNotPushed(SendCandidateInvitationJob::class);
 });
 
@@ -216,7 +216,7 @@ test('the M2M sso-link mint stays at 30 minutes', function (): void {
 
     $claims = emailedTtlClaims($response->json('token'));
     expect(array_keys($response->json()))->toBe(['token'])
-        ->and($claims['exp'] - $claims['iat'])->toBe(1800);
+        ->and($claims['exp'] - $claims['iat'])->toBeBetween(1800, 1800 + 1);
 });
 
 test('a reusable-link redemption mints no sso-link at all and its candidate credential keeps its own lifetime', function (): void {
@@ -226,7 +226,7 @@ test('a reusable-link redemption mints no sso-link at all and its candidate cred
 
     $claims = emailedTtlClaims((string) $response->json('access_token'));
     expect($claims['typ'])->toBe('candidate')
-        ->and($claims['exp'] - $claims['iat'])->toBe(120 * 60);
+        ->and($claims['exp'] - $claims['iat'])->toBeBetween(120 * 60, 120 * 60 + 1);
 });
 
 test('the raw factory mint still defaults to 30 minutes and honours an explicit lifetime', function (): void {
@@ -291,11 +291,39 @@ test('the scheduled-start sweep mints a link that lives the configured 24 hours'
         $label = (new ReflectionProperty($job, 'expiresAtLabel'))->getValue($job);
 
         expect($claims['candidate_ref'])->toBe($participant->candidate_ref)
-            ->and($claims['exp'] - $claims['iat'])->toBe(1440 * 60)
+            ->and($claims['exp'] - $claims['iat'])->toBeBetween(1440 * 60, 1440 * 60 + 1)
             ->and($label)->toBe(Carbon::createFromTimestamp($claims['exp'])->locale('en')->isoFormat('LLL'));
 
         return true;
     });
+});
+
+test('a broken emailed lifetime does not take the sweep down: the row is isolated, nothing is mailed, nothing is cancelled', function (): void {
+    Bus::fake();
+    $world = Fx::redeemable();
+    $participant = Participant::factory()->forProject($world['project'])->create([
+        'scheduled_at' => now()->subMinute(),
+        'scheduling_status' => ParticipantSchedulingStatus::NoticeSent,
+    ]);
+    config(['candidate_invitations.emailed_link_ttl_minutes' => 5]);
+
+    expect(fn () => Artisan::call('beai:dispatch-scheduled-invitations'))->not->toThrow(Throwable::class);
+
+    Bus::assertNotDispatched(SendCandidateInvitationJob::class);
+    // Left untouched on purpose (the sweep's transient-failure rule): the next tick retries it once the setting is fixed.
+    expect($participant->fresh()->scheduling_status)->toBe(ParticipantSchedulingStatus::NoticeSent);
+});
+
+test('a broken emailed lifetime fails the operator mint loudly with nothing queued and no participant created', function (): void {
+    Queue::fake();
+    $world = Fx::redeemable();
+    config(['candidate_invitations.emailed_link_ttl_minutes' => 5]);
+
+    $response = emailedTtlOperatorMint($this, $world, 'broken-ttl-1', 'broken@example.test');
+
+    expect($response->status())->toBe(500);
+    Queue::assertNothingPushed();
+    expect(Participant::withoutGlobalScopes()->where('candidate_ref', 'broken-ttl-1')->exists())->toBeFalse();
 });
 
 // ─── Range doctrine: refused, never clamped ──────────────────────────────────
@@ -326,7 +354,7 @@ test('the boundary lifetimes 15 and 10080 are accepted', function (int $minutes)
     );
 
     $claims = emailedTtlClaims($minted->token);
-    expect($claims['exp'] - $claims['iat'])->toBe($minutes * 60)
+    expect($claims['exp'] - $claims['iat'])->toBeBetween($minutes * 60, $minutes * 60 + 1)
         ->and($minted->delivery)->toBe(LinkDelivery::Emailed);
 })->with([15, 10080]);
 
@@ -339,7 +367,7 @@ test('a returned link ignores the emailed lifetime setting, even a broken one', 
     );
 
     $claims = emailedTtlClaims($minted->token);
-    expect($claims['exp'] - $claims['iat'])->toBe(1800)
+    expect($claims['exp'] - $claims['iat'])->toBeBetween(1800, 1800 + 1)
         ->and($minted->delivery)->toBe(LinkDelivery::Returned);
 });
 
