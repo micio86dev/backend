@@ -87,7 +87,7 @@ final class ResolveEvaluationTerminalState
         // A retry skips the gate entirely, and with it the ZeroCompetencies `errore`
         // arm: a project whose composition was emptied between the attempts must not
         // strand a retry in `errore`. The counts are still logged below.
-        $isRetry = (bool) Evaluation::withoutGlobalScopes()
+        $isRetry = (bool) Evaluation::withoutGlobalScope('tenant')
             ->whereKey($evaluation->id)
             ->value('retry_attempt');
 

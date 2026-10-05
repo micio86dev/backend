@@ -338,13 +338,13 @@ class ScoreEvaluationJob implements ShouldQueue
     private function mergeRetryResults(Evaluation $evaluation): ?Evaluation
     {
         return DB::transaction(function () use ($evaluation): ?Evaluation {
-            $locked = Evaluation::withoutGlobalScopes()->lockForUpdate()->find($evaluation->id);
+            $locked = Evaluation::withoutGlobalScope('tenant')->lockForUpdate()->find($evaluation->id);
 
             if ($locked === null || $locked->status !== EvaluationStatus::Pending || ! $locked->retry_attempt) {
                 return null;
             }
 
-            $deleted = CompetencyResult::withoutGlobalScopes()
+            $deleted = CompetencyResult::withoutGlobalScope('tenant')
                 ->where('evaluation_id', $locked->id)
                 ->where('valid', false)
                 ->delete();
