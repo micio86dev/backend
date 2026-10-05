@@ -551,10 +551,137 @@ test('a retry on a project with zero scorable competencies ends completed, never
     Event::assertNotDispatched(EvaluationFailed::class);
 });
 
-// ─── PR2b pick-up ────────────────────────────────────────────────────────────
+// ─── 7.1  failed() and endParticipantUnresolvable() finalize a retry (design D10) ─
 
-// Owned by slice PR2b (tasks 7.1-7.8), deliberately NOT implemented in PR2a:
-test('PR2b: failed() and endParticipantUnresolvable() finalize a retry as completed, never errore')->todo();
+test('failed(): a retry job that exhausts its queue retries finalizes completed with the retained results, never errore', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    // `processing` is the state after the merge: the invalid results are already gone.
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 8, 'evaluation' => 'processing']);
+    DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', false)->delete();
+    $before = retryScoringSnapshot($w['evaluation']->id, $w['validCodes']);
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->failed(new RuntimeException('queue retries exhausted'));
+
+    expect(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Completed)
+        ->and(DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->count())->toBe(8)
+        ->and(retryScoringSnapshot($w['evaluation']->id, $w['validCodes']))->toEqual($before)
+        ->and(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('completato');
+    Event::assertDispatchedTimes(EvaluationCompleted::class, 1);
+    Event::assertDispatched(EvaluationCompleted::class, fn (EvaluationCompleted $e): bool => $e->evaluationId === $w['evaluation']->id);
+    Event::assertNotDispatched(EvaluationFailed::class);
+});
+
+test('failed(): a failure BEFORE the merge merges first, so no first-attempt invalid result survives into the definitive evaluation', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 8, 'evaluation' => 'pending']);
+    $invalidResultIds = DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', false)->pluck('id');
+    expect($invalidResultIds)->toHaveCount(2);
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->failed(new RuntimeException('queue retries exhausted'));
+
+    expect(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Completed)
+        ->and(DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', false)->count())->toBe(0)
+        ->and(DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', true)->count())->toBe(8)
+        ->and(DB::table('indicator_scores')->whereIn('competency_result_id', $invalidResultIds)->count())->toBe(0)
+        ->and(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('completato');
+    Event::assertDispatchedTimes(EvaluationCompleted::class, 1);
+    Event::assertNotDispatched(EvaluationFailed::class);
+});
+
+test('endParticipantUnresolvable(): a retry whose role cannot be resolved finalizes completed with the retained results, never errore', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 8]);
+    retryScoringCassette([]);
+    DB::table('projects')->where('id', $w['project']->id)->update(['role_code' => 'NOT_A_REAL_ROLE']);
+    Log::spy();
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->handle();
+
+    Log::shouldHaveReceived('error')
+        ->withArgs(fn (string $message, array $context = []): bool => str_contains($message, 'project.role_code has no matching Role'))
+        ->once();
+    expect(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Completed)
+        ->and(DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', true)->count())->toBe(8)
+        ->and(DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', false)->count())->toBe(0)
+        ->and(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('completato');
+    Event::assertDispatchedTimes(EvaluationCompleted::class, 1);
+    Event::assertNotDispatched(EvaluationFailed::class);
+});
+
+test('failed(): completed + retry_attempt is a logged no-op (the retry already ran), never errore, no event', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    $w = retryScoringWorld(['evaluation' => 'completed', 'participant' => 'completato']);
+    $before = retryScoringSnapshot($w['evaluation']->id, $w['codes']);
+    $evaluatedAt = DB::table('evaluations')->where('id', $w['evaluation']->id)->value('evaluated_at');
+    Log::spy();
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->failed(new RuntimeException('late failure of a superseded job'));
+
+    Log::shouldHaveReceived('info')
+        ->withArgs(fn (string $message, array $context = []): bool => $message === 'ScoreEvaluationJob: retry already completed — failed() is a no-op'
+            && $context['evaluation_id'] === $w['evaluation']->id)
+        ->once();
+    expect(retryScoringSnapshot($w['evaluation']->id, $w['codes']))->toEqual($before)
+        ->and(DB::table('evaluations')->where('id', $w['evaluation']->id)->value('evaluated_at'))->toBe($evaluatedAt)
+        ->and(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('completato');
+    Event::assertNotDispatched(EvaluationCompleted::class);
+    Event::assertNotDispatched(EvaluationFailed::class);
+});
+
+test('failed(): a pending retry whose candidate has not re-interviewed is left alone, never errore, the single retry is not burned', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    $w = retryScoringWorld(['participant' => 'in_attesa']);
+    $before = retryScoringSnapshot($w['evaluation']->id, $w['codes']);
+
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->failed(new RuntimeException('stray job failure'));
+
+    expect(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Pending)
+        ->and(retryScoringSnapshot($w['evaluation']->id, $w['codes']))->toEqual($before)
+        ->and(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('in_attesa');
+    Event::assertNotDispatched(EvaluationCompleted::class);
+    Event::assertNotDispatched(EvaluationFailed::class);
+});
+
+test('failed(): a throw inside the finalization leaves the participant in_valutazione with an error log, never errore', function (): void {
+    $w = retryScoringWorld(['competencies' => 10, 'valid' => 8, 'evaluation' => 'processing']);
+    DB::table('competency_results')->where('evaluation_id', $w['evaluation']->id)->where('valid', false)->delete();
+    $failedEmitted = false;
+    Event::listen(EvaluationFailed::class, function () use (&$failedEmitted): void {
+        $failedEmitted = true;
+    });
+    Event::listen(EvaluationCompleted::class, function (): void {
+        throw new RuntimeException('finalization boom');
+    });
+    Log::spy();
+
+    // Must not propagate: failed() is the queue worker's last resort.
+    (new ScoreEvaluationJob($w['participant']->id, retryAttempt: true))->failed(new RuntimeException('queue retries exhausted'));
+
+    Log::shouldHaveReceived('error')
+        ->withArgs(fn (string $message, array $context = []): bool => $message === 'ScoreEvaluationJob: retry finalization failed — participant left in_valutazione'
+            && $context['participant_id'] === $w['participant']->id
+            && $context['error'] === 'finalization boom')
+        ->once();
+    expect($failedEmitted)->toBeFalse()
+        ->and(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('in_valutazione')
+        // All-or-nothing: the half-done finalization was rolled back, so a re-dispatch can resume it.
+        ->and(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Processing);
+});
+
+test('failed(): a first-attempt evaluation is unchanged, participant errore and EvaluationFailed', function (): void {
+    Event::fake([EvaluationCompleted::class, EvaluationFailed::class]);
+    $w = retryScoringWorld(['evaluation' => 'processing', 'retryAttempt' => false]);
+
+    (new ScoreEvaluationJob($w['participant']->id))->failed(new RuntimeException('queue retries exhausted'));
+
+    expect(DB::table('participants')->where('id', $w['participant']->id)->value('status'))->toBe('errore')
+        ->and(retryScoringEvaluation($w['participant']->id)->status)->toBe(EvaluationStatus::Processing);
+    Event::assertDispatchedTimes(EvaluationFailed::class, 1);
+    Event::assertNotDispatched(EvaluationCompleted::class);
+});
+
+// ─── 7.2 / 7.3 are below and in ParticipantRecovery/RecoverFailedParticipantTest.php ─────
+
 test('PR2b: the retry completion webhook is delivered under the {evaluation_id}:retry dedupe key')->todo();
 test('PR2b: retry-era progress webhooks use the :retry dedupe suffix')->todo();
 test('PR2b: RecoverFailedParticipant admits an interview-stage errore during an in-flight retry')->todo();
