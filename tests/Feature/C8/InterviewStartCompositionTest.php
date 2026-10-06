@@ -119,7 +119,7 @@ function c8MakeInterviewable(array $scenario): void
 /**
  * Create BarsIndicator rows with EN translations.
  */
-function c8SeedIndicators(int $roleId, int $competencyId, string $locale = 'en', int $count = 2): void
+function c8SeedIndicators(?int $roleId, int $competencyId, string $locale = 'en', int $count = 2): void
 {
     for ($i = 0; $i < $count; $i++) {
         $ind = new BarsIndicator;
@@ -627,19 +627,22 @@ test('5.8 NEW session + composition fails (regression guard) → still 422, no I
     Http::assertNothingSent();
 });
 
-// ─── FIX W1: assessment_type guard ───────────────────────────────────────────
+// ─── Potential assessments start through the same adaptive engine ────────────
 
-test('W1 potential-type project → 422 assessment_type_not_supported, no session created, no provider call', function (): void {
-    Http::fake(c8HeygenFake());
-    Queue::fake();
-
+/**
+ * Seed a `potential` scenario: Org → Project(role_code null) → competencies with
+ * ROLE-LESS BARS rows (`role_id` null) and one authored primary each.
+ *
+ * @param  list<string>  $codes  Competency code prefixes, in interview order.
+ * @return array{org: Organization, project: Project, participant: Participant, competencies: list<Competency>}
+ */
+function c8SeedPotentialScenario(array $codes = ['MTG'], string $participantStatus = 'in_attesa'): array
+{
     $org = Organization::factory()->create();
+
     $resolver = app(TenantResolver::class);
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
-
-    // potential type: role_code is null (domain constraint); assessment_type = 'potential'
-    $competency = Competency::factory()->create(['code' => 'MTG_'.uniqid()]);
 
     $project = Project::factory()->create([
         'status' => 'active',
@@ -648,79 +651,261 @@ test('W1 potential-type project → 422 assessment_type_not_supported, no sessio
         'assessment_type' => 'potential',
     ]);
 
-    DB::table('project_competencies')->insert([
-        'project_id' => $project->id,
-        'competency_id' => $competency->id,
-        'position' => 1,
-    ]);
+    $competencies = [];
 
-    $participant = c8MakeParticipant($org, $project, 'in_attesa');
-    $bearer = CandidateTokenFactory::mintCandidateToken($participant);
+    foreach ($codes as $position => $code) {
+        $competency = Competency::factory()->create(['code' => $code.'_'.uniqid()]);
+
+        DB::table('project_competencies')->insert([
+            'project_id' => $project->id,
+            'competency_id' => $competency->id,
+            'position' => $position + 1,
+        ]);
+
+        c8SeedIndicators(null, $competency->id, 'en', 3);
+
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $competency->id,
+            'text' => ['en' => "Authored potential question for {$code}", 'it' => "Domanda potenziale {$code}"],
+            'position' => 0,
+        ]);
+
+        $competencies[] = $competency;
+    }
+
+    $participant = c8MakeParticipant($org, $project, $participantStatus);
+
+    return compact('org', 'project', 'participant', 'competencies');
+}
+
+/**
+ * Fake the provider and capture the outbound context body, the live session
+ * teardowns and the number of session tokens issued.
+ *
+ * @return ArrayObject<string, mixed> Filled while requests run: `body`, `teardowns`, `tokens`.
+ */
+function c8CaptureProvider(): ArrayObject
+{
+    $captured = new ArrayObject(['body' => [], 'teardowns' => [], 'tokens' => 0]);
+
+    Http::fake(function ($request) use ($captured) {
+        $url = $request->url();
+
+        if (str_contains($url, '/contexts')) {
+            $captured['body'] = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-potential']], 200);
+        }
+
+        if (str_contains($url, '/sessions/token')) {
+            $captured['tokens']++;
+
+            return Http::response(['data' => ['session_id' => 'heygen-potential', 'session_token' => 'tok-potential']], 200);
+        }
+
+        if ($request->method() === 'DELETE' && preg_match('#/sessions/([^/]+)$#', $url, $m) === 1) {
+            $captured['teardowns'][] = $m[1];
+        }
+
+        return Http::response([], 200);
+    });
+
+    return $captured;
+}
+
+test('potential starts: 201, role-less indicators and the authored primary reach the provider prompt', function (): void {
+    Queue::fake();
+    $captured = c8CaptureProvider();
+
+    $scenario = c8SeedPotentialScenario(['MTG']);
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
         ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
-    $response->assertStatus(422);
-    $response->assertJsonPath('error', 'assessment_type_not_supported');
+    $response->assertStatus(201);
+    $response->assertJsonPath('question_context.prompt_version', config('conversation.prompt_version'));
 
-    // No InterviewSession row created
-    $resolver->setOrgId($org->id);
-    expect(InterviewSession::where('participant_id', $participant->id)->count())->toBe(0);
+    expect(config('conversation.prompt_version'))->toBeString()->not->toBe('');
+    expect(InterviewSession::where('participant_id', $scenario['participant']->id)->count())->toBe(1);
 
-    // No provider HTTP call made
-    Http::assertNothingSent();
+    expect($captured['body'])->toHaveKey('prompt');
+    expect($captured['body']['prompt'])
+        ->toContain('Indicator text 0')
+        ->toContain('Excellent anchor 2')
+        ->toContain('Authored potential question for MTG');
 });
 
-test('W1 potential-type project on RESUME in_corso path → 422 assessment_type_not_supported, no provider call', function (): void {
-    Http::fake(c8HeygenFake());
+test('potential resumes: the outgoing session is released and a fresh one carries the composed prompt', function (): void {
     Queue::fake();
+    $captured = c8CaptureProvider();
 
-    $org = Organization::factory()->create();
-    $resolver = app(TenantResolver::class);
-    $resolver->setOrgId($org->id);
-    $resolver->setBypass(false);
+    $scenario = c8SeedPotentialScenario(['LAT'], 'in_corso');
+    $oldRef = 'old-potential-ref-'.uniqid();
 
-    $competency = Competency::factory()->create(['code' => 'LAT_'.uniqid()]);
-
-    $project = Project::factory()->create([
-        'status' => 'active',
-        'role_code' => null,
-        'language' => 'en',
-        'assessment_type' => 'potential',
-    ]);
-
-    DB::table('project_competencies')->insert([
-        'project_id' => $project->id,
-        'competency_id' => $competency->id,
-        'position' => 1,
-    ]);
-
-    // Participant already in_corso with a pre-existing in_corso session (resume scenario)
-    $participant = c8MakeParticipant($org, $project, 'in_corso');
-
-    InterviewSession::create([
-        'participant_id' => $participant->id,
-        'project_id' => $project->id,
+    $session = InterviewSession::create([
+        'participant_id' => $scenario['participant']->id,
+        'project_id' => $scenario['project']->id,
         'question_index' => 0,
-        'competency_code' => $competency->code,
-        'framework_version_id' => $project->framework_version_id,
+        'competency_code' => $scenario['competencies'][0]->code,
+        'framework_version_id' => $scenario['project']->framework_version_id,
         'provider' => 'heygen',
-        'provider_session_ref' => 'old-potential-ref-'.uniqid(),
+        'provider_session_ref' => $oldRef,
         'status' => 'in_corso',
     ]);
 
-    $bearer = CandidateTokenFactory::mintCandidateToken($participant);
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
 
     $response = $this
         ->withHeaders(['Authorization' => 'Bearer '.$bearer])
         ->postJson('/api/candidate/interview/start');
 
-    // Must hard-fail even on resume path — non-standard type never reaches degraded bypass
-    $response->assertStatus(422);
-    $response->assertJsonPath('error', 'assessment_type_not_supported');
+    $response->assertStatus(201);
+    expect($response->json('error'))->toBeNull();
 
-    // No provider HTTP call made
+    $session->refresh();
+    expect($captured['teardowns'])->toBe([$oldRef])
+        ->and($captured['tokens'])->toBe(1)
+        ->and($session->provider_session_ref)->toBe('heygen-potential')
+        ->and(InterviewSession::where('participant_id', $scenario['participant']->id)->count())->toBe(1);
+
+    expect($captured['body']['prompt'])
+        ->toContain('Indicator text 0')
+        ->toContain('Authored potential question for LAT');
+});
+
+test('potential: a configured minimum above what one primary plus the budget permits is clamped to 5', function (): void {
+    Queue::fake();
+    $captured = c8CaptureProvider();
+    config(['conversation.min_questions' => 6, 'conversation.followup_budget' => 4]);
+
+    $scenario = c8SeedPotentialScenario(['MTG']);
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    // min(6, 1 primary + 4 follow-ups) = 5.
+    expect($captured['body']['prompt'])
+        ->toContain('at least 5 questions')
+        ->not->toContain('at least 6 questions');
+});
+
+// ─── Assessment type default-deny ────────────────────────────────────────────
+
+test('a stored assessment type outside the enum is refused before any gate, write or provider call', function (string $path): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    // Deliberately NOT made interviewable on the fresh path: were the guard to
+    // run after the interviewability gate, this project would answer a
+    // different code. The resume path carries an existing session instead.
+    $scenario = $path === 'resume'
+        ? c8SeedResumeInCorsoScenario()
+        : c8SeedStandardScenario('en');
+
+    $before = InterviewSession::where('participant_id', $scenario['participant']->id)->count();
+    $statusBefore = $scenario['participant']->status;
+
+    // Raw write: the model's own validation would refuse the bogus value.
+    DB::table('projects')->where('id', $scenario['project']->id)->update(['assessment_type' => 'exotic']);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'assessment_type_not_supported');
+
+    expect(InterviewSession::where('participant_id', $scenario['participant']->id)->count())->toBe($before)
+        ->and($scenario['participant']->fresh()->status)->toBe($statusBefore);
+
+    Http::assertNothingSent();
+})->with(['fresh', 'resume']);
+
+// ─── Composition failures stay explicit ──────────────────────────────────────
+
+test('standard whose role is not in the pinned revision → 422 composition_error, nothing written or sent', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $scenario = c8SeedStandardScenario('en');
+    c8MakeInterviewable($scenario);
+
+    DB::table('projects')->where('id', $scenario['project']->id)->update(['role_code' => 'NO_SUCH_ROLE']);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'composition_error');
+
+    expect(InterviewSession::where('participant_id', $scenario['participant']->id)->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('potential whose competency has only a role-scoped decoy row → 422 composition_error, nothing written or sent', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $scenario = c8SeedPotentialScenario(['MTG']);
+    $competency = $scenario['competencies'][0];
+
+    // Replace the role-less rows with a decoy bound to a role: `role_id IS NULL`
+    // must exclude it.
+    BarsIndicator::where('competency_id', $competency->id)->delete();
+    $decoyRole = Role::factory()->create(['code' => 'DECOY_'.uniqid()]);
+    c8SeedIndicators($decoyRole->id, $competency->id, 'en', 3);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'composition_error');
+
+    expect(InterviewSession::where('participant_id', $scenario['participant']->id)->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('potential reaching a LAT competency without role-less rows → 422 composition_error, no provider call', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $scenario = c8SeedPotentialScenario(['MTG', 'LAT'], 'in_corso');
+    [$mtg, $lat] = $scenario['competencies'];
+
+    BarsIndicator::where('competency_id', $lat->id)->delete();
+
+    // MTG is already done, so the next competency is LAT.
+    InterviewSession::create([
+        'participant_id' => $scenario['participant']->id,
+        'project_id' => $scenario['project']->id,
+        'question_index' => 0,
+        'competency_code' => $mtg->code,
+        'framework_version_id' => $scenario['project']->framework_version_id,
+        'provider' => 'heygen',
+        'provider_session_ref' => null,
+        'status' => 'completed',
+    ]);
+
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(422)
+        ->assertJsonPath('error', 'composition_error');
+
+    expect(InterviewSession::where('participant_id', $scenario['participant']->id)->count())->toBe(1);
     Http::assertNothingSent();
 });
 

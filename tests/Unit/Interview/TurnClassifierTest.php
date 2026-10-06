@@ -216,6 +216,28 @@ test('a retry opening still matches when the primary is the turn\'s final questi
     expect($result)->toBe('primary');
 });
 
+test('a reinterview opening — the primary behind the neutral continuation cue — classifies as primary', function (string $locale, string $primary): void {
+    // OpeningTextComposer's `reinterview` variant (scoring-retry-rt-b PR2c) ends
+    // on the authored primary, like `retry`, so the trailing match holds.
+    $session = turnClassifierSession([$primary]);
+
+    $turn = (string) trans('interview.opening.reinterview_authored', ['question' => $primary], $locale);
+
+    expect($turn)->not->toBe($primary)
+        ->and((new TurnClassifier)->classify($session, $turn))->toBe('primary');
+})->with([
+    'en' => ['en', 'Tell me about a time you led a difficult project.'],
+    'it' => ['it', 'Raccontami di una volta in cui hai guidato un progetto difficile.'],
+]);
+
+test('a reinterview cue followed by something other than the next primary is a follow-up', function (): void {
+    $session = turnClassifierSession(['Tell me about a time you led a difficult project.']);
+
+    $turn = (string) trans('interview.opening.reinterview_authored', ['question' => 'What was your role in it?'], 'en');
+
+    expect((new TurnClassifier)->classify($session, $turn))->toBe('follow_up');
+});
+
 test('a verbatim re-ask of an already-matched primary is primary but does not advance the pointer', function (): void {
     $session = turnClassifierSession(['Primary one.', 'Primary two.']);
     turnClassifierMarkMatched($session, 'Primary one.');

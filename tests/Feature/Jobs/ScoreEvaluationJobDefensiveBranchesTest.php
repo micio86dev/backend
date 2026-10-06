@@ -789,9 +789,17 @@ test('(10b) failed(): participant not found → EvaluationFailed still emitted',
     });
 });
 
-// ─── Additional: retryAttempt=true path (deferred to PR4) ────────────────────
+// ─── Additional: retryAttempt payload flag without a database authorization ──
+//
+// scoring-retry-rt-b (PR2a) replaced the "deferred to PR4" stub. The old test only
+// asserted "does not throw" for a pending evaluation dispatched with the payload flag
+// true while the row had retry_attempt=false, and pinned the stub's log wording. The
+// retry branch is now real, so the SAME input has a defined outcome (design D8: the
+// database row is authoritative, a payload flag alone is a logged no-op) and the test
+// asserts it: nothing written, no LLM call, the participant untouched. The full retry
+// behaviours live in tests/Feature/Retry/RetryScoringTest.php.
 
-test('retryAttempt=true on terminal evaluation → logs deferred-to-PR4 message, no crash', function (): void {
+test('retryAttempt=true payload on a pending evaluation WITHOUT a database authorization → logged no-op, nothing written', function (): void {
     $org = defOrg();
     $project = defProject($org);
     $participant = defParticipant($org, $project, 'in_valutazione');
@@ -800,7 +808,7 @@ test('retryAttempt=true on terminal evaluation → logs deferred-to-PR4 message,
     $resolver->setOrgId($org->id);
     $resolver->setBypass(false);
 
-    Evaluation::create([
+    $evaluation = Evaluation::create([
         'participant_id' => $participant->id,
         'status' => EvaluationStatus::Pending->value,
         'framework_version_id' => $project->framework_version_id,
@@ -809,8 +817,22 @@ test('retryAttempt=true on terminal evaluation → logs deferred-to-PR4 message,
         'evaluated_at' => now(),
         'retry_attempt' => false,
     ]);
+    $result = CompetencyResult::factory()->unscorable()->create([
+        'evaluation_id' => $evaluation->id,
+        'competency_code' => 'DEF_RETRY',
+    ]);
+    $cassette = new CassetteLLMProvider([]);
+    $this->app->instance(LLMProvider::class, $cassette);
+    Log::spy();
 
-    // retryAttempt=true + pending → RT-B path (lines 228-232) — deferred to PR4.
-    expect(static fn () => (new ScoreEvaluationJob($participant->id, retryAttempt: true))->handle())
-        ->not->toThrow(Throwable::class);
+    (new ScoreEvaluationJob($participant->id, retryAttempt: true))->handle();
+
+    Log::shouldHaveReceived('info')
+        ->withArgs(fn (string $message, array $context = []): bool => $message === 'ScoreEvaluationJob: retry flag without a database authorization — no-op'
+            && $context['evaluation_id'] === $evaluation->id)
+        ->once();
+    expect($cassette->callCount())->toBe(0)
+        ->and(Evaluation::withoutGlobalScopes()->find($evaluation->id)->status)->toBe(EvaluationStatus::Pending)
+        ->and(CompetencyResult::withoutGlobalScopes()->find($result->id))->not->toBeNull()
+        ->and(Participant::withoutGlobalScopes()->find($participant->id)->status)->toBe('in_valutazione');
 });

@@ -182,6 +182,24 @@ final class AuthMatrixResources
     }
 
     /**
+     * A participant whose evaluation retry may be authorized: `completato`,
+     * a `pending` evaluation, on an open project (the retry mints a link).
+     */
+    public function retryableParticipant(): Participant
+    {
+        return $this->memo['retryable'] ??= TenantContextScope::runFor(
+            $this->world->orgA->id,
+            function (): Participant {
+                $this->openProject();
+                $participant = $this->newParticipant('completato', 'retryable participant');
+                Evaluation::factory()->pending()->create(['participant_id' => $participant->id]);
+
+                return $participant;
+            },
+        );
+    }
+
+    /**
      * A participant with a pending scheduled start, which may be rescheduled or cancelled.
      */
     public function scheduledParticipant(): Participant

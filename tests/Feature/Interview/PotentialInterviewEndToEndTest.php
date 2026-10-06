@@ -1,0 +1,283 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * End-to-end pin for a `potential` interview: `/start` per competency, then
+ * scoring and the 90% completion gate.
+ *
+ * A `potential` project (`role_code` null, MTG and LAT with ROLE-LESS BARS rows)
+ * must flow through the same `ScoreEvaluationJob`, reliability, completion gate
+ * and evaluation webhook as `standard`. This file adds no production behavior:
+ * it proves the pieces compose.
+ *
+ * Helpers are file-local (`potE2e*`); nothing is shared with other test files.
+ *
+ * REQ: Potential Scoring And Completion Parity (potential-assessment-interview)
+ */
+
+use App\Contracts\LLMProvider;
+use App\Jobs\DeliverWebhookJob;
+use App\Jobs\ScoreEvaluationJob;
+use App\Models\BarsIndicator;
+use App\Models\Competency;
+use App\Models\CompetencyResult;
+use App\Models\Evaluation;
+use App\Models\InterviewSession;
+use App\Models\Organization;
+use App\Models\Participant;
+use App\Models\Project;
+use App\Models\ProjectQuestion;
+use App\Models\Utterance;
+use App\Models\WebhookDelivery;
+use App\Support\Jwt\CandidateTokenFactory;
+use App\Support\Tenancy\TenantResolver;
+use App\Testing\CassetteLLMProvider;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+
+uses(RefreshDatabase::class);
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Seed a `potential` project with a webhook enabled for `evaluation`, two
+ * role-less competencies (MTG, LAT) with 3 indicators and one authored primary
+ * each, and an `in_attesa` participant.
+ *
+ * @return array{org: Organization, project: Project, participant: Participant, codes: list<string>}
+ */
+function potE2eSeed(): array
+{
+    $org = Organization::factory()->create();
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+
+    $project = Project::factory()->create([
+        'status' => 'active',
+        'role_code' => null,
+        'language' => 'en',
+        'assessment_type' => 'potential',
+        'webhook_url' => 'https://calling-system.example.test/hooks',
+        'webhook_secret' => 'whsec_potential_e2e',
+        'webhook_events' => ['evaluation'],
+    ]);
+
+    $codes = [];
+
+    foreach (['MTG', 'LAT'] as $position => $prefix) {
+        $competency = Competency::factory()->potential()->create(['code' => $prefix.'_'.uniqid()]);
+
+        DB::table('project_competencies')->insert([
+            'project_id' => $project->id,
+            'competency_id' => $competency->id,
+            'position' => $position + 1,
+        ]);
+
+        foreach ([0, 1, 2] as $indicatorPosition) {
+            $indicator = new BarsIndicator;
+            $indicator->forceFill([
+                'role_id' => null,
+                'competency_id' => $competency->id,
+                'revision_id' => $competency->revision_id,
+                'text' => ['en' => "{$prefix} indicator {$indicatorPosition}"],
+                'anchor_5' => ['en' => 'Anchor 5'],
+                'anchor_3' => ['en' => 'Anchor 3'],
+                'anchor_1' => ['en' => 'Anchor 1'],
+                'position' => $indicatorPosition,
+            ]);
+            $indicator->save();
+        }
+
+        ProjectQuestion::create([
+            'project_id' => $project->id,
+            'competency_id' => $competency->id,
+            'text' => ['en' => "Authored {$prefix} question", 'it' => "Domanda {$prefix}"],
+            'position' => 0,
+        ]);
+
+        $codes[] = (string) $competency->code;
+    }
+
+    $participant = new Participant;
+    $participant->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'pot-e2e-'.uniqid(),
+        'display_name' => 'Potential E2E',
+        'email' => uniqid('cand-').'@example.test',
+        'status' => 'in_attesa',
+    ]);
+    $participant->save();
+
+    return ['org' => $org, 'project' => $project, 'participant' => $participant->fresh(), 'codes' => $codes];
+}
+
+/**
+ * Drive `/start` once per competency through the real endpoint, completing the
+ * session it opened (with a candidate utterance) before the next call, then
+ * move the participant to `in_valutazione` as the interview-finalize step does.
+ *
+ * @param  array{org: Organization, project: Project, participant: Participant, codes: list<string>}  $scenario
+ */
+function potE2eRunInterview(array $scenario, object $test): void
+{
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    foreach ($scenario['codes'] as $code) {
+        $test->withHeaders(['Authorization' => 'Bearer '.$bearer])
+            ->postJson('/api/candidate/interview/start')
+            ->assertStatus(201);
+
+        $session = InterviewSession::where('participant_id', $scenario['participant']->id)
+            ->where('competency_code', $code)
+            ->firstOrFail();
+
+        $session->forceFill(['status' => 'completed'])->save();
+
+        $utterance = new Utterance;
+        $utterance->forceFill([
+            'organization_id' => $scenario['org']->id,
+            'interview_session_id' => $session->id,
+            'speaker' => 'Candidate',
+            'text' => 'I led the rollout end to end and checked in with the team daily.',
+            'ts' => now(),
+        ]);
+        $utterance->save();
+    }
+
+    Participant::withoutGlobalScopes()->whereKey($scenario['participant']->id)->update(['status' => 'in_valutazione']);
+}
+
+/**
+ * @return array{behaviors: list<array<string, mixed>>}
+ */
+function potE2eBehaviors(int $first, int $second, int $third): array
+{
+    $scores = [$first, $second, $third];
+    $behaviors = [];
+
+    foreach ($scores as $index => $score) {
+        $behaviors[] = [
+            'indicator' => "echo {$index}",
+            'score' => $score,
+            'explanation' => 'Scored from the transcript.',
+            'excerpts' => $score === -1 ? [] : ['I led the rollout end to end'],
+        ];
+    }
+
+    return ['behaviors' => $behaviors];
+}
+
+function potE2eEvaluation(Participant $participant): Evaluation
+{
+    return Evaluation::withoutGlobalScopes()->where('participant_id', $participant->id)->firstOrFail();
+}
+
+// ─── Both competencies valid → completato ────────────────────────────────────
+
+test('a potential interview reaches completato through scoring and the shared gate', function (): void {
+    Queue::fake();
+    Http::fake(['*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-pot']], 200),
+        '*liveavatar*/sessions/token*' => Http::response(['data' => ['session_id' => 'sess-pot', 'session_token' => 'tok-pot']], 200),
+        '*liveavatar*/sessions/*' => Http::response([], 200)]);
+
+    $scenario = potE2eSeed();
+    potE2eRunInterview($scenario, test());
+
+    app()->instance(LLMProvider::class, new CassetteLLMProvider(array_fill_keys(
+        $scenario['codes'],
+        json_encode(potE2eBehaviors(5, 3, 1), JSON_THROW_ON_ERROR),
+    )));
+
+    (new ScoreEvaluationJob($scenario['participant']->id))->handle();
+
+    $participant = Participant::withoutGlobalScopes()->findOrFail($scenario['participant']->id);
+    expect($participant->status)->toBe('completato');
+
+    $evaluation = potE2eEvaluation($participant);
+    expect($evaluation->status->value)->toBe('completed');
+    expect($evaluation->framework_version_id)->not->toBeNull();
+    expect($evaluation->model_version)->toBeString()->not->toBe('');
+    expect($evaluation->prompt_version)->toBeString()->not->toBe('');
+    expect($evaluation->evaluated_at)->not->toBeNull();
+
+    $results = CompetencyResult::withoutGlobalScopes()->where('evaluation_id', $evaluation->id)->get();
+    expect($results)->toHaveCount(2);
+
+    foreach ($results as $result) {
+        // 3 assessed of 3 indicators: reliability = assessed / total = 1.0.
+        expect((float) $result->reliability)->toBe(1.0);
+        expect((bool) $result->valid)->toBeTrue();
+        expect($result->unscorable_reason)->toBeNull();
+    }
+
+    Queue::assertPushed(DeliverWebhookJob::class, 1);
+
+    $delivery = WebhookDelivery::withoutGlobalScopes()->where('participant_id', $participant->id)->firstOrFail();
+    $payload = $delivery->payload;
+
+    expect(array_keys($payload))->toEqualCanonicalizing(
+        ['version', 'event', 'delivery_id', 'occurred_at', 'livemode', 'candidate_ref', 'project', 'data'],
+    );
+    expect($payload['event'])->toBe('evaluation');
+    expect($payload['candidate_ref'])->toBe($participant->candidate_ref);
+    expect($payload['data']['status'])->toBe('completed');
+    // jsonb does not preserve object key order: compare as a set.
+    expect(array_keys($payload['data']['text']))->toEqualCanonicalizing($scenario['codes']);
+    expect($payload['data']['text'][$scenario['codes'][0]]['behaviors'])->toHaveCount(3);
+});
+
+// ─── Below the 90% gate → pending, partial webhook ───────────────────────────
+
+test('a potential evaluation below the gate is pending and ships partial data', function (): void {
+    Queue::fake();
+    Http::fake(['*liveavatar*/contexts*' => Http::response(['data' => ['context_id' => 'ctx-pot']], 200),
+        '*liveavatar*/sessions/token*' => Http::response(['data' => ['session_id' => 'sess-pot', 'session_token' => 'tok-pot']], 200),
+        '*liveavatar*/sessions/*' => Http::response([], 200)]);
+
+    $scenario = potE2eSeed();
+    potE2eRunInterview($scenario, test());
+
+    // First competency fully assessed; second has no assessable evidence at all.
+    app()->instance(LLMProvider::class, new CassetteLLMProvider([
+        $scenario['codes'][0] => json_encode(potE2eBehaviors(5, 3, 1), JSON_THROW_ON_ERROR),
+        $scenario['codes'][1] => json_encode(potE2eBehaviors(-1, -1, -1), JSON_THROW_ON_ERROR),
+    ]));
+
+    (new ScoreEvaluationJob($scenario['participant']->id))->handle();
+
+    $participant = Participant::withoutGlobalScopes()->findOrFail($scenario['participant']->id);
+    $evaluation = potE2eEvaluation($participant);
+
+    // 1 valid of 2 competencies = 50% < 90%.
+    expect($evaluation->status->value)->toBe('pending');
+
+    // The candidate lifecycle still closes on the first terminal resolution.
+    expect($participant->status)->toBe('completato');
+
+    $valid = CompetencyResult::withoutGlobalScopes()
+        ->where('evaluation_id', $evaluation->id)
+        ->where('valid', true)
+        ->count();
+    expect($valid)->toBe(1);
+
+    $delivery = WebhookDelivery::withoutGlobalScopes()->where('participant_id', $participant->id)->firstOrFail();
+
+    expect($delivery->payload['data']['status'])->toBe('pending');
+    // jsonb does not preserve object key order: compare as a set.
+    expect(array_keys($delivery->payload['data']['text']))->toEqualCanonicalizing($scenario['codes']);
+    expect($delivery->payload['data']['text'][$scenario['codes'][1]]['reliability'])->toBe('0%');
+});
+
+// The spec also requires "exactly one retry, then definitive completato" for a
+// below-gate evaluation. `ScoreEvaluationJob` only logs and returns on
+// `retryAttempt: true` for a pending evaluation ("deferred to PR4"; roadmap
+// product decision 4 gates it), for `standard` and `potential` alike, so there
+// is no retry behavior to pin yet.
+test('a below-gate potential evaluation is retried exactly once and then definitive')
+    ->todo();

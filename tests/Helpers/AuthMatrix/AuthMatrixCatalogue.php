@@ -238,6 +238,7 @@ final class AuthMatrixCatalogue
             'GET api/participants/{id}/transcript/download' => self::user('participants', self::orgScoped([self::A, self::O, self::V], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::NOT_FOUND)),
             'GET api/participants/{participant}/sessions' => self::user('participants', self::orgScoped([self::A, self::O, self::V], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::NOT_FOUND)),
             // Model-less ability first: a wrong role is 403 even for a foreign id, then the org filter 404s.
+            'POST api/participants/{id}/retry' => self::user('participants', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::NOT_FOUND)),
             'POST api/participants/{id}/recover' => self::user('participants', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::NOT_FOUND)),
             'PATCH api/participants/{id}/schedule' => self::user('participants', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::NOT_FOUND)),
             'DELETE api/participants/{id}/schedule' => self::user('participants', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::NOT_FOUND)),
@@ -284,6 +285,7 @@ final class AuthMatrixCatalogue
             'GET api/m2m/participants/{id}' => self::m2m('participants:read'),
             'PATCH api/m2m/participants/{id}/schedule' => self::m2m('participants:schedule'),
             'DELETE api/m2m/participants/{id}/schedule' => self::m2m('participants:schedule'),
+            'POST api/m2m/participants/{id}/retry' => self::m2m('participants:retry'),
             'POST api/m2m/sso-link' => self::m2m('sso_link:generate'),
             'GET api/m2m/whoami' => self::m2m(null),
 

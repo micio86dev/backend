@@ -88,6 +88,15 @@ final class AuthMatrixFixtures
             'POST api/participants/{id}/recover' => [
                 'params' => fn (AuthMatrixResources $r): array => ['id' => $r->erroredParticipant()->id],
             ],
+            'POST api/participants/{id}/retry' => [
+                'params' => fn (AuthMatrixResources $r): array => ['id' => $r->retryableParticipant()->id],
+                // The retry mints a link and queues the invitation: it needs the
+                // candidate app origin, and the queue must not run the mail inline.
+                'before' => function (): void {
+                    config(['interview.candidate_app_url' => 'https://interview.example.test']);
+                    Queue::fake();
+                },
+            ],
             'PATCH api/participants/{id}/schedule' => [
                 'params' => self::scheduledParticipant(...),
                 'payload' => fn (): array => ['scheduled_at' => now('UTC')->addDays(2)->format('Y-m-d\TH:i:s\Z')],

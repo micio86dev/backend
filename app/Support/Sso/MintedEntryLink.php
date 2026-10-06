@@ -15,6 +15,11 @@ use Illuminate\Support\Carbon;
  * the resolved language used to compose the entry URL, and whether the
  * `candidate_ref` names a reusable-link visitor.
  *
+ * `$delivery` is the channel the minter ACTUALLY used, which can differ from
+ * the one requested: `Emailed` is downgraded to `Returned` for a reusable-link
+ * visitor, whose address is never mailed. Callers derive "was an email queued"
+ * from it, so the token's lifetime and the `email_sent` answer cannot disagree.
+ *
  * `$targetsReusableLinkVisitor` is the one fact the dispatching controller needs
  * to decide not to mail the address: a visitor's address is self-declared and
  * never verified. It is a flag, not a row, because the dispatch site must not
@@ -31,5 +36,6 @@ final readonly class MintedEntryLink
         public Carbon $expiresAt,
         public string $lang,
         public bool $targetsReusableLinkVisitor = false,
+        public LinkDelivery $delivery = LinkDelivery::Returned,
     ) {}
 }

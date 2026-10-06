@@ -87,6 +87,20 @@ class ParticipantPolicy
     }
 
     /**
+     * Authorize the single re-interview of a `pending` evaluation
+     * (scoring-retry-rt-b) — admin and operator only, `viewer` denied.
+     * It re-opens a finished assessment, resets the answers of the invalid
+     * competencies and mints a candidate link, so it is never a read-only
+     * capability. Model-less, like `recover()`: the check runs BEFORE the
+     * participant is resolved (403 before 404), so a caller without the role
+     * never learns whether an id exists.
+     */
+    public function retry(User $user): bool
+    {
+        return $user->hasRole('admin') || $user->hasRole('operator');
+    }
+
+    /**
      * Reschedule or cancel a scheduled interview (interview-scheduling,
      * design AD-7) — admin and operator only, `viewer` denied. Same
      * reasoning as `create()`/`recover()`: this mutates the candidate's

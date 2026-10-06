@@ -9,6 +9,7 @@ use App\Enums\WebhookEventType;
 use App\Events\CompetencySessionEnded;
 use App\Events\ParticipantCreated;
 use App\Jobs\DeliverWebhookJob;
+use App\Models\Evaluation;
 use App\Models\Project;
 use App\Models\WebhookDelivery;
 use App\Services\Webhooks\ProgressPayloadAssembler;
@@ -26,7 +27,9 @@ use Throwable;
  * dedupe_key (spec: "For progress events, dedupe_key MUST be derived from the
  * participant and the triggering boundary"):
  *   - creation:        "participant-created:{participantId}"
- *   - competency end:  "competency-ended:{participantId}:{competencyCode}"
+ *   - competency end:  "competency-ended:{participantId}:{competencyCode}", with a
+ *                      ":retry" suffix while the participant's Evaluation is an authorized
+ *                      retry (RT-B)
  *
  * REQ: SendProgressWebhook listener (C10 D4/D5)
  */
@@ -76,11 +79,29 @@ class SendProgressWebhook
             $event->projectId,
             $event->participantId,
             WebhookEventType::Progress,
-            'competency-ended:'.$event->participantId.':'.$event->competencyCode,
+            'competency-ended:'.$event->participantId.':'.$event->competencyCode.($this->isRetryEra($event->participantId, $organizationId) ? ':retry' : ''),
             fn (string $deliveryId): array => $this->assembler->assemble($event->participantId, $organizationId, $deliveryId)
         );
 
         $this->dispatchIfPending($delivery);
+    }
+
+    /**
+     * RT-B (design D12): true while the participant's Evaluation is an authorized retry.
+     * Re-interview progress then gets its own `:retry` dedupe key, so the second pass over
+     * a competency is not absorbed by the first interview's row. Before the first scoring
+     * no Evaluation row exists, so first-attempt keys never change.
+     *
+     * `withoutGlobalScope('tenant')` ONLY (no ambient tenant context in this listener),
+     * with an explicit organization filter on the already-resolved id.
+     */
+    private function isRetryEra(int $participantId, int $organizationId): bool
+    {
+        return Evaluation::withoutGlobalScope('tenant')
+            ->where('organization_id', $organizationId)
+            ->where('participant_id', $participantId)
+            ->where('retry_attempt', true)
+            ->exists();
     }
 
     /**

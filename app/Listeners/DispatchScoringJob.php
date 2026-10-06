@@ -7,6 +7,7 @@ namespace App\Listeners;
 use App\Enums\ApiKeyMode;
 use App\Events\ScoringRequested;
 use App\Jobs\ScoreEvaluationJob;
+use App\Models\Evaluation;
 use App\Models\Participant;
 use Illuminate\Support\Facades\Log;
 
@@ -77,6 +78,14 @@ class DispatchScoringJob
             return;
         }
 
-        ScoreEvaluationJob::dispatch($event->participantId);
+        // RT-B (design D8): the retry flag is read from the persisted evaluation row,
+        // org-filtered with the same independent $event->organizationId, never from
+        // the event or ambient state. No evaluation row (first attempt) means false.
+        $retryAttempt = (bool) Evaluation::withoutGlobalScope('tenant')
+            ->where('organization_id', $event->organizationId)
+            ->where('participant_id', $event->participantId)
+            ->value('retry_attempt');
+
+        ScoreEvaluationJob::dispatch($event->participantId, retryAttempt: $retryAttempt);
     }
 }
