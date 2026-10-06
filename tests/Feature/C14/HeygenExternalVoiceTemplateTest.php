@@ -417,6 +417,18 @@ test('a superadmin can import a template with an external voice, which is verifi
     expect(TenantContextScope::runFor($org->id, fn () => AvatarTemplate::where('name', 'Bad')->count()))->toBe(0);
 });
 
+test('an import refusal about the voice names the field it is about, not just the bare code', function (): void {
+    hevFake();
+    $token = TemplateActors::token('acting', Organization::factory()->create());
+
+    $response = $this->withToken($token)->postJson('/api/avatar-templates/import', [
+        'schema' => 'beai.avatar-template/1',
+        'templates' => [['name' => 'Bad', 'provider' => 'heygen', 'config' => hevConfig(['ttsExternalVoiceId' => 'nope'])]],
+    ]);
+
+    expect($response->assertUnprocessable()->json('errors'))->toBe(['templates.0' => ['config.ttsExternalVoiceId: tts_voice_not_found']]);
+});
+
 test('a superadmin copies a template with an external voice into an organization: config kept, nothing bound again', function (): void {
     hevFake();
     $org = Organization::factory()->create();

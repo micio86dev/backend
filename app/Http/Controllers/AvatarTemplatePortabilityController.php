@@ -135,7 +135,13 @@ final class AvatarTemplatePortabilityController extends Controller
             try {
                 app(BindHeygenTemplateVoice::class)->run($record['provider'], $record['config']);
             } catch (ValidationException $e) {
-                return implode(' ', array_merge(...array_values($e->errors())));
+                // Keep the field each refusal is about (`config.ttsExternalVoiceId: tts_voice_not_found`):
+                // the bare code alone does not say which part of the entry to fix.
+                return implode(' ', array_map(
+                    fn (string $field, array $messages): string => implode(' ', array_map(fn (string $message): string => "{$field}: {$message}", $messages)),
+                    array_keys($e->errors()),
+                    array_values($e->errors()),
+                ));
             }
 
             return null;
