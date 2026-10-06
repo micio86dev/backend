@@ -175,6 +175,20 @@ final class AuthMatrixMachineWorld
     }
 
     /**
+     * A finished participant whose evaluation is still `pending`: the one kind
+     * whose retry may be authorized.
+     */
+    public function retryable(Organization $org): Participant
+    {
+        return $this->memo["retryable.{$org->id}"] ??= TenantContextScope::runFor($org->id, function () use ($org): Participant {
+            $participant = $this->participant($org, 'completato', ApiKeyMode::Live, 'retryable');
+            Evaluation::factory()->pending()->create(['participant_id' => $participant->id]);
+
+            return $participant;
+        });
+    }
+
+    /**
      * A participant with a pending scheduled start (may be rescheduled or cancelled).
      */
     public function scheduled(Organization $org): Participant

@@ -53,7 +53,7 @@ function expectedAbilities(): array
             // Read yes, manage no. This row is the bug that started the sweep.
             'avatarTemplates' => ['viewAny' => true, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => true],
-            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
+            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true, 'retry' => true],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
@@ -67,7 +67,7 @@ function expectedAbilities(): array
             // Deletes a project? No. Editing its settings and deleting
             // everything beneath it stopped sharing one permission.
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => false],
-            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
+            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true, 'retry' => true],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
@@ -79,7 +79,7 @@ function expectedAbilities(): array
             'llmCredentials' => ['viewAny' => false, 'create' => false, 'update' => false, 'delete' => false],
             'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             'projects' => ['viewAny' => true, 'create' => false, 'update' => false, 'delete' => false],
-            'participants' => ['viewAny' => true, 'create' => false, 'recover' => false],
+            'participants' => ['viewAny' => true, 'create' => false, 'recover' => false, 'retry' => false],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
