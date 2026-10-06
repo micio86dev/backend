@@ -3913,6 +3913,223 @@
                 }
             }
         },
+        "/participants/{id}/retry": {
+            "post": {
+                "operationId": "evaluationRetry.store",
+                "description": "Re-opens the participant for the competencies whose result is invalid and returns\na single-use link. Allowed once per participant, for a completed interview whose\nevaluation is still pending.",
+                "summary": "Authorize the single re-interview of a pending evaluation",
+                "tags": [
+                    "EvaluationRetry"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Scramble derives the response schema from this literal and cannot read a\nproperty's type through the DTO, hence the key-level annotations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "in_attesa"
+                                        },
+                                        "entry_url": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "email_sent": {
+                                            "type": "boolean",
+                                            "description": "Whether BEAI queued the link by email to the candidate."
+                                        },
+                                        "competencies_reset": {
+                                            "type": "array",
+                                            "description": "Codes of the competencies that will be asked again.",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "entry_url",
+                                        "expires_at",
+                                        "email_sent",
+                                        "competencies_reset"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "reason"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/m2m/participants/{id}/retry": {
+            "post": {
+                "operationId": "m2m.evaluationRetry.store",
+                "description": "Requires the `participants:retry` ability.",
+                "summary": "Authorize the single re-interview of a pending evaluation",
+                "tags": [
+                    "EvaluationRetry"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Scramble derives the response schema from this literal and cannot read a\nproperty's type through the DTO, hence the key-level annotations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "const": "in_attesa"
+                                        },
+                                        "entry_url": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "email_sent": {
+                                            "type": "boolean",
+                                            "description": "Whether BEAI queued the link by email to the candidate."
+                                        },
+                                        "competencies_reset": {
+                                            "type": "array",
+                                            "description": "Codes of the competencies that will be asked again.",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "entry_url",
+                                        "expires_at",
+                                        "email_sent",
+                                        "competencies_reset"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "reason"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/embed/exchange": {
             "get": {
                 "operationId": "exchange.exchange",
