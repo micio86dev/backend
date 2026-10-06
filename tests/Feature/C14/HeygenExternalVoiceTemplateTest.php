@@ -25,6 +25,7 @@ use App\Models\Organization;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderPreflight;
 use App\Services\Provider\QuestionContext;
+use App\Support\AvatarTemplates\AvatarProviderCatalogue;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplatePayload;
@@ -245,6 +246,77 @@ test('a missing platform vendor key is a clear 422, not a 500', function (): voi
     expect($response->assertUnprocessable()->json('errors'))->toHaveKey('config.ttsExternalVoiceId');
     expect(AvatarTemplate::platformOnly()->count())->toBe(0);
 });
+
+/**
+ * Makes the REAL registrar fail with `$code`, so the whole save path is exercised.
+ * The vendor catalogue is warmed first: the strict voice check precedes the bind and
+ * needs the very key some of these scenarios remove.
+ */
+function hevRegistrarFails(string $code): void
+{
+    hevFake(match ($code) {
+        'tts_secret_failed' => ['api.liveavatar.com/v1/secrets' => Http::response(['code' => 5000], 500)],
+        'tts_voice_bind_failed' => ['api.liveavatar.com/v1/voices/third_party' => Http::response(['code' => 5000], 500)],
+        default => [],
+    });
+    AvatarProviderCatalogue::fetch('cartesia', 'voice');
+
+    match ($code) {
+        'tts_provider_unconfigured' => config(['interview.heygen.api_key' => '', 'interview.preflight.verify_references' => false]),
+        'tts_vendor_key_missing' => config(['services.cartesia.api_key' => '']),
+        'tts_bind_busy' => Cache::lock('heygen-voice-bind:cartesia:'.sha1(HEV_CARTESIA_VOICE), 60)->get(),
+        default => null,
+    };
+}
+
+dataset('hev non-field bind failures', [
+    'provider key missing' => ['tts_provider_unconfigured', 503],
+    'vendor key missing' => ['tts_vendor_key_missing', 503],
+    'lock contention' => ['tts_bind_busy', 503],
+    'secret refused upstream' => ['tts_secret_failed', 502],
+]);
+
+test('a bind failure that is not about the voice is a non-field error with a server class, on the platform route', function (string $code, int $status): void {
+    hevRegistrarFails($code);
+
+    $response = $this->withToken(hevPlatformToken())->postJson('/api/admin/avatar-templates', hevPayload(hevConfig()));
+
+    expect($response->status())->toBe($status)
+        ->and($response->json('message'))->toBe($code)
+        ->and($response->json('errors'))->toBeNull()
+        ->and(str_contains($response->getContent(), 'config.ttsExternalVoiceId'))->toBeFalse()
+        ->and(AvatarTemplate::platformOnly()->count())->toBe(0);
+})->with('hev non-field bind failures');
+
+test('a bind failure that is not about the voice is a non-field error with a server class, on the organization routes', function (string $code, int $status): void {
+    hevRegistrarFails($code);
+    $org = Organization::factory()->create();
+    $token = TemplateActors::token('acting', $org);
+
+    $created = $this->withToken($token)->postJson('/api/avatar-templates', hevPayload(hevConfig()));
+
+    expect($created->status())->toBe($status)
+        ->and($created->json('message'))->toBe($code)
+        ->and($created->json('errors'))->toBeNull()
+        ->and(str_contains($created->getContent(), 'config.ttsExternalVoiceId'))->toBeFalse();
+
+    $own = TenantContextScope::runFor($org->id, fn () => AvatarTemplate::create([
+        'name' => 'Own', 'provider' => 'heygen', 'config' => ['avatarId' => 'av_ok', 'voiceId' => 'native'],
+    ]));
+    $updated = $this->withToken($token)->patchJson("/api/avatar-templates/{$own->id}", ['config' => hevConfig()]);
+
+    expect($updated->status())->toBe($status)
+        ->and($updated->json('message'))->toBe($code)
+        ->and(str_contains($updated->getContent(), 'config.ttsExternalVoiceId'))->toBeFalse();
+})->with('hev non-field bind failures');
+
+test('a bind failure about the voice itself stays on the voice field', function (string $code): void {
+    hevRegistrarFails($code);
+
+    $response = $this->withToken(hevPlatformToken())->postJson('/api/admin/avatar-templates', hevPayload(hevConfig()));
+
+    expect($response->assertUnprocessable()->json('errors'))->toBe(['config.ttsExternalVoiceId' => [$code]]);
+})->with(['tts_voice_bind_failed']);
 
 test('a template without an external engine never touches LiveAvatar voices', function (): void {
     hevFake();

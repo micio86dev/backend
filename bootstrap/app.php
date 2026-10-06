@@ -8,6 +8,7 @@ use App\Exceptions\AvatarTemplateInUseException;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
+use App\Exceptions\HeygenVoiceBindUnavailableException;
 use App\Exceptions\ParticipantTransitionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Exceptions\Sso\EntryLinkUrlNotConfigured;
@@ -297,6 +298,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // usage check and the delete is the same 409 the check itself answers,
         // never a 500. The exception's own render() builds the body.
         $exceptions->render(function (AvatarTemplateInUseException $e, Request $request) {
+            return $e->render();
+        });
+
+        // heygen-third-party-voices: a bind that failed for a reason that is not the voice's
+        // (platform keys unset, bind lock busy, LiveAvatar lost the secret) is a 502/503 with
+        // a stable code, never a 422 on the voice field. The exception renders its own body.
+        $exceptions->render(function (HeygenVoiceBindUnavailableException $e, Request $request) {
             return $e->render();
         });
 

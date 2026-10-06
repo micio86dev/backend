@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\AvatarTemplates;
 
+use App\Exceptions\HeygenVoiceBindUnavailableException;
 use App\Services\ConversationLlm\HeygenVoiceRegistrar;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplateReferenceValidator;
@@ -20,10 +21,14 @@ use Illuminate\Validation\ValidationException;
  * LiveAvatar accepts any provider voice id with HTTP 200 and a bad id that got
  * bound would be kept forever.
  *
- * Every refusal is a 422 on `config.ttsExternalVoiceId` with a stable code
- * (`tts_voice_not_found`, `tts_voice_unverifiable`, or one of
- * `HeygenVoiceRegistrar::FAILURES`), never a 500 and never a silently wrong
- * template. A voice the ledger already knows is neither re-verified nor
+ * A refusal about the voice itself is a 422 on `config.ttsExternalVoiceId` with a
+ * stable code (`tts_voice_not_found`, `tts_voice_unverifiable`,
+ * `tts_voice_bind_failed`, `tts_engine_unsupported`). A failure that is not the
+ * voice's fault (the platform's own keys are not set, a concurrent save holds the
+ * bind lock, LiveAvatar lost the vendor secret) throws
+ * `HeygenVoiceBindUnavailableException` instead: a 503 or 502 with the same stable
+ * code, so the operator is not told to change a voice that is fine. Never a 500
+ * and never a silently wrong template. A voice the ledger already knows is neither re-verified nor
  * re-bound: it was verified when it was bound, and no vendor or LiveAvatar
  * call is made.
  */
@@ -35,6 +40,7 @@ final class BindHeygenTemplateVoice
      * @param  array<string, mixed>  $config
      *
      * @throws ValidationException
+     * @throws HeygenVoiceBindUnavailableException
      */
     public function run(string $provider, array $config): void
     {
@@ -63,6 +69,10 @@ final class BindHeygenTemplateVoice
         $result = $this->registrar->ensureVoice($engine, $voiceId);
 
         if ($result['status'] === 'failed') {
+            if (HeygenVoiceBindUnavailableException::handles($result['code'])) {
+                throw new HeygenVoiceBindUnavailableException($result['code']);
+            }
+
             $this->refuse($result['code']);
         }
     }
