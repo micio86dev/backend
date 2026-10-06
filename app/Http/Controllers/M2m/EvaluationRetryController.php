@@ -64,7 +64,8 @@ final class EvaluationRetryController extends Controller
         // Scramble derives the response schema from this literal and cannot read a
         // property's type through the DTO, hence the key-level annotations.
         return response()->json([
-            'status' => 'in_attesa',
+            /** @var string The participant's new lifecycle status. */
+            'status' => $result->status,
             'entry_url' => $result->entryUrl,
             'expires_at' => $result->expiresAt->toIso8601String(),
             /** @var bool Whether BEAI queued the link by email to the candidate. */

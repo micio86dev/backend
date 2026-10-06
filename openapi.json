@@ -3959,7 +3959,7 @@
                                     "properties": {
                                         "status": {
                                             "type": "string",
-                                            "const": "in_attesa"
+                                            "description": "The participant's new lifecycle status."
                                         },
                                         "entry_url": {
                                             "type": "string"
@@ -4069,7 +4069,7 @@
                                     "properties": {
                                         "status": {
                                             "type": "string",
-                                            "const": "in_attesa"
+                                            "description": "The participant's new lifecycle status."
                                         },
                                         "entry_url": {
                                             "type": "string"
