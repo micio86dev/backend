@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\Competency;
+use Database\Factories\Concerns\GeneratesUnusedCode;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,6 +22,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class CompetencyFactory extends Factory
 {
+    use GeneratesUnusedCode;
+
     protected $model = Competency::class;
 
     /**
@@ -29,7 +32,7 @@ class CompetencyFactory extends Factory
     public function definition(): array
     {
         return [
-            'code' => strtoupper($this->faker->unique()->lexify('???')),
+            'code' => $this->unusedCode(Competency::class),
             'type' => 'standard',
             // Bare arrays, not json_encode() (gga review finding: this and
             // `RoleFactory` modelled the SAME `HasTranslations` attribute
