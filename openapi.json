@@ -4125,6 +4125,9 @@
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
                     },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
                     },
