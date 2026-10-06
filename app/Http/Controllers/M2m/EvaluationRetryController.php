@@ -9,6 +9,7 @@ use App\Actions\Participant\RetryActor;
 use App\Exceptions\Participant\EvaluationRetryRefused;
 use App\Http\Controllers\Controller;
 use App\Models\ApiClient;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -40,6 +41,8 @@ final class EvaluationRetryController extends Controller
      * Authorize the single re-interview of a pending evaluation.
      *
      * Requires the `participants:retry` ability.
+     *
+     * @throws AuthorizationException
      */
     public function store(Request $request, int $id): JsonResponse
     {
