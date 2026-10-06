@@ -372,6 +372,13 @@ test('anyone who is not a superadmin is refused the fields: the validator answer
         ->and(ConfigValidator::validate('heygen', ['avatarId' => 'a', 'voiceId' => 'v']))->toBe([]);
 });
 
+test('the voice model sent alone is still superadmin only: ttsModelName without an engine is refused to anyone else', function (): void {
+    expect(ConfigValidator::validate('heygen', ['avatarId' => 'a', 'voiceId' => 'v', 'ttsModelName' => 'sonic-3']))->toBe([
+        ['key' => 'ttsModelName', 'code' => 'superadmin_only'],
+    ])
+        ->and(ConfigValidator::validate('heygen', ['avatarId' => 'a', 'voiceId' => 'v', 'ttsModelName' => 'sonic-3'], true))->not->toContain(['key' => 'ttsModelName', 'code' => 'superadmin_only']);
+});
+
 test('an organization admin cannot write templates at all, on any route, so cannot reach the voice fields', function (): void {
     hevFake();
     $org = Organization::factory()->create();
