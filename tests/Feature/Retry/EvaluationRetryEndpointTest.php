@@ -202,6 +202,19 @@ test('an operator cannot reach a participant of another organization and nothing
     expect(retryEpSnapshot($foreign))->toEqual($before);
 });
 
+test('a superadmin with no organization in scope gets 404 and nothing is written', function (): void {
+    // Platform staff acting for no client has no tenant to authorize inside: the route must not guess one.
+    $w = retryEpWorld();
+    $before = retryEpSnapshot($w);
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)
+        ->postJson("/api/participants/{$w['participant']->id}/retry")
+        ->assertNotFound();
+
+    expect(retryEpSnapshot($w))->toEqual($before);
+});
+
 test('an unknown id answers 404 exactly like a foreign one', function (): void {
     $mine = retryEpWorld();
     $foreign = retryEpWorld();
