@@ -18,6 +18,7 @@ declare(strict_types=1);
  * the header. A colour is CSS: it always renders, with images off, everywhere.
  */
 
+use App\Notifications\ResetPasswordNotification;
 use App\Notifications\UserInvitationNotification;
 use App\Support\Mail\EmailBranding;
 
@@ -258,4 +259,66 @@ test('no tenant colour leaves the product palette alone', function (): void {
     $html = renderedInvitation();
 
     expect(strtolower($html))->toContain('#771aaf');
+});
+
+/**
+ * THE BUTTON TEXT.
+ *
+ * The button took the tenant colour as its background while the layout's
+ * per-send `a { color: <brand> }` rule (specificity 0,1,1) beat the theme's
+ * `.button { color: #fff }` (0,1,0) once inlined, so the label was painted in
+ * the same colour as its own background and was invisible. The text is now
+ * black or white, picked by the same WCAG rule the backoffice uses.
+ */
+function buttonAnchorStyle(string $html): string
+{
+    preg_match('/<a [^>]*class="button button-primary"[^>]*>/', $html, $anchor);
+    expect($anchor)->not->toBeEmpty();
+    preg_match('/style="([^"]*)"/', $anchor[0], $style);
+
+    return $style[1] ?? '';
+}
+
+test('a light tenant colour gets black button text', function (): void {
+    app(EmailBranding::class)->set('#ffd400');
+
+    $style = buttonAnchorStyle(renderedInvitation());
+
+    expect($style)->toContain('background-color: #ffd400')
+        ->and($style)->toContain('color: #000000');
+});
+
+test('a dark tenant colour gets white button text', function (): void {
+    app(EmailBranding::class)->set('#771aaf');
+
+    $style = buttonAnchorStyle(renderedInvitation());
+
+    expect($style)->toContain('color: #ffffff');
+});
+
+test('the button text never equals its own background', function (string $brand): void {
+    app(EmailBranding::class)->set($brand);
+
+    $style = buttonAnchorStyle(renderedInvitation());
+    preg_match('/(?<![-\w])color:\s*(#[0-9a-fA-F]{6})/', $style, $text);
+
+    expect($text)->not->toBeEmpty()
+        ->and(strtolower($text[1]))->not->toBe($brand);
+})->with(['#ffd400', '#771aaf', '#ffffff', '#000000']);
+
+test('every notification sharing the button component gets the readable text', function (): void {
+    app(EmailBranding::class)->set('#ffd400');
+
+    $reset = (new ResetPasswordNotification('https://backoffice.test/reset', 60))
+        ->toMail(null)->render()->toHtml();
+
+    expect(buttonAnchorStyle($reset))->toContain('color: #000000');
+});
+
+test('an unbranded button carries no inline text colour', function (): void {
+    app(EmailBranding::class)->forget();
+
+    preg_match('/<a [^>]*class="button button-primary"[^>]*>/', renderedInvitation(), $anchor);
+
+    expect($anchor[0])->not->toMatch('/(?<![-\w])color:\s*#000000/');
 });
