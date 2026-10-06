@@ -25,7 +25,6 @@ declare(strict_types=1);
  * answer, and `SettingsSurfaceTest` asserts the endpoints refuse in step.
  */
 
-use App\Http\Controllers\Auth\AuthController;
 use App\Models\Organization;
 
 /**
@@ -101,15 +100,27 @@ test('the abilities map answers exactly what the policies do, for every role', f
     expect($response->json('abilities'))->toEqual(expectedAbilities()[$role]);
 })->with(['admin', 'operator', 'viewer']);
 
-test('the /auth/me contract documents every ability the map publishes, so the generated client cannot lag the runtime', function (): void {
+test('the exported OpenAPI /auth/me abilities shape equals the map the runtime publishes, in both directions', function (): void {
+    // The generated typed clients read openapi.json, not the controller's comment: assert on that artifact so
+    // a key the runtime adds, drops or renames can neither lag nor linger in the contract.
     $org = Organization::factory()->create();
-    $abilities = $this->withToken(authTokenForRole($org, 'admin'))->getJson('/api/auth/me')->assertOk()->json('abilities');
-    $doc = (string) (new ReflectionMethod(AuthController::class, 'me'))->getDocComment();
+    $published = $this->withToken(authTokenForRole($org, 'admin'))->getJson('/api/auth/me')->assertOk()->json('abilities');
 
-    foreach ($abilities as $group => $actions) {
-        foreach (array_keys($actions) as $action) {
-            expect($doc)->toMatch('/\b'.preg_quote($group, '/').': array\{[^}]*\b'.preg_quote($action, '/').': bool/', "`{$group}.{$action}` is published at runtime but missing from the documented /auth/me shape");
-        }
+    $spec = json_decode((string) file_get_contents(base_path('openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $documented = $spec['paths']['/auth/me']['get']['responses']['200']['content']['application/json']['schema']['properties']['abilities']['properties'];
+
+    $groups = static function (array $map): array {
+        $keys = array_keys($map);
+        sort($keys);
+
+        return $keys;
+    };
+
+    expect($groups($documented))->toBe($groups($published));
+
+    foreach ($published as $group => $actions) {
+        expect($groups($documented[$group]['properties']))->toBe($groups($actions), "abilities.{$group} differs between openapi.json and the runtime");
+        expect($documented[$group]['required'] ?? [])->toEqualCanonicalizing(array_keys($actions), "abilities.{$group} must list every published action as required");
     }
 });
 
