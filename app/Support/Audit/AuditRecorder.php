@@ -48,8 +48,13 @@ final class AuditRecorder
         ?array $after = null,
     ): void {
         try {
-            /** @var User|null $actor */
-            $actor = Auth::user();
+            // Only a human User may be recorded as the actor: `actor_id` is a
+            // foreign key to `users`. On the `auth:api-m2m` surface the default
+            // guard resolves the authenticated ApiClient, whose id is NOT a user
+            // id; writing it would violate the foreign key (or, worse, name an
+            // unrelated user whose id happens to match) and lose the row.
+            $authenticated = Auth::user();
+            $actor = $authenticated instanceof User ? $authenticated : null;
 
             AuditLog::create([
                 // Null when an M2M client or a console command acted. Recording
