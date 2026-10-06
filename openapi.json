@@ -880,12 +880,16 @@
                                                         },
                                                         "recover": {
                                                             "type": "boolean"
+                                                        },
+                                                        "retry": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
                                                         "create",
-                                                        "recover"
+                                                        "recover",
+                                                        "retry"
                                                     ]
                                                 },
                                                 "clients": {

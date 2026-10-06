@@ -25,6 +25,7 @@ declare(strict_types=1);
  * answer, and `SettingsSurfaceTest` asserts the endpoints refuse in step.
  */
 
+use App\Http\Controllers\Auth\AuthController;
 use App\Models\Organization;
 
 /**
@@ -99,6 +100,18 @@ test('the abilities map answers exactly what the policies do, for every role', f
     // equality catches the first.
     expect($response->json('abilities'))->toEqual(expectedAbilities()[$role]);
 })->with(['admin', 'operator', 'viewer']);
+
+test('the /auth/me contract documents every ability the map publishes, so the generated client cannot lag the runtime', function (): void {
+    $org = Organization::factory()->create();
+    $abilities = $this->withToken(authTokenForRole($org, 'admin'))->getJson('/api/auth/me')->assertOk()->json('abilities');
+    $doc = (string) (new ReflectionMethod(AuthController::class, 'me'))->getDocComment();
+
+    foreach ($abilities as $group => $actions) {
+        foreach (array_keys($actions) as $action) {
+            expect($doc)->toMatch('/\b'.preg_quote($group, '/').': array\{[^}]*\b'.preg_quote($action, '/').': bool/', "`{$group}.{$action}` is published at runtime but missing from the documented /auth/me shape");
+        }
+    }
+});
 
 test('the superadmin is told they may manage avatar templates', function (): void {
     // The platform column, which no tenant role occupies. `Gate::before`
