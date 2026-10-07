@@ -156,11 +156,17 @@ jobs:
       - name: Run migrations
         run: php artisan migrate --force --env=testing
 
-      # ── Pest test suite (all tiers, required) ─────────────────────────────
-      - name: Run tests
-        run: php artisan test --parallel
-
-      # ── Coverage gate (85% minimum) ───────────────────────────────────────
+      # ── Pest test suite (all tiers, required) + coverage gate (85% minimum) ─
+      # ONE parallel run does both jobs. The suite used to run twice: once with
+      # `--parallel` and no coverage (about 8 minutes on the runner), then a
+      # second time serially with `--coverage` (about 19 minutes), so 27 of the
+      # job's 32 minutes were the same ~8,300 tests executed back to back.
+      # `--parallel --coverage` runs it once, fails on any red test exactly as
+      # before, and enforces the same `--min=85` floor on the merged report.
+      # Measured on 2026-10-07 at the same commit: 8,358 tests, 18 skipped, 0
+      # failures, total coverage 95.8% (identical to the serial figure), in 283
+      # seconds on an 8-core machine.
+      #
       # `-d memory_limit=2G` is required, not defensive. PCOV holds the whole
       # line map in memory and the report renderer builds every class summary
       # before printing; at PHP's default 128M the process dies with a
@@ -168,9 +174,10 @@ jobs:
       # coverage failure when it is really an OOM. Reproduced locally on
       # 2026-08-26 at the exact commit that first crossed the limit. The
       # phpstan step above already carries `--memory-limit=1G` for the same
-      # class of reason.
-      - name: Test coverage (≥85%)
-        run: php -d memory_limit=2G artisan test --coverage --min=85
+      # class of reason. Each parallel worker is its own PHP process and takes
+      # the same limit.
+      - name: Run tests with coverage (parallel, ≥85%)
+        run: php -d memory_limit=2G artisan test --parallel --coverage --min=85
 
       # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
       - name: Generate OpenAPI spec
