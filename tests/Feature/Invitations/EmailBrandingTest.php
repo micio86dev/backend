@@ -315,10 +315,13 @@ test('every notification sharing the button component gets the readable text', f
     expect(buttonAnchorStyle($reset))->toContain('color: #000000');
 });
 
-test('an unbranded button carries no inline text colour', function (): void {
+test('an unbranded button carries only the theme text colour', function (): void {
     app(EmailBranding::class)->forget();
 
-    preg_match('/<a [^>]*class="button button-primary"[^>]*>/', renderedInvitation(), $anchor);
+    // The theme stylesheet inlines its own `color: #fff`; that is the only text colour an
+    // unbranded button may carry. Matched on a declaration boundary so `background-color:`
+    // and `border-color:` do not count.
+    preg_match_all('/(?:^|;)\s*color\s*:\s*([^;]+)/', buttonAnchorStyle(renderedInvitation()), $declared);
 
-    expect($anchor[0])->not->toMatch('/(?<![-\w])color:\s*#000000/');
+    expect($declared[1])->toBe(['#fff']);
 });
