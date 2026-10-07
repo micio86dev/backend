@@ -228,7 +228,7 @@ trait ValidatesProjectComposition
 
             foreach ($competencies as $competency) {
                 if ($competency->type !== 'potential') {
-                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is type=standard; potential projects require only potential-type competencies.");
+                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is a Readiness competency; Potential projects require only Potential competencies.");
 
                     return;
                 }
@@ -283,7 +283,7 @@ trait ValidatesProjectComposition
 
             foreach ($competencies as $competency) {
                 if ($competency->type !== 'standard') {
-                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is type=potential; standard projects require only standard-type competencies.");
+                    $v->errors()->add('competency_ids', "Competency '{$competency->code}' is a Potential competency; Readiness projects require only Readiness competencies.");
 
                     return;
                 }

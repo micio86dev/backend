@@ -227,6 +227,9 @@ test('the per-competency cap message is returned in the requested language', fun
 
     expect($message)->toContain('al massimo');
     expect($message)->not->toContain('allows at most');
+    // The `standard` type is displayed as Prontezza; the machine value never leaks.
+    expect($message)->toContain('valutazione di Prontezza');
+    expect($message)->not->toContain('standard');
 });
 
 test('the same cap message is English for an English operator', function (): void {
@@ -250,6 +253,9 @@ test('the same cap message is English for an English operator', function (): voi
 
     $english->assertStatus(422);
     expect($english->json('errors.competency_id.0'))->toContain('at most');
+    // The `standard` type is displayed as Readiness; the machine value never leaks.
+    expect($english->json('errors.competency_id.0'))->toContain('A Readiness assessment');
+    expect($english->json('errors.competency_id.0'))->not->toContain('standard');
 });
 
 test('raising the platform cap lets an operator author a second question', function (): void {
@@ -355,10 +361,30 @@ test('the competency type mismatch message translates both assessment types', fu
     // Both types render translated, and the sentence stays grammatical with
     // either. The Italian 'potential' reads 'di potenziale', which the previous
     // template turned into "è di tipo di potenziale".
-    expect($message)->toContain('di potenziale');
-    expect($message)->toContain('standard');
+    expect($message)->toContain('di Potenziale');
+    expect($message)->toContain('di Prontezza');
+    expect($message)->not->toContain('standard');
     expect($message)->not->toContain('di tipo di');
     expect($message)->not->toContain('messages.project_questions');
+});
+
+test('the competency type mismatch message names the types Readiness and Potential in English', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = pqAdmin($org);
+    $project = pqProject($org);
+    $mismatched = pqCompetency('potential');
+    pqAttach($org, $project, $mismatched);
+
+    $message = $this->withToken($token)
+        ->withHeaders(['Accept-Language' => 'en'])
+        ->postJson("/api/projects/{$project->id}/questions", [
+            'competency_id' => $mismatched->id,
+            'text' => ['en' => 'A question for the wrong competency type.'],
+        ])->assertStatus(422)->json('message');
+
+    expect($message)->toContain('a Potential competency');
+    expect($message)->toContain('requires a Readiness one');
+    expect($message)->not->toContain('standard');
 });
 
 /**

@@ -141,7 +141,11 @@ test('standard + potential competency (MTG) → 422', function (): void {
         'language' => 'en',
         'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$mtg->id],
-    ])->assertUnprocessable();
+    ])->assertUnprocessable()
+        ->assertJsonPath(
+            'errors.competency_ids.0',
+            "Competency 'MTG' is a Potential competency; Readiness projects require only Readiness competencies."
+        );
 });
 
 test('valid potential project with MTG + LAT seeded → 201', function (): void {
@@ -222,7 +226,11 @@ test('potential + standard competency (PRS) → 422', function (): void {
         'language' => 'en',
         'avatar_template_id' => templateIdForCurrentOrg(),
         'competency_ids' => [$prs->id],
-    ])->assertUnprocessable();
+    ])->assertUnprocessable()
+        ->assertJsonPath(
+            'errors.competency_ids.0',
+            "Competency 'PRS' is a Readiness competency; Potential projects require only Potential competencies."
+        );
 });
 
 test('mixed standard+potential competencies → 422', function (): void {
