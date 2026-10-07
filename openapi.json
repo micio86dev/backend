@@ -1226,7 +1226,7 @@
         "/avatar-templates/field-specs": {
             "get": {
                 "operationId": "avatarTemplate.fieldSpecs",
-                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives.",
+                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives. The superadmin-only fields (the external HeyGen voice) are listed\nfor a superadmin and for nobody else.",
                 "summary": "The field specs both providers accept",
                 "tags": [
                     "AvatarTemplate"
@@ -1240,7 +1240,195 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "string"
+                                            "type": "object",
+                                            "properties": {
+                                                "heygen": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                },
+                                                "tavus": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "heygen",
+                                                "tavus"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -8205,6 +8393,230 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/field-specs": {
+            "get": {
+                "operationId": "platformAvatarTemplate.fieldSpecs",
+                "description": "Machine-facing and NOT localized, like the organization route's.",
+                "summary": "The field specs a platform template accepts, including the superadmin-only\nones (the external HeyGen voice). The organization route lists those for a\nsuperadmin too and for nobody else",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "heygen": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                },
+                                                "tavus": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "heygen",
+                                                "tavus"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"

@@ -162,6 +162,7 @@ final class AuthMatrixCatalogue
             // ─── avatar templates ────────────────────────────────────────────
             // Platform (global) templates: NULL organization, superadmin only, no `org.context`
             // (a bare superadmin is exactly who manages them). Bare AND acting are served.
+            'GET api/admin/avatar-templates/field-specs' => self::superadminOnly('avatar-templates'),
             'GET api/admin/avatar-templates' => self::superadminOnly('avatar-templates'),
             'POST api/admin/avatar-templates' => self::superadminOnly('avatar-templates'),
             'GET api/admin/avatar-templates/{id}' => self::superadminOnly('avatar-templates'),

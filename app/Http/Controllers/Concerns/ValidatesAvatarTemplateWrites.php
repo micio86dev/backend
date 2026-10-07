@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Models\AvatarTemplate;
+use App\Models\User;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\TemplateReferenceValidator;
 use Closure;
@@ -66,11 +67,23 @@ trait ValidatesAvatarTemplateWrites
     }
 
     /**
+     * Whether the caller may set the superadmin-only fields (the external HeyGen
+     * voice). Read from the authenticated user, never from the page or route: the
+     * same rule on the platform and the organization template routes.
+     */
+    private function callerIsSuperadmin(): bool
+    {
+        $user = request()->user();
+
+        return $user instanceof User && $user->is_superadmin === true;
+    }
+
+    /**
      * @param  array<string, mixed>  $config
      */
     private function assertConfigValid(string $provider, array $config): void
     {
-        $errors = ConfigValidator::validate($provider, $config);
+        $errors = ConfigValidator::validate($provider, $config, $this->callerIsSuperadmin());
 
         // References are checked only once the shape is sound: a missing or
         // mistyped id would otherwise be reported twice.

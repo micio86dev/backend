@@ -9,9 +9,11 @@ use App\Exceptions\ProviderException;
 use App\Exceptions\ProviderTranscriptShapeException;
 use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
+use App\Services\ConversationLlm\HeygenVoiceRegistrar;
 use App\Services\ConversationLlm\LlmBindingResolver;
 use App\Services\ConversationLlm\ManagedLlmPayload;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplatePayload;
 use App\Support\Provider\ProviderErrorMessage;
 use Illuminate\Http\Client\Response;
@@ -67,6 +69,30 @@ class HeygenProvider implements ProviderSessionService
         // re-opened by an env change with no deploy.
         'interactivity_type',
         'video_settings.quality',
+    ];
+
+    /**
+     * The `voice_settings` fields added to the allowlist FOR A TEMPLATE THAT
+     * BINDS AN EXTERNAL VOICE (`ttsEngine` cartesia | elevenlabs), and only for
+     * one (heygen-third-party-voices H2).
+     *
+     * They are not in `TOKEN_FIELD_ALLOWLIST` for everyone on purpose: a
+     * dot-path allowlist cannot tell the discriminated object an external voice
+     * needs from the flat knobs a native-voice template has always stored, and
+     * widening it for all would start sending those flat knobs (without the
+     * `provider` discriminator LiveAvatar's union requires) for every existing
+     * template. A native-voice template's token body must stay byte-identical.
+     * `TemplatePayload::heygen()` emits the discriminated shape only for an
+     * external engine, so these paths are empty for everything else anyway.
+     */
+    private const EXTERNAL_VOICE_TOKEN_FIELDS = [
+        'voice_settings.provider',
+        'voice_settings.speed',
+        'voice_settings.stability',
+        'voice_settings.similarity_boost',
+        'voice_settings.style',
+        'voice_settings.use_speaker_boost',
+        'voice_settings.model',
     ];
 
     /**
@@ -330,10 +356,19 @@ class HeygenProvider implements ProviderSessionService
      */
     private function allowlistedTemplateFields(array $templateConfig): array
     {
-        $mapped = TemplatePayload::heygen($templateConfig);
+        $engine = $templateConfig['ttsEngine'] ?? null;
+        $external = is_string($engine)
+            && in_array($engine, ProviderFieldSpecs::HEYGEN_EXTERNAL_ENGINES, true)
+            && is_string($templateConfig['ttsExternalVoiceId'] ?? null);
+
+        $mapped = TemplatePayload::heygen(
+            $templateConfig,
+            $external ? $this->boundVoiceId($engine, trim((string) $templateConfig['ttsExternalVoiceId'])) : null,
+        );
 
         $allowlist = array_unique(array_merge(
             self::TOKEN_FIELD_ALLOWLIST,
+            $external ? self::EXTERNAL_VOICE_TOKEN_FIELDS : [],
             (array) config('interview.heygen.extra_token_fields', []),
         ));
 
@@ -348,6 +383,41 @@ class HeygenProvider implements ProviderSessionService
         }
 
         return $filtered;
+    }
+
+    /**
+     * The LiveAvatar voice id for a template's external voice.
+     *
+     * The ledger answers on every normal start (no HTTP). When its row is gone
+     * since the save (a restored backup, a purged table) the voice is rebound
+     * once here: the vendor id was verified when the template was saved, and
+     * the registrar's own lock and unique key keep concurrent starts to one
+     * bind. When it still cannot be resolved the start FAILS: falling back to
+     * the platform default voice would put the wrong voice in front of a
+     * candidate and report nothing.
+     *
+     * @throws ProviderException when the voice can be neither found nor bound
+     */
+    private function boundVoiceId(string $engine, string $providerVoiceId): string
+    {
+        $registrar = app(HeygenVoiceRegistrar::class);
+
+        $voiceId = $registrar->boundVoiceId($engine, $providerVoiceId);
+
+        if ($voiceId !== null) {
+            return $voiceId;
+        }
+
+        $result = $registrar->ensureVoice($engine, $providerVoiceId);
+
+        if ($result['status'] === 'bound') {
+            return $result['voice_id'];
+        }
+
+        throw new ProviderException(
+            "HeyGen: the template's external voice is not bound ({$result['code']})",
+            ProviderFailureClass::Upstream,
+        );
     }
 
     /**

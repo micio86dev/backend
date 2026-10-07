@@ -60,7 +60,7 @@ final class AvatarTemplateDuplicateController extends Controller
 
         // A copy of a template that no longer validates would just move the
         // problem into another organization.
-        if (ConfigValidator::validate($template->provider, $template->config) !== []) {
+        if (ConfigValidator::validate($template->provider, $template->config, $request->user()?->is_superadmin === true) !== []) {
             throw ValidationException::withMessages(['template' => 'source_config_invalid']);
         }
 

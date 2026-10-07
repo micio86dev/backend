@@ -16,6 +16,13 @@ namespace App\Support\AvatarTemplates;
 final readonly class FieldSpec
 {
     /**
+     * The `toArray()` shape as a PHPDoc type, for `#[Response]` on the routes that return the specs by provider.
+     * Scramble cannot infer it through the helper-built array and would document the body as a string.
+     * Optional keys are the ones `toArray()` drops when null/false.
+     */
+    public const DOC_SHAPE = 'array{key: string, type: string, label_key: string, hint_key?: string, required?: bool, options?: list<string>, min?: int|float, max?: int|float, step?: int|float, catalogue_resource?: string, options_depend_on?: string, options_by_value?: array<string, list<string>>, superadmin_only?: bool, superseded_by_key?: string, superseded_by_values?: list<string>}';
+
+    /**
      * @param  list<string>|null  $options  Allowed values for a select.
      * @param  string|null  $palPath  JSON-pointer-ish path into the Tavus PAL
      *                                body. Fields WITHOUT one are
@@ -63,6 +70,22 @@ final readonly class FieldSpec
         public ?string $optionsDependOn = null,
         /** @var array<string, list<string>>|null */
         public ?array $optionsByValue = null,
+        /**
+         * The field may be set by a SUPERADMIN only (heygen-third-party-voices; cost
+         * control: it binds a paid vendor voice). Any other caller is refused
+         * (`superadmin_only`) and the field-spec routes do not list it for them.
+         * It is written from either template page, platform or organization.
+         */
+        public bool $superadminOnly = false,
+        /**
+         * The field is REPLACED by another field's value: when `supersededByKey`
+         * holds one of `supersededByValues` this field is not required and must
+         * be absent (`superseded_by_*`), so a native HeyGen voice id cannot sit
+         * beside an external voice that overrides it (a dead knob).
+         */
+        public ?string $supersededByKey = null,
+        /** @var list<string>|null */
+        public ?array $supersededByValues = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -81,6 +104,9 @@ final readonly class FieldSpec
             'catalogue_resource' => $this->catalogueResource,
             'options_depend_on' => $this->optionsDependOn,
             'options_by_value' => $this->optionsByValue,
+            'superadmin_only' => $this->superadminOnly,
+            'superseded_by_key' => $this->supersededByKey,
+            'superseded_by_values' => $this->supersededByValues,
         ], fn (mixed $v): bool => $v !== null && $v !== false);
     }
 }

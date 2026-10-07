@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\AvatarTemplates;
 
+use Illuminate\Support\Str;
+
 /**
  * Validates a template's config against its provider's field spec (C14).
  *
@@ -18,9 +20,13 @@ final class ConfigValidator
 {
     /**
      * @param  array<string, mixed>  $config
+     * @param  bool  $superadmin  true only when the caller is a superadmin (cost control: an
+     *                            external voice is a paid vendor call): a superadmin-only field
+     *                            from anyone else is refused (`superadmin_only`), never
+     *                            silently stored. The page it is written from does not matter.
      * @return list<array{key: string, code: string}>
      */
-    public static function validate(string $provider, array $config): array
+    public static function validate(string $provider, array $config, bool $superadmin = false): array
     {
         $fields = ProviderFieldSpecs::for($provider);
 
@@ -50,8 +56,18 @@ final class ConfigValidator
         foreach ($fields as $field) {
             $present = array_key_exists($field->key, $config) && $config[$field->key] !== null;
 
+            $superseded = self::isSuperseded($field, $config);
+
+            if ($superseded && $present) {
+                // A voice knob the engine's settings object lacks keeps its own refusal: the operator
+                // is told to pick another engine, not that a native HeyGen voice is in the way.
+                $errors[] = ['key' => $field->key, 'code' => self::checkEngineSupport($provider, $field, $config) ?? 'superseded_by_'.Str::snake((string) $field->supersededByKey)];
+
+                continue;
+            }
+
             if (! $present) {
-                if ($field->required) {
+                if ($field->required && ! $superseded) {
                     $errors[] = ['key' => $field->key, 'code' => 'required'];
                 }
 
@@ -62,7 +78,8 @@ final class ConfigValidator
                 continue;
             }
 
-            $error = self::checkValue($field, $config[$field->key])
+            $error = ($field->superadminOnly && ! $superadmin ? 'superadmin_only' : null)
+                ?? self::checkValue($field, $config[$field->key])
                 ?? self::checkDependentOption($field, $config);
 
             if ($error !== null) {
@@ -71,6 +88,41 @@ final class ConfigValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * The field's governing field holds a value that replaces it.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private static function isSuperseded(FieldSpec $field, array $config): bool
+    {
+        if ($field->supersededByKey === null || $field->supersededByValues === null) {
+            return false;
+        }
+
+        $governing = $config[$field->supersededByKey] ?? null;
+
+        return is_string($governing) && in_array($governing, $field->supersededByValues, true);
+    }
+
+    /**
+     * A HeyGen voice knob the chosen external engine's settings object does not
+     * have: accepted and stored it would never be sent.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private static function checkEngineSupport(string $provider, FieldSpec $field, array $config): ?string
+    {
+        $engine = $config['ttsEngine'] ?? null;
+
+        if (! is_string($engine)) {
+            return null;
+        }
+
+        return in_array($field->key, ProviderFieldSpecs::unsupportedKnobs($provider, $engine), true)
+            ? 'tts_setting_unsupported'
+            : null;
     }
 
     /**
