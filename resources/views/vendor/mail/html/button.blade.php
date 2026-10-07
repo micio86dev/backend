@@ -25,13 +25,20 @@
     anchor. Recolouring the background and leaving the borders purple would
     draw a purple frame around a tenant-coloured button.
 
+    The TEXT colour is set here too, and it has to be: the layout injects
+    `a { color: <brand> }` per send, which outranks the theme's
+    `.button { color: #fff }` once inlined, so without it the label took the
+    brand colour and vanished into its own background. Black or white by WCAG
+    contrast, the rule the backoffice already uses.
+
     Emits NOTHING when no colour is configured, so the stylesheet's own value
     stands — the brand constant lives in one place.
 --}}
-@php($brandColor = app(App\Support\Mail\EmailBranding::class)->primaryColor())
+@php($branding = app(App\Support\Mail\EmailBranding::class))
+@php($brandColor = $branding->primaryColor())
 <a href="{{ $url }}" class="button button-{{ $color }}"
    @if ($brandColor !== null && $color === 'primary')
-   style="background-color: {{ $brandColor }}; border-color: {{ $brandColor }};"
+   style="background-color: {{ $brandColor }}; border-color: {{ $brandColor }}; color: {{ $branding->foregroundColor() }};"
    @endif
    target="_blank" rel="noopener">{!! $slot !!}</a>
 </td>
