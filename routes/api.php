@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationAuditController;
 use App\Http\Controllers\Api\EvaluationIndexController;
+use App\Http\Controllers\Api\EvaluationRetryController;
 use App\Http\Controllers\Api\FrameworkController;
 use App\Http\Controllers\Api\LlmCredentialController;
 use App\Http\Controllers\Api\LlmModelController;
@@ -38,6 +39,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\AvatarCatalogueSampleController;
 use App\Http\Controllers\AvatarTemplateController;
 use App\Http\Controllers\AvatarTemplateDuplicateController;
 use App\Http\Controllers\AvatarTemplatePortabilityController;
@@ -52,6 +54,7 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HealthReadyController;
 use App\Http\Controllers\M2m\AbilityCatalogController;
 use App\Http\Controllers\M2m\ApiClientController;
+use App\Http\Controllers\M2m\EvaluationRetryController as M2mEvaluationRetryController;
 use App\Http\Controllers\M2m\ParticipantController;
 use App\Http\Controllers\M2m\SsoLinkController;
 use App\Http\Controllers\M2m\WhoamiController;
@@ -427,6 +430,7 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // organization and is exactly who manages these. Every lookup goes through
     // `AvatarTemplate::platformOnly()`, so the organization routes below never
     // see one and these never see an organization's.
+    Route::get('admin/avatar-templates/field-specs', [PlatformAvatarTemplateController::class, 'fieldSpecs']);
     Route::get('admin/avatar-templates', [PlatformAvatarTemplateController::class, 'index']);
     Route::post('admin/avatar-templates', [PlatformAvatarTemplateController::class, 'store']);
     Route::get('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'show'])->whereNumber('id');
@@ -609,6 +613,10 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // row, so a bare superadmin works), throttled per user because every miss is
     // a paid provider call. Declared BEFORE /{id} like the literal paths above.
     Route::post('/avatar-templates/voice-preview', AvatarVoicePreviewController::class)->middleware('throttle:avatar-voice-preview');
+    // cartesia-catalogue-sample-proxy: Cartesia's own catalogue clip needs the platform key, so the SERVER
+    // downloads it and serves the bytes. Same `create` gate and no org.context as the route above; its own
+    // per-user bucket (a miss is a free download, not a paid synthesis, but it is still an outbound call).
+    Route::get('/avatar-templates/catalogue-sample', AvatarCatalogueSampleController::class)->middleware('throttle:avatar-catalogue-sample');
     Route::post('/avatar-templates/{id}/activate', [AvatarTemplateController::class, 'activate']);
     Route::post('/avatar-templates/{id}/deactivate', [AvatarTemplateController::class, 'deactivate']);
     Route::post('/avatar-templates/{id}/duplicate', AvatarTemplateDuplicateController::class);
@@ -683,6 +691,19 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('/participants/{id}/recover', [ParticipantRecoveryController::class, 'store']);
+});
+
+// ─── Evaluation Retry (scoring-retry-rt-b) ────────────────────────────────
+// POST /api/participants/{id}/retry — authorizes the SINGLE re-interview of a
+// `pending` evaluation. Own route group, adjacent to the recovery write above:
+// it is a WRITE (re-opens the participant, resets invalid sessions, mints a
+// link), not a read. ParticipantPolicy::retry denies viewer (403 before any
+// participant is resolved); AuthorizeEvaluationRetry resolves the participant
+// scoped to the authenticated tenant under a row lock (cross-org -> 404).
+// The M2M twin is POST /api/m2m/participants/{id}/retry below.
+
+Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
+    Route::post('/participants/{id}/retry', [EvaluationRetryController::class, 'store']);
 });
 
 // ─── Participant Scheduling (interview-scheduling PR-E) ────────────────────
@@ -777,6 +798,12 @@ Route::prefix('m2m')
             ->middleware('ability:participants:schedule');
         Route::delete('/participants/{id}/schedule', [ParticipantController::class, 'cancelSchedule'])
             ->middleware('ability:participants:schedule');
+
+        // ─── scoring-retry-rt-b: single evaluation retry ──────────────────────
+        // POST /api/m2m/participants/{id}/retry (participants:retry)
+        // The ability check runs before the participant is resolved.
+        Route::post('/participants/{id}/retry', [M2mEvaluationRetryController::class, 'store'])
+            ->middleware('ability:participants:retry');
 
         // ─── C6: SSO-Link Mint ────────────────────────────────────────────────
         // POST /api/m2m/sso-link (sso_link:generate)

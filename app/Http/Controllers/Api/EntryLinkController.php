@@ -19,6 +19,7 @@ use App\Support\Participant\PlaceholderEmail;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\Sso\EntryLinkMinter;
 use App\Support\Sso\EntryLinkUrlComposer;
+use App\Support\Sso\LinkDelivery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -204,6 +205,15 @@ final class EntryLinkController extends Controller
             return response()->json(new ParticipantEnrolmentResource($result['participant']), 201);
         }
 
+        // The link's lifetime follows how it travels: a link BEAI is going to
+        // email lives the configured invitation lifetime (24 hours by
+        // default), one that is only returned to the operator keeps 30
+        // minutes. The minter downgrades `Emailed` for a reusable-link
+        // visitor, so `email_sent` below is read back from the channel it
+        // actually used and cannot disagree with the token.
+        $requestedEmail = (bool) ($validated['send_email'] ?? true);
+        $addressIsPlaceholder = PlaceholderEmail::is($validated['email']);
+
         try {
             $minted = $this->minter->mint(
                 $project,
@@ -213,6 +223,7 @@ final class EntryLinkController extends Controller
                 $validated['role_code'] ?? null,
                 $validated['lang'] ?? null,
                 $externalReference,
+                $requestedEmail && ! $addressIsPlaceholder ? LinkDelivery::Emailed : LinkDelivery::Returned,
             );
         } catch (EntryLinkRefused $e) {
             return match ($e->reason) {
@@ -273,9 +284,7 @@ final class EntryLinkController extends Controller
         // still minted and returned, and `email_sent` stays truthful: the job is
         // not queued, so the answer is false. The job keeps its own placeholder
         // refusal as a second line of defence.
-        $requestedEmail = (bool) ($validated['send_email'] ?? true);
-        $addressIsPlaceholder = PlaceholderEmail::is($validated['email']);
-        $emailSent = (bool) ($requestedEmail && ! $minted->targetsReusableLinkVisitor && ! $addressIsPlaceholder);
+        $emailSent = $minted->delivery === LinkDelivery::Emailed;
 
         if ($requestedEmail && ! $emailSent) {
             // One line, no context: neither the address nor the name belongs in

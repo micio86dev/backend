@@ -114,6 +114,7 @@ test('ElevenLabs voices expose accent, locale, preview and separate native Itali
         'accent' => 'standard',
         'italian' => 'native',
         'preview_audio_url' => 'https://cdn.example/chiara-it.mp3',
+        'preview_audio_via_api' => false,
     ]);
     expect($byId['e-accent']['italian'])->toBe('native')
         ->and($byId['e-accent']['accent'])->toBe('Italian');

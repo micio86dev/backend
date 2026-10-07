@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\AvatarTemplates\BindHeygenTemplateVoice;
 use App\Actions\AvatarTemplates\DuplicateAvatarTemplate;
 use App\Exceptions\AvatarTemplateInUseException;
 use App\Http\Controllers\Concerns\ValidatesAvatarTemplateWrites;
@@ -13,8 +14,10 @@ use App\Models\AvatarTemplate;
 use App\Models\User;
 use App\Services\ConversationLlm\HeygenLlmRegistrar;
 use App\Support\AvatarTemplates\ConfigValidator;
+use App\Support\AvatarTemplates\FieldSpec;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
+use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\Superadmin\PlatformAuditWriter;
 use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -73,6 +76,32 @@ final class PlatformAvatarTemplateController extends Controller
     }
 
     /**
+     * The field specs a platform template accepts, including the superadmin-only
+     * ones (the external HeyGen voice). The organization route lists those for a
+     * superadmin too and for nobody else.
+     *
+     * Machine-facing and NOT localized, like the organization route's.
+     *
+     * @throws AuthorizationException
+     */
+    #[ResponseDoc(200, type: 'array{data: array{heygen: list<'.FieldSpec::DOC_SHAPE.'>, tavus: list<'.FieldSpec::DOC_SHAPE.'>}}')]
+    public function fieldSpecs(Request $request): JsonResponse
+    {
+        abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
+
+        $specs = [];
+
+        foreach (['heygen', 'tavus'] as $provider) {
+            $specs[$provider] = array_map(
+                fn ($field): array => $field->toArray(),
+                ProviderFieldSpecs::forCaller($provider, true),
+            );
+        }
+
+        return response()->json(['data' => $specs]);
+    }
+
+    /**
      * List platform avatar templates with their usage.
      *
      * @response array{data: list<\App\Http\Resources\PlatformAvatarTemplateResource>}
@@ -123,6 +152,7 @@ final class PlatformAvatarTemplateController extends Controller
         $validated = $request->validate($this->templateStoreRules());
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
+        app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
 
         $template = $this->answeringPlatformNameRace(fn (): AvatarTemplate => $this->context->run($actor, fn (): AvatarTemplate => DB::transaction(function () use ($validated, $actor): AvatarTemplate {
@@ -176,6 +206,7 @@ final class PlatformAvatarTemplateController extends Controller
 
         if (array_key_exists('config', $validated)) {
             $this->assertConfigValid($template->provider, $validated['config']);
+            app(BindHeygenTemplateVoice::class)->run($template->provider, $validated['config']);
         }
 
         if (array_key_exists('name', $validated)) {
@@ -372,7 +403,7 @@ final class PlatformAvatarTemplateController extends Controller
 
         // A copy of a template that no longer validates would just move the
         // problem into another organization.
-        if (ConfigValidator::validate($template->provider, $template->config) !== []) {
+        if (ConfigValidator::validate($template->provider, $template->config, true) !== []) {
             throw ValidationException::withMessages(['template' => 'source_config_invalid']);
         }
 

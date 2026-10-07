@@ -53,13 +53,68 @@ final class TemplateReferenceValidator
         }
 
         return match ($provider) {
-            'heygen' => array_values(array_filter([
-                self::exists('heygen', 'avatar', $config['avatarId'] ?? null, 'avatarId', 'avatar_not_found'),
-                self::exists('heygen', 'voice', $config['voiceId'] ?? null, 'voiceId', 'voice_not_found'),
-            ])),
+            'heygen' => self::heygen($config),
             'tavus' => self::tavus($config),
             default => [],
         };
+    }
+
+    /**
+     * Whether a vendor's catalogue lists a voice, STRICTLY: the one check that
+     * gates an irreversible third-party call (binding a voice on LiveAvatar).
+     *
+     * `validate()` fails OPEN on purpose, because a provider outage must not
+     * stop an operator saving a template. A bind cannot afford that: LiveAvatar
+     * accepts ANY provider voice id with HTTP 200 (live 2026-10-03), so an id
+     * that was never verified would be bound and kept forever. Hence: not
+     * verifiable means not bound, and the references kill switch does not apply.
+     *
+     * @return string|null null when listed; `tts_voice_not_found` or `tts_voice_unverifiable`
+     */
+    public static function externalVoiceProblem(string $engine, string $voiceId): ?string
+    {
+        $catalogue = AvatarProviderCatalogue::fetch($engine, 'voice');
+
+        if ($catalogue['status'] !== 'ok') {
+            return 'tts_voice_unverifiable';
+        }
+
+        if (self::contains($catalogue['items'], $voiceId)) {
+            return null;
+        }
+
+        $fresh = AvatarProviderCatalogue::fetch($engine, 'voice', fresh: true);
+
+        if ($fresh['status'] !== 'ok') {
+            return 'tts_voice_unverifiable';
+        }
+
+        return self::contains($fresh['items'], $voiceId) ? null : 'tts_voice_not_found';
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<array{key: string, code: string}>
+     */
+    private static function heygen(array $config): array
+    {
+        $errors = [];
+
+        $avatar = self::exists('heygen', 'avatar', $config['avatarId'] ?? null, 'avatarId', 'avatar_not_found');
+        if ($avatar !== null) {
+            $errors[] = $avatar;
+        }
+
+        // An external engine supplies the voice, so the native id is not looked up
+        // (`ConfigValidator` already refused one sitting beside it).
+        if (! in_array($config['ttsEngine'] ?? null, ProviderFieldSpecs::HEYGEN_EXTERNAL_ENGINES, true)) {
+            $voice = self::exists('heygen', 'voice', $config['voiceId'] ?? null, 'voiceId', 'voice_not_found');
+            if ($voice !== null) {
+                $errors[] = $voice;
+            }
+        }
+
+        return [...$errors, ...self::tts($config)];
     }
 
     /**
@@ -81,6 +136,20 @@ final class TemplateReferenceValidator
         if ($pal !== null) {
             $errors[] = $pal;
         }
+
+        return [...$errors, ...self::tts($config)];
+    }
+
+    /**
+     * The third-party TTS pairing both providers share: an engine needs a voice,
+     * a voice needs an engine, and the voice must exist at the vendor.
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<array{key: string, code: string}>
+     */
+    private static function tts(array $config): array
+    {
+        $errors = [];
 
         $engine = is_string($config['ttsEngine'] ?? null) ? $config['ttsEngine'] : null;
         $voiceId = is_string($config['ttsExternalVoiceId'] ?? null) ? trim($config['ttsExternalVoiceId']) : '';

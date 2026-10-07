@@ -53,7 +53,7 @@ function expectedAbilities(): array
             // Read yes, manage no. This row is the bug that started the sweep.
             'avatarTemplates' => ['viewAny' => true, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => true],
-            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
+            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true, 'retry' => true],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
@@ -67,7 +67,7 @@ function expectedAbilities(): array
             // Deletes a project? No. Editing its settings and deleting
             // everything beneath it stopped sharing one permission.
             'projects' => ['viewAny' => true, 'create' => true, 'update' => true, 'delete' => false],
-            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true],
+            'participants' => ['viewAny' => true, 'create' => true, 'recover' => true, 'retry' => true],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
@@ -79,7 +79,7 @@ function expectedAbilities(): array
             'llmCredentials' => ['viewAny' => false, 'create' => false, 'update' => false, 'delete' => false],
             'avatarTemplates' => ['viewAny' => false, 'create' => false, 'update' => false, 'activate' => false, 'delete' => false, 'manageGlobal' => false],
             'projects' => ['viewAny' => true, 'create' => false, 'update' => false, 'delete' => false],
-            'participants' => ['viewAny' => true, 'create' => false, 'recover' => false],
+            'participants' => ['viewAny' => true, 'create' => false, 'recover' => false, 'retry' => false],
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
@@ -99,6 +99,30 @@ test('the abilities map answers exactly what the policies do, for every role', f
     // equality catches the first.
     expect($response->json('abilities'))->toEqual(expectedAbilities()[$role]);
 })->with(['admin', 'operator', 'viewer']);
+
+test('the exported OpenAPI /auth/me abilities shape equals the map the runtime publishes, in both directions', function (): void {
+    // The generated typed clients read openapi.json, not the controller's comment: assert on that artifact so
+    // a key the runtime adds, drops or renames can neither lag nor linger in the contract.
+    $org = Organization::factory()->create();
+    $published = $this->withToken(authTokenForRole($org, 'admin'))->getJson('/api/auth/me')->assertOk()->json('abilities');
+
+    $spec = json_decode((string) file_get_contents(base_path('openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $documented = $spec['paths']['/auth/me']['get']['responses']['200']['content']['application/json']['schema']['properties']['abilities']['properties'];
+
+    $groups = static function (array $map): array {
+        $keys = array_keys($map);
+        sort($keys);
+
+        return $keys;
+    };
+
+    expect($groups($documented))->toBe($groups($published));
+
+    foreach ($published as $group => $actions) {
+        expect($groups($documented[$group]['properties']))->toBe($groups($actions), "abilities.{$group} differs between openapi.json and the runtime");
+        expect($documented[$group]['required'] ?? [])->toEqualCanonicalizing(array_keys($actions), "abilities.{$group} must list every published action as required");
+    }
+});
 
 test('the superadmin is told they may manage avatar templates', function (): void {
     // The platform column, which no tenant role occupies. `Gate::before`

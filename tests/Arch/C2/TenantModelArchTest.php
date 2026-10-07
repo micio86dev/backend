@@ -15,6 +15,8 @@ use App\Models\Competency;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
 use App\Models\FrameworkGap;
+use App\Models\HeygenBoundVoice;
+use App\Models\HeygenVendorSecret;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
 use App\Models\Organization;
@@ -116,6 +118,12 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // organization, so a tenant global scope would hide these rows from
         // the only person entitled to them.
         PlatformSetting::class,
+        // heygen-third-party-voices — the ledger of BEAI's own LiveAvatar voices
+        // and vendor secrets. Platform resources made with the platform vendor
+        // keys and shared by every template that names them; no
+        // `organization_id` column exists, and no tenant surface reads them.
+        HeygenBoundVoice::class,
+        HeygenVendorSecret::class,
     ];
 
     $violations = [];

@@ -88,7 +88,86 @@ final class ProviderFieldSpecs
         'elevenlabs' => 'eleven_multilingual_v2',
     ];
 
-    /** @return list<FieldSpec> */
+    /**
+     * External TTS engines a HeyGen (LiveAvatar) template can bind
+     * (`ttsEngine`): the vendors whose voices LiveAvatar can import through
+     * `POST /v1/voices/third_party`. `none` means the native LiveAvatar voice.
+     *
+     * @var list<string>
+     */
+    public const HEYGEN_EXTERNAL_ENGINES = ['cartesia', 'elevenlabs'];
+
+    /**
+     * The model sent in `avatar_persona.voice_settings.model` for a bound voice,
+     * pinned rather than left to LiveAvatar's own default so a future vendor
+     * default cannot move a live template. `sonic-2` has NO Italian and is never
+     * offered.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json `CartesiaVoiceSettings.model`
+     * default `sonic-3.5`; `ElevenLabsVoiceSettings.model` default `eleven_flash_v2_5`.
+     * The discriminated shape is documented, NOT yet exercised on a live session.
+     *
+     * @var array<string, string>
+     */
+    public const HEYGEN_TTS_DEFAULT_MODEL = [
+        'cartesia' => 'sonic-3.5',
+        'elevenlabs' => 'eleven_flash_v2_5',
+    ];
+
+    /**
+     * The LiveAvatar models offered per engine (`voice_settings.model`), the
+     * Italian-capable subset of `CartesiaModelEnum` / `ElevenLabsModelEnum`:
+     * `sonic-2` and `sonic-turbo` are not offered (no Italian guarantee);
+     * `eleven_v3*` honour only `stability` of the voice settings, so they would
+     * make the other knobs dead and are left out.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json
+     *
+     * @var array<string, list<string>>
+     */
+    public const HEYGEN_TTS_MODELS = [
+        'cartesia' => ['sonic-3.5', 'sonic-3'],
+        'elevenlabs' => ['eleven_flash_v2_5', 'eleven_multilingual_v2'],
+    ];
+
+    /**
+     * Voice knobs an engine's LiveAvatar settings object does not have:
+     * `CartesiaVoiceSettings` carries `speed` and `model` only, so the other four
+     * would be accepted, stored and never sent (a dead knob) and are refused.
+     *
+     * @var array<string, list<string>>
+     */
+    public const HEYGEN_ENGINE_UNSUPPORTED_KNOBS = [
+        'cartesia' => ['voiceStability', 'voiceSimilarityBoost', 'voiceStyle', 'voiceUseSpeakerBoost'],
+    ];
+
+    /**
+     * The voice knobs an external engine does not support on a PROVIDER. Only HeyGen has the rule:
+     * another provider that spells a field the same way is never affected by it.
+     *
+     * @return list<string>
+     */
+    public static function unsupportedKnobs(string $provider, string $engine): array
+    {
+        return $provider === 'heygen' ? (self::HEYGEN_ENGINE_UNSUPPORTED_KNOBS[$engine] ?? []) : [];
+    }
+
+    /**
+     * The HeyGen engines whose settings object has no such knob. Declared on the field as the engines
+     * that REPLACE it, so the form hides it exactly when the engine could only refuse it.
+     *
+     * @return list<string>
+     */
+    private static function enginesWithoutKnob(string $key): array
+    {
+        return array_keys(array_filter(self::HEYGEN_ENGINE_UNSUPPORTED_KNOBS, fn (array $knobs): bool => in_array($key, $knobs, true)));
+    }
+
+    /**
+     * Every field of a provider, superadmin-only ones included.
+     *
+     * @return list<FieldSpec>
+     */
     public static function for(string $provider): array
     {
         return match ($provider) {
@@ -100,6 +179,19 @@ final class ProviderFieldSpecs
             // politely helps nobody.
             default => [],
         };
+    }
+
+    /**
+     * The fields a caller may set: every field for a superadmin, minus the
+     * superadmin-only ones for anyone else.
+     *
+     * @return list<FieldSpec>
+     */
+    public static function forCaller(string $provider, bool $superadmin): array
+    {
+        return $superadmin
+            ? self::for($provider)
+            : array_values(array_filter(self::for($provider), fn (FieldSpec $field): bool => ! $field->superadminOnly));
     }
 
     /** @return list<FieldSpec> */
@@ -116,16 +208,27 @@ final class ProviderFieldSpecs
             // operator pick a language and hear no difference — the exact failure
             // the comments in TemplatePayload already warn about.
             new FieldSpec('avatarId', FieldType::Text, $l('avatarId'), required: true, hintKey: $h('avatarId'), catalogueResource: 'avatar'),
-            new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId'), catalogueResource: 'voice'),
+            // Required UNLESS an external engine supplies the voice: the two are
+            // alternatives, and a native id beside an external one would be sent
+            // nowhere (superseded, see FieldSpec).
+            new FieldSpec('voiceId', FieldType::Text, $l('voiceId'), required: true, hintKey: $h('voiceId'), catalogueResource: 'voice', supersededByKey: 'ttsEngine', supersededByValues: self::HEYGEN_EXTERNAL_ENGINES),
+            // SUPERADMIN only, on either template page (heygen-third-party-voices).
+            // The voice is bound on LiveAvatar at save time; the bound id is derived from the
+            // ledger when a session starts, never stored on the template.
+            new FieldSpec('ttsEngine', FieldType::Select, $l('ttsEngine'), options: ['none', ...self::HEYGEN_EXTERNAL_ENGINES], hintKey: $h('heygenTtsEngine'), superadminOnly: true),
+            // The same "voice model" control Tavus has. Only models that speak Italian
+            // are offered; unset sends the pinned default (HEYGEN_TTS_DEFAULT_MODEL).
+            new FieldSpec('ttsModelName', FieldType::Select, $l('ttsModelName'), options: array_merge(...array_values(self::HEYGEN_TTS_MODELS)), hintKey: $h('heygenTtsModelName'), optionsDependOn: 'ttsEngine', optionsByValue: self::HEYGEN_TTS_MODELS, superadminOnly: true),
+            new FieldSpec('ttsExternalVoiceId', FieldType::Text, $l('ttsExternalVoiceId'), hintKey: $h('heygenTtsExternalVoiceId'), superadminOnly: true),
             new FieldSpec('interactivityType', FieldType::Select, $l('interactivityType'), options: ['CONVERSATIONAL', 'PUSH_TO_TALK'], hintKey: $h('interactivityType')),
             new FieldSpec('maxSessionDurationSec', FieldType::Number, $l('maxSessionDurationSec'), min: 30, max: self::HEYGEN_MAX_SECONDS, hintKey: $h('maxSessionDurationSec')),
             new FieldSpec('videoQuality', FieldType::Select, $l('videoQuality'), options: ['very_high', 'high', 'medium', 'low'], hintKey: $h('videoQuality')),
             new FieldSpec('videoEncoding', FieldType::Select, $l('videoEncoding'), options: ['H264', 'VP8'], hintKey: $h('videoEncoding')),
             new FieldSpec('voiceSpeed', FieldType::Number, $l('voiceSpeed'), min: 0.8, max: 1.2, step: 0.01, hintKey: $h('voiceSpeed')),
-            new FieldSpec('voiceStability', FieldType::Number, $l('voiceStability'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStability')),
-            new FieldSpec('voiceSimilarityBoost', FieldType::Number, $l('voiceSimilarityBoost'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceSimilarityBoost')),
-            new FieldSpec('voiceStyle', FieldType::Number, $l('voiceStyle'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStyle')),
-            new FieldSpec('voiceUseSpeakerBoost', FieldType::Checkbox, $l('voiceUseSpeakerBoost'), hintKey: $h('voiceUseSpeakerBoost')),
+            new FieldSpec('voiceStability', FieldType::Number, $l('voiceStability'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStability'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceStability')),
+            new FieldSpec('voiceSimilarityBoost', FieldType::Number, $l('voiceSimilarityBoost'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceSimilarityBoost'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceSimilarityBoost')),
+            new FieldSpec('voiceStyle', FieldType::Number, $l('voiceStyle'), min: 0, max: 1, step: 0.01, hintKey: $h('voiceStyle'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceStyle')),
+            new FieldSpec('voiceUseSpeakerBoost', FieldType::Checkbox, $l('voiceUseSpeakerBoost'), hintKey: $h('voiceUseSpeakerBoost'), supersededByKey: 'ttsEngine', supersededByValues: self::enginesWithoutKnob('voiceUseSpeakerBoost')),
         ];
     }
 

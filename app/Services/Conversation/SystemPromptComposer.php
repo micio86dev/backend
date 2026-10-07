@@ -60,7 +60,10 @@ final class SystemPromptComposer
      * Compose a system prompt for a single competency evaluation.
      *
      * @param  string  $competencyCode  Competency code (for error messages and section headers).
-     * @param  int  $roleId  Role primary key — MUST match the project's role.
+     * @param  int|null  $roleId  Role primary key — MUST match the project's role. `null`
+     *                            is the role-less lookup used by `potential` assessments:
+     *                            forwarded unchanged to `BarsIndicatorLoader::forRoleCompetency()`,
+     *                            which then selects only the rows with no role.
      * @param  int  $competencyId  Competency primary key.
      * @param  string  $projectLocale  Project language code ('en' or 'it').
      * @param  int  $followUpBudget  Maximum follow-up questions (ratified default = 4).
@@ -100,7 +103,7 @@ final class SystemPromptComposer
      */
     public function compose(
         string $competencyCode,
-        int $roleId,
+        ?int $roleId,
         int $competencyId,
         string $projectLocale,
         int $followUpBudget,
@@ -114,8 +117,10 @@ final class SystemPromptComposer
         $indicators = $this->loader->forRoleCompetency($roleId, $competencyId, $revisionId);
 
         if ($indicators->isEmpty()) {
+            $roleLabel = $roleId === null ? 'none' : (string) $roleId;
+
             throw new CompositionException(
-                "SystemPromptComposer: no BARS indicators found for role [{$roleId}] and competency [{$competencyCode}]. "
+                "SystemPromptComposer: no BARS indicators found for role [{$roleLabel}] and competency [{$competencyCode}]. "
                 .'Cannot compose a prompt without indicators — a prompt-less session would silently lose all adaptivity.',
             );
         }

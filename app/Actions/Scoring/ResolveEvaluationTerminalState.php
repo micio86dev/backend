@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Scoring;
 
+use App\Enums\EvaluationStatus;
 use App\Events\EvaluationCompleted;
 use App\Exceptions\Scoring\ZeroCompetenciesInvariantException;
 use App\Models\CompetencyResult;
@@ -26,6 +27,9 @@ use Illuminate\Support\Facades\Log;
  * D5 CC1 gate:
  *   valid_competencies / total_competencies >= 0.90 → completed; else → pending.
  *   Invariant guard: total_competencies == 0 → ZeroCompetenciesInvariantException.
+ *   RT-B (scoring-retry-rt-b D9): an Evaluation with `retry_attempt = true` skips the
+ *   gate and the invariant guard and is ALWAYS persisted `completed` (the single
+ *   retry is the definitive run, whatever the ratio).
  *
  * D9 lifecycle:
  *   Both completed and pending resolve participant in_valutazione → completato.
@@ -77,30 +81,44 @@ final class ResolveEvaluationTerminalState
                 ->count();
         }
 
-        // ── Invariant guard: total_competencies == 0 ─────────────────────
-        $projectId = (int) $project->id;
-        $gate = new CompletionGate;
+        // ── RT-B: the retry run is definitive (design D9) ─────────────────
+        // The database row decides, never a caller-supplied flag: a crash-resumed job
+        // reaches this point through the `processing` path with no payload hint.
+        // A retry skips the gate entirely, and with it the ZeroCompetencies `errore`
+        // arm: a project whose composition was emptied between the attempts must not
+        // strand a retry in `errore`. The counts are still logged below.
+        $isRetry = (bool) Evaluation::withoutGlobalScope('tenant')
+            ->whereKey($evaluation->id)
+            ->value('retry_attempt');
 
-        try {
-            $terminalStatus = $gate->evaluate($validCount, $totalCount);
-        } catch (ZeroCompetenciesInvariantException) {
-            Log::error('ScoreEvaluationJob: invariant — project has 0 competencies; marking participant errore', [
-                'evaluation_id' => $evaluation->id,
-                'project_id' => $projectId,
-            ]);
+        if ($isRetry) {
+            $terminalStatus = EvaluationStatus::Completed;
+        } else {
+            // ── Invariant guard: total_competencies == 0 ─────────────────
+            $projectId = (int) $project->id;
+            $gate = new CompletionGate;
 
-            // Transition participant to errore (guard: only if in_valutazione).
-            $participant->refresh();
-            if ($participant->status === 'in_valutazione') {
-                $participant->status = 'errore';
-                $participant->save();
+            try {
+                $terminalStatus = $gate->evaluate($validCount, $totalCount);
+            } catch (ZeroCompetenciesInvariantException) {
+                Log::error('ScoreEvaluationJob: invariant — project has 0 competencies; marking participant errore', [
+                    'evaluation_id' => $evaluation->id,
+                    'project_id' => $projectId,
+                ]);
 
-                // public-api step 6, G-38.
-                InterviewEventRecorder::error($participant->organization_id, $participant->id);
+                // Transition participant to errore (guard: only if in_valutazione).
+                $participant->refresh();
+                if ($participant->status === 'in_valutazione') {
+                    $participant->status = 'errore';
+                    $participant->save();
+
+                    // public-api step 6, G-38.
+                    InterviewEventRecorder::error($participant->organization_id, $participant->id);
+                }
+
+                // Do NOT emit EvaluationCompleted — invariant error, no valid Evaluation.
+                return;
             }
-
-            // Do NOT emit EvaluationCompleted — invariant error, no valid Evaluation.
-            return;
         }
 
         // ── Persist terminal Evaluation state ─────────────────────────────
@@ -116,6 +134,7 @@ final class ResolveEvaluationTerminalState
             'status' => $terminalStatus->value,
             'valid_count' => $validCount,
             'total_count' => $totalCount,
+            'retry' => $isRetry,
         ]);
 
         // ── Lifecycle: in_valutazione → completato (D9 FIX-7 race guard) ──

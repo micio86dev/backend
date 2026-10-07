@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * The platform avatar-template surface is documented in the committed
- * `openapi.json` (global-avatar-templates A4): all eight operations, the same
+ * `openapi.json` (global-avatar-templates A4): all nine operations, the same
  * 403 component on every one, the 409 bodies a superadmin must handle, and the
  * `avatarTemplates.manageGlobal` ability flag the backoffice gates its nav on.
  *
@@ -21,6 +21,7 @@ function pasSpec(): array
 }
 
 const PAS_OPERATIONS = [
+    'get /admin/avatar-templates/field-specs',
     'get /admin/avatar-templates',
     'post /admin/avatar-templates',
     'get /admin/avatar-templates/{id}',

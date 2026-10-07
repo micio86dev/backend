@@ -106,3 +106,26 @@ test('a fence followed by trailing prose containing a brace is refused by the fe
     // silently returning the CLEAN fenced JSON while discarding a brace.
     expect($result->json)->not->toBe('{"behaviors": []}');
 });
+
+// ─── critical-zone coverage (T8) ─────────────────────────────────────────────
+
+test('a single-line fence with no newline is not unwrapped as a fence', function (): void {
+    $raw = '```{"behaviors": []}```';
+
+    $result = (new ResponseEnvelopeStripper)->unwrap($raw);
+
+    // No newline means no language-tag boundary, so the fence rule must refuse
+    // rather than guess. The prose rule then takes the braces — and the
+    // discarded runs contain no brace or quote, so it is safe.
+    expect($result->wasFenced)->toBeFalse()
+        ->and($result->json)->toBe('{"behaviors": []}');
+});
+
+test('an opening fence with no closing fence is not treated as fenced', function (): void {
+    $raw = "```json\n{\"behaviors\": []}";
+
+    $result = (new ResponseEnvelopeStripper)->unwrap($raw);
+
+    expect($result->wasFenced)->toBeFalse()
+        ->and($result->json)->toBe('{"behaviors": []}');
+});

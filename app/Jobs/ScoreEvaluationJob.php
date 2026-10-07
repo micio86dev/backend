@@ -53,7 +53,12 @@ use Illuminate\Support\Facades\Log;
  *   Step 2: load Evaluation row → branch:
  *     - No row: create Evaluation(status=processing, versions) → score normally.
  *     - 23505 concurrent INSERT: catch + reload + re-enter guard.
- *     - {completed|pending} + retry_attempt=false → no-op.
+ *     - {completed|pending} + retry_attempt=false (database) → no-op.
+ *     - pending + retry_attempt=true (database) + participant in_valutazione →
+ *       RT-B merge (delete invalid results, flip to processing, one transaction),
+ *       then the resume-skip loop re-scores what has no result.
+ *     - completed + retry_attempt=true, or pending + retry while the participant
+ *       has not re-interviewed → logged no-op.
  *     - processing → resume-skip path (skips already-scored competencies).
  *
  * Per-competency loop (D2 D3 D4):
@@ -177,6 +182,7 @@ class ScoreEvaluationJob implements ShouldQueue
      *   - No row → create in processing + proceed.
      *   - 23505 concurrent INSERT → reload + re-enter (max 1 re-entry).
      *   - {completed|pending} + retry_attempt=false → no-op.
+     *   - pending + retry_attempt=true → RT-B merge (design D8 table), see below.
      *   - processing → resume-skip path.
      *
      * @param  bool  $reentrant  True when called after a 23505 catch (prevents infinite loop).
@@ -248,8 +254,21 @@ class ScoreEvaluationJob implements ShouldQueue
             return;
         }
 
-        // Terminal status ({completed|pending}) with retryAttempt=false → no-op.
-        if (! $this->retryAttempt) {
+        // ── Terminal status ({completed|pending}) ─────────────────────────────
+        // RT-B (design D8): the DATABASE row is authoritative for "this is a retry".
+        // The payload flag is only a hint — a crash-resumed or re-dispatched job
+        // carries no reliable flag, the evaluation row does.
+        if (! $evaluation->retry_attempt) {
+            if ($this->retryAttempt) {
+                Log::info('ScoreEvaluationJob: retry flag without a database authorization — no-op', [
+                    'participant_id' => $this->participantId,
+                    'evaluation_id' => $evaluation->id,
+                    'status' => $status->value,
+                ]);
+
+                return;
+            }
+
             Log::info('ScoreEvaluationJob: Evaluation already terminal — no-op', [
                 'participant_id' => $this->participantId,
                 'evaluation_id' => $evaluation->id,
@@ -259,11 +278,104 @@ class ScoreEvaluationJob implements ShouldQueue
             return;
         }
 
-        // retryAttempt=true + pending → domain retry RT-B path (PR4).
-        // Not implemented in PR2.
-        Log::info('ScoreEvaluationJob: domain retry path — deferred to PR4', [
-            'participant_id' => $this->participantId,
-        ]);
+        // retry_attempt = true in the database from here on.
+        if ($status === EvaluationStatus::Completed) {
+            // A6: the retry already ran (superseded, duplicated or raced). No LLM call, no write, no event.
+            Log::info('ScoreEvaluationJob: retry already completed — no-op', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $evaluation->id,
+            ]);
+
+            return;
+        }
+
+        if ($participant->status !== 'in_valutazione') {
+            // A stray job while the candidate has not (yet) finished the re-interview.
+            Log::info('ScoreEvaluationJob: retry not scored — participant has not re-interviewed', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $evaluation->id,
+                'participant_status' => $participant->status,
+            ]);
+
+            return;
+        }
+
+        if (! $this->retryAttempt) {
+            // Unreachable once DispatchScoringJob passes the flag; never strand the participant over it.
+            Log::warning('ScoreEvaluationJob: database has a retry authorization but the job payload flag is false — merging anyway', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $evaluation->id,
+            ]);
+        }
+
+        $merged = $this->mergeRetryResults($evaluation);
+
+        if ($merged === null) {
+            Log::info('ScoreEvaluationJob: retry merge skipped — evaluation no longer pending under the lock', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $evaluation->id,
+            ]);
+
+            return;
+        }
+
+        $this->runScoringPipeline($merged, $participant);
+    }
+
+    /**
+     * RT-B retry merge: in ONE transaction delete the invalid competency results
+     * (indicator scores and audits go with them by FK cascade) and flip the
+     * Evaluation `pending` → `processing`. Re-scoring of the competencies that now
+     * have no result then runs on the ordinary resume-skip loop.
+     *
+     * Atomic only for the delete-and-flip step; crash safety of what follows comes
+     * from the `processing` resume path, which never re-merges. The row is locked
+     * and re-checked so two racing jobs cannot both delete.
+     *
+     * @return Evaluation|null the processing evaluation, or null when it is no
+     *                         longer a pending retry under the lock
+     */
+    private function mergeRetryResults(Evaluation $evaluation): ?Evaluation
+    {
+        return DB::transaction(function () use ($evaluation): ?Evaluation {
+            // Participant first, evaluation second: the same order as AuthorizeEvaluationRetry, so
+            // the two can never wait on each other. The status the guard read earlier may be stale.
+            $participant = Participant::withoutGlobalScope('tenant')
+                ->where('organization_id', $evaluation->organization_id)
+                ->lockForUpdate()
+                ->find($this->participantId);
+
+            if ($participant === null || $participant->status !== 'in_valutazione') {
+                return null;
+            }
+
+            $locked = Evaluation::withoutGlobalScope('tenant')->lockForUpdate()->find($evaluation->id);
+
+            if ($locked === null || $locked->status !== EvaluationStatus::Pending || ! $locked->retry_attempt) {
+                return null;
+            }
+
+            $deleted = CompetencyResult::withoutGlobalScope('tenant')
+                ->where('evaluation_id', $locked->id)
+                ->where('valid', false)
+                ->delete();
+
+            // The retry re-scores under TODAY's model and prompt, so the row records those
+            // (owner decision, 2026-10-05); the framework version stays the one pinned at
+            // project creation. Per-call detail remains in `ai_requests`.
+            $locked->model_version = config('scoring.model_version');
+            $locked->prompt_version = config('scoring.prompt_version');
+            $locked->status = EvaluationStatus::Processing;
+            $locked->save();
+
+            Log::info('ScoreEvaluationJob: retry merge — invalid results deleted, evaluation processing', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $locked->id,
+                'deleted_results' => $deleted,
+            ]);
+
+            return $locked;
+        });
     }
 
     /**
@@ -490,6 +602,14 @@ class ScoreEvaluationJob implements ShouldQueue
      *     If participant is already errore (e.g. race with concurrent failed()), skip transition.
      * (b) ALWAYS emit EvaluationFailed($participantId) regardless of transition outcome.
      *
+     * RT-B (design D10): when the Evaluation row is an authorized retry
+     * (`retry_attempt = true`), neither (a) nor (b) applies. The retry is the
+     * definitive run by rule, so finalizeRetryWithRetainedResults() finalizes it
+     * `completed`, the participant moves to `completato` and EvaluationCompleted is
+     * emitted; the participant never reaches `errore` and EvaluationFailed is never
+     * emitted (its webhook would collide with the evaluation dedupe key and the
+     * recovery guard would refuse the result: a dead end).
+     *
      * This ensures PRs 1–2 cannot leave participants orphaned in in_valutazione on failure.
      *
      * Tenant context (queued-job-tenancy PR2): failed() performs zero tenant-scoped
@@ -511,6 +631,12 @@ class ScoreEvaluationJob implements ShouldQueue
 
         if ($participant !== null && $orgId !== null && $orgId >= 1) {
             TenantContextScope::runFor($orgId, function () use ($participant, $orgId): void {
+                // RT-B (design D10): a retry is the definitive run, so its technical failure
+                // finalizes `completed` with the retained results instead of `errore`.
+                if ($this->finalizeRetryWithRetainedResults($participant)) {
+                    return;
+                }
+
                 $this->transitionParticipantToErrore($participant);
                 // $orgId (pre-commit gate, round 5, finding 2): threaded onto the
                 // event itself — this IS the trusted derivation
@@ -553,8 +679,95 @@ class ScoreEvaluationJob implements ShouldQueue
     private function endParticipantUnresolvable(Participant $participant): void
     {
         $participant->refresh();
+
+        // RT-B (design D10): same rule as failed(). A retry that cannot resolve its catalogue
+        // is still the definitive run, so it finalizes `completed` with the retained results.
+        if ($this->finalizeRetryWithRetainedResults($participant)) {
+            return;
+        }
+
         $this->transitionParticipantToErrore($participant);
         event(new EvaluationFailed($this->participantId, $participant->organization_id));
+    }
+
+    /**
+     * RT-B (design D10, task 7.4): finalize an authorized retry `completed` with the valid
+     * results it retains, instead of moving the participant to `errore`.
+     *
+     * Called first by failed() and endParticipantUnresolvable(). Returns true when the
+     * Evaluation row is an authorized retry (`retry_attempt = true`), meaning the caller
+     * must NOT run its `errore` + EvaluationFailed path, whatever the outcome here; false
+     * for a first attempt or a participant without an Evaluation row (callers unchanged).
+     *
+     *   - `completed`: the retry already ran (A6). Logged no-op, no write, no event.
+     *   - `pending`: the failure came before the merge, so the idempotent merge runs
+     *     first and the definitive result never mixes first-attempt invalid results.
+     *     The merge itself refuses while the participant is not `in_valutazione` (a
+     *     stray job before the candidate re-interviewed): the retry is left untouched
+     *     rather than burned.
+     *   - `processing`: the merge already ran; finalize what is persisted.
+     *
+     * The terminal resolution (forced `completed`, participant `completato`,
+     * EvaluationCompleted) runs in ONE transaction so it is all-or-nothing: a half-done
+     * finalization (evaluation `completed`, participant still `in_valutazione`) would be
+     * unrecoverable, because a re-dispatch treats `completed + retry_attempt` as a no-op.
+     * If anything throws, the transaction rolls back, an `error` log is written and the
+     * participant stays `in_valutazione` with a `pending|processing` evaluation (risk R4):
+     * still never `errore`. Nothing propagates out of failed().
+     *
+     * Reads strip only the `tenant` scope: callers run inside the participant's own
+     * TenantContextScope and the participant's id is the only key used.
+     */
+    private function finalizeRetryWithRetainedResults(Participant $participant): bool
+    {
+        $evaluation = Evaluation::withoutGlobalScope('tenant')
+            ->where('participant_id', $participant->id)
+            ->where('organization_id', $participant->organization_id)
+            ->first();
+
+        if ($evaluation === null || ! $evaluation->retry_attempt) {
+            return false;
+        }
+
+        if ($evaluation->status === EvaluationStatus::Completed) {
+            Log::info('ScoreEvaluationJob: retry already completed — failed() is a no-op', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $evaluation->id,
+            ]);
+
+            return true;
+        }
+
+        try {
+            if ($evaluation->status === EvaluationStatus::Pending) {
+                $merged = $this->mergeRetryResults($evaluation);
+
+                if ($merged === null) {
+                    Log::info('ScoreEvaluationJob: retry not finalized — participant has not re-interviewed or the evaluation moved on', [
+                        'participant_id' => $this->participantId,
+                        'evaluation_id' => $evaluation->id,
+                    ]);
+
+                    return true;
+                }
+
+                $evaluation = $merged;
+            }
+
+            // participants.project_id is a NOT NULL foreign key and soft-deleted projects are
+            // included here, so a missing project is a corrupted row: the throw is handled below.
+            $project = $participant->project()->withoutGlobalScopes()->firstOrFail();
+
+            DB::transaction(fn () => (new ResolveEvaluationTerminalState)->resolve($evaluation, $participant, $project));
+        } catch (\Throwable $finalizationException) {
+            Log::error('ScoreEvaluationJob: retry finalization failed — participant left in_valutazione', [
+                'participant_id' => $this->participantId,
+                'evaluation_id' => $evaluation->id,
+                'error' => $finalizationException->getMessage(),
+            ]);
+        }
+
+        return true;
     }
 
     /**

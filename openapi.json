@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.66.0"
+        "version": "0.67.0"
     },
     "servers": [
         {
@@ -880,12 +880,16 @@
                                                         },
                                                         "recover": {
                                                             "type": "boolean"
+                                                        },
+                                                        "retry": {
+                                                            "type": "boolean"
                                                         }
                                                     },
                                                     "required": [
                                                         "viewAny",
                                                         "create",
-                                                        "recover"
+                                                        "recover",
+                                                        "retry"
                                                     ]
                                                 },
                                                 "clients": {
@@ -948,6 +952,210 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/avatar-templates/catalogue-sample": {
+            "get": {
+                "operationId": "avatarCatalogueSample",
+                "description": "Returns the RAW AUDIO bytes (`audio/wav`, `audio/ogg` or `audio/mpeg`), not JSON. Failures are\n`{message: <code>}` with one of `voice_preview_unavailable` (422, the voice has no catalogue\nclip), `voice_preview_provider_not_configured` (503), `voice_preview_voice_not_found` (404)\nand `voice_preview_provider_error` (502).",
+                "summary": "GET /api/avatar-templates/catalogue-sample",
+                "tags": [
+                    "AvatarCatalogueSample"
+                ],
+                "parameters": [
+                    {
+                        "name": "provider",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "cartesia"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "voice_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The audio clip.",
+                        "content": {
+                            "audio/wav": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/ogg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/mpeg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "X-Content-Type-Options": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "nosniff"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "422": {
+                        "description": "Either the request failed validation (the standard validation body) or the voice has no catalogue clip (`voice_preview_unavailable`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "voice_preview_unavailable"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "errors": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "errors"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The provider does not know this voice.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_voice_not_found"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Throttled. Retry after the number of seconds in the `Retry-After` header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before retrying.",
+                                "required": true,
+                                "schema": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The provider failed or was unreachable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_error"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The provider is not configured on the platform.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_not_configured"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1018,7 +1226,7 @@
         "/avatar-templates/field-specs": {
             "get": {
                 "operationId": "avatarTemplate.fieldSpecs",
-                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives.",
+                "description": "Served rather than duplicated in the Nuxt app, so the form, the\nvalidation and the provider payload cannot disagree \u2014 which is the whole\nreason the spec is declarative. Machine-facing and NOT localized: it\ncarries label keys, and translation happens where the operator's locale\nlives. The superadmin-only fields (the external HeyGen voice) are listed\nfor a superadmin and for nobody else.",
                 "summary": "The field specs both providers accept",
                 "tags": [
                     "AvatarTemplate"
@@ -1032,7 +1240,195 @@
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "string"
+                                            "type": "object",
+                                            "properties": {
+                                                "heygen": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                },
+                                                "tavus": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "heygen",
+                                                "tavus"
+                                            ]
                                         }
                                     },
                                     "required": [
@@ -1855,11 +2251,37 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The audio clip.",
                         "content": {
-                            "application/json": {
+                            "audio/wav": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/ogg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            },
+                            "audio/mpeg": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
                                 "schema": {
                                     "type": "string"
+                                }
+                            },
+                            "X-Content-Type-Options": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "nosniff"
                                 }
                             }
                         }
@@ -1871,7 +2293,141 @@
                         "$ref": "#/components/responses/AuthenticationException"
                     },
                     "422": {
-                        "$ref": "#/components/responses/ValidationException"
+                        "description": "Either the request failed validation (the standard validation body) or no voice can be previewed (`voice_preview_unavailable`, with a `reason`: `tavus_stock_voice`, `pal_uses_tavus_voice`, `pal_azure_engine` or `pal_no_voice_configured`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string",
+                                                    "const": "voice_preview_unavailable"
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "tavus_stock_voice",
+                                                        "pal_uses_tavus_voice",
+                                                        "pal_azure_engine",
+                                                        "pal_no_voice_configured"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                },
+                                                "errors": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "message",
+                                                "errors"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The provider does not know this voice.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_voice_not_found"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Throttled. Retry after the number of seconds in the `Retry-After` header.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds to wait before retrying.",
+                                "required": true,
+                                "schema": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "The provider failed or was unreachable.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_error"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The provider is not configured on the platform.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "const": "voice_preview_provider_not_configured"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3545,6 +4101,226 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
+        "/participants/{id}/retry": {
+            "post": {
+                "operationId": "evaluationRetry.store",
+                "description": "Re-opens the participant for the competencies whose result is invalid and returns\na single-use link. Allowed once per participant, for a completed interview whose\nevaluation is still pending.",
+                "summary": "Authorize the single re-interview of a pending evaluation",
+                "tags": [
+                    "EvaluationRetry"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Scramble derives the response schema from this literal and cannot read a\nproperty's type through the DTO, hence the key-level annotations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "description": "The participant's new lifecycle status."
+                                        },
+                                        "entry_url": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "email_sent": {
+                                            "type": "boolean",
+                                            "description": "Whether BEAI queued the link by email to the candidate."
+                                        },
+                                        "competencies_reset": {
+                                            "type": "array",
+                                            "description": "Codes of the competencies that will be asked again.",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "entry_url",
+                                        "expires_at",
+                                        "email_sent",
+                                        "competencies_reset"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "reason"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/m2m/participants/{id}/retry": {
+            "post": {
+                "operationId": "m2m.evaluationRetry.store",
+                "description": "Requires the `participants:retry` ability.",
+                "summary": "Authorize the single re-interview of a pending evaluation",
+                "tags": [
+                    "EvaluationRetry"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 500
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Scramble derives the response schema from this literal and cannot read a\nproperty's type through the DTO, hence the key-level annotations.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "description": "The participant's new lifecycle status."
+                                        },
+                                        "entry_url": {
+                                            "type": "string"
+                                        },
+                                        "expires_at": {
+                                            "type": "string"
+                                        },
+                                        "email_sent": {
+                                            "type": "boolean",
+                                            "description": "Whether BEAI queued the link by email to the candidate."
+                                        },
+                                        "competencies_reset": {
+                                            "type": "array",
+                                            "description": "Codes of the competencies that will be asked again.",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "entry_url",
+                                        "expires_at",
+                                        "email_sent",
+                                        "competencies_reset"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reason": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "reason"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
                     }
                 }
             }
@@ -7617,6 +8393,230 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/ModelNotFoundException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/admin/avatar-templates/field-specs": {
+            "get": {
+                "operationId": "platformAvatarTemplate.fieldSpecs",
+                "description": "Machine-facing and NOT localized, like the organization route's.",
+                "summary": "The field specs a platform template accepts, including the superadmin-only\nones (the external HeyGen voice). The organization route lists those for a\nsuperadmin too and for nobody else",
+                "tags": [
+                    "PlatformAvatarTemplate"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "heygen": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                },
+                                                "tavus": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "key": {
+                                                                "type": "string"
+                                                            },
+                                                            "type": {
+                                                                "type": "string"
+                                                            },
+                                                            "label_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "hint_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "required": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "options": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "min": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "max": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "step": {
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    {
+                                                                        "type": "number"
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "catalogue_resource": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_depend_on": {
+                                                                "type": "string"
+                                                            },
+                                                            "options_by_value": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "superadmin_only": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "superseded_by_key": {
+                                                                "type": "string"
+                                                            },
+                                                            "superseded_by_values": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "key",
+                                                            "type",
+                                                            "label_key"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "heygen",
+                                                "tavus"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/AuthorizationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
@@ -14432,6 +15432,18 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "retry_attempt": {
+                        "type": "boolean"
+                    },
+                    "retry_authorized_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "retry_available": {
+                        "type": "boolean"
                     }
                 },
                 "required": [
@@ -14452,7 +15464,10 @@
                     "elapsed",
                     "cost",
                     "files",
-                    "created_at"
+                    "created_at",
+                    "retry_attempt",
+                    "retry_authorized_at",
+                    "retry_available"
                 ],
                 "title": "ParticipantDetailResource"
             },

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\Role;
+use Database\Factories\Concerns\GeneratesUnusedCode;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -27,6 +28,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class RoleFactory extends Factory
 {
+    use GeneratesUnusedCode;
+
     protected $model = Role::class;
 
     /**
@@ -34,7 +37,7 @@ class RoleFactory extends Factory
      */
     public function definition(): array
     {
-        $code = strtoupper($this->faker->unique()->lexify('???'));
+        $code = $this->unusedCode(Role::class);
 
         return [
             'code' => $code,

@@ -131,4 +131,14 @@ final class EmailBranding
     {
         return $this->primaryColor;
     }
+
+    /**
+     * The text colour for a button painted in the primary colour: black or
+     * white by WCAG contrast, the same rule the backoffice applies. Null when
+     * there is no colour, so the theme's own button text stands.
+     */
+    public function foregroundColor(): ?string
+    {
+        return $this->primaryColor === null ? null : ReadableForeground::for($this->primaryColor);
+    }
 }

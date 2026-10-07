@@ -228,6 +228,7 @@ final class AuthMatrixPlatformFixtures
         $global = fn (AuthMatrixResources $r): array => ['id' => $r->platform()->globalTemplate()->id];
 
         return [
+            'GET api/admin/avatar-templates/field-specs' => [],
             'GET api/admin/avatar-templates' => [],
             'POST api/admin/avatar-templates' => [
                 'payload' => fn (): array => [
@@ -287,6 +288,19 @@ final class AuthMatrixPlatformFixtures
                     Storage::fake();
                     config(['services.cartesia.api_key' => 'TEST_CARTESIA_KEY']);
                     Http::fake(['*' => Http::response("ID3\x03\x00\x00\x00\x00\x00\x00MATRIX", 200)]);
+                },
+                'payload' => fn (): array => ['provider' => 'cartesia', 'voice_id' => 'matrix-voice'],
+            ],
+            // The catalogue clip is downloaded by the server with the platform key: an allowed cell must not
+            // reach the network nor write to the real disk.
+            'GET api/avatar-templates/catalogue-sample' => [
+                'before' => function (): void {
+                    Storage::fake();
+                    config(['services.cartesia.api_key' => 'TEST_CARTESIA_KEY']);
+                    Http::fake([
+                        'api.cartesia.ai/*' => Http::response(['preview_file_url' => 'https://files.cartesia.ai/files/file_matrix/download'], 200),
+                        'files.cartesia.ai/*' => fn () => Http::response("RIFF\x00\x00\x00\x00WAVEMATRIX", 200, ['Content-Type' => 'audio/wav']),
+                    ]);
                 },
                 'payload' => fn (): array => ['provider' => 'cartesia', 'voice_id' => 'matrix-voice'],
             ],

@@ -38,6 +38,10 @@ class CandidateTokenFactory
      * `setTTL()` below — a single source of truth for the 30-minute
      * invariant this feature was designed around (see
      * `openspec/specs/participant-sso/spec.md` — "No Revocation Semantics").
+     *
+     * This is the lifetime of a link that is only RETURNED to a caller. A link
+     * BEAI emails lives longer: `EntryLinkMinter` passes the configured
+     * `candidate_invitations.emailed_link_ttl_minutes` as `$ttlMinutes`.
      */
     public const SSO_LINK_TTL_MINUTES = 30;
 
@@ -61,9 +65,10 @@ class CandidateTokenFactory
      *
      * @param  array<string, mixed>  $claims  Must include 'candidate_ref', 'project_id', 'org_id', 'display_name',
      *                                        'email'. Optional: 'role_code', 'lang', 'external_id', 'source'.
+     * @param  int  $ttlMinutes  Lifetime of this one token. Defaults to the 30-minute returned-link lifetime.
      * @return string Signed HS256 JWT
      */
-    public static function mintSsoLink(array $claims): string
+    public static function mintSsoLink(array $claims, int $ttlMinutes = self::SSO_LINK_TTL_MINUTES): string
     {
         $candidateRef = $claims['candidate_ref'];
 
@@ -86,18 +91,31 @@ class CandidateTokenFactory
         }
 
         // RAW mint: iss/iat/exp/nbf/jti auto-populated by factory.
-        // setTTL(self::SSO_LINK_TTL_MINUTES) for the sso-link token.
+        // setTTL($ttlMinutes) for the sso-link token.
         // Build Payload then encode to token string.
         $jwt = app(JWTAuth::class);
-        $jwt->factory()->setTTL(self::SSO_LINK_TTL_MINUTES);
-        // make(true), not make(): tymon's factory is a container singleton
-        // whose claim collection ACCUMULATES across calls. Without the reset,
-        // a link minted for candidate B in the same process would inherit the
-        // optional `external_id`/`source` claims of candidate A minted just
-        // before it (the scheduled-invitation sweep mints many links per run).
-        $jwtPayload = $jwt->factory()->customClaims($payload)->make(true);
+        $factory = $jwt->factory();
 
-        return $jwt->manager()->encode($jwtPayload)->get();
+        // The factory is a container singleton, so `setTTL()` outlives this
+        // call. A 24-hour emailed-link lifetime left behind would become the
+        // lifetime of every later token minted without its own `setTTL()` in a
+        // long-lived worker (the user access token, for one). Put back whatever
+        // was there.
+        $previousTtl = $factory->getTTL();
+        $factory->setTTL($ttlMinutes);
+
+        try {
+            // make(true), not make(): tymon's factory is a container singleton
+            // whose claim collection ACCUMULATES across calls. Without the reset,
+            // a link minted for candidate B in the same process would inherit the
+            // optional `external_id`/`source` claims of candidate A minted just
+            // before it (the scheduled-invitation sweep mints many links per run).
+            $jwtPayload = $factory->customClaims($payload)->make(true);
+
+            return $jwt->manager()->encode($jwtPayload)->get();
+        } finally {
+            $factory->setTTL($previousTtl);
+        }
     }
 
     /**

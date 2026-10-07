@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Events\ScoringRequested;
+use App\Models\Evaluation;
 use App\Models\Participant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -132,7 +133,17 @@ class FinalizeInterview implements ShouldQueue
         }
 
         // Layer 2 — Redis NX dedup lock (FIX-4, Option A)
-        $lockKey = 'finalize:'.$this->participantId;
+        // RT-B (design D7): the dedup key is scoped to the attempt. A re-interview
+        // finished within the 2 h TTL of the first finalization must not be dropped
+        // by the first attempt's key; exactly one retry exists, so two keys are a
+        // closed set. The flag is read from the persisted evaluation row, org-filtered,
+        // and the cache is never written by the authorization action.
+        $isRetry = (bool) Evaluation::withoutGlobalScope('tenant')
+            ->where('organization_id', $this->organizationId)
+            ->where('participant_id', $this->participantId)
+            ->value('retry_attempt');
+
+        $lockKey = 'finalize:'.$this->participantId.($isRetry ? ':retry' : '');
 
         // Cache::add() is atomic: returns true if the key was SET (did not exist), false if it existed.
         $acquired = Cache::add($lockKey, true, self::DEDUP_LOCK_TTL_SECONDS);

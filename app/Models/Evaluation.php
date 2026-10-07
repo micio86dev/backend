@@ -36,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property string $prompt_version
  * @property Carbon|null $evaluated_at
  * @property bool $retry_attempt
+ * @property Carbon|null $retry_authorized_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  */
@@ -59,6 +60,7 @@ class Evaluation extends TenantModel
         'prompt_version',
         'evaluated_at',
         'retry_attempt',
+        'retry_authorized_at',
     ];
 
     /**
@@ -72,6 +74,7 @@ class Evaluation extends TenantModel
             'status' => EvaluationStatus::class,
             'evaluated_at' => 'immutable_datetime',
             'retry_attempt' => 'boolean',
+            'retry_authorized_at' => 'immutable_datetime',
         ];
     }
 

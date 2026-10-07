@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Support\Mail\CandidateInvitationKind;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -38,6 +39,7 @@ final class CandidateInvitationNotification extends Notification
         private readonly string $organizationName,
         private readonly string $projectName,
         private readonly string $expiresAtLabel,
+        private readonly CandidateInvitationKind $kind = CandidateInvitationKind::Initial,
     ) {}
 
     /** @return array<int, string> */
@@ -48,10 +50,18 @@ final class CandidateInvitationNotification extends Notification
 
     public function toMail(mixed $notifiable): MailMessage
     {
+        // The retry invitation (scoring-retry-rt-b) differs from the first one in
+        // exactly three static lines: subject, introduction and the expiry
+        // sentence, which also says the link is single-use. Every other line is
+        // shared on purpose, so the requirements and the URL fallback cannot
+        // drift between the two. The words never come from the tenant (ruling 10).
+        $retry = $this->kind === CandidateInvitationKind::Retry;
+        $key = $retry ? 'candidate_invitation.retry.' : 'candidate_invitation.';
+
         return (new MailMessage)
-            ->subject(__('candidate_invitation.subject', ['project' => $this->projectName]))
+            ->subject(__($key.'subject', ['project' => $this->projectName]))
             ->greeting(__('candidate_invitation.greeting', ['name' => $this->displayName]))
-            ->line(__('candidate_invitation.intro', [
+            ->line(__($key.'intro', [
                 'organization' => $this->organizationName,
                 'project' => $this->projectName,
             ]))
@@ -68,7 +78,7 @@ final class CandidateInvitationNotification extends Notification
             // anchor is unusable in a client that mangles anchors.
             ->line(__('candidate_invitation.url_fallback'))
             ->line($this->entryUrl)
-            ->line(__('candidate_invitation.expiry', ['date' => $this->expiresAtLabel]))
+            ->line(__($key.'expiry', ['date' => $this->expiresAtLabel]))
             ->salutation(__('candidate_invitation.salutation'));
     }
 }

@@ -40,7 +40,7 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
  *   in_attesa → in_corso | errore
  *   in_corso  → in_valutazione | errore
  *   in_valutazione → completato | errore
- *   completato → [] (terminal)
+ *   completato → in_attesa (ONLY via App\Actions\Participant\AuthorizeEvaluationRetry)
  *   errore     → in_attesa (ONLY via App\Actions\Participant\RecoverFailedParticipant)
  *
  * REQ: Participant Model and Schema, Participant Model Lifecycle Guard
@@ -143,12 +143,14 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject, 
      * C7a adds:   in_attesa→errore (hard-fail on first competency /start)
      *             in_corso→errore  (hard-fail on subsequent competency)
      *
-     * 'completato' is an EXPLICIT key with an empty array — genuinely terminal, no
-     * outbound edge, ever. 'errore' carries exactly ONE outbound edge (in_attesa) —
-     * the participant-error-recovery recovery action; it is otherwise still terminal
-     * for every other target (in_corso/in_valutazione/completato all rejected). The
-     * ?? [] fallback exists only as a last resort for unrecognized states; both known
-     * keys MUST appear explicitly so the intent is visible and auditable.
+     * 'completato' and 'errore' each carry exactly ONE outbound edge (in_attesa), each
+     * written by exactly one action: 'errore' by the participant-error-recovery action,
+     * 'completato' by the evaluation-retry authorization (scoring-retry-rt-b). Both are
+     * otherwise still terminal for every other target (completato -> in_corso/
+     * in_valutazione/errore and errore -> in_corso/in_valutazione/completato all
+     * rejected). The ?? [] fallback exists only as a last resort for unrecognized
+     * states; every known key MUST appear explicitly so the intent is visible and
+     * auditable.
      *
      * IMPORTANT: 'started_at' is NOT in $fillable — use direct property assignment:
      *   $participant->started_at = now();
@@ -162,7 +164,11 @@ class Participant extends Model implements AuthenticatableContract, JWTSubject, 
         'in_attesa' => ['in_corso', 'errore'],
         'in_corso' => ['in_valutazione', 'errore'],
         'in_valutazione' => ['completato', 'errore'],
-        'completato' => [],   // terminal — no outbound transitions (FIX-5)
+        // (scoring-retry-rt-b, design D2) ONE authorized retry edge — written ONLY
+        // by App\Actions\Participant\AuthorizeEvaluationRetry, which re-opens a
+        // participant whose evaluation is `pending` for a single re-interview. Still
+        // terminal for every other transition target (FIX-5 amended).
+        'completato' => ['in_attesa'],
         // (participant-error-recovery D2) ONE authorized recovery edge — written
         // ONLY by App\Actions\Participant\RecoverFailedParticipant. Still terminal
         // for every other transition target.

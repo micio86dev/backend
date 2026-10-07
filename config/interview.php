@@ -86,6 +86,14 @@ return [
         'extra_token_fields' => array_filter(explode(',', (string) env('HEYGEN_EXTRA_TOKEN_FIELDS', ''))),
 
         /*
+         * How long a template save waits for another save that is binding the SAME
+         * third-party voice on LiveAvatar before answering `tts_bind_busy`
+         * (HeygenVoiceRegistrar). LiveAvatar's bind is not idempotent, so two
+         * concurrent binds would create two voices.
+         */
+        'bind_lock_wait_seconds' => (int) env('HEYGEN_BIND_LOCK_WAIT_SECONDS', 10),
+
+        /*
          * PLATFORM-DEFAULT avatar identity (hotfix 0.22.1 — production outage:
          * HeyGen HTTP 422 "avatar_id: Field required" on EVERY /start, because
          * `HeygenProvider::buildSessionTokenBody()` sourced avatar_id/voice_id/

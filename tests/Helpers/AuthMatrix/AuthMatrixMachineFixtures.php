@@ -41,6 +41,7 @@ final class AuthMatrixMachineFixtures
         'GET api/m2m/participants/{id}' => 'participants:read',
         'PATCH api/m2m/participants/{id}/schedule' => 'participants:schedule',
         'DELETE api/m2m/participants/{id}/schedule' => 'participants:schedule',
+        'POST api/m2m/participants/{id}/retry' => 'participants:retry',
         'POST api/m2m/sso-link' => 'sso_link:generate',
         'GET api/m2m/whoami' => null,
     ];
@@ -83,6 +84,7 @@ final class AuthMatrixMachineFixtures
         'GET api/m2m/participants/{id}',
         'PATCH api/m2m/participants/{id}/schedule',
         'DELETE api/m2m/participants/{id}/schedule',
+        'POST api/m2m/participants/{id}/retry',
         'POST api/m2m/sso-link',
     ];
 
@@ -112,12 +114,12 @@ final class AuthMatrixMachineFixtures
     public static function prepare(string $key): void
     {
         // The hosted interview URL a new enrolment or session token carries needs the candidate app's origin.
-        if (in_array($key, ['POST api/v1/interviews', 'POST api/v1/interviews/{interview}/session-tokens'], true)) {
+        if (in_array($key, ['POST api/v1/interviews', 'POST api/v1/interviews/{interview}/session-tokens', 'POST api/m2m/participants/{id}/retry'], true)) {
             config(['interview.candidate_app_url' => 'https://interview.example.test']);
         }
 
         match ($key) {
-            'POST api/v1/exports', 'POST api/v1/webhooks/deliveries/{id}/redeliver' => Queue::fake(),
+            'POST api/v1/exports', 'POST api/v1/webhooks/deliveries/{id}/redeliver', 'POST api/m2m/participants/{id}/retry' => Queue::fake(),
             'GET api/v1/interviews/{interview}/recording' => Storage::fake(),
             default => null,
         };
@@ -139,6 +141,7 @@ final class AuthMatrixMachineFixtures
                 'payload' => ['scheduled_at' => now('UTC')->addDays(2)->format('Y-m-d\TH:i:s\Z')],
             ],
             'DELETE api/m2m/participants/{id}/schedule' => ['params' => ['id' => $m->scheduled($org)->id], 'payload' => []],
+            'POST api/m2m/participants/{id}/retry' => ['params' => ['id' => $m->retryable($org)->id], 'payload' => []],
             'POST api/m2m/sso-link' => ['params' => [], 'payload' => self::enrolment($m, $org)],
             'GET api/m2m/whoami' => ['params' => [], 'payload' => []],
             default => throw new LogicException("No M2M fixture for [{$key}]."),

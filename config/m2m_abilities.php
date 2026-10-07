@@ -20,6 +20,11 @@ return [
         // participants has no standing reason to also reschedule/cancel
         // their scheduled interview.
         'participants:schedule',
+        // scoring-retry-rt-b: authorizes the single re-interview of a `pending`
+        // evaluation. Narrower than participants:create on purpose: it re-opens a
+        // finished assessment and mints a candidate link, which a client
+        // provisioned only to create or read participants has no reason to do.
+        'participants:retry',
         'evaluations:read',
         'progress:read',
         'projects:read',

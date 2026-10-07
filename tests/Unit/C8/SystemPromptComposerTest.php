@@ -36,7 +36,7 @@ use App\Services\Conversation\SystemPromptComposer;
  * @param  array<string, mixed>  $translations  Override specific translatable fields.
  */
 function composerMakeIndicator(
-    int $roleId,
+    ?int $roleId,
     int $competencyId,
     int $position,
     array $translations = []
@@ -683,4 +683,42 @@ test('(d5) an unset conversation.prompt_version fails composition instead of sta
 
     expect(fn () => $composer->compose($competency->code, $role->id, $competency->id, 'en', 2, null))
         ->toThrow(CompositionException::class);
+});
+
+// ─── Role-less lookup (potential assessments) ────────────────────────────────
+
+test('(e1) a null role composes from the role-less rows and never from a role-scoped decoy', function (): void {
+    $role = Role::factory()->create(['code' => 'RLS_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'RLS_'.uniqid()]);
+
+    composerMakeIndicator(null, $competency->id, 0, [
+        'text' => ['en' => 'Role-less indicator text', 'it' => 'Testo indicatore senza ruolo'],
+        'anchor_5' => ['en' => 'Role-less anchor five', 'it' => 'Ancora senza ruolo cinque'],
+    ]);
+    composerMakeIndicator($role->id, $competency->id, 0, [
+        'text' => ['en' => 'Role-scoped decoy text', 'it' => 'Testo esca con ruolo'],
+        'anchor_5' => ['en' => 'Role-scoped decoy anchor', 'it' => 'Ancora esca con ruolo'],
+    ]);
+
+    $prompt = makeComposer()->compose($competency->code, null, $competency->id, 'en', 2, null);
+
+    expect($prompt->text)
+        ->toContain('Role-less indicator text')
+        ->toContain('Role-less anchor five')
+        ->not->toContain('Role-scoped decoy text')
+        ->not->toContain('Role-scoped decoy anchor');
+});
+
+test('(e2) a null role with no role-less rows fails naming the competency and "role [none]"', function (): void {
+    $role = Role::factory()->create(['code' => 'RLE_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'RLE_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $composer = makeComposer();
+
+    expect(fn () => $composer->compose($competency->code, null, $competency->id, 'en', 2, null))
+        ->toThrow(
+            CompositionException::class,
+            "role [none] and competency [{$competency->code}]",
+        );
 });

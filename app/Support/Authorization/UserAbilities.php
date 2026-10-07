@@ -97,7 +97,7 @@ final class UserAbilities
      *     llmCredentials: array{viewAny: bool, create: bool, update: bool, delete: bool},
      *     avatarTemplates: array{viewAny: bool, create: bool, update: bool, activate: bool, delete: bool, manageGlobal: bool},
      *     projects: array{viewAny: bool, create: bool, update: bool, delete: bool},
-     *     participants: array{viewAny: bool, create: bool, recover: bool},
+     *     participants: array{viewAny: bool, create: bool, recover: bool, retry: bool},
      *     clients: array{viewAny: bool},
      *     platformSettings: array{viewAny: bool},
      *     catalogue: array{manage: bool},
@@ -215,6 +215,9 @@ final class UserAbilities
                 // alone, because recovery is a capability rather than a
                 // judgement about one participant.
                 'recover' => $gate->allows('recover', Participant::class),
+                // No subject either: authorizing the one evaluation retry is a
+                // capability of the role, decided before any participant is read.
+                'retry' => $gate->allows('retry', Participant::class),
             ],
             // No subject, like `participants.recover` above: the ability is
             // about the caller (superadmin-clients-console D4), not a row —

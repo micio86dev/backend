@@ -12,8 +12,9 @@ declare(strict_types=1);
  * - in_corso → errore (C7a new edge: hard-fail on subsequent competency)
  * - in_valutazione → completato (C9 path, still valid)
  * - in_valutazione → errore (still valid — kept from C6 map)
- * - completato → [] (terminal: explicit key, no fallthrough)
- * - errore → [] (terminal: explicit key, no fallthrough)
+ * - completato → in_attesa (the ONE evaluation-retry edge, scoring-retry-rt-b; every other
+ *   target stays rejected — the full matrix is in tests/Unit/Participant/ParticipantRetryTransitionTest.php)
+ * - errore → in_attesa (the ONE recovery edge; every other target stays rejected)
  * - Illegal transitions raise ParticipantTransitionException (→ 422)
  *
  * Task 3.2: started_at stamped via direct property assignment (not mass-assign).
@@ -117,9 +118,9 @@ test('in_valutazione → errore is allowed (error on final evaluation)', functio
     expect($p->fresh()->status)->toBe('errore');
 });
 
-// ─── TERMINAL states: explicit keys (no ?? [] fallthrough) ────────────────────
+// ─── Near-terminal states: explicit keys (no ?? [] fallthrough) ───────────────
 
-test('completato is explicitly terminal — completato → errore is rejected', function (): void {
+test('completato has one outbound edge (the retry edge) — completato → errore is rejected', function (): void {
     $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
     $p = makeC7aParticipantWithStatus($org, $project, 'completato');
@@ -127,7 +128,7 @@ test('completato is explicitly terminal — completato → errore is rejected', 
     expect(fn () => c7aTransitionParticipant($p, 'errore'))->toThrow(ParticipantTransitionException::class);
 });
 
-test('completato is explicitly terminal — completato → in_corso is rejected', function (): void {
+test('completato has one outbound edge (the retry edge) — completato → in_corso is rejected', function (): void {
     $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
     $p = makeC7aParticipantWithStatus($org, $project, 'completato');
@@ -152,7 +153,7 @@ test('errore → in_attesa is allowed (participant-error-recovery: the recovery 
     expect($p->fresh()->status)->toBe('in_attesa');
 });
 
-test('errore is explicitly terminal — errore → in_corso is rejected', function (): void {
+test('errore has one outbound edge (the recovery edge) — errore → in_corso is rejected', function (): void {
     $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
     $p = makeC7aParticipantWithStatus($org, $project, 'errore');
@@ -160,7 +161,7 @@ test('errore is explicitly terminal — errore → in_corso is rejected', functi
     expect(fn () => c7aTransitionParticipant($p, 'in_corso'))->toThrow(ParticipantTransitionException::class);
 });
 
-test('errore is explicitly terminal — errore → in_valutazione is rejected', function (): void {
+test('errore has one outbound edge (the recovery edge) — errore → in_valutazione is rejected', function (): void {
     $org = Organization::factory()->create();
     $project = makeC7aTransitionProject($org);
     $p = makeC7aParticipantWithStatus($org, $project, 'errore');

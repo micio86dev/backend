@@ -185,7 +185,7 @@ final class AuthController extends Controller
      *         llmCredentials: array{viewAny: bool, create: bool, update: bool, delete: bool},
      *         avatarTemplates: array{viewAny: bool, create: bool, update: bool, activate: bool, delete: bool, manageGlobal: bool},
      *         projects: array{viewAny: bool, create: bool, update: bool, delete: bool},
-     *         participants: array{viewAny: bool, create: bool, recover: bool},
+     *         participants: array{viewAny: bool, create: bool, recover: bool, retry: bool},
      *         clients: array{viewAny: bool}, platformSettings: array{viewAny: bool},
      *         catalogue: array{manage: bool},
      *     },
