@@ -111,6 +111,10 @@ test('a role-less indicator belonging to a standard competency refuses publish',
 
     expect($rules)->toContain('standard_indicator_must_have_role');
     expect($subjects)->toContain("indicator:{$indicatorId}");
+    // The machine `rule` key keeps the stored type value; the human `detail` names the type
+    // the way the product does: Readiness.
+    expect(array_column($violations, 'detail'))
+        ->toContain('indicator for Readiness competency H9STDROLELESS must not have role_id = null');
 });
 
 test('a role-less indicator belonging to a potential competency contributes no such violation', function (): void {

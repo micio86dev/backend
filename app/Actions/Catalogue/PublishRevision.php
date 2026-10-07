@@ -356,7 +356,7 @@ final class PublishRevision
         return array_values($rows->map(fn (object $row): array => [
             'rule' => 'standard_indicator_must_have_role',
             'subject' => "indicator:{$row->id}",
-            'detail' => "indicator for standard competency {$row->code} must not have role_id = null",
+            'detail' => "indicator for Readiness competency {$row->code} must not have role_id = null",
         ])->all());
     }
 
