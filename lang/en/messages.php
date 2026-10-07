@@ -13,7 +13,7 @@ return [
     | literal, but the sentence an operator reads in the backoffice must follow
     | the language they are working in. These two were English string literals
     | built by interpolation inside the FormRequest, so an operator on the
-    | Italian backoffice was told "A standard project allows at most 1
+    | Italian backoffice was told "A Readiness project allows at most 1
     | question(s) per competency." in the middle of an otherwise Italian
     | screen.
     |
@@ -27,11 +27,11 @@ return [
         // and ungrammatical in Italian, which has no "(s)" escape hatch.
         'max_per_competency' => '{1} A :type assessment allows at most one question per competency.|[2,*] A :type assessment allows at most :count questions per competency.',
         // The assessment TYPE, translated. `:type` used to receive the raw
-        // enum, so an Italian operator read "Un progetto standard…" with an
+        // enum, so an Italian operator read "Un progetto standard…" (the machine value, now displayed as Prontezza / Readiness) with an
         // untranslated token mid-sentence.
         'assessment_type' => [
-            'standard' => 'standard',
-            'potential' => 'potential',
+            'standard' => 'Readiness',
+            'potential' => 'Potential',
         ],
     ],
 
