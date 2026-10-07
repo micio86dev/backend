@@ -28,6 +28,9 @@ final class HeygenVoiceBindUnavailableException extends RuntimeException
         'tts_secret_failed' => 502,
     ];
 
+    /** Status for a code the table does not know: a defined 5xx, never a 500 or a PHP warning. */
+    public const FALLBACK_STATUS = 503;
+
     public function __construct(public readonly string $errorCode)
     {
         parent::__construct($errorCode);
@@ -40,7 +43,7 @@ final class HeygenVoiceBindUnavailableException extends RuntimeException
 
     public function httpStatus(): int
     {
-        return self::STATUS[$this->errorCode];
+        return self::STATUS[$this->errorCode] ?? self::FALLBACK_STATUS;
     }
 
     public function render(): JsonResponse
