@@ -192,7 +192,10 @@ final class UserAbilities
         // the subject, so the bare instance is a faithful stand-in.
         if ($orgId !== null) {
             $apiClient->organization_id = $orgId;
-            $targetUser->organization_id = $orgId;
+            // `forceFill`, not a property write: the column is typed `int<0, max>` on `User` and the acting
+            // organization comes from the resolver as a plain `int`. Same effect as the direct assignment the
+            // other subjects use — `organization_id` is deliberately not fillable.
+            $targetUser->forceFill(['organization_id' => $orgId]);
             $avatarTemplate->organization_id = $orgId;
             $project->organization_id = $orgId;
         }
