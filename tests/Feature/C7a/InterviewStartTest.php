@@ -316,7 +316,7 @@ test('POST /start resume in_corso: no duplicate row, fresh token issued, old ses
     expect($oldSession->provider_session_ref)->toBe('heygen-session-fresh');
     expect($oldSession->status)->toBe('in_corso');
 
-    // Teardown was called for the OLD ref (HTTP DELETE to /sessions/old-ref-to-teardown)
+    // Teardown was called for the OLD ref (HTTP POST to /sessions/stop for old-ref-to-teardown)
     Http::assertSent(fn ($req) => str_contains($req->url(), 'old-ref-to-teardown'));
 });
 
