@@ -637,7 +637,9 @@ class HeygenProvider implements ProviderSessionService
         $apiKey = (string) config('interview.heygen.api_key', '');
 
         try {
+            // Synchronous, inside the candidate's request: bound it well under the client's 30 s default.
             $response = Http::withHeaders(['X-API-KEY' => $apiKey])
+                ->timeout(5)
                 ->delete(self::BASE_URL.'/contexts/'.rawurlencode($contextRef));
         } catch (\Throwable $e) {
             Log::warning('HeyGen: context delete failed', [

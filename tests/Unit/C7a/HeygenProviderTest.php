@@ -1033,3 +1033,17 @@ test('HeygenProvider::deleteContext() reports false, without throwing, on a reje
     expect($provider->deleteContext('ctx-405'))->toBeFalse()
         ->and($provider->deleteContext('ctx-down'))->toBeFalse();
 });
+
+test('HeygenProvider::deleteContext() runs under an explicit 5 second timeout, not the 30 second client default', function (): void {
+    // It runs synchronously inside the candidate's request: a hung DELETE must cost seconds, not half a minute.
+    $timeouts = [];
+    Http::fake(function ($request, $options) use (&$timeouts) {
+        $timeouts[] = $options['timeout'] ?? null;
+
+        return Http::response([], 200);
+    });
+
+    (new HeygenProvider)->deleteContext('ctx-abc');
+
+    expect($timeouts)->toBe([5]);
+});
