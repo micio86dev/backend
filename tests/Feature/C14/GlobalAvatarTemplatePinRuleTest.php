@@ -126,8 +126,12 @@ test('a bare superadmin still cannot create a project: there is no organization 
     $org = Organization::factory()->create();
     $global = PlatformTemplates::insertActiveGlobal();
 
+    // Refused up front by `org.context` (409), no longer by the org-scoped template rule (422): with no
+    // organization in context there is nothing to create the project INTO, whichever template it names.
     $this->withToken(TemplateActors::token('bare', $org))->postJson('/api/projects', gprPayload($org, $global->id))
-        ->assertStatus(422)->assertJsonValidationErrors('avatar_template_id');
+        ->assertStatus(409)->assertJsonPath('message', 'organization_context_required');
+
+    expect(Project::query()->withoutGlobalScopes()->count())->toBe(0);
 });
 
 test('a brand-new organization with no template of its own creates its first project on a global', function (): void {

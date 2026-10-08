@@ -12,6 +12,7 @@ use App\Services\AbilitiesValidator;
 use App\Services\ApiKeyGenerator;
 use App\Support\Audit\AuditRecorder;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -24,8 +25,8 @@ use Illuminate\Validation\Rule;
  * Admin-only credential management for M2M API clients.
  *
  * Routes (all under /api/m2m, auth:api + TenantContext):
- *   POST   /clients          — create a new client; returns 201 with one-time api_key
- *   GET    /clients          — list org-scoped clients (paginated; no key material)
+ *   POST   /clients          — create a new client; returns 201 with one-time api_key (+ org.context)
+ *   GET    /clients          — list org-scoped clients (paginated; no key material) (+ org.context)
  *   DELETE /clients/{id}     — revoke (soft-revoke via is_active=false + Redis denylist)
  *   (NO show endpoint)       — GET /clients/{id} → 404
  *
@@ -50,23 +51,17 @@ final class ApiClientController extends Controller
      *   "api_key": "beai_live_..."   ← returned ONCE, never stored raw
      * }
      */
+    #[Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function store(Request $request): JsonResponse
     {
         $this->authorize('create', ApiClient::class);
 
         // The ORG IN CONTEXT, not the actor's own column. See index() below
-        // for why those are different for a superadmin.
-        $orgId = app(TenantResolver::class)->getOrgId();
-
-        // No client selected. A key belongs to the tenant it authenticates
-        // FOR, so there is nothing to create here — `organization_id` is NOT
-        // NULL and the insert used to die on the constraint with a 500. The
-        // backoffice hides this section in the all-clients view, but the rail
-        // is an affordance and this is the control: refuse, legibly, before
-        // anything is written. Machine-facing body, not localized.
-        if ($orgId === null) {
-            return response()->json(['error' => 'no_client_selected'], 409);
-        }
+        // for why those are different for a superadmin. With none selected the
+        // route never gets here: `org.context` answers 409
+        // `organization_context_required` first (a key belongs to the tenant it
+        // authenticates FOR, and `organization_id` is NOT NULL).
+        $orgId = $this->organizationInContext();
 
         // `mode` (public-api step 2, SPEC.md §3.7 test mode): optional, defaults to
         // 'live' — every client issued before this field existed IS a live client, so
@@ -155,6 +150,7 @@ final class ApiClientController extends Controller
      * Admin only. The whole set is returned, not a page, with the active clients first. The key hash and
      * the raw API key are never returned.
      */
+    #[Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function index(): AnonymousResourceCollection
     {
         $this->authorize('viewAny', ApiClient::class);
@@ -174,16 +170,15 @@ final class ApiClientController extends Controller
         // Asking the user instead is what made this list come back EMPTY on
         // every request a superadmin made while acting as a client: the filter
         // was `organization_id = null`, which no row can match.
-        $orgId = app(TenantResolver::class)->getOrgId();
-
-        // No client selected: an empty list, not every tenant's keys. The
-        // superadmin bypass exists so BEAI can operate the platform, but there
-        // is no all-clients view of CREDENTIALS to operate — a key is only
-        // meaningful inside the org it speaks for, and a merged list would be
-        // the cross-tenant read surface the tenancy rules exist to forbid.
-        if ($orgId === null) {
-            return ApiClientResource::collection(collect());
-        }
+        //
+        // No client selected is refused by `org.context` (409
+        // `organization_context_required`) before this runs, never answered
+        // with an empty list: the superadmin bypass exists so BEAI can operate
+        // the platform, but there is no all-clients view of CREDENTIALS — a key
+        // is only meaningful inside the org it speaks for, a merged list would
+        // be the cross-tenant read surface the tenancy rules exist to forbid,
+        // and an empty one reads as "this client has no keys".
+        $orgId = $this->organizationInContext();
 
         $clients = ApiClient::where('organization_id', $orgId)
             ->orderByDesc('is_active')
@@ -191,6 +186,17 @@ final class ApiClientController extends Controller
             ->get();
 
         return ApiClientResource::collection($clients);
+    }
+
+    /**
+     * The organization in context. `org.context` guarantees one on the routes that call this; the throw only
+     * fires if a route is ever registered without the middleware, which must be a loud fault and never a query
+     * for `organization_id IS NULL`.
+     */
+    private function organizationInContext(): int
+    {
+        return app(TenantResolver::class)->getOrgId()
+            ?? throw new \LogicException('ApiClientController requires the org.context middleware on this route.');
     }
 
     /**

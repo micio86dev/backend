@@ -194,6 +194,7 @@ class UserController extends Controller
      * Answers `204` on success, or `422` with `{error, message}` when refused: `error` is `last_admin`
      * or `self_deactivation`.
      */
+    #[\Dedoc\Scramble\Attributes\Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function deactivate(int $id): Response|JsonResponse
     {
         $target = $this->reader->read($id);
@@ -242,6 +243,7 @@ class UserController extends Controller
      * ADDS an available admin/operator/viewer back to the org, so it cannot
      * violate the last-admin invariant.
      */
+    #[\Dedoc\Scramble\Attributes\Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function activate(int $id): Response
     {
         $target = $this->reader->read($id);

@@ -9,6 +9,7 @@ use App\Http\Requests\UpdateOrganizationRequest;
 use App\Http\Resources\Admin\OrganizationResource;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -62,6 +63,7 @@ class OrganizationController extends Controller
      * Accepts `name`, the default webhook settings and `primary_color`. Any other field in the body is
      * ignored.
      */
+    #[Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function update(UpdateOrganizationRequest $request): JsonResponse
     {
         $organization = Organization::findOrFail(app(TenantResolver::class)->getOrgId());

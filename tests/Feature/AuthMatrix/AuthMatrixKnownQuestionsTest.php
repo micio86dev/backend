@@ -98,9 +98,10 @@ test('a bare superadmin gets one consistent answer on every org-scoped write tha
         )->getStatusCode();
     }
 
-    // POST /users and POST /m2m/clients already answer 409 for this condition.
-    expect(array_unique($statuses))->toBe([409], 'Statuses: '.json_encode($statuses));
-})->skip('KQ-2: the same missing-acting-client condition answers 403, 404 and 404 depending on the route (UpdateOrganizationRequest.php:34-36, OrganizationLogoController.php:142,243, UserAdminReader).');
+    // POST /users, POST /m2m/clients and POST /projects answer 409 for this condition too.
+    // `array_values`: `array_unique` keeps the first occurrence's string key, so the bare comparison could never be `[409]`.
+    expect(array_values(array_unique($statuses)))->toBe([409], 'Statuses: '.json_encode($statuses));
+});
 
 test('a test-mode key cannot mint a session token for a live interview, nor a live key for a test one', function (string $keyMode, string $participantMode): void {
     $key = 'POST api/v1/interviews/{interview}/session-tokens';

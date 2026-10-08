@@ -11,6 +11,7 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -40,6 +41,8 @@ use Illuminate\Support\Facades\Gate;
  */
 final class UserAbilities
 {
+    public function __construct(private readonly TenantResolver $resolver) {}
+
     /**
      * Nested rather than dotted-flat (`['organization.update' => true]`).
      * A dot in a key is ambiguous everywhere it is later read — Laravel's own
@@ -90,6 +93,28 @@ final class UserAbilities
      * button that silently vanishes teaches nothing. The button renders; the
      * API explains.
      *
+     * WHICH ORGANIZATION THIS ANSWERS FOR. The caller's own when they have
+     * one, otherwise the ACTING organization `TenantContext` resolved for a
+     * superadmin. A superadmin's own column is null by definition, so reading
+     * only the column answered for nobody: the subjects below were built
+     * org-less and a superadmin acting as a client was told what a user with
+     * no organization is told.
+     *
+     * WITH NO ORGANIZATION AT ALL (a superadmin who has selected no client)
+     * four groups are published as all-`false`: `organization`, `apiClients`,
+     * `projects` and `participants`. They describe one client's data, every
+     * write behind them is refused with 409 `organization_context_required`,
+     * and `Gate::before` would otherwise answer `true` for all of them. The
+     * suppression has to live here for that reason: no policy body runs for a
+     * superadmin, so no policy can say "nothing is selected".
+     *
+     * The other groups are NOT suppressed, and the omission is deliberate:
+     * `users.viewAny` is the ability that guards `/settings`, which with no
+     * client selected hosts the PLATFORM user list, the platform credentials
+     * and the platform settings; `llmCredentials` are platform rows;
+     * `avatarTemplates.*` guard two `scope: 'platform'` pages. Hiding those
+     * would lock the superadmin out of the screens used to pick a client.
+     *
      * @return array{
      *     organization: array{view: bool, update: bool},
      *     apiClients: array{viewAny: bool, create: bool, delete: bool},
@@ -105,6 +130,9 @@ final class UserAbilities
      */
     public function for(User $user): array
     {
+        // The organization in context: the caller's own, else the acting one.
+        $orgId = $user->organization_id ?? $this->resolver->getOrgId();
+
         // A brand-new organization has no rows yet, and `Gate` still needs a
         // subject for the model-instance policies.
         //
@@ -116,7 +144,7 @@ final class UserAbilities
         // strips a class-string before calling a policy, so `allows('update',
         // Organization::class)` would invoke `update($user)` and die on the
         // missing parameter.
-        $organization = Organization::find($user->organization_id)
+        $organization = ($orgId === null ? null : Organization::find($orgId))
             ?? new Organization;
 
         $gate = Gate::forUser($user);
@@ -141,8 +169,6 @@ final class UserAbilities
         // row is the hole `TenantScoped` closes), so a constructor array would
         // silently drop it and leave `ApiClientPolicy::delete` comparing
         // against null.
-        $orgId = $user->organization_id;
-
         $apiClient = new ApiClient;
         $targetUser = new User;
         $llmCredential = new LlmCredential;
@@ -154,10 +180,11 @@ final class UserAbilities
         // user with no organization is the SUPERADMIN, and a tenant row with a
         // null owner is the state `TenantScoped` exists to make impossible.
         //
-        // Leaving these subjects org-less for that identity is also correct on
-        // the merits — `Gate::before` answers every ability for a superadmin
-        // before a policy is consulted, so nothing downstream ever reads the
-        // column on these instances.
+        // A superadmin acting as a client now gets them stamped with that
+        // client, like a member of it. With no client the subjects stay
+        // org-less, which is correct on the merits — `Gate::before` answers
+        // every ability for a superadmin before a policy is consulted, so
+        // nothing downstream ever reads the column on these instances.
         // `$llmCredential` is absent from this list on purpose. Credentials
         // became PLATFORM rows (RATIFIED 2026-09-14) and carry no
         // `organization_id` at all, so assigning one would be an undefined
@@ -165,20 +192,26 @@ final class UserAbilities
         // the subject, so the bare instance is a faithful stand-in.
         if ($orgId !== null) {
             $apiClient->organization_id = $orgId;
-            $targetUser->organization_id = $orgId;
+            // `forceFill`, not a property write: the column is typed `int<0, max>` on `User` and the acting
+            // organization comes from the resolver as a plain `int`. Same effect as the direct assignment the
+            // other subjects use — `organization_id` is deliberately not fillable.
+            $targetUser->forceFill(['organization_id' => $orgId]);
             $avatarTemplate->organization_id = $orgId;
             $project->organization_id = $orgId;
         }
 
+        // Computed once: it decides four groups below, and they must agree.
+        $hasOrganization = $orgId !== null;
+
         return [
             'organization' => [
-                'view' => $gate->allows('view', $organization),
-                'update' => $gate->allows('update', $organization),
+                'view' => $hasOrganization && $gate->allows('view', $organization),
+                'update' => $hasOrganization && $gate->allows('update', $organization),
             ],
             'apiClients' => [
-                'viewAny' => $gate->allows('viewAny', ApiClient::class),
-                'create' => $gate->allows('create', ApiClient::class),
-                'delete' => $gate->allows('delete', $apiClient),
+                'viewAny' => $hasOrganization && $gate->allows('viewAny', ApiClient::class),
+                'create' => $hasOrganization && $gate->allows('create', ApiClient::class),
+                'delete' => $hasOrganization && $gate->allows('delete', $apiClient),
             ],
             'users' => [
                 'viewAny' => $gate->allows('viewAny', User::class),
@@ -203,21 +236,21 @@ final class UserAbilities
                 'manageGlobal' => $gate->allows('manageGlobalAvatarTemplates'),
             ],
             'projects' => [
-                'viewAny' => $gate->allows('viewAny', Project::class),
-                'create' => $gate->allows('create', Project::class),
-                'update' => $gate->allows('update', $project),
-                'delete' => $gate->allows('delete', $project),
+                'viewAny' => $hasOrganization && $gate->allows('viewAny', Project::class),
+                'create' => $hasOrganization && $gate->allows('create', Project::class),
+                'update' => $hasOrganization && $gate->allows('update', $project),
+                'delete' => $hasOrganization && $gate->allows('delete', $project),
             ],
             'participants' => [
-                'viewAny' => $gate->allows('viewAny', Participant::class),
-                'create' => $gate->allows('create', Participant::class),
+                'viewAny' => $hasOrganization && $gate->allows('viewAny', Participant::class),
+                'create' => $hasOrganization && $gate->allows('create', Participant::class),
                 // No subject: `ParticipantPolicy::recover` takes the actor
                 // alone, because recovery is a capability rather than a
                 // judgement about one participant.
-                'recover' => $gate->allows('recover', Participant::class),
+                'recover' => $hasOrganization && $gate->allows('recover', Participant::class),
                 // No subject either: authorizing the one evaluation retry is a
                 // capability of the role, decided before any participant is read.
-                'retry' => $gate->allows('retry', Participant::class),
+                'retry' => $hasOrganization && $gate->allows('retry', Participant::class),
             ],
             // No subject, like `participants.recover` above: the ability is
             // about the caller (superadmin-clients-console D4), not a row —
