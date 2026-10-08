@@ -36,6 +36,15 @@ use Throwable;
  * base_url, secret_id}` echoes `{id, base_url, display_name, model_name,
  * secret_id}` under `data`.
  *
+ * RE-PROVEN AGAINST api.liveavatar.com/v1 ON 2026-10-08 (and by
+ * https://docs.liveavatar.com/openapi.json): `POST /v1/secrets {secret_type:
+ * "OPENAI_API_KEY", secret_value, secret_name}` returns `data.id`;
+ * `POST /v1/llm-configurations {display_name, model_name, base_url, secret_id}`
+ * returns `data.id`; PATCH, GET and DELETE work on llm-configurations; secrets
+ * have no PATCH. The configuration is bound to a session ONLY through the
+ * top-level `llm_configuration_id` of `POST /v1/sessions/token` — `/v1/contexts`
+ * has no such field and drops it; see `HeygenProvider::buildSessionTokenBody()`.
+ *
  * THE HOST WAS WRONG, AND IT COST A RELEASE
  * -----------------------------------------
  * This docblock used to claim these management endpoints lived at

@@ -21,6 +21,8 @@ use App\Exceptions\ProviderException;
 use App\Exceptions\ProviderTranscriptShapeException;
 use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
+use App\Services\ConversationLlm\LlmBinding;
+use App\Services\ConversationLlm\LlmBindingResolver;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
@@ -746,4 +748,68 @@ test('HeygenProvider::teardown() returns false when the transport throws, withou
     Http::fake(['*liveavatar*' => fn () => throw new ConnectionException('timeout')]);
 
     expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session')))->toBeFalse();
+});
+
+// ---------------------------------------------------------------------------
+// llm_configuration_id placement — heygen-session-stop (F2b)
+//
+// Proven live 2026-10-08 against api.liveavatar.com/v1, and in the OpenAPI doc
+// (https://docs.liveavatar.com/openapi.json — the field exists only on
+// `FullSDKSessionTokenConfigDataSchema`): the binding goes TOP-LEVEL on
+// `POST /sessions/token`. `POST /contexts` has no such field (its 200 drops it),
+// and nested under `avatar_persona` it is silently ignored — a template would
+// look bound while the avatar answered with HeyGen's default LLM.
+// ---------------------------------------------------------------------------
+
+test('HeygenProvider::issue() sends llm_configuration_id top-level on /sessions/token, never under avatar_persona and never on /contexts', function (): void {
+    $template = new AvatarTemplate;
+    $template->forceFill(['config' => ['avatarId' => 'av-1', 'voiceId' => 'voice-1']]);
+
+    app()->instance(ActiveTemplateResolver::class, new class($template)
+    {
+        public function __construct(private readonly AvatarTemplate $template) {}
+
+        public function resolve(): AvatarTemplate
+        {
+            return $this->template;
+        }
+    });
+    app()->instance(LlmBindingResolver::class, new class
+    {
+        public function resolve(AvatarTemplate $template): LlmBinding
+        {
+            return new LlmBinding('gpt-x', 'https://llm.example.test/v1', 'sk-not-sent', '3f2a8c1e-0d4b-4f6a-9c1e-7b5d2a9e4c10');
+        }
+    });
+
+    $contextBody = [];
+    $tokenBody = [];
+    Http::fake([
+        '*liveavatar*/contexts*' => function ($request) use (&$contextBody) {
+            $contextBody = $request->data();
+
+            return Http::response(['data' => ['id' => 'ctx-llm']], 200);
+        },
+        '*liveavatar*/sessions/token*' => function ($request) use (&$tokenBody) {
+            $tokenBody = $request->data();
+
+            return Http::response(['data' => ['session_id' => 'sid-llm', 'session_token' => 'tok-llm']], 200);
+        },
+    ]);
+
+    (new HeygenProvider)->issue(
+        mockSession('heygen'),
+        new QuestionContext(competencyCode: 'PRS', questionIndex: 0, systemPrompt: 'P', openingText: 'Hello'),
+    );
+
+    expect($tokenBody['llm_configuration_id'] ?? null)->toBe('3f2a8c1e-0d4b-4f6a-9c1e-7b5d2a9e4c10');
+    expect($tokenBody['avatar_persona'])->not->toHaveKey('llm_configuration_id');
+    expect($tokenBody['avatar_persona']['context_id'])->toBe('ctx-llm');
+    expect(array_keys($contextBody))->toEqualCanonicalizing(['name', 'prompt', 'opening_text']);
+    expect($contextBody)->not->toHaveKey('llm_configuration_id');
+    // The upstream LLM secret never reaches the avatar vendor's session body.
+    expect(json_encode($tokenBody))->not->toContain('sk-not-sent');
+
+    app()->forgetInstance(ActiveTemplateResolver::class);
+    app()->forgetInstance(LlmBindingResolver::class);
 });

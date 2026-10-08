@@ -249,17 +249,26 @@ class HeygenProvider implements ProviderSessionService
      * rationale). Absent entirely when the template is unbound or has never
      * synced a configuration.
      *
-     * @wire-source live HeyGen API smoke-check, 2026-08-26 — Phase 0.3(a)
-     * control experiment: `POST /v1/sessions/token` returned HTTP 200
-     * IDENTICALLY for a valid `llm_configuration_id` at TOP LEVEL, a bogus
-     * all-zeros id at top level, a bogus id nested under `avatar_persona`,
-     * AND for a completely invented field name — the endpoint accepts and
-     * ignores any unknown field, so NO status code can discriminate where
-     * this belongs (the exact class of problem `TemplatePayload.php:38-40`
-     * already documents). Top level (i.e. `$providerOwned`, sibling to
-     * `mode`/`is_sandbox`) is this batch's BEST GUESS, UNVERIFIED — only a
-     * live conversational smoke test (not a 200 from `/sessions/token`
-     * alone) can confirm the real placement. Do not treat this as pinned.
+     * PLACEMENT OF `llm_configuration_id` IS PROVEN, not a guess:
+     * - It is a TOP-LEVEL field of `POST /v1/sessions/token`, sibling to
+     *   `mode`/`is_sandbox`, and exists nowhere else — in the OpenAPI document it
+     *   is a property of `FullSDKSessionTokenConfigDataSchema` only
+     *   (https://docs.liveavatar.com/openapi.json).
+     * - `POST /v1/contexts` has no such field: its 200 response drops it.
+     * - Live probe, 2026-10-08, api.liveavatar.com/v1: a malformed id at top level
+     *   is rejected with 422 "Input should be a valid UUID"; the same id nested
+     *   under `avatar_persona` is silently IGNORED (a template would look bound
+     *   while the avatar used HeyGen's default LLM); a well-formed id that does not
+     *   exist is rejected later, at `/sessions/start`, with 400 "LLM configuration
+     *   ... not found in your space".
+     * - It supersedes the 2026-08-26 control experiment, which only saw HTTP 200
+     *   for every variant: `/sessions/token` validates the id's FORMAT at top level
+     *   but never its existence, so a status code alone could not tell placements
+     *   apart. `/sessions/token` also answers 422 when `avatar_persona` is absent
+     *   ("Provide exactly one of avatar_persona or voice_agent").
+     * Pinned by `HeygenProviderTest` (top level only; never under `avatar_persona`,
+     * never on `/contexts`).
+     *
      * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
      *
      * @return array<string, mixed>
