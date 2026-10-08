@@ -564,7 +564,9 @@ final class SystemPromptComposer
             $floor = $templates->render(PromptFragmentKey::AdvanceFloorWithPrimaries, ['floor' => $floor]);
         }
 
-        if ($advancePhrase === null || trim($advancePhrase) === '') {
+        // A phrase with nothing speakable (including non-ASCII whitespace such as NBSP or a
+        // zero-width space) takes the no-phrase branch, the same predicate PromptTemplateSet applies.
+        if ($advancePhrase === null || trim($advancePhrase) === '' || preg_replace('/[\s\x{200B}]+/u', '', $advancePhrase) === '') {
             return $templates->render(PromptFragmentKey::AdvanceWithoutPhrase, ['floor' => $floor]);
         }
 

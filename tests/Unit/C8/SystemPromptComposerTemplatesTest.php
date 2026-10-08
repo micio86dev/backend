@@ -131,3 +131,15 @@ test('the raw budget is substituted, never inflated by the primaries', function 
 
     expect($text)->toContain('⟦budget⟧ 2');
 });
+
+test('an advance phrase with nothing speakable takes the no-phrase branch instead of failing', function (string $phrase): void {
+    $text = composeWithTemplates(['phrase' => $phrase], markerSet());
+
+    expect($text)->toContain('⟦advance.without_phrase⟧')
+        ->not->toContain('⟦advance.with_phrase⟧');
+})->with([
+    'no-break space' => ["\u{00A0}"],
+    'zero-width space' => ["\u{200B}"],
+    'ideographic space' => ["\u{3000}"],
+    'mixed' => [" \u{00A0}\u{200B} "],
+]);
