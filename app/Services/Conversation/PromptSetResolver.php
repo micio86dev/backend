@@ -64,7 +64,12 @@ final class PromptSetResolver
         $active = ConversationPromptSet::query()->where('is_active', true)->orderBy('id')->limit(2)->get(['id', 'label', 'content_sha256']);
 
         if ($active->count() > 1) {
-            throw PromptTemplateUnresolvableException::ambiguousActiveSet($active->map(static fn (ConversationPromptSet $row): int => $row->id)->values()->all());
+            $ids = [];
+            foreach ($active as $row) {
+                $ids[] = $row->id;
+            }
+
+            throw PromptTemplateUnresolvableException::ambiguousActiveSet($ids);
         }
 
         $set = $active->first();
