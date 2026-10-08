@@ -1,0 +1,87 @@
+{
+    "G01": {
+        "sha256": "462ea0989e6dc17020de9ec14b5d0be14efde104997b6eb0ad4497f3309ebad4",
+        "bytes": 3189,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G02": {
+        "sha256": "022b7dd18671e22094dc58e4fe7c168d4d733d1a2904c59fe9c1c6f1250bd1c0",
+        "bytes": 3778,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G03": {
+        "sha256": "e745c007443f18b118884c4db30b48efa4f3e21ea917b2c4fb15a47667503114",
+        "bytes": 3702,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G04": {
+        "sha256": "0e3c0446cb39c8560bc2935bfe33e55ceaa720cdab5e0b7d3e84604ca9d6ceb8",
+        "bytes": 3700,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G05": {
+        "sha256": "d318c6cb8d69db8263cf9052063c918b37d344f30fa3f70ef46e259d999f7373",
+        "bytes": 4298,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G06": {
+        "sha256": "44354c8349ea83a5acdcf5807a5ef07070239e0568ad54ffa3036e88a97331af",
+        "bytes": 4390,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G07": {
+        "sha256": "ef778652792cd0a45e17769c299a0938a1274c9e7a842c2ea95b1bbb38d93e11",
+        "bytes": 4323,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G08": {
+        "sha256": "41736587d165f0e821464a4af49b05f239b12745eb057cab61e5016de81c3d5b",
+        "bytes": 4491,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G09": {
+        "sha256": "673bfcbc951b7441e7feb7536b47f79717aabe136dae1b97cb4c61b6aa694e07",
+        "bytes": 4518,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G10": {
+        "sha256": "13b5e1fd9d9205b5c56ba7bcfa9cadec9cdb26736a378c269bdaf0d22d666fce",
+        "bytes": 4505,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G11": {
+        "sha256": "fb5350a6301d43bd92fe212e521cdc36a202206b2a2b415e0a25e4b740c82609",
+        "bytes": 4414,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G12": {
+        "sha256": "4279428bc5b02e7ba57a80a2e01297d83f913995a55f2a2496cc254158507b8d",
+        "bytes": 3468,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G13": {
+        "sha256": "221b701b056398b69543267ff1825442595a1b7e8356aab75fdc98259e206e8c",
+        "bytes": 4292,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G14": {
+        "sha256": "c2431c66408de5cc26ebe9ab50e3980718f81c28f3e0317149e5cbb1fe4fca38",
+        "bytes": 4388,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G15": {
+        "sha256": "0b7f70e993bce83013902a1327ad2f22efe375e35bd04d25057d0978537b5941",
+        "bytes": 3922,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G16": {
+        "sha256": "ad59c3b20cb5c3d7412467e4d4ccfdc74d8a4791870aa0280029c696d0ac2116",
+        "bytes": 3921,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "G17": {
+        "sha256": "c22af8eb2dae5bd3dc1807714ab1abbd19ed0b498b0bbfdb59eda01a49b3f27c",
+        "bytes": 4083,
+        "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    }
+}
