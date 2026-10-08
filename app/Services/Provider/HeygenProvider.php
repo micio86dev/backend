@@ -162,6 +162,10 @@ class HeygenProvider implements ProviderSessionService
             token: $sessionToken,
             conversation_url: null,
             provider_session_ref: $sessionId,
+            // The `/contexts` entry created above. Handed back so teardown() can
+            // delete it: nothing else ever does, and the account accumulates one
+            // per session otherwise. '' (no id in the response) means none.
+            provider_context_ref: $contextId !== '' ? $contextId : null,
         );
     }
 
@@ -530,6 +534,11 @@ class HeygenProvider implements ProviderSessionService
      * so the status is checked explicitly: a 404 means the session is already gone
      * (benign, `true`); any other non-2xx or a transport error is logged with the
      * provider's own message redacted and reported as `false`.
+     *
+     * When the token carries a `provider_context_ref`, the `/v1/contexts/{id}` entry
+     * `issue()` created is deleted AFTER the stop succeeded (or answered 404), via
+     * `deleteContext()`: best-effort, and it never changes the boolean returned for
+     * the stop. A failed stop keeps the context, the session may still be using it.
      * ALWAYS takes a typed ProviderToken (no raw-string overload) per WARNING-6.
      *
      * @wire-source https://docs.liveavatar.com/openapi.json — `POST /v1/sessions/stop`
@@ -561,6 +570,11 @@ class HeygenProvider implements ProviderSessionService
         }
 
         if ($response->successful() || $response->status() === 404) {
+            // Only once the session is released (or already gone): a context still
+            // attached to a live session must not be deleted from under it. The
+            // delete never alters the result for the stop.
+            $this->deleteContext($token->provider_context_ref, $apiKey);
+
             return true;
         }
 
@@ -572,6 +586,43 @@ class HeygenProvider implements ProviderSessionService
         ]);
 
         return false;
+    }
+
+    /**
+     * Delete the `/v1/contexts` entry `issue()` created for a session.
+     *
+     * Best-effort and NEVER throws: the session it served is already stopped, so a
+     * context that survives costs a stale entry, not a live conversation. A 404
+     * means it is already gone (benign, silent); any other non-2xx or a transport
+     * error is logged, the provider's own message key-redacted.
+     */
+    private function deleteContext(?string $contextRef, string $apiKey): void
+    {
+        if ($contextRef === null || $contextRef === '') {
+            return;
+        }
+
+        try {
+            $response = Http::withHeaders(['X-API-KEY' => $apiKey])
+                ->delete(self::BASE_URL.'/contexts/'.rawurlencode($contextRef));
+        } catch (\Throwable $e) {
+            Log::warning('HeyGen: context delete failed', [
+                'provider_context_ref' => $contextRef,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        if ($response->successful() || $response->status() === 404) {
+            return;
+        }
+
+        Log::warning('HeyGen: context delete failed', [
+            'provider_context_ref' => $contextRef,
+            'status' => $response->status(),
+            'provider_message' => ProviderErrorMessage::extract($response->json(), $apiKey),
+        ]);
     }
 
     /**

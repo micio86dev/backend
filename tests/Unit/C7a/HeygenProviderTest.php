@@ -813,3 +813,134 @@ test('HeygenProvider::issue() sends llm_configuration_id top-level on /sessions/
     app()->forgetInstance(ActiveTemplateResolver::class);
     app()->forgetInstance(LlmBindingResolver::class);
 });
+
+// ---------------------------------------------------------------------------
+// Context cleanup — heygen-context-cleanup
+//
+// `issue()` creates a `/v1/contexts` entry for every session and nothing ever
+// deleted it, so the account accumulated one `beai-*` context per session.
+// `issue()` now hands the id back on the token and `teardown()` deletes it,
+// best-effort, AFTER the stop: a context still attached to a live session must
+// not be pulled out from under it.
+// ---------------------------------------------------------------------------
+
+test('HeygenProvider::issue() returns the /contexts data.id as provider_context_ref', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-abc']], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => 'session-xyz', 'session_token' => 'token-abc'],
+        ], 200),
+    ]);
+
+    $token = (new HeygenProvider)->issue(mockSession('heygen'), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
+
+    expect($token->provider_context_ref)->toBe('ctx-abc')
+        ->and($token->provider_session_ref)->toBe('session-xyz');
+});
+
+test('HeygenProvider::issue() reports no context ref when /contexts answers without an id', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts*' => Http::response(['data' => []], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => 'session-xyz', 'session_token' => 'token-abc'],
+        ], 200),
+    ]);
+
+    $token = (new HeygenProvider)->issue(mockSession('heygen'), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
+
+    expect($token->provider_context_ref)->toBeNull();
+});
+
+test('HeygenProvider::teardown() deletes the context with DELETE /v1/contexts/{id} AFTER the stop', function (): void {
+    Http::fake(['*liveavatar*' => Http::response(['code' => 1000, 'data' => null], 200)]);
+
+    $released = (new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session', 'ctx-abc'));
+
+    expect($released)->toBeTrue();
+
+    $calls = Http::recorded()->map(fn (array $pair): string => $pair[0]->method().' '.$pair[0]->url())->values()->all();
+    expect($calls)->toBe([
+        'POST https://api.liveavatar.com/v1/sessions/stop',
+        'DELETE https://api.liveavatar.com/v1/contexts/ctx-abc',
+    ]);
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && $request->hasHeader('X-API-KEY', 'SUPER_SECRET_HEYGEN_KEY_12345'));
+});
+
+test('HeygenProvider::teardown() still deletes the context when the stop answers 404 (session already gone)', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response(['message' => 'Session not found'], 404),
+        '*liveavatar*/contexts/*' => Http::response([], 200),
+    ]);
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'gone', 'ctx-abc')))->toBeTrue();
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && $request->url() === 'https://api.liveavatar.com/v1/contexts/ctx-abc');
+});
+
+test('HeygenProvider::teardown() keeps the context when the stop failed, because the session may still be using it', function (): void {
+    Http::fake(['*liveavatar*/sessions/stop*' => Http::response(['message' => 'boom'], 500)]);
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session', 'ctx-abc')))->toBeFalse();
+
+    Http::assertNotSent(fn ($request): bool => $request->method() === 'DELETE');
+    Http::assertSentCount(1);
+});
+
+test('HeygenProvider::teardown() without a context ref sends no DELETE', function (): void {
+    Http::fake(['*liveavatar*' => Http::response([], 200)]);
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session')))->toBeTrue();
+
+    Http::assertNotSent(fn ($request): bool => $request->method() === 'DELETE');
+});
+
+test('HeygenProvider::teardown() reports the stop result even when the context delete fails', function (int $status): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response([], 200),
+        '*liveavatar*/contexts/*' => Http::response(['message' => 'denied for SUPER_SECRET_HEYGEN_KEY_12345'], $status),
+    ]);
+
+    $logs = [];
+    Log::listen(function ($message) use (&$logs): void {
+        $logs[] = ['level' => $message->level, 'text' => (string) json_encode([$message->message, $message->context])];
+    });
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session', 'ctx-abc')))->toBeTrue();
+
+    $warnings = array_values(array_filter($logs, fn (array $l): bool => $l['level'] === 'warning'
+        && str_contains($l['text'], 'HeyGen: context delete failed')));
+    expect($warnings)->toHaveCount(1);
+    expect($warnings[0]['text'])->toContain((string) $status)->toContain('ctx-abc')->toContain('[REDACTED]');
+
+    foreach ($logs as $log) {
+        expect($log['text'])->not->toContain('SUPER_SECRET_HEYGEN_KEY_12345');
+    }
+})->with([400, 401, 405, 500, 503]);
+
+test('HeygenProvider::teardown() treats a 404 on the context delete as benign: no warning, stop result unchanged', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response([], 200),
+        '*liveavatar*/contexts/*' => Http::response(['message' => 'not found'], 404),
+    ]);
+
+    $warnings = 0;
+    Log::listen(function ($message) use (&$warnings): void {
+        if ($message->level === 'warning') {
+            $warnings++;
+        }
+    });
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session', 'ctx-abc')))->toBeTrue();
+    expect($warnings)->toBe(0);
+});
+
+test('HeygenProvider::teardown() survives a transport error on the context delete', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response([], 200),
+        '*liveavatar*/contexts/*' => fn () => throw new ConnectionException('timeout'),
+    ]);
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session', 'ctx-abc')))->toBeTrue();
+});

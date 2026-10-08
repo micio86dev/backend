@@ -69,3 +69,17 @@ test('ProviderToken is readonly — properties cannot be mutated', function (): 
     expect(fn () => $token->provider = 'tavus')
         ->toThrow(Error::class);
 });
+
+test('ProviderToken carries an optional provider_context_ref that defaults to null', function (): void {
+    expect((new ProviderToken(provider: 'tavus'))->provider_context_ref)->toBeNull()
+        ->and((new ProviderToken(provider: 'heygen', provider_context_ref: 'ctx-1'))->provider_context_ref)->toBe('ctx-1');
+});
+
+test('ProviderToken::fromRef carries the context ref when given and leaves it null otherwise', function (): void {
+    $withContext = ProviderToken::fromRef('heygen', 'session-ref-001', 'ctx-1');
+    $without = ProviderToken::fromRef('heygen', 'session-ref-001');
+
+    expect($withContext->provider_session_ref)->toBe('session-ref-001')
+        ->and($withContext->provider_context_ref)->toBe('ctx-1')
+        ->and($without->provider_context_ref)->toBeNull();
+});
