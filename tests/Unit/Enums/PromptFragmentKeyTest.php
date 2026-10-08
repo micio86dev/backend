@@ -3,11 +3,10 @@
 declare(strict_types=1);
 
 /**
- * RED — PR4a.1: PromptFragmentKey, the vocabulary of the 31 prompt fragments
+ * PromptFragmentKey is the vocabulary of the 31 prompt fragments
  * `SystemPromptComposer` renders (db-driven-conversation-prompts, design N-1).
  *
- * Nothing reads the enum yet; this pins the vocabulary before PR4b moves the
- * composer's literals behind it.
+ * Nothing reads the enum yet; this pins the vocabulary and each key's token set.
  */
 
 use App\Enums\PromptFragmentKey;

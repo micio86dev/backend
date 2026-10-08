@@ -71,6 +71,9 @@ enum PromptFragmentKey: string
      * never tells the avatar the sentence to speak, which is the defect that
      * killed HeyGen sessions with MAX_DURATION_REACHED.
      *
+     * Every token-less case is listed on purpose: no `default` arm, so a new
+     * case that is not placed here fails as an unhandled `match` (and in PHPStan).
+     *
      * @return list<string>
      */
     public function requiredTokens(): array
@@ -90,7 +93,23 @@ enum PromptFragmentKey: string
             self::AdvanceFloorWithPrimaries,
             self::AdvanceWithoutPhrase => ['floor'],
             self::AdvanceWithPhrase => ['floor', 'advance_phrase'],
-            default => [],
+            self::LabelOpening,
+            self::LabelCoverage,
+            self::LabelOverride,
+            self::LabelStar,
+            self::LabelFollowUp,
+            self::LabelNudge,
+            self::LabelPrimary,
+            self::LabelAdvance,
+            self::Star,
+            self::OpeningResumedNotice,
+            self::OpeningFallback,
+            self::OpeningClosing,
+            self::PrimaryNone,
+            self::PrimaryIntro,
+            self::PrimaryAskedBeforeOne,
+            self::PrimaryProgressAllAsked,
+            self::AdvanceFloorOne => [],
         };
     }
 }
