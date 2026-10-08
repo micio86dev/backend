@@ -40,6 +40,7 @@ use App\Models\WebhookDelivery;
 use App\Support\Jwt\CandidateTokenFactory;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -138,14 +139,24 @@ function recoveryBearer(Participant $participant): string
 // ─── THE CRUX ────────────────────────────────────────────────────────────────
 
 test('full cycle: fail at competency 2 of 3, recover, resume, finish 2 and 3 -> in_valutazione + FinalizeInterview dispatched (participant-error-recovery D2 crux)', function (): void {
+    // /contexts POSTs: comp1 success, comp2 fails (Upstream 5xx), comp2 RETRY
+    // after recovery succeeds, comp3 succeeds. The DELETE /contexts/{id} sent when
+    // a finished session is released is answered apart, so it never advances
+    // the POST count.
+    $contextPosts = 0;
     Http::fake([
-        // /contexts: comp1 success, comp2 fails (Upstream 5xx), comp2 RETRY
-        // after recovery succeeds, comp3 succeeds.
-        '*liveavatar*/contexts*' => Http::sequence()
-            ->push(['data' => ['id' => 'ctx-1']], 200)
-            ->push(['error' => 'Internal Server Error'], 503)
-            ->push(['data' => ['id' => 'ctx-2-retry']], 200)
-            ->push(['data' => ['id' => 'ctx-3']], 200),
+        '*liveavatar*/contexts*' => function (Request $request) use (&$contextPosts) {
+            if ($request->method() === 'DELETE') {
+                return Http::response([], 200);
+            }
+
+            return match (++$contextPosts) {
+                1 => Http::response(['data' => ['id' => 'ctx-1']], 200),
+                2 => Http::response(['error' => 'Internal Server Error'], 503),
+                3 => Http::response(['data' => ['id' => 'ctx-2-retry']], 200),
+                default => Http::response(['data' => ['id' => 'ctx-3']], 200),
+            };
+        },
         '*liveavatar*/sessions/token*' => Http::response([
             'data' => [
                 'session_id' => 'heygen-session-'.uniqid(),
