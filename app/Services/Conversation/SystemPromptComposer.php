@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Conversation;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\PromptTemplateSet;
 use App\DTOs\Conversation\SpokenOpening;
+use App\Enums\PromptFragmentKey;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Models\BarsIndicator;
+use App\Support\Conversation\BaselinePromptFragments;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -96,6 +99,13 @@ final class SystemPromptComposer
      *                                its project's own pinned revision and always passes it;
      *                                omitted, the loader defaults to the latest published
      *                                revision, never "any revision".
+     * @param  PromptTemplateSet|null  $templates  The prose fragments the static sections are
+     *                                             rendered from (db-driven-conversation-prompts).
+     *                                             Appended LAST, like `$revisionId`. Null builds
+     *                                             the baseline set for `$projectLocale` from
+     *                                             `BaselinePromptFragments`, so every caller that
+     *                                             passes nothing gets today's bytes. Branch
+     *                                             selection, clamps, joins and numbering stay here.
      *
      * @throws CompositionException When no indicators exist for the role+competency pair,
      *                              or `$spokenOpening` names a primary the set does not have.
@@ -113,7 +123,9 @@ final class SystemPromptComposer
         array $primaryQuestions = [],
         ?SpokenOpening $spokenOpening = null,
         ?int $revisionId = null,
+        ?PromptTemplateSet $templates = null,
     ): ComposedPrompt {
+        $templates ??= BaselinePromptFragments::templateSet($projectLocale);
         $indicators = $this->loader->forRoleCompetency($roleId, $competencyId, $revisionId);
 
         if ($indicators->isEmpty()) {
@@ -143,14 +155,15 @@ final class SystemPromptComposer
         $spokenOpening = self::resolveSpokenOpening($spokenOpening, $primaryQuestions);
 
         $coverageSection = $this->buildCoverageSection($competencyCode, $indicators, $projectLocale);
-        $starSection = $this->buildStarSection();
-        $budgetSection = $this->buildBudgetSection($followUpBudget);
-        $nudgeSection = $this->buildNudgeSection($nudgeMinChars);
-        $advanceSection = $this->buildAdvanceSection($advancePhrase, $effectiveMinimum, $primaryQuestions !== []);
+        $starSection = $this->buildStarSection($templates);
+        $budgetSection = $this->buildBudgetSection($templates, $followUpBudget);
+        $nudgeSection = $this->buildNudgeSection($templates, $nudgeMinChars);
+        $advanceSection = $this->buildAdvanceSection($templates, $advancePhrase, $effectiveMinimum, $primaryQuestions !== []);
         $primarySection = $this->buildPrimaryQuestionsSection($primaryQuestions, $spokenOpening);
         $openingSection = $this->buildOpeningSection($primaryQuestions, $spokenOpening);
 
         $text = $this->assemblePrompt(
+            $templates,
             $competencyCode,
             $openingSection,
             $coverageSection,
@@ -293,39 +306,9 @@ final class SystemPromptComposer
      * The same-episode rule is stated ONCE: repetition competes with the other
      * rules in this prompt for the model's attention.
      */
-    private function buildStarSection(): string
+    private function buildStarSection(PromptTemplateSet $templates): string
     {
-        return <<<'STAR'
-This competency is assessed on what the candidate actually did in the past. A primary
-question does not always ask for that: it may be a greeting or a general question. When
-an answer does not already describe a specific episode from the candidate's own past,
-use your follow-ups to lead from that answer to ONE such episode relevant to this
-competency.
-
-Once an episode is under discussion, make it complete enough to assess. After EVERY
-answer about it, work out which of these five is least covered, and make your next
-follow-up close that gap:
-  S — Situation: the concrete circumstances, and when and where it happened.
-  T — Task: what the candidate was responsible for delivering.
-  C — Context: the constraints, pressures and people involved.
-  A — Action: what the candidate personally did — the specific steps THEY took,
-      not what the team did.
-  R — Result: how it ended, with a measurable outcome wherever one exists.
-
-Action and Result are the two candidates most often leave implicit, and they are
-exactly what the assessment demands: an answer with no concrete actions the candidate
-personally did, and no measurable outcome, cannot score well however articulate it is.
-Ask for them explicitly rather than hoping they arrive.
-
-If an element genuinely does not apply to this episode, or the candidate says they
-cannot recall it, treat it as covered and do not ask about it again.
-
-STAY ON ONE EPISODE. Once the candidate has begun describing an episode, every follow-up
-must deepen the SAME episode. Do NOT ask for a second or different example. The single
-exception: if the episode turns out to contain no assessable behaviour at all, you may
-ask for a different one. This rule governs follow-ups only: a primary question still to
-be asked may move to another subject, and you must still ask it.
-STAR;
+        return $templates->render(PromptFragmentKey::Star);
     }
 
     /**
@@ -345,9 +328,9 @@ STAR;
      * when the interview may close, and the weaker one read as permission.
      * The advance rule belongs in exactly one place, and it has one.
      */
-    private function buildBudgetSection(int $budget): string
+    private function buildBudgetSection(PromptTemplateSet $templates, int $budget): string
     {
-        return "Ask at most {$budget} follow-up questions per competency.";
+        return $templates->render(PromptFragmentKey::Budget, ['budget' => $budget]);
     }
 
     /**
@@ -360,17 +343,13 @@ STAR;
      * character threshold would trap the model re-prompting a complete
      * one-word answer.
      */
-    private function buildNudgeSection(?int $nudgeMinChars): string
+    private function buildNudgeSection(PromptTemplateSet $templates, ?int $nudgeMinChars): string
     {
         if ($nudgeMinChars === null || $nudgeMinChars <= 0) {
             return '';
         }
 
-        return 'If the candidate\'s answer to a question that asks them to describe, explain or '
-            ."give an example is shorter than {$nudgeMinChars} characters, you may re-prompt once "
-            .'asking them to elaborate. This re-prompt does NOT consume a follow-up budget slot. A short '
-            .'answer to a simple question — their name, a yes or a no — is complete: accept it '
-            .'and move on, and never re-prompt it.';
+        return $templates->render(PromptFragmentKey::Nudge, ['nudge_min_chars' => $nudgeMinChars]);
     }
 
     /**
@@ -553,7 +532,7 @@ STAR;
      *
      * REQ: R-5 advance signal, star-interviewer-protocol D-4.
      */
-    private function buildAdvanceSection(?string $advancePhrase, int $minQuestions, bool $hasPrimaries): string
+    private function buildAdvanceSection(PromptTemplateSet $templates, ?string $advancePhrase, int $minQuestions, bool $hasPrimaries): string
     {
         // The phrase must be QUOTED here, verbatim. It used to say "speak
         // end_phrase" and never said what end_phrase was — the avatar was told
@@ -578,30 +557,25 @@ STAR;
         // after the first answer" — or a one-primary, zero-budget competency
         // could never close.
         $floor = $minQuestions === 1
-            ? 'you have asked at least 1 question in this competency'
-            : "you have asked at least {$minQuestions} questions in this competency";
+            ? $templates->render(PromptFragmentKey::AdvanceFloorOne)
+            : $templates->render(PromptFragmentKey::AdvanceFloorMany, ['min_questions' => $minQuestions]);
 
         if ($hasPrimaries) {
-            $floor = 'every primary question has been asked and '.$floor;
+            $floor = $templates->render(PromptFragmentKey::AdvanceFloorWithPrimaries, ['floor' => $floor]);
         }
 
         if ($advancePhrase === null || trim($advancePhrase) === '') {
-            return 'Speak the closing phrase ONLY when all coverage topics have been addressed '
-                .'OR the follow-up budget is exhausted, AND '.$floor.'. '
-                .'Do NOT close after the first answer unless these conditions already hold.';
+            return $templates->render(PromptFragmentKey::AdvanceWithoutPhrase, ['floor' => $floor]);
         }
 
-        return 'When all coverage topics have been addressed OR the follow-up budget is '
-            .'exhausted, AND '.$floor.', you MUST end your turn by saying this sentence '
-            .'exactly, word for word, as your final sentence: "'.$advancePhrase.'" '
-            .'Say it verbatim — do not paraphrase, translate or add to it. '
-            .'Do NOT say it before these conditions hold.';
+        return $templates->render(PromptFragmentKey::AdvanceWithPhrase, ['floor' => $floor, 'advance_phrase' => $advancePhrase]);
     }
 
     /**
      * Assemble the full prompt from section strings.
      */
     private function assemblePrompt(
+        PromptTemplateSet $templates,
         string $competencyCode,
         string $openingSection,
         string $coverageSection,
@@ -612,24 +586,23 @@ STAR;
         string $primarySection = '',
     ): string {
         $parts = [
-            'You are an adaptive interviewer conducting a BARS-based competency assessment '
-            ."for the [{$competencyCode}] competency.",
+            $templates->render(PromptFragmentKey::Header, ['competency_code' => $competencyCode]),
             '',
             $openingSection,
             '',
-            'COVERAGE TOPICS (evaluate these behavioral indicators — do not reveal them verbatim):',
+            $templates->render(PromptFragmentKey::LabelCoverage),
             $coverageSection,
             '',
-            'STAR COVERAGE PROTOCOL — how to conduct this competency:',
+            $templates->render(PromptFragmentKey::LabelStar),
             $starSection,
             '',
-            'FOLLOW-UP RULES:',
+            $templates->render(PromptFragmentKey::LabelFollowUp),
             $budgetSection,
         ];
 
         if ($nudgeSection !== '') {
             $parts[] = '';
-            $parts[] = 'NUDGE RULE:';
+            $parts[] = $templates->render(PromptFragmentKey::LabelNudge);
             $parts[] = $nudgeSection;
         }
 
@@ -638,12 +611,12 @@ STAR;
         // has not been told about yet cannot be one it waits to ask.
         if ($primarySection !== '') {
             $parts[] = '';
-            $parts[] = 'PRIMARY QUESTIONS:';
+            $parts[] = $templates->render(PromptFragmentKey::LabelPrimary);
             $parts[] = $primarySection;
         }
 
         $parts[] = '';
-        $parts[] = 'ADVANCE RULE:';
+        $parts[] = $templates->render(PromptFragmentKey::LabelAdvance);
         $parts[] = $advanceSection;
 
         return implode("\n", $parts);
