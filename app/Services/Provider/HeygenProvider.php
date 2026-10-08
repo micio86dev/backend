@@ -547,11 +547,14 @@ class HeygenProvider implements ProviderSessionService
      */
     public function teardown(ProviderToken $token): bool
     {
+        $apiKey = (string) config('interview.heygen.api_key', '');
+
         if ($token->provider_session_ref === null) {
+            // Nothing to stop, but `issue()` tolerates a null session_id: free the context.
+            $this->deleteContext($token->provider_context_ref, $apiKey);
+
             return true;
         }
-
-        $apiKey = (string) config('interview.heygen.api_key', '');
 
         try {
             $response = Http::withHeaders(['X-API-KEY' => $apiKey])

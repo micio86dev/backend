@@ -662,6 +662,16 @@ test('HeygenProvider::teardown() with null provider_session_ref is a no-op', fun
     expect(true)->toBeTrue();
 });
 
+test('HeygenProvider::teardown() with no session ref still deletes the context it holds', function (): void {
+    Http::fake(['*liveavatar*' => Http::response([], 200)]);
+
+    $released = (new HeygenProvider)->teardown(new ProviderToken(provider: 'heygen', provider_session_ref: null, provider_context_ref: 'orphan-ctx'));
+
+    expect($released)->toBeTrue();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), '/v1/contexts/orphan-ctx'));
+});
+
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
 function mockSession(string $provider, ?string $ref = null): InterviewSession

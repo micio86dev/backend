@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Candidate;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
 use App\Actions\Interview\BuildInterviewSessionResponse;
+use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\ResolveInterviewDirective;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
@@ -87,6 +88,7 @@ class InterviewController extends Controller
         private readonly TurnClassifier $turnClassifier,
         private readonly AvatarSilenceDetector $avatarSilence,
         private readonly ProviderPreflight $preflight,
+        private readonly ReleaseProviderSession $releaseEnded,
     ) {}
 
     // =========================================================================
@@ -821,6 +823,9 @@ class InterviewController extends Controller
 
         // Observation only, after the commit: the stretch /end just stored.
         $this->inspectAvatarSilence($session, $session->provider_session_ref);
+
+        // Best-effort, after the commit: never fails /end.
+        ($this->releaseEnded)($session);
 
         if ($progress !== null) {
             event(new CompetencySessionEnded(
