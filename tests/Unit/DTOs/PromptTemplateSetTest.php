@@ -98,6 +98,18 @@ test('an unknown token value is refused, and the message names key and token', f
         ->toThrow(InvalidArgumentException::class, 'nope');
 });
 
+test('a value that is neither a string nor an int is refused, and the message names the token', function (mixed $value): void {
+    $set = new PromptTemplateSet(completeFragments());
+
+    expect(fn () => $set->render(PromptFragmentKey::Budget, ['budget' => $value]))
+        ->toThrow(InvalidArgumentException::class, 'PromptTemplateSet: value of [budget] must be string|int.');
+})->with([
+    'array' => [[1]],
+    'null' => [null],
+    'bool' => [true],
+    'float' => [1.5],
+]);
+
 test('a key without tokens refuses any value', function (): void {
     $set = new PromptTemplateSet(completeFragments());
 

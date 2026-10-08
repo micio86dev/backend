@@ -68,9 +68,10 @@ final readonly class PromptTemplateSet
      * already substituted, so a value that itself contains `{{budget}}` (an
      * operator's advance phrase or primary question) appears literally.
      *
-     * @param  array<string, string|int>  $values  Token value keyed by bare token name.
+     * @param  array<string, mixed>  $values  Token value keyed by bare token name; each must be string|int.
      *
-     * @throws InvalidArgumentException When a required token has no value or a value has no token.
+     * @throws InvalidArgumentException When a required token has no value, a value has no token,
+     *                                  or a value is neither a string nor an int.
      */
     public function render(PromptFragmentKey $key, array $values = []): string
     {
@@ -93,6 +94,10 @@ final readonly class PromptTemplateSet
         $replacements = [];
 
         foreach ($values as $token => $value) {
+            if (! is_string($value) && ! is_int($value)) {
+                throw new InvalidArgumentException("PromptTemplateSet: value of [{$token}] must be string|int.");
+            }
+
             $replacements['{{'.$token.'}}'] = (string) $value;
         }
 
