@@ -26,7 +26,7 @@ beforeEach(fn () => PromptSetResolver::flushCache());
 /**
  * Insert a sealed set. Options: `label`, `active`, `locales`, `drop` (en keys to omit),
  * `extra` (en key => body), `bodies` (en key => body, sealed), `tamper` (en key => body written
- * AFTER sealing), `overrides` (rows without prompt_set_id), `sealed_overrides` (what the seal covers, if different), `hash` (stored hash instead of the seal).
+ * AFTER sealing), `locale_bodies` (locale => key => body, sealed; replaces that locale's baseline copy), `overrides` (rows without prompt_set_id), `sealed_overrides` (what the seal covers, if different), `hash` (stored hash instead of the seal).
  *
  * @param  array<string, mixed>  $options
  */
@@ -36,7 +36,7 @@ function makePromptSet(array $options = []): int
 
     foreach ($options['locales'] ?? ['en', 'it'] as $locale) {
         $bodies = array_diff_key(BaselinePromptFragments::forLocale('en'), array_flip($options['drop'] ?? []));
-        $bodies = array_replace($bodies, $options['bodies'] ?? [], $options['extra'] ?? []);
+        $bodies = array_replace($bodies, $options['bodies'] ?? [], $options['extra'] ?? [], $options['locale_bodies'][$locale] ?? []);
 
         foreach ($bodies as $key => $body) {
             $fragments[] = ['key' => $key, 'locale' => $locale, 'body' => $body];
@@ -113,6 +113,23 @@ test('a complete valid active set renders exactly like the code baseline', funct
 
     expect($resolved->templates->render(PromptFragmentKey::Header, ['competency_code' => 'COL']))
         ->toBe($baseline->render(PromptFragmentKey::Header, ['competency_code' => 'COL']));
+});
+
+test('each locale is served its own text for the same key', function (): void {
+    makePromptSet(['locale_bodies' => ['it' => [
+        PromptFragmentKey::LabelOpening->value => 'APERTURA:',
+        PromptFragmentKey::Header->value => 'Sei un intervistatore per {{competency_code}}.',
+    ]]]);
+
+    $italian = resolveWith('it');
+    $english = resolveWith('en');
+    $baseline = BaselinePromptFragments::templateSet('en');
+
+    expect($italian->templates->template(PromptFragmentKey::LabelOpening))->toBe('APERTURA:')
+        ->and($italian->templates->render(PromptFragmentKey::Header, ['competency_code' => 'COL']))->toBe('Sei un intervistatore per COL.')
+        ->and($english->templates->template(PromptFragmentKey::LabelOpening))->toBe('OPENING:')
+        ->and($english->templates->template(PromptFragmentKey::Header))->toBe($baseline->template(PromptFragmentKey::Header))
+        ->and($italian->templates->template(PromptFragmentKey::Budget))->toBe($baseline->template(PromptFragmentKey::Budget));
 });
 
 test('no active set is refused', function (): void {
