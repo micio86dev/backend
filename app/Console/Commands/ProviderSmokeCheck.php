@@ -94,12 +94,23 @@ final class ProviderSmokeCheck extends Command
         }
 
         try {
-            $service->teardown($token);
-            $this->info('teardown(): OK');
+            $released = $service->teardown($token);
         } catch (Throwable $e) {
-            // Non-fatal — the acceptance claim already stands on issue() succeeding.
-            $this->error('teardown(): FAILED (non-fatal, best-effort) — '.$e->getMessage());
+            $this->error('teardown(): FAILED — '.$e->getMessage());
+
+            return self::FAILURE;
         }
+
+        if (! $released) {
+            // teardown() is best-effort and never throws, so a rejected release is only
+            // visible in its return value. Printing OK here once hid a 405 that left the
+            // session running (and billing) on the provider.
+            $this->error("teardown(): FAILED — the [{$providerName}] API did not confirm the release of session [{$token->provider_session_ref}]. It may still be running and consuming credits: stop it manually and check the application log for the provider's status.");
+
+            return self::FAILURE;
+        }
+
+        $this->info('teardown(): OK');
 
         $this->info("interview:smoke-check PASSED — the [{$providerName}] outbound request shape was ACCEPTED by the real API.");
 
