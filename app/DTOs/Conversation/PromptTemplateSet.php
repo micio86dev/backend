@@ -62,6 +62,15 @@ final readonly class PromptTemplateSet
     }
 
     /**
+     * The stored template of one fragment, placeholders intact: what a
+     * contract check validates. Rendering goes through {@see render()}.
+     */
+    public function template(PromptFragmentKey $key): string
+    {
+        return $this->fragments[$key->value];
+    }
+
+    /**
      * Render one fragment: a SINGLE `strtr` pass over the template.
      *
      * Single pass is the injection guard: `strtr` never rescans text it has
