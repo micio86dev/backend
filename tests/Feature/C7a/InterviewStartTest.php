@@ -28,6 +28,7 @@ use App\Models\AvatarTemplate;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\InterviewSession;
+use App\Models\InterviewSessionLivePeriod;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
@@ -38,6 +39,7 @@ use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
@@ -316,8 +318,11 @@ test('POST /start resume in_corso: no duplicate row, fresh token issued, old ses
     expect($oldSession->provider_session_ref)->toBe('heygen-session-fresh');
     expect($oldSession->status)->toBe('in_corso');
 
-    // Teardown was called for the OLD ref (HTTP POST to /sessions/stop for old-ref-to-teardown)
-    Http::assertSent(fn ($req) => str_contains($req->url(), 'old-ref-to-teardown'));
+    // Teardown was called for the OLD ref: `POST /v1/sessions/stop` with the ref in the
+    // JSON body `session_id` (the ref is NOT in the URL under the real wire contract).
+    Http::assertSent(fn ($req) => $req->method() === 'POST'
+        && parse_url($req->url(), PHP_URL_PATH) === '/v1/sessions/stop'
+        && ($req->data()['session_id'] ?? null) === 'old-ref-to-teardown');
 });
 
 test('POST /start resume pending (no provider_session_ref): retries issue, 201 in_corso', function (): void {
@@ -1082,4 +1087,264 @@ test('pre-flight responses carry no secret and no trace', function (): void {
     $body = $this->withHeaders(['Authorization' => 'Bearer '.$token])->postJson('/api/candidate/interview/start')->assertStatus(422)->getContent();
 
     expect($body)->not->toContain('MUST_NOT_LEAK_PREFLIGHT')->not->toContain('trace')->not->toContain('exception');
+});
+
+// ─── HeyGen context cleanup (heygen-context-cleanup) ─────────────────────────
+
+/**
+ * @return array<string, mixed> a HeyGen fake whose /contexts answers with a real `data.id`
+ *
+ * Method- and path-aware like the real API: only `POST /v1/contexts` creates and only
+ * `DELETE /v1/contexts/{id}` deletes; any other verb answers 405 (a path-only fake once
+ * hid a DELETE that really answers 405, because it replied 200 to every verb).
+ */
+function heygenContextFake(string $contextId, string $sessionRef): array
+{
+    return [
+        '*liveavatar*/contexts*' => function ($request) use ($contextId) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+
+            return match (true) {
+                $request->method() === 'POST' && $path === '/v1/contexts' => Http::response(['data' => ['id' => $contextId]], 200),
+                $request->method() === 'DELETE' && str_starts_with((string) $path, '/v1/contexts/') => Http::response([], 200),
+                default => Http::response(['message' => 'Method Not Allowed'], 405),
+            };
+        },
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => $sessionRef, 'session_token' => 'tok-'.uniqid()],
+        ], 200),
+        '*liveavatar*/sessions/stop*' => Http::response([], 200),
+    ];
+}
+
+/**
+ * The mutating HeyGen calls of the test so far, in order, as `METHOD /path [session_id]`.
+ *
+ * @return list<string>
+ */
+function heygenMutatingCalls(): array
+{
+    return Http::recorded()
+        ->map(fn (array $pair): string => trim($pair[0]->method().' '.parse_url($pair[0]->url(), PHP_URL_PATH).' '.($pair[0]->data()['session_id'] ?? '')))
+        ->filter(fn (string $call): bool => ! str_starts_with($call, 'GET '))
+        ->values()->all();
+}
+
+test('POST /start persists the HeyGen context id next to the session ref', function (): void {
+    Http::fake(heygenContextFake('ctx-persisted', 'sess-persisted'));
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $pending = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'status' => 'pending',
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    $pending->refresh();
+    expect($pending->provider_session_ref)->toBe('sess-persisted')
+        ->and($pending->provider_context_ref)->toBe('ctx-persisted');
+});
+
+test('POST /start resume in_corso: stops the old session, THEN deletes its context, and persists the fresh context', function (): void {
+    Http::fake(heygenContextFake('ctx-fresh', 'sess-fresh'));
+    Queue::fake();
+
+    // The fake answers 405 to anything but a real DELETE, which `deleteContext()` logs.
+    $deleteFailures = 0;
+    Log::listen(function ($message) use (&$deleteFailures): void {
+        if (str_contains($message->message, 'context delete failed')) {
+            $deleteFailures++;
+        }
+    });
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-ref',
+        'provider_context_ref' => 'old-ctx',
+        'status' => 'in_corso',
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    $calls = Http::recorded()->map(fn (array $pair): string => $pair[0]->method().' '.parse_url($pair[0]->url(), PHP_URL_PATH))->values()->all();
+    $stop = array_search('POST /v1/sessions/stop', $calls, true);
+    $delete = array_search('DELETE /v1/contexts/old-ctx', $calls, true);
+
+    expect($stop)->not->toBeFalse()
+        ->and($delete)->not->toBeFalse()
+        ->and($stop)->toBeLessThan($delete);
+
+    expect($deleteFailures)->toBe(0);
+
+    $session->refresh();
+    expect($session->provider_session_ref)->toBe('sess-fresh')
+        ->and($session->provider_context_ref)->toBe('ctx-fresh');
+});
+
+test('POST /start resume in_corso: an unconfirmed stop keeps the old context, names it in a warning, and still issues the fresh session', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response(['message' => 'boom'], 500),
+    ] + heygenContextFake('ctx-fresh', 'sess-fresh'));
+    Queue::fake();
+
+    $warnings = [];
+    Log::listen(function ($message) use (&$warnings): void {
+        if ($message->level === 'warning') {
+            $warnings[] = $message->context;
+        }
+    });
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-ref',
+        'provider_context_ref' => 'old-ctx',
+        'status' => 'in_corso',
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    // The candidate must get the fresh session whatever happened to the old one...
+    $session->refresh();
+    expect($session->provider_session_ref)->toBe('sess-fresh')
+        ->and($session->provider_context_ref)->toBe('ctx-fresh');
+
+    // ...but the row can hold one context ref, so the old one is about to be forgotten. Without
+    // a stop that held, deleting it would pull it from under a possibly live session: it is left
+    // on HeyGen, and the only trace of its id is this warning.
+    Http::assertNotSent(fn ($req) => $req->method() === 'DELETE');
+    expect(collect($warnings)->contains(fn (array $context): bool => ($context['old_context_ref'] ?? null) === 'old-ctx'))->toBeTrue();
+});
+
+// ─── DB failure after the provider succeeded: the fresh session AND its context are released ──
+
+test('POST /start resume in_corso: a DB failure after issue() stops the fresh session and deletes the fresh context', function (): void {
+    Http::fake(heygenContextFake('ctx-fresh', 'sess-fresh'));
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-ref',
+        'provider_context_ref' => 'old-ctx',
+        'status' => 'in_corso',
+    ]);
+
+    // `liveClock->open()` is the last write of the resume transaction: failing it rolls the new refs back.
+    InterviewSessionLivePeriod::creating(fn () => throw new RuntimeException('forced live period failure'));
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(500)
+        ->assertJsonPath('error', 'db_error');
+
+    // The old session is released by the resume itself; the fresh one by the compensation, in the same order.
+    expect(heygenMutatingCalls())->toBe([
+        'POST /v1/contexts',
+        'POST /v1/sessions/token',
+        'POST /v1/sessions/stop old-ref',
+        'DELETE /v1/contexts/old-ctx',
+        'POST /v1/sessions/stop sess-fresh',
+        'DELETE /v1/contexts/ctx-fresh',
+    ]);
+
+    expect($session->fresh()->provider_session_ref)->toBe('old-ref');
+});
+
+test('POST /start first issue: a DB failure after issue() stops the fresh session and deletes the fresh context', function (): void {
+    Http::fake(heygenContextFake('ctx-fresh', 'sess-fresh'));
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $pending = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'status' => 'pending',
+    ]);
+
+    InterviewSessionLivePeriod::creating(fn () => throw new RuntimeException('forced live period failure'));
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(500)
+        ->assertJsonPath('error', 'db_error');
+
+    expect(heygenMutatingCalls())->toBe([
+        'POST /v1/contexts',
+        'POST /v1/sessions/token',
+        'POST /v1/sessions/stop sess-fresh',
+        'DELETE /v1/contexts/ctx-fresh',
+    ]);
+
+    $pending->refresh();
+    expect($pending->status)->toBe('pending')
+        ->and($pending->provider_context_ref)->toBeNull();
 });

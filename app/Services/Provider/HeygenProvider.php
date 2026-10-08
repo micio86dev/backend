@@ -125,6 +125,39 @@ class HeygenProvider implements ProviderSessionService
         // read from `data.id`. `data.context_id` does NOT exist in the real contract.
         $contextId = (string) $ctxResponse->json('data.id', '');
 
+        // The context above is already on HeyGen. Whatever stops the token call (a
+        // 429, a 5xx, a malformed answer, a transport error), no session will ever
+        // reference it, so it is deleted here or it accumulates in the account.
+        try {
+            [$sessionToken, $sessionId] = $this->requestSessionToken($apiKey, $session, $ctx, $contextId);
+        } catch (\Throwable $e) {
+            $this->deleteContext($contextId);
+
+            throw $e;
+        }
+
+        return new ProviderToken(
+            provider: 'heygen',
+            token: $sessionToken,
+            conversation_url: null,
+            provider_session_ref: $sessionId,
+            // The `/contexts` entry created above. Handed back so teardown() can
+            // delete it: nothing else ever does, and the account accumulates one
+            // per session otherwise. '' (no id in the response) means none.
+            provider_context_ref: $contextId !== '' ? $contextId : null,
+        );
+    }
+
+    /**
+     * Call `POST /v1/sessions/token` for a freshly created context and read the
+     * session token and (nullable) session id out of the answer.
+     *
+     * @return array{0: string, 1: string|null} [session_token, session_id]
+     *
+     * @throws ProviderException on a non-2xx answer or a body without `session_token`
+     */
+    private function requestSessionToken(string $apiKey, InterviewSession $session, QuestionContext $ctx, string $contextId): array
+    {
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
             ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($ctx, $contextId, $session->project_id));
 
@@ -157,12 +190,7 @@ class HeygenProvider implements ProviderSessionService
             );
         }
 
-        return new ProviderToken(
-            provider: 'heygen',
-            token: $sessionToken,
-            conversation_url: null,
-            provider_session_ref: $sessionId,
-        );
+        return [$sessionToken, $sessionId];
     }
 
     /**
@@ -530,6 +558,11 @@ class HeygenProvider implements ProviderSessionService
      * so the status is checked explicitly: a 404 means the session is already gone
      * (benign, `true`); any other non-2xx or a transport error is logged with the
      * provider's own message redacted and reported as `false`.
+     *
+     * When the token carries a `provider_context_ref`, the `/v1/contexts/{id}` entry
+     * `issue()` created is deleted AFTER the stop succeeded (or answered 404), via
+     * `deleteContext()`: best-effort, and it never changes the boolean returned for
+     * the stop. A failed stop keeps the context, the session may still be using it.
      * ALWAYS takes a typed ProviderToken (no raw-string overload) per WARNING-6.
      *
      * @wire-source https://docs.liveavatar.com/openapi.json — `POST /v1/sessions/stop`
@@ -538,11 +571,14 @@ class HeygenProvider implements ProviderSessionService
      */
     public function teardown(ProviderToken $token): bool
     {
+        $apiKey = (string) config('interview.heygen.api_key', '');
+
         if ($token->provider_session_ref === null) {
+            // Nothing to stop, but `issue()` tolerates a null session_id: free the context.
+            $this->deleteContext($token->provider_context_ref);
+
             return true;
         }
-
-        $apiKey = (string) config('interview.heygen.api_key', '');
 
         try {
             $response = Http::withHeaders(['X-API-KEY' => $apiKey])
@@ -561,6 +597,11 @@ class HeygenProvider implements ProviderSessionService
         }
 
         if ($response->successful() || $response->status() === 404) {
+            // Only once the session is released (or already gone): a context still
+            // attached to a live session must not be deleted from under it. The
+            // delete never alters the result for the stop.
+            $this->deleteContext($token->provider_context_ref);
+
             return true;
         }
 
@@ -568,6 +609,54 @@ class HeygenProvider implements ProviderSessionService
             'provider_session_ref' => $token->provider_session_ref,
             'status' => $response->status(),
             // Only the provider's own, key-redacted complaint — never the raw body.
+            'provider_message' => ProviderErrorMessage::extract($response->json(), $apiKey),
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Delete the `/v1/contexts` entry `issue()` created for a session.
+     *
+     * Best-effort and NEVER throws: the session it served is already stopped, so a
+     * context that survives costs a stale entry, not a live conversation. A 404
+     * means it is already gone (benign, silent); any other non-2xx or a transport
+     * error is logged, the provider's own message key-redacted.
+     *
+     * Public so a caller that must PROVE the delete (the live smoke check) can read
+     * the outcome: `teardown()` deliberately ignores it for its own result.
+     *
+     * @return bool true when the context is deleted, already gone, or there was none to delete
+     */
+    public function deleteContext(?string $contextRef): bool
+    {
+        if ($contextRef === null || $contextRef === '') {
+            return true;
+        }
+
+        $apiKey = (string) config('interview.heygen.api_key', '');
+
+        try {
+            // Synchronous, inside the candidate's request: bound it well under the client's 30 s default.
+            $response = Http::withHeaders(['X-API-KEY' => $apiKey])
+                ->timeout(5)
+                ->delete(self::BASE_URL.'/contexts/'.rawurlencode($contextRef));
+        } catch (\Throwable $e) {
+            Log::warning('HeyGen: context delete failed', [
+                'provider_context_ref' => $contextRef,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+
+        if ($response->successful() || $response->status() === 404) {
+            return true;
+        }
+
+        Log::warning('HeyGen: context delete failed', [
+            'provider_context_ref' => $contextRef,
+            'status' => $response->status(),
             'provider_message' => ProviderErrorMessage::extract($response->json(), $apiKey),
         ]);
 

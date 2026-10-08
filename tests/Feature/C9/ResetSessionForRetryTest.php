@@ -65,6 +65,7 @@ function resetFixture(int $errorCount = 1): array
         'framework_version_id' => $project->framework_version_id,
         'provider' => 'heygen',
         'provider_session_ref' => 'provider-ref-to-clear',
+        'provider_context_ref' => 'provider-context-to-clear',
         'status' => 'error',
         'ended_reason' => 'error',
         'error_count' => $errorCount,
@@ -85,7 +86,7 @@ function resetFixture(int $errorCount = 1): array
     return [$session->fresh(), $org, $participant];
 }
 
-test('the reset clears the four session fields that make it resumable', function (): void {
+test('the reset clears the session fields that make it resumable', function (): void {
     [$session] = resetFixture();
 
     (new ResetSessionForRetry)($session);
@@ -93,6 +94,9 @@ test('the reset clears the four session fields that make it resumable', function
     $fresh = $session->fresh();
     expect($fresh->status)->toBe('pending');
     expect($fresh->provider_session_ref)->toBeNull();
+    // Cleared together with the session ref: a context ref left behind would point at
+    // an entry the NEXT session never created, and its teardown would delete it.
+    expect($fresh->provider_context_ref)->toBeNull();
     expect($fresh->ended_reason)->toBeNull();
     expect($fresh->ended_at)->toBeNull();
 });

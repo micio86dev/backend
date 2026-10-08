@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Candidate;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
 use App\Actions\Interview\BuildInterviewSessionResponse;
+use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\ResolveInterviewDirective;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
@@ -87,6 +88,7 @@ class InterviewController extends Controller
         private readonly TurnClassifier $turnClassifier,
         private readonly AvatarSilenceDetector $avatarSilence,
         private readonly ProviderPreflight $preflight,
+        private readonly ReleaseProviderSession $releaseEnded,
     ) {}
 
     // =========================================================================
@@ -822,6 +824,9 @@ class InterviewController extends Controller
         // Observation only, after the commit: the stretch /end just stored.
         $this->inspectAvatarSilence($session, $session->provider_session_ref);
 
+        // Best-effort, after the commit: never fails /end.
+        ($this->releaseEnded)($session);
+
         if ($progress !== null) {
             event(new CompetencySessionEnded(
                 $progress['participant_id'],
@@ -1188,9 +1193,21 @@ class InterviewController extends Controller
             // before composition. Without that harvest a resume would
             // destroy everything said before it: each resume issues a NEW
             // provider_session_ref, and /end reconciles only the surviving one.
-            $oldToken = ProviderToken::fromRef($session->provider, $oldRef);
+            // The context ref travels with the session ref: the provider deletes
+            // the old session's context entry too, once the stop has succeeded.
+            $oldToken = ProviderToken::fromRef($session->provider, $oldRef, $session->provider_context_ref);
             try {
-                $provider->teardown($oldToken);
+                if (! $provider->teardown($oldToken)) {
+                    // The row holds ONE context ref and it is about to take the fresh
+                    // session's, so the old one is forgotten. The provider kept it on
+                    // purpose (a context is not deleted from under a session whose stop
+                    // it could not confirm): this line is the only trace of its id.
+                    Log::warning('C7a: old provider session not confirmed stopped; its context was left in place', [
+                        'session_id' => $session->id,
+                        'old_ref' => $oldRef,
+                        'old_context_ref' => $session->provider_context_ref,
+                    ]);
+                }
             } catch (\Throwable $e) {
                 // Non-fatal — log and continue (candidate needs the fresh session)
                 Log::warning('C7a: teardown of old provider session failed (non-fatal)', [
@@ -1205,6 +1222,7 @@ class InterviewController extends Controller
         try {
             DB::transaction(function () use ($session, $freshToken, $ctx): void {
                 $session->provider_session_ref = $freshToken->provider_session_ref;
+                $session->provider_context_ref = $freshToken->provider_context_ref;
                 $session->status = 'in_corso';
                 // (D2) `??=` — a no-op here for any row that truly resumed
                 // (started_at is already set from the first stretch).
@@ -1275,6 +1293,7 @@ class InterviewController extends Controller
             DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency, $ctx): void {
                 // UPDATE session status = in_corso + new ref
                 $session->provider_session_ref = $token->provider_session_ref;
+                $session->provider_context_ref = $token->provider_context_ref;
                 $session->status = 'in_corso';
 
                 // (interview-session-started-at, D2) The FIRST live moment,
@@ -1615,8 +1634,9 @@ class InterviewController extends Controller
      * harvested `$ref`'s transcript — this method never harvests, and calling
      * it before that harvest would discard everything said in the stretch.
      *
-     * It leaves the session `in_corso` with a NULL ref, which is precisely the
-     * state the next `/start` resumes.
+     * It leaves the session `in_corso` with a NULL ref once the stop is
+     * confirmed, which is precisely the state the next `/start` resumes; an
+     * unconfirmed stop leaves the refs, which that same `/start` also resumes.
      *
      * The live period closes OUTSIDE any guard on the teardown succeeding: a
      * period is BEAI's own observation of elapsed interview time, not a mirror
@@ -1628,9 +1648,13 @@ class InterviewController extends Controller
      * candidate's request over it is worse, and would leave the ref pointing at
      * a session we have stopped using either way.
      *
-     * The ref is forgotten LAST. Until that line the row still points at the
-     * session being torn down, so a crash anywhere above leaves a recoverable
-     * state rather than an orphaned provider conversation nothing references.
+     * The refs are forgotten LAST, and ONLY once the provider confirmed the stop
+     * (together with the context ref, which the same teardown deleted). Until
+     * then the row still points at the session being torn down, so a crash
+     * anywhere above, or a stop the provider did not confirm, leaves a
+     * recoverable state rather than an orphaned provider conversation nothing
+     * references: the next `/suspend`, the next `/start` (whose resume tears the
+     * old ref down again) or the reaper retries against the same ids.
      */
     private function releaseProviderSession(
         InterviewSession $session,
@@ -1640,8 +1664,9 @@ class InterviewController extends Controller
         $this->liveClock->close($session, 'pause');
 
         try {
-            $provider->teardown(ProviderToken::fromRef($session->provider, $ref));
+            $released = $provider->teardown(ProviderToken::fromRef($session->provider, $ref, $session->provider_context_ref));
         } catch (\Throwable $e) {
+            $released = false;
             Log::warning('C7a: teardown of the stopped provider session failed (non-fatal)', [
                 'session_id' => $session->id,
                 'ref' => $ref,
@@ -1649,7 +1674,12 @@ class InterviewController extends Controller
             ]);
         }
 
+        if (! $released) {
+            return;
+        }
+
         $session->provider_session_ref = null;
+        $session->provider_context_ref = null;
         $session->save();
     }
 

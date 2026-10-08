@@ -80,6 +80,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $system_prompt_chars
  * @property string $provider
  * @property string|null $provider_session_ref
+ * @property string|null $provider_context_ref
  * @property string $status
  * @property string|null $ended_reason
  * @property int $error_count
@@ -126,6 +127,7 @@ class InterviewSession extends TenantModel
         'framework_version_id',
         'provider',
         'provider_session_ref',
+        'provider_context_ref',
         'status',
         'ended_reason',
         'started_at',

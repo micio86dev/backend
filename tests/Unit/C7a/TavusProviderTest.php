@@ -303,3 +303,42 @@ test('TavusProvider::teardown() reports whether the conversation was released in
     'unauthorized' => [401, false],
     'upstream error' => [500, false],
 ]);
+
+test('TavusProvider::teardown() on a non-2xx logs a redacted warning with the status and never the API key', function (int $status): void {
+    Http::fake([
+        '*tavusapi*/v2/conversations/*/end' => Http::response(['message' => 'denied for SUPER_SECRET_TAVUS_KEY_99999'], $status),
+    ]);
+
+    $logs = [];
+    Log::listen(function ($message) use (&$logs): void {
+        $logs[] = ['level' => $message->level, 'text' => (string) json_encode([$message->message, $message->context])];
+    });
+
+    $released = (new TavusProvider)->teardown(ProviderToken::fromRef('tavus', 'conv-live'));
+
+    expect($released)->toBeFalse();
+
+    $warnings = array_values(array_filter($logs, fn (array $l): bool => $l['level'] === 'warning'
+        && str_contains($l['text'], 'Tavus: teardown failed')));
+    expect($warnings)->toHaveCount(1);
+    expect($warnings[0]['text'])->toContain((string) $status)->toContain('[REDACTED]');
+
+    foreach ($logs as $log) {
+        expect($log['text'])->not->toContain('SUPER_SECRET_TAVUS_KEY_99999');
+    }
+})->with([400, 401, 422, 500, 503]);
+
+test('TavusProvider has no context concept: issue() returns a null provider_context_ref and teardown() ignores one', function (): void {
+    Http::fake([
+        '*tavusapi*/v2/conversations' => Http::response(['conversation_id' => 'conv-abc', 'conversation_url' => 'https://tavus.io/conv-abc'], 200),
+        '*tavusapi*/v2/conversations/*/end' => Http::response([], 200),
+    ]);
+
+    $token = (new TavusProvider)->issue(tavusMockSession(), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
+    expect($token->provider_context_ref)->toBeNull();
+
+    Http::fake(['*' => Http::response([], 200)]);
+    expect((new TavusProvider)->teardown(ProviderToken::fromRef('tavus', 'conv-abc', 'ctx-should-be-ignored')))->toBeTrue();
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn ($request): bool => $request->method() === 'DELETE');
+});

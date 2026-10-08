@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
+use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Models\InterviewSession;
 use App\Support\Interview\SessionLiveClock;
@@ -45,6 +46,7 @@ final class ReapStaleInterviews extends Command
         private readonly SessionLiveClock $liveClock,
         private readonly RecordConversationLlmUsage $recordLlmUsage,
         private readonly SettleParticipantCompletion $settle,
+        private readonly ReleaseProviderSession $releaseProvider,
     ) {
         parent::__construct();
     }
@@ -196,7 +198,7 @@ final class ReapStaleInterviews extends Command
      */
     private function endSession(InterviewSession $session): void
     {
-        DB::transaction(function () use ($session): void {
+        $ended = DB::transaction(function () use ($session): bool {
             $locked = InterviewSession::withoutGlobalScopes()
                 ->whereKey($session->id)
                 ->lockForUpdate()
@@ -207,7 +209,7 @@ final class ReapStaleInterviews extends Command
             // stamping `timeout` over a genuine `completed` would rewrite the
             // truth about how their interview finished.
             if ($locked === null || $locked->status !== 'in_corso') {
-                return;
+                return false;
             }
 
             $locked->status = 'timeout';
@@ -217,7 +219,14 @@ final class ReapStaleInterviews extends Command
 
             $this->liveClock->close($locked, 'end');
             ($this->recordLlmUsage)($locked);
+
+            return true;
         });
+
+        if ($ended) {
+            // After the commit, best-effort: never aborts the sweep.
+            ($this->releaseProvider)($session);
+        }
 
         Log::info('reaped an abandoned interview session', [
             'session_id' => $session->id,
