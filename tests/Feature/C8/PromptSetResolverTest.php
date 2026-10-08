@@ -26,7 +26,7 @@ beforeEach(fn () => PromptSetResolver::flushCache());
 /**
  * Insert a sealed set. Options: `label`, `active`, `locales`, `drop` (en keys to omit),
  * `extra` (en key => body), `bodies` (en key => body, sealed), `tamper` (en key => body written
- * AFTER sealing), `locale_bodies` (locale => key => body, sealed; replaces that locale's baseline copy), `overrides` (rows without prompt_set_id), `sealed_overrides` (what the seal covers, if different), `hash` (stored hash instead of the seal).
+ * AFTER sealing), `extra_rows` (list of key/locale/body fragment rows, sealed, for duplicates), `locale_bodies` (locale => key => body, sealed; replaces that locale's baseline copy), `overrides` (rows without prompt_set_id), `sealed_overrides` (what the seal covers, if different), `hash` (stored hash instead of the seal).
  *
  * @param  array<string, mixed>  $options
  */
@@ -42,6 +42,8 @@ function makePromptSet(array $options = []): int
             $fragments[] = ['key' => $key, 'locale' => $locale, 'body' => $body];
         }
     }
+
+    $fragments = [...$fragments, ...($options['extra_rows'] ?? [])];
 
     $overrides = $options['overrides'] ?? [];
     $seal = PromptSetSeal::seal($fragments, $options['sealed_overrides'] ?? $overrides);
@@ -153,6 +155,53 @@ test('two active sets are refused instead of serving the first', function (): vo
             ->and($e->getMessage())->toContain((string) $first)->toContain((string) $second);
     }
 });
+
+test('a duplicate (key, locale) fragment is refused whether or not the seal covers it', function (bool $sealed): void {
+    // The unique constraint makes this impossible; drop it (transactional DDL, rolled back with the test).
+    DB::statement('ALTER TABLE conversation_prompt_fragments DROP CONSTRAINT conversation_prompt_fragments_set_key_locale_unique');
+    $duplicate = ['key' => PromptFragmentKey::LabelOpening->value, 'locale' => 'en', 'body' => 'OPENING (second):'];
+
+    if ($sealed) {
+        makePromptSet(['extra_rows' => [$duplicate]]);
+    } else {
+        $setId = makePromptSet();
+        DB::table('conversation_prompt_fragments')->insert([
+            'prompt_set_id' => $setId, 'fragment_key' => $duplicate['key'], 'locale' => 'en', 'body' => $duplicate['body'], 'created_at' => now(),
+        ]);
+    }
+
+    try {
+        resolveWith();
+        $this->fail('Expected PromptTemplateUnresolvableException, none thrown.');
+    } catch (Unresolvable $e) {
+        expect($e->reason)->toBe(Unresolvable::DUPLICATE_ROW)
+            ->and($e->getMessage())->toContain(PromptFragmentKey::LabelOpening->value)->not->toContain('second');
+    }
+})->with([
+    'covered by the seal' => [true],
+    'not covered by the seal' => [false],
+]);
+
+test('a duplicate override is refused whether or not the seal covers it', function (?string $role, bool $sealed): void {
+    DB::statement('DROP INDEX conversation_prompt_overrides_role_specific_unique');
+    DB::statement('DROP INDEX conversation_prompt_overrides_role_less_unique');
+    $rows = [overrideRow($role, 'COL', 'en', 'first text'), overrideRow($role, 'COL', 'en', 'second text')];
+
+    makePromptSet(['overrides' => $rows, 'sealed_overrides' => $sealed ? $rows : [$rows[0]]]);
+
+    try {
+        resolveWith('en', 'COL', $role);
+        $this->fail('Expected PromptTemplateUnresolvableException, none thrown.');
+    } catch (Unresolvable $e) {
+        expect($e->reason)->toBe(Unresolvable::DUPLICATE_ROW)
+            ->and($e->getMessage())->toContain('COL')->not->toContain('text');
+    }
+})->with([
+    'role-less, sealed' => [null, true],
+    'role-less, unsealed' => [null, false],
+    'role-specific, sealed' => ['FLL', true],
+    'role-specific, unsealed' => ['FLL', false],
+]);
 
 test('a missing key is refused even though the stored seal is correct', function (): void {
     makePromptSet(['drop' => [PromptFragmentKey::Budget->value]]);

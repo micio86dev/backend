@@ -29,6 +29,10 @@ use App\Support\Conversation\PromptSetSeal;
  * even though a partial unique index makes that state impossible, so a broken
  * invariant is loud instead of silently serving whichever row came first.
  *
+ * A set holding two rows for one identity (fragment key and locale, or override
+ * role, competency and locale) is refused with `duplicate_row` before the seal
+ * is checked; rows are read in a fixed order so no row ever wins by arrival.
+ *
  * Verification, each a distinct {@see PromptTemplateUnresolvableException} reason:
  * the seal recomputed over ALL rows of the set (every locale, plus overrides)
  * equals the stored one; the locale has rows; its key set equals
@@ -87,12 +91,14 @@ final class PromptSetResolver
     private function loadAndVerify(ConversationPromptSet $set, string $locale): array
     {
         $fragmentRows = [];
-        foreach (ConversationPromptFragment::query()->where('prompt_set_id', $set->id)->toBase()->get(['fragment_key', 'locale', 'body']) as $row) {
+        $fragmentQuery = ConversationPromptFragment::query()->where('prompt_set_id', $set->id)->orderBy('fragment_key')->orderBy('locale')->orderBy('id');
+        foreach ($fragmentQuery->toBase()->get(['fragment_key', 'locale', 'body']) as $row) {
             $fragmentRows[] = ['key' => (string) $row->fragment_key, 'locale' => (string) $row->locale, 'body' => (string) $row->body];
         }
 
         $overrideRows = [];
-        foreach (ConversationPromptOverride::query()->where('prompt_set_id', $set->id)->toBase()->get(['role_code', 'competency_code', 'locale', 'body']) as $row) {
+        $overrideQuery = ConversationPromptOverride::query()->where('prompt_set_id', $set->id)->orderBy('role_code')->orderBy('competency_code')->orderBy('locale')->orderBy('id');
+        foreach ($overrideQuery->toBase()->get(['role_code', 'competency_code', 'locale', 'body']) as $row) {
             $overrideRows[] = [
                 'role_code' => $row->role_code === null ? null : (string) $row->role_code,
                 'competency_code' => (string) $row->competency_code,
@@ -100,6 +106,10 @@ final class PromptSetResolver
                 'body' => (string) $row->body,
             ];
         }
+
+        // Before the seal: a second row for one identity is named as such even when the seal covers it,
+        // and no row is ever picked over another by arrival order.
+        $this->assertNoDuplicates($set, $fragmentRows, $overrideRows);
 
         if (! hash_equals($set->content_sha256, PromptSetSeal::seal($fragmentRows, $overrideRows))) {
             throw PromptTemplateUnresolvableException::sealMismatch($set->label);
@@ -144,6 +154,44 @@ final class PromptSetResolver
         }
 
         return ['templates' => new PromptTemplateSet($bodies), 'overrides' => $overrides];
+    }
+
+    /**
+     * The unique indexes make a duplicate impossible; this keeps the resolver from
+     * silently picking one if that guarantee were ever lost.
+     *
+     * @param  list<array{key: string, locale: string, body: string}>  $fragmentRows
+     * @param  list<array{role_code: string|null, competency_code: string, locale: string, body: string}>  $overrideRows
+     *
+     * @throws PromptTemplateUnresolvableException
+     */
+    private function assertNoDuplicates(ConversationPromptSet $set, array $fragmentRows, array $overrideRows): void
+    {
+        $seen = [];
+        foreach ($fragmentRows as $row) {
+            $identity = json_encode([$row['key'], $row['locale']], JSON_THROW_ON_ERROR);
+
+            if (isset($seen[$identity])) {
+                throw PromptTemplateUnresolvableException::duplicateRow($set->label, $row['locale'], "fragment [{$row['key']}]");
+            }
+
+            $seen[$identity] = true;
+        }
+
+        $seen = [];
+        foreach ($overrideRows as $row) {
+            $identity = json_encode([$row['role_code'], $row['competency_code'], $row['locale']], JSON_THROW_ON_ERROR);
+
+            if (isset($seen[$identity])) {
+                throw PromptTemplateUnresolvableException::duplicateRow(
+                    $set->label,
+                    $row['locale'],
+                    sprintf('the override for competency [%s] and %s', $row['competency_code'], $row['role_code'] === null ? 'no role' : "role [{$row['role_code']}]"),
+                );
+            }
+
+            $seen[$identity] = true;
+        }
     }
 
     /**
