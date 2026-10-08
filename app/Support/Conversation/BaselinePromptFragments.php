@@ -13,7 +13,7 @@ use App\Enums\PromptFragmentKey;
  *
  * These are `SystemPromptComposer`'s literals moved verbatim: the default of
  * `compose()` when no set is given, the seed source of the stored baseline set
- * and the break-glass target. The 15 keys the composer reads are pinned by the prompt
+ * and the break-glass target. The 30 keys the composer reads are pinned by the prompt
  * goldens; all 31 bodies are pinned by hash in BaselinePromptFragmentsTest.
  *
  * A body is stored TRIMMED: the spaces and newlines that join a fragment to its

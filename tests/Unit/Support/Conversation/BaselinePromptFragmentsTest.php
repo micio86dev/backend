@@ -47,7 +47,7 @@ test('templateSet builds a complete, renderable set for the locale', function ()
 });
 
 /*
- * The bytes of every baseline body, pinned by hash. The goldens pin the 15 keys the composer reads
+ * The bytes of every baseline body, pinned by hash. The goldens pin the 30 keys the composer reads
  * today; this pins all 31, including label.override, which no composer path reads yet.
  * Editing a body is a deliberate act: it changes the prompt, so regenerate the hash with the change.
  */

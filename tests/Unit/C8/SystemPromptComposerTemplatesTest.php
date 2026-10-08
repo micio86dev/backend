@@ -90,7 +90,7 @@ function composeWithTemplates(array $case, ?PromptTemplateSet $templates): strin
     )->text;
 }
 
-/** Cases chosen so that, together, every migrated key is rendered at least once. */
+/** Cases chosen so that, together, every consumable key is rendered at least once. */
 function templateCases(): array
 {
     return [
@@ -104,7 +104,7 @@ function templateCases(): array
     ];
 }
 
-test('a provided set supplies the migrated sections', function (array $case): void {
+test('a provided set supplies every section', function (array $case): void {
     $text = composeWithTemplates($case, markerSet());
 
     expect($text)->toContain('⟦header⟧')
@@ -217,3 +217,11 @@ test('an advance phrase with nothing speakable takes the no-phrase branch instea
     'ideographic space' => ["\u{3000}"],
     'mixed' => [" \u{00A0}\u{200B} "],
 ]);
+
+test('a fragment that cannot be rendered surfaces as a CompositionException naming the key', function (): void {
+    $composer = new SystemPromptComposer(new BarsIndicatorLoader);
+    $render = new ReflectionMethod($composer, 'render');
+
+    expect(fn () => $render->invoke($composer, markerSet(), PromptFragmentKey::Budget, ['budget' => []]))
+        ->toThrow(CompositionException::class, 'budget');
+});
