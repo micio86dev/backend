@@ -109,13 +109,16 @@ function goldenStartPrompt(string $type, string $locale, array $codes, int $prim
     test()->withHeaders(['Authorization' => 'Bearer '.casBearer($participant)])
         ->postJson('/api/candidate/interview/start')->assertStatus(201);
 
-    foreach (Http::recorded() as [$request]) {
-        if (str_contains($request->url(), '/contexts')) {
-            return (string) ($request->data()['prompt'] ?? '');
-        }
-    }
+    // Only the context CREATION carries the prompt; a context DELETE (the release
+    // of an old session on resume) targets /contexts/{id} and must never be taken for it.
+    $creations = collect(Http::recorded())
+        ->map(fn (array $pair) => $pair[0])
+        ->filter(fn ($request) => $request->method() === 'POST' && str_ends_with($request->url(), '/contexts'))
+        ->values();
 
-    throw new RuntimeException('The /start call sent no provider context.');
+    expect($creations)->toHaveCount(1, 'The /start call must create exactly one provider context.');
+
+    return (string) ($creations->first()->data()['prompt'] ?? '');
 }
 
 function goldenAssertHttp(string $id, string $prompt): void
@@ -131,8 +134,10 @@ function goldenAssertHttp(string $id, string $prompt): void
 test('H1 standard en fresh start sends the pinned prompt', function (): void {
     $prompt = goldenStartPrompt('standard', 'en', ['GOLD_A', 'GOLD_B'], 2, false);
 
-    expect($prompt)->toContain(trans('interview.end_phrase', [], 'en'))
-        ->not->toContain(trans('interview.final_phrase', [], 'en'));
+    // The advance phrase is embedded between double quotes: match the quoted form so a
+    // phrase that merely contains the other one cannot give a false result.
+    expect($prompt)->toContain('"'.trans('interview.end_phrase', [], 'en').'"')
+        ->not->toContain('"'.trans('interview.final_phrase', [], 'en').'"');
     goldenAssertHttp('H1', $prompt);
 });
 
@@ -151,6 +156,6 @@ test('H3 potential it on the last competency sends the final phrase, not the int
 
     expect($final)->not->toBe($intermediate)
         ->and($prompt)->toContain('"'.$final.'"')
-        ->not->toContain($intermediate);
+        ->not->toContain('"'.$intermediate.'"');
     goldenAssertHttp('H3', $prompt);
 });
