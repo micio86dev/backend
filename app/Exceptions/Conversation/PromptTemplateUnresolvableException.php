@@ -1,0 +1,95 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Exceptions\Conversation;
+
+/**
+ * Thrown when no usable prompt set can be resolved for a composition
+ * (db-driven-conversation-prompts, design N-6/N-9).
+ *
+ * A CompositionException, so the existing `catch` in the interview controller
+ * answers it with the same 422 `composition_error`: a missing or damaged set is
+ * a hard failure, never a silent fallback to other text.
+ *
+ * {@see $reason} is the machine-readable cause, one constant per failure.
+ * Messages name sets, locales, keys and tokens only; they NEVER include a
+ * template or override body, which is operator-authored text and ends up in
+ * error tracking.
+ */
+class PromptTemplateUnresolvableException extends CompositionException
+{
+    public const NO_ACTIVE_SET = 'no_active_set';
+
+    public const LOCALE_MISSING = 'locale_missing';
+
+    public const KEYS_INCOMPLETE = 'keys_incomplete';
+
+    public const CONTRACT_VIOLATED = 'contract_violated';
+
+    public const SEAL_MISMATCH = 'seal_mismatch';
+
+    public const OVERRIDE_INVALID = 'override_invalid';
+
+    final protected function __construct(public readonly string $reason, string $message)
+    {
+        parent::__construct($message);
+    }
+
+    public static function noActiveSet(): self
+    {
+        return new self(self::NO_ACTIVE_SET, 'No conversation prompt set is active.');
+    }
+
+    public static function localeMissing(string $setLabel, string $locale): self
+    {
+        return new self(self::LOCALE_MISSING, "Prompt set [{$setLabel}] has no fragments for locale [{$locale}].");
+    }
+
+    /**
+     * @param  list<string>  $missing  Keys of the enum with no stored fragment.
+     * @param  list<string>  $unknown  Stored keys outside the enum.
+     */
+    public static function keysIncomplete(string $setLabel, string $locale, array $missing, array $unknown): self
+    {
+        return new self(self::KEYS_INCOMPLETE, sprintf(
+            'Prompt set [%s] locale [%s] does not hold exactly the fragment keys. Missing: [%s]. Unknown: [%s].',
+            $setLabel,
+            $locale,
+            implode(', ', $missing),
+            implode(', ', $unknown),
+        ));
+    }
+
+    /**
+     * @param  list<string>  $violations  Messages from `PromptFragmentContract`; they name keys and tokens, never bodies.
+     */
+    public static function contractViolated(string $setLabel, string $locale, array $violations): self
+    {
+        return new self(self::CONTRACT_VIOLATED, sprintf(
+            'Prompt set [%s] locale [%s] breaks the placeholder contract: %s.',
+            $setLabel,
+            $locale,
+            implode('; ', $violations),
+        ));
+    }
+
+    public static function sealMismatch(string $setLabel): self
+    {
+        return new self(self::SEAL_MISMATCH, "Prompt set [{$setLabel}] does not match its content seal; its stored text was altered.");
+    }
+
+    /**
+     * @param  list<string>  $violations
+     */
+    public static function overrideInvalid(string $setLabel, string $locale, string $competencyCode, array $violations): self
+    {
+        return new self(self::OVERRIDE_INVALID, sprintf(
+            'Prompt set [%s] locale [%s] override for competency [%s] is invalid: %s.',
+            $setLabel,
+            $locale,
+            $competencyCode,
+            implode('; ', $violations),
+        ));
+    }
+}
