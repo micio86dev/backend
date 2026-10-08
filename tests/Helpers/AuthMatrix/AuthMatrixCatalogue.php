@@ -196,9 +196,9 @@ final class AuthMatrixCatalogue
 
             // ─── organization (own organization) ─────────────────────────────
             'GET api/organization' => self::user('organization', self::orgScoped([self::A, self::O, self::V])),
-            'PATCH api/organization' => self::user('organization', self::orgScoped([self::A], bare: AuthMatrix::UNRESOLVED)),
-            'POST api/organization/logo' => self::user('organization', self::orgScoped([self::A], bare: AuthMatrix::UNRESOLVED)),
-            'DELETE api/organization/logo' => self::user('organization', self::orgScoped([self::A], bare: AuthMatrix::UNRESOLVED)),
+            'PATCH api/organization' => self::user('organization', self::orgScoped([self::A], bare: AuthMatrix::CONFLICT)),
+            'POST api/organization/logo' => self::user('organization', self::orgScoped([self::A], bare: AuthMatrix::CONFLICT)),
+            'DELETE api/organization/logo' => self::user('organization', self::orgScoped([self::A], bare: AuthMatrix::CONFLICT)),
             // Public on purpose: a branded login page must render before anyone signs in.
             'GET api/organizations/{organization}/logo' => self::open('organization', AuthMatrix::TENANCY_NONE),
 
@@ -206,14 +206,14 @@ final class AuthMatrixCatalogue
             'GET api/users' => self::user('users', self::orgScoped([self::A])),
             'POST api/users' => self::user('users', self::orgScoped([self::A], bare: AuthMatrix::CONFLICT)),
             'PATCH api/users/{user}' => self::user('users', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
-            'POST api/users/{user}/activate' => self::user('users', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::UNRESOLVED)),
-            'POST api/users/{user}/deactivate' => self::user('users', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::UNRESOLVED)),
+            'POST api/users/{user}/activate' => self::user('users', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
+            'POST api/users/{user}/deactivate' => self::user('users', self::orgScoped([self::A], cross: AuthMatrix::NOT_FOUND, bare: AuthMatrix::CONFLICT)),
 
             // ─── projects ────────────────────────────────────────────────────
             'GET api/projects' => self::user('projects', self::orgScoped([self::A, self::O, self::V])),
-            // A bare superadmin has no organization whose framework version / avatar template
-            // it may reference, so the (org-scoped) validation refuses: 422, and nothing is created.
-            'POST api/projects' => self::user('projects', self::orgScoped([self::A, self::O], bare: AuthMatrix::UNPROCESSABLE)),
+            // A bare superadmin has no organization to create the project in: `org.context` refuses
+            // with 409 before validation runs (it used to be a 422 from org-scoped rules), nothing is created.
+            'POST api/projects' => self::user('projects', self::orgScoped([self::A, self::O], bare: AuthMatrix::CONFLICT)),
             'GET api/projects/{project}' => self::user('projects', self::orgScoped([self::A, self::O, self::V], cross: AuthMatrix::NOT_FOUND)),
             // Under bypass a bare superadmin sees (and may edit) every tenant's project.
             'PUT|PATCH api/projects/{project}' => self::user('projects', self::orgScoped([self::A, self::O], cross: AuthMatrix::NOT_FOUND)),
@@ -274,7 +274,8 @@ final class AuthMatrixCatalogue
 
             // ─── m2m client management (user JWT, admin only) ────────────────
             'GET api/m2m/abilities' => self::user('m2m-admin', self::orgScoped([self::A])),
-            'GET api/m2m/clients' => self::user('m2m-admin', self::orgScoped([self::A])),
+            // A bare superadmin is refused (409), not served an empty list that reads as "this client has no keys".
+            'GET api/m2m/clients' => self::user('m2m-admin', self::orgScoped([self::A], bare: AuthMatrix::CONFLICT)),
             'POST api/m2m/clients' => self::user('m2m-admin', self::orgScoped([self::A], bare: AuthMatrix::CONFLICT)),
             // ApiClient is not a tenant model: a foreign key is 403 by policy (org mismatch), not 404 (informational KQ-I2).
             'DELETE api/m2m/clients/{apiClient}' => self::user('m2m-admin', self::orgScoped([self::A], cross: AuthMatrix::FORBIDDEN)),
@@ -362,32 +363,27 @@ final class AuthMatrixCatalogue
                 'cells' => [],
             ],
             'KQ-2' => [
-                'summary' => 'A superadmin with no acting client on org-scoped routes gets a DIFFERENT status per '
-                    .'route for the same missing-context condition: 403 (PATCH /organization: find(null) is falsy so '
-                    .'the FormRequest refuses), 404 (organization logo: findOrFail(null); user activate/deactivate: '
-                    .'organization_id IS NULL matches nothing), 409 (user store/update, api-client create). '
-                    .'Gate::before never gets to help because the route fails earlier.',
+                'summary' => 'RESOLVED (openspec change acting-org-409-contract). A superadmin with no acting client '
+                    .'used to get a DIFFERENT status per org-scoped route for the same missing-context condition: '
+                    .'403 (PATCH /organization), 404 (organization logo, user activate/deactivate), 422 (POST /projects), '
+                    .'a bespoke 409 body (POST /m2m/clients) and an empty 200 (GET /m2m/clients). Every one of them '
+                    .'now opts into the `org.context` middleware and answers the same legible 409 '
+                    .'`organization_context_required`, before any write. GET /organization is the deliberate exception: '
+                    .'it answers `200 {"data": null}` because the shell reads it on every page.',
                 'evidence' => [
-                    'app/Http/Requests/UpdateOrganizationRequest.php:34-36',
-                    'app/Http/Controllers/Api/OrganizationLogoController.php:142,243',
-                    'app/Support/Users/UserAdminReader.php (baseQuery org filter)',
-                    'app/Http/Requests/UpdateUserRequest.php:36-40 (the 409 that activate/deactivate lack)',
+                    'routes/api.php (org.context on the writes above)',
+                    'tests/Feature/AuthMatrix/AuthMatrixKnownQuestionsTest.php (the regression guard)',
+                    'tests/Feature/Superadmin/ActingOrganizationContractTest.php',
                 ],
-                'cells' => [
-                    'PATCH api/organization' => $bare,
-                    'POST api/organization/logo' => $bare,
-                    'DELETE api/organization/logo' => $bare,
-                    'POST api/users/{user}/activate' => $bare,
-                    'POST api/users/{user}/deactivate' => $bare,
-                ],
+                'cells' => [],
             ],
             'KQ-3' => [
                 'summary' => 'Bare-superadmin writes whose outcome static reading could not settle (validation '
                     .'rules bind to the resolved org id, which is null; the target row is visible under bypass but '
                     .'the org-scoped rules are not). SETTLED by real requests in the matrix tests: '
-                    .'POST /projects answers 422 (nothing to reference) and PATCH /projects/{project} answers 200 '
-                    .'(bypass reaches the row); POST /entry-links answers 201 (bypass resolves the project). All '
-                    .'three are now encoded, so this record is informational.',
+                    .'PATCH /projects/{project} answers 200 (bypass reaches the row) and POST /entry-links answers 201 '
+                    .'(bypass resolves the project); POST /projects answered 422 and now answers 409 (KQ-2). All '
+                    .'three are encoded, so this record is informational.',
                 'evidence' => [
                     'app/Http/Requests/StoreProjectRequest.php:77-88',
                     'app/Http/Requests/UpdateProjectRequest.php:124',
