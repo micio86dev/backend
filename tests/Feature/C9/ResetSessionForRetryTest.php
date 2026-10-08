@@ -101,6 +101,18 @@ test('the reset clears the session fields that make it resumable', function (): 
     expect($fresh->ended_at)->toBeNull();
 });
 
+test('the reset keeps the conversation prompt version stamped on the first attempt', function (): void {
+    // Same judgement as started_at and system_prompt_chars: the stamp records what the
+    // session FIRST ran under, and a re-offer is the same session, not a new one. A
+    // re-offered competency composed under a later prompt is the documented mixed record.
+    [$session] = resetFixture();
+    $session->forceFill(['conversation_prompt_version' => 'v-first'])->save();
+
+    (new ResetSessionForRetry)($session);
+
+    expect($session->fresh()->conversation_prompt_version)->toBe('v-first');
+});
+
 test('the reset does NOT touch error_count — this is the bound', function (): void {
     // A counter cleared by its own reset is not a bound: reset, fail, reset, fail,
     // forever. `markSessionError()` is its sole writer, deliberately.

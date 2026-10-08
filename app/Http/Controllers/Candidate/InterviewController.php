@@ -1231,7 +1231,7 @@ class InterviewController extends Controller
                 // re-invoked on resume — stamp() carries its own write-once /
                 // downgrade-only / null-guard rules, mirroring started_at's
                 // idiom right above it.
-                $this->llmSnapshot->stamp($session, $ctx->systemPrompt);
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->promptVersion);
                 $session->save();
 
                 // (D1/D4) Open the NEW stretch in the same transaction — the
@@ -1308,7 +1308,7 @@ class InterviewController extends Controller
                 // RESUME path above — this site is also reached by a
                 // re-offered competency (ResetSessionForRetry), not only a
                 // true first issue.
-                $this->llmSnapshot->stamp($session, $ctx->systemPrompt);
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->promptVersion);
                 $session->save();
 
                 // (D1/D4) Open a new live period in the SAME transaction as

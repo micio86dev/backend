@@ -32,6 +32,11 @@ use App\Support\AvatarTemplates\ActiveTemplateResolver;
  *     would destroy a previously recorded good value — and `P` is the LARGEST
  *     term in the cost estimator's `c_t` (design D10) because it is
  *     re-sent every turn.
+ *   - `conversation_prompt_version` — same discipline as `system_prompt_chars`:
+ *     write-once AND never overwritten FROM a null (db-driven-conversation-prompts
+ *     PR3, design N-8). The degraded RESUME path carries no version either, and a
+ *     later compose under a newer prompt records the interview as MIXED, not as
+ *     rewritten: the stamp holds the version the session FIRST ran under.
  *
  * `avatar_template_id` comes from `ActiveTemplateResolver` (the template
  * actually active for this session's provider, whether or not it carries a
@@ -54,8 +59,11 @@ final class InterviewSessionLlmSnapshot
      * @param  string|null  $systemPrompt  The composed system prompt for THIS
      *                                     issue() call, or null when the caller has none
      *                                     (never fabricated; a null never overwrites a value).
+     * @param  string|null  $promptVersion  The conversation prompt version of that same
+     *                                      composition (`QuestionContext::$promptVersion`);
+     *                                      null when there is none, and never fabricated.
      */
-    public function stamp(InterviewSession $session, ?string $systemPrompt): void
+    public function stamp(InterviewSession $session, ?string $systemPrompt, ?string $promptVersion = null): void
     {
         $template = $this->templates->resolve($session->provider, $session->project_id);
 
@@ -81,6 +89,11 @@ final class InterviewSessionLlmSnapshot
         // Write-once AND never written FROM a null.
         if ($systemPrompt !== null && $session->system_prompt_chars === null) {
             $session->system_prompt_chars = mb_strlen($systemPrompt);
+        }
+
+        // Write-once AND never written FROM a null.
+        if ($promptVersion !== null && $session->conversation_prompt_version === null) {
+            $session->conversation_prompt_version = $promptVersion;
         }
     }
 }
