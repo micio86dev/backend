@@ -283,8 +283,11 @@ test('a verified set is served from memory: the fragment query is not repeated, 
     DB::listen(function ($query) use (&$queries): void {
         $queries[] = $query->sql;
     });
-    $count = function (string $table) use (&$queries): int {
-        return count(array_filter($queries, static fn (string $sql): bool => str_contains($sql, '"'.$table.'"')));
+    $grammar = DB::getQueryGrammar();
+    $count = function (string $table) use (&$queries, $grammar): int {
+        $wrapped = $grammar->wrapTable($table);
+
+        return count(array_filter($queries, static fn (string $sql): bool => str_contains($sql, $wrapped)));
     };
 
     resolveWith();
