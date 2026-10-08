@@ -71,7 +71,8 @@ final readonly class PromptTemplateSet
      * @param  array<string, mixed>  $values  Token value keyed by bare token name; each must be string|int.
      *
      * @throws InvalidArgumentException When a required token has no value, a value has no token,
-     *                                  or a value is neither a string nor an int.
+     *                                  a value is neither a string nor an int,
+     *                                  or the `advance_phrase` value is empty.
      */
     public function render(PromptFragmentKey $key, array $values = []): string
     {
@@ -96,6 +97,12 @@ final readonly class PromptTemplateSet
         foreach ($values as $token => $value) {
             if (! is_string($value) && ! is_int($value)) {
                 throw new InvalidArgumentException("PromptTemplateSet: value of [{$token}] must be string|int.");
+            }
+
+            if ($token === 'advance_phrase' && preg_replace('/[\s\x{200B}]+/u', '', (string) $value) === '') {
+                // An empty phrase renders `say: ""`: the avatar speaks nothing, completion never
+                // fires and the provider session dies with MAX_DURATION_REACHED.
+                throw new InvalidArgumentException('PromptTemplateSet: the value of [advance_phrase] must not be empty.');
             }
 
             $replacements['{{'.$token.'}}'] = (string) $value;

@@ -110,6 +110,24 @@ test('a value that is neither a string nor an int is refused, and the message na
     'float' => [1.5],
 ]);
 
+test('an empty advance phrase is refused: it would make the avatar say nothing', function (string $phrase): void {
+    $set = new PromptTemplateSet(completeFragments());
+
+    expect(fn () => $set->render(PromptFragmentKey::AdvanceWithPhrase, ['floor' => 'x', 'advance_phrase' => $phrase]))
+        ->toThrow(InvalidArgumentException::class, 'PromptTemplateSet: the value of [advance_phrase] must not be empty.');
+})->with([
+    'empty' => [''],
+    'spaces' => ['   '],
+    'newline' => ["\n"],
+    'nbsp and zero-width space' => ["\u{00A0}\u{200B}"],
+]);
+
+test('a phrase made of the digit zero is not empty', function (): void {
+    $set = new PromptTemplateSet(completeFragments(['advance.with_phrase' => '{{floor}} say "{{advance_phrase}}"']));
+
+    expect($set->render(PromptFragmentKey::AdvanceWithPhrase, ['floor' => 'x', 'advance_phrase' => 0]))->toBe('x say "0"');
+});
+
 test('a key without tokens refuses any value', function (): void {
     $set = new PromptTemplateSet(completeFragments());
 
