@@ -13,6 +13,7 @@ declare(strict_types=1);
  * `RefreshDatabase` keeps one open around each test.
  */
 
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -175,4 +176,42 @@ test('a fragment or override pointing at a missing set violates its foreign key'
         '23503',
         'conversation_prompt_overrides_prompt_set_id_foreign',
     );
+});
+
+test('activating a second set by UPDATE violates conversation_prompt_sets_one_active as an insert does', function (): void {
+    promptSchemaInsertSet('baseline', ['is_active' => true, 'activated_at' => now()]);
+    $nextId = promptSchemaInsertSet('next');
+
+    assertPostgresConstraintViolation(
+        fn () => DB::transaction(fn () => DB::table('conversation_prompt_sets')->where('id', $nextId)->update(['is_active' => true])),
+        '23505',
+        'conversation_prompt_sets_one_active',
+    );
+});
+
+/** An over-length value is refused by the column type (SQLSTATE 22001) before any CHECK can run. */
+function promptSchemaAssertTooLong(Closure $statement): void
+{
+    try {
+        DB::transaction($statement);
+    } catch (QueryException $e) {
+        expect($e->getCode())->toBe('22001');
+
+        return;
+    }
+
+    test()->fail('The over-length value was accepted.');
+}
+
+test('an over-length content hash is refused by the char(64) type, not by the hex CHECK', function (): void {
+    promptSchemaAssertTooLong(fn () => promptSchemaInsertSet('long-hash', ['content_sha256' => str_repeat('a', 65)]));
+});
+
+test('over-length fragment and override columns are refused by their varchar limits', function (): void {
+    $setId = promptSchemaInsertSet('limits');
+
+    promptSchemaAssertTooLong(fn () => DB::table('conversation_prompt_fragments')->insert(promptSchemaFragment($setId, ['fragment_key' => str_repeat('k', 49)])));
+    promptSchemaAssertTooLong(fn () => DB::table('conversation_prompt_fragments')->insert(promptSchemaFragment($setId, ['locale' => str_repeat('l', 9)])));
+    promptSchemaAssertTooLong(fn () => DB::table('conversation_prompt_overrides')->insert(promptSchemaOverride($setId, ['role_code' => str_repeat('r', 256)])));
+    promptSchemaAssertTooLong(fn () => DB::table('conversation_prompt_overrides')->insert(promptSchemaOverride($setId, ['competency_code' => str_repeat('c', 256)])));
 });
