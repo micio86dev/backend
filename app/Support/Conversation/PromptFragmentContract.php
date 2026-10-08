@@ -29,6 +29,9 @@ final class PromptFragmentContract
     /** A well-formed token: `{{name}}`, no inner spaces. */
     private const TOKEN_PATTERN = '/(?<!\{)\{\{([A-Za-z0-9_]+)\}\}(?!\})/';
 
+    /** Unicode whitespace (NBSP included) or a zero-width space at either edge; `trim()` sees ASCII only. */
+    private const EDGE_WHITESPACE_PATTERN = '/^[\s\x{200B}]|[\s\x{200B}]$/u';
+
     /**
      * Every contract violation of a fragment template, in a stable order;
      * an empty list means the template is valid.
@@ -37,13 +40,13 @@ final class PromptFragmentContract
      */
     public function violations(PromptFragmentKey $key, string $body): array
     {
-        if (trim($body) === '') {
+        if ($this->isBlank($body)) {
             return ["fragment [{$key->value}] is empty"];
         }
 
         $violations = [];
 
-        if ($body !== trim($body)) {
+        if (preg_match(self::EDGE_WHITESPACE_PATTERN, $body) === 1) {
             $violations[] = "fragment [{$key->value}] has leading or trailing whitespace";
         }
 
@@ -72,7 +75,7 @@ final class PromptFragmentContract
      */
     public function overrideViolations(string $body): array
     {
-        if (trim($body) === '') {
+        if ($this->isBlank($body)) {
             return ['override is empty'];
         }
 
@@ -91,6 +94,12 @@ final class PromptFragmentContract
         if ($violations !== []) {
             throw new InvalidArgumentException(implode('; ', $violations));
         }
+    }
+
+    /** Empty once every Unicode whitespace and zero-width space is removed. */
+    private function isBlank(string $body): bool
+    {
+        return preg_replace('/[\s\x{200B}]+/u', '', $body) === '';
     }
 
     private function hasStrayBraces(string $body): bool

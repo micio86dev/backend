@@ -76,6 +76,21 @@ test('leading and trailing whitespace is refused', function () use ($violationsO
     }
 });
 
+test('unicode edge whitespace is refused like ASCII whitespace', function () use ($violationsOf): void {
+    foreach (["Ask {{budget}}\u{00A0}", "\u{00A0}Ask {{budget}}", "Ask {{budget}}\u{200B}", "\u{200B}Ask {{budget}}", "Ask {{budget}}\u{2003}"] as $body) {
+        expect($violationsOf(PromptFragmentKey::Budget, $body))
+            ->toBe(['fragment [budget] has leading or trailing whitespace']);
+    }
+});
+
+test('a body made only of invisible characters is empty', function () use ($violationsOf): void {
+    foreach (["\u{00A0}", "\u{200B}", " \u{00A0}\u{200B}\n"] as $body) {
+        expect($violationsOf(PromptFragmentKey::LabelStar, $body))->toBe(['fragment [label.star] is empty']);
+    }
+
+    expect((new PromptFragmentContract)->overrideViolations("\u{00A0}\u{200B}"))->toBe(['override is empty']);
+});
+
 test('an empty body is refused', function () use ($violationsOf): void {
     expect($violationsOf(PromptFragmentKey::LabelStar, ''))->toBe(['fragment [label.star] is empty'])
         ->and($violationsOf(PromptFragmentKey::LabelStar, "  \n"))->toContain('fragment [label.star] is empty');
