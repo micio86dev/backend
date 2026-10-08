@@ -49,6 +49,7 @@ final class ResetSessionForRetry
 
         $session->status = 'pending';
         $session->provider_session_ref = null;
+        $session->provider_context_ref = null;
         $session->ended_reason = null;
         $session->ended_at = null;
         // error_count is deliberately absent — see the class docblock.

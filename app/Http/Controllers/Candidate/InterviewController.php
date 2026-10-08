@@ -1188,7 +1188,9 @@ class InterviewController extends Controller
             // before composition. Without that harvest a resume would
             // destroy everything said before it: each resume issues a NEW
             // provider_session_ref, and /end reconciles only the surviving one.
-            $oldToken = ProviderToken::fromRef($session->provider, $oldRef);
+            // The context ref travels with the session ref: the provider deletes
+            // the old session's context entry too, once the stop has succeeded.
+            $oldToken = ProviderToken::fromRef($session->provider, $oldRef, $session->provider_context_ref);
             try {
                 $provider->teardown($oldToken);
             } catch (\Throwable $e) {
@@ -1205,6 +1207,7 @@ class InterviewController extends Controller
         try {
             DB::transaction(function () use ($session, $freshToken, $ctx): void {
                 $session->provider_session_ref = $freshToken->provider_session_ref;
+                $session->provider_context_ref = $freshToken->provider_context_ref;
                 $session->status = 'in_corso';
                 // (D2) `??=` — a no-op here for any row that truly resumed
                 // (started_at is already set from the first stretch).
@@ -1275,6 +1278,7 @@ class InterviewController extends Controller
             DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency, $ctx): void {
                 // UPDATE session status = in_corso + new ref
                 $session->provider_session_ref = $token->provider_session_ref;
+                $session->provider_context_ref = $token->provider_context_ref;
                 $session->status = 'in_corso';
 
                 // (interview-session-started-at, D2) The FIRST live moment,
@@ -1628,7 +1632,8 @@ class InterviewController extends Controller
      * candidate's request over it is worse, and would leave the ref pointing at
      * a session we have stopped using either way.
      *
-     * The ref is forgotten LAST. Until that line the row still points at the
+     * The ref is forgotten LAST (together with the provider's context ref, which
+     * the same teardown deleted). Until that line the row still points at the
      * session being torn down, so a crash anywhere above leaves a recoverable
      * state rather than an orphaned provider conversation nothing references.
      */
@@ -1640,7 +1645,7 @@ class InterviewController extends Controller
         $this->liveClock->close($session, 'pause');
 
         try {
-            $provider->teardown(ProviderToken::fromRef($session->provider, $ref));
+            $provider->teardown(ProviderToken::fromRef($session->provider, $ref, $session->provider_context_ref));
         } catch (\Throwable $e) {
             Log::warning('C7a: teardown of the stopped provider session failed (non-fatal)', [
                 'session_id' => $session->id,
@@ -1650,6 +1655,7 @@ class InterviewController extends Controller
         }
 
         $session->provider_session_ref = null;
+        $session->provider_context_ref = null;
         $session->save();
     }
 

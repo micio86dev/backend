@@ -1086,3 +1086,91 @@ test('pre-flight responses carry no secret and no trace', function (): void {
 
     expect($body)->not->toContain('MUST_NOT_LEAK_PREFLIGHT')->not->toContain('trace')->not->toContain('exception');
 });
+
+// ─── HeyGen context cleanup (heygen-context-cleanup) ─────────────────────────
+
+/**
+ * @return array<string, mixed> a HeyGen fake whose /contexts answers with a real `data.id`
+ */
+function heygenContextFake(string $contextId, string $sessionRef): array
+{
+    return [
+        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => $contextId]], 200),
+        '*liveavatar*/sessions/token*' => Http::response([
+            'data' => ['session_id' => $sessionRef, 'session_token' => 'tok-'.uniqid()],
+        ], 200),
+        '*liveavatar*/sessions/stop*' => Http::response([], 200),
+    ];
+}
+
+test('POST /start persists the HeyGen context id next to the session ref', function (): void {
+    Http::fake(heygenContextFake('ctx-persisted', 'sess-persisted'));
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_attesa');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $pending = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'status' => 'pending',
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    $pending->refresh();
+    expect($pending->provider_session_ref)->toBe('sess-persisted')
+        ->and($pending->provider_context_ref)->toBe('ctx-persisted');
+});
+
+test('POST /start resume in_corso: stops the old session, THEN deletes its context, and persists the fresh context', function (): void {
+    Http::fake(heygenContextFake('ctx-fresh', 'sess-fresh'));
+    Queue::fake();
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-ref',
+        'provider_context_ref' => 'old-ctx',
+        'status' => 'in_corso',
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    $calls = Http::recorded()->map(fn (array $pair): string => $pair[0]->method().' '.parse_url($pair[0]->url(), PHP_URL_PATH))->values()->all();
+    $stop = array_search('POST /v1/sessions/stop', $calls, true);
+    $delete = array_search('DELETE /v1/contexts/old-ctx', $calls, true);
+
+    expect($stop)->not->toBeFalse()
+        ->and($delete)->not->toBeFalse()
+        ->and($stop)->toBeLessThan($delete);
+
+    $session->refresh();
+    expect($session->provider_session_ref)->toBe('sess-fresh')
+        ->and($session->provider_context_ref)->toBe('ctx-fresh');
+});
