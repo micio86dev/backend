@@ -12,7 +12,9 @@ use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Models\BarsIndicator;
 use App\Support\Conversation\BaselinePromptFragments;
+use App\Support\Conversation\PromptFragmentContract;
 use Illuminate\Database\Eloquent\Collection;
+use InvalidArgumentException;
 
 /**
  * Composes a deterministic, versioned system prompt for the avatar at /start time.
@@ -108,7 +110,8 @@ final class SystemPromptComposer
      *                                             selection, clamps, joins and numbering stay here.
      *
      * @throws CompositionException When no indicators exist for the role+competency pair,
-     *                              or `$spokenOpening` names a primary the set does not have.
+     *                              `$spokenOpening` names a primary the set does not have,
+     *                              or a provided `$templates` breaks the placeholder contract.
      * @throws AnchorTranslationMissingException When any indicator field lacks a $projectLocale translation.
      */
     public function compose(
@@ -125,7 +128,12 @@ final class SystemPromptComposer
         ?int $revisionId = null,
         ?PromptTemplateSet $templates = null,
     ): ComposedPrompt {
-        $templates ??= BaselinePromptFragments::templateSet($projectLocale);
+        if ($templates === null) {
+            $templates = BaselinePromptFragments::templateSet($projectLocale);
+        } else {
+            self::assertTemplatesHonourTheContract($templates);
+        }
+
         $indicators = $this->loader->forRoleCompetency($roleId, $competencyId, $revisionId);
 
         if ($indicators->isEmpty()) {
@@ -159,8 +167,8 @@ final class SystemPromptComposer
         $budgetSection = $this->buildBudgetSection($templates, $followUpBudget);
         $nudgeSection = $this->buildNudgeSection($templates, $nudgeMinChars);
         $advanceSection = $this->buildAdvanceSection($templates, $advancePhrase, $effectiveMinimum, $primaryQuestions !== []);
-        $primarySection = $this->buildPrimaryQuestionsSection($primaryQuestions, $spokenOpening);
-        $openingSection = $this->buildOpeningSection($primaryQuestions, $spokenOpening);
+        $primarySection = $this->buildPrimaryQuestionsSection($templates, $primaryQuestions, $spokenOpening);
+        $openingSection = $this->buildOpeningSection($templates, $primaryQuestions, $spokenOpening);
 
         $text = $this->assemblePrompt(
             $templates,
@@ -185,6 +193,57 @@ final class SystemPromptComposer
         $version = self::promptVersion();
 
         return new ComposedPrompt(text: $text, version: $version);
+    }
+
+    /**
+     * Render one fragment, turning the set's refusal into a composition failure.
+     *
+     * The controller catches `CompositionException` and answers 422; anything
+     * else becomes a 500. The message carries the key and the token names
+     * `PromptTemplateSet` reports, never a template body.
+     *
+     * @param  array<string, string|int>  $values
+     *
+     * @throws CompositionException When the set cannot render the fragment with these values.
+     */
+    private function render(PromptTemplateSet $templates, PromptFragmentKey $key, array $values = []): string
+    {
+        try {
+            return $templates->render($key, $values);
+        } catch (InvalidArgumentException $e) {
+            throw new CompositionException(
+                "SystemPromptComposer: the fragment [{$key->value}] cannot be rendered: ".$e->getMessage(),
+                previous: $e,
+            );
+        }
+    }
+
+    /**
+     * A provided set is checked against the placeholder contract before it is
+     * used. `render()` substitutes the tokens it is given and never reads the
+     * template, so a template without `{{advance_phrase}}` would silently
+     * drop the closing sentence (completion never fires, the provider session
+     * dies with MAX_DURATION_REACHED) and an unknown `{{x}}` would reach the
+     * model literally. The publish-time guard cannot be the only line of
+     * defence: migrations, seeders and raw SQL bypass it.
+     *
+     * @throws CompositionException With every violation, each naming a key and, where one applies, a token.
+     */
+    private static function assertTemplatesHonourTheContract(PromptTemplateSet $templates): void
+    {
+        $contract = new PromptFragmentContract;
+        $violations = [];
+
+        foreach (PromptFragmentKey::cases() as $key) {
+            $violations = [...$violations, ...$contract->violations($key, $templates->template($key))];
+        }
+
+        if ($violations !== []) {
+            throw new CompositionException(
+                'SystemPromptComposer: the prompt template set breaks the placeholder contract: '
+                .implode('; ', $violations).'.',
+            );
+        }
     }
 
     // ─── The clamp ────────────────────────────────────────────────────────────
@@ -308,7 +367,7 @@ final class SystemPromptComposer
      */
     private function buildStarSection(PromptTemplateSet $templates): string
     {
-        return $templates->render(PromptFragmentKey::Star);
+        return $this->render($templates, PromptFragmentKey::Star);
     }
 
     /**
@@ -330,7 +389,7 @@ final class SystemPromptComposer
      */
     private function buildBudgetSection(PromptTemplateSet $templates, int $budget): string
     {
-        return $templates->render(PromptFragmentKey::Budget, ['budget' => $budget]);
+        return $this->render($templates, PromptFragmentKey::Budget, ['budget' => $budget]);
     }
 
     /**
@@ -349,7 +408,7 @@ final class SystemPromptComposer
             return '';
         }
 
-        return $templates->render(PromptFragmentKey::Nudge, ['nudge_min_chars' => $nudgeMinChars]);
+        return $this->render($templates, PromptFragmentKey::Nudge, ['nudge_min_chars' => $nudgeMinChars]);
     }
 
     /**
@@ -422,35 +481,40 @@ final class SystemPromptComposer
      * own greeting, so this is the only way it knows what the candidate's
      * next reply is answering.
      *
+     * Which fragments apply is decided here (fallback, fresh, resumed, re-ask of an
+     * asked primary); the words, and the single spaces that join them, are the set's
+     * and the composer's respectively.
+     *
      * @param  list<string>  $questions
      */
-    private function buildOpeningSection(array $questions, SpokenOpening $opening): string
+    private function buildOpeningSection(PromptTemplateSet $templates, array $questions, SpokenOpening $opening): string
     {
-        $resumed = $opening->resumed
-            ? 'This conversation was interrupted and has just resumed; questions asked before the '
-                .'interruption count toward the minimum in the ADVANCE RULE. '
-            : '';
+        $parts = [$this->render($templates, PromptFragmentKey::LabelOpening)];
+
+        if ($opening->resumed) {
+            $parts[] = $this->render($templates, PromptFragmentKey::OpeningResumedNotice);
+        }
 
         if ($opening->primaryNumber === null) {
-            return 'OPENING: '.$resumed.'You have ALREADY spoken your opening line, which asked the '
-                .'candidate to describe a specific episode from their work related to this '
-                .'competency. Do NOT ask for one again. Treat their next reply as that episode and '
-                .'begin probing it.';
+            $parts[] = $this->render($templates, PromptFragmentKey::OpeningFallback);
+
+            return implode(' ', $parts);
         }
 
         $number = $opening->primaryNumber;
-        $quoted = 'primary question '.$number.', word for word: "'.$questions[$number - 1].'"';
+        $quoted = $this->render($templates, PromptFragmentKey::OpeningQuoted, [
+            'number' => $number,
+            'question' => $questions[$number - 1],
+        ]);
 
-        $spoken = match (true) {
-            $opening->isReAskOfAskedPrimary() => 'Every primary question was already asked before the '
-                .'interruption; your opening line re-asked the last one, '.$quoted.', to restart the '
-                .'conversation.',
-            $opening->resumed => 'Your opening line re-asked '.$quoted.'.',
-            default => 'You have ALREADY spoken your opening line, which was '.$quoted.'.',
+        $parts[] = match (true) {
+            $opening->isReAskOfAskedPrimary() => $this->render($templates, PromptFragmentKey::OpeningSpokenReaskAll, ['quoted' => $quoted]),
+            $opening->resumed => $this->render($templates, PromptFragmentKey::OpeningSpokenResumed, ['quoted' => $quoted]),
+            default => $this->render($templates, PromptFragmentKey::OpeningSpokenFresh, ['quoted' => $quoted]),
         };
+        $parts[] = $this->render($templates, PromptFragmentKey::OpeningClosing);
 
-        return 'OPENING: '.$resumed.$spoken.' Do NOT ask it again. The candidate\'s next reply is '
-            .'their answer to it.';
+        return implode(' ', $parts);
     }
 
     /**
@@ -477,44 +541,32 @@ final class SystemPromptComposer
      * off) there is no list; the section says the fallback opening was the
      * competency's only question.
      *
+     * The words of every sentence are the set's; which sentences apply, the
+     * counts they name and the `N. question` numbering are decided here.
+     *
      * @param  list<string>  $questions
      */
-    private function buildPrimaryQuestionsSection(array $questions, SpokenOpening $opening): string
+    private function buildPrimaryQuestionsSection(PromptTemplateSet $templates, array $questions, SpokenOpening $opening): string
     {
         if ($questions === []) {
-            return 'This competency has no primary questions: your opening line was its only '
-                .'primary question, and everything you ask from here on is a follow-up.';
+            return $this->render($templates, PromptFragmentKey::PrimaryNone);
         }
 
         $total = count($questions);
         $spoken = (int) $opening->primaryNumber;
 
-        $lines = [
-            'The numbered list below is the COMPLETE set of primary questions for this '
-            .'competency, in order. Every one of them MUST be asked, phrased exactly as '
-            .'written, before you end the competency. You may NOT introduce, substitute, '
-            .'reorder or reword a primary question of your own — your only generative '
-            .'latitude is follow-up questions. A follow-up may probe the answer just given, '
-            .'or lead from it toward one concrete episode from the candidate\'s own past '
-            .'that is relevant to this competency. Ask the primaries as part of the '
-            .'conversation rather than reading a list.',
-        ];
+        $lines = [$this->render($templates, PromptFragmentKey::PrimaryIntro)];
 
         if ($opening->resumed && $opening->primariesAskedBefore > 0 && ! $opening->isReAskOfAskedPrimary()) {
             $lines[] = $opening->primariesAskedBefore === 1
-                ? 'Primary question 1 was asked before the interruption.'
-                : 'Primary questions 1-'.$opening->primariesAskedBefore.' were asked before the interruption.';
+                ? $this->render($templates, PromptFragmentKey::PrimaryAskedBeforeOne)
+                : $this->render($templates, PromptFragmentKey::PrimaryAskedBeforeMany, ['count' => $opening->primariesAskedBefore]);
         }
 
         $lines[] = match (true) {
-            $opening->isReAskOfAskedPrimary() => 'Every primary question has already been asked, so '
-                .'everything you ask from here on is a follow-up.',
-            $spoken >= $total => 'Primary question '.$spoken.' was your opening line and is the last '
-                .'one: every primary question has now been asked, so everything you ask from here '
-                .'on is a follow-up.',
-            default => 'Primary question '.$spoken.' was your opening line. After the candidate '
-                .'answers it, ask follow-ups as needed, then continue with primary question '
-                .($spoken + 1).'.',
+            $opening->isReAskOfAskedPrimary() => $this->render($templates, PromptFragmentKey::PrimaryProgressAllAsked),
+            $spoken >= $total => $this->render($templates, PromptFragmentKey::PrimaryProgressLast, ['spoken' => $spoken]),
+            default => $this->render($templates, PromptFragmentKey::PrimaryProgressNext, ['spoken' => $spoken, 'next' => $spoken + 1]),
         };
 
         $lines[] = '';
@@ -557,20 +609,20 @@ final class SystemPromptComposer
         // after the first answer" — or a one-primary, zero-budget competency
         // could never close.
         $floor = $minQuestions === 1
-            ? $templates->render(PromptFragmentKey::AdvanceFloorOne)
-            : $templates->render(PromptFragmentKey::AdvanceFloorMany, ['min_questions' => $minQuestions]);
+            ? $this->render($templates, PromptFragmentKey::AdvanceFloorOne)
+            : $this->render($templates, PromptFragmentKey::AdvanceFloorMany, ['min_questions' => $minQuestions]);
 
         if ($hasPrimaries) {
-            $floor = $templates->render(PromptFragmentKey::AdvanceFloorWithPrimaries, ['floor' => $floor]);
+            $floor = $this->render($templates, PromptFragmentKey::AdvanceFloorWithPrimaries, ['floor' => $floor]);
         }
 
         // A phrase with nothing speakable (including non-ASCII whitespace such as NBSP or a
         // zero-width space) takes the no-phrase branch, the same predicate PromptTemplateSet applies.
         if ($advancePhrase === null || trim($advancePhrase) === '' || preg_replace('/[\s\x{200B}]+/u', '', $advancePhrase) === '') {
-            return $templates->render(PromptFragmentKey::AdvanceWithoutPhrase, ['floor' => $floor]);
+            return $this->render($templates, PromptFragmentKey::AdvanceWithoutPhrase, ['floor' => $floor]);
         }
 
-        return $templates->render(PromptFragmentKey::AdvanceWithPhrase, ['floor' => $floor, 'advance_phrase' => $advancePhrase]);
+        return $this->render($templates, PromptFragmentKey::AdvanceWithPhrase, ['floor' => $floor, 'advance_phrase' => $advancePhrase]);
     }
 
     /**
@@ -588,23 +640,23 @@ final class SystemPromptComposer
         string $primarySection = '',
     ): string {
         $parts = [
-            $templates->render(PromptFragmentKey::Header, ['competency_code' => $competencyCode]),
+            $this->render($templates, PromptFragmentKey::Header, ['competency_code' => $competencyCode]),
             '',
             $openingSection,
             '',
-            $templates->render(PromptFragmentKey::LabelCoverage),
+            $this->render($templates, PromptFragmentKey::LabelCoverage),
             $coverageSection,
             '',
-            $templates->render(PromptFragmentKey::LabelStar),
+            $this->render($templates, PromptFragmentKey::LabelStar),
             $starSection,
             '',
-            $templates->render(PromptFragmentKey::LabelFollowUp),
+            $this->render($templates, PromptFragmentKey::LabelFollowUp),
             $budgetSection,
         ];
 
         if ($nudgeSection !== '') {
             $parts[] = '';
-            $parts[] = $templates->render(PromptFragmentKey::LabelNudge);
+            $parts[] = $this->render($templates, PromptFragmentKey::LabelNudge);
             $parts[] = $nudgeSection;
         }
 
@@ -613,12 +665,12 @@ final class SystemPromptComposer
         // has not been told about yet cannot be one it waits to ask.
         if ($primarySection !== '') {
             $parts[] = '';
-            $parts[] = $templates->render(PromptFragmentKey::LabelPrimary);
+            $parts[] = $this->render($templates, PromptFragmentKey::LabelPrimary);
             $parts[] = $primarySection;
         }
 
         $parts[] = '';
-        $parts[] = $templates->render(PromptFragmentKey::LabelAdvance);
+        $parts[] = $this->render($templates, PromptFragmentKey::LabelAdvance);
         $parts[] = $advanceSection;
 
         return implode("\n", $parts);

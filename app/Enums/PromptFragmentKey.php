@@ -16,8 +16,8 @@ namespace App\Enums;
  * bare token names a key's template must contain; that set is also the whole of
  * what the key may contain — the contract allows no other token.
  *
- * The composer reads these keys through a PromptTemplateSet; the opening and primary-question keys
- * are still consumed by literals until the next slice of the chain.
+ * The composer reads these keys through a PromptTemplateSet; only `label.override` (reserved for the
+ * per-competency override slice) is not read yet.
  */
 enum PromptFragmentKey: string
 {

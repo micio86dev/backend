@@ -36,6 +36,13 @@ test('a complete key set builds a set that renders its own bodies', function ():
         ->and($set->render(PromptFragmentKey::LabelAdvance))->toBe('label.advance');
 });
 
+test('template returns the stored body untouched, placeholders included', function (): void {
+    $set = new PromptTemplateSet(promptSetFragments());
+
+    expect($set->template(PromptFragmentKey::Budget))->toBe('budget {{budget}}')
+        ->and($set->template(PromptFragmentKey::LabelStar))->toBe('label.star');
+});
+
 test('a set missing a key is refused, and the message names the key', function (): void {
     $fragments = promptSetFragments();
     unset($fragments['advance.floor_one']);
