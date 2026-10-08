@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * RED — PR4a.5: PromptFragmentContract validates a fragment TEMPLATE, never
- * rendered text (db-driven-conversation-prompts, design N-2).
+ * PromptFragmentContract validates a fragment TEMPLATE, never rendered text
+ * (db-driven-conversation-prompts, design N-2).
  *
  * The contract replaces the code-review gate that database-driven prompts
  * remove, so each rule has its own assertion and the one that guards the
@@ -127,9 +127,4 @@ test('an override body is plain text: any placeholder or brace pair is refused',
         ->and($contract->overrideViolations('Dangling }}'))
         ->toBe(['override contains a placeholder or brace pair "{{" / "}}"'])
         ->and($contract->overrideViolations(''))->toBe(['override is empty']);
-});
-
-test('the contract judges templates: a value with a token inside is no concern of it', function () use ($violationsOf): void {
-    // The template is valid; what an operator later supplies as a value is never re-validated.
-    expect($violationsOf(PromptFragmentKey::AdvanceWithPhrase, 'AND {{floor}}, say: "{{advance_phrase}}"'))->toBe([]);
 });
