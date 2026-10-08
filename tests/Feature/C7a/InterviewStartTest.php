@@ -38,6 +38,7 @@ use App\Support\Tenancy\TenantResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
@@ -1173,4 +1174,53 @@ test('POST /start resume in_corso: stops the old session, THEN deletes its conte
     $session->refresh();
     expect($session->provider_session_ref)->toBe('sess-fresh')
         ->and($session->provider_context_ref)->toBe('ctx-fresh');
+});
+
+test('POST /start resume in_corso: an unconfirmed stop keeps the old context, names it in a warning, and still issues the fresh session', function (): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response(['message' => 'boom'], 500),
+    ] + heygenContextFake('ctx-fresh', 'sess-fresh'));
+    Queue::fake();
+
+    $warnings = [];
+    Log::listen(function ($message) use (&$warnings): void {
+        if ($message->level === 'warning') {
+            $warnings[] = $message->context;
+        }
+    });
+
+    $org = startOrg();
+    [$project, $comps] = startProjectWithCompetencies($org, 1);
+    $participant = startParticipant($org, $project, 'in_corso');
+    $token = startBearer($participant);
+
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $session = InterviewSession::create([
+        'participant_id' => $participant->id,
+        'project_id' => $project->id,
+        'question_index' => 0,
+        'competency_code' => $comps[0]->code,
+        'framework_version_id' => $project->framework_version_id,
+        'provider' => 'heygen',
+        'provider_session_ref' => 'old-ref',
+        'provider_context_ref' => 'old-ctx',
+        'status' => 'in_corso',
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    // The candidate must get the fresh session whatever happened to the old one...
+    $session->refresh();
+    expect($session->provider_session_ref)->toBe('sess-fresh')
+        ->and($session->provider_context_ref)->toBe('ctx-fresh');
+
+    // ...but the row can hold one context ref, so the old one is about to be forgotten. Without
+    // a stop that held, deleting it would pull it from under a possibly live session: it is left
+    // on HeyGen, and the only trace of its id is this warning.
+    Http::assertNotSent(fn ($req) => $req->method() === 'DELETE');
+    expect(collect($warnings)->contains(fn (array $context): bool => ($context['old_context_ref'] ?? null) === 'old-ctx'))->toBeTrue();
 });
