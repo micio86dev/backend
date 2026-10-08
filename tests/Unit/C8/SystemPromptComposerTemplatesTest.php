@@ -23,14 +23,14 @@ use App\Models\Role;
 use App\Services\Conversation\BarsIndicatorLoader;
 use App\Services\Conversation\SystemPromptComposer;
 
-/** Keys the composer reads through the set; the primary.* fragments stay literal until the next commit. */
-const MIGRATED_PROMPT_KEYS = [
-    'header', 'label.opening', 'label.coverage', 'label.star', 'label.follow_up', 'label.nudge', 'label.primary', 'label.advance',
-    'star', 'budget', 'nudge',
-    'opening.resumed_notice', 'opening.fallback', 'opening.quoted', 'opening.spoken_reask_all',
-    'opening.spoken_resumed', 'opening.spoken_fresh', 'opening.closing',
-    'advance.floor_one', 'advance.floor_many', 'advance.floor_with_primaries', 'advance.with_phrase', 'advance.without_phrase',
-];
+/** Every key but the one reserved for per-competency overrides, which no composer path reads yet. */
+function consumablePromptKeys(): array
+{
+    return array_values(array_diff(
+        array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases()),
+        ['label.override'],
+    ));
+}
 
 /**
  * @param  array<string, string>  $overrides  Bodies that replace a key's marker body.
@@ -98,6 +98,8 @@ function templateCases(): array
         'primaries, nudge, phrase, minimum 4' => ['nudge' => 100, 'phrase' => 'Move on.', 'primaries' => ['One?', 'Two?']],
         'minimum 1, resumed' => ['min' => 1, 'phrase' => 'Done.', 'primaries' => ['One?'], 'opening' => SpokenOpening::resumed(1, 1)],
         'resumed with a pending primary' => ['primaries' => ['One?', 'Two?', 'Three?'], 'opening' => SpokenOpening::resumed(1, 3)],
+        'resumed with two primaries asked' => ['primaries' => ['A?', 'B?', 'C?', 'D?'], 'opening' => SpokenOpening::resumed(2, 4)],
+        'a single primary, fresh' => ['primaries' => ['Only?']],
         'no primaries, resumed' => ['opening' => SpokenOpening::fallback(true)],
     ];
 }
@@ -112,26 +114,48 @@ test('a provided set supplies the migrated sections', function (array $case): vo
         ->and($text)->toContain("⟦label.advance⟧\n⟦advance.");
 })->with(fn (): array => array_map(static fn (array $case): array => [$case], templateCases()));
 
-test('every migrated key is rendered somewhere across the case matrix', function (): void {
+test('every consumable key is rendered somewhere across the case matrix', function (): void {
     $combined = implode("\n", array_map(
         static fn (array $case): string => composeWithTemplates($case, markerSet()),
         templateCases(),
     ));
 
-    foreach (MIGRATED_PROMPT_KEYS as $key) {
+    expect(consumablePromptKeys())->toHaveCount(30);
+
+    foreach (consumablePromptKeys() as $key) {
         expect($combined)->toContain('⟦'.$key.'⟧');
     }
 });
 
-test('the primary questions section still ignores the provided set', function (): void {
-    $text = composeWithTemplates(templateCases()['primaries, nudge, phrase, minimum 4'], markerSet());
+test('label.override is the only key no case reads', function (): void {
+    $combined = implode("\n", array_map(
+        static fn (array $case): string => composeWithTemplates($case, markerSet()),
+        templateCases(),
+    ));
 
-    foreach (array_diff(array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases()), MIGRATED_PROMPT_KEYS) as $key) {
-        expect($text)->not->toContain('⟦'.$key.'⟧');
-    }
+    expect($combined)->not->toContain('⟦label.override⟧');
+});
 
-    expect($text)->toContain('The numbered list below is the COMPLETE set')
-        ->and($text)->toContain("⟦label.primary⟧\nThe numbered list");
+test('the primary section is the intro, the asked-before line, the progress line and the numbered list', function (): void {
+    $none = composeWithTemplates([], markerSet());
+    $fresh = composeWithTemplates(['primaries' => ['One?', 'Two?']], markerSet());
+    $last = composeWithTemplates(['primaries' => ['Only?']], markerSet());
+    $askedOne = composeWithTemplates(['primaries' => ['A?', 'B?', 'C?'], 'opening' => SpokenOpening::resumed(1, 3)], markerSet());
+    $askedMany = composeWithTemplates(['primaries' => ['A?', 'B?', 'C?', 'D?'], 'opening' => SpokenOpening::resumed(2, 4)], markerSet());
+    $reaskAll = composeWithTemplates(['primaries' => ['One?'], 'opening' => SpokenOpening::resumed(1, 1)], markerSet());
+
+    expect($none)->toContain("⟦label.primary⟧\n⟦primary.none⟧\n")
+        ->and($fresh)->toContain("⟦label.primary⟧\n⟦primary.intro⟧\n⟦primary.progress_next⟧ 1 2\n\n1. One?\n2. Two?\n")
+        ->and($last)->toContain("⟦primary.intro⟧\n⟦primary.progress_last⟧ 1\n\n1. Only?\n")
+        ->and($askedOne)->toContain("⟦primary.intro⟧\n⟦primary.asked_before_one⟧\n⟦primary.progress_next⟧ 2 3\n\n1. A?")
+        ->and($askedMany)->toContain("⟦primary.intro⟧\n⟦primary.asked_before_many⟧ 2\n⟦primary.progress_next⟧ 3 4\n\n1. A?")
+        ->and($reaskAll)->toContain("⟦primary.intro⟧\n⟦primary.progress_all_asked⟧\n\n1. One?");
+});
+
+test('operator text with token-like characters reaches the numbered list untouched', function (): void {
+    $text = composeWithTemplates(['primaries' => ['Why {{budget}} on Re:think? {{count}}', 'Two?']], markerSet());
+
+    expect($text)->toContain("\n1. Why {{budget}} on Re:think? {{count}}\n2. Two?\n");
 });
 
 test('the opening paragraph is the label, the notice, the spoken variant and the closing, joined by single spaces', function (): void {
@@ -170,10 +194,10 @@ test('a set with an unknown token in a body fails composition', function (): voi
 });
 
 test('a set with a blank body fails composition', function (): void {
-    $set = markerSet(['opening.closing' => "  \u{00A0} "]);
+    $set = markerSet(['primary.intro' => "  \u{00A0} "]);
 
     expect(fn () => composeWithTemplates(['primaries' => ['One?']], $set))
-        ->toThrow(CompositionException::class, 'opening.closing');
+        ->toThrow(CompositionException::class, 'primary.intro');
 });
 
 test('the raw budget is substituted, never inflated by the primaries', function (): void {

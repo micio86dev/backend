@@ -167,7 +167,7 @@ final class SystemPromptComposer
         $budgetSection = $this->buildBudgetSection($templates, $followUpBudget);
         $nudgeSection = $this->buildNudgeSection($templates, $nudgeMinChars);
         $advanceSection = $this->buildAdvanceSection($templates, $advancePhrase, $effectiveMinimum, $primaryQuestions !== []);
-        $primarySection = $this->buildPrimaryQuestionsSection($primaryQuestions, $spokenOpening);
+        $primarySection = $this->buildPrimaryQuestionsSection($templates, $primaryQuestions, $spokenOpening);
         $openingSection = $this->buildOpeningSection($templates, $primaryQuestions, $spokenOpening);
 
         $text = $this->assemblePrompt(
@@ -541,44 +541,32 @@ final class SystemPromptComposer
      * off) there is no list; the section says the fallback opening was the
      * competency's only question.
      *
+     * The words of every sentence are the set's; which sentences apply, the
+     * counts they name and the `N. question` numbering are decided here.
+     *
      * @param  list<string>  $questions
      */
-    private function buildPrimaryQuestionsSection(array $questions, SpokenOpening $opening): string
+    private function buildPrimaryQuestionsSection(PromptTemplateSet $templates, array $questions, SpokenOpening $opening): string
     {
         if ($questions === []) {
-            return 'This competency has no primary questions: your opening line was its only '
-                .'primary question, and everything you ask from here on is a follow-up.';
+            return $this->render($templates, PromptFragmentKey::PrimaryNone);
         }
 
         $total = count($questions);
         $spoken = (int) $opening->primaryNumber;
 
-        $lines = [
-            'The numbered list below is the COMPLETE set of primary questions for this '
-            .'competency, in order. Every one of them MUST be asked, phrased exactly as '
-            .'written, before you end the competency. You may NOT introduce, substitute, '
-            .'reorder or reword a primary question of your own — your only generative '
-            .'latitude is follow-up questions. A follow-up may probe the answer just given, '
-            .'or lead from it toward one concrete episode from the candidate\'s own past '
-            .'that is relevant to this competency. Ask the primaries as part of the '
-            .'conversation rather than reading a list.',
-        ];
+        $lines = [$this->render($templates, PromptFragmentKey::PrimaryIntro)];
 
         if ($opening->resumed && $opening->primariesAskedBefore > 0 && ! $opening->isReAskOfAskedPrimary()) {
             $lines[] = $opening->primariesAskedBefore === 1
-                ? 'Primary question 1 was asked before the interruption.'
-                : 'Primary questions 1-'.$opening->primariesAskedBefore.' were asked before the interruption.';
+                ? $this->render($templates, PromptFragmentKey::PrimaryAskedBeforeOne)
+                : $this->render($templates, PromptFragmentKey::PrimaryAskedBeforeMany, ['count' => $opening->primariesAskedBefore]);
         }
 
         $lines[] = match (true) {
-            $opening->isReAskOfAskedPrimary() => 'Every primary question has already been asked, so '
-                .'everything you ask from here on is a follow-up.',
-            $spoken >= $total => 'Primary question '.$spoken.' was your opening line and is the last '
-                .'one: every primary question has now been asked, so everything you ask from here '
-                .'on is a follow-up.',
-            default => 'Primary question '.$spoken.' was your opening line. After the candidate '
-                .'answers it, ask follow-ups as needed, then continue with primary question '
-                .($spoken + 1).'.',
+            $opening->isReAskOfAskedPrimary() => $this->render($templates, PromptFragmentKey::PrimaryProgressAllAsked),
+            $spoken >= $total => $this->render($templates, PromptFragmentKey::PrimaryProgressLast, ['spoken' => $spoken]),
+            default => $this->render($templates, PromptFragmentKey::PrimaryProgressNext, ['spoken' => $spoken, 'next' => $spoken + 1]),
         };
 
         $lines[] = '';
