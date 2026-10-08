@@ -316,8 +316,11 @@ test('POST /start resume in_corso: no duplicate row, fresh token issued, old ses
     expect($oldSession->provider_session_ref)->toBe('heygen-session-fresh');
     expect($oldSession->status)->toBe('in_corso');
 
-    // Teardown was called for the OLD ref (HTTP POST to /sessions/stop for old-ref-to-teardown)
-    Http::assertSent(fn ($req) => str_contains($req->url(), 'old-ref-to-teardown'));
+    // Teardown was called for the OLD ref: `POST /v1/sessions/stop` with the ref in the
+    // JSON body `session_id` (the ref is NOT in the URL under the real wire contract).
+    Http::assertSent(fn ($req) => $req->method() === 'POST'
+        && parse_url($req->url(), PHP_URL_PATH) === '/v1/sessions/stop'
+        && ($req->data()['session_id'] ?? null) === 'old-ref-to-teardown');
 });
 
 test('POST /start resume pending (no provider_session_ref): retries issue, 201 in_corso', function (): void {
