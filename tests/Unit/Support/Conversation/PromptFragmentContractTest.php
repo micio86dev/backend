@@ -128,3 +128,8 @@ test('an override body is plain text: any placeholder or brace pair is refused',
         ->toBe(['override contains a placeholder or brace pair "{{" / "}}"'])
         ->and($contract->overrideViolations(''))->toBe(['override is empty']);
 });
+
+test('a body that is not valid UTF-8 is refused instead of skipping the whitespace rule', function (): void {
+    expect((new PromptFragmentContract)->violations(PromptFragmentKey::Budget, "At most {{budget}} \xC3\x28"))
+        ->toBe(['fragment [budget] is not valid UTF-8']);
+});

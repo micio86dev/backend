@@ -40,6 +40,10 @@ final class PromptFragmentContract
      */
     public function violations(PromptFragmentKey $key, string $body): array
     {
+        if (! mb_check_encoding($body, 'UTF-8')) {
+            return ["fragment [{$key->value}] is not valid UTF-8"];
+        }
+
         if ($this->isBlank($body)) {
             return ["fragment [{$key->value}] is empty"];
         }
