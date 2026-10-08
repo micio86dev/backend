@@ -125,6 +125,39 @@ class HeygenProvider implements ProviderSessionService
         // read from `data.id`. `data.context_id` does NOT exist in the real contract.
         $contextId = (string) $ctxResponse->json('data.id', '');
 
+        // The context above is already on HeyGen. Whatever stops the token call (a
+        // 429, a 5xx, a malformed answer, a transport error), no session will ever
+        // reference it, so it is deleted here or it accumulates in the account.
+        try {
+            [$sessionToken, $sessionId] = $this->requestSessionToken($apiKey, $session, $ctx, $contextId);
+        } catch (\Throwable $e) {
+            $this->deleteContext($contextId, $apiKey);
+
+            throw $e;
+        }
+
+        return new ProviderToken(
+            provider: 'heygen',
+            token: $sessionToken,
+            conversation_url: null,
+            provider_session_ref: $sessionId,
+            // The `/contexts` entry created above. Handed back so teardown() can
+            // delete it: nothing else ever does, and the account accumulates one
+            // per session otherwise. '' (no id in the response) means none.
+            provider_context_ref: $contextId !== '' ? $contextId : null,
+        );
+    }
+
+    /**
+     * Call `POST /v1/sessions/token` for a freshly created context and read the
+     * session token and (nullable) session id out of the answer.
+     *
+     * @return array{0: string, 1: string|null} [session_token, session_id]
+     *
+     * @throws ProviderException on a non-2xx answer or a body without `session_token`
+     */
+    private function requestSessionToken(string $apiKey, InterviewSession $session, QuestionContext $ctx, string $contextId): array
+    {
         $tokenResponse = Http::withHeaders(['X-API-KEY' => $apiKey])
             ->post(self::BASE_URL.'/sessions/token', $this->buildSessionTokenBody($ctx, $contextId, $session->project_id));
 
@@ -157,16 +190,7 @@ class HeygenProvider implements ProviderSessionService
             );
         }
 
-        return new ProviderToken(
-            provider: 'heygen',
-            token: $sessionToken,
-            conversation_url: null,
-            provider_session_ref: $sessionId,
-            // The `/contexts` entry created above. Handed back so teardown() can
-            // delete it: nothing else ever does, and the account accumulates one
-            // per session otherwise. '' (no id in the response) means none.
-            provider_context_ref: $contextId !== '' ? $contextId : null,
-        );
+        return [$sessionToken, $sessionId];
     }
 
     /**

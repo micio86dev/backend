@@ -954,3 +954,57 @@ test('HeygenProvider::teardown() survives a transport error on the context delet
 
     expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session', 'ctx-abc')))->toBeTrue();
 });
+
+// ---------------------------------------------------------------------------
+// issue() must not orphan the context it just created
+// ---------------------------------------------------------------------------
+
+test('HeygenProvider::issue() deletes the fresh context when /sessions/token fails, then rethrows the same failure', function (int $status, ProviderFailureClass $class): void {
+    Http::fake([
+        '*liveavatar*/contexts' => Http::response(['data' => ['id' => 'ctx-orphan']], 200),
+        '*liveavatar*/sessions/token*' => Http::response(['message' => 'nope'], $status),
+        '*liveavatar*/contexts/*' => Http::response([], 200),
+    ]);
+
+    $thrown = null;
+
+    try {
+        (new HeygenProvider)->issue(mockSession('heygen'), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
+    } catch (ProviderException $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->toBeInstanceOf(ProviderException::class)
+        ->and($thrown->failureClass())->toBe($class);
+
+    $calls = Http::recorded()->map(fn (array $pair): string => $pair[0]->method().' '.parse_url($pair[0]->url(), PHP_URL_PATH))->values()->all();
+    expect($calls)->toBe(['POST /v1/contexts', 'POST /v1/sessions/token', 'DELETE /v1/contexts/ctx-orphan']);
+})->with([
+    '429 provider_busy' => [429, ProviderFailureClass::Throttle],
+    '503 upstream' => [503, ProviderFailureClass::Upstream],
+]);
+
+test('HeygenProvider::issue() deletes the fresh context when the token response has no session_token', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts' => Http::response(['data' => ['id' => 'ctx-orphan']], 200),
+        '*liveavatar*/sessions/token*' => Http::response(['data' => ['session_id' => 'sid']], 200),
+        '*liveavatar*/contexts/*' => Http::response([], 200),
+    ]);
+
+    expect(fn () => (new HeygenProvider)->issue(mockSession('heygen'), new QuestionContext(competencyCode: 'PRS', questionIndex: 0)))
+        ->toThrow(ProviderException::class, 'missing session_token');
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'DELETE'
+        && $request->url() === 'https://api.liveavatar.com/v1/contexts/ctx-orphan');
+});
+
+test('HeygenProvider::issue() still throws the ORIGINAL failure when the cleanup delete also fails', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts' => Http::response(['data' => ['id' => 'ctx-orphan']], 200),
+        '*liveavatar*/sessions/token*' => Http::response(['message' => 'busy'], 429),
+        '*liveavatar*/contexts/*' => fn () => throw new ConnectionException('timeout'),
+    ]);
+
+    expect(fn () => (new HeygenProvider)->issue(mockSession('heygen'), new QuestionContext(competencyCode: 'PRS', questionIndex: 0)))
+        ->toThrow(ProviderException::class, 'HTTP 429');
+});
