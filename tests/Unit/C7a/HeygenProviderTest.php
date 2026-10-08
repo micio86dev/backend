@@ -25,6 +25,7 @@ use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -679,3 +680,70 @@ function mockSession(string $provider, ?string $ref = null): InterviewSession
 
     return $session;
 }
+
+// ---------------------------------------------------------------------------
+// teardown() wire contract — heygen-session-stop (F2b)
+//
+// @wire-source https://docs.liveavatar.com/openapi.json — `POST /v1/sessions/stop`
+// takes `StopSessionSchema {session_id: uuid, reason: SessionEndReasonEnum}`; the
+// only operation on `/v1/sessions/{session_id}` is GET. Proven live 2026-10-08:
+// `DELETE /v1/sessions/{ref}` answers 405 and leaves the session running, while
+// `POST /v1/sessions/stop` answers 200 and records `end_reason`.
+//
+// The earlier fakes matched the PATH only (`*liveavatar*/sessions*`), so a wrong
+// verb passed. These tests pin verb + path + body.
+// ---------------------------------------------------------------------------
+
+test('HeygenProvider::teardown() stops the session with POST /v1/sessions/stop {session_id, reason}, never DELETE /sessions/{ref}', function (): void {
+    Http::fake(['*liveavatar*' => Http::response(['code' => 1000, 'data' => null], 200)]);
+
+    $ref = '0b6d1f0c-6f58-4d4e-9d63-2f1d6a7c9a10';
+
+    $released = (new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', $ref));
+
+    expect($released)->toBeTrue();
+
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($request): bool => $request->method() === 'POST'
+        && $request->url() === 'https://api.liveavatar.com/v1/sessions/stop'
+        && $request->data() === ['session_id' => $ref, 'reason' => 'USER_CLOSED']
+        && $request->hasHeader('X-API-KEY', 'SUPER_SECRET_HEYGEN_KEY_12345'));
+    Http::assertNotSent(fn ($request): bool => $request->method() === 'DELETE');
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), '/sessions/'.$ref));
+});
+
+test('HeygenProvider::teardown() treats 404 (session already gone) as released', function (): void {
+    Http::fake(['*liveavatar*/sessions/stop*' => Http::response(['message' => 'Session not found'], 404)]);
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'gone-session')))->toBeTrue();
+});
+
+test('HeygenProvider::teardown() on a non-2xx stop returns false, logs a redacted warning and never throws', function (int $status): void {
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response(['message' => 'denied for SUPER_SECRET_HEYGEN_KEY_12345'], $status),
+    ]);
+
+    $logs = [];
+    Log::listen(function ($message) use (&$logs): void {
+        $logs[] = ['level' => $message->level, 'text' => (string) json_encode([$message->message, $message->context])];
+    });
+
+    $released = (new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session'));
+
+    expect($released)->toBeFalse();
+
+    $warnings = array_values(array_filter($logs, fn (array $l): bool => $l['level'] === 'warning'
+        && str_contains($l['text'], 'HeyGen: teardown failed')));
+    expect($warnings)->toHaveCount(1);
+    expect($warnings[0]['text'])->toContain((string) $status)->toContain('[REDACTED]');
+
+    foreach ($logs as $log) {
+        expect($log['text'])->not->toContain('SUPER_SECRET_HEYGEN_KEY_12345');
+    }
+})->with([400, 401, 405, 422, 500, 503]);
+
+test('HeygenProvider::teardown() returns false when the transport throws, without propagating', function (): void {
+    Http::fake(['*liveavatar*' => fn () => throw new ConnectionException('timeout')]);
+
+    expect((new HeygenProvider)->teardown(ProviderToken::fromRef('heygen', 'live-session')))->toBeFalse();
+});

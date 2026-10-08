@@ -28,10 +28,11 @@ use Illuminate\Support\Str;
  *   POST https://api.liveavatar.com/v1/contexts         — create avatar context
  *   POST https://api.liveavatar.com/v1/sessions/token   — issue session access token
  *   GET  https://api.liveavatar.com/v1/sessions/{ref}/transcript — fetch transcript
- *   DELETE https://api.liveavatar.com/v1/sessions/{ref} — teardown session
+ *   POST https://api.liveavatar.com/v1/sessions/stop    — stop (tear down) a session
  *
- * Open question (C7a design): LiveAvatar v1 vs native HeyGen REST endpoint.
- * C7a tests use Http::fake against these paths. Confirm with client before live deploy.
+ * Contract source: https://docs.liveavatar.com/openapi.json, confirmed against the live
+ * API on 2026-10-08. Tests use Http::fake against these paths and pin verb, path and
+ * body where the verb matters (a path-only fake once hid a DELETE that answers 405).
  *
  * Security:
  * - API key lives ONLY in config('interview.heygen.api_key') (env HEYGEN_API_KEY).
@@ -44,6 +45,9 @@ use Illuminate\Support\Str;
 class HeygenProvider implements ProviderSessionService
 {
     private const BASE_URL = 'https://api.liveavatar.com/v1';
+
+    /** `SessionEndReasonEnum` value recorded when BEAI ends a session itself. */
+    private const STOP_REASON = 'USER_CLOSED';
 
     /**
      * Demo-proven `POST /sessions/token` template fields (PR2 D2, delta spec
@@ -507,27 +511,58 @@ class HeygenProvider implements ProviderSessionService
     /**
      * Teardown (release) a HeyGen session.
      *
-     * Best-effort — failure is logged but non-fatal.
+     * `POST /v1/sessions/stop` with `{session_id, reason: "USER_CLOSED"}` — the only
+     * way LiveAvatar offers to end a session (`StopSessionSchema`; the single
+     * operation on `/v1/sessions/{session_id}` is GET). `DELETE /sessions/{ref}`,
+     * which this method used to send, answers 405 and leaves the session running
+     * (proven live 2026-10-08).
+     *
+     * Best-effort and idempotent — NEVER throws. `Http` does not throw on a 4xx/5xx,
+     * so the status is checked explicitly: a 404 means the session is already gone
+     * (benign, `true`); any other non-2xx or a transport error is logged with the
+     * provider's own message redacted and reported as `false`.
      * ALWAYS takes a typed ProviderToken (no raw-string overload) per WARNING-6.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json — `POST /v1/sessions/stop`
+     *
+     * @return bool true when the session is released or already gone; false otherwise
      */
-    public function teardown(ProviderToken $token): void
+    public function teardown(ProviderToken $token): bool
     {
         if ($token->provider_session_ref === null) {
-            return;
+            return true;
         }
 
         $apiKey = (string) config('interview.heygen.api_key', '');
 
         try {
-            Http::withHeaders(['X-API-KEY' => $apiKey])
-                ->delete(self::BASE_URL.'/sessions/'.$token->provider_session_ref);
+            $response = Http::withHeaders(['X-API-KEY' => $apiKey])
+                ->post(self::BASE_URL.'/sessions/stop', [
+                    'session_id' => $token->provider_session_ref,
+                    'reason' => self::STOP_REASON,
+                ]);
         } catch (\Throwable $e) {
             // Best-effort — log without raw response (key material may be present)
             Log::warning('HeyGen: teardown failed', [
                 'provider_session_ref' => $token->provider_session_ref,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
+
+        if ($response->successful() || $response->status() === 404) {
+            return true;
+        }
+
+        Log::warning('HeyGen: teardown failed', [
+            'provider_session_ref' => $token->provider_session_ref,
+            'status' => $response->status(),
+            // Only the provider's own, key-redacted complaint — never the raw body.
+            'provider_message' => ProviderErrorMessage::extract($response->json(), $apiKey),
+        ]);
+
+        return false;
     }
 
     /**
