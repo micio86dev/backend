@@ -3,9 +3,10 @@
 declare(strict_types=1);
 
 /**
- * PromptTemplateUnresolvableException rides the existing CompositionException
- * `catch` (422 `composition_error`), carries a distinct machine reason per
- * failure, and never puts template text in its message.
+ * PromptTemplateUnresolvableException is a CompositionException (the type the
+ * interview controller maps to 422 `composition_error`; that mapping is not
+ * exercised for this class until the resolver is wired), carries a distinct
+ * machine reason per failure, and never puts template text in its message.
  */
 
 use App\Exceptions\Conversation\CompositionException;

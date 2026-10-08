@@ -8,8 +8,10 @@ namespace App\Exceptions\Conversation;
  * Thrown when no usable prompt set can be resolved for a composition
  * (db-driven-conversation-prompts, design N-6/N-9).
  *
- * A CompositionException, so the existing `catch` in the interview controller
- * answers it with the same 422 `composition_error`: a missing or damaged set is
+ * A CompositionException, which the interview controller already maps to 422
+ * `composition_error`. The resolver is not wired into the composition path yet,
+ * so no test proves that mapping for this class: the wiring and the HTTP proof
+ * come with the cut-over slice. The intent is that a missing or damaged set is
  * a hard failure, never a silent fallback to other text.
  *
  * {@see $reason} is the machine-readable cause, one constant per failure.
