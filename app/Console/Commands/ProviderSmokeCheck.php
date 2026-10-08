@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
+use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use Illuminate\Console\Command;
@@ -93,8 +94,17 @@ final class ProviderSmokeCheck extends Command
             return self::FAILURE;
         }
 
+        // HeyGen only: the context delete is a wire call of its own that teardown()
+        // swallows by design, so it is made and checked here, after a stop that
+        // carries no context. Printing PASSED over a DELETE that answered 405 would
+        // leave one context per run on the account.
+        $deletesContext = $service instanceof HeygenProvider;
+        $stopToken = $deletesContext
+            ? new ProviderToken(provider: $token->provider, provider_session_ref: $token->provider_session_ref)
+            : $token;
+
         try {
-            $released = $service->teardown($token);
+            $released = $service->teardown($stopToken);
         } catch (Throwable $e) {
             $this->error('teardown(): FAILED — '.$e->getMessage());
 
@@ -111,6 +121,12 @@ final class ProviderSmokeCheck extends Command
         }
 
         $this->info('teardown(): OK');
+
+        if ($deletesContext && ! $service->deleteContext($token->provider_context_ref)) {
+            $this->error("context delete: FAILED — the [{$providerName}] API did not confirm the delete of context [{$token->provider_context_ref}]. It is still on the account: delete it manually and check the application log for the provider's status.");
+
+            return self::FAILURE;
+        }
 
         $this->info("interview:smoke-check PASSED — the [{$providerName}] outbound request shape was ACCEPTED by the real API.");
 

@@ -1008,3 +1008,28 @@ test('HeygenProvider::issue() still throws the ORIGINAL failure when the cleanup
     expect(fn () => (new HeygenProvider)->issue(mockSession('heygen'), new QuestionContext(competencyCode: 'PRS', questionIndex: 0)))
         ->toThrow(ProviderException::class, 'HTTP 429');
 });
+
+test('HeygenProvider::deleteContext() confirms a delete and an already-gone context, and does nothing without an id', function (): void {
+    Http::fake(['*liveavatar*/contexts/ctx-ok' => Http::response([], 200), '*liveavatar*/contexts/ctx-gone' => Http::response([], 404)]);
+
+    $provider = new HeygenProvider;
+
+    expect($provider->deleteContext('ctx-ok'))->toBeTrue()
+        ->and($provider->deleteContext('ctx-gone'))->toBeTrue()
+        ->and($provider->deleteContext(null))->toBeTrue()
+        ->and($provider->deleteContext(''))->toBeTrue();
+
+    Http::assertSentCount(2);
+});
+
+test('HeygenProvider::deleteContext() reports false, without throwing, on a rejected delete or a transport error', function (): void {
+    Http::fake([
+        '*liveavatar*/contexts/ctx-405' => Http::response(['message' => 'Method Not Allowed'], 405),
+        '*liveavatar*/contexts/ctx-down' => fn () => throw new ConnectionException('timeout'),
+    ]);
+
+    $provider = new HeygenProvider;
+
+    expect($provider->deleteContext('ctx-405'))->toBeFalse()
+        ->and($provider->deleteContext('ctx-down'))->toBeFalse();
+});
