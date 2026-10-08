@@ -27,7 +27,7 @@ use InvalidArgumentException;
 final class PromptFragmentContract
 {
     /** A well-formed token: `{{name}}`, no inner spaces. */
-    private const TOKEN_PATTERN = '/\{\{([A-Za-z0-9_]+)\}\}/';
+    private const TOKEN_PATTERN = '/(?<!\{)\{\{([A-Za-z0-9_]+)\}\}(?!\})/';
 
     /**
      * Every contract violation of a fragment template, in a stable order;

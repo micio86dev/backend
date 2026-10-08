@@ -64,7 +64,7 @@ test('a token outside the key\'s own set is refused', function () use ($violatio
 test('a stray or malformed brace pair is refused', function () use ($violationsOf): void {
     $stray = 'fragment [budget] contains a stray "{{" or "}}"';
 
-    foreach (['{{budget}} and {{', '{{budget}} and }}', '{{ budget }}', '{{budget}', '{{budget}} {{}}'] as $body) {
+    foreach (['{{budget}} and {{', '{{budget}} and }}', '{{ budget }}', '{{budget}', '{{budget}} {{}}', '{{{budget}}}', '{{budget}}}'] as $body) {
         expect($violationsOf(PromptFragmentKey::Budget, $body))->toContain($stray);
     }
 });
