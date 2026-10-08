@@ -204,6 +204,25 @@ test('5.1 /start with standard EN competency → 201 + question_context.prompt_v
     $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
 });
 
+test('5.1b /start stamps the configured conversation prompt version on the session', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $scenario = c8SeedStandardScenario('en');
+    c8MakeInterviewable($scenario);
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    $session = InterviewSession::where('participant_id', $scenario['participant']->id)->sole();
+    expect($session->conversation_prompt_version)
+        ->toBe(config('conversation.prompt_version'))
+        ->not->toBeEmpty();
+});
+
 test('5.5 /start response never leaks composed system_prompt; provider body carries it (anti-leak)', function (): void {
     Queue::fake();
 

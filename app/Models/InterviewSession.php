@@ -62,6 +62,11 @@ use Illuminate\Support\Carbon;
  * naive re-stamp from a context without a system prompt would destroy a
  * previously recorded good value.
  *
+ * `conversation_prompt_version` (db-driven-conversation-prompts PR3, design N-8)
+ * follows the same stamp-only discipline as `system_prompt_chars`: written by
+ * `InterviewSessionLlmSnapshot::stamp()` only (so it is not in `$fillable`),
+ * write-once, never overwritten FROM a null, and never serialised.
+ *
  * Security:
  * - organization_id NOT in $fillable — stamped by TenantScoped.creating unconditionally.
  *
@@ -78,6 +83,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $llm_model_key
  * @property string|null $llm_binding_status
  * @property int|null $system_prompt_chars
+ * @property string|null $conversation_prompt_version
  * @property string $provider
  * @property string|null $provider_session_ref
  * @property string|null $provider_context_ref
