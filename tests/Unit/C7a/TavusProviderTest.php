@@ -292,3 +292,14 @@ function tavusMockSession(?string $ref = null): InterviewSession
 
     return $session;
 }
+
+test('TavusProvider::teardown() reports whether the conversation was released instead of looking successful on a 4xx/5xx', function (int $status, bool $released): void {
+    Http::fake(['*tavusapi*/v2/conversations/*/end' => Http::response(['message' => 'x'], $status)]);
+
+    expect((new TavusProvider)->teardown(ProviderToken::fromRef('tavus', 'conv-x')))->toBe($released);
+})->with([
+    'ok' => [200, true],
+    'already gone' => [404, true],
+    'unauthorized' => [401, false],
+    'upstream error' => [500, false],
+]);

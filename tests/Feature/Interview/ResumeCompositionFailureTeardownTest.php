@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\Queue;
 
 /**
  * A HeyGen fake that hands out a NEW `session_id` per `/sessions/token` call
- * and records which ref every teardown DELETE targeted.
+ * and records which ref every teardown stop targeted.
  *
  * @return object{tokens: list<string>, teardownRefs: list<string>}
  */
@@ -70,11 +70,10 @@ function compositionTeardownFake(): object
             ]]], 200);
         }
 
-        if ($request->method() === 'DELETE' && str_contains($url, '/sessions/')) {
-            // .../sessions/{ref} — teardown. Excludes the two URL shapes
-            // above, both already matched and returned by this point.
-            preg_match('#/sessions/([^/]+)$#', $url, $m);
-            $calls->teardownRefs[] = $m[1];
+        if ($request->method() === 'POST' && str_ends_with($url, '/sessions/stop')) {
+            // POST .../sessions/stop {session_id} — teardown. The ref travels in
+            // the body, not the path.
+            $calls->teardownRefs[] = (string) ($request->data()['session_id'] ?? '');
 
             return Http::response([], 200);
         }

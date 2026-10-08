@@ -218,23 +218,39 @@ class TavusProvider implements ProviderSessionService
      *
      * @wire-source legacy-demo/src/pages/api/interview/end.ts:59-62
      */
-    public function teardown(ProviderToken $token): void
+    public function teardown(ProviderToken $token): bool
     {
         if ($token->provider_session_ref === null) {
-            return;
+            return true;
         }
 
         $apiKey = (string) config('interview.tavus.api_key', '');
 
         try {
-            Http::withHeaders(['x-api-key' => $apiKey])
+            $response = Http::withHeaders(['x-api-key' => $apiKey])
                 ->post(self::BASE_URL.'/conversations/'.$token->provider_session_ref.'/end');
         } catch (\Throwable $e) {
             Log::warning('Tavus: teardown failed', [
                 'provider_session_ref' => $token->provider_session_ref,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
+
+        // `Http` does not throw on a 4xx/5xx: report it instead of looking successful.
+        // A 404 means the conversation is already gone, which is the goal.
+        if ($response->successful() || $response->status() === 404) {
+            return true;
+        }
+
+        Log::warning('Tavus: teardown failed', [
+            'provider_session_ref' => $token->provider_session_ref,
+            'status' => $response->status(),
+            'provider_message' => ProviderErrorMessage::extract($response->json(), $apiKey),
+        ]);
+
+        return false;
     }
 
     /**

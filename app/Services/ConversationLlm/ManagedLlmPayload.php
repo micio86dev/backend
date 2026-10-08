@@ -29,6 +29,13 @@ final class ManagedLlmPayload
     }
 
     /**
+     * The fragment merged into the TOP LEVEL of the `POST /v1/sessions/token` body.
+     *
+     * Not `/contexts` (no such field) and not under `avatar_persona` (silently
+     * ignored): proven live on 2026-10-08 and by the OpenAPI document
+     * (https://docs.liveavatar.com/openapi.json, `FullSDKSessionTokenConfigDataSchema`).
+     * See `HeygenProvider::buildSessionTokenBody()`.
+     *
      * @return array{llm_configuration_id: string}
      */
     public static function forHeygenSessionToken(LlmBinding $binding): array

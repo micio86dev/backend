@@ -37,6 +37,11 @@ final class TemplatePayload
      * cartesia | elevenLabs, plus the knobs that engine has and a pinned
      * model). For everything else the body is unchanged to the byte.
      *
+     * Never carries `llm_configuration_id`: the conversation-LLM binding is a
+     * top-level `/sessions/token` field owned by `ManagedLlmPayload`, and nested
+     * under `avatar_persona` (where this fragment lives) LiveAvatar silently
+     * ignores it (proven live, 2026-10-08).
+     *
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */

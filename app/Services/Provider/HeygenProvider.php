@@ -28,10 +28,11 @@ use Illuminate\Support\Str;
  *   POST https://api.liveavatar.com/v1/contexts         — create avatar context
  *   POST https://api.liveavatar.com/v1/sessions/token   — issue session access token
  *   GET  https://api.liveavatar.com/v1/sessions/{ref}/transcript — fetch transcript
- *   DELETE https://api.liveavatar.com/v1/sessions/{ref} — teardown session
+ *   POST https://api.liveavatar.com/v1/sessions/stop    — stop (tear down) a session
  *
- * Open question (C7a design): LiveAvatar v1 vs native HeyGen REST endpoint.
- * C7a tests use Http::fake against these paths. Confirm with client before live deploy.
+ * Contract source: https://docs.liveavatar.com/openapi.json, confirmed against the live
+ * API on 2026-10-08. Tests use Http::fake against these paths and pin verb, path and
+ * body where the verb matters (a path-only fake once hid a DELETE that answers 405).
  *
  * Security:
  * - API key lives ONLY in config('interview.heygen.api_key') (env HEYGEN_API_KEY).
@@ -44,6 +45,9 @@ use Illuminate\Support\Str;
 class HeygenProvider implements ProviderSessionService
 {
     private const BASE_URL = 'https://api.liveavatar.com/v1';
+
+    /** `SessionEndReasonEnum` value recorded when BEAI ends a session itself. */
+    private const STOP_REASON = 'USER_CLOSED';
 
     /**
      * Demo-proven `POST /sessions/token` template fields (PR2 D2, delta spec
@@ -245,17 +249,26 @@ class HeygenProvider implements ProviderSessionService
      * rationale). Absent entirely when the template is unbound or has never
      * synced a configuration.
      *
-     * @wire-source live HeyGen API smoke-check, 2026-08-26 — Phase 0.3(a)
-     * control experiment: `POST /v1/sessions/token` returned HTTP 200
-     * IDENTICALLY for a valid `llm_configuration_id` at TOP LEVEL, a bogus
-     * all-zeros id at top level, a bogus id nested under `avatar_persona`,
-     * AND for a completely invented field name — the endpoint accepts and
-     * ignores any unknown field, so NO status code can discriminate where
-     * this belongs (the exact class of problem `TemplatePayload.php:38-40`
-     * already documents). Top level (i.e. `$providerOwned`, sibling to
-     * `mode`/`is_sandbox`) is this batch's BEST GUESS, UNVERIFIED — only a
-     * live conversational smoke test (not a 200 from `/sessions/token`
-     * alone) can confirm the real placement. Do not treat this as pinned.
+     * PLACEMENT OF `llm_configuration_id` IS PROVEN, not a guess:
+     * - It is a TOP-LEVEL field of `POST /v1/sessions/token`, sibling to
+     *   `mode`/`is_sandbox`, and exists nowhere else — in the OpenAPI document it
+     *   is a property of `FullSDKSessionTokenConfigDataSchema` only
+     *   (https://docs.liveavatar.com/openapi.json).
+     * - `POST /v1/contexts` has no such field: its 200 response drops it.
+     * - Live probe, 2026-10-08, api.liveavatar.com/v1: a malformed id at top level
+     *   is rejected with 422 "Input should be a valid UUID"; the same id nested
+     *   under `avatar_persona` is silently IGNORED (a template would look bound
+     *   while the avatar used HeyGen's default LLM); a well-formed id that does not
+     *   exist is rejected later, at `/sessions/start`, with 400 "LLM configuration
+     *   ... not found in your space".
+     * - It supersedes the 2026-08-26 control experiment, which only saw HTTP 200
+     *   for every variant: `/sessions/token` validates the id's FORMAT at top level
+     *   but never its existence, so a status code alone could not tell placements
+     *   apart. `/sessions/token` also answers 422 when `avatar_persona` is absent
+     *   ("Provide exactly one of avatar_persona or voice_agent").
+     * Pinned by `HeygenProviderTest` (top level only; never under `avatar_persona`,
+     * never on `/contexts`).
+     *
      * @wire-source legacy-demo/src/pages/api/interview/start.ts:206-221
      *
      * @return array<string, mixed>
@@ -507,27 +520,58 @@ class HeygenProvider implements ProviderSessionService
     /**
      * Teardown (release) a HeyGen session.
      *
-     * Best-effort — failure is logged but non-fatal.
+     * `POST /v1/sessions/stop` with `{session_id, reason: "USER_CLOSED"}` — the only
+     * way LiveAvatar offers to end a session (`StopSessionSchema`; the single
+     * operation on `/v1/sessions/{session_id}` is GET). `DELETE /sessions/{ref}`,
+     * which this method used to send, answers 405 and leaves the session running
+     * (proven live 2026-10-08).
+     *
+     * Best-effort and idempotent — NEVER throws. `Http` does not throw on a 4xx/5xx,
+     * so the status is checked explicitly: a 404 means the session is already gone
+     * (benign, `true`); any other non-2xx or a transport error is logged with the
+     * provider's own message redacted and reported as `false`.
      * ALWAYS takes a typed ProviderToken (no raw-string overload) per WARNING-6.
+     *
+     * @wire-source https://docs.liveavatar.com/openapi.json — `POST /v1/sessions/stop`
+     *
+     * @return bool true when the session is released or already gone; false otherwise
      */
-    public function teardown(ProviderToken $token): void
+    public function teardown(ProviderToken $token): bool
     {
         if ($token->provider_session_ref === null) {
-            return;
+            return true;
         }
 
         $apiKey = (string) config('interview.heygen.api_key', '');
 
         try {
-            Http::withHeaders(['X-API-KEY' => $apiKey])
-                ->delete(self::BASE_URL.'/sessions/'.$token->provider_session_ref);
+            $response = Http::withHeaders(['X-API-KEY' => $apiKey])
+                ->post(self::BASE_URL.'/sessions/stop', [
+                    'session_id' => $token->provider_session_ref,
+                    'reason' => self::STOP_REASON,
+                ]);
         } catch (\Throwable $e) {
             // Best-effort — log without raw response (key material may be present)
             Log::warning('HeyGen: teardown failed', [
                 'provider_session_ref' => $token->provider_session_ref,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
+
+        if ($response->successful() || $response->status() === 404) {
+            return true;
+        }
+
+        Log::warning('HeyGen: teardown failed', [
+            'provider_session_ref' => $token->provider_session_ref,
+            'status' => $response->status(),
+            // Only the provider's own, key-redacted complaint — never the raw body.
+            'provider_message' => ProviderErrorMessage::extract($response->json(), $apiKey),
+        ]);
+
+        return false;
     }
 
     /**

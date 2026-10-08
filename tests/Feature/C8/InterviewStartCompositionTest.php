@@ -465,9 +465,8 @@ test('5.6 RESUME in_corso + composition fails → 422, no fresh provider session
             $tokenCalls++;
         }
 
-        if ($request->method() === 'DELETE' && str_contains($url, '/sessions/')) {
-            preg_match('#/sessions/([^/]+)$#', $url, $m);
-            $teardownRefs[] = $m[1];
+        if ($request->method() === 'POST' && str_ends_with($url, '/sessions/stop')) {
+            $teardownRefs[] = (string) ($request->data()['session_id'] ?? '');
         }
 
         return Http::response([], 200);
@@ -704,8 +703,8 @@ function c8CaptureProvider(): ArrayObject
             return Http::response(['data' => ['session_id' => 'heygen-potential', 'session_token' => 'tok-potential']], 200);
         }
 
-        if ($request->method() === 'DELETE' && preg_match('#/sessions/([^/]+)$#', $url, $m) === 1) {
-            $captured['teardowns'][] = $m[1];
+        if ($request->method() === 'POST' && str_ends_with($url, '/sessions/stop')) {
+            $captured['teardowns'][] = (string) ($request->data()['session_id'] ?? '');
         }
 
         return Http::response([], 200);
