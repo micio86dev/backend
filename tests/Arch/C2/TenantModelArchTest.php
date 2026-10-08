@@ -12,6 +12,9 @@ use App\Models\ApiClient;
 use App\Models\BarsIndicator;
 use App\Models\CatalogMeta;
 use App\Models\Competency;
+use App\Models\ConversationPromptFragment;
+use App\Models\ConversationPromptOverride;
+use App\Models\ConversationPromptSet;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
 use App\Models\FrameworkGap;
@@ -124,6 +127,15 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // `organization_id` column exists, and no tenant surface reads them.
         HeygenBoundVoice::class,
         HeygenVendorSecret::class,
+        // db-driven-conversation-prompts — the published prompt sets and their
+        // fragments and overrides. Platform artefacts shared by every
+        // organization, immutable by database trigger once published; none of
+        // the three tables has an `organization_id` column, so there is nothing
+        // for a tenant scope to filter on. Overrides are keyed by catalogue
+        // role/competency CODE, never by tenant.
+        ConversationPromptSet::class,
+        ConversationPromptFragment::class,
+        ConversationPromptOverride::class,
     ];
 
     $violations = [];
