@@ -138,6 +138,22 @@ test('no active set is refused', function (): void {
     expect(unresolvableReason(fn () => resolveWith()))->toBe(Unresolvable::NO_ACTIVE_SET);
 });
 
+test('two active sets are refused instead of serving the first', function (): void {
+    // The partial unique index makes this state impossible; drop it (DDL is transactional in
+    // Postgres, so RefreshDatabase rolls it back) to prove the resolver does not rely on it silently.
+    DB::statement('DROP INDEX conversation_prompt_sets_one_active');
+    $first = makePromptSet(['label' => 'v1']);
+    $second = makePromptSet(['label' => 'v2']);
+
+    try {
+        resolveWith();
+        $this->fail('Expected PromptTemplateUnresolvableException, none thrown.');
+    } catch (Unresolvable $e) {
+        expect($e->reason)->toBe(Unresolvable::AMBIGUOUS_ACTIVE_SET)
+            ->and($e->getMessage())->toContain((string) $first)->toContain((string) $second);
+    }
+});
+
 test('a missing key is refused even though the stored seal is correct', function (): void {
     makePromptSet(['drop' => [PromptFragmentKey::Budget->value]]);
 

@@ -31,6 +31,8 @@ class PromptTemplateUnresolvableException extends CompositionException
 
     public const OVERRIDE_INVALID = 'override_invalid';
 
+    public const AMBIGUOUS_ACTIVE_SET = 'ambiguous_active_set';
+
     final protected function __construct(public readonly string $reason, string $message)
     {
         parent::__construct($message);
@@ -39,6 +41,14 @@ class PromptTemplateUnresolvableException extends CompositionException
     public static function noActiveSet(): self
     {
         return new self(self::NO_ACTIVE_SET, 'No conversation prompt set is active.');
+    }
+
+    /**
+     * @param  list<int>  $setIds  The ids of the sets that are all marked active.
+     */
+    public static function ambiguousActiveSet(array $setIds): self
+    {
+        return new self(self::AMBIGUOUS_ACTIVE_SET, 'More than one conversation prompt set is active: ['.implode(', ', $setIds).'].');
     }
 
     public static function localeMissing(string $setLabel, string $locale): self

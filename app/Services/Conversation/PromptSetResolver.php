@@ -25,6 +25,10 @@ use App\Support\Conversation\PromptSetSeal;
  * one whose stored hash changed) is a different key, so a long-lived worker
  * can never serve a set after the activation moved.
  *
+ * Exactly one set may be active: more than one refuses (`ambiguous_active_set`)
+ * even though a partial unique index makes that state impossible, so a broken
+ * invariant is loud instead of silently serving whichever row came first.
+ *
  * Verification, each a distinct {@see PromptTemplateUnresolvableException} reason:
  * the seal recomputed over ALL rows of the set (every locale, plus overrides)
  * equals the stored one; the locale has rows; its key set equals
@@ -52,7 +56,14 @@ final class PromptSetResolver
      */
     public function resolveActive(string $locale, string $competencyCode, ?string $roleCode): ResolvedPromptSet
     {
-        $set = ConversationPromptSet::query()->where('is_active', true)->first(['id', 'label', 'content_sha256']);
+        // Two rows is enough to know the single-active invariant is broken; never serve either of them.
+        $active = ConversationPromptSet::query()->where('is_active', true)->orderBy('id')->limit(2)->get(['id', 'label', 'content_sha256']);
+
+        if ($active->count() > 1) {
+            throw PromptTemplateUnresolvableException::ambiguousActiveSet($active->map(static fn (ConversationPromptSet $row): int => $row->id)->values()->all());
+        }
+
+        $set = $active->first();
 
         if ($set === null) {
             throw PromptTemplateUnresolvableException::noActiveSet();
