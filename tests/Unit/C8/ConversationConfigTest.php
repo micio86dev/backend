@@ -84,3 +84,11 @@ test('(g) PromptSource::configured() resolves a valid value and refuses anything
     config(['conversation.prompt_source' => null]);
     expect(fn () => PromptSource::configured())->toThrow(PromptTemplateUnresolvableException::class, '[null]');
 });
+
+test('(h) PromptSource::configured() names a boolean value as true or false, not as 1 or an empty string', function (): void {
+    foreach ([true => '[true]', false => '[false]'] as $value => $named) {
+        config(['conversation.prompt_source' => (bool) $value]);
+
+        expect(fn () => PromptSource::configured())->toThrow(PromptTemplateUnresolvableException::class, $named);
+    }
+});

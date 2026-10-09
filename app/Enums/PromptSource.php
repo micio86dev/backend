@@ -32,6 +32,10 @@ enum PromptSource: string
         $value = config('conversation.prompt_source');
 
         return (is_string($value) ? self::tryFrom($value) : null)
-            ?? throw PromptTemplateUnresolvableException::invalidSource(is_scalar($value) ? (string) $value : get_debug_type($value));
+            ?? throw PromptTemplateUnresolvableException::invalidSource(match (true) {
+                is_bool($value) => $value ? 'true' : 'false',
+                is_scalar($value) => (string) $value,
+                default => get_debug_type($value),
+            });
     }
 }
