@@ -14,8 +14,11 @@ declare(strict_types=1);
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Helpers\Conversation\PromptTables;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn () => PromptTables::empty());
 
 /** @return array{0: int, 1: int, 2: int} [set id, fragment id, override id] */
 function promptImmutabilityFixture(): array

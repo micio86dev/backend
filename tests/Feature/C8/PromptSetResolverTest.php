@@ -18,10 +18,14 @@ use App\Support\Conversation\BaselinePromptFragments;
 use App\Support\Conversation\PromptSetSeal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Helpers\Conversation\PromptTables;
 
 uses(RefreshDatabase::class);
 
-beforeEach(fn () => PromptSetResolver::flushCache());
+beforeEach(function (): void {
+    PromptTables::empty();
+    PromptSetResolver::flushCache();
+});
 
 /**
  * Insert a sealed set. Options: `label`, `active`, `locales`, `drop` (en keys to omit),

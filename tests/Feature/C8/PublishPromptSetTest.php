@@ -22,10 +22,12 @@ use App\Support\Conversation\PromptSetSeal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Helpers\Conversation\PromptSetPayload as Payload;
+use Tests\Helpers\Conversation\PromptTables;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    PromptTables::empty();
     PromptSetResolver::flushCache();
     $this->counts = rowCounts();
 });
