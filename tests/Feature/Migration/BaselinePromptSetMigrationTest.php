@@ -185,3 +185,36 @@ test('down() removes nothing', function (): void {
     expect(DB::table('conversation_prompt_sets')->where('label', 'baseline-1')->where('is_active', true)->count())->toBe(1)
         ->and(DB::table('conversation_prompt_fragments')->count())->toBe($before);
 });
+
+test('a baseline file that carries overrides is refused and no set is written', function (mixed $overrides): void {
+    $file = json_decode((string) file_get_contents(database_path('prompt-sets/baseline-1.json')), true, 16, JSON_THROW_ON_ERROR);
+    if ($overrides === null) {
+        unset($file['overrides']);
+    } else {
+        $file['overrides'] = $overrides;
+    }
+
+    $migration = baselineBootstrap();
+    $original = database_path();
+    $dir = sys_get_temp_dir().'/baseline-overrides-'.bin2hex(random_bytes(6));
+    mkdir($dir.'/prompt-sets', 0755, true);
+    file_put_contents($dir.'/prompt-sets/baseline-1.json', json_encode($file, JSON_THROW_ON_ERROR));
+    PromptTables::empty();
+    app()->useDatabasePath($dir);
+
+    try {
+        expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'overrides');
+    } finally {
+        app()->useDatabasePath($original);
+        unlink($dir.'/prompt-sets/baseline-1.json');
+        rmdir($dir.'/prompt-sets');
+        rmdir($dir);
+    }
+
+    expect(DB::table('conversation_prompt_sets')->count())->toBe(0)
+        ->and(DB::table('conversation_prompt_fragments')->count())->toBe(0);
+})->with([
+    'a non-empty list' => [[['fragment_key' => 'header', 'locale' => 'en', 'body' => 'x']]],
+    'not a list at all' => ['oops'],
+    'the key is absent' => [null],
+]);

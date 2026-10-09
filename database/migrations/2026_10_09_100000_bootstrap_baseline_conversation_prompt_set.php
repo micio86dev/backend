@@ -142,6 +142,12 @@ return new class extends Migration
             throw new RuntimeException('Cannot bootstrap the baseline prompt set: '.self::LABEL.'.json must hold the label "'.self::LABEL.'" and a non-empty "fragments" object.');
         }
 
+        // The seal and `up()` carry no overrides, so a file that held any would be
+        // dropped silently with no hash mismatch. The dump writes `"overrides": []`.
+        if (($data['overrides'] ?? null) !== []) {
+            throw new RuntimeException('Cannot bootstrap the baseline prompt set: '.self::LABEL.'.json must carry an empty "overrides" list; the baseline has no overrides.');
+        }
+
         $rows = [];
 
         foreach ($byLocale as $locale => $bodies) {
