@@ -69,13 +69,15 @@ final class DumpBaselinePromptSetCommand extends Command
             return self::SUCCESS;
         }
 
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+        // Silenced on purpose: Laravel turns a PHP warning into an exception, which would
+        // bypass the FAILURE returns below and the messages that explain them.
+        if (! is_dir($directory) && ! @mkdir($directory, 0755, true) && ! is_dir($directory)) {
             $this->error("The directory [{$directory}] cannot be created.");
 
             return self::FAILURE;
         }
 
-        if (file_put_contents($path, $json, LOCK_EX) === false) {
+        if (@file_put_contents($path, $json, LOCK_EX) === false) {
             $this->error("The file [{$path}] cannot be written.");
 
             return self::FAILURE;

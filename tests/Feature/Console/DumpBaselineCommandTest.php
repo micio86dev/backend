@@ -115,3 +115,33 @@ test('the committed baseline-1.json is exactly what the baseline produces today'
         ->and((string) file_get_contents(database_path('prompt-sets/baseline-1.json')))
         ->toBe((string) file_get_contents($this->dir.'/baseline-1.json'));
 });
+
+test('a directory that cannot be created fails and says so', function (): void {
+    File::ensureDirectoryExists($this->dir);
+    file_put_contents($this->dir.'/a-file', 'x');
+
+    [$code, $output] = dumpBaseline($this->dir.'/a-file/nested');
+
+    expect($code)->not->toBe(0)
+        ->and($output)->toContain('cannot be created')
+        ->and(is_dir($this->dir.'/a-file/nested'))->toBeFalse();
+});
+
+test('a file that cannot be written fails and says so', function (): void {
+    if (posix_geteuid() === 0) {
+        $this->markTestSkipped('root ignores directory permissions, so a read-only directory cannot refuse the write.');
+    }
+
+    File::ensureDirectoryExists($this->dir);
+    chmod($this->dir, 0555);
+
+    try {
+        [$code, $output] = dumpBaseline($this->dir);
+    } finally {
+        chmod($this->dir, 0755);
+    }
+
+    expect($code)->not->toBe(0)
+        ->and($output)->toContain('cannot be written')
+        ->and(is_file($this->dir.'/baseline-1.json'))->toBeFalse();
+});
