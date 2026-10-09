@@ -106,7 +106,7 @@ final class PromptSetResolver
         $locales = array_values(array_unique(array_column($fragmentRows, 'locale')));
 
         if ($locales === []) {
-            throw PromptTemplateUnresolvableException::localeMissing($set->label, 'any');
+            throw PromptTemplateUnresolvableException::emptySet($set->label);
         }
 
         foreach ($locales as $locale) {

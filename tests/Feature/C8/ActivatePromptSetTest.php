@@ -125,6 +125,23 @@ test('a set that fails verification can never become active and the incumbent st
     'contract violation' => [Unresolvable::CONTRACT_VIOLATED, fn () => insertRawSet('bad', Payload::fragments(['en', 'it'], ['advance.with_phrase' => 'no token']))],
 ]);
 
+test('a set with no fragments at all is refused as empty and the incumbent stays', function (): void {
+    publishSet('good');
+    app(ActivatePromptSet::class)->handle('good');
+    insertRawSet('empty', []);
+
+    try {
+        app(ActivatePromptSet::class)->handle('empty');
+        $this->fail('Expected PromptTemplateUnresolvableException.');
+    } catch (Unresolvable $e) {
+        expect($e->reason)->toBe(Unresolvable::EMPTY_SET)
+            ->and($e->getMessage())->toContain('[empty]')->toContain('no fragments')->not->toContain('[any]');
+    }
+
+    expect(activeLabels())->toBe(['good'])
+        ->and(ConversationPromptSet::query()->where('label', 'empty')->value('is_active'))->toBeFalse();
+});
+
 test('a failure after the incumbent was deactivated rolls the swap back', function (): void {
     publishSet('s1');
     publishSet('s2');
