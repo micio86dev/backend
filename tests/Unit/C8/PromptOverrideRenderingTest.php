@@ -149,3 +149,17 @@ test('an override body is appended literally: braces, tokens, quotes and multiby
         ->and($removed)->toBe(1)
         ->and(ovrAdvanceTail($with))->toBe(ovrAdvanceTail($without));
 });
+
+test('a blank override is no override: no heading is rendered for an empty body', function (string $blank): void {
+    $case = ['phrase' => 'Done.', 'primaries' => ['One?']];
+
+    $without = ovrCompose($case, null);
+    $with = ovrCompose($case, $blank);
+
+    expect($with)->toBe($without)
+        ->and($with)->not->toContain(OVR_LABEL);
+})->with([
+    'empty string' => [''],
+    'ascii whitespace' => ["  \n\t "],
+    'no-break and zero-width spaces' => ["\u{00A0}\u{200B} \u{3000}"],
+]);

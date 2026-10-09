@@ -674,7 +674,10 @@ final class SystemPromptComposer
         // guidance is about what to look for in this competency, so it belongs
         // beside the indicators, and it stays clear of the ADVANCE RULE that
         // decides when the competency ends.
-        if ($override !== null) {
+        // A blank body is no override: the contract refuses one at publish and at
+        // resolve time (the same blank definition), and a bare heading would only
+        // tell the model there is guidance when there is none.
+        if ($override !== null && preg_replace('/[\s\x{200B}]+/u', '', $override) !== '') {
             $parts[] = '';
             $parts[] = $this->render($templates, PromptFragmentKey::LabelOverride);
             $parts[] = $override;
