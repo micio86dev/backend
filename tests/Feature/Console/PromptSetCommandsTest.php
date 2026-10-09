@@ -107,8 +107,19 @@ test('activate switches the active set and exits zero', function (): void {
     $code = Artisan::call('beai:prompt-set:activate', ['label' => 's1']);
 
     expect($code)->toBe(0)
-        ->and(Artisan::output())->toContain('s1')
+        ->and(Artisan::output())->toContain('Activated')->toContain('s1')
         ->and(ConversationPromptSet::query()->where('label', 's1')->value('is_active'))->toBeTrue();
+});
+
+test('activating the already active set exits zero and says nothing changed', function (): void {
+    app(PublishPromptSet::class)->handle('s1', null, Payload::fragments());
+    Artisan::call('beai:prompt-set:activate', ['label' => 's1']);
+
+    $code = Artisan::call('beai:prompt-set:activate', ['label' => 's1']);
+
+    expect($code)->toBe(0)
+        ->and(Artisan::output())->toContain('already active')
+        ->and(ConversationPromptSet::query()->where('is_active', true)->pluck('label')->all())->toBe(['s1']);
 });
 
 test('activate refuses an unknown label and an unverifiable set, leaving the incumbent active', function (): void {

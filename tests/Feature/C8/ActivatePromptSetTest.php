@@ -63,11 +63,12 @@ test('activating a set makes it the only active one and records activated_at', f
     publishSet('s2');
     app(ActivatePromptSet::class)->handle('s1');
 
-    $activated = app(ActivatePromptSet::class)->handle('s2');
+    $activation = app(ActivatePromptSet::class)->handle('s2');
 
     expect(activeLabels())->toBe(['s2'])
-        ->and($activated->is_active)->toBeTrue()
-        ->and($activated->activated_at)->not->toBeNull()
+        ->and($activation->changed)->toBeTrue()
+        ->and($activation->set->is_active)->toBeTrue()
+        ->and($activation->set->activated_at)->not->toBeNull()
         ->and(ConversationPromptSet::query()->where('label', 's1')->value('is_active'))->toBeFalse();
 });
 
@@ -87,7 +88,9 @@ test('re-activating the active set changes nothing', function (): void {
     $again = app(ActivatePromptSet::class)->handle('s1');
 
     expect(activeLabels())->toBe(['s1'])
-        ->and($again->activated_at->equalTo($first->activated_at))->toBeTrue();
+        ->and($first->changed)->toBeTrue()
+        ->and($again->changed)->toBeFalse()
+        ->and($again->set->activated_at->equalTo($first->set->activated_at))->toBeTrue();
 });
 
 test('an unknown set is refused with no side effects', function (): void {

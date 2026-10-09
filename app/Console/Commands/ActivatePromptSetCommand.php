@@ -7,7 +7,6 @@ namespace App\Console\Commands;
 use App\Actions\Conversation\ActivatePromptSet;
 use App\Exceptions\Conversation\PromptSetException;
 use App\Exceptions\Conversation\PromptTemplateUnresolvableException;
-use App\Models\ConversationPromptSet;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -30,8 +29,7 @@ final class ActivatePromptSetCommand extends Command
         $label = (string) $this->argument('label');
 
         try {
-            $wasActive = ConversationPromptSet::query()->where('label', $label)->value('is_active') === true;
-            $set = $activate->handle($label);
+            $activation = $activate->handle($label);
         } catch (PromptSetException|PromptTemplateUnresolvableException $e) {
             $this->error($e->getMessage());
 
@@ -42,9 +40,11 @@ final class ActivatePromptSetCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info($wasActive
-            ? "Prompt set [{$set->label}] is already active; nothing changed."
-            : "Activated prompt set [{$set->label}] (id {$set->id}). New interviews compose from it.");
+        $set = $activation->set;
+
+        $this->info($activation->changed
+            ? "Activated prompt set [{$set->label}] (id {$set->id}). New interviews compose from it."
+            : "Prompt set [{$set->label}] is already active; nothing changed.");
 
         return self::SUCCESS;
     }

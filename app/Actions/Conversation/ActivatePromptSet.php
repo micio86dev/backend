@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Conversation;
 
+use App\DTOs\Conversation\PromptSetActivation;
 use App\Exceptions\Conversation\PromptSetException;
 use App\Exceptions\Conversation\PromptTemplateUnresolvableException;
 use App\Models\ConversationPromptSet;
@@ -19,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  * never become active; the incumbent is deactivated FIRST, because the
  * one-active partial unique index is not deferrable; then the target is
  * activated and `activated_at` recorded. Re-activating the active set changes
- * nothing. Activation only affects the NEXT composition: a session already
+ * nothing and the result says so ({@see PromptSetActivation::$changed}). Activation only affects the NEXT composition: a session already
  * composed keeps the set it was stamped with.
  */
 final class ActivatePromptSet
@@ -32,9 +33,9 @@ final class ActivatePromptSet
      * @throws PromptSetException When no set matches.
      * @throws PromptTemplateUnresolvableException When the set fails verification.
      */
-    public function handle(int|string $ref): ConversationPromptSet
+    public function handle(int|string $ref): PromptSetActivation
     {
-        $set = DB::transaction(function () use ($ref): ConversationPromptSet {
+        $activation = DB::transaction(function () use ($ref): PromptSetActivation {
             $set = ConversationPromptSet::query()
                 ->where(is_int($ref) ? 'id' : 'label', $ref)
                 ->lockForUpdate()
@@ -43,17 +44,17 @@ final class ActivatePromptSet
             $this->resolver->verify($set);
 
             if ($set->is_active) {
-                return $set;
+                return new PromptSetActivation($set, false);
             }
 
             ConversationPromptSet::query()->where('is_active', true)->update(['is_active' => false]);
             $set->forceFill(['is_active' => true, 'activated_at' => now()])->save();
 
-            return $set;
+            return new PromptSetActivation($set, true);
         });
 
         DB::afterCommit(PromptSetResolver::flushCache(...));
 
-        return $set;
+        return $activation;
     }
 }
