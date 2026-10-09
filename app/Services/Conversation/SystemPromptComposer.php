@@ -30,6 +30,8 @@ use InvalidArgumentException;
  *      provider already spoke before this prompt runs (see SpokenOpening).
  *   2. Coverage topics — ordered, role-scoped BARS indicator text (internal; not revealed
  *      verbatim). The ONLY localised section.
+ *   2b. Override (optional): the operator's guidance for this competency, one section headed
+ *      by `label.override`, rendered only when one applies (db-driven-conversation-prompts).
  *   3. STAR coverage protocol + the same-episode constraint (star-interviewer-protocol).
  *      Placed before the follow-up rules: it says what a follow-up is FOR, and a budget
  *      stated before any notion of what to spend it on is a number without a purpose.
@@ -108,6 +110,16 @@ final class SystemPromptComposer
      *                                             `BaselinePromptFragments`, so every caller that
      *                                             passes nothing gets today's bytes. Branch
      *                                             selection, clamps, joins and numbering stay here.
+     * @param  string|null  $override  The operator's guidance for THIS competency
+     *                                 (db-driven-conversation-prompts PR9), already chosen by
+     *                                 `PromptSetResolver` (role-specific over role-less, never
+     *                                 both) and already checked against the override contract
+     *                                 there. Appended LAST. Null renders nothing and the output is
+     *                                 byte-identical to a call without it; otherwise it renders as
+     *                                 ONE section headed by `label.override`, after COVERAGE TOPICS
+     *                                 and before the STAR protocol, and moves nothing else. It is
+     *                                 appended verbatim AFTER every other section is rendered, so
+     *                                 no token in it is ever substituted.
      *
      * @throws CompositionException When no indicators exist for the role+competency pair,
      *                              `$spokenOpening` names a primary the set does not have,
@@ -127,6 +139,7 @@ final class SystemPromptComposer
         ?SpokenOpening $spokenOpening = null,
         ?int $revisionId = null,
         ?PromptTemplateSet $templates = null,
+        ?string $override = null,
     ): ComposedPrompt {
         if ($templates === null) {
             $templates = BaselinePromptFragments::templateSet($projectLocale);
@@ -180,6 +193,7 @@ final class SystemPromptComposer
             $nudgeSection,
             $advanceSection,
             $primarySection,
+            $override,
         );
 
         // No fallback, and a BLANK is refused rather than stamped. The literal
@@ -645,6 +659,7 @@ final class SystemPromptComposer
         string $nudgeSection,
         string $advanceSection,
         string $primarySection = '',
+        ?string $override = null,
     ): string {
         $parts = [
             $this->render($templates, PromptFragmentKey::Header, ['competency_code' => $competencyCode]),
@@ -653,13 +668,27 @@ final class SystemPromptComposer
             '',
             $this->render($templates, PromptFragmentKey::LabelCoverage),
             $coverageSection,
+        ];
+
+        // After COVERAGE TOPICS and before the STAR protocol (design N-12): the
+        // guidance is about what to look for in this competency, so it belongs
+        // beside the indicators, and it stays clear of the ADVANCE RULE that
+        // decides when the competency ends.
+        if ($override !== null) {
+            $parts[] = '';
+            $parts[] = $this->render($templates, PromptFragmentKey::LabelOverride);
+            $parts[] = $override;
+        }
+
+        array_push(
+            $parts,
             '',
             $this->render($templates, PromptFragmentKey::LabelStar),
             $starSection,
             '',
             $this->render($templates, PromptFragmentKey::LabelFollowUp),
             $budgetSection,
-        ];
+        );
 
         if ($nudgeSection !== '') {
             $parts[] = '';
