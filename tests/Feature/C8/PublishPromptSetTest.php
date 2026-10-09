@@ -12,6 +12,7 @@ use App\Actions\Conversation\ActivatePromptSet;
 use App\Actions\Conversation\PublishPromptSet;
 use App\Enums\PromptFragmentKey;
 use App\Exceptions\Conversation\PromptSetException;
+use App\Exceptions\Conversation\PromptTemplateUnresolvableException;
 use App\Models\ConversationPromptFragment;
 use App\Models\ConversationPromptOverride;
 use App\Models\ConversationPromptSet;
@@ -19,6 +20,7 @@ use App\Services\Conversation\PromptSetResolver;
 use App\Support\Conversation\BaselinePromptFragments;
 use App\Support\Conversation\PromptSetSeal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\Helpers\Conversation\PromptSetPayload as Payload;
 
 uses(RefreshDatabase::class);
@@ -149,4 +151,31 @@ test('a failure after the set and fragments were inserted rolls everything back'
     }
 
     expect(rowCounts())->toBe($this->counts);
+});
+
+test('a stored set that fails the read-back verification rolls everything back', function (): void {
+    // After the last fragment is written, a row the seal never covered lands in the same set.
+    ConversationPromptFragment::created(static function (ConversationPromptFragment $fragment): void {
+        if (ConversationPromptFragment::query()->where('prompt_set_id', $fragment->prompt_set_id)->count() === 62) {
+            DB::table('conversation_prompt_fragments')->insert([
+                'prompt_set_id' => $fragment->prompt_set_id, 'fragment_key' => 'extra.key', 'locale' => 'en', 'body' => 'late row', 'created_at' => now(),
+            ]);
+        }
+    });
+
+    try {
+        $refusal = null;
+
+        try {
+            app(PublishPromptSet::class)->handle('v1', null, Payload::fragments());
+        } catch (PromptTemplateUnresolvableException $e) {
+            $refusal = $e;
+        }
+    } finally {
+        ConversationPromptFragment::flushEventListeners();
+    }
+
+    expect($refusal)->not->toBeNull()
+        ->and($refusal->reason)->toBe(PromptTemplateUnresolvableException::SEAL_MISMATCH)
+        ->and(rowCounts())->toBe($this->counts);
 });
