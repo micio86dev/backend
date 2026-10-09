@@ -40,6 +40,7 @@ use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\Role;
 use App\Services\Conversation\BarsIndicatorLoader;
+use App\Services\Conversation\PromptSetResolver;
 use App\Services\Conversation\SystemPromptComposer;
 use Tests\Support\PromptGolden;
 
@@ -98,9 +99,13 @@ function goldenCases(): array
  * Compose one case against fixed catalogue rows: competency CHAR_COMP (with a
  * role) or CHAR_POT (role-less), three indicators in `en` and `it`.
  *
+ * With `$fromStoredSet` the templates are the ACTIVE stored set's, resolved for the
+ * case's locale, competency and role (the `db` prompt source); without it the
+ * composer builds its own baseline (the `baseline` source).
+ *
  * @param  array<string, mixed>  $case
  */
-function goldenCompose(array $case): string
+function goldenCompose(array $case, bool $fromStoredSet = false): string
 {
     config(['conversation.min_questions' => 4, 'conversation.prompt_version' => 'characterization-v1']);
 
@@ -126,6 +131,10 @@ function goldenCompose(array $case): string
         $indicator->save();
     }
 
+    $templates = $fromStoredSet
+        ? app(PromptSetResolver::class)->resolveActive($case['locale'], $competency->code, $role?->code)->templates
+        : null;
+
     return (new SystemPromptComposer(new BarsIndicatorLoader))->compose(
         competencyCode: $competency->code,
         roleId: $role?->id,
@@ -137,6 +146,7 @@ function goldenCompose(array $case): string
         minQuestions: $case['min'],
         primaryQuestions: $case['primaries'],
         spokenOpening: $case['opening'],
+        templates: $templates,
     )->text;
 }
 
@@ -167,6 +177,11 @@ test('the composed prompt is byte-identical to its golden fixture', function (st
     }
 
     expect(PromptGolden::fixtures()->matches($id, $text))->toBeTrue("{$id} drifted from its fixture");
+})->with(fn (): array => array_keys(goldenCases()));
+
+test('the same fixtures hold when the templates come from the active stored set', function (string $id): void {
+    expect(PromptGolden::fixtures()->matches($id, goldenCompose(goldenCases()[$id], fromStoredSet: true)))
+        ->toBeTrue("{$id} drifted from its fixture on the stored baseline set");
 })->with(fn (): array => array_keys(goldenCases()));
 
 test('G07 is the StandardPromptCharacterizationTest input and keeps its 4323-byte pin', function (): void {

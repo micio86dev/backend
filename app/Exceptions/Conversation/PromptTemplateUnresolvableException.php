@@ -8,11 +8,11 @@ namespace App\Exceptions\Conversation;
  * Thrown when no usable prompt set can be resolved for a composition
  * (db-driven-conversation-prompts, design N-6/N-9).
  *
- * A CompositionException, which the interview controller already maps to 422
- * `composition_error`. The resolver is not wired into the composition path yet,
- * so no test proves that mapping for this class: the wiring and the HTTP proof
- * come with the cut-over slice. The intent is that a missing or damaged set is
- * a hard failure, never a silent fallback to other text.
+ * A CompositionException, which the interview controller maps to 422
+ * `composition_error` (`PromptCutoverTest` proves it through `/start`, with no
+ * session row and no provider call). A missing or damaged set is a hard failure,
+ * never a silent fallback to other text; the controller also reports it, so it
+ * reaches error tracking.
  *
  * {@see $reason} is the machine-readable cause, one constant per failure.
  * Messages name sets, locales, keys and tokens only; they NEVER include a
@@ -39,9 +39,19 @@ class PromptTemplateUnresolvableException extends CompositionException
 
     public const EMPTY_SET = 'empty_set';
 
+    public const INVALID_SOURCE = 'invalid_source';
+
     final protected function __construct(public readonly string $reason, string $message)
     {
         parent::__construct($message);
+    }
+
+    /**
+     * @param  string  $value  The configured `conversation.prompt_source`; it is configuration, not operator-authored text.
+     */
+    public static function invalidSource(string $value): self
+    {
+        return new self(self::INVALID_SOURCE, "conversation.prompt_source is [{$value}]; it must be one of [db, baseline].");
     }
 
     public static function noActiveSet(): self

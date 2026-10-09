@@ -14,9 +14,11 @@ use App\DTOs\Conversation\ComposedPrompt;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\ApiKeyMode;
 use App\Enums\AssessmentType;
+use App\Enums\PromptSource;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
+use App\Exceptions\Conversation\PromptTemplateUnresolvableException;
 use App\Exceptions\ProviderException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
@@ -33,6 +35,7 @@ use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Models\Utterance;
 use App\Services\Conversation\OpeningTextComposer;
+use App\Services\Conversation\PromptSetResolver;
 use App\Services\Conversation\SystemPromptComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
@@ -90,6 +93,7 @@ class InterviewController extends Controller
         private readonly AvatarSilenceDetector $avatarSilence,
         private readonly ProviderPreflight $preflight,
         private readonly ReleaseProviderSession $releaseEnded,
+        private readonly PromptSetResolver $promptSets,
     ) {}
 
     // =========================================================================
@@ -983,6 +987,19 @@ class InterviewController extends Controller
         }
 
         try {
+            // The ACTIVE stored prompt set (db-driven-conversation-prompts, N-9),
+            // resolved INSIDE this try so that no set, an ambiguous or tampered
+            // one, a missing locale and an invalid source flag all end in the
+            // catch below: 422, no session, no provider call, and no fallback to
+            // other text. `baseline` is the break-glass and reads no table.
+            $templates = PromptSource::configured() === PromptSource::Db
+                ? $this->promptSets->resolveActive(
+                    $project->language,
+                    $competencyCode,
+                    $assessmentType === AssessmentType::Standard ? $project->role_code : null,
+                )->templates
+                : null;
+
             return $this->composer->compose(
                 competencyCode: $competencyCode,
                 roleId: $roleId,
@@ -1004,9 +1021,18 @@ class InterviewController extends Controller
                 primaryQuestions: $primaryQuestions,
                 spokenOpening: $spokenOpening,
                 revisionId: $revisionId,
+                templates: $templates,
             );
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (PromptTemplateUnresolvableException $e) {
+            // Same 422 as any composition failure, but a broken active set (or
+            // source flag) is an operator problem that every candidate hits, so
+            // it must also reach error tracking. The message names sets, keys and
+            // locales, never a prompt body.
+            report($e);
+
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (CompositionException) {
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
