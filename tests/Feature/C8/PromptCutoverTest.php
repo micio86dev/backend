@@ -255,10 +255,11 @@ test('a failure of the infrastructure while resolving the set is a 500, never a 
 });
 
 test('a potential project resolves the stored set without a role, so a role override is never picked', function (): void {
-    // Characterization. The resolved override is not consumed by the composer yet, so the role
-    // argument has no visible effect on the text. It does on the resolver: the override it selects is
-    // validated, and a role-specific body that breaks the contract (tampered in, then resealed so ONLY
-    // the override contract can fail) is refused as soon as that role is looked up.
+    // The role argument decides which override row the resolver selects, and the one it selects is
+    // validated: a role-specific body that breaks the contract (tampered in, then resealed so ONLY
+    // the override contract can fail) is refused as soon as that role is looked up. A potential
+    // project must therefore start fine, because it never looks that role up.
+    // (Printing the override is proved by PromptOverrideStartTest.)
     app(PublishPromptSet::class)->handle('cutover-role-override', null, Payload::fragments(), [
         Payload::override('POT_ROLE', 'POT_COMP', 'en', 'A role specific override.'),
     ]);

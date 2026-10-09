@@ -16,15 +16,15 @@ namespace App\Enums;
  * bare token names a key's template must contain; that set is also the whole of
  * what the key may contain — the contract allows no other token.
  *
- * The composer reads these keys through a PromptTemplateSet; only `label.override` (reserved for the
- * per-competency override slice) is not read yet.
+ * The composer reads these keys through a PromptTemplateSet; `label.override` is read only when a
+ * per-competency override applies, so a prompt without one never prints it.
  */
 enum PromptFragmentKey: string
 {
     // Frame
     case Header = 'header';
 
-    // Labels. `label.override` is reserved until the override section ships.
+    // Labels. `label.override` heads the optional per-competency override section.
     case LabelOpening = 'label.opening';
     case LabelCoverage = 'label.coverage';
     case LabelOverride = 'label.override';

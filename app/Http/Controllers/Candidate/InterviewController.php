@@ -1027,6 +1027,10 @@ class InterviewController extends Controller
                 spokenOpening: $spokenOpening,
                 revisionId: $revisionId,
                 templates: $resolved?->templates,
+                // At most one body, already chosen (role-specific over role-less) and checked
+                // against the override contract by the resolver. The `baseline` source reads
+                // no table, so it has none.
+                override: $resolved?->override,
             );
 
             // `version` stays the configured string (the client sees it); the set

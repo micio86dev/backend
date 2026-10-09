@@ -23,7 +23,7 @@ use App\Models\Role;
 use App\Services\Conversation\BarsIndicatorLoader;
 use App\Services\Conversation\SystemPromptComposer;
 
-/** Every key but the one reserved for per-competency overrides, which no composer path reads yet. */
+/** Every key but the one read only when a per-competency override is composed (see PromptOverrideRenderingTest). */
 function consumablePromptKeys(): array
 {
     return array_values(array_diff(
@@ -128,7 +128,7 @@ test('every consumable key is rendered somewhere across the case matrix', functi
     }
 });
 
-test('label.override is the only key no case reads', function (): void {
+test('label.override is read only when an override is composed', function (): void {
     $combined = implode("\n", array_map(
         static fn (array $case): string => composeWithTemplates($case, markerSet()),
         templateCases(),
