@@ -7,8 +7,11 @@ use App\Models\ConversationPromptOverride;
 use App\Models\ConversationPromptSet;
 use App\Models\TenantModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Helpers\Conversation\PromptTables;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn () => PromptTables::empty());
 
 test('the prompt set models are plain Eloquent models, never tenant scoped', function (string $model, string $table): void {
     $instance = new $model;

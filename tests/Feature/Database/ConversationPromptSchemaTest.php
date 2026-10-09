@@ -17,8 +17,11 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Helpers\Conversation\PromptTables;
 
 uses(RefreshDatabase::class);
+
+beforeEach(fn () => PromptTables::empty());
 
 const PROMPT_SCHEMA_HASH = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
