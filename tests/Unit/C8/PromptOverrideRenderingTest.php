@@ -162,4 +162,5 @@ test('a blank override is no override: no heading is rendered for an empty body'
     'empty string' => [''],
     'ascii whitespace' => ["  \n\t "],
     'no-break and zero-width spaces' => ["\u{00A0}\u{200B} \u{3000}"],
+    'invalid utf-8' => ["\xC3\x28"],
 ]);

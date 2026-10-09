@@ -676,8 +676,9 @@ final class SystemPromptComposer
         // decides when the competency ends.
         // A blank body is no override: the contract refuses one at publish and at
         // resolve time (the same blank definition), and a bare heading would only
-        // tell the model there is guidance when there is none.
-        if ($override !== null && preg_replace('/[\s\x{200B}]+/u', '', $override) !== '') {
+        // tell the model there is guidance when there is none. A positive match
+        // fails closed: bytes that are not valid UTF-8 count as no text.
+        if ($override !== null && preg_match('/[^\s\x{200B}]/u', $override) === 1) {
             $parts[] = '';
             $parts[] = $this->render($templates, PromptFragmentKey::LabelOverride);
             $parts[] = $override;
