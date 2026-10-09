@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * BaselinePromptFragments is the code-side baseline of the 31 conversation
+ * BaselinePromptFragments is the code-side baseline of the 32 conversation
  * prompt fragments (db-driven-conversation-prompts, PR4b): today's literals,
  * stored trimmed, for `en` and `it` (the composer speaks English instructions
  * for every locale, so `it` is a verbatim copy of `en`).
@@ -35,6 +35,13 @@ test('the it baseline is a verbatim copy of the en baseline', function (): void 
 
 test('a locale without its own rows falls back to the English baseline', function (): void {
     expect(BaselinePromptFragments::forLocale('fr'))->toBe(BaselinePromptFragments::forLocale('en'));
+});
+
+test('opening.continuation tells the avatar not to greet again, word for word', function (): void {
+    expect(BaselinePromptFragments::forLocale('en')['opening.continuation'])->toBe(
+        'This is not the start of the interview. The candidate has already been welcomed and has answered earlier '
+        .'questions. Do NOT greet, welcome or introduce yourself again.',
+    );
 });
 
 test('templateSet builds a complete, renderable set for the locale', function (): void {
@@ -72,6 +79,7 @@ test('every baseline body keeps its pinned bytes', function (): void {
         'opening.spoken_resumed' => 'b987e2f7c8c351570c7c51e94459650171487533252bcae712a7806c219efde2',
         'opening.spoken_fresh' => 'ea2ee353a51d75be55144f76aa7592be7cdf5ae93b7baf6b94fd68d88a22ac74',
         'opening.closing' => '5a15a12c8c5e18eb2ed0d1d3d174a52dff43e78cdc95cd5deffc96f708df987f',
+        'opening.continuation' => '3655f92eb07fb8f575e59a7dfec0f919635bf4ab2c214adba6e385b3c90fe0cf',
         'primary.none' => 'c07710d1df824e3e5037b41baf2fadbdc54d7dac5711eedaa49fe0d457fe0acb',
         'primary.intro' => 'b51534720ea5c44f5ffa26095cf2833a8890ce401e9fcd4d415028f129e7ecfb',
         'primary.asked_before_one' => '7186f8c37fcd8d386fa4484d4d5cf6dbe7e27a14fc5ce5f2d8ddadcc7b47fd71',

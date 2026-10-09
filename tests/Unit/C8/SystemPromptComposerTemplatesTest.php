@@ -23,12 +23,12 @@ use App\Models\Role;
 use App\Services\Conversation\BarsIndicatorLoader;
 use App\Services\Conversation\SystemPromptComposer;
 
-/** Every key but the one reserved for per-competency overrides, which no composer path reads yet. */
+/** Every key but the two no case reads yet: per-competency overrides, and the continuation clause (wired by the next commit). */
 function consumablePromptKeys(): array
 {
     return array_values(array_diff(
         array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases()),
-        ['label.override'],
+        ['label.override', 'opening.continuation'],
     ));
 }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * The 31 prose fragments `SystemPromptComposer` renders into the conversation
+ * The 32 prose fragments `SystemPromptComposer` renders into the conversation
  * system prompt (db-driven-conversation-prompts, design N-1).
  *
  * A fragment is a leaf of prose. Branch selection, the minimum clamp, line
@@ -47,6 +47,7 @@ enum PromptFragmentKey: string
     case OpeningSpokenResumed = 'opening.spoken_resumed';
     case OpeningSpokenFresh = 'opening.spoken_fresh';
     case OpeningClosing = 'opening.closing';
+    case OpeningContinuation = 'opening.continuation';
 
     // Primary questions
     case PrimaryNone = 'primary.none';
@@ -106,6 +107,7 @@ enum PromptFragmentKey: string
             self::OpeningResumedNotice,
             self::OpeningFallback,
             self::OpeningClosing,
+            self::OpeningContinuation,
             self::PrimaryNone,
             self::PrimaryIntro,
             self::PrimaryAskedBeforeOne,

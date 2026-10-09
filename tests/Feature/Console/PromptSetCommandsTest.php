@@ -48,7 +48,7 @@ test('publish stores an inactive set from the file and exits zero', function ():
     $set = ConversationPromptSet::query()->where('label', 'v1')->firstOrFail();
 
     expect($code)->toBe(0)
-        ->and($output)->toContain('v1')->toContain('62 fragments')->toContain('1 override')
+        ->and($output)->toContain('v1')->toContain('64 fragments')->toContain('1 override')
         ->and($set->is_active)->toBeFalse()
         ->and($set->notes)->toBe('from file');
 });

@@ -8,13 +8,13 @@ use App\DTOs\Conversation\PromptTemplateSet;
 use App\Enums\PromptFragmentKey;
 
 /**
- * The code-side baseline of the 31 conversation prompt fragments
+ * The code-side baseline of the 32 conversation prompt fragments
  * (db-driven-conversation-prompts, design N-1/N-10).
  *
  * These are `SystemPromptComposer`'s literals moved verbatim: the default of
  * `compose()` when no set is given, the seed source of the stored baseline set
- * and the break-glass target. The 30 keys the composer reads are pinned by the prompt
- * goldens; all 31 bodies are pinned by hash in BaselinePromptFragmentsTest.
+ * and the break-glass target. The 31 keys the composer reads are pinned by the prompt
+ * goldens; all 32 bodies are pinned by hash in BaselinePromptFragmentsTest.
  *
  * A body is stored TRIMMED: the spaces and newlines that join a fragment to its
  * neighbours are code-side joins and stay in the composer. A `{{token}}` marks
@@ -127,6 +127,8 @@ STAR;
             PromptFragmentKey::OpeningSpokenFresh->value => 'You have ALREADY spoken your opening line, which was {{quoted}}.',
             PromptFragmentKey::OpeningClosing->value => 'Do NOT ask it again. The candidate\'s next reply is '
                 .'their answer to it.',
+            PromptFragmentKey::OpeningContinuation->value => 'This is not the start of the interview. The candidate has already been welcomed and has '
+                .'answered earlier questions. Do NOT greet, welcome or introduce yourself again.',
 
             PromptFragmentKey::PrimaryNone->value => 'This competency has no primary questions: your opening line was its only '
                 .'primary question, and everything you ask from here on is a follow-up.',
