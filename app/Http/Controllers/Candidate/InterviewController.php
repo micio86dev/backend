@@ -22,6 +22,7 @@ use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
 use App\Jobs\PublicApi\RunMockInterviewJob;
+use App\Jobs\ReleaseEndedProviderSessionJob;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\Evaluation;
@@ -824,8 +825,15 @@ class InterviewController extends Controller
         // Observation only, after the commit: the stretch /end just stored.
         $this->inspectAvatarSilence($session, $session->provider_session_ref);
 
-        // Best-effort, after the commit: never fails /end.
-        ($this->releaseEnded)($session);
+        // Best-effort, after the commit: never fails /end. A HeyGen competency that
+        // handed over to the next one is NOT released here: the client keeps that
+        // session live until the incoming one has painted, and a stop now would cut
+        // the stream the candidate is still watching. A delayed job backs it up.
+        if ($this->handsOverToNextCompetency($session, $endedReason, $directive)) {
+            $this->deferProviderRelease($session);
+        } else {
+            ($this->releaseEnded)($session);
+        }
 
         if ($progress !== null) {
             event(new CompetencySessionEnded(
@@ -841,6 +849,47 @@ class InterviewController extends Controller
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    /**
+     * Whether the client is still showing this session while the next competency connects.
+     *
+     * Only a HeyGen competency that COMPLETED and is followed by another one: the
+     * client hands over only for HeyGen (invisible-competency-handover, D9) and only
+     * on `continue`. Every other end (`timeout`, `skipped`, a pause, the last
+     * competency, Tavus) has nothing waiting on the session.
+     *
+     * @param  array{ended_competencies: int, total_competencies: int, next_action: string}|null  $directive
+     */
+    private function handsOverToNextCompetency(InterviewSession $session, string $endedReason, ?array $directive): bool
+    {
+        return $session->provider === 'heygen'
+            && $endedReason === 'completed'
+            && ($directive['next_action'] ?? null) === 'continue';
+    }
+
+    /**
+     * Queue the release for later, with the refs as they are NOW (a resume may issue a
+     * newer session on this row before it runs). If the queue is unreachable the
+     * session is released at once instead: a cut stream beats a session left running.
+     */
+    private function deferProviderRelease(InterviewSession $session): void
+    {
+        try {
+            ReleaseEndedProviderSessionJob::dispatch(
+                $session->id,
+                $session->organization_id,
+                $session->provider,
+                $session->provider_session_ref,
+                $session->provider_context_ref,
+            )->delay((int) config('interview.provider_release_delay_seconds'))->afterCommit();
+        } catch (\Throwable $e) {
+            Log::warning('interview.provider_release.defer_failed', [
+                'session_id' => $session->id,
+                'exception' => $e::class,
+            ]);
+            ($this->releaseEnded)($session);
+        }
+    }
 
     /**
      * Compose the system prompt for the next competency.
