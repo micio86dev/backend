@@ -23,10 +23,16 @@ declare(strict_types=1);
  * the whole contract, so they are asserted directly.
  */
 
+use App\Actions\Conversation\ActivatePromptSet;
+use App\Actions\Conversation\PublishPromptSet;
+use App\Models\ConversationPromptSet;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Database\Seeders\PlatformSuperadminSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\DB;
+use Tests\Helpers\Conversation\PromptSetPayload;
+use Tests\Helpers\Conversation\PromptTables;
 
 /**
  * A stand-in for `migrate` that fails, registered over the real one.
@@ -448,4 +454,82 @@ test('a failed migration never reaches the framework-version backfill', function
     $this->artisan('beai:deploy')->assertFailed();
 
     expect(RecordingEnsureVersionsStub::$order)->toBe([]);
+});
+
+// ─── Active conversation prompt set (db-driven-conversation-prompts PR8) ────
+
+test('the happy path verifies the active prompt set for every supported locale', function (): void {
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] verifying the active conversation prompt set')
+        ->expectsOutputToContain('[deploy] prompt set OK')
+        ->assertExitCode(Command::SUCCESS);
+});
+
+test('a deploy with no active prompt set is refused, and nothing after the check runs', function (): void {
+    // Every /start would answer 422 composition_error: booting that code is the failure this gate prevents.
+    PromptTables::empty();
+    registerDeployStub(new RecordingSyncStub);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] FAILED: the active conversation prompt set is unusable')
+        ->expectsOutputToContain('No conversation prompt set is active')
+        ->assertFailed();
+
+    expect(RecordingSyncStub::$ran)->toBeFalse();
+});
+
+test('a deploy with two active prompt sets is refused', function (): void {
+    DB::statement('DROP INDEX conversation_prompt_sets_one_active');
+    app(PublishPromptSet::class)->handle('deploy-second', null, PromptSetPayload::fragments());
+    ConversationPromptSet::query()->where('label', 'deploy-second')->update(['is_active' => true]);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('More than one conversation prompt set is active')
+        ->assertFailed();
+});
+
+test('a deploy whose active prompt set no longer matches its seal is refused', function (): void {
+    DB::statement('ALTER TABLE conversation_prompt_fragments DISABLE TRIGGER USER');
+    DB::table('conversation_prompt_fragments')->where('fragment_key', 'budget')->update(['body' => 'TAMPERED {{budget}}']);
+    DB::statement('ALTER TABLE conversation_prompt_fragments ENABLE TRIGGER USER');
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('does not match its content seal')
+        ->assertFailed();
+});
+
+test('a deploy whose active prompt set lacks a supported locale is refused', function (): void {
+    app(PublishPromptSet::class)->handle('deploy-en-only', null, PromptSetPayload::fragments(['en']));
+    app(ActivatePromptSet::class)->handle('deploy-en-only');
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('no fragments for locale [it]')
+        ->assertFailed();
+});
+
+test('the baseline source skips the active prompt set check, even with no set at all', function (): void {
+    config(['conversation.prompt_source' => 'baseline']);
+    PromptTables::empty();
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] prompt source is baseline')
+        ->doesntExpectOutputToContain('[deploy] FAILED')
+        ->assertExitCode(Command::SUCCESS);
+});
+
+test('an unknown prompt source refuses the deploy instead of choosing a source', function (): void {
+    config(['conversation.prompt_source' => 'bogus']);
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] FAILED: the active conversation prompt set is unusable')
+        ->expectsOutputToContain('[bogus]')
+        ->assertFailed();
+});
+
+test('a failed migration never reaches the prompt set check', function (): void {
+    registerDeployStub(new FailingMigrateStub);
+
+    $this->artisan('beai:deploy')
+        ->doesntExpectOutputToContain('verifying the active conversation prompt set')
+        ->assertFailed();
 });
