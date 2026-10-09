@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Helpers\Conversation;
 
+use App\Models\ConversationPromptSet;
+use App\Support\Conversation\PromptSetSeal;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,6 +30,29 @@ final class PromptTables
         foreach (['conversation_prompt_fragments', 'conversation_prompt_overrides', 'conversation_prompt_sets'] as $table) {
             DB::statement("ALTER TABLE {$table} DISABLE TRIGGER USER");
             DB::table($table)->delete();
+            DB::statement("ALTER TABLE {$table} ENABLE TRIGGER USER");
+        }
+    }
+
+    /**
+     * Replace the body of every override of a set with one the override contract
+     * refuses, and reseal the set over the real rows, so that ONLY the override
+     * contract is left to fail (publishing would have refused the body).
+     */
+    public static function breakOverrideBody(ConversationPromptSet $set, string $body): void
+    {
+        foreach (['conversation_prompt_overrides', 'conversation_prompt_sets'] as $table) {
+            DB::statement("ALTER TABLE {$table} DISABLE TRIGGER USER");
+        }
+
+        DB::table('conversation_prompt_overrides')->where('prompt_set_id', $set->id)->update(['body' => $body]);
+        $fragments = DB::table('conversation_prompt_fragments')->where('prompt_set_id', $set->id)
+            ->get(['fragment_key as key', 'locale', 'body'])->map(fn (object $row): array => (array) $row)->all();
+        $overrides = DB::table('conversation_prompt_overrides')->where('prompt_set_id', $set->id)
+            ->get(['role_code', 'competency_code', 'locale', 'body'])->map(fn (object $row): array => (array) $row)->all();
+        DB::table('conversation_prompt_sets')->where('id', $set->id)->update(['content_sha256' => PromptSetSeal::seal($fragments, $overrides)]);
+
+        foreach (['conversation_prompt_overrides', 'conversation_prompt_sets'] as $table) {
             DB::statement("ALTER TABLE {$table} ENABLE TRIGGER USER");
         }
     }

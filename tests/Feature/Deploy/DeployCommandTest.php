@@ -507,6 +507,25 @@ test('a deploy whose active prompt set lacks a supported locale is refused', fun
         ->assertFailed();
 });
 
+test('a deploy whose active prompt set holds a broken override body is refused, naming the override', function (): void {
+    // The per-locale resolve loop uses a synthetic competency and no role, so it can never meet this
+    // override: the guarantee rests on verify($set). The seal is recomputed over the real rows, so ONLY
+    // the override contract is left to fail.
+    app(PublishPromptSet::class)->handle('deploy-override', null, PromptSetPayload::fragments(), [
+        PromptSetPayload::override('DEPLOY_ROLE', 'DEPLOY_COMP', 'en', 'A valid override body.'),
+    ]);
+    app(ActivatePromptSet::class)->handle('deploy-override');
+
+    $set = ConversationPromptSet::query()->where('label', 'deploy-override')->sole();
+
+    PromptTables::breakOverrideBody($set, 'Broken {{budget}} override.');
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('override for competency [DEPLOY_COMP] is invalid')
+        ->doesntExpectOutputToContain('does not match its content seal')
+        ->assertFailed();
+});
+
 test('the baseline source skips the active prompt set check, even with no set at all', function (): void {
     config(['conversation.prompt_source' => 'baseline']);
     PromptTables::empty();
