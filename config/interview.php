@@ -65,6 +65,25 @@ return [
     'stale_after_minutes' => (int) env('INTERVIEW_STALE_AFTER_MINUTES', 30),
 
     /*
+     * How long after `/end` the outgoing provider session of a competency that
+     * HANDED OVER to the next one is released at the provider (a queued job).
+     *
+     * The frontend keeps the outgoing session live until the incoming one has
+     * painted, then crossfades (invisible-competency-handover, D5). Stopping it
+     * at `/end` kills the stream the candidate is still watching. The client
+     * stops its own session as soon as the handover completes, so this only
+     * backs up a tab that closed mid-handover.
+     *
+     * 45 s clears the longest handover the client allows, measured from `/end`:
+     * HANDOVER_BOUND_MS (10 s) before the outgoing is released, plus
+     * CONNECTING_CEILING_MS (20 s) for an incoming that is still connecting
+     * (both in `useInterviewSession.ts`) = 30 s, plus 15 s for the `/start`
+     * round trip, its retries and the crossfade. Every other end releases at
+     * once: nothing is waiting on that session.
+     */
+    'provider_release_delay_seconds' => (int) env('INTERVIEW_PROVIDER_RELEASE_DELAY_SECONDS', 45),
+
+    /*
     |--------------------------------------------------------------------------
     | HeyGen Provider Configuration
     |--------------------------------------------------------------------------

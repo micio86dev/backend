@@ -15,19 +15,25 @@ final class ReleaseProviderSession
 {
     public function __invoke(InterviewSession $session): void
     {
-        if ($session->provider_session_ref === null && $session->provider_context_ref === null) {
+        $this->forRefs($session->provider, $session->provider_session_ref, $session->provider_context_ref);
+    }
+
+    /** Release exactly these refs: a deferred caller must not release whatever the row holds by then. */
+    public function forRefs(string $provider, ?string $sessionRef, ?string $contextRef): void
+    {
+        if ($sessionRef === null && $contextRef === null) {
             return;
         }
 
         try {
-            (match ($session->provider) {
+            (match ($provider) {
                 'tavus' => app(TavusProvider::class),
                 'mock' => app(MockProvider::class),
                 default => app(HeygenProvider::class),
             })->teardown(new ProviderToken(
-                provider: $session->provider,
-                provider_session_ref: $session->provider_session_ref,
-                provider_context_ref: $session->provider_context_ref,
+                provider: $provider,
+                provider_session_ref: $sessionRef,
+                provider_context_ref: $contextRef,
             ));
         } catch (\Throwable) {
             // The outcome is already committed; a stale provider session must not undo it.
