@@ -204,7 +204,7 @@ test('5.1 /start with standard EN competency → 201 + question_context.prompt_v
     $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
 });
 
-test('5.1b /start stamps the configured conversation prompt version on the session', function (): void {
+test('5.1b /start stamps the configured conversation prompt version and the stored set on the session', function (): void {
     Http::fake(c8HeygenFake());
     Queue::fake();
 
@@ -219,8 +219,7 @@ test('5.1b /start stamps the configured conversation prompt version on the sessi
 
     $session = InterviewSession::where('participant_id', $scenario['participant']->id)->sole();
     expect($session->conversation_prompt_version)
-        ->toBe(config('conversation.prompt_version'))
-        ->not->toBeEmpty();
+        ->toMatch('/^'.preg_quote((string) config('conversation.prompt_version'), '/').'\+s\d+\.[0-9a-f]{12}$/');
 });
 
 test('5.5 /start response never leaks composed system_prompt; provider body carries it (anti-leak)', function (): void {

@@ -14,9 +14,11 @@ use App\DTOs\Conversation\ComposedPrompt;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\ApiKeyMode;
 use App\Enums\AssessmentType;
+use App\Enums\PromptSource;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
+use App\Exceptions\Conversation\PromptTemplateUnresolvableException;
 use App\Exceptions\ProviderException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
@@ -33,6 +35,7 @@ use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Models\Utterance;
 use App\Services\Conversation\OpeningTextComposer;
+use App\Services\Conversation\PromptSetResolver;
 use App\Services\Conversation\SystemPromptComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
@@ -90,6 +93,7 @@ class InterviewController extends Controller
         private readonly AvatarSilenceDetector $avatarSilence,
         private readonly ProviderPreflight $preflight,
         private readonly ReleaseProviderSession $releaseEnded,
+        private readonly PromptSetResolver $promptSets,
     ) {}
 
     // =========================================================================
@@ -549,6 +553,7 @@ class InterviewController extends Controller
             // D6 — progress, computed by the resolver from the ordered list.
             competencyOrdinal: $nextCompetency['competency_ordinal'],
             totalCompetencies: $nextCompetency['total_competencies'],
+            promptSetRef: $compositionResult->promptSetRef,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -909,6 +914,10 @@ class InterviewController extends Controller
      *                                     `potential`, no role-less BARS rows for the competency)
      *   - 'anchor_translation_missing'  → AnchorTranslationMissingException (missing locale text)
      *
+     * Only composition problems are a 422. Anything else thrown while resolving the stored
+     * prompt set (a database outage) propagates as a 500 on purpose: it is not a composition
+     * error, and it must never silently fall back to the baseline text.
+     *
      * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
      * RV-3: provider field client confirmation required before live deploy.
      *
@@ -983,7 +992,20 @@ class InterviewController extends Controller
         }
 
         try {
-            return $this->composer->compose(
+            // The ACTIVE stored prompt set (db-driven-conversation-prompts, N-9),
+            // resolved INSIDE this try so that no set, an ambiguous or tampered
+            // one, a missing locale and an invalid source flag all end in the
+            // catch below: 422, no session, no provider call, and no fallback to
+            // other text. `baseline` is the break-glass and reads no table.
+            $resolved = PromptSource::configured() === PromptSource::Db
+                ? $this->promptSets->resolveActive(
+                    $project->language,
+                    $competencyCode,
+                    $assessmentType === AssessmentType::Standard ? $project->role_code : null,
+                )
+                : null;
+
+            $composed = $this->composer->compose(
                 competencyCode: $competencyCode,
                 roleId: $roleId,
                 competencyId: $competency->id,
@@ -1004,9 +1026,24 @@ class InterviewController extends Controller
                 primaryQuestions: $primaryQuestions,
                 spokenOpening: $spokenOpening,
                 revisionId: $revisionId,
+                templates: $resolved?->templates,
             );
+
+            // `version` stays the configured string (the client sees it); the set
+            // the text came from travels beside it for the durable stamp.
+            return $resolved === null
+                ? $composed
+                : new ComposedPrompt($composed->text, $composed->version, $resolved->stampRef());
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (PromptTemplateUnresolvableException $e) {
+            // Same 422 as any composition failure, but a broken active set (or
+            // source flag) is an operator problem that every candidate hits, so
+            // it must also reach error tracking. The message names sets, keys and
+            // locales, never a prompt body.
+            report($e);
+
+            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (CompositionException) {
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
@@ -1286,7 +1323,7 @@ class InterviewController extends Controller
                 // re-invoked on resume — stamp() carries its own write-once /
                 // downgrade-only / null-guard rules, mirroring started_at's
                 // idiom right above it.
-                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->promptVersion);
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
                 $session->save();
 
                 // (D1/D4) Open the NEW stretch in the same transaction — the
@@ -1363,7 +1400,7 @@ class InterviewController extends Controller
                 // RESUME path above — this site is also reached by a
                 // re-offered competency (ResetSessionForRetry), not only a
                 // true first issue.
-                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->promptVersion);
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
                 $session->save();
 
                 // (D1/D4) Open a new live period in the SAME transaction as

@@ -60,8 +60,10 @@ final class InterviewSessionLlmSnapshot
      *                                     issue() call, or null when the caller has none
      *                                     (never fabricated; a null never overwrites a value).
      * @param  string|null  $promptVersion  The conversation prompt version of that same
-     *                                      composition (`QuestionContext::$promptVersion`);
-     *                                      null when there is none, and never fabricated.
+     *                                      composition, joined with the stored set it came from
+     *                                      (`QuestionContext::stampedPromptVersion()`,
+     *                                      `{version}+s{id}.{sha12}`; the bare version for the
+     *                                      baseline source); null when there is none, and never fabricated.
      */
     public function stamp(InterviewSession $session, ?string $systemPrompt, ?string $promptVersion = null): void
     {

@@ -63,5 +63,25 @@ readonly class QuestionContext
          */
         public ?int $competencyOrdinal = null,
         public ?int $totalCompetencies = null,
+        /**
+         * The stored prompt set the system prompt was composed from (`s{id}.{sha12}`),
+         * null for the code baseline. Kept OUT of `$promptVersion`, which the client
+         * sees; only {@see self::stampedPromptVersion()} joins them.
+         */
+        public ?string $promptSetRef = null,
     ) {}
+
+    /**
+     * The value stamped on the session: the configured prompt version, followed by
+     * `+{set ref}` when the text came from a stored set. Null when there is no version
+     * (a stamp is never fabricated).
+     */
+    public function stampedPromptVersion(): ?string
+    {
+        if ($this->promptVersion === null || $this->promptSetRef === null) {
+            return $this->promptVersion;
+        }
+
+        return $this->promptVersion.'+'.$this->promptSetRef;
+    }
 }

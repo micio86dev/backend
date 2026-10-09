@@ -26,6 +26,11 @@ declare(strict_types=1);
  * against, so a lang edit MUST show up as a golden diff. Nothing else in the
  * prompt varies between runs, so no normalization is applied.
  *
+ * Both prompt sources are pinned to the SAME fixtures: the tests above run on the
+ * default source (`db`: the bootstrap migration's baseline set, resolved and
+ * sealed), and the last test runs H1 to H4 again on the `baseline` break-glass. The
+ * stored baseline set therefore reproduces the code baseline byte for byte.
+ *
  * Capture (once, on the pre-change tree):
  *   PROMPT_GOLDEN_CAPTURE=1 PROMPT_GOLDEN_SOURCE_COMMIT=<commit> vendor/bin/pest tests/Feature/C8/InterviewStartPromptGoldenTest.php
  */
@@ -193,3 +198,18 @@ test('the first competency never carries the no-greeting clause', function (): v
 test('a resume of the second competency never carries the no-greeting clause', function (): void {
     expect(goldenStartPrompt('standard', 'en', ['GOLD_A', 'GOLD_B'], 2, true, completed: 1))->not->toContain('Do NOT greet');
 });
+
+test('the default prompt source is the database, so H1 to H4 above pin the stored baseline set', function (): void {
+    expect(config('conversation.prompt_source'))->toBe('db');
+});
+
+test('H1 to H4 are byte-identical on the baseline break-glass source too', function (string $id, array $args): void {
+    config(['conversation.prompt_source' => 'baseline']);
+
+    goldenAssertHttp($id, goldenStartPrompt(...$args));
+})->with([
+    'H1' => ['H1', ['standard', 'en', ['GOLD_A', 'GOLD_B'], 2, false]],
+    'H2' => ['H2', ['standard', 'it', ['GOLD_A', 'GOLD_B'], 2, true]],
+    'H3' => ['H3', ['potential', 'it', ['GOLD_MTG'], 1, false]],
+    'H4' => ['H4', ['standard', 'en', ['GOLD_A', 'GOLD_B'], 2, false, 1]],
+]);

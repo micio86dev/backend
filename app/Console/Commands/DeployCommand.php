@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\PromptSource;
+use App\Exceptions\Conversation\PromptTemplateUnresolvableException;
+use App\Models\ConversationPromptSet;
+use App\Services\Conversation\PromptSetResolver;
 use Database\Seeders\FrameworkCatalogSeeder;
 use Database\Seeders\PlatformSuperadminSeeder;
 use Illuminate\Console\Command;
@@ -28,12 +32,20 @@ use Throwable;
  * One artisan command has no `&&` to lose, no quoting to get wrong, and no
  * dependence on how the platform tokenises the field.
  *
- * THE TWO STEPS HAVE DELIBERATELY DIFFERENT FAILURE SEMANTICS
- * -----------------------------------------------------------
+ * THE STEPS HAVE DELIBERATELY DIFFERENT FAILURE SEMANTICS
+ * --------------------------------------------------------
  * 1. `migrate --force` is FATAL. A non-zero exit here aborts the deploy, and
  *    that is the entire point: booting code against a schema it does not
  *    have is the failure this command exists to prevent.
- * 2. `beai:sync-llm-registry` is NON-FATAL, preserving the semantics the
+ * 2. The active conversation prompt set check is FATAL, right after the
+ *    migrations (db-driven-conversation-prompts, design N-9). With
+ *    `conversation.prompt_source=db` every interview start composes from the
+ *    ACTIVE stored set, and a missing, ambiguous, tampered or incomplete one
+ *    answers every candidate 422 `composition_error`: that is a release which
+ *    must not go live, not a stale picker. The check runs the very resolution
+ *    `/start` runs, for every supported locale. With `baseline` it is skipped
+ *    (the break-glass reads no table); an unknown source value is fatal too.
+ * 3. `beai:sync-llm-registry` is NON-FATAL, preserving the semantics the
  *    entrypoint had. It refreshes `llm_models`, which is catalogue data, not
  *    schema; a transient database hiccup over it must not refuse a release.
  *    The worst case is a stale model picker an operator fixes by redeploying
@@ -59,7 +71,7 @@ class DeployCommand extends Command
 {
     protected $signature = 'beai:deploy';
 
-    protected $description = 'Run the release steps a deploy must perform: migrations (fatal), then the framework catalogue seed, the default framework version backfill and the LLM registry sync (all non-fatal).';
+    protected $description = 'Run the release steps a deploy must perform: migrations (fatal), the active prompt set check (fatal), then the framework catalogue seed, the default framework version backfill and the LLM registry sync (all non-fatal).';
 
     public function handle(): int
     {
@@ -72,6 +84,15 @@ class DeployCommand extends Command
         }
 
         $this->info('[deploy] migrations OK');
+
+        $this->line('[deploy] verifying the active conversation prompt set…');
+
+        if (! $this->verifyActivePromptSet()) {
+            $this->error('[deploy] FAILED: the active conversation prompt set is unusable. Aborting the deploy.');
+            $this->error('[deploy] Activate an intact set with `php artisan beai:prompt-set:activate <label>`, or set CONVERSATION_PROMPT_SOURCE=baseline to deploy on the code baseline.');
+
+            return self::FAILURE;
+        }
 
         $this->line('[deploy] seeding the framework catalogue…');
 
@@ -126,6 +147,48 @@ class DeployCommand extends Command
         } catch (Throwable $e) {
             // A migration fault usually surfaces as a QueryException rather
             // than a non-zero return, so the fatal rule must cover both.
+            $this->error('[deploy] '.$e::class.': '.$e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
+     * The same resolution `/start` performs, run once per supported locale:
+     * exactly one active set, its seal, a complete key set and the placeholder
+     * contract for each locale, plus the contract of every override body.
+     *
+     * FATAL, unlike the data steps below: see the class docblock. Any failure,
+     * a refusal or a database error, is reported with its message (sets, keys
+     * and locales only, never a body) and aborts the deploy.
+     */
+    private function verifyActivePromptSet(): bool
+    {
+        try {
+            if (PromptSource::configured() === PromptSource::Baseline) {
+                $this->warn('[deploy] prompt source is baseline: the active prompt set check is skipped.');
+
+                return true;
+            }
+
+            // The deploy re-verifies against the database, never against a set cached by this process.
+            PromptSetResolver::flushCache();
+            $resolver = app(PromptSetResolver::class);
+
+            foreach ((array) config('app.supported_locales') as $locale) {
+                $resolver->resolveActive((string) $locale, 'DEPLOY-CHECK', null);
+            }
+
+            $set = ConversationPromptSet::query()->where('is_active', true)->sole();
+            $resolver->verify($set);
+            $this->info("[deploy] prompt set OK ({$set->label})");
+
+            return true;
+        } catch (PromptTemplateUnresolvableException $e) {
+            $this->error('[deploy] '.$e->getMessage());
+
+            return false;
+        } catch (Throwable $e) {
             $this->error('[deploy] '.$e::class.': '.$e->getMessage());
 
             return false;

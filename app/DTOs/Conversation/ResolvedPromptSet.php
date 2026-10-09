@@ -27,6 +27,15 @@ final readonly class ResolvedPromptSet
      */
     public function ref(): string
     {
-        return sprintf('%s+s%d.%s', $this->setLabel, $this->setId, substr($this->contentSha256, 0, 12));
+        return $this->setLabel.'+'.$this->stampRef();
+    }
+
+    /**
+     * The label-free reference `s{id}.{sha12}` that the durable session stamp
+     * appends to the configured prompt version.
+     */
+    public function stampRef(): string
+    {
+        return sprintf('s%d.%s', $this->setId, substr($this->contentSha256, 0, 12));
     }
 }

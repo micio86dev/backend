@@ -40,3 +40,11 @@ test('(d) ComposedPrompt is readonly — mutation throws Error', function (): vo
 
     expect(fn () => $dto->text = 'mutated')->toThrow(Error::class);
 });
+
+test('(e) ComposedPrompt carries the stored set reference separately, null for the baseline', function (): void {
+    $stored = new ComposedPrompt(text: 'Some text.', version: 'conv-1.0', promptSetRef: 's7.0123456789ab');
+
+    expect($stored->promptSetRef)->toBe('s7.0123456789ab')
+        ->and($stored->version)->toBe('conv-1.0')
+        ->and((new ComposedPrompt(text: 'Some text.', version: 'conv-1.0'))->promptSetRef)->toBeNull();
+});
