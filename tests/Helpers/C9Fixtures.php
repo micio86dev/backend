@@ -199,11 +199,13 @@ function casClientErrorFake(): array
 function heygenOkFake(): array
 {
     return [
-        '*liveavatar*/contexts*' => Http::response(['data' => ['id' => 'ctx-'.uniqid()]], 200),
-        '*liveavatar*/sessions/token*' => Http::response([
+        '*liveavatar*/contexts*' => fn () => Http::response(['data' => ['id' => 'ctx-'.uniqid('', true)]], 200),
+        // A closure, so EVERY issue gets its own session id: a real provider never hands the same
+        // id to two sessions, and `interview_session_live_periods` allows one open period per ref.
+        '*liveavatar*/sessions/token*' => fn () => Http::response([
             'data' => [
-                'session_id' => 'heygen-session-'.uniqid(),
-                'session_token' => 'heygen-token-'.uniqid(),
+                'session_id' => 'heygen-session-'.uniqid('', true),
+                'session_token' => 'heygen-token-'.uniqid('', true),
             ],
         ], 200),
         // The transcript fetch MUST return the real shape. A 200 whose body lacks
