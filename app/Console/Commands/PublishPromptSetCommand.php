@@ -26,7 +26,7 @@ use Throwable;
  *     {
  *       "label": "v2",                                   // required unless --label is given, 1 to 64 chars, unique
  *       "notes": "why this set exists",                  // optional
- *       "fragments": {                                   // every locale carries EXACTLY the 31 PromptFragmentKey keys
+ *       "fragments": {                                   // every locale carries EXACTLY the 32 PromptFragmentKey keys
  *         "en": { "header": "...", "advance.with_phrase": "... {{advance_phrase}} ...", ... },
  *         "it": { ... }
  *       },

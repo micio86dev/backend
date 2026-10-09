@@ -101,6 +101,7 @@ function templateCases(): array
         'resumed with two primaries asked' => ['primaries' => ['A?', 'B?', 'C?', 'D?'], 'opening' => SpokenOpening::resumed(2, 4)],
         'a single primary, fresh' => ['primaries' => ['Only?']],
         'no primaries, resumed' => ['opening' => SpokenOpening::fallback(true)],
+        'a later competency, fresh' => ['primaries' => ['One?', 'Two?'], 'opening' => SpokenOpening::primary(1, continuation: true)],
     ];
 }
 
@@ -120,7 +121,7 @@ test('every consumable key is rendered somewhere across the case matrix', functi
         templateCases(),
     ));
 
-    expect(consumablePromptKeys())->toHaveCount(30);
+    expect(consumablePromptKeys())->toHaveCount(31);
 
     foreach (consumablePromptKeys() as $key) {
         expect($combined)->toContain('⟦'.$key.'⟧');
@@ -170,6 +171,20 @@ test('the opening paragraph is the label, the notice, the spoken variant and the
         ->and($reaskAll)->toContain("\n⟦label.opening⟧ ⟦opening.resumed_notice⟧ ⟦opening.spoken_reask_all⟧ ⟦opening.quoted⟧ 1 One? ⟦opening.closing⟧\n")
         ->and($fallback)->toContain("\n⟦label.opening⟧ ⟦opening.fallback⟧\n")
         ->and($fallbackResumed)->toContain("\n⟦label.opening⟧ ⟦opening.resumed_notice⟧ ⟦opening.fallback⟧\n");
+});
+
+test('opening.continuation follows the closing, joined by one space, and only when the flag is set', function (): void {
+    $continued = composeWithTemplates(['primaries' => ['One?', 'Two?'], 'opening' => SpokenOpening::primary(1, continuation: true)], markerSet());
+    $first = composeWithTemplates(['primaries' => ['One?', 'Two?'], 'opening' => SpokenOpening::primary(1)], markerSet());
+    $default = composeWithTemplates(['primaries' => ['One?', 'Two?']], markerSet());
+    $resumed = composeWithTemplates(['primaries' => ['One?', 'Two?', 'Three?'], 'opening' => SpokenOpening::resumed(1, 3)], markerSet());
+    $fallback = composeWithTemplates(['opening' => SpokenOpening::fallback()], markerSet());
+
+    expect($continued)->toContain("\n⟦label.opening⟧ ⟦opening.spoken_fresh⟧ ⟦opening.quoted⟧ 1 One? ⟦opening.closing⟧ ⟦opening.continuation⟧\n")
+        ->and($first)->not->toContain('⟦opening.continuation⟧')
+        ->and($default)->not->toContain('⟦opening.continuation⟧')
+        ->and($resumed)->not->toContain('⟦opening.continuation⟧')
+        ->and($fallback)->not->toContain('⟦opening.continuation⟧');
 });
 
 test('operator text with token-like characters reaches the opening untouched', function (): void {

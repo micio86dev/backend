@@ -56,7 +56,7 @@ test('a valid payload is stored inactive with a seal that matches its stored row
     expect($set->is_active)->toBeFalse()
         ->and($set->activated_at)->toBeNull()
         ->and($set->notes)->toBe('first set')
-        ->and(ConversationPromptFragment::query()->where('prompt_set_id', $set->id)->count())->toBe(62)
+        ->and(ConversationPromptFragment::query()->where('prompt_set_id', $set->id)->count())->toBe(64)
         ->and(ConversationPromptOverride::query()->where('prompt_set_id', $set->id)->count())->toBe(1);
 
     $stored = ConversationPromptSet::query()->findOrFail($set->id);
@@ -135,7 +135,7 @@ test('a duplicate label is refused and the first set is untouched', function ():
     $refusal = publishRefusal(Payload::fragments(['en'], ['budget' => BaselinePromptFragments::forLocale('en')['budget'].' changed']), [], 'v1');
 
     expect($refusal->reason)->toBe(PromptSetException::DUPLICATE_LABEL)
-        ->and(rowCounts())->toBe([$this->counts[0] + 1, $this->counts[1] + 62, $this->counts[2]]);
+        ->and(rowCounts())->toBe([$this->counts[0] + 1, $this->counts[1] + 64, $this->counts[2]]);
 });
 
 test('a failure after the set and fragments were inserted rolls everything back', function (): void {
@@ -156,7 +156,7 @@ test('a failure after the set and fragments were inserted rolls everything back'
 test('a stored set that fails the read-back verification rolls everything back', function (): void {
     // After the last fragment is written, a row the seal never covered lands in the same set.
     ConversationPromptFragment::created(static function (ConversationPromptFragment $fragment): void {
-        if (ConversationPromptFragment::query()->where('prompt_set_id', $fragment->prompt_set_id)->count() === 62) {
+        if (ConversationPromptFragment::query()->where('prompt_set_id', $fragment->prompt_set_id)->count() === 64) {
             DB::table('conversation_prompt_fragments')->insert([
                 'prompt_set_id' => $fragment->prompt_set_id, 'fragment_key' => 'extra.key', 'locale' => 'en', 'body' => 'late row', 'created_at' => now(),
             ]);

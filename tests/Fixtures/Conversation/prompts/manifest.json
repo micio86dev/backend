@@ -84,6 +84,16 @@
         "bytes": 4083,
         "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
     },
+    "G18": {
+        "sha256": "c5443acb9ad7dfde7c3aff484c0105f1dc7651049b0e9f7e82cdb75159d3b0cd",
+        "bytes": 4465,
+        "source_commit": "2ac9d99e198c0af38b000aae54fcb1cadaabea3a"
+    },
+    "G19": {
+        "sha256": "26e5086f4467414c09ec01ef234a0dce0144a23691aee6c3b8450cb0bfaa1d84",
+        "bytes": 4468,
+        "source_commit": "2ac9d99e198c0af38b000aae54fcb1cadaabea3a"
+    },
     "H1": {
         "sha256": "96bef12372ae02dc724072312eb1d26e00906b5930dacb9cf8df1774115289f1",
         "bytes": 4134,
@@ -98,5 +108,10 @@
         "sha256": "3ff89c5a3ccb02d6bc834febdd106a7274624a725b25a830bbf475a2a6ce0c82",
         "bytes": 4140,
         "source_commit": "e215c43fc4456a6be52c9c3fc2720ef4bba4dd08"
+    },
+    "H4": {
+        "sha256": "143466e9c88b397e154dc141c689aae08aee432a927fbade851b1d1421e717c1",
+        "bytes": 4290,
+        "source_commit": "2ac9d99e198c0af38b000aae54fcb1cadaabea3a"
     }
 }

@@ -8,7 +8,7 @@ use App\Enums\PromptFragmentKey;
 use InvalidArgumentException;
 
 /**
- * The 31 prompt fragment templates of ONE locale, immutable
+ * The 32 prompt fragment templates of ONE locale, immutable
  * (db-driven-conversation-prompts, design N-1/N-7).
  *
  * Built only from a COMPLETE key set: a missing key or a key outside
