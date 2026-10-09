@@ -37,6 +37,8 @@ class PromptTemplateUnresolvableException extends CompositionException
 
     public const DUPLICATE_ROW = 'duplicate_row';
 
+    public const EMPTY_SET = 'empty_set';
+
     final protected function __construct(public readonly string $reason, string $message)
     {
         parent::__construct($message);
@@ -61,6 +63,11 @@ class PromptTemplateUnresolvableException extends CompositionException
     public static function duplicateRow(string $setLabel, string $locale, string $what): self
     {
         return new self(self::DUPLICATE_ROW, "Prompt set [{$setLabel}] locale [{$locale}] holds more than one row for {$what}.");
+    }
+
+    public static function emptySet(string $setLabel): self
+    {
+        return new self(self::EMPTY_SET, "Prompt set [{$setLabel}] holds no fragments at all.");
     }
 
     public static function localeMissing(string $setLabel, string $locale): self

@@ -22,6 +22,7 @@ test('every failure is a CompositionException with its own reason', function ():
         Unresolvable::OVERRIDE_INVALID => Unresolvable::overrideInvalid('v1', 'en', 'COL', ['override is empty']),
         Unresolvable::AMBIGUOUS_ACTIVE_SET => Unresolvable::ambiguousActiveSet([3, 7]),
         Unresolvable::DUPLICATE_ROW => Unresolvable::duplicateRow('v1', 'en', 'fragment [budget]'),
+        Unresolvable::EMPTY_SET => Unresolvable::emptySet('v1'),
     ];
 
     foreach ($cases as $reason => $exception) {
@@ -30,7 +31,7 @@ test('every failure is a CompositionException with its own reason', function ():
             ->and($exception->getMessage())->not->toBe('');
     }
 
-    expect(array_keys($cases))->toHaveCount(8)->and(array_unique(array_keys($cases)))->toHaveCount(8);
+    expect(array_keys($cases))->toHaveCount(9)->and(array_unique(array_keys($cases)))->toHaveCount(9);
 });
 
 test('the messages name keys and sets but carry no template body', function (): void {

@@ -91,9 +91,65 @@ final class PromptSetResolver
     }
 
     /**
+     * Verify a stored set across EVERY locale it holds, without caching or
+     * resolving anything: the gate an activation passes before a set can become
+     * the active one. It runs the very checks a composition runs (seal, key set,
+     * placeholder contract) plus the contract of every override body.
+     *
+     * @throws PromptTemplateUnresolvableException
+     */
+    public function verify(ConversationPromptSet $set): void
+    {
+        [$fragmentRows, $overrideRows] = $this->rows($set);
+        $this->assertSealed($set, $fragmentRows, $overrideRows);
+
+        $locales = array_values(array_unique(array_column($fragmentRows, 'locale')));
+
+        if ($locales === []) {
+            throw PromptTemplateUnresolvableException::emptySet($set->label);
+        }
+
+        foreach ($locales as $locale) {
+            $this->verifiedBodies($set, $locale, $fragmentRows);
+        }
+
+        $contract = new PromptFragmentContract;
+
+        foreach ($overrideRows as $row) {
+            $violations = $contract->overrideViolations($row['body']);
+
+            if ($violations !== []) {
+                throw PromptTemplateUnresolvableException::overrideInvalid($set->label, $row['locale'], $row['competency_code'], $violations);
+            }
+        }
+    }
+
+    /**
      * @return array{templates: PromptTemplateSet, overrides: list<array{role_code: string|null, competency_code: string, body: string}>}
      */
     private function loadAndVerify(ConversationPromptSet $set, string $locale): array
+    {
+        [$fragmentRows, $overrideRows] = $this->rows($set);
+        $this->assertSealed($set, $fragmentRows, $overrideRows);
+
+        $bodies = $this->verifiedBodies($set, $locale, $fragmentRows);
+
+        $overrides = [];
+        foreach ($overrideRows as $row) {
+            if ($row['locale'] === $locale) {
+                $overrides[] = ['role_code' => $row['role_code'], 'competency_code' => $row['competency_code'], 'body' => $row['body']];
+            }
+        }
+
+        return ['templates' => new PromptTemplateSet($bodies), 'overrides' => $overrides];
+    }
+
+    /**
+     * Every stored row of the set, as the plain arrays the seal is taken over.
+     *
+     * @return array{0: list<array{key: string, locale: string, body: string}>, 1: list<array{role_code: string|null, competency_code: string, locale: string, body: string}>}
+     */
+    private function rows(ConversationPromptSet $set): array
     {
         $fragmentRows = [];
         $fragmentQuery = ConversationPromptFragment::query()->where('prompt_set_id', $set->id)->orderBy('fragment_key')->orderBy('locale')->orderBy('id');
@@ -112,6 +168,15 @@ final class PromptSetResolver
             ];
         }
 
+        return [$fragmentRows, $overrideRows];
+    }
+
+    /**
+     * @param  list<array{key: string, locale: string, body: string}>  $fragmentRows
+     * @param  list<array{role_code: string|null, competency_code: string, locale: string, body: string}>  $overrideRows
+     */
+    private function assertSealed(ConversationPromptSet $set, array $fragmentRows, array $overrideRows): void
+    {
         // Before the seal: a second row for one identity is named as such even when the seal covers it,
         // and no row is ever picked over another by arrival order.
         $this->assertNoDuplicates($set, $fragmentRows, $overrideRows);
@@ -119,7 +184,17 @@ final class PromptSetResolver
         if (! hash_equals($set->content_sha256, PromptSetSeal::seal($fragmentRows, $overrideRows))) {
             throw PromptTemplateUnresolvableException::sealMismatch($set->label);
         }
+    }
 
+    /**
+     * The bodies of one locale once its rows exist, hold exactly the enum's keys
+     * and satisfy the placeholder contract.
+     *
+     * @param  list<array{key: string, locale: string, body: string}>  $fragmentRows
+     * @return array<string, string>
+     */
+    private function verifiedBodies(ConversationPromptSet $set, string $locale, array $fragmentRows): array
+    {
         $bodies = [];
         foreach ($fragmentRows as $row) {
             if ($row['locale'] === $locale) {
@@ -151,14 +226,7 @@ final class PromptSetResolver
             throw PromptTemplateUnresolvableException::contractViolated($set->label, $locale, $violations);
         }
 
-        $overrides = [];
-        foreach ($overrideRows as $row) {
-            if ($row['locale'] === $locale) {
-                $overrides[] = ['role_code' => $row['role_code'], 'competency_code' => $row['competency_code'], 'body' => $row['body']];
-            }
-        }
-
-        return ['templates' => new PromptTemplateSet($bodies), 'overrides' => $overrides];
+        return $bodies;
     }
 
     /**
