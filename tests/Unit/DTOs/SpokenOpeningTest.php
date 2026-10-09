@@ -30,3 +30,24 @@ test('fallback() names no primary', function (): void {
         ->and($opening->resumed)->toBeTrue()
         ->and($opening->isReAskOfAskedPrimary())->toBeFalse();
 });
+
+test('the continuation flag defaults to false on every shape', function (): void {
+    expect(SpokenOpening::primary(1)->continuation)->toBeFalse()
+        ->and(SpokenOpening::resumed(1, 3)->continuation)->toBeFalse()
+        ->and(SpokenOpening::fallback()->continuation)->toBeFalse();
+});
+
+test('primary() carries the continuation flag it is given and keeps every other field', function (): void {
+    $continued = SpokenOpening::primary(1, continuation: true);
+
+    expect($continued->continuation)->toBeTrue()
+        ->and($continued->primaryNumber)->toBe(1)
+        ->and($continued->resumed)->toBeFalse()
+        ->and($continued->primariesAskedBefore)->toBe(0)
+        ->and($continued->isReAskOfAskedPrimary())->toBeFalse();
+});
+
+test('only primary() can carry the continuation flag', function (): void {
+    expect((new ReflectionMethod(SpokenOpening::class, 'resumed'))->getNumberOfParameters())->toBe(2)
+        ->and((new ReflectionMethod(SpokenOpening::class, 'fallback'))->getNumberOfParameters())->toBe(1);
+});

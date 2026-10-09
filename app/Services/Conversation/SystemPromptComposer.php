@@ -482,7 +482,7 @@ final class SystemPromptComposer
      * next reply is answering.
      *
      * Which fragments apply is decided here (fallback, fresh, resumed, re-ask of an
-     * asked primary); the words, and the single spaces that join them, are the set's
+     * asked primary, and the closing no-greeting clause of a later competency); the words, and the single spaces that join them, are the set's
      * and the composer's respectively.
      *
      * @param  list<string>  $questions
@@ -513,6 +513,13 @@ final class SystemPromptComposer
             default => $this->render($templates, PromptFragmentKey::OpeningSpokenFresh, ['quoted' => $quoted]),
         };
         $parts[] = $this->render($templates, PromptFragmentKey::OpeningClosing);
+
+        // A later competency starts a NEW provider session whose model has no
+        // memory of the welcome. Said last and only when flagged, so every other
+        // opening is byte-identical to what it was before the flag existed.
+        if ($opening->continuation) {
+            $parts[] = $this->render($templates, PromptFragmentKey::OpeningContinuation);
+        }
 
         return implode(' ', $parts);
     }

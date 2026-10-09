@@ -15,6 +15,9 @@ declare(strict_types=1);
  *  - H2 standard `it`, resumed live session, first of two competencies
  *  - H3 potential `it`, the last (here only) competency: the FINAL phrase, never
  *    the intermediate one
+ *  - H4 standard `en`, the SECOND of two competencies, the first already completed:
+ *    the OPENING paragraph carries the no-greeting continuation clause (H1, H2 and
+ *    H3 must not)
  *
  * Determinism: the catalogue codes, indicator and question texts are fixed and
  * the budget, minimum and nudge are set explicitly. The only environment-
@@ -42,8 +45,9 @@ use Tests\Support\PromptGolden;
  * Seed a fixed project, call /start, and return the provider `prompt`.
  *
  * @param  list<string>  $codes  Competency codes in interview order.
+ * @param  int  $completed  How many leading competencies the candidate already finished.
  */
-function goldenStartPrompt(string $type, string $locale, array $codes, int $primaries, bool $resume): string
+function goldenStartPrompt(string $type, string $locale, array $codes, int $primaries, bool $resume, int $completed = 0): string
 {
     config(['conversation.min_questions' => 4, 'conversation.followup_budget' => 4]);
     Http::fake(heygenOkFake());
@@ -93,12 +97,25 @@ function goldenStartPrompt(string $type, string $locale, array $codes, int $prim
 
     $participant = casParticipant($org, $project, $resume ? 'in_corso' : 'in_attesa');
 
+    foreach (array_slice($codes, 0, $completed) as $position => $code) {
+        InterviewSession::create([
+            'participant_id' => $participant->id,
+            'project_id' => $project->id,
+            'question_index' => $position,
+            'competency_code' => $code,
+            'framework_version_id' => $project->framework_version_id,
+            'provider' => 'heygen',
+            'provider_session_ref' => 'golden-done-ref-'.$position,
+            'status' => 'completed',
+        ]);
+    }
+
     if ($resume) {
         InterviewSession::create([
             'participant_id' => $participant->id,
             'project_id' => $project->id,
-            'question_index' => 0,
-            'competency_code' => $codes[0],
+            'question_index' => $completed,
+            'competency_code' => $codes[$completed],
             'framework_version_id' => $project->framework_version_id,
             'provider' => 'heygen',
             'provider_session_ref' => 'golden-old-ref',
@@ -158,4 +175,21 @@ test('H3 potential it on the last competency sends the final phrase, not the int
         ->and($prompt)->toContain('"'.$final.'"')
         ->not->toContain('"'.$intermediate.'"');
     goldenAssertHttp('H3', $prompt);
+});
+
+test('H4 standard en second competency sends the pinned prompt with the no-greeting clause', function (): void {
+    $prompt = goldenStartPrompt('standard', 'en', ['GOLD_A', 'GOLD_B'], 2, false, completed: 1);
+
+    expect($prompt)->toContain('GOLD_B')
+        ->and($prompt)->toContain('primary question 1, word for word: "GOLD_B question 1?". Do NOT ask it again.')
+        ->and($prompt)->toContain('Do NOT greet, welcome or introduce yourself again.');
+    goldenAssertHttp('H4', $prompt);
+});
+
+test('the first competency never carries the no-greeting clause', function (): void {
+    expect(goldenStartPrompt('standard', 'en', ['GOLD_A', 'GOLD_B'], 2, false))->not->toContain('Do NOT greet');
+});
+
+test('a resume of the second competency never carries the no-greeting clause', function (): void {
+    expect(goldenStartPrompt('standard', 'en', ['GOLD_A', 'GOLD_B'], 2, true, completed: 1))->not->toContain('Do NOT greet');
 });

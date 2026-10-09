@@ -11,7 +11,11 @@ namespace App\DTOs\Conversation;
  * The opening is spoken by the provider before the prompt runs, so the model
  * only knows what it asked if the prompt tells it. Three shapes exist:
  *   - `primary(n)`       — a fresh competency; the opening was primary n
- *                          (always 1 on the /start path).
+ *                          (always 1 on the /start path). With `continuation`,
+ *                          the competency is not the interview's first: the
+ *                          candidate was welcomed earlier, and the prompt says
+ *                          so, because the new provider session has no memory
+ *                          of it.
  *   - `resumed(k, n)`    — a resumed competency where k of n primaries were
  *                          already asked; the opening re-asked the pending
  *                          primary k+1, or the last one when k = n.
@@ -26,18 +30,21 @@ final readonly class SpokenOpening
         public ?int $primaryNumber,
         public bool $resumed,
         public int $primariesAskedBefore,
+        public bool $continuation = false,
     ) {}
 
     /**
+     * @param  bool  $continuation  True when an earlier competency of this interview already welcomed the candidate.
+     *
      * @throws \InvalidArgumentException When `$number` is below 1.
      */
-    public static function primary(int $number): self
+    public static function primary(int $number, bool $continuation = false): self
     {
         if ($number < 1) {
             throw new \InvalidArgumentException('SpokenOpening: a primary number starts at 1.');
         }
 
-        return new self($number, false, $number - 1);
+        return new self($number, false, $number - 1, $continuation);
     }
 
     /**

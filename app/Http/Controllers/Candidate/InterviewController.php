@@ -386,7 +386,13 @@ class InterviewController extends Controller
                 $this->turnClassifier->matchedCount($liveSession),
                 count($primaryQuestions),
             ),
-            default => SpokenOpening::primary(1),
+            // A fresh start of any competency after the first: the candidate was
+            // welcomed on the first one, and this provider session's model has no
+            // memory of it, so the prompt must say not to welcome them again.
+            // Keyed on the competency's place in the project's order, not on
+            // `$isFirst` (started_at): that one also reads false for a candidate
+            // recovered from an error who is redoing competency 1.
+            default => SpokenOpening::primary(1, continuation: $nextCompetency['competency_ordinal'] > 1),
         };
 
         // Which sentence ends THIS turn: the last competency gets the final

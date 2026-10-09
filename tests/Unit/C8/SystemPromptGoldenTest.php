@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Golden pin: the composed system prompt, byte for byte (cases G01 to G17).
+ * Golden pin: the composed system prompt, byte for byte (cases G01 to G19).
  *
  * These are CHARACTERIZATION tests, captured from the composer BEFORE its
  * template text moves into the database. They are green the moment they are
@@ -28,6 +28,8 @@ declare(strict_types=1);
  *  - G14 operator text holding `:budget`, `{{budget}}`, quotes, multibyte, padding
  *  - G15 minimum 99 clamped                     G16 minimum -3 clamped
  *  - G17 one primary, resumed after it was asked
+ *  - G18 `en`, a later competency (continuation: the no-greeting clause)
+ *  - G19 `it`, the same, with the project locale `it` (the clause stays English)
  *
  * Capture (once, on the pre-change tree):
  *   PROMPT_GOLDEN_CAPTURE=1 PROMPT_GOLDEN_SOURCE_COMMIT=<commit> vendor/bin/pest tests/Unit/C8/SystemPromptGoldenTest.php
@@ -84,6 +86,11 @@ function goldenCases(): array
         'G15' => ['min' => 99, 'phrase' => GOLD_PHRASE, 'primaries' => $questions(2)],
         'G16' => ['min' => -3, 'phrase' => GOLD_PHRASE, 'primaries' => $questions(2)],
         'G17' => ['phrase' => GOLD_PHRASE, 'primaries' => $questions(1), 'opening' => SpokenOpening::resumed(1, 1)],
+        'G18' => ['nudge' => 120, 'phrase' => GOLD_PHRASE, 'primaries' => $questions(2), 'opening' => SpokenOpening::primary(1, continuation: true)],
+        'G19' => [
+            'locale' => 'it', 'nudge' => 120, 'phrase' => GOLD_PHRASE, 'primaries' => $questions(2),
+            'opening' => SpokenOpening::primary(1, continuation: true),
+        ],
     ];
 }
 
