@@ -65,7 +65,12 @@ use Illuminate\Support\Carbon;
  * `conversation_prompt_version` (db-driven-conversation-prompts PR3, design N-8)
  * follows the same stamp-only discipline as `system_prompt_chars`: written by
  * `InterviewSessionLlmSnapshot::stamp()` only (so it is not in `$fillable`),
- * write-once, never overwritten FROM a null, and never serialised.
+ * write-once, never overwritten FROM a null, and never serialised. Its value is
+ * `{configured version}+s{set id}.{sha12}` when the prompt came from a stored
+ * set (PR8), or the bare configured version for the `baseline` source. Because it
+ * is write-once, activating another set later never rewrites it: a resumed
+ * interview that composes under a newer set is a documented MIXED record that
+ * still names the set it STARTED under.
  *
  * Security:
  * - organization_id NOT in $fillable — stamped by TenantScoped.creating unconditionally.

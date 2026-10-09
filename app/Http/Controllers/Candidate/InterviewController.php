@@ -553,6 +553,7 @@ class InterviewController extends Controller
             // D6 — progress, computed by the resolver from the ordered list.
             competencyOrdinal: $nextCompetency['competency_ordinal'],
             totalCompetencies: $nextCompetency['total_competencies'],
+            promptSetRef: $compositionResult->promptSetRef,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -992,15 +993,15 @@ class InterviewController extends Controller
             // one, a missing locale and an invalid source flag all end in the
             // catch below: 422, no session, no provider call, and no fallback to
             // other text. `baseline` is the break-glass and reads no table.
-            $templates = PromptSource::configured() === PromptSource::Db
+            $resolved = PromptSource::configured() === PromptSource::Db
                 ? $this->promptSets->resolveActive(
                     $project->language,
                     $competencyCode,
                     $assessmentType === AssessmentType::Standard ? $project->role_code : null,
-                )->templates
+                )
                 : null;
 
-            return $this->composer->compose(
+            $composed = $this->composer->compose(
                 competencyCode: $competencyCode,
                 roleId: $roleId,
                 competencyId: $competency->id,
@@ -1021,8 +1022,14 @@ class InterviewController extends Controller
                 primaryQuestions: $primaryQuestions,
                 spokenOpening: $spokenOpening,
                 revisionId: $revisionId,
-                templates: $templates,
+                templates: $resolved?->templates,
             );
+
+            // `version` stays the configured string (the client sees it); the set
+            // the text came from travels beside it for the durable stamp.
+            return $resolved === null
+                ? $composed
+                : new ComposedPrompt($composed->text, $composed->version, $resolved->stampRef());
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (PromptTemplateUnresolvableException $e) {
@@ -1312,7 +1319,7 @@ class InterviewController extends Controller
                 // re-invoked on resume — stamp() carries its own write-once /
                 // downgrade-only / null-guard rules, mirroring started_at's
                 // idiom right above it.
-                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->promptVersion);
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
                 $session->save();
 
                 // (D1/D4) Open the NEW stretch in the same transaction — the
@@ -1389,7 +1396,7 @@ class InterviewController extends Controller
                 // RESUME path above — this site is also reached by a
                 // re-offered competency (ResetSessionForRetry), not only a
                 // true first issue.
-                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->promptVersion);
+                $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
                 $session->save();
 
                 // (D1/D4) Open a new live period in the SAME transaction as

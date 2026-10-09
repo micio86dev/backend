@@ -40,6 +40,14 @@ use Illuminate\Testing\TestResponse;
 use Tests\Helpers\Conversation\PromptSetPayload as Payload;
 use Tests\Helpers\Conversation\PromptTables;
 
+/** The stored baseline set as the bootstrap migration left it: the reference the stamp must name. */
+function cutoverActiveRef(): string
+{
+    $set = ConversationPromptSet::query()->where('is_active', true)->sole();
+
+    return sprintf('s%d.%s', $set->id, substr($set->content_sha256, 0, 12));
+}
+
 const CUTOVER_MARKER = 'CUTOVER-MARKER: ask at most {{budget}} follow-up questions.';
 
 beforeEach(function (): void {
@@ -224,4 +232,46 @@ test('an unknown prompt source fails loudly and chooses neither source', functio
         && str_contains($e->getMessage(), 'bogus')
         && str_contains($e->getMessage(), 'db')
         && str_contains($e->getMessage(), 'baseline'));
+});
+
+// ─── The durable stamp ───────────────────────────────────────────────────────
+
+test('the session stamp names the configured version and the stored set that was composed', function (): void {
+    $participant = cutoverParticipant();
+    $ref = cutoverActiveRef();
+
+    $response = cutoverStart($participant)->assertStatus(201);
+
+    $stamp = InterviewSession::query()->where('participant_id', $participant->id)->sole()->conversation_prompt_version;
+
+    expect($stamp)->toBe(config('conversation.prompt_version').'+'.$ref)
+        ->and($stamp)->toMatch('/^[^+]+\+s\d+\.[0-9a-f]{12}$/')
+        // The client-facing version is the bare configured string: the set reference stays internal.
+        ->and($response->json('question_context.prompt_version'))->toBe(config('conversation.prompt_version'));
+});
+
+test('the baseline source stamps the bare configured version', function (): void {
+    config(['conversation.prompt_source' => 'baseline']);
+    $participant = cutoverParticipant();
+
+    cutoverStart($participant)->assertStatus(201);
+
+    expect(InterviewSession::query()->where('participant_id', $participant->id)->sole()->conversation_prompt_version)
+        ->toBe(config('conversation.prompt_version'));
+});
+
+test('activating another set after the interview was composed does not change its stamp', function (): void {
+    $participant = cutoverParticipant();
+    $firstStamp = config('conversation.prompt_version').'+'.cutoverActiveRef();
+
+    cutoverStart($participant)->assertStatus(201);
+
+    $second = cutoverActivateMarkerSet('cutover-later');
+    $this->assertNotSame($firstStamp, config('conversation.prompt_version').'+s'.$second->id.'.'.substr($second->content_sha256, 0, 12));
+
+    // The same candidate resumes: the prompt really IS composed again, from the new set.
+    cutoverStart($participant)->assertStatus(201);
+
+    expect(cutoverPrompt())->toContain('CUTOVER-MARKER')
+        ->and(InterviewSession::query()->where('participant_id', $participant->id)->sole()->conversation_prompt_version)->toBe($firstStamp);
 });
