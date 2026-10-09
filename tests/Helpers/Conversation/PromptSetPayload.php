@@ -15,6 +15,11 @@ final class PromptSetPayload
     /**
      * The `fragments` object of the JSON file: `{locale: {key: body}}`.
      *
+     * Every locale other than `en` gets the English baseline behind a `[locale] `
+     * marker: the same tokens, different words, so a test can tell which
+     * locale's text it received while the set stays contract-valid. A
+     * `$replace` body is used as given for every locale.
+     *
      * @param  list<string>  $locales
      * @param  array<string, string>  $replace  key => body, applied to every locale
      * @return array<string, array<string, string>>
@@ -24,7 +29,13 @@ final class PromptSetPayload
         $byLocale = [];
 
         foreach ($locales as $locale) {
-            $byLocale[$locale] = array_replace(BaselinePromptFragments::forLocale('en'), $replace);
+            $baseline = BaselinePromptFragments::forLocale('en');
+
+            if ($locale !== 'en') {
+                $baseline = array_map(static fn (string $body): string => "[{$locale}] {$body}", $baseline);
+            }
+
+            $byLocale[$locale] = array_replace($baseline, $replace);
         }
 
         return $byLocale;

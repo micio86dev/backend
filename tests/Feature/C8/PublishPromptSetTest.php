@@ -67,17 +67,21 @@ test('a valid payload is stored inactive with a seal that matches its stored row
         ->and($stored->content_sha256)->toBe(PromptSetSeal::seal(Payload::fragments(), [$override]));
 });
 
-test('a published set is resolvable once activated, and publishing alone activates nothing', function (): void {
+test('a published set is resolvable once activated, per locale, and publishing alone activates nothing', function (): void {
     app(PublishPromptSet::class)->handle('v1', null, Payload::fragments());
 
     expect(ConversationPromptSet::query()->where('is_active', true)->exists())->toBeFalse();
 
     app(ActivatePromptSet::class)->handle('v1');
-    $resolved = app(PromptSetResolver::class)->resolveActive('it', 'COL', null);
+    $resolver = app(PromptSetResolver::class);
+    $italian = $resolver->resolveActive('it', 'COL', null);
+    $english = $resolver->resolveActive('en', 'COL', null);
+    $published = Payload::byLocale();
 
-    expect($resolved->setLabel)->toBe('v1')
-        ->and($resolved->templates->template(PromptFragmentKey::Header))
-        ->toBe(BaselinePromptFragments::templateSet('it')->template(PromptFragmentKey::Header));
+    expect($italian->setLabel)->toBe('v1')
+        ->and($italian->templates->template(PromptFragmentKey::Header))->toBe($published['it']['header'])
+        ->and($english->templates->template(PromptFragmentKey::Header))->toBe($published['en']['header'])
+        ->and($italian->templates->template(PromptFragmentKey::Header))->not->toBe($english->templates->template(PromptFragmentKey::Header));
 });
 
 test('a locale with an incomplete key set is refused and nothing is persisted', function (): void {
