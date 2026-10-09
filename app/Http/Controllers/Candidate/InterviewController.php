@@ -914,6 +914,10 @@ class InterviewController extends Controller
      *                                     `potential`, no role-less BARS rows for the competency)
      *   - 'anchor_translation_missing'  → AnchorTranslationMissingException (missing locale text)
      *
+     * Only composition problems are a 422. Anything else thrown while resolving the stored
+     * prompt set (a database outage) propagates as a 500 on purpose: it is not a composition
+     * error, and it must never silently fall back to the baseline text.
+     *
      * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
      * RV-3: provider field client confirmation required before live deploy.
      *

@@ -32,7 +32,9 @@ use App\Models\Project;
 use App\Models\ProjectQuestion;
 use App\Models\Role;
 use App\Services\Conversation\PromptSetResolver;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -232,6 +234,62 @@ test('an unknown prompt source fails loudly and chooses neither source', functio
         && str_contains($e->getMessage(), 'bogus')
         && str_contains($e->getMessage(), 'db')
         && str_contains($e->getMessage(), 'baseline'));
+});
+
+test('a failure of the infrastructure while resolving the set is a 500, never a 422 and never the baseline', function (): void {
+    // Characterization: only composition problems are a 422 composition_error. A database outage is not
+    // one, and must neither be disguised as one nor silently served from the code baseline.
+    Exceptions::fake();
+    $participant = cutoverParticipant();
+    Event::listen(QueryExecuted::class, function (QueryExecuted $query): void {
+        if (str_contains($query->sql, 'conversation_prompt_sets')) {
+            throw new RuntimeException('prompt tables unreachable');
+        }
+    });
+
+    cutoverStart($participant)->assertStatus(500);
+
+    expect(InterviewSession::query()->count())->toBe(0);
+    Http::assertNothingSent();
+    Exceptions::assertReported(fn (RuntimeException $e): bool => $e->getMessage() === 'prompt tables unreachable');
+});
+
+test('a potential project resolves the stored set without a role, so a role override is never picked', function (): void {
+    // Characterization. The resolved override is not consumed by the composer yet, so the role
+    // argument has no visible effect on the text. It does on the resolver: the override it selects is
+    // validated, and a role-specific body that breaks the contract (tampered in, then resealed so ONLY
+    // the override contract can fail) is refused as soon as that role is looked up.
+    app(PublishPromptSet::class)->handle('cutover-role-override', null, Payload::fragments(), [
+        Payload::override('POT_ROLE', 'POT_COMP', 'en', 'A role specific override.'),
+    ]);
+    app(ActivatePromptSet::class)->handle('cutover-role-override');
+    $set = ConversationPromptSet::query()->where('label', 'cutover-role-override')->sole();
+
+    PromptTables::breakOverrideBody($set, 'Broken {{budget}} override.');
+
+    // A potential project carries no role by rule; the stale role_code is what a wrong lookup would find.
+    $org = casOrg();
+    $project = casInTenant($org, fn (): Project => Project::factory()->create([
+        'status' => 'active', 'assessment_type' => 'potential', 'role_code' => 'POT_ROLE', 'language' => 'en', 'nudge_min_chars' => 120,
+    ]));
+    $competency = Competency::factory()->create(['code' => 'POT_COMP']);
+    DB::table('project_competencies')->insert(['project_id' => $project->id, 'competency_id' => $competency->id, 'position' => 0]);
+    $indicator = new BarsIndicator;
+    $indicator->forceFill([
+        'role_id' => null,
+        'competency_id' => $competency->id,
+        'text' => ['en' => 'indicator', 'it' => 'indicatore'],
+        'anchor_5' => ['en' => 'five', 'it' => 'cinque'],
+        'anchor_3' => ['en' => 'three', 'it' => 'tre'],
+        'anchor_1' => ['en' => 'one', 'it' => 'uno'],
+        'position' => 0,
+    ]);
+    $indicator->save();
+    ProjectQuestion::create(['project_id' => $project->id, 'competency_id' => $competency->id, 'text' => ['en' => 'Tell me.', 'it' => 'Dimmi.'], 'position' => 0]);
+
+    cutoverStart(casParticipant($org, $project, 'in_attesa'))->assertStatus(201);
+
+    expect(cutoverPrompt())->not->toBe('');
 });
 
 // ─── The durable stamp ───────────────────────────────────────────────────────
