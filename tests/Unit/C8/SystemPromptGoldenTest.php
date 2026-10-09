@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Golden pin: the composed system prompt, byte for byte (cases G01 to G19).
+ * Golden pin: the composed system prompt, byte for byte (cases G01 to G20).
  *
  * These are CHARACTERIZATION tests, captured from the composer BEFORE its
  * template text moves into the database. They are green the moment they are
@@ -30,6 +30,8 @@ declare(strict_types=1);
  *  - G17 one primary, resumed after it was asked
  *  - G18 `en`, a later competency (continuation: the no-greeting clause)
  *  - G19 `it`, the same, with the project locale `it` (the clause stays English)
+ *  - G20 `en`, with a per-competency override (one section between COVERAGE TOPICS and the
+ *    STAR protocol; everything else as G05 would be). Captured with the override change.
  *
  * Capture (once, on the pre-change tree):
  *   PROMPT_GOLDEN_CAPTURE=1 PROMPT_GOLDEN_SOURCE_COMMIT=<commit> vendor/bin/pest tests/Unit/C8/SystemPromptGoldenTest.php
@@ -92,6 +94,10 @@ function goldenCases(): array
             'locale' => 'it', 'nudge' => 120, 'phrase' => GOLD_PHRASE, 'primaries' => $questions(2),
             'opening' => SpokenOpening::primary(1, continuation: true),
         ],
+        'G20' => [
+            'nudge' => 120, 'phrase' => GOLD_PHRASE, 'primaries' => $questions(2),
+            'override' => "Probe for a measurable outcome.\n\nRe:think \"quotes\" — caffè, 日本語, :budget stays literal.",
+        ],
     ];
 }
 
@@ -111,7 +117,7 @@ function goldenCompose(array $case, bool $fromStoredSet = false): string
 
     $case += [
         'locale' => 'en', 'roleless' => false, 'budget' => 4, 'nudge' => null,
-        'phrase' => null, 'min' => null, 'primaries' => [], 'opening' => null,
+        'phrase' => null, 'min' => null, 'primaries' => [], 'opening' => null, 'override' => null,
     ];
 
     $role = $case['roleless'] ? null : Role::factory()->create(['code' => 'CHAR_ROLE']);
@@ -147,6 +153,7 @@ function goldenCompose(array $case, bool $fromStoredSet = false): string
         primaryQuestions: $case['primaries'],
         spokenOpening: $case['opening'],
         templates: $templates,
+        override: $case['override'],
     )->text;
 }
 

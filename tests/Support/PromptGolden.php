@@ -29,7 +29,7 @@ final class PromptGolden
      * The one place the fixtures directory hash is pinned. Capturing new
      * fixtures changes it; update this constant in the same commit.
      */
-    public const PINNED_DIRECTORY_SHA256 = '15e61639017373df6a32d2bf96e7ffa8eba3a36dd25c86d20e94f27b6ec8b70a';
+    public const PINNED_DIRECTORY_SHA256 = '536a4dde2c233328e299e11b0f22f38c02336667380cea49e6280bdb2f32770e';
 
     private const MANIFEST = 'manifest.json';
 

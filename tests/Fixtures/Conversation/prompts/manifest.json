@@ -94,6 +94,11 @@
         "bytes": 4468,
         "source_commit": "2ac9d99e198c0af38b000aae54fcb1cadaabea3a"
     },
+    "G20": {
+        "sha256": "db12083fbfec331ad321adda05392fbcbe870089ce86885e5ae3d450f4a2e36c",
+        "bytes": 4426,
+        "source_commit": "14d609d96b3069990fdd6772b604e4159cd2c2ea"
+    },
     "H1": {
         "sha256": "96bef12372ae02dc724072312eb1d26e00906b5930dacb9cf8df1774115289f1",
         "bytes": 4134,
