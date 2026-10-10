@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Actions\Interview\ReleaseProviderSession;
 use App\Models\InterviewSession;
+use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -55,14 +56,20 @@ final class ReleaseEndedProviderSessionJob implements ShouldQueue
         public readonly ?string $providerContextRef,
     ) {}
 
-    public function handle(ReleaseProviderSession $release): void
+    public function handle(ReleaseProviderSession $release, SharedProviderRefGuard $siblings): void
     {
         try {
-            TenantContextScope::runFor($this->organizationId, function () use ($release): void {
+            TenantContextScope::runFor($this->organizationId, function () use ($release, $siblings): void {
                 $session = InterviewSession::query()->find($this->sessionId);
 
                 if ($session === null
                     || ($session->provider_session_ref === null && $session->provider_context_ref === null)) {
+                    return;
+                }
+
+                // A sibling row still talking over this conversation (a continuation was
+                // granted): ending it now would cut that live interview.
+                if ($siblings->hasLiveSibling($this->organizationId, $this->provider, $this->providerSessionRef, $this->sessionId)) {
                     return;
                 }
 
