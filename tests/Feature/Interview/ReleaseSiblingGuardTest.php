@@ -91,6 +91,18 @@ test('the deferred job releases when no in_corso row shares the ref', function (
     expect(rsgTeardowns())->toBe(['POST /v2/conversations/conv-shared/end']);
 });
 
+test('the deferred job releases when it runs before the continuation row exists, and a later row resurrects nothing', function (): void {
+    [$org, $project] = rsgTenant();
+    $ended = rsgRow($org, $project, 'completed', 'conv-shared');
+
+    rsgRunJob($ended);
+    rsgRow($org, $project, 'in_corso', 'conv-shared', 'INN');
+
+    // Documented fallback (N12): the late continuation finds the conversation released.
+    // API-04: a continuation must be refused for a ref this job already released
+    expect(rsgTeardowns())->toBe(['POST /v2/conversations/conv-shared/end']);
+});
+
 test('an already-ended conversation is benign for the deferred job', function (): void {
     [$org, $project] = rsgTenant();
     $ended = rsgRow($org, $project, 'completed', 'conv-gone');

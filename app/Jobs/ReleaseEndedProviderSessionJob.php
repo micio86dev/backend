@@ -33,6 +33,13 @@ use Throwable;
  * suspend or retry has already cleared both, the release is theirs and
  * this job has nothing to do.
  *
+ * Shared-conversation contract (design N12): the sibling guard only sees the instant
+ * the job runs. `provider_release_delay_seconds` is the grace within which the client's
+ * boundary `/start` (sent right after `/end`, no candidate wait) must create the
+ * continuation row. A job that runs BEFORE that row exists releases the conversation BY
+ * DESIGN (documented fallback; no retry, tries=1). API-04 must therefore refuse a
+ * continuation for a ref this job already released, so the client starts a fresh one.
+ *
  * Scalars only (no model, no secret), and it never fails: the outcome of `/end`
  * is long committed and a stale provider session is not worth a retry loop.
  */
