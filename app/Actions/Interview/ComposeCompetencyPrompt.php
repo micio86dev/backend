@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Interview;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\ResolvedCompetencyInput;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\AssessmentType;
 use App\Enums\PromptSource;
@@ -65,6 +66,69 @@ final class ComposeCompetencyPrompt
         SpokenOpening $spokenOpening,
         ?string $advancePhrase = null,
     ): ComposedPrompt {
+        $input = $this->resolveInput(
+            $project,
+            $assessmentType,
+            $competencyCode,
+            $revisionId,
+            $competency,
+            $primaryQuestions,
+            $followUpBudget,
+            $spokenOpening,
+            $advancePhrase,
+        );
+
+        $composed = $this->composer->compose(
+            competencyCode: $input->competencyCode,
+            roleId: $input->roleId,
+            competencyId: $input->competencyId,
+            projectLocale: $input->projectLocale,
+            followUpBudget: $input->followUpBudget,
+            nudgeMinChars: $input->nudgeMinChars,
+            // The sentence the avatar must SPEAK to end its turn. Without it the
+            // prompt told it to utter a placeholder it had never been given, so no
+            // question ever ended by itself.
+            advancePhrase: $input->advancePhrase,
+            // What the OPERATOR wrote for this competency. These ARE the primaries,
+            // never additive to `$followUpBudget` — see SystemPromptComposer.
+            primaryQuestions: $input->primaryQuestions,
+            spokenOpening: $input->spokenOpening,
+            revisionId: $input->revisionId,
+            templates: $input->templates,
+            // At most one body, already chosen (role-specific over role-less) and
+            // checked against the override contract by the resolver. The `baseline`
+            // source reads no table, so it has none.
+            override: $input->override,
+        );
+
+        // `version` stays the configured string (the client sees it); the set the
+        // text came from travels beside it for the durable stamp.
+        return $input->promptSetRef === null
+            ? $composed
+            : new ComposedPrompt($composed->text, $composed->version, $input->promptSetRef);
+    }
+
+    /**
+     * Everything `compose()` needs for ONE competency, resolved: the role, the stored set
+     * and its override. Shared by the single-competency path ({@see self::handle()}) and the
+     * multi-competency plan (`ComposeConversationPlan`), so both resolve one way.
+     *
+     * @param  list<string>  $primaryQuestions
+     *
+     * @throws CompositionException
+     * @throws PromptTemplateUnresolvableException
+     */
+    public function resolveInput(
+        Project $project,
+        AssessmentType $assessmentType,
+        string $competencyCode,
+        ?int $revisionId,
+        ?Competency $competency,
+        array $primaryQuestions,
+        int $followUpBudget,
+        SpokenOpening $spokenOpening,
+        ?string $advancePhrase = null,
+    ): ResolvedCompetencyInput {
         if ($revisionId === null) {
             // The project's own pin did not resolve (`CatalogueRevisionResolver::
             // tryForProject()`). Treated identically to "role/competency not found
@@ -112,33 +176,20 @@ final class ComposeCompetencyPrompt
             )
             : null;
 
-        $composed = $this->composer->compose(
+        return new ResolvedCompetencyInput(
             competencyCode: $competencyCode,
             roleId: $roleId,
             competencyId: $competency->id,
             projectLocale: $project->language,
             followUpBudget: $followUpBudget,
             nudgeMinChars: $project->nudge_min_chars,
-            // The sentence the avatar must SPEAK to end its turn. Without it the
-            // prompt told it to utter a placeholder it had never been given, so no
-            // question ever ended by itself.
             advancePhrase: $advancePhrase,
-            // What the OPERATOR wrote for this competency. These ARE the primaries,
-            // never additive to `$followUpBudget` — see SystemPromptComposer.
             primaryQuestions: $primaryQuestions,
             spokenOpening: $spokenOpening,
             revisionId: $revisionId,
             templates: $resolved?->templates,
-            // At most one body, already chosen (role-specific over role-less) and
-            // checked against the override contract by the resolver. The `baseline`
-            // source reads no table, so it has none.
             override: $resolved?->override,
+            promptSetRef: $resolved?->stampRef(),
         );
-
-        // `version` stays the configured string (the client sees it); the set the
-        // text came from travels beside it for the durable stamp.
-        return $resolved === null
-            ? $composed
-            : new ComposedPrompt($composed->text, $composed->version, $resolved->stampRef());
     }
 }

@@ -69,6 +69,12 @@ readonly class QuestionContext
          * sees; only {@see self::stampedPromptVersion()} joins them.
          */
         public ?string $promptSetRef = null,
+        /**
+         * Seconds Tavus waits after the participant leaves before it ends the conversation
+         * (`properties.participant_left_timeout`). Set only while the single-session gate applies
+         * (tavus-single-session-interview N16); null omits the key, so every other create body is unchanged.
+         */
+        public ?int $participantLeftTimeout = null,
     ) {}
 
     /**

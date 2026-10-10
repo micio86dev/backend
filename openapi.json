@@ -6652,6 +6652,9 @@
                                                 "competency_ordinal",
                                                 "total_competencies"
                                             ]
+                                        },
+                                        "conversation_id": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
