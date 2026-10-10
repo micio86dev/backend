@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Conversation;
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\ConversationPlan;
 use App\DTOs\Conversation\PromptTemplateSet;
+use App\DTOs\Conversation\ResolvedCompetencyInput;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\PromptFragmentKey;
 use App\Exceptions\Conversation\CompositionException;
@@ -207,6 +209,111 @@ final class SystemPromptComposer
         $version = self::promptVersion();
 
         return new ComposedPrompt(text: $text, version: $version);
+    }
+
+    /**
+     * Machine-facing wrapper text of a multi-competency context. A code constant, English,
+     * never operator-editable (design N13); changing it follows the convention of bumping
+     * `conversation.prompt_version`.
+     */
+    private const GLOBAL_RULES = "GLOBAL RULES\n"
+        ."Do not begin any topic until you are told to begin it by topic code.\n"
+        .'When told to begin a topic, follow that topic\'s block and nothing else.';
+
+    /**
+     * Compose ONE segmented context from already-resolved competencies, in the order given.
+     *
+     * Pure assembler (no ordering, no resolution, no DB): each entry is composed by
+     * {@see self::compose()} with its own arguments, so each segment is byte-identical to the
+     * single-competency prompt, then wrapped in `=== TOPIC CODE: X ===` / `=== END TOPIC X ===`
+     * markers under the global rules. The version is read once, before any segment.
+     *
+     * Truncation: when the final string would exceed `conversation.max_context_chars`
+     * (measured with `mb_strlen` on the final string, wrapper included), the plan covers the
+     * longest PREFIX of whole entries that fits; a segment is never cut. A text of exactly the
+     * limit fits. If not even the first entry fits, nothing is emitted.
+     *
+     * @param  list<ResolvedCompetencyInput>  $inputs
+     *
+     * @throws CompositionException When the list is empty, the entries come from different
+     *                              stored prompt sets, a competency code repeats, the first segment alone exceeds the
+     *                              limit, or any `compose()` call fails.
+     * @throws AnchorTranslationMissingException When an entry lacks a locale translation.
+     */
+    public function composeMany(array $inputs): ConversationPlan
+    {
+        if ($inputs === []) {
+            throw new CompositionException('SystemPromptComposer::composeMany: at least one competency is required.');
+        }
+
+        // The global rules address blocks by code: two blocks sharing one are indistinguishable.
+        $seen = [];
+        foreach ($inputs as $input) {
+            if (isset($seen[$input->competencyCode])) {
+                throw new CompositionException(
+                    "SystemPromptComposer::composeMany: duplicate competency code [{$input->competencyCode}].",
+                );
+            }
+            $seen[$input->competencyCode] = true;
+        }
+
+        $setRef = $inputs[0]->promptSetRef;
+        foreach ($inputs as $input) {
+            if ($input->promptSetRef !== $setRef) {
+                throw new CompositionException(
+                    'SystemPromptComposer::composeMany: every competency must be composed from the same prompt set.',
+                );
+            }
+        }
+
+        $version = self::promptVersion();
+        $limit = (int) config('conversation.max_context_chars');
+
+        $text = self::GLOBAL_RULES;
+        $covered = [];
+
+        foreach ($inputs as $input) {
+            $segment = $this->compose(
+                competencyCode: $input->competencyCode,
+                roleId: $input->roleId,
+                competencyId: $input->competencyId,
+                projectLocale: $input->projectLocale,
+                followUpBudget: $input->followUpBudget,
+                nudgeMinChars: $input->nudgeMinChars,
+                advancePhrase: $input->advancePhrase,
+                minQuestions: $input->minQuestions,
+                primaryQuestions: $input->primaryQuestions,
+                spokenOpening: $input->spokenOpening,
+                revisionId: $input->revisionId,
+                templates: $input->templates,
+                override: $input->override,
+            )->text;
+
+            $code = $input->competencyCode;
+            $candidate = $text."\n\n=== TOPIC CODE: {$code} ===\n{$segment}\n=== END TOPIC {$code} ===";
+
+            if (mb_strlen($candidate) > $limit) {
+                break;
+            }
+
+            $text = $candidate;
+            $covered[] = $code;
+        }
+
+        if ($covered === []) {
+            throw new CompositionException(
+                'SystemPromptComposer::composeMany: the first competency alone exceeds conversation.max_context_chars.',
+            );
+        }
+
+        return new ConversationPlan(
+            text: $text,
+            version: $version,
+            promptSetRef: $setRef,
+            coveredCodes: $covered,
+            truncated: count($covered) < count($inputs),
+            chars: mb_strlen($text),
+        );
     }
 
     /**
