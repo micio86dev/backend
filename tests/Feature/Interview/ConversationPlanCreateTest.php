@@ -25,6 +25,7 @@ use App\Models\Project;
 use App\Services\Conversation\PromptSetResolver;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -214,4 +215,34 @@ test('a composition failure for a covered competency answers 422 before any prov
 
     Http::assertNothingSent();
     expect(casInTenant($org, fn () => InterviewSession::query()->count()))->toBe(0);
+});
+
+test('a concurrent start that created the row first falls back to the single-competency create', function (): void {
+    config(['interview.tavus.single_session' => true, 'conversation.prompt_source' => 'baseline']);
+    cpcFake();
+    [$org, $project, $participant] = cpcFixture(3);
+
+    // Seam: the last read before the create (the session lookup for this competency) is the
+    // moment a concurrent /start wins. Insert its row there, so the controller's INSERT hits the UNIQUE
+    // constraint and resumes it. The plan is already built by then (the gate is open, 3 fresh).
+    $raced = null;
+    DB::listen(function ($query) use (&$raced, $org, $participant, $project): void {
+        if ($raced !== null || ! str_contains($query->sql, 'from "interview_sessions" where "participant_id" = ? and "competency_code" = ? and "status"')) {
+            return;
+        }
+        $raced = casInTenant($org, fn () => InterviewSession::create([
+            'participant_id' => $participant->id, 'project_id' => $project->id, 'question_index' => 0,
+            'competency_code' => Competency::query()->orderBy('id')->firstOrFail()->code,
+            'framework_version_id' => $project->framework_version_id, 'provider' => 'tavus',
+            'status' => 'pending', 'primary_questions' => [], 'follow_up_budget' => 4,
+        ]));
+    });
+
+    $response = cpcStart($participant)->assertSuccessful();
+
+    expect($raced)->not->toBeNull()
+        ->and($response->json())->not->toHaveKey('conversation_id')
+        ->and(cpcRow($org, $participant)->id)->toBe($raced->id)
+        ->and(cpcRow($org, $participant)->conversation_plan)->toBeNull()
+        ->and(cpcCreateBody()['conversational_context'])->not->toContain('=== TOPIC CODE:');
 });
