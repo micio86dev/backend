@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Actions\Interview\ReleaseProviderSession;
 use App\Models\InterviewSession;
+use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,6 +33,13 @@ use Throwable;
  * suspend or retry has already cleared both, the release is theirs and
  * this job has nothing to do.
  *
+ * Shared-conversation contract (design N12): the sibling guard only sees the instant
+ * the job runs. `provider_release_delay_seconds` is the grace within which the client's
+ * boundary `/start` (sent right after `/end`, no candidate wait) must create the
+ * continuation row. A job that runs BEFORE that row exists releases the conversation BY
+ * DESIGN (documented fallback; no retry, tries=1). API-04 must therefore refuse a
+ * continuation for a ref this job already released, so the client starts a fresh one.
+ *
  * Scalars only (no model, no secret), and it never fails: the outcome of `/end`
  * is long committed and a stale provider session is not worth a retry loop.
  */
@@ -55,14 +63,20 @@ final class ReleaseEndedProviderSessionJob implements ShouldQueue
         public readonly ?string $providerContextRef,
     ) {}
 
-    public function handle(ReleaseProviderSession $release): void
+    public function handle(ReleaseProviderSession $release, SharedProviderRefGuard $siblings): void
     {
         try {
-            TenantContextScope::runFor($this->organizationId, function () use ($release): void {
+            TenantContextScope::runFor($this->organizationId, function () use ($release, $siblings): void {
                 $session = InterviewSession::query()->find($this->sessionId);
 
                 if ($session === null
                     || ($session->provider_session_ref === null && $session->provider_context_ref === null)) {
+                    return;
+                }
+
+                // A sibling row still talking over this conversation (a continuation was
+                // granted): ending it now would cut that live interview.
+                if ($siblings->hasLiveSibling($this->organizationId, $this->provider, $this->providerSessionRef, $this->sessionId)) {
                     return;
                 }
 

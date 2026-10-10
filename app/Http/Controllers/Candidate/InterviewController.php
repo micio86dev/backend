@@ -47,6 +47,7 @@ use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\AvatarSilenceDetector;
 use App\Support\Interview\SessionLiveClock;
+use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Interview\SingleSessionGate;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
@@ -95,6 +96,7 @@ class InterviewController extends Controller
         private readonly ResolvePrimaryQuestions $resolvePrimaryQuestions,
         private readonly ComposeConversationPlan $composeConversationPlan,
         private readonly SingleSessionGate $singleSessionGate,
+        private readonly SharedProviderRefGuard $siblings,
     ) {}
 
     // =========================================================================
@@ -912,20 +914,40 @@ class InterviewController extends Controller
     // =========================================================================
 
     /**
-     * Whether the client is still showing this session while the next competency connects.
+     * Whether the session must outlive this `/end` because the next competency still needs it.
      *
-     * Only a HeyGen competency that COMPLETED and is followed by another one: the
-     * client hands over only for HeyGen (invisible-competency-handover, D9) and only
-     * on `continue`. Every other end (`timeout`, `skipped`, a pause, the last
-     * competency, Tavus) has nothing waiting on the session.
+     * Either a HeyGen competency that COMPLETED and is followed by another one (the client
+     * hands over only for HeyGen, invisible-competency-handover D9, and only on `continue`),
+     * or a Tavus row whose conversation is shared with a later competency of its plan (N12).
+     * Every other end (`timeout`, `skipped` on HeyGen, a pause, the last competency, mock)
+     * has nothing waiting on the session.
      *
      * @param  array{ended_competencies: int, total_competencies: int, next_action: string}|null  $directive
      */
     private function handsOverToNextCompetency(InterviewSession $session, string $endedReason, ?array $directive): bool
     {
-        return $session->provider === 'heygen'
-            && $endedReason === 'completed'
-            && ($directive['next_action'] ?? null) === 'continue';
+        if (($directive['next_action'] ?? null) !== 'continue') {
+            return false;
+        }
+
+        return ($session->provider === 'heygen' && $endedReason === 'completed')
+            || $this->planCoversLaterCompetency($session);
+    }
+
+    /**
+     * Whether the conversation this Tavus row holds is shared with a LATER competency: the
+     * row's stored plan lists its own competency and at least one more after it (design N12).
+     */
+    private function planCoversLaterCompetency(InterviewSession $session): bool
+    {
+        if ($session->provider !== 'tavus' || $session->provider_session_ref === null) {
+            return false;
+        }
+
+        $codes = array_column($session->conversation_plan['competencies'] ?? [], 'code');
+        $at = array_search($session->competency_code, $codes, true);
+
+        return $at !== false && $at < count($codes) - 1;
     }
 
     /**
@@ -1254,7 +1276,9 @@ class InterviewController extends Controller
         // rather than being discarded by a later, unrelated write failure.
         $this->liveClock->close($session, 'resume');
 
-        if ($oldRef !== null) {
+        // A sibling row still on this conversation keeps it alive (design N12): the row
+        // moves to its fresh ref below, and the old conversation is that sibling's to end.
+        if ($oldRef !== null && ! $this->siblings->hasLiveSibling((int) $session->organization_id, $session->provider, $oldRef, $session->id)) {
             // The outgoing transcript was already harvested by start(),
             // before composition. Without that harvest a resume would
             // destroy everything said before it: each resume issues a NEW

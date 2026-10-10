@@ -9,6 +9,7 @@ use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Models\InterviewSession;
 use App\Support\Interview\SessionLiveClock;
+use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
@@ -47,6 +48,7 @@ final class ReapStaleInterviews extends Command
         private readonly RecordConversationLlmUsage $recordLlmUsage,
         private readonly SettleParticipantCompletion $settle,
         private readonly ReleaseProviderSession $releaseProvider,
+        private readonly SharedProviderRefGuard $siblings,
     ) {
         parent::__construct();
     }
@@ -223,8 +225,9 @@ final class ReapStaleInterviews extends Command
             return true;
         });
 
-        if ($ended) {
-            // After the commit, best-effort: never aborts the sweep.
+        // After the commit, best-effort: never aborts the sweep. A conversation another
+        // live row still shares is left to that row's own end (design N12).
+        if ($ended && ! $this->siblings->hasLiveSibling((int) $session->organization_id, $session->provider, $session->provider_session_ref, $session->id)) {
             ($this->releaseProvider)($session);
         }
 
