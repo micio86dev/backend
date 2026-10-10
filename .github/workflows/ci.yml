@@ -182,7 +182,9 @@ jobs:
       # coverage file into the parent) died with "Allowed memory size of
       # 2147483648 bytes exhausted (tried to allocate 433820176 bytes)" AFTER
       # all tests had passed. The runner has 16 GB; the limit is a ceiling, not
-      # an allocation.
+      # an allocation. `phpunit.xml` carries its own `<ini name="memory_limit">`
+      # that PHPUnit applies on top of the `-d` flag, so BOTH must be raised
+      # together (raising only the flag left the 2G ceiling in force).
       - name: Run tests with coverage (parallel, ≥85%)
         run: php -d memory_limit=4G artisan test --parallel --coverage --min=85
 

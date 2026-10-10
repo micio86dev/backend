@@ -45,7 +45,7 @@
              than in php.ini so artisan test, its parallel workers and a bare
              vendor/bin/pest all get it. Passing the limit on the command line
              does NOT reach the child process artisan test spawns. -->
-        <ini name="memory_limit" value="2G"/>
+        <ini name="memory_limit" value="4G"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_KEY" value="base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="/>
         <env name="JWT_SECRET" value="testing-secret-key-for-phpunit-only-not-for-production-use"/>
