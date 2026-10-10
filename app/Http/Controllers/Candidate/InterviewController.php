@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Candidate;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
+use App\Actions\Interview\AdvanceOnLiveConversation;
 use App\Actions\Interview\BuildInterviewSessionResponse;
 use App\Actions\Interview\ComposeCompetencyPrompt;
 use App\Actions\Interview\ComposeConversationPlan;
@@ -97,6 +98,7 @@ class InterviewController extends Controller
         private readonly ComposeConversationPlan $composeConversationPlan,
         private readonly SingleSessionGate $singleSessionGate,
         private readonly SharedProviderRefGuard $siblings,
+        private readonly AdvanceOnLiveConversation $advanceOnLiveConversation,
     ) {}
 
     // =========================================================================
@@ -148,11 +150,11 @@ class InterviewController extends Controller
      * interviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`
      * means the provider failed.
      *
-     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, conversation_id?: string}
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, conversation_id?: string, continuation?: array{conversation_id: string, competency_code: string}}
      *
      * @throws \Throwable
      */
-    public function start(): JsonResponse
+    public function start(Request $request): JsonResponse
     {
         /** @var Participant $participant */
         $participant = auth('api-candidate')->user();
@@ -261,6 +263,56 @@ class InterviewController extends Controller
 
             if ($blocked) {
                 return response()->json(['error' => 'project_not_interviewable'], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
+
+        // Resolved ahead of the composition: the single-session gate decides both whether a
+        // continuation can be granted and which composer runs. Pure: it reads the pinned template
+        // and the override, nothing else.
+        $providerName = $this->providerNameFor($participant, $project);
+        $singleSession = $this->singleSessionGate->applies($project, $providerName);
+
+        // (tavus-single-session-interview, N6) The client may assert the conversation it is still
+        // joined to. A granted continuation composes nothing and calls no provider, so it runs
+        // after the next competency is resolved and BEFORE any composition: a competency that
+        // could not be composed (a missing translation) must not turn it into a 422. Every
+        // refusal falls through to the ordinary path below. With the gate closed the input is ignored.
+        if ($singleSession) {
+            $liveConversationId = $request->validate([
+                'live_conversation_id' => ['nullable', 'string', 'max:128'],
+            ])['live_conversation_id'] ?? null;
+
+            try {
+                $continuation = $this->advanceOnLiveConversation->handle(
+                    $participant,
+                    $project,
+                    $providerName,
+                    $liveConversationId,
+                    $nextCompetency,
+                );
+            } catch (\Throwable $e) {
+                // Nothing was created at the provider, so there is no ref to give back.
+                Log::error('C7a: db failure granting a continuation', [
+                    'stage' => 'start',
+                    ...SafeDbContext::for($e),
+                ]);
+
+                return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+
+            if ($continuation !== null) {
+                return $this->buildSessionResponse->handle(
+                    $continuation,
+                    new ProviderToken(provider: 'tavus', provider_session_ref: $continuation->provider_session_ref),
+                    $project->language,
+                    null,
+                    $nextCompetency['competency_ordinal'],
+                    $nextCompetency['total_competencies'],
+                    continuation: [
+                        'conversation_id' => (string) $continuation->provider_session_ref,
+                        'competency_code' => $continuation->competency_code,
+                    ],
+                );
             }
         }
 
@@ -411,11 +463,6 @@ class InterviewController extends Controller
         $isLastCompetency = $nextCompetency['competency_ordinal']
             >= $nextCompetency['total_competencies'];
         $advancePhrase = $isLastCompetency ? $finalPhrase : $endPhrase;
-
-        // Resolved here, ahead of the composition, because the single-session gate decides which
-        // composer runs. Pure: it reads the pinned template and the override, nothing else.
-        $providerName = $this->providerNameFor($participant, $project);
-        $singleSession = $this->singleSessionGate->applies($project, $providerName);
 
         $composeSingle = fn (): ComposedPrompt|JsonResponse => $this->composeOrRefuse(
             fn (): ComposedPrompt => $this->composeCompetencyPrompt->handle(
@@ -936,7 +983,7 @@ class InterviewController extends Controller
 
     /**
      * Whether the conversation this Tavus row holds is shared with a LATER competency: the
-     * row's stored plan lists its own competency and at least one more after it (design N12).
+     * stored plan (its own, or its owner's for a continuation row) lists its own competency and at least one more after it (design N12).
      */
     private function planCoversLaterCompetency(InterviewSession $session): bool
     {
@@ -944,7 +991,17 @@ class InterviewController extends Controller
             return false;
         }
 
-        $codes = array_column($session->conversation_plan['competencies'] ?? [], 'code');
+        // The plan is frozen on the row that created the conversation; a continuation row shares
+        // its ref and carries none, so it asks the owner (same participant, same organization).
+        $plan = $session->conversation_plan ?? InterviewSession::query()
+            ->where('organization_id', $session->organization_id)
+            ->where('participant_id', $session->participant_id)
+            ->where('provider', 'tavus')
+            ->where('provider_session_ref', $session->provider_session_ref)
+            ->whereNotNull('conversation_plan')
+            ->orderBy('id')
+            ->value('conversation_plan');
+        $codes = array_column($plan['competencies'] ?? [], 'code');
         $at = array_search($session->competency_code, $codes, true);
 
         return $at !== false && $at < count($codes) - 1;

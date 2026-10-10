@@ -36,6 +36,7 @@ final class BuildInterviewSessionResponse
     /**
      * @param  string|null  $language  The PROJECT's language (BCP-ish locale, may be null).
      * @param  string|null  $conversationId  The provider conversation id of a fresh multi-competency create; null otherwise.
+     * @param  array{conversation_id: string, competency_code: string}|null  $continuation  Present only for a granted continuation on a live conversation; the key is absent otherwise.
      * @param  string|null  $promptVersion  Composed prompt template version (C8) — the composed
      *                                      prompt's version on every 201.
      */
@@ -47,6 +48,7 @@ final class BuildInterviewSessionResponse
         ?int $competencyOrdinal = null,
         ?int $totalCompetencies = null,
         ?string $conversationId = null,
+        ?array $continuation = null,
     ): JsonResponse {
         [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
 
@@ -99,6 +101,12 @@ final class BuildInterviewSessionResponse
         // closed the key is absent, not null, so the body is byte-identical to the old one.
         if ($conversationId !== null) {
             $body['conversation_id'] = $conversationId;
+        }
+
+        // Present exactly when the browser may keep its conversation and retarget it (design D2):
+        // a server-issued code and the id it asserted, never prose, anchors or a prompt.
+        if ($continuation !== null) {
+            $body['continuation'] = $continuation;
         }
 
         return response()->json($body, Response::HTTP_CREATED);
