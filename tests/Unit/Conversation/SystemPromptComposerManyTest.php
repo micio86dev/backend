@@ -16,6 +16,7 @@ use App\DTOs\Conversation\ConversationPlan;
 use App\DTOs\Conversation\ResolvedCompetencyInput;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Exceptions\Conversation\CompositionException;
+use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Models\BarsIndicator;
 use App\Models\Competency;
 use App\Models\Role;
@@ -287,4 +288,17 @@ test('the plan exposes the one set ref so the stamp can be built', function (): 
 
     $baseline = manyComposer()->composeMany([manyInput('DRV', $role)]);
     expect($baseline->promptSetRef)->toBeNull();
+});
+
+test('duplicate competency codes are refused before anything is composed', function (): void {
+    $role = Role::factory()->create(['code' => 'MANY_ROLE']);
+    $first = manyInput('CSF', $role);
+    // The unknown locale would make compose() throw AnchorTranslationMissingException on the
+    // first entry: the duplicate must be reported INSTEAD, proving nothing was composed yet.
+    $poisoned = manyInput('INN', $role, ['projectLocale' => 'zz']);
+
+    expect(fn () => manyComposer()->composeMany([$first, $first]))
+        ->toThrow(CompositionException::class, 'CSF')
+        ->and(fn () => manyComposer()->composeMany([$poisoned, $first, $poisoned]))
+        ->toThrow(CompositionException::class, 'INN');
 });

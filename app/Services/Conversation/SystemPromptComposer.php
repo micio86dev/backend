@@ -236,7 +236,7 @@ final class SystemPromptComposer
      * @param  list<ResolvedCompetencyInput>  $inputs
      *
      * @throws CompositionException When the list is empty, the entries come from different
-     *                              stored prompt sets, the first segment alone exceeds the
+     *                              stored prompt sets, a competency code repeats, the first segment alone exceeds the
      *                              limit, or any `compose()` call fails.
      * @throws AnchorTranslationMissingException When an entry lacks a locale translation.
      */
@@ -244,6 +244,17 @@ final class SystemPromptComposer
     {
         if ($inputs === []) {
             throw new CompositionException('SystemPromptComposer::composeMany: at least one competency is required.');
+        }
+
+        // The global rules address blocks by code: two blocks sharing one are indistinguishable.
+        $seen = [];
+        foreach ($inputs as $input) {
+            if (isset($seen[$input->competencyCode])) {
+                throw new CompositionException(
+                    "SystemPromptComposer::composeMany: duplicate competency code [{$input->competencyCode}].",
+                );
+            }
+            $seen[$input->competencyCode] = true;
         }
 
         $setRef = $inputs[0]->promptSetRef;
