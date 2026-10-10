@@ -17,6 +17,28 @@ final class ReleaseProviderSession
     public function __invoke(InterviewSession $session): void
     {
         $this->forRefs($session->provider, $session->provider_session_ref, $session->provider_context_ref);
+        $this->markReleased($session->organization_id, $session->provider, $session->provider_session_ref);
+    }
+
+    /**
+     * Record that the conversation behind `$ref` was released, on every row of the organization that
+     * shares it, so a late continuation is refused (tavus-single-session-interview, API-04). Callers
+     * run inside a tenant context; the explicit organization predicate is a second pin. Written after
+     * a release was ATTEMPTED, never when a caller skipped it: a failed teardown leaves the
+     * conversation in an unknown state, and a fresh one is always safe.
+     */
+    public function markReleased(int $organizationId, string $provider, ?string $ref): void
+    {
+        if ($ref === null || $ref === '') {
+            return;
+        }
+
+        InterviewSession::query()
+            ->where('organization_id', $organizationId)
+            ->where('provider', $provider)
+            ->where('provider_session_ref', $ref)
+            ->whereNull('provider_released_at')
+            ->update(['provider_released_at' => now()]);
     }
 
     /** Release exactly these refs: a deferred caller must not release whatever the row holds by then. */

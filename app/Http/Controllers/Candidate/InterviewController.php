@@ -1306,6 +1306,9 @@ class InterviewController extends Controller
                     'error' => $e->getMessage(),
                 ]);
             }
+
+            // The conversation was released (or its release attempted): a late continuation must not be granted on it.
+            $this->releaseEnded->markReleased((int) $session->organization_id, $session->provider, $oldRef);
         }
 
         // (c) Persist new ref in a short DB txn (FIX-8: no participant update needed on RESUME)
@@ -1778,6 +1781,9 @@ class InterviewController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+
+        // Attempted is enough to refuse a late continuation on it (a fresh conversation is always safe).
+        $this->releaseEnded->markReleased((int) $session->organization_id, $session->provider, $ref);
 
         if (! $released) {
             return;

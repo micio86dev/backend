@@ -37,8 +37,9 @@ use Throwable;
  * the job runs. `provider_release_delay_seconds` is the grace within which the client's
  * boundary `/start` (sent right after `/end`, no candidate wait) must create the
  * continuation row. A job that runs BEFORE that row exists releases the conversation BY
- * DESIGN (documented fallback; no retry, tries=1). API-04 must therefore refuse a
- * continuation for a ref this job already released, so the client starts a fresh one.
+ * DESIGN (documented fallback; no retry, tries=1). The release is recorded on the rows
+ * sharing the ref (`provider_released_at`), and the continuation grant refuses such a ref, so the client
+ * starts a fresh conversation.
  *
  * Scalars only (no model, no secret), and it never fails: the outcome of `/end`
  * is long committed and a stale provider session is not worth a retry loop.
@@ -81,6 +82,7 @@ final class ReleaseEndedProviderSessionJob implements ShouldQueue
                 }
 
                 $release->forRefs($this->provider, $this->providerSessionRef, $this->providerContextRef);
+                $release->markReleased($this->organizationId, $this->provider, $this->providerSessionRef);
             });
         } catch (Throwable $e) {
             // Class only: a provider exception message may echo key material.
