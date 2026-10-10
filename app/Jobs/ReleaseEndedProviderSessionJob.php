@@ -29,7 +29,7 @@ use Throwable;
  * never re-read from the row: by the time the job runs, a resume may have issued
  * a NEWER session on the same row, and that one must not be stopped. The row is
  * only consulted to see whether anything still owns a ref — when a later
- * suspend, retry or reaper has already cleared both, the release is theirs and
+ * suspend or retry has already cleared both, the release is theirs and
  * this job has nothing to do.
  *
  * Scalars only (no model, no secret), and it never fails: the outcome of `/end`

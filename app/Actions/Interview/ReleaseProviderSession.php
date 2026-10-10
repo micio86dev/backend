@@ -9,6 +9,7 @@ use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\MockProvider;
 use App\Services\Provider\ProviderToken;
 use App\Services\Provider\TavusProvider;
+use Illuminate\Support\Facades\Log;
 
 /** Best-effort release of what an ended session still holds at its provider; never throws. */
 final class ReleaseProviderSession
@@ -35,8 +36,13 @@ final class ReleaseProviderSession
                 provider_session_ref: $sessionRef,
                 provider_context_ref: $contextRef,
             ));
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // The outcome is already committed; a stale provider session must not undo it.
+            // Class only: a provider exception message may echo key material.
+            Log::warning('interview.provider_release.failed', [
+                'provider' => $provider,
+                'exception' => $e::class,
+            ]);
         }
     }
 }

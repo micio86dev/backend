@@ -2,13 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Interview\ReleaseProviderSession;
 use App\Jobs\ReleaseEndedProviderSessionJob;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Services\Provider\HeygenProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
@@ -156,4 +161,40 @@ test('/end releases at once when the interview pauses after the competency', fun
 
     expect(recordedReleaseCalls())->toBe(['POST /v1/sessions/stop', 'DELETE /v1/contexts/hg-ctx']);
     Queue::assertNotPushed(ReleaseEndedProviderSessionJob::class);
+});
+
+test('/end releases at once when the deferred release cannot be queued, and says so without the exception message', function (): void {
+    [, , $headers, $session] = endReleaseScenario(2);
+    Log::spy();
+    Bus::shouldReceive('dispatch')->andThrow(new RuntimeException('redis://:s3cret@queue down'));
+
+    test()->withHeaders($headers)
+        ->postJson('/api/candidate/interview/end', ['session_id' => $session->id, 'ended_reason' => 'completed'])
+        ->assertOk()
+        ->assertJsonPath('next_action', 'continue');
+
+    expect(recordedReleaseCalls())->toBe(['POST /v1/sessions/stop', 'DELETE /v1/contexts/hg-ctx']);
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'interview.provider_release.defer_failed'
+        && $context === ['session_id' => $session->id, 'exception' => RuntimeException::class])->once();
+});
+
+test('the deferred job swallows its own failure and logs the exception class only', function (): void {
+    [$org, , , $session] = endReleaseScenario(2);
+    Log::spy();
+    DB::beforeExecuting(fn () => throw new RuntimeException('connection to 10.0.0.9 with password=s3cret lost'));
+
+    ReleaseEndedProviderSessionJob::dispatchSync($session->id, $org->id, 'heygen', 'hg-ref', 'hg-ctx');
+
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'interview.provider_release.deferred_failed'
+        && $context === ['session_id' => $session->id, 'exception' => RuntimeException::class])->once();
+});
+
+test('a release that blows up before any provider call is logged by class only and never thrown', function (): void {
+    Log::spy();
+    app()->bind(HeygenProvider::class, fn () => throw new RuntimeException('boom with key sk-live-123'));
+
+    (new ReleaseProviderSession)->forRefs('heygen', 'hg-ref', 'hg-ctx');
+
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'interview.provider_release.failed'
+        && $context === ['provider' => 'heygen', 'exception' => RuntimeException::class])->once();
 });
