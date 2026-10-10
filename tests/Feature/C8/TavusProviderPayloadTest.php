@@ -194,3 +194,44 @@ test('6.8 TavusProvider::issue() with null openingText → POST /conversations b
 
     expect($capturedBody)->not->toHaveKey('custom_greeting');
 });
+
+test('6.9 TavusProvider::issue() of a single-session conversation matches the multi golden, participant_left_timeout included', function (): void {
+    config(['interview.tavus.persona_id' => 'p8a490c4dfd4', 'interview.tavus.replica_id' => 'rf4e9d9790f0']);
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        $capturedBody = $request->data();
+
+        return Http::response(['conversation_id' => 'conv-multi', 'conversation_url' => 'https://tavus.io/conv-multi'], 200);
+    });
+
+    $ctx = new QuestionContext(
+        competencyCode: 'COL',
+        questionIndex: 0,
+        systemPrompt: 'TEST_MULTI_PROMPT',
+        promptVersion: 'v1',
+        openingText: 'TEST_OPENING',
+        language: 'it',
+        participantLeftTimeout: 60,
+    );
+
+    (new TavusProvider)->issue(c8TavusMockSession(), $ctx);
+
+    $golden = json_decode((string) file_get_contents(base_path('tests/Fixtures/Provider/tavus/conversations_request_multi_golden.json')), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($capturedBody)->toEqual($golden);
+});
+
+test('6.10 TavusProvider::issue() without a participant_left_timeout never sends the key', function (): void {
+    $capturedBody = [];
+
+    Http::fake(function ($request) use (&$capturedBody) {
+        $capturedBody = $request->data();
+
+        return Http::response(['conversation_id' => 'conv-flag-off', 'conversation_url' => 'https://tavus.io/conv-flag-off'], 200);
+    });
+
+    (new TavusProvider)->issue(c8TavusMockSession(), new QuestionContext(competencyCode: 'COL', questionIndex: 0, systemPrompt: 'P', language: 'it'));
+
+    expect($capturedBody['properties'] ?? [])->not->toHaveKey('participant_left_timeout');
+});

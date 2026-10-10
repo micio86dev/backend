@@ -179,6 +179,12 @@ class TavusProvider implements ProviderSessionService
             $body['properties']['language'] = TavusLanguage::forWire($language);
         }
 
+        // N16: a single-session conversation says when it ends after the browser leaves; the unset
+        // default was observed NOT to end it. Absent (not 0) for every other conversation.
+        if ($ctx?->participantLeftTimeout !== null) {
+            $body['properties']['participant_left_timeout'] = $ctx->participantLeftTimeout;
+        }
+
         $replicaId = config('interview.tavus.replica_id');
 
         if (is_string($replicaId) && $replicaId !== '') {

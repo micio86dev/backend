@@ -1,0 +1,10 @@
+{
+  "persona_id": "p8a490c4dfd4",
+  "replica_id": "rf4e9d9790f0",
+  "conversational_context": "TEST_MULTI_PROMPT",
+  "custom_greeting": "TEST_OPENING",
+  "properties": {
+    "language": "italian",
+    "participant_left_timeout": 60
+  }
+}
