@@ -7,12 +7,14 @@ namespace App\Http\Controllers\Candidate;
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
 use App\Actions\Interview\BuildInterviewSessionResponse;
 use App\Actions\Interview\ComposeCompetencyPrompt;
+use App\Actions\Interview\ComposeConversationPlan;
 use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\ResolveInterviewDirective;
 use App\Actions\Interview\ResolvePrimaryQuestions;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Actions\InterviewSession\ResetSessionForRetry;
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\ConversationPlan;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\ApiKeyMode;
 use App\Enums\AssessmentType;
@@ -45,6 +47,7 @@ use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\AvatarSilenceDetector;
 use App\Support\Interview\SessionLiveClock;
+use App\Support\Interview\SingleSessionGate;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
 use App\Support\Project\ProjectInterviewability;
@@ -90,6 +93,8 @@ class InterviewController extends Controller
         private readonly ProviderPreflight $preflight,
         private readonly ReleaseProviderSession $releaseEnded,
         private readonly ResolvePrimaryQuestions $resolvePrimaryQuestions,
+        private readonly ComposeConversationPlan $composeConversationPlan,
+        private readonly SingleSessionGate $singleSessionGate,
     ) {}
 
     // =========================================================================
@@ -141,7 +146,7 @@ class InterviewController extends Controller
      * interviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`
      * means the provider failed.
      *
-     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}}
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, conversation_id?: string}
      *
      * @throws \Throwable
      */
@@ -405,17 +410,56 @@ class InterviewController extends Controller
             >= $nextCompetency['total_competencies'];
         $advancePhrase = $isLastCompetency ? $finalPhrase : $endPhrase;
 
-        $compositionResult = $this->composePromptForCompetency(
-            $project,
-            $assessmentType,
-            $nextCompetency['competency_code'],
-            $revisionId,
-            $nextCompetencyRow,
-            $primaryQuestions,
-            $followUpBudget,
-            $spokenOpening,
-            $advancePhrase,
+        // Resolved here, ahead of the composition, because the single-session gate decides which
+        // composer runs. Pure: it reads the pinned template and the override, nothing else.
+        $providerName = $this->providerNameFor($participant, $project);
+        $singleSession = $this->singleSessionGate->applies($project, $providerName);
+
+        $composeSingle = fn (): ComposedPrompt|JsonResponse => $this->composeOrRefuse(
+            fn (): ComposedPrompt => $this->composeCompetencyPrompt->handle(
+                $project,
+                $assessmentType,
+                $nextCompetency['competency_code'],
+                $revisionId,
+                $nextCompetencyRow,
+                $primaryQuestions,
+                $followUpBudget,
+                $spokenOpening,
+                $advancePhrase,
+            ),
         );
+
+        // (tavus-single-session-interview) A plan covers the competencies still to come on ONE
+        // conversation. Only a fresh start can build one: a resume, a re-offer or a row that already
+        // exists issues a fresh single-competency conversation, exactly as before. A prefix that
+        // covers a single competency is not a plan either.
+        $plan = null;
+        $compositionResult = null;
+
+        if ($singleSession && ! $hasExistingSession && ! $isResumeInCorso && ! $isReoffer) {
+            $remaining = $this->freshRemainingCompetencies($pid, $project->id, $nextCompetency['competency_ordinal']);
+
+            if (count($remaining) > 1) {
+                $planned = $this->composeOrRefuse(fn (): ConversationPlan => $this->composeConversationPlan->handle(
+                    $project,
+                    $assessmentType,
+                    $revisionId,
+                    $remaining,
+                    $followUpBudget,
+                    $endPhrase,
+                    $finalPhrase,
+                ));
+
+                if ($planned instanceof JsonResponse) {
+                    $compositionResult = $planned;
+                } elseif (count($planned->coveredCodes) > 1) {
+                    $plan = $planned;
+                    $compositionResult = new ComposedPrompt($planned->text, $planned->version, $planned->promptSetRef);
+                }
+            }
+        }
+
+        $compositionResult ??= $composeSingle();
         if ($compositionResult instanceof JsonResponse) {
             // No fresh provider session will be issued, so the outgoing one —
             // still live, still billing — has nothing left to hand over to.
@@ -460,8 +504,6 @@ class InterviewController extends Controller
         // interview can never reach `resolveProvider('mock')` through this
         // assignment, whatever the project's avatar template or override
         // holds.
-        $providerName = $this->providerNameFor($participant, $project);
-
         // (D2/D3) A re-offered competency is reset to `pending` and its previous
         // attempt's transcript discarded BEFORE the session is resumed, so the
         // competency is never scored on a conversation that mixes two attempts.
@@ -485,6 +527,17 @@ class InterviewController extends Controller
             $primaryQuestions,
             $followUpBudget,
         );
+
+        // A concurrent /start created the row first: this request resumes it, and a resumed
+        // conversation is never a plan. Compose the single-competency prompt it needs instead.
+        if ($plan !== null && ! $session->wasRecentlyCreated) {
+            $plan = null;
+            $compositionResult = $composeSingle();
+
+            if ($compositionResult instanceof JsonResponse) {
+                return $compositionResult;
+            }
+        }
 
         // The snapshot TurnClassifier audits against is refreshed for a
         // fresh prompt composition, but ONLY while the session has NO
@@ -550,6 +603,7 @@ class InterviewController extends Controller
             competencyOrdinal: $nextCompetency['competency_ordinal'],
             totalCompetencies: $nextCompetency['total_competencies'],
             promptSetRef: $compositionResult->promptSetRef,
+            participantLeftTimeout: $singleSession ? (int) config('interview.tavus.participant_left_timeout', 60) : null,
         );
 
         // ─── RESUME in_corso path ─────────────────────────────────────────────
@@ -561,7 +615,7 @@ class InterviewController extends Controller
         // ─── All pending paths (new, resume-pending, UniqueConstraint recovery) ─
         // The isFirstCompetency flag drives whether participant.started_at + status is stamped.
         // If participant.status is already 'in_corso', this is a subsequent competency.
-        return $this->handleIssuePending($session, $participant, $providerService, $ctx, isFirstCompetency: $isFirst);
+        return $this->handleIssuePending($session, $participant, $providerService, $ctx, isFirstCompetency: $isFirst, conversationPlan: $plan?->stored());
     }
 
     // =========================================================================
@@ -899,45 +953,30 @@ class InterviewController extends Controller
     }
 
     /**
-     * Compose the system prompt for the next competency, or refuse with the 422.
+     * Run a composition and turn its failure into the 422, or return its result.
      *
-     * This MUST be called BEFORE createOrResumeSession() and BEFORE issue() so that
+     * This MUST run BEFORE createOrResumeSession() and BEFORE issue() so that
      * a composition failure leaves zero InterviewSession rows and makes zero provider calls.
      *
      * Failure codes (machine-readable, not localized per BEAI machine-facing response policy):
      *   - 'composition_error'           → CompositionException (empty indicators / bad role; for
-     *                                     `potential`, no role-less BARS rows for the competency)
+     *                                     `potential`, no role-less BARS rows for the competency;
+     *                                     for a plan, entries from different prompt sets)
      *   - 'anchor_translation_missing'  → AnchorTranslationMissingException (missing locale text)
      *
      * Only composition problems are a 422. Anything else thrown while resolving the stored
      * prompt set (a database outage) propagates as a 500 on purpose: it is not a composition
      * error, and it must never silently fall back to the baseline text.
      *
-     * @param  list<string>  $primaryQuestions
+     * @template T
+     *
+     * @param  \Closure(): T  $compose
+     * @return T|JsonResponse
      */
-    private function composePromptForCompetency(
-        Project $project,
-        AssessmentType $assessmentType,
-        string $competencyCode,
-        ?int $revisionId,
-        ?Competency $competency,
-        array $primaryQuestions,
-        int $followUpBudget,
-        SpokenOpening $spokenOpening,
-        ?string $advancePhrase = null,
-    ): ComposedPrompt|JsonResponse {
+    private function composeOrRefuse(\Closure $compose): mixed
+    {
         try {
-            return $this->composeCompetencyPrompt->handle(
-                $project,
-                $assessmentType,
-                $competencyCode,
-                $revisionId,
-                $competency,
-                $primaryQuestions,
-                $followUpBudget,
-                $spokenOpening,
-                $advancePhrase,
-            );
+            return $compose();
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (PromptTemplateUnresolvableException $e) {
@@ -951,6 +990,37 @@ class InterviewController extends Controller
         } catch (CompositionException) {
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+    }
+
+    /**
+     * The competencies a fresh conversation could cover: the next one and every later one that
+     * has no session row yet, in project order (tavus-single-session-interview N3).
+     *
+     * @return list<array{competency_code: string, competency_ordinal: int, total_competencies: int}>
+     */
+    private function freshRemainingCompetencies(int $participantId, int $projectId, int $fromOrdinal): array
+    {
+        $started = InterviewSession::where('participant_id', $participantId)
+            ->where('project_id', $projectId)
+            ->pluck('competency_code')
+            ->all();
+
+        $all = DB::table('project_competencies as pc')
+            ->join('framework_competencies as fc', 'fc.id', '=', 'pc.competency_id')
+            ->where('pc.project_id', $projectId)
+            ->orderBy('pc.position')
+            ->pluck('fc.code')
+            ->values();
+
+        $remaining = [];
+
+        foreach ($all as $index => $code) {
+            if ($index + 1 >= $fromOrdinal && ! in_array($code, $started, true)) {
+                $remaining[] = ['competency_code' => (string) $code, 'competency_ordinal' => $index + 1, 'total_competencies' => $all->count()];
+            }
+        }
+
+        return $remaining;
     }
 
     /**
@@ -1269,6 +1339,8 @@ class InterviewController extends Controller
      * Provider call is OUTSIDE any DB transaction.
      * On success: short DB txn updating both session + participant (FIX-8).
      * Failure matrix: 429 → provider_busy; 5xx → errore + 502; DB failure → teardown + 500.
+     *
+     * @param  array{competencies: list<array{code: string, primary_questions: list<string>, follow_up_budget: int}>, chars: int}|null  $conversationPlan  The frozen plan of a fresh single-session create; null writes nothing.
      */
     private function handleIssuePending(
         InterviewSession $session,
@@ -1276,6 +1348,7 @@ class InterviewController extends Controller
         ProviderSessionService $provider,
         QuestionContext $ctx,
         bool $isFirstCompetency,
+        ?array $conversationPlan = null,
     ): JsonResponse {
         // Provider call OUTSIDE any DB transaction (design invariant)
         try {
@@ -1286,7 +1359,7 @@ class InterviewController extends Controller
 
         // (4a) Provider SUCCESS → short txn (FIX-8: BOTH writes in ONE transaction)
         try {
-            DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency, $ctx): void {
+            DB::transaction(function () use ($session, $token, $participant, $isFirstCompetency, $ctx, $conversationPlan): void {
                 // UPDATE session status = in_corso + new ref
                 $session->provider_session_ref = $token->provider_session_ref;
                 $session->provider_context_ref = $token->provider_context_ref;
@@ -1305,6 +1378,10 @@ class InterviewController extends Controller
                 // re-offered competency (ResetSessionForRetry), not only a
                 // true first issue.
                 $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
+                // Frozen once, on the row that created the conversation (N2). No anchor in it.
+                if ($conversationPlan !== null) {
+                    $session->conversation_plan = $conversationPlan;
+                }
                 $session->save();
 
                 // (D1/D4) Open a new live period in the SAME transaction as
@@ -1390,7 +1467,15 @@ class InterviewController extends Controller
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        return $this->buildSessionResponse->handle($session, $token, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
+        return $this->buildSessionResponse->handle(
+            $session,
+            $token,
+            $ctx->language,
+            $ctx->promptVersion,
+            $ctx->competencyOrdinal,
+            $ctx->totalCompetencies,
+            conversationId: $conversationPlan === null ? null : $token->provider_session_ref,
+        );
     }
 
     /**
