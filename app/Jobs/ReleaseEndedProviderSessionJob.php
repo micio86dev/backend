@@ -81,8 +81,12 @@ final class ReleaseEndedProviderSessionJob implements ShouldQueue
                     return;
                 }
 
-                $release->forRefs($this->provider, $this->providerSessionRef, $this->providerContextRef);
-                $release->markReleased($this->organizationId, $this->provider, $this->providerSessionRef);
+                try {
+                    $release->forRefs($this->provider, $this->providerSessionRef, $this->providerContextRef);
+                } finally {
+                    // Attempted is enough, even when the attempt threw (the catch below logs it).
+                    $release->markReleased($this->organizationId, $this->provider, $this->providerSessionRef);
+                }
             });
         } catch (Throwable $e) {
             // Class only: a provider exception message may echo key material.

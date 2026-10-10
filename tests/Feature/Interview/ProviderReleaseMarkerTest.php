@@ -17,8 +17,11 @@ use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Models\Organization;
 use App\Models\Project;
+use App\Services\Provider\TavusProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -147,4 +150,64 @@ test('a resume that tears down its old conversation marks it on the rows sharing
 
     expect($live->fresh()->provider_session_ref)->not->toBe($ended->provider_session_ref)
         ->and(prmReleased($ended))->toBeTrue();
+});
+
+/**
+ * Make `forRefs` itself throw: the provider teardown throws AND the failure log it swallows into
+ * throws too (a broken log sink), so the exception escapes `forRefs`.
+ */
+function prmBreakForRefs(): void
+{
+    $provider = Mockery::mock(TavusProvider::class);
+    $provider->shouldReceive('teardown')->andThrow(new RuntimeException('teardown blew up'));
+    app()->instance(TavusProvider::class, $provider);
+    Log::partialMock()->shouldReceive('warning')->andReturnUsing(function (string $message): void {
+        if ($message === 'interview.provider_release.failed') {
+            throw new RuntimeException('log sink down');
+        }
+    });
+}
+
+test('the synchronous release writes the marker even when the teardown throws', function (): void {
+    $org = casOrg();
+    [$project] = casProject($org, 1);
+    $ended = prmRow($org, $project, 'completed', 'conv-throw');
+
+    prmBreakForRefs();
+
+    expect(fn () => casInTenant($org, fn () => (new ReleaseProviderSession)($ended)))->toThrow(RuntimeException::class);
+
+    expect(prmReleased($ended))->toBeTrue();
+});
+
+test('the deferred job writes the marker even when the teardown throws, and swallows the failure', function (): void {
+    $org = casOrg();
+    [$project] = casProject($org, 1);
+    $ended = prmRow($org, $project, 'completed', 'conv-throw');
+    prmBreakForRefs();
+
+    $job = new ReleaseEndedProviderSessionJob($ended->id, $org->id, 'tavus', 'conv-throw', null);
+    app()->call([$job, 'handle']);
+
+    expect(prmReleased($ended))->toBeTrue();
+});
+
+test('a release with no ref to release writes no marker', function (): void {
+    $org = casOrg();
+    [$project] = casProject($org, 1);
+    $ended = prmRow($org, $project, 'completed', null);
+
+    casInTenant($org, fn () => (new ReleaseProviderSession)($ended));
+
+    expect(prmReleased($ended))->toBeFalse();
+});
+
+test('a /suspend whose teardown the provider did not confirm still marks the conversation as attempted', function (): void {
+    [, $headers, $live, $ended] = prmLiveWithEndedSibling();
+    Http::swap(new HttpFactory);
+    Http::fake(['*' => Http::response([], 500)]);
+
+    test()->withHeaders($headers)->postJson('/api/candidate/interview/suspend', ['session_id' => $live->id])->assertOk();
+
+    expect(prmReleased($ended))->toBeTrue();
 });

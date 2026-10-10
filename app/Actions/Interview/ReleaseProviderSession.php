@@ -16,8 +16,12 @@ final class ReleaseProviderSession
 {
     public function __invoke(InterviewSession $session): void
     {
-        $this->forRefs($session->provider, $session->provider_session_ref, $session->provider_context_ref);
-        $this->markReleased($session->organization_id, $session->provider, $session->provider_session_ref);
+        try {
+            $this->forRefs($session->provider, $session->provider_session_ref, $session->provider_context_ref);
+        } finally {
+            // Attempted is enough, even when the attempt threw.
+            $this->markReleased($session->organization_id, $session->provider, $session->provider_session_ref);
+        }
     }
 
     /**
