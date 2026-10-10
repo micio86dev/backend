@@ -13421,7 +13421,22 @@
                 },
                 "responses": {
                     "202": {
-                        "description": ""
+                        "description": "Utterance persisted. `boundary_due` is true once the competency has met its turn budget.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "boundary_due": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "boundary_due"
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "409": {
                         "description": "Session was no longer in_corso at INSERT time (atomic rejection).\n409 Conflict is the canonical signal for \"session no longer in_corso\".\nThe client MUST treat 409 as a no-op (the interview has ended).",
