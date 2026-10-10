@@ -190,6 +190,25 @@ return [
         'replica_id' => env('TAVUS_REPLICA_ID', 'rf4e9d9790f0'),
         'persona_id' => env('TAVUS_PERSONA_ID', 'p8a490c4dfd4'),
 
+        /*
+         * Single-session interview (tavus-single-session-interview, N1): ONE Tavus
+         * conversation spans several competencies. Ships DARK: `single_session`
+         * defaults to false, and `SingleSessionGate` is the only reader. The
+         * canary list (comma-separated project ids) enables it for named
+         * projects while the flag stays off. HeyGen and mock are never affected.
+         */
+        'single_session' => (bool) env('INTERVIEW_TAVUS_SINGLE_SESSION', false),
+        'single_session_projects' => array_values(array_filter(
+            array_map('intval', explode(',', (string) env('INTERVIEW_TAVUS_SINGLE_SESSION_PROJECTS', ''))),
+        )),
+
+        /*
+         * Seconds Tavus waits after the participant leaves before ending the
+         * conversation. Sent explicitly in the create body when the gate applies
+         * (an unset value does not end a conversation: PG6).
+         */
+        'participant_left_timeout' => (int) env('INTERVIEW_TAVUS_PARTICIPANT_LEFT_TIMEOUT', 60),
+
         // Fallback ONLY for callers with no project in scope (ProviderSmokeCheck's
         // standalone fake session). Every real interview supplies the project's
         // language through QuestionContext.

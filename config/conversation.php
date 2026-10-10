@@ -111,4 +111,21 @@ return [
     */
     'min_questions' => (int) env('CONVERSATION_MIN_QUESTIONS', 4),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Single-Session Interview (tavus-single-session-interview)
+    |--------------------------------------------------------------------------
+    |
+    | max_context_chars       ceiling on the serialised multi-competency context;
+    |                         a longer remaining list is truncated to a prefix.
+    | ceiling_headroom_seconds a conversation within this many seconds of its
+    |                         provider ceiling is not continued (retuned after G-B).
+    | boundary_grace_turns    extra substantive turns beyond 1 + follow_up_budget
+    |                         before a competency boundary is due.
+    |
+    */
+    'max_context_chars' => (int) env('CONVERSATION_MAX_CONTEXT_CHARS', 40000),
+    'ceiling_headroom_seconds' => (int) env('CONVERSATION_CEILING_HEADROOM_SECONDS', 480),
+    'boundary_grace_turns' => (int) env('CONVERSATION_BOUNDARY_GRACE_TURNS', 1),
+
 ];

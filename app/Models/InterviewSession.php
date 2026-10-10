@@ -96,6 +96,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $ended_reason
  * @property int $error_count
  * @property list<string>|null $primary_questions
+ * @property array{competencies: list<array{code: string, primary_questions: list<string>, follow_up_budget: int}>, chars: int}|null $conversation_plan
  * @property int|null $follow_up_budget
  * @property CarbonImmutable|null $transcript_harvested_at
  * @property CarbonImmutable|null $started_at
@@ -168,6 +169,9 @@ class InterviewSession extends TenantModel
             'ended_at' => 'immutable_datetime',
             'system_prompt_chars' => 'integer',
             'primary_questions' => 'array',
+            // Single-session plan (tavus-single-session-interview, N2): written
+            // once by the create path, never exposed, not mass-assignable.
+            'conversation_plan' => 'array',
             'follow_up_budget' => 'integer',
             // An uncast column comes back from pdo_pgsql as a STRING, which
             // makes the `@property CarbonImmutable|null` annotation above false at
