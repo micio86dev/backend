@@ -88,6 +88,8 @@ final class AdvanceOnLiveConversation
             return null;
         }
 
+        // Not re-checked under the lock below: a stale answer only yields the ordinary issue (a refusal),
+        // never a continuation granted on an expired conversation.
         if (! $this->released($organizationId, $liveConversationId) && $this->lifetime->isNearCeiling($owner, $liveConversationId)) {
             $this->deferRelease($owner, $liveConversationId);
 

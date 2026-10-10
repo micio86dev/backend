@@ -32,7 +32,11 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     Queue::fake();
     PromptSetResolver::flushCache();
-    config(['interview.tavus.single_session' => true, 'interview.tavus.single_session_projects' => []]);
+    config([
+        'interview.tavus.single_session' => true,
+        'interview.tavus.single_session_projects' => [],
+        'conversation.ceiling_headroom_seconds' => 480, // the near-ceiling cases below depend on it
+    ]);
     Http::fake([
         '*tavusapi*/v2/conversations' => fn () => Http::response([
             'conversation_id' => 'conv-'.uniqid('', true),
@@ -371,6 +375,29 @@ test('a mid-competency resume of an expired conversation defers the release of t
             && $job->delay === (int) config('interview.provider_release_delay_seconds'),
     );
     expect(casInTenant($s['org'], fn () => InterviewSession::findOrFail($granted->json('session_id'))->provider_session_ref))->not->toBe($s['ref']);
+});
+
+test('a failed resume at the ceiling schedules no release: the row still holds the old conversation', function (): void {
+    $s = cgScenario();
+    cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])->assertStatus(201);
+    cgAge($s, 3200);
+    Queue::fake();
+    // The fresh ref cannot be saved (opening the new live stretch fails inside the same
+    // transaction): the row keeps the OLD conversation. The listener is inert once disarmed.
+    $armed = true;
+    InterviewSessionLivePeriod::creating(function () use (&$armed): void {
+        if ($armed) {
+            throw new RuntimeException('boom');
+        }
+    });
+
+    try {
+        cgPost($s['participant'], 'start')->assertStatus(500);
+    } finally {
+        $armed = false;
+    }
+
+    Queue::assertNotPushed(ReleaseEndedProviderSessionJob::class);
 });
 
 test('a resume far from the ceiling still tears the old ref down inline', function (): void {

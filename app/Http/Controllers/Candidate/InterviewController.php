@@ -1345,9 +1345,9 @@ class InterviewController extends Controller
         // continuation's, with the refs captured now. The fresh ref below is a different conversation.
         $deferred = $oldRef !== null && ! $hasLiveSibling && $session->provider === 'tavus'
             && $this->refLifetime->isNearCeiling($session, $oldRef);
-        if ($deferred) {
-            $this->deferProviderRelease($session);
-        }
+        // The release is queued only once the fresh ref is saved (below), from this snapshot of the
+        // outgoing refs: a failed resume must never schedule the end of the conversation the row still holds.
+        $outgoing = clone $session;
 
         if ($oldRef !== null && ! $hasLiveSibling && ! $deferred) {
             // The outgoing transcript was already harvested by start(),
@@ -1426,6 +1426,10 @@ class InterviewController extends Controller
             }
 
             return response()->json(['error' => 'db_error'], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+
+        if ($deferred) {
+            $this->deferProviderRelease($outgoing);
         }
 
         return $this->buildSessionResponse->handle($session, $freshToken, $ctx->language, $ctx->promptVersion, $ctx->competencyOrdinal, $ctx->totalCompetencies);
