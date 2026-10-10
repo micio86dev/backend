@@ -302,3 +302,20 @@ test('duplicate competency codes are refused before anything is composed', funct
         ->and(fn () => manyComposer()->composeMany([$poisoned, $first, $poisoned]))
         ->toThrow(CompositionException::class, 'INN');
 });
+
+test('an inner composition failure on a later entry propagates unchanged and yields no plan', function (): void {
+    $role = Role::factory()->create(['code' => 'MANY_ROLE']);
+    $ok = manyInput('CSF', $role);
+    $bad = manyInput('INN', $role, ['projectLocale' => 'zz']);
+    $plan = null;
+
+    try {
+        $plan = manyComposer()->composeMany([$ok, $bad]);
+        $thrown = null;
+    } catch (AnchorTranslationMissingException $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->toBeInstanceOf(AnchorTranslationMissingException::class)
+        ->and($plan)->toBeNull();
+});
