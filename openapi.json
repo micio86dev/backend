@@ -6587,11 +6587,7 @@
                                 "type": "object",
                                 "properties": {
                                     "live_conversation_id": {
-                                        "type": [
-                                            "string",
-                                            "null"
-                                        ],
-                                        "maxLength": 128
+                                        "type": "string"
                                     }
                                 }
                             }
@@ -6701,9 +6697,6 @@
                                 }
                             }
                         }
-                    },
-                    "422": {
-                        "$ref": "#/components/responses/ValidationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"

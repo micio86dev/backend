@@ -276,11 +276,12 @@ class InterviewController extends Controller
         // joined to. A granted continuation composes nothing and calls no provider, so it runs
         // after the next competency is resolved and BEFORE any composition: a competency that
         // could not be composed (a missing translation) must not turn it into a 422. Every
-        // refusal falls through to the ordinary path below. With the gate closed the input is ignored.
+        // refusal falls through to the ordinary path below, a malformed id (not a string, empty, over 128
+        // chars) included: it is read leniently as absent, never validated into a 422. With the gate closed
+        // the input is ignored.
         if ($singleSession) {
-            $liveConversationId = $request->validate([
-                'live_conversation_id' => ['nullable', 'string', 'max:128'],
-            ])['live_conversation_id'] ?? null;
+            $rawLiveId = $request->input('live_conversation_id');
+            $liveConversationId = is_string($rawLiveId) && $rawLiveId !== '' && mb_strlen($rawLiveId) <= 128 ? $rawLiveId : null;
 
             try {
                 $continuation = $this->advanceOnLiveConversation->handle(
@@ -305,7 +306,7 @@ class InterviewController extends Controller
                     $continuation,
                     new ProviderToken(provider: 'tavus', provider_session_ref: $continuation->provider_session_ref),
                     $project->language,
-                    null,
+                    $continuation->conversation_prompt_version,
                     $nextCompetency['competency_ordinal'],
                     $nextCompetency['total_competencies'],
                     continuation: [

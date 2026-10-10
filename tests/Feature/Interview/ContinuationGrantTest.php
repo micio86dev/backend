@@ -271,3 +271,29 @@ test('/end of a continuation row defers the release while the owner plan covers 
     cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])
         ->assertStatus(201)->assertJsonPath('continuation.competency_code', $s['codes'][2]);
 });
+
+test('a malformed live_conversation_id is never a 422: the start falls to the ordinary issue path', function (mixed $id): void {
+    $s = cgScenario();
+    $creates = cgCreates();
+
+    $response = cgPost($s['participant'], 'start', ['live_conversation_id' => $id])->assertStatus(201);
+
+    $response->assertJsonMissingPath('continuation');
+    expect($response->json('conversation_url'))->toBe('https://tavus.io/conv')
+        ->and(cgCreates())->toBe($creates + 1);
+})->with([
+    'array' => [['a']],
+    'integer' => [42],
+    'boolean' => [true],
+    'over 128 chars' => [str_repeat('x', 129)],
+]);
+
+test('a continuation 201 carries the prompt version of the conversation it joins', function (): void {
+    $s = cgScenario();
+    $version = $s['owner']->conversation_prompt_version;
+    expect($version)->toBeString()->not->toBe('');
+
+    cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])
+        ->assertStatus(201)
+        ->assertJsonPath('question_context.prompt_version', $version);
+});
