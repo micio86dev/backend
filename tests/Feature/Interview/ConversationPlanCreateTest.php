@@ -155,6 +155,16 @@ test('a single remaining competency writes no plan and returns no conversation_i
         ->and(cpcCreateBody()['conversational_context'])->not->toContain('=== TOPIC CODE:');
 });
 
+test('a plan-less create on an open gate still sends the leave timeout: it is a policy of the project, not of the plan', function (): void {
+    config(['interview.tavus.single_session' => true, 'interview.tavus.participant_left_timeout' => 45]);
+    cpcFake();
+    [, , $participant] = cpcFixture(1);
+
+    cpcStart($participant)->assertStatus(201);
+
+    expect(cpcCreateBody()['properties']['participant_left_timeout'])->toBe(45);
+});
+
 test('HeyGen is invariant with the flag on', function (): void {
     config(['interview.tavus.single_session' => true]);
     cpcFake();
@@ -202,6 +212,7 @@ test('a plan that fits only the first competency falls back to the ordinary sing
 
     expect($response->json())->not->toHaveKey('conversation_id')
         ->and(cpcRow($org, $participant)->conversation_plan)->toBeNull()
+        ->and(cpcCreateBody()['properties']['participant_left_timeout'])->toBe(60)
         ->and(cpcCreateBody()['conversational_context'])->not->toContain('=== TOPIC CODE:');
 });
 
@@ -244,5 +255,71 @@ test('a concurrent start that created the row first falls back to the single-com
         ->and($response->json())->not->toHaveKey('conversation_id')
         ->and(cpcRow($org, $participant)->id)->toBe($raced->id)
         ->and(cpcRow($org, $participant)->conversation_plan)->toBeNull()
+        ->and(cpcCreateBody()['properties']['participant_left_timeout'])->toBe(60)
         ->and(cpcCreateBody()['conversational_context'])->not->toContain('=== TOPIC CODE:');
+});
+
+function cpcCreatingRow(Organization $org, Participant $participant, string $code): InterviewSession
+{
+    return casInTenant($org, fn () => InterviewSession::query()->where('participant_id', $participant->id)->where('competency_code', $code)->sole());
+}
+
+/** Give the participant a finished session for each of the given competency codes. */
+function cpcComplete(Organization $org, Project $project, Participant $participant, array $codes): void
+{
+    foreach ($codes as $code) {
+        casInTenant($org, fn () => InterviewSession::create([
+            'participant_id' => $participant->id, 'project_id' => $project->id, 'question_index' => 0,
+            'competency_code' => $code, 'framework_version_id' => $project->framework_version_id,
+            'provider' => 'tavus', 'status' => 'completed', 'primary_questions' => [], 'follow_up_budget' => 4,
+        ]));
+    }
+}
+
+test('the plan covers exactly the competencies from the canonical next one to the end, from every starting position', function (int $done): void {
+    config(['interview.tavus.single_session' => true, 'conversation.prompt_source' => 'baseline']);
+    cpcFake();
+    [$org, $project, $participant, $codes] = cpcFixture(3);
+    cpcComplete($org, $project, $participant, array_slice($codes, 0, $done));
+
+    $response = cpcStart($participant)->assertStatus(201);
+
+    $expected = array_slice($codes, $done);
+    $plan = cpcCreatingRow($org, $participant, $expected[0])->conversation_plan;
+    // The canonical resolver and the plan agree on where the run starts and how long the project is.
+    $response->assertJsonPath('question_context.competency_code', $expected[0])
+        ->assertJsonPath('question_context.competency_ordinal', $done + 1)
+        ->assertJsonPath('question_context.total_competencies', 3);
+    expect($plan === null ? [$expected[0]] : array_column($plan['competencies'], 'code'))->toBe($expected)
+        ->and($plan === null)->toBe(count($expected) === 1);
+})->with([0, 1, 2]);
+
+test('a detached pivot row and an unlinked catalogue competency are excluded from both the canonical next and the plan', function (): void {
+    config(['interview.tavus.single_session' => true, 'conversation.prompt_source' => 'baseline']);
+    cpcFake();
+    [$org, $project, $participant, $codes] = cpcFixture(4);
+    Competency::factory()->create();
+    // The project dropped its second competency (a sync() detaches the pivot row) and its positions have gaps.
+    DB::table('project_competencies')->where('project_id', $project->id)->where('position', 1)->delete();
+    DB::table('project_competencies')->where('project_id', $project->id)->where('position', 2)->update(['position' => 5]);
+    DB::table('project_competencies')->where('project_id', $project->id)->where('position', 3)->update(['position' => 9]);
+    cpcComplete($org, $project, $participant, [$codes[0]]);
+
+    $response = cpcStart($participant)->assertStatus(201);
+
+    $response->assertJsonPath('question_context.competency_code', $codes[2])
+        ->assertJsonPath('question_context.competency_ordinal', 2)
+        ->assertJsonPath('question_context.total_competencies', 3);
+    expect(array_column(cpcCreatingRow($org, $participant, $codes[2])->conversation_plan['competencies'], 'code'))->toBe([$codes[2], $codes[3]]);
+});
+
+test('a later competency that already has a session row is left out of the plan', function (): void {
+    config(['interview.tavus.single_session' => true, 'conversation.prompt_source' => 'baseline']);
+    cpcFake();
+    [$org, $project, $participant, $codes] = cpcFixture(3);
+    cpcComplete($org, $project, $participant, [$codes[2]]);
+
+    cpcStart($participant)->assertStatus(201)->assertJsonPath('question_context.competency_code', $codes[0]);
+
+    expect(array_column(cpcCreatingRow($org, $participant, $codes[0])->conversation_plan['competencies'], 'code'))->toBe([$codes[0], $codes[1]]);
 });
