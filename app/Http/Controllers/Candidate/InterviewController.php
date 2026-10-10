@@ -47,6 +47,7 @@ use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\AvatarSilenceDetector;
+use App\Support\Interview\ProviderRefLifetime;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Interview\SingleSessionGate;
@@ -99,6 +100,7 @@ class InterviewController extends Controller
         private readonly SingleSessionGate $singleSessionGate,
         private readonly SharedProviderRefGuard $siblings,
         private readonly AdvanceOnLiveConversation $advanceOnLiveConversation,
+        private readonly ProviderRefLifetime $refLifetime,
     ) {}
 
     // =========================================================================
@@ -150,7 +152,7 @@ class InterviewController extends Controller
      * interviewed, `429 provider_busy` means the provider is busy and the call can be retried, and `502`
      * means the provider failed.
      *
-     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, conversation_id?: string, continuation?: array{conversation_id: string, competency_code: string}}
+     * @scramble-return array{session_id: int, provider: string, provider_token: string|null, conversation_url: string|null, audio_only: bool, question_context: array{competency_code: string, question_index: int, end_phrase: string, final_phrase: string, prompt_version: string|null, competency_ordinal: int|null, total_competencies: int|null}, conversation_id?: string, conversation_ttl_seconds?: int, continuation?: array{conversation_id: string, competency_code: string}}
      *
      * @throws \Throwable
      */
@@ -1336,7 +1338,18 @@ class InterviewController extends Controller
 
         // A sibling row still on this conversation keeps it alive (design N12): the row
         // moves to its fresh ref below, and the old conversation is that sibling's to end.
-        if ($oldRef !== null && ! $this->siblings->hasLiveSibling((int) $session->organization_id, $session->provider, $oldRef, $session->id)) {
+        $hasLiveSibling = $oldRef !== null && $this->siblings->hasLiveSibling((int) $session->organization_id, $session->provider, $oldRef, $session->id);
+
+        // A Tavus conversation at its ceiling is the mid-competency expiry (design N6/N12): the
+        // crossfade may still be showing it, so its release is deferred like a refused
+        // continuation's, with the refs captured now. The fresh ref below is a different conversation.
+        $deferred = $oldRef !== null && ! $hasLiveSibling && $session->provider === 'tavus'
+            && $this->refLifetime->isNearCeiling($session, $oldRef);
+        if ($deferred) {
+            $this->deferProviderRelease($session);
+        }
+
+        if ($oldRef !== null && ! $hasLiveSibling && ! $deferred) {
             // The outgoing transcript was already harvested by start(),
             // before composition. Without that harvest a resume would
             // destroy everything said before it: each resume issues a NEW
@@ -1560,6 +1573,7 @@ class InterviewController extends Controller
             $ctx->competencyOrdinal,
             $ctx->totalCompetencies,
             conversationId: $conversationPlan === null ? null : $token->provider_session_ref,
+            conversationTtlSeconds: $conversationPlan === null ? null : $this->refLifetime->ceilingSeconds($session),
         );
     }
 

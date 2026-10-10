@@ -41,9 +41,9 @@
              worker its own copy, so a full run died with "Allowed memory size
              of 134217728 bytes exhausted" long before any assertion failed.
              A cap, not a reservation: PHP still allocates only what it uses,
-             and 2G keeps a parallel run inside an 8GB machine. Set here rather
-             than in php.ini so artisan test, its parallel workers and a bare
-             vendor/bin/pest all get it. Passing the limit on the command line
+             and 4G leaves room for the coverage report merge, which outgrew 2G
+             on the CI runner on 2026-10-10. Set here rather than in php.ini so artisan test,
+             its parallel workers and a bare vendor/bin/pest all get it. Passing the limit on the command line
              does NOT reach the child process artisan test spawns. -->
         <ini name="memory_limit" value="4G"/>
         <env name="APP_ENV" value="testing"/>

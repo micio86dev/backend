@@ -297,3 +297,105 @@ test('a continuation 201 carries the prompt version of the conversation it joins
         ->assertStatus(201)
         ->assertJsonPath('question_context.prompt_version', $version);
 });
+
+/** Age the live conversation: move every period of its ref `$seconds` into the past. */
+function cgAge(array $s, int $seconds): void
+{
+    casInTenant($s['org'], fn () => InterviewSessionLivePeriod::query()
+        ->where('provider_session_ref', $s['ref'])
+        ->update(['started_at' => now()->subSeconds($seconds)]));
+}
+
+test('a conversation near its ceiling is refused: the ordinary issue runs and the old ref is released only through a deferred job', function (): void {
+    $s = cgScenario();
+    cgAge($s, 3200); // default ceiling 3600, headroom 480
+    $creates = cgCreates();
+    $teardownsBefore = count(cgTeardowns());
+
+    $response = cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])->assertStatus(201);
+
+    $response->assertJsonMissingPath('continuation');
+    expect(cgCreates())->toBe($creates + 1)
+        ->and(count(cgTeardowns()))->toBe($teardownsBefore); // nothing ended inline
+    Queue::assertPushed(
+        ReleaseEndedProviderSessionJob::class,
+        fn (ReleaseEndedProviderSessionJob $job): bool => $job->providerSessionRef === $s['ref'] && $job->sessionId === $s['owner']->id
+            && $job->delay === (int) config('interview.provider_release_delay_seconds'),
+    );
+
+    // The deferred job ends the OLD conversation only; the freshly issued one stays releasable by nobody.
+    $newRef = (string) casInTenant($s['org'], fn () => InterviewSession::findOrFail($response->json('session_id'))->provider_session_ref);
+    expect($newRef)->not->toBe($s['ref']);
+    cgRunRelease(Queue::pushed(ReleaseEndedProviderSessionJob::class)->last());
+    expect(cgTeardowns())->toContain("/v2/conversations/{$s['ref']}/end")
+        ->and(cgTeardowns())->not->toContain("/v2/conversations/{$newRef}/end");
+    casInTenant($s['org'], function () use ($s, $newRef): void {
+        expect(InterviewSession::where('provider_session_ref', $s['ref'])->whereNull('provider_released_at')->count())->toBe(0)
+            ->and(InterviewSession::where('provider_session_ref', $newRef)->whereNotNull('provider_released_at')->count())->toBe(0);
+    });
+});
+
+test('a conversation inside its ceiling still gets a continuation and dispatches no release', function (): void {
+    $s = cgScenario();
+    cgAge($s, 2000);
+    Queue::fake(); // forget the /end release deferred by the scenario
+
+    cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])->assertStatus(201)->assertJsonPath('continuation.conversation_id', $s['ref']);
+
+    Queue::assertNotPushed(ReleaseEndedProviderSessionJob::class);
+});
+
+test('a template cap lowers the ceiling the grant honours', function (): void {
+    $s = cgScenario();
+    casInTenant($s['org'], fn () => AvatarTemplate::whereKey($s['project']->avatar_template_id)->update(['config' => json_encode(['maxCallDurationSec' => 900])]));
+    cgAge($s, 500); // 500 + 480 >= 900, yet far inside the platform 3600
+
+    cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])->assertStatus(201)->assertJsonMissingPath('continuation');
+});
+
+test('a mid-competency resume of an expired conversation defers the release of the old ref', function (): void {
+    $s = cgScenario();
+    // The second competency is live on the same conversation, then the browser reloads near the ceiling.
+    $granted = cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])->assertStatus(201);
+    cgAge($s, 3200);
+    Queue::fake();
+    $teardownsBefore = count(cgTeardowns());
+
+    $resumed = cgPost($s['participant'], 'start')->assertStatus(201);
+
+    expect($resumed->json('session_id'))->toBe($granted->json('session_id'))
+        ->and(count(cgTeardowns()))->toBe($teardownsBefore);
+    Queue::assertPushed(
+        ReleaseEndedProviderSessionJob::class,
+        fn (ReleaseEndedProviderSessionJob $job): bool => $job->providerSessionRef === $s['ref']
+            && $job->delay === (int) config('interview.provider_release_delay_seconds'),
+    );
+    expect(casInTenant($s['org'], fn () => InterviewSession::findOrFail($granted->json('session_id'))->provider_session_ref))->not->toBe($s['ref']);
+});
+
+test('a resume far from the ceiling still tears the old ref down inline', function (): void {
+    $s = cgScenario();
+    cgPost($s['participant'], 'start', ['live_conversation_id' => $s['ref']])->assertStatus(201);
+    Queue::fake();
+    $teardownsBefore = count(cgTeardowns());
+
+    cgPost($s['participant'], 'start')->assertStatus(201);
+
+    expect(count(cgTeardowns()))->toBe($teardownsBefore + 1);
+    Queue::assertNotPushed(ReleaseEndedProviderSessionJob::class);
+});
+
+test('a fresh multi-competency response carries the ceiling the client may rely on', function (): void {
+    $org = casOrg();
+    [$project] = casProject($org, 3);
+    $project->forceFill(['avatar_template_id' => AvatarTemplate::create([
+        'name' => 'ttl '.uniqid(), 'provider' => 'tavus', 'config' => ['maxCallDurationSec' => 900],
+    ])->id])->save();
+    $participant = casParticipant($org, $project, 'in_attesa');
+
+    $fresh = cgPost($participant, 'start')->assertStatus(201)->assertJsonPath('conversation_ttl_seconds', 900);
+
+    cgPost($participant, 'end', ['session_id' => $fresh->json('session_id'), 'ended_reason' => 'completed'])->assertOk();
+    cgPost($participant, 'start', ['live_conversation_id' => $fresh->json('conversation_id')])->assertStatus(201)
+        ->assertJsonMissingPath('conversation_ttl_seconds');
+});

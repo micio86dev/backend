@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\Interview;
 
+use App\Jobs\ReleaseEndedProviderSessionJob;
 use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
+use App\Support\Interview\ProviderRefLifetime;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Interview\SingleSessionGate;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Grants the next competency a continuation on a Tavus conversation that is already live
@@ -33,7 +36,10 @@ use Illuminate\Support\Facades\DB;
  * A failure inside the transaction propagates; the caller answers its usual 500, and no ref leaks
  * because none was created.
  *
- * Not decided here: the conversation's age against the provider ceiling (API-05).
+ * Rule 5 (N6/N7): a conversation near its ceiling is refused, and its release is DEFERRED through the
+ * existing job (never inline: the client's crossfade still shows it). The refs travel as captured;
+ * the issue path that follows creates a conversation with a DIFFERENT ref, so the job's sibling
+ * guard and the `provider_released_at` marker concern the old ref only.
  */
 final class AdvanceOnLiveConversation
 {
@@ -41,6 +47,7 @@ final class AdvanceOnLiveConversation
         private readonly SingleSessionGate $gate,
         private readonly SharedProviderRefGuard $siblings,
         private readonly SessionLiveClock $liveClock,
+        private readonly ProviderRefLifetime $lifetime,
     ) {}
 
     /**
@@ -78,6 +85,12 @@ final class AdvanceOnLiveConversation
             ->first(fn (array $candidate): bool => $candidate['code'] === $next['competency_code']);
 
         if ($entry === null || $this->siblings->hasLiveSibling($organizationId, 'tavus', $liveConversationId, $owner->id)) {
+            return null;
+        }
+
+        if (! $this->released($organizationId, $liveConversationId) && $this->lifetime->isNearCeiling($owner, $liveConversationId)) {
+            $this->deferRelease($owner, $liveConversationId);
+
             return null;
         }
 
@@ -133,5 +146,21 @@ final class AdvanceOnLiveConversation
             ->where('provider_session_ref', $ref)
             ->whereNotNull('provider_released_at')
             ->exists();
+    }
+
+    private function deferRelease(InterviewSession $owner, string $ref): void
+    {
+        try {
+            ReleaseEndedProviderSessionJob::dispatch(
+                $owner->id,
+                (int) $owner->organization_id,
+                'tavus',
+                $ref,
+                $owner->provider_context_ref,
+            )->delay((int) config('interview.provider_release_delay_seconds'))->afterCommit();
+        } catch (\Throwable $e) {
+            // The conversation is at its ceiling: the provider ends it itself. Never fail the start.
+            Log::warning('interview.provider_release.defer_failed', ['session_id' => $owner->id, 'exception' => $e::class]);
+        }
     }
 }
