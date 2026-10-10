@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Candidate;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
 use App\Actions\Interview\BuildInterviewSessionResponse;
+use App\Actions\Interview\ComposeCompetencyPrompt;
 use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\ResolveInterviewDirective;
 use App\Actions\Interview\SettleParticipantCompletion;
@@ -14,7 +15,6 @@ use App\DTOs\Conversation\ComposedPrompt;
 use App\DTOs\Conversation\SpokenOpening;
 use App\Enums\ApiKeyMode;
 use App\Enums\AssessmentType;
-use App\Enums\PromptSource;
 use App\Enums\ProviderFailureClass;
 use App\Events\CompetencySessionEnded;
 use App\Exceptions\Conversation\CompositionException;
@@ -32,11 +32,8 @@ use App\Models\InterviewSession;
 use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ProjectQuestion;
-use App\Models\Role;
 use App\Models\Utterance;
 use App\Services\Conversation\OpeningTextComposer;
-use App\Services\Conversation\PromptSetResolver;
-use App\Services\Conversation\SystemPromptComposer;
 use App\Services\ConversationLlm\InterviewSessionLlmSnapshot;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\MockProvider;
@@ -79,7 +76,7 @@ class InterviewController extends Controller
     use ResolvesOwnedSession;
 
     public function __construct(
-        private readonly SystemPromptComposer $composer,
+        private readonly ComposeCompetencyPrompt $composeCompetencyPrompt,
         private readonly OpeningTextComposer $openingComposer,
         private readonly SettleParticipantCompletion $settleCompletion,
         private readonly ResolveInterviewDirective $resolveDirective,
@@ -93,7 +90,6 @@ class InterviewController extends Controller
         private readonly AvatarSilenceDetector $avatarSilence,
         private readonly ProviderPreflight $preflight,
         private readonly ReleaseProviderSession $releaseEnded,
-        private readonly PromptSetResolver $promptSets,
     ) {}
 
     // =========================================================================
@@ -903,9 +899,8 @@ class InterviewController extends Controller
     }
 
     /**
-     * Compose the system prompt for the next competency.
+     * Compose the system prompt for the next competency, or refuse with the 422.
      *
-     * Returns a ComposedPrompt on success, or a 422 JsonResponse on failure.
      * This MUST be called BEFORE createOrResumeSession() and BEFORE issue() so that
      * a composition failure leaves zero InterviewSession rows and makes zero provider calls.
      *
@@ -917,28 +912,6 @@ class InterviewController extends Controller
      * Only composition problems are a 422. Anything else thrown while resolving the stored
      * prompt set (a database outage) propagates as a 500 on purpose: it is not a composition
      * error, and it must never silently fall back to the baseline text.
-     *
-     * REQ: M-3 controller wiring (C8 Phase 5 — task 5.5)
-     * RV-3: provider field client confirmation required before live deploy.
-     *
-     * `Project $project` is non-nullable (framework-catalogue-authoring
-     * PR3b, H11 dead-code finding): its only call site (`start()`) already
-     * narrowed `$project` to non-null before calling this method, so the
-     * former `?Project` parameter and its `=== null` branch were
-     * unreachable — never exercised by any test, and never reachable by any
-     * real request.
-     *
-     * `$competency` is resolved ONCE by the caller and passed in (gga review
-     * finding on the H11 hoist, second pass): `start()` already resolves
-     * this SAME `(code, revisionId)` pair as `$nextCompetencyRow` to compute
-     * `$primaryQuestions` — this method used to re-resolve the identical
-     * row a second time for the same request.
-     *
-     * `$followUpBudget` and `$spokenOpening` are also resolved by `start()`
-     * (framework-catalogue-authoring PR7, D7): the budget is reused when the
-     * session's `follow_up_budget` snapshot is written, and the spoken
-     * opening is what `start()` hands the opening composer, so the prompt
-     * and the opening agree on which primary was spoken.
      *
      * @param  list<string>  $primaryQuestions
      */
@@ -953,91 +926,18 @@ class InterviewController extends Controller
         SpokenOpening $spokenOpening,
         ?string $advancePhrase = null,
     ): ComposedPrompt|JsonResponse {
-        if ($revisionId === null) {
-            // The project's own pin did not resolve (`CatalogueRevisionResolver::
-            // tryForProject()` — framework-catalogue-authoring PR3b, H1). Treated
-            // identically to "role/competency not found in catalog" below: /start
-            // hard-fails 422.
-            // Never falls back to "latest published" here — that would pin an
-            // already-created project onto whatever revision happens to be
-            // newest right now (CLAUDE.md ruling 3).
-            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        // Resolve the role from the assessment type, never from whether role_code
-        // happens to be null. `standard` resolves project.role_code scoped to the
-        // project's OWN pinned revision (framework-catalogue-authoring PR3b, H1) —
-        // a bare `where('code', ...)` would resolve whichever of the baseline/draft
-        // pair Postgres happens to return first once a draft sharing this code
-        // exists. `potential` carries no role by rule and composes against the
-        // role-less BARS rows (`role_id IS NULL`). The match has NO default arm on
-        // purpose: a new AssessmentType case must fail here, loudly, instead of
-        // silently composing against the wrong indicator set.
-        $roleId = match ($assessmentType) {
-            AssessmentType::Standard => Role::where('code', $project->role_code)
-                ->where('revision_id', $revisionId)
-                ->first()?->id,
-            AssessmentType::Potential => null,
-        };
-
-        if ($assessmentType === AssessmentType::Standard && $roleId === null) {
-            // role_code set on project but not found in catalog → composition failure.
-            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        if ($competency === null) {
-            // Resolved by the caller from the SAME (code, revisionId) pair;
-            // null means "not found in catalog" there too.
-            return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
         try {
-            // The ACTIVE stored prompt set (db-driven-conversation-prompts, N-9),
-            // resolved INSIDE this try so that no set, an ambiguous or tampered
-            // one, a missing locale and an invalid source flag all end in the
-            // catch below: 422, no session, no provider call, and no fallback to
-            // other text. `baseline` is the break-glass and reads no table.
-            $resolved = PromptSource::configured() === PromptSource::Db
-                ? $this->promptSets->resolveActive(
-                    $project->language,
-                    $competencyCode,
-                    $assessmentType === AssessmentType::Standard ? $project->role_code : null,
-                )
-                : null;
-
-            $composed = $this->composer->compose(
-                competencyCode: $competencyCode,
-                roleId: $roleId,
-                competencyId: $competency->id,
-                projectLocale: $project->language,
-                followUpBudget: $followUpBudget,
-                nudgeMinChars: $project->nudge_min_chars,
-                // The sentence the avatar must SPEAK to end its turn. Without it
-                // the prompt told it to utter a placeholder it had never been
-                // given, so no question ever ended by itself.
-                advancePhrase: $advancePhrase,
-                // What the OPERATOR wrote for this competency — the CALLER's
-                // own `$primaryQuestions` (framework-catalogue-authoring
-                // PR3b, H11 / PR7, D7): hoisted to `start()`, computed once
-                // against the SAME (project, competency) pair this method
-                // resolves via `$competencyCode`/`$revisionId`, rather than
-                // queried a second time here. These ARE the primaries, never
-                // additive to `$followUpBudget` — see SystemPromptComposer.
-                primaryQuestions: $primaryQuestions,
-                spokenOpening: $spokenOpening,
-                revisionId: $revisionId,
-                templates: $resolved?->templates,
-                // At most one body, already chosen (role-specific over role-less) and checked
-                // against the override contract by the resolver. The `baseline` source reads
-                // no table, so it has none.
-                override: $resolved?->override,
+            return $this->composeCompetencyPrompt->handle(
+                $project,
+                $assessmentType,
+                $competencyCode,
+                $revisionId,
+                $competency,
+                $primaryQuestions,
+                $followUpBudget,
+                $spokenOpening,
+                $advancePhrase,
             );
-
-            // `version` stays the configured string (the client sees it); the set
-            // the text came from travels beside it for the durable stamp.
-            return $resolved === null
-                ? $composed
-                : new ComposedPrompt($composed->text, $composed->version, $resolved->stampRef());
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (PromptTemplateUnresolvableException $e) {
