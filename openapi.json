@@ -6580,6 +6580,20 @@
                 "tags": [
                     "Interview"
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "live_conversation_id": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "",
@@ -6655,6 +6669,21 @@
                                         },
                                         "conversation_id": {
                                             "type": "string"
+                                        },
+                                        "continuation": {
+                                            "type": "object",
+                                            "properties": {
+                                                "conversation_id": {
+                                                    "type": "string"
+                                                },
+                                                "competency_code": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "conversation_id",
+                                                "competency_code"
+                                            ]
                                         }
                                     },
                                     "required": [
