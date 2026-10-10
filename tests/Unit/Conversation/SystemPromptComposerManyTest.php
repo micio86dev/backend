@@ -347,11 +347,12 @@ test('rule 2 quotes the steering phrase the frontend sends, ADVANCE_TEMPLATE in 
     $role = Role::factory()->create(['code' => 'MANY_ROLE']);
     $text = manyComposer()->composeMany([manyInput('CSF', $role)])->text;
 
-    // frontend: 'The candidate has finished that topic. Begin topic code %s now.'
-    $steering = sprintf('The candidate has finished that topic. Begin topic code %s now.', 'STG');
+    // Mirror of the frontend template (cross-repo reads are fragile, so a change there
+    // must be copied here): the sentence after the fixed preamble is what rule 2 quotes.
+    $template = 'The candidate has finished that topic. Begin topic code %s now.';
+    $quoted = substr($template, strlen('The candidate has finished that topic. '));
 
-    expect($text)->toContain('says "Begin topic code XYZ now."')
-        ->and($steering)->toContain('Begin topic code STG now.');
+    expect($text)->toContain('says "'.sprintf($quoted, 'XYZ').'"');
 });
 
 test('the single-competency prompt carries no global rules', function (): void {
