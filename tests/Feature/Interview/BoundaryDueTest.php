@@ -126,10 +126,13 @@ test('the threshold uses the row follow_up_budget snapshot, not the global confi
 });
 
 test('a row without a snapshot falls back to the configured budget', function (): void {
-    config(['conversation.followup_budget' => 0, 'conversation.boundary_grace_turns' => 1]);
+    config(['conversation.followup_budget' => 3, 'conversation.boundary_grace_turns' => 2]);
     [$session, $token] = boundaryDueSession(budget: null);
-    boundaryDueSeed($session, 1);
+    boundaryDueSeed($session, 4);
 
+    // Threshold: 1 + 3 (config) + 2 (config) = 6. At 5 turns (4 seeded + 1 posted), should be false.
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false]);
+    // At 6 turns, should be true.
     boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true]);
 });
 
