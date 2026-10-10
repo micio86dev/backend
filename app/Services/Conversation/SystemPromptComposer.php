@@ -271,6 +271,7 @@ final class SystemPromptComposer
 
         $text = self::GLOBAL_RULES;
         $covered = [];
+        $stored = [];
 
         foreach ($inputs as $input) {
             $segment = $this->compose(
@@ -298,6 +299,11 @@ final class SystemPromptComposer
 
             $text = $candidate;
             $covered[] = $code;
+            $stored[] = [
+                'code' => $code,
+                'primary_questions' => $input->primaryQuestions,
+                'follow_up_budget' => $input->followUpBudget,
+            ];
         }
 
         if ($covered === []) {
@@ -313,6 +319,7 @@ final class SystemPromptComposer
             coveredCodes: $covered,
             truncated: count($covered) < count($inputs),
             chars: mb_strlen($text),
+            competencies: $stored,
         );
     }
 
