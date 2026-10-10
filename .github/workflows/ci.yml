@@ -176,8 +176,15 @@ jobs:
       # phpstan step above already carries `--memory-limit=1G` for the same
       # class of reason. Each parallel worker is its own PHP process and takes
       # the same limit.
+      #
+      # 2026-10-10: raised from 2G to 4G. The suite grew past 8,900 tests and
+      # the PHP report merge (`Report/PHP.php`, which unserialises every worker's
+      # coverage file into the parent) died with "Allowed memory size of
+      # 2147483648 bytes exhausted (tried to allocate 433820176 bytes)" AFTER
+      # all tests had passed. The runner has 16 GB; the limit is a ceiling, not
+      # an allocation.
       - name: Run tests with coverage (parallel, ≥85%)
-        run: php -d memory_limit=2G artisan test --parallel --coverage --min=85
+        run: php -d memory_limit=4G artisan test --parallel --coverage --min=85
 
       # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
       - name: Generate OpenAPI spec
