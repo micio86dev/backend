@@ -6670,6 +6670,9 @@
                                         "conversation_id": {
                                             "type": "string"
                                         },
+                                        "conversation_ttl_seconds": {
+                                            "type": "integer"
+                                        },
                                         "continuation": {
                                             "type": "object",
                                             "properties": {
