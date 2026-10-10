@@ -208,3 +208,39 @@ test('a failing transaction rolls everything back and surfaces the failure', fun
     expect(fn () => aolAdvance($s, 'conv-1'))->toThrow(RuntimeException::class)
         ->and(aolRowCount())->toBe(1);
 });
+
+test('a release that lands after the first read is seen once the owner row is locked', function (): void {
+    $s = aolScenario();
+    $fired = false;
+    // Seam: the `for update` read is the lock; a release committed right after it (as a concurrent
+    // job would between the action's first read and its insert) must be seen by the re-check.
+    DB::listen(function ($query) use (&$fired): void {
+        if (! $fired && str_contains(strtolower($query->sql), 'for update')) {
+            $fired = true;
+            DB::table('interview_sessions')->update(['provider_released_at' => now()]);
+        }
+    });
+
+    expect(aolAdvance($s, 'conv-1'))->toBeNull()
+        ->and($fired)->toBeTrue()
+        ->and(aolRowCount())->toBe(1);
+});
+
+test('a next row that lands after the first read is seen once the owner row is locked', function (): void {
+    $s = aolScenario();
+    $fired = false;
+    DB::listen(function ($query) use (&$fired, $s): void {
+        if (! $fired && str_contains(strtolower($query->sql), 'for update')) {
+            $fired = true;
+            DB::table('interview_sessions')->insert([
+                'organization_id' => $s['org']->id, 'participant_id' => $s['participant']->id,
+                'project_id' => $s['project']->id, 'framework_version_id' => $s['project']->framework_version_id,
+                'provider' => 'tavus', 'status' => 'pending', 'competency_code' => $s['codes'][1],
+                'question_index' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+    });
+
+    expect(aolAdvance($s, 'conv-1'))->toBeNull()->and($fired)->toBeTrue();
+    expect(aolRowCount())->toBe(2);
+});

@@ -77,15 +77,22 @@ final class AdvanceOnLiveConversation
         $entry = collect($owner->conversation_plan['competencies'] ?? [])
             ->first(fn (array $candidate): bool => $candidate['code'] === $next['competency_code']);
 
-        if ($entry === null
-            || InterviewSession::query()->where('participant_id', $participant->id)->where('competency_code', $next['competency_code'])->exists()
-            || $this->released($organizationId, $liveConversationId)
-            || $this->siblings->hasLiveSibling($organizationId, 'tavus', $liveConversationId, $owner->id)) {
+        if ($entry === null || $this->siblings->hasLiveSibling($organizationId, 'tavus', $liveConversationId, $owner->id)) {
             return null;
         }
 
         try {
-            return DB::transaction(function () use ($participant, $project, $owner, $entry, $next, $liveConversationId): InterviewSession {
+            return DB::transaction(function () use ($participant, $project, $owner, $entry, $next, $liveConversationId, $organizationId): ?InterviewSession {
+                // Serialise with a release and a concurrent /start on the owner row, then decide on
+                // what is true after the lock: a release or a next row that landed since the first
+                // read must refuse the grant.
+                InterviewSession::query()->whereKey($owner->id)->lockForUpdate()->first();
+
+                if ($this->released($organizationId, $liveConversationId)
+                    || InterviewSession::query()->where('participant_id', $participant->id)->where('competency_code', $next['competency_code'])->exists()) {
+                    return null;
+                }
+
                 $row = new InterviewSession;
                 $row->forceFill([
                     'participant_id' => $participant->id,
