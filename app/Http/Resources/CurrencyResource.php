@@ -12,7 +12,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * A catalogue currency. `rate_per_usd` is a decimal STRING (never a float): the
  * rate has six decimals and a float would round-trip it lossily.
  *
- * Admin-only under T-EXPOSE-001: no public serializer carries these keys.
+ * Visible to every authenticated role (`GET /api/currencies`) and to the superadmin
+ * catalogue, never in the public `/v1` API (T-EXPOSE-001).
  *
  * @mixin Currency
  */

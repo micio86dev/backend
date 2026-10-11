@@ -252,10 +252,10 @@ class AppServiceProvider extends ServiceProvider
         // belongs to no organization, so no org-scoped policy describes who may
         // manage one. Published as `avatarTemplates.manageGlobal`; the platform
         // controller repeats the check inline, this is only the rendering hint.
+        Gate::define('manageGlobalAvatarTemplates', static fn (User $user): bool => $user->is_superadmin === true);
+
         // organization-currencies D10 — same shape: the catalogue is platform data. Published as `currencies.manage`.
         Gate::define('manageCurrencies', static fn (User $user): bool => $user->is_superadmin === true);
-
-        Gate::define('manageGlobalAvatarTemplates', static fn (User $user): bool => $user->is_superadmin === true);
 
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //

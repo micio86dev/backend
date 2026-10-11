@@ -48,6 +48,8 @@ class UpdateCurrencyRequest extends FormRequest
      */
     public function after(): array
     {
+        // One rule, two encodings: activation needs a rate. Here the rate may already be stored;
+        // {@see StoreCurrencyRequest::after()} requires it in the body.
         return [function ($validator): void {
             if (! $this->boolean('is_active') || $this->has('rate_per_usd')) {
                 return;
