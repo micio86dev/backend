@@ -30,9 +30,9 @@ class OrganizationResource extends JsonResource
      * return bigint as string, and the contract must be true regardless of
      * that PDO detail.
      *
-     * @return array{id: int, name: string, slug: string, primary_color: string|null, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     * @return array{id: int, name: string, slug: string, primary_color: string|null, currency_code: string, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      *
-     * @scramble-return array{id: int, name: string, slug: string, primary_color: string|null, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
+     * @scramble-return array{id: int, name: string, slug: string, primary_color: string|null, currency_code: string, logo_url: string|null, default_webhook_url: string|null, default_webhook_events: list<string>|null, has_default_webhook_secret: bool, created_at: string|null, updated_at: string|null}
      */
     public function toArray(Request $request): array
     {
@@ -68,6 +68,8 @@ class OrganizationResource extends JsonResource
             // file was stored correctly the whole time. An S3-style disk
             // already answers absolutely and passes through untouched.
             'logo_url' => $organization->absoluteLogoUrl(),
+            // Always present; USD for an organization that never chose. Display only.
+            'currency_code' => $organization->currency_code,
             'default_webhook_url' => $organization->default_webhook_url,
             'default_webhook_events' => $organization->default_webhook_events,
             // default_webhook_secret intentionally excluded (hidden + encrypted) —
