@@ -15,6 +15,7 @@ use App\Models\Competency;
 use App\Models\ConversationPromptFragment;
 use App\Models\ConversationPromptOverride;
 use App\Models\ConversationPromptSet;
+use App\Models\Currency;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
 use App\Models\FrameworkGap;
@@ -91,6 +92,10 @@ test('all non-excluded models with organization_id extend TenantModel', function
         // every organization must resolve the SAME registry row for the SAME
         // vendor model id. See design.md D1.
         LlmModel::class,
+        // organization-currencies — Currency is a PLATFORM catalogue (ISO code,
+        // symbol, a superadmin-maintained rate). It has no `organization_id`:
+        // every organization resolves the same row, like LlmModel's rate card.
+        Currency::class,
         // LlmCredential joined LlmModel here on 2026-09-14, and for the
         // matching reason. It was a TenantModel — an organization's
         // bring-your-own key — until that was REVERSED: the key is BEAI's now,
