@@ -41,7 +41,13 @@ final class CreateOrganization
     {
         return DB::transaction(function () use ($name, $slug, $actor, $currencyCode): Organization {
             // Null keeps the column default (USD); refresh() loads it into the model.
-            $organization = Organization::create(['name' => $name, 'slug' => $slug, ...($currencyCode === null ? [] : ['currency_code' => $currencyCode])])->refresh();
+            $attributes = ['name' => $name, 'slug' => $slug];
+
+            if ($currencyCode !== null) {
+                $attributes['currency_code'] = $currencyCode;
+            }
+
+            $organization = Organization::create($attributes)->refresh();
 
             app(PermissionRegistrar::class)->forgetCachedPermissions();
 

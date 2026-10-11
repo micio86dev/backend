@@ -7295,7 +7295,7 @@
             },
             "patch": {
                 "operationId": "organization.update",
-                "description": "Accepts `name`, the default webhook settings, `primary_color` and `currency_code` (active catalogue codes only). Any other field in the body is\nignored.",
+                "description": "Accepts `name`, the default webhook settings, `primary_color` and\n`currency_code` (active catalogue codes only). Any other field in the body\nis ignored.",
                 "summary": "Update the organization",
                 "tags": [
                     "Organization"

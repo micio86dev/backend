@@ -55,6 +55,7 @@
 # ----------------
 #   php artisan beai:deploy              # both steps, as a deploy runs them
 #   php artisan beai:sync-llm-registry   # catalogue only; idempotent
+#   php artisan beai:sync-currency-rates # EUR rate if none stored; never overwrites
 set -eu
 
 exec "$@"

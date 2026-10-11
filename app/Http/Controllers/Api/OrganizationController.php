@@ -61,8 +61,9 @@ class OrganizationController extends Controller
     /**
      * Update the organization.
      *
-     * Accepts `name`, the default webhook settings, `primary_color` and `currency_code` (active catalogue codes only). Any other field in the body is
-     * ignored.
+     * Accepts `name`, the default webhook settings, `primary_color` and
+     * `currency_code` (active catalogue codes only). Any other field in the body
+     * is ignored.
      */
     #[Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function update(UpdateOrganizationRequest $request): JsonResponse

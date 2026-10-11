@@ -33,5 +33,8 @@ class DatabaseSeeder extends Seeder
 
         // C3 Framework Catalog — idempotent global catalog seed
         $this->call(FrameworkCatalogSeeder::class);
+
+        // Owner-confirmed EUR rate; no-op when a rate is already stored.
+        $this->call(CurrencyRatesSeeder::class);
     }
 }

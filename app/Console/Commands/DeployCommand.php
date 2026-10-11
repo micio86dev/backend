@@ -53,6 +53,10 @@ use Throwable;
  *    exception are absorbed — a connection error surfaces as the latter, so
  *    handling only the former would make the rule half-true.
  *
+ * 4. `beai:sync-currency-rates` is NON-FATAL, last: it sets the owner-confirmed
+ *    EUR rate only while none is stored. Recover by hand with
+ *    `php artisan beai:sync-currency-rates`.
+ *
  * MIGRATIONS STILL DO NOT BELONG IN THE ENTRYPOINT
  * ------------------------------------------------
  * `preDeployCommand` runs ONCE per deploy in its own container. An entrypoint
@@ -129,6 +133,21 @@ class DeployCommand extends Command
             // Non-fatal by design — see the class docblock.
             $this->warn('[deploy] WARNING: registry sync failed — continuing anyway.');
             $this->warn('[deploy] The model picker may be empty until `php artisan beai:sync-llm-registry` succeeds.');
+        }
+
+        $this->line('[deploy] syncing the confirmed currency rates…');
+
+        $currencyExit = $this->syncCurrencyRates();
+
+        if ($currencyExit === self::SUCCESS) {
+            $this->info('[deploy] currency rates OK');
+        } elseif ($currencyExit === SyncCurrencyRatesCommand::EXIT_SKIPPED) {
+            $this->warn('[deploy] WARNING: currency rates skipped — the EUR row is missing, nothing was set. Continuing anyway.');
+            $this->warn('[deploy] Run `php artisan beai:sync-currency-rates` once the currencies table is populated.');
+        } else {
+            // Non-fatal by design, same rule as the registry sync.
+            $this->warn('[deploy] WARNING: currency rates failed — continuing anyway.');
+            $this->warn('[deploy] EUR stays inactive until `php artisan beai:sync-currency-rates` succeeds.');
         }
 
         $this->info('[deploy] done');
@@ -300,6 +319,23 @@ class DeployCommand extends Command
             $this->warn('[deploy] '.$e::class.': '.$e->getMessage());
 
             return false;
+        }
+    }
+
+    /**
+     * Set the owner-confirmed EUR rate when none is stored (it never
+     * overwrites a superadmin's rate). NON-FATAL, same rule as the registry
+     * sync: catalogue data, not schema. Recover by hand with
+     * `php artisan beai:sync-currency-rates`.
+     */
+    private function syncCurrencyRates(): int
+    {
+        try {
+            return $this->call('beai:sync-currency-rates');
+        } catch (Throwable $e) {
+            $this->warn('[deploy] '.$e::class.': '.$e->getMessage());
+
+            return self::FAILURE;
         }
     }
 }
