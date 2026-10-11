@@ -8,18 +8,21 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 
-final class RecordingCurrencyRatesStub extends Command
+final class DeployStepRecorder
 {
     /** @var list<string> */
     public static array $order = [];
+}
 
+final class RecordingCurrencyRatesStub extends Command
+{
     protected $signature = 'beai:sync-currency-rates';
 
     protected $description = 'Stub that records invocation.';
 
     public function handle(): int
     {
-        self::$order[] = 'currency-rates';
+        DeployStepRecorder::$order[] = 'currency-rates';
 
         return self::SUCCESS;
     }
@@ -33,7 +36,7 @@ final class OrderedRegistryStub extends Command
 
     public function handle(): int
     {
-        RecordingCurrencyRatesStub::$order[] = 'registry';
+        DeployStepRecorder::$order[] = 'registry';
 
         return self::SUCCESS;
     }
@@ -107,17 +110,27 @@ it('reports what happened from the artisan command', function (): void {
     $this->artisan('beai:sync-currency-rates')->expectsOutputToContain('already set')->assertSuccessful();
 
     DB::table('currencies')->where('code', 'EUR')->delete();
-    $this->artisan('beai:sync-currency-rates')->expectsOutputToContain('skipped')->assertSuccessful();
+    $this->artisan('beai:sync-currency-rates')->expectsOutputToContain('skipped')->assertExitCode(2);
+});
+
+it('reports a skipped rate truthfully from beai:deploy without aborting it', function (): void {
+    DB::table('currencies')->where('code', 'EUR')->delete();
+
+    $this->artisan('beai:deploy')
+        ->expectsOutputToContain('[deploy] WARNING: currency rates skipped')
+        ->doesntExpectOutputToContain('[deploy] currency rates OK')
+        ->expectsOutputToContain('[deploy] done')
+        ->assertSuccessful();
 });
 
 it('runs from beai:deploy after the registry sync', function (): void {
-    RecordingCurrencyRatesStub::$order = [];
+    DeployStepRecorder::$order = [];
     app(Kernel::class)->registerCommand(new OrderedRegistryStub);
     app(Kernel::class)->registerCommand(new RecordingCurrencyRatesStub);
 
     $this->artisan('beai:deploy')->assertSuccessful();
 
-    expect(RecordingCurrencyRatesStub::$order)->toBe(['registry', 'currency-rates']);
+    expect(DeployStepRecorder::$order)->toBe(['registry', 'currency-rates']);
 });
 
 it('does not abort the deploy when the rate step fails or throws', function (Command $stub): void {

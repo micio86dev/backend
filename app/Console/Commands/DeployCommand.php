@@ -137,8 +137,13 @@ class DeployCommand extends Command
 
         $this->line('[deploy] syncing the confirmed currency rates…');
 
-        if ($this->syncCurrencyRates()) {
+        $currencyExit = $this->syncCurrencyRates();
+
+        if ($currencyExit === self::SUCCESS) {
             $this->info('[deploy] currency rates OK');
+        } elseif ($currencyExit === SyncCurrencyRatesCommand::EXIT_SKIPPED) {
+            $this->warn('[deploy] WARNING: currency rates skipped — the EUR row is missing, nothing was set. Continuing anyway.');
+            $this->warn('[deploy] Run `php artisan beai:sync-currency-rates` once the currencies table is populated.');
         } else {
             // Non-fatal by design, same rule as the registry sync.
             $this->warn('[deploy] WARNING: currency rates failed — continuing anyway.');
@@ -323,14 +328,14 @@ class DeployCommand extends Command
      * sync: catalogue data, not schema. Recover by hand with
      * `php artisan beai:sync-currency-rates`.
      */
-    private function syncCurrencyRates(): bool
+    private function syncCurrencyRates(): int
     {
         try {
-            return $this->call('beai:sync-currency-rates') === self::SUCCESS;
+            return $this->call('beai:sync-currency-rates');
         } catch (Throwable $e) {
             $this->warn('[deploy] '.$e::class.': '.$e->getMessage());
 
-            return false;
+            return self::FAILURE;
         }
     }
 }

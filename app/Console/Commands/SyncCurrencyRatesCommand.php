@@ -18,14 +18,18 @@ use Illuminate\Console\Command;
  */
 class SyncCurrencyRatesCommand extends Command
 {
+    /** Exit code when the EUR row is missing: nothing was set, and that is not success. */
+    public const EXIT_SKIPPED = 2;
+
     protected $signature = 'beai:sync-currency-rates';
 
     protected $description = 'Set the confirmed initial EUR rate when none is stored (never overwrites an existing rate).';
 
     public function handle(CurrencyRatesSeeder $seeder): int
     {
-        $this->info('EUR rate: '.$seeder->run());
+        $outcome = $seeder->run();
+        $this->info('EUR rate: '.$outcome);
 
-        return self::SUCCESS;
+        return $outcome === CurrencyRatesSeeder::SKIPPED ? self::EXIT_SKIPPED : self::SUCCESS;
     }
 }
