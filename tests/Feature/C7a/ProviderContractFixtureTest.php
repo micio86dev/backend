@@ -384,11 +384,10 @@ test('L2 (P4, regression): an unbound template\'s PAL PATCH body is byte-identic
 // L2: the outbound `/v1/secrets` and `/v1/llm-configurations` POST bodies
 // match a golden shape — proves "unchanged", not "correct", same L2 doctrine
 // as the Tavus/LiveAvatar goldens above. Deliberately does NOT cover the
-// `/v1/sessions/token` body's `llm_configuration_id` placement — design D8's
-// placement inside `$providerOwned` is this batch's BEST GUESS (see
-// `HeygenProvider::buildSessionTokenBody()`'s docblock), UNVERIFIED by any
-// live conversational test, and pinning it in a golden fixture would encode
-// a guess as a fact.
+// `/v1/sessions/token` body's `llm_configuration_id` placement here: it is no
+// longer a guess (proven live 2026-10-08 and in the OpenAPI document, see
+// `HeygenProvider::buildSessionTokenBody()`'s docblock), and it is pinned by
+// `HeygenProviderTest` ("sends llm_configuration_id top-level ...").
 
 test('L1: HeygenLlmRegistrar::ensureSecret() correctly reads data.id from a docs-verified /v1/secrets response', function (): void {
     config()->set('interview.heygen.api_key', 'platform-heygen-key');

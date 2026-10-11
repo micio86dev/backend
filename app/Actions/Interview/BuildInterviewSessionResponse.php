@@ -35,6 +35,9 @@ final class BuildInterviewSessionResponse
 {
     /**
      * @param  string|null  $language  The PROJECT's language (BCP-ish locale, may be null).
+     * @param  string|null  $conversationId  The provider conversation id of a fresh multi-competency create; null otherwise.
+     * @param  array{conversation_id: string, competency_code: string}|null  $continuation  Present only for a granted continuation on a live conversation; the key is absent otherwise.
+     * @param  int|null  $conversationTtlSeconds  The ceiling of a fresh multi-competency conversation, in seconds (N11); null otherwise.
      * @param  string|null  $promptVersion  Composed prompt template version (C8) — the composed
      *                                      prompt's version on every 201.
      */
@@ -45,10 +48,13 @@ final class BuildInterviewSessionResponse
         ?string $promptVersion = null,
         ?int $competencyOrdinal = null,
         ?int $totalCompetencies = null,
+        ?string $conversationId = null,
+        ?array $continuation = null,
+        ?int $conversationTtlSeconds = null,
     ): JsonResponse {
         [$endPhrase, $finalPhrase] = $this->resolveCompletionPhrases($language);
 
-        return response()->json([
+        $body = [
             'session_id' => $session->id,
             'provider' => $token->provider,
             // Voice-only interviews, so the client knows not to mount a video
@@ -91,7 +97,27 @@ final class BuildInterviewSessionResponse
                 'competency_ordinal' => $competencyOrdinal,
                 'total_competencies' => $totalCompetencies,
             ],
-        ], Response::HTTP_CREATED);
+        ];
+
+        // Only a fresh single-session create names its conversation (design A6/N11); with the gate
+        // closed the key is absent, not null, so the body is byte-identical to the old one.
+        if ($conversationId !== null) {
+            $body['conversation_id'] = $conversationId;
+        }
+
+        // The ceiling the client may schedule its handover against; absent on a continuation, whose
+        // conversation already has its timer, and with the gate closed (design N11).
+        if ($conversationTtlSeconds !== null) {
+            $body['conversation_ttl_seconds'] = $conversationTtlSeconds;
+        }
+
+        // Present exactly when the browser may keep its conversation and retarget it (design D2):
+        // a server-issued code and the id it asserted, never prose, anchors or a prompt.
+        if ($continuation !== null) {
+            $body['continuation'] = $continuation;
+        }
+
+        return response()->json($body, Response::HTTP_CREATED);
     }
 
     /**

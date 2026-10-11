@@ -60,8 +60,9 @@ final class MockProvider implements ProviderSessionService
         return [];
     }
 
-    public function teardown(ProviderToken $token): void
+    public function teardown(ProviderToken $token): bool
     {
         // No real vendor session exists to tear down — see class docblock.
+        return true;
     }
 }

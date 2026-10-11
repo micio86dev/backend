@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Catalogue\CompetencyController as CatalogueCompeten
 use App\Http\Controllers\Api\Catalogue\DefaultQuestionController;
 use App\Http\Controllers\Api\Catalogue\RevisionController;
 use App\Http\Controllers\Api\Catalogue\RoleController as CatalogueRoleController;
+use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationAuditController;
@@ -27,6 +28,7 @@ use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ParticipantRecoveryController;
 use App\Http\Controllers\Api\ParticipantScheduleController;
 use App\Http\Controllers\Api\PlatformAvatarTemplateController;
+use App\Http\Controllers\Api\PlatformCurrencyController;
 use App\Http\Controllers\Api\PlatformUserController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
@@ -335,6 +337,9 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 // no policy check, no ownership to authorize.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/llm-models', [LlmModelController::class, 'index']);
+
+    // organization-currencies — the active catalogue, readable by every authenticated role.
+    Route::get('/currencies', [CurrencyController::class, 'index']);
 });
 
 // ─── Conversation LLM Credentials (pluggable-conversation-llm PR P2) ─────────
@@ -357,7 +362,12 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
 // destroy → HTTP 204 No Content (soft-delete; FV lock preserved).
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
-    Route::apiResource('projects', ProjectController::class);
+    // `store` is registered apart from the other four verbs only to carry `org.context`: a project is created
+    // INTO an organization, and a superadmin with no acting organization has none (409
+    // `organization_context_required`, before validation — it used to be a 422 from org-scoped rules). The route
+    // name is the one `apiResource` would have given it.
+    Route::apiResource('projects', ProjectController::class)->except('store');
+    Route::post('projects', [ProjectController::class, 'store'])->name('projects.store')->middleware('org.context');
 
     // Predefined interview questions, nested under the project
     // (potential-competencies-and-authored-questions).
@@ -439,6 +449,12 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('admin/avatar-templates/{id}/deactivate', [PlatformAvatarTemplateController::class, 'deactivate'])->whereNumber('id');
     Route::delete('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'destroy'])->whereNumber('id');
     Route::post('admin/avatar-templates/{id}/duplicate', [PlatformAvatarTemplateController::class, 'duplicate'])->whereNumber('id');
+
+    // The currency catalogue (organization-currencies D10): platform data, superadmin only, no `org.context`.
+    Route::get('admin/currencies', [PlatformCurrencyController::class, 'index']);
+    Route::post('admin/currencies', [PlatformCurrencyController::class, 'store']);
+    Route::patch('admin/currencies/{code}', [PlatformCurrencyController::class, 'update'])->where('code', '[A-Z]{3}');
+    Route::delete('admin/currencies/{code}', [PlatformCurrencyController::class, 'destroy'])->where('code', '[A-Z]{3}');
 });
 
 // ─── Framework Catalogue Authoring (framework-catalogue-authoring PR3, D12) ──
@@ -481,13 +497,19 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('catalogue')->grou
 
 // ─── Organization Settings (backoffice-missing-pages, D2) ────────────────────
 // Singular, self-resolving resource — NO id in the path, ever. The org
-// resolves exclusively from the authenticated user's organization_id, so
-// there is no `{organization}` route variant and no IDOR surface to guard.
+// resolves exclusively from the tenant context (`TenantResolver`): the
+// caller's own organization, or a superadmin's acting one. So there is no
+// `{organization}` route variant and no IDOR surface to guard.
 // Read for all roles, write admin-only (OrganizationPolicy).
+//
+// With no organization context (a superadmin with no acting organization) the
+// READ answers `200 {"data": null}` on purpose — the shell calls it on every
+// page to paint the brand colour — and every WRITE answers 409
+// `organization_context_required` through `org.context`.
 
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/organization', [OrganizationController::class, 'show']);
-    Route::patch('/organization', [OrganizationController::class, 'update']);
+    Route::patch('/organization', [OrganizationController::class, 'update'])->middleware('org.context');
     // Separate from the PATCH above, deliberately: `logo_path` is written ONLY
     // by an endpoint that knows a file was actually stored. Accepting it as a
     // field on the settings PATCH would let a client point the logo at any path
@@ -499,9 +521,13 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     // it also runs `getimagesize()` on a decompression-bomb candidate, so the
     // burn is CPU as well as storage. Admin-only narrows who can reach it; it
     // does not make the loop cheaper. DELETE stays free: idempotent, no PUT.
+    //
+    // `org.context` on both verbs: a logo belongs to an organization, and with none in context the answer is the
+    // legible 409 rather than a 404 from `findOrFail(null)`. It runs before the throttle's upload work.
     Route::post('/organization/logo', [OrganizationLogoController::class, 'store'])
-        ->middleware('throttle:10,1');
-    Route::delete('/organization/logo', [OrganizationLogoController::class, 'destroy']);
+        ->middleware(['org.context', 'throttle:10,1']);
+    Route::delete('/organization/logo', [OrganizationLogoController::class, 'destroy'])
+        ->middleware('org.context');
 });
 
 // ─── Organization Logo Read (PUBLIC) ─────────────────────────────────────────
@@ -575,8 +601,8 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
     Route::patch('/users/{user}', [UserController::class, 'update']);
-    Route::post('/users/{user}/deactivate', [UserController::class, 'deactivate']);
-    Route::post('/users/{user}/activate', [UserController::class, 'activate']);
+    Route::post('/users/{user}/deactivate', [UserController::class, 'deactivate'])->middleware('org.context');
+    Route::post('/users/{user}/activate', [UserController::class, 'activate'])->middleware('org.context');
 });
 
 // ─── Avatar Templates (C14) ───────────────────────────────────────────────────
@@ -939,8 +965,10 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('m2m')->group(func
     // backoffice can offer the real set instead of mirroring it in a constant
     // that would drift the moment an ability is added or removed.
     Route::get('/abilities', AbilityCatalogController::class);
-    Route::post('/clients', [ApiClientController::class, 'store']);
-    Route::get('/clients', [ApiClientController::class, 'index']);
+    // A key authenticates FOR one organization (`api_clients.organization_id` is NOT NULL), so both verbs need one
+    // in context: 409 `organization_context_required` with none, never an empty list and never a tenant-less key.
+    Route::post('/clients', [ApiClientController::class, 'store'])->middleware('org.context');
+    Route::get('/clients', [ApiClientController::class, 'index'])->middleware('org.context');
     Route::delete('/clients/{apiClient}', [ApiClientController::class, 'destroy']);
     // Intentionally NO: Route::get('/clients/{apiClient}', ...) — returns 404 per design
 });

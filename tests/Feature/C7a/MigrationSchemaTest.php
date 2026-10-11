@@ -77,6 +77,17 @@ test('interview_sessions.provider_session_ref is nullable', function (): void {
     expect($col->is_nullable)->toBe('YES');
 });
 
+test('interview_sessions.provider_context_ref is a nullable string, absent until a provider issues a context', function (): void {
+    $col = collect(
+        DB::select("SELECT is_nullable, data_type FROM information_schema.columns
+                    WHERE table_name = 'interview_sessions' AND column_name = 'provider_context_ref'")
+    )->first();
+
+    expect($col)->not->toBeNull()
+        ->and($col->is_nullable)->toBe('YES')
+        ->and($col->data_type)->toBe('character varying');
+});
+
 test('interview_sessions.ended_reason is nullable', function (): void {
     $col = collect(
         DB::select("SELECT is_nullable FROM information_schema.columns

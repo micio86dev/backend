@@ -204,6 +204,24 @@ test('5.1 /start with standard EN competency → 201 + question_context.prompt_v
     $response->assertJsonPath('question_context.prompt_version', fn ($v) => is_string($v) && strlen($v) > 0);
 });
 
+test('5.1b /start stamps the configured conversation prompt version and the stored set on the session', function (): void {
+    Http::fake(c8HeygenFake());
+    Queue::fake();
+
+    $scenario = c8SeedStandardScenario('en');
+    c8MakeInterviewable($scenario);
+    $bearer = CandidateTokenFactory::mintCandidateToken($scenario['participant']);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$bearer])
+        ->postJson('/api/candidate/interview/start')
+        ->assertStatus(201);
+
+    $session = InterviewSession::where('participant_id', $scenario['participant']->id)->sole();
+    expect($session->conversation_prompt_version)
+        ->toMatch('/^'.preg_quote((string) config('conversation.prompt_version'), '/').'\+s\d+\.[0-9a-f]{12}$/');
+});
+
 test('5.5 /start response never leaks composed system_prompt; provider body carries it (anti-leak)', function (): void {
     Queue::fake();
 
@@ -465,9 +483,8 @@ test('5.6 RESUME in_corso + composition fails → 422, no fresh provider session
             $tokenCalls++;
         }
 
-        if ($request->method() === 'DELETE' && str_contains($url, '/sessions/')) {
-            preg_match('#/sessions/([^/]+)$#', $url, $m);
-            $teardownRefs[] = $m[1];
+        if ($request->method() === 'POST' && str_ends_with($url, '/sessions/stop')) {
+            $teardownRefs[] = (string) ($request->data()['session_id'] ?? '');
         }
 
         return Http::response([], 200);
@@ -704,8 +721,8 @@ function c8CaptureProvider(): ArrayObject
             return Http::response(['data' => ['session_id' => 'heygen-potential', 'session_token' => 'tok-potential']], 200);
         }
 
-        if ($request->method() === 'DELETE' && preg_match('#/sessions/([^/]+)$#', $url, $m) === 1) {
-            $captured['teardowns'][] = $m[1];
+        if ($request->method() === 'POST' && str_ends_with($url, '/sessions/stop')) {
+            $captured['teardowns'][] = (string) ($request->data()['session_id'] ?? '');
         }
 
         return Http::response([], 200);

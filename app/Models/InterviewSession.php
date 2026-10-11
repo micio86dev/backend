@@ -62,6 +62,16 @@ use Illuminate\Support\Carbon;
  * naive re-stamp from a context without a system prompt would destroy a
  * previously recorded good value.
  *
+ * `conversation_prompt_version` (db-driven-conversation-prompts PR3, design N-8)
+ * follows the same stamp-only discipline as `system_prompt_chars`: written by
+ * `InterviewSessionLlmSnapshot::stamp()` only (so it is not in `$fillable`),
+ * write-once, never overwritten FROM a null, and never serialised. Its value is
+ * `{configured version}+s{set id}.{sha12}` when the prompt came from a stored
+ * set (PR8), or the bare configured version for the `baseline` source. Because it
+ * is write-once, activating another set later never rewrites it: a resumed
+ * interview that composes under a newer set is a documented MIXED record that
+ * still names the set it STARTED under.
+ *
  * Security:
  * - organization_id NOT in $fillable — stamped by TenantScoped.creating unconditionally.
  *
@@ -78,12 +88,16 @@ use Illuminate\Support\Carbon;
  * @property string|null $llm_model_key
  * @property string|null $llm_binding_status
  * @property int|null $system_prompt_chars
+ * @property string|null $conversation_prompt_version
  * @property string $provider
  * @property string|null $provider_session_ref
+ * @property string|null $provider_context_ref
  * @property string $status
  * @property string|null $ended_reason
  * @property int $error_count
  * @property list<string>|null $primary_questions
+ * @property Carbon|null $provider_released_at
+ * @property array{competencies: list<array{code: string, primary_questions: list<string>, follow_up_budget: int}>, chars: int}|null $conversation_plan
  * @property int|null $follow_up_budget
  * @property CarbonImmutable|null $transcript_harvested_at
  * @property CarbonImmutable|null $started_at
@@ -126,6 +140,7 @@ class InterviewSession extends TenantModel
         'framework_version_id',
         'provider',
         'provider_session_ref',
+        'provider_context_ref',
         'status',
         'ended_reason',
         'started_at',
@@ -155,6 +170,10 @@ class InterviewSession extends TenantModel
             'ended_at' => 'immutable_datetime',
             'system_prompt_chars' => 'integer',
             'primary_questions' => 'array',
+            // Single-session plan (tavus-single-session-interview, N2): written
+            // once by the create path, never exposed, not mass-assignable.
+            'conversation_plan' => 'array',
+            'provider_released_at' => 'datetime',
             'follow_up_budget' => 'integer',
             // An uncast column comes back from pdo_pgsql as a STRING, which
             // makes the `@property CarbonImmutable|null` annotation above false at

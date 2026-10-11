@@ -45,7 +45,10 @@ function resumeReAskFake(array $transcript): object
     Http::fake(function ($request) use ($calls, $transcript) {
         $url = $request->url();
 
-        if (str_contains($url, '/contexts')) {
+        // Only the context CREATIONS are the prompts under test: a resume now also
+        // sends `DELETE /contexts/{id}` for the old session's context, whose empty
+        // body would otherwise be recorded as a prompt.
+        if (str_contains($url, '/contexts') && $request->method() === 'POST') {
             $calls->contexts[] = $request->data();
 
             return Http::response(['data' => ['id' => 'ctx-'.uniqid()]], 200);

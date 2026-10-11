@@ -19,8 +19,11 @@ declare(strict_types=1);
  * column.
  *
  * Also pins the no-client-selected shape. The backoffice hides the section
- * there, but an endpoint may not depend on a rail to stay safe: the list is
- * empty and the create is REFUSED, never a 500 and never a tenant-less key.
+ * there, but an endpoint may not depend on a rail to stay safe: BOTH verbs are
+ * refused with the shared 409 `organization_context_required` (`org.context`),
+ * never a 500, never a tenant-less key and never an empty list that reads as
+ * "this client has no keys". (`no_client_selected` and the empty list were the
+ * previous contract; see openspec change acting-org-409-contract.)
  */
 
 use App\Models\ApiClient;
@@ -85,7 +88,7 @@ test('superadmin acting as a client revokes that client\'s key', function (): vo
     expect($client->fresh()->is_active)->toBeFalse();
 });
 
-test('superadmin with NO client selected sees an empty list, not another tenant\'s keys', function (): void {
+test('superadmin with NO client selected is refused the list, and sees none of another tenant\'s keys', function (): void {
     $orgA = Organization::factory()->create();
     $orgB = Organization::factory()->create();
 
@@ -96,8 +99,9 @@ test('superadmin with NO client selected sees an empty list, not another tenant\
 
     $response = $this->withToken($token)->getJson('/api/m2m/clients');
 
-    $response->assertOk();
-    expect($response->json('data'))->toHaveCount(0);
+    $response->assertStatus(409)
+        ->assertJson(['message' => 'organization_context_required'])
+        ->assertJsonMissingPath('data');
 });
 
 test('superadmin with NO client selected cannot create a tenant-less key', function (): void {
@@ -109,7 +113,8 @@ test('superadmin with NO client selected cannot create a tenant-less key', funct
     ]);
 
     $response->assertStatus(409)
-        ->assertJson(['error' => 'no_client_selected']);
+        ->assertJson(['message' => 'organization_context_required'])
+        ->assertJsonMissingPath('error');
 
     expect(ApiClient::query()->count())->toBe(0);
 });

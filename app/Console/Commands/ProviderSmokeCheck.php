@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\InterviewSession;
 use App\Services\Provider\HeygenProvider;
 use App\Services\Provider\ProviderSessionService;
+use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use Illuminate\Console\Command;
@@ -93,12 +94,38 @@ final class ProviderSmokeCheck extends Command
             return self::FAILURE;
         }
 
+        // HeyGen only: the context delete is a wire call of its own that teardown()
+        // swallows by design, so it is made and checked here, after a stop that
+        // carries no context. Printing PASSED over a DELETE that answered 405 would
+        // leave one context per run on the account.
+        $deletesContext = $service instanceof HeygenProvider;
+        $stopToken = $deletesContext
+            ? new ProviderToken(provider: $token->provider, provider_session_ref: $token->provider_session_ref)
+            : $token;
+
         try {
-            $service->teardown($token);
-            $this->info('teardown(): OK');
+            $released = $service->teardown($stopToken);
         } catch (Throwable $e) {
-            // Non-fatal — the acceptance claim already stands on issue() succeeding.
-            $this->error('teardown(): FAILED (non-fatal, best-effort) — '.$e->getMessage());
+            $this->error('teardown(): FAILED — '.$e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if (! $released) {
+            // teardown() is best-effort and never throws, so a rejected release is only
+            // visible in its return value. Printing OK here once hid a 405 that left the
+            // session running (and billing) on the provider.
+            $this->error("teardown(): FAILED — the [{$providerName}] API did not confirm the release of session [{$token->provider_session_ref}]. It may still be running and consuming credits: stop it manually and check the application log for the provider's status.");
+
+            return self::FAILURE;
+        }
+
+        $this->info('teardown(): OK');
+
+        if ($deletesContext && ! $service->deleteContext($token->provider_context_ref)) {
+            $this->error("context delete: FAILED — the [{$providerName}] API did not confirm the delete of context [{$token->provider_context_ref}]. It is still on the account: delete it manually and check the application log for the provider's status.");
+
+            return self::FAILURE;
         }
 
         $this->info("interview:smoke-check PASSED — the [{$providerName}] outbound request shape was ACCEPTED by the real API.");

@@ -45,6 +45,7 @@ class AdminOrganizationController extends Controller
             (string) $request->validated('name'),
             (string) $request->validated('slug'),
             $actor,
+            $request->validated('currency_code'),
         );
 
         return (new OrganizationResource($organization))->response()->setStatusCode(Response::HTTP_CREATED);
@@ -69,7 +70,7 @@ class AdminOrganizationController extends Controller
         $actor = $request->user();
         $organization = Organization::findOrFail($id);
 
-        $organization->fill($request->safe()->only(['name', 'primary_color']));
+        $organization->fill($request->safe()->only(['name', 'primary_color', 'currency_code']));
         $changes = $organization->getDirty();
         $before = array_intersect_key($organization->getOriginal(), $changes);
         $organization->save();

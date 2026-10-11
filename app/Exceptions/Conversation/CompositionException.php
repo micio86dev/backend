@@ -17,6 +17,9 @@ namespace App\Exceptions\Conversation;
  * Both map to HTTP 422 at the controller layer; neither creates a provider
  * session nor flips the participant state.
  *
+ * Not final: {@see PromptTemplateUnresolvableException} narrows it for a prompt set
+ * that cannot be resolved, and rides the same `catch` and the same 422.
+ *
  * REQ: CompositionException (C8 Phase 3 — task 3.8)
  */
-final class CompositionException extends \RuntimeException {}
+class CompositionException extends \RuntimeException {}

@@ -131,8 +131,11 @@ final class SessionLiveClock
      * session's provider — `resolve()` (pluggable-conversation-llm PR P0)
      * already filters by provider, so a different-provider active template
      * is never returned here in the first place).
+     *
+     * Public: this is the ONE owner of the number. `ProviderRefLifetime` reads it from here
+     * (tavus-single-session-interview, A10) and must never restate it.
      */
-    private function resolveMaxSeconds(InterviewSession $session): int
+    public function resolveMaxSeconds(InterviewSession $session): int
     {
         $default = match ($session->provider) {
             'tavus' => ProviderFieldSpecs::TAVUS_MAX_SECONDS,

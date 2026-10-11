@@ -438,3 +438,60 @@ test('pausing twice leaves every turn stored exactly once', function (): void {
 
     expect(array_count_values($texts))->each->toBe(1);
 });
+
+test('suspend stops the HeyGen session, THEN deletes its context, and forgets both refs', function (): void {
+    ['session' => $session, 'token' => $token] = suspendLiveSession();
+
+    // The fixture runs on Tavus; re-point the row at HeyGen so the controller
+    // routes the teardown through the provider that owns a context.
+    $session->forceFill([
+        'provider' => 'heygen',
+        'provider_session_ref' => 'hg-live-ref',
+        'provider_context_ref' => 'hg-live-ctx',
+    ])->save();
+
+    Http::fake(['*liveavatar*' => Http::response(['data' => null], 200)]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/suspend', ['session_id' => $session->id])
+        ->assertOk();
+
+    $calls = Http::recorded()
+        ->map(fn (array $pair): string => $pair[0]->method().' '.parse_url($pair[0]->url(), PHP_URL_PATH))
+        // The transcript harvest GET legitimately comes first; only the mutating calls are ordered here.
+        ->filter(fn (string $call): bool => str_contains($call, '/v1/') && ! str_starts_with($call, 'GET '))
+        ->values()->all();
+    expect($calls)->toBe(['POST /v1/sessions/stop', 'DELETE /v1/contexts/hg-live-ctx']);
+
+    $fresh = $session->fresh();
+    expect($fresh->provider_session_ref)->toBeNull()
+        ->and($fresh->provider_context_ref)->toBeNull();
+});
+
+test('suspend keeps BOTH refs when HeyGen does not confirm the stop, and never deletes the context', function (): void {
+    ['session' => $session, 'token' => $token] = suspendLiveSession();
+
+    $session->forceFill([
+        'provider' => 'heygen',
+        'provider_session_ref' => 'hg-live-ref',
+        'provider_context_ref' => 'hg-live-ctx',
+    ])->save();
+
+    Http::fake([
+        '*liveavatar*/sessions/stop*' => Http::response(['message' => 'boom'], 500),
+        '*liveavatar*' => Http::response(['data' => null], 200),
+    ]);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/suspend', ['session_id' => $session->id])
+        ->assertOk();
+
+    // The stop failed, so the session may still be live and the context is still attached to it.
+    // Forgetting either ref would orphan both on HeyGen; keeping them lets the next /start resume
+    // (or the reaper) retry the release against the same ids.
+    $fresh = $session->fresh();
+    expect($fresh->provider_session_ref)->toBe('hg-live-ref')
+        ->and($fresh->provider_context_ref)->toBe('hg-live-ctx');
+
+    Http::assertNotSent(fn ($req) => $req->method() === 'DELETE');
+});

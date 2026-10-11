@@ -200,6 +200,10 @@ test('POST /start falls back to platform default language when participant langu
     Queue::fake();
 
     // French has no lang/fr/interview.php yet → must fall back to config app.fallback_locale (en).
+    // This test is about the PHRASE fallback, not the prompt text: a stored prompt set holds
+    // fragments for the supported locales only, so `fr` would be refused on the `db` source
+    // (PromptCutoverTest proves that). The `baseline` source falls back to `en` like the phrases.
+    config(['conversation.prompt_source' => 'baseline']);
     $org = phrasesOrg();
     [$project] = phrasesProjectWithCompetencies($org, 1, 'fr');
     $participant = phrasesParticipant($org, $project, 'fr');

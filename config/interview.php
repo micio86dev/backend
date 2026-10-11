@@ -65,6 +65,25 @@ return [
     'stale_after_minutes' => (int) env('INTERVIEW_STALE_AFTER_MINUTES', 30),
 
     /*
+     * How long after `/end` the outgoing provider session of a competency that
+     * HANDED OVER to the next one is released at the provider (a queued job).
+     *
+     * The frontend keeps the outgoing session live until the incoming one has
+     * painted, then crossfades (invisible-competency-handover, D5). Stopping it
+     * at `/end` kills the stream the candidate is still watching. The client
+     * stops its own session as soon as the handover completes, so this only
+     * backs up a tab that closed mid-handover.
+     *
+     * 45 s clears the longest handover the client allows, measured from `/end`:
+     * HANDOVER_BOUND_MS (10 s) before the outgoing is released, plus
+     * CONNECTING_CEILING_MS (20 s) for an incoming that is still connecting
+     * (both in `useInterviewSession.ts`) = 30 s, plus 15 s for the `/start`
+     * round trip, its retries and the crossfade. Every other end releases at
+     * once: nothing is waiting on that session.
+     */
+    'provider_release_delay_seconds' => (int) env('INTERVIEW_PROVIDER_RELEASE_DELAY_SECONDS', 45),
+
+    /*
     |--------------------------------------------------------------------------
     | HeyGen Provider Configuration
     |--------------------------------------------------------------------------
@@ -170,6 +189,25 @@ return [
          */
         'replica_id' => env('TAVUS_REPLICA_ID', 'rf4e9d9790f0'),
         'persona_id' => env('TAVUS_PERSONA_ID', 'p8a490c4dfd4'),
+
+        /*
+         * Single-session interview (tavus-single-session-interview, N1): ONE Tavus
+         * conversation spans several competencies. Ships DARK: `single_session`
+         * defaults to false, and `SingleSessionGate` is the only reader. The
+         * canary list (comma-separated project ids) enables it for named
+         * projects while the flag stays off. HeyGen and mock are never affected.
+         */
+        'single_session' => (bool) env('INTERVIEW_TAVUS_SINGLE_SESSION', false),
+        'single_session_projects' => array_values(array_filter(
+            array_map('intval', explode(',', (string) env('INTERVIEW_TAVUS_SINGLE_SESSION_PROJECTS', ''))),
+        )),
+
+        /*
+         * Seconds Tavus waits after the participant leaves before ending the
+         * conversation. Sent explicitly in the create body when the gate applies
+         * (an unset value does not end a conversation: PG6).
+         */
+        'participant_left_timeout' => (int) env('INTERVIEW_TAVUS_PARTICIPANT_LEFT_TIMEOUT', 60),
 
         // Fallback ONLY for callers with no project in scope (ProviderSmokeCheck's
         // standalone fake session). Every real interview supplies the project's

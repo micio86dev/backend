@@ -36,6 +36,7 @@ final class ExposureCatalogue
             'Organization' => [
                 'slug',
                 'primary_color',
+                'currency_code',
                 'logo_url',
                 'default_webhook_url',
                 'default_webhook_events',
@@ -48,6 +49,15 @@ final class ExposureCatalogue
             'PlatformAvatarTemplate' => [
                 'usage.organization_count',
                 'usage.project_count',
+            ],
+            // organization-currencies D12: the catalogue resource is platform data. Every key is admin-only.
+            'Currency' => [
+                'code',
+                'symbol',
+                'decimals',
+                'rate_per_usd',
+                'rate_as_of',
+                'is_active',
             ],
             'Project' => [
                 'avatar_template_id',

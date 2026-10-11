@@ -14,11 +14,14 @@ namespace App\Services\Provider;
  *   token              — ephemeral session token (HeyGen LiveAvatar); null for Tavus
  *   conversation_url   — conversation URL (Tavus); null for HeyGen
  *   provider_session_ref — opaque ref used to identify/teardown the provider session
+ *   provider_context_ref — opaque id of a per-session provider-side context entry that
+ *                          teardown() must also delete (HeyGen `/v1/contexts`); null for
+ *                          providers with no such concept (Tavus, mock)
  *
  * Static factory for teardown of an already-persisted session ref (RESUME in_corso path):
- *   ProviderToken::fromRef(string $provider, string $ref): self
+ *   ProviderToken::fromRef(string $provider, string $ref, ?string $contextRef = null): self
  *   — creates a minimal ProviderToken carrying the provider name + provider_session_ref
- *     (other fields null). The provider name is REQUIRED (F1): teardown dispatch is
+ *     (+ the optional provider_context_ref; other fields null). The provider name is REQUIRED (F1): teardown dispatch is
  *     provider-routed (HeyGen vs Tavus), so a token with an empty provider would route
  *     to no branch and silently orphan the old session — defeating FIX-1.
  *     Always pass $session->provider (the session row carries the resolved provider).
@@ -36,6 +39,7 @@ readonly class ProviderToken
         public ?string $token = null,
         public ?string $conversation_url = null,
         public ?string $provider_session_ref = null,
+        public ?string $provider_context_ref = null,
     ) {}
 
     /**
@@ -50,7 +54,7 @@ readonly class ProviderToken
      *
      * @throws \InvalidArgumentException if provider is empty.
      */
-    public static function fromRef(string $provider, string $ref): self
+    public static function fromRef(string $provider, string $ref, ?string $contextRef = null): self
     {
         if ($provider === '') {
             throw new \InvalidArgumentException(
@@ -59,6 +63,6 @@ readonly class ProviderToken
             );
         }
 
-        return new self(provider: $provider, provider_session_ref: $ref);
+        return new self(provider: $provider, provider_session_ref: $ref, provider_context_ref: $contextRef);
     }
 }

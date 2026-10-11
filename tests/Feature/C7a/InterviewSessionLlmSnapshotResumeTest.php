@@ -261,6 +261,78 @@ test('system_prompt_chars is write-once and never overwritten from a null on the
     expect($session->system_prompt_chars)->toBe($recorded);
 });
 
+/**
+ * A bare pending session in tenant context, for the stamps that do not depend
+ * on a bound template (conversation_prompt_version).
+ */
+function llmSnapshotBareSession(): InterviewSession
+{
+    $org = Organization::factory()->create();
+    $resolver = app(TenantResolver::class);
+    $resolver->setOrgId($org->id);
+    $resolver->setBypass(false);
+    $project = Project::factory()->create(['status' => 'active']);
+    $participant = new Participant;
+    $participant->forceFill([
+        'organization_id' => $org->id,
+        'project_id' => $project->id,
+        'candidate_ref' => 'snap-'.uniqid(),
+        'display_name' => 'Snapshot Candidate',
+        'email' => uniqid('cand-').'@example.test',
+        'status' => 'in_attesa',
+    ]);
+    $participant->save();
+
+    return llmSnapshotSession($org->id, $project, $participant);
+}
+
+test('conversation_prompt_version is stamped on the first compose', function (): void {
+    $session = llmSnapshotBareSession();
+
+    app(InterviewSessionLlmSnapshot::class)->stamp($session, 'a prompt', 'v-first');
+    $session->save();
+
+    expect($session->fresh()->conversation_prompt_version)->toBe('v-first');
+});
+
+test('conversation_prompt_version is write-once — a later compose with a different version does not overwrite it', function (): void {
+    $session = llmSnapshotBareSession();
+    $stamper = app(InterviewSessionLlmSnapshot::class);
+
+    $stamper->stamp($session, 'a prompt', 'v-first');
+    $session->save();
+    $stamper->stamp($session, 'a resumed prompt', 'v-second');
+    $session->save();
+
+    expect($session->fresh()->conversation_prompt_version)->toBe('v-first');
+});
+
+test('conversation_prompt_version is never nulled on the degraded resume path', function (): void {
+    $session = llmSnapshotBareSession();
+    $stamper = app(InterviewSessionLlmSnapshot::class);
+
+    $stamper->stamp($session, 'a prompt', 'v-first');
+    $session->save();
+    // Degraded RESUME: no composed prompt, so no version either.
+    $stamper->stamp($session, null, null);
+    $session->save();
+
+    expect($session->fresh()->conversation_prompt_version)->toBe('v-first');
+});
+
+test('a session stamped without a version stays null until a version arrives', function (): void {
+    $session = llmSnapshotBareSession();
+    $stamper = app(InterviewSessionLlmSnapshot::class);
+
+    $stamper->stamp($session, null, null);
+    $session->save();
+    expect($session->fresh()->conversation_prompt_version)->toBeNull();
+
+    $stamper->stamp($session, 'a prompt', 'v-late');
+    $session->save();
+    expect($session->fresh()->conversation_prompt_version)->toBe('v-late');
+});
+
 test('an unbound resolved template (or none) snapshots unbound, llm_model_key null', function (): void {
     $org = Organization::factory()->create();
     $resolver = app(TenantResolver::class);

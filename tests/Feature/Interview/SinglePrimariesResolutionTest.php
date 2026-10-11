@@ -31,7 +31,8 @@ test('OpeningTextComposer\'s opening question and SystemPromptComposer\'s primar
 
     $capturedContextBody = [];
     Http::fake(function ($request) use (&$capturedContextBody) {
-        if (str_contains($request->url(), '/contexts')) {
+        // POST only: a resume also sends `DELETE /contexts/{id}` for the old session.
+        if (str_contains($request->url(), '/contexts') && $request->method() === 'POST') {
             $capturedContextBody = $request->data();
 
             return Http::response(['data' => ['id' => 'ctx-single-primaries']], 200);
@@ -95,7 +96,8 @@ test('a RESUME after the only primary was asked re-asks it and never truncates t
 
     $capturedContextBody = [];
     Http::fake(function ($request) use (&$capturedContextBody) {
-        if (str_contains($request->url(), '/contexts')) {
+        // POST only: a resume also sends `DELETE /contexts/{id}` for the old session.
+        if (str_contains($request->url(), '/contexts') && $request->method() === 'POST') {
             $capturedContextBody = $request->data();
 
             return Http::response(['data' => ['id' => 'ctx-resume-primaries']], 200);

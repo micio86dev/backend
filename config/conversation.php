@@ -8,7 +8,13 @@ declare(strict_types=1);
  * Keys:
  *   prompt_version    — conversation prompt template version, stamped by SystemPromptComposer
  *                       on every composed prompt. Distinct lifecycle from scoring.prompt_version —
- *                       do NOT reuse config/scoring.php. Bump on ANY template change.
+ *                       do NOT reuse config/scoring.php. Bump on a change to the PHP structure
+ *                       of the prompt or to OpeningTextComposer; fragment text is versioned by
+ *                       the stored prompt set, not by this string.
+ *   prompt_source     — where the prompt TEXT comes from: `db` (default, the active stored
+ *                       prompt set) or `baseline` (the code baseline, no database read).
+ *                       `baseline` is the break-glass for a broken or missing active set;
+ *                       any other value fails every /start with a 422 until corrected.
  *   followup_budget   — default follow-up budget per competency (max N per competency),
  *                       ON TOP OF the primary questions — never merged with their count
  *                       (framework-catalogue-authoring PR7, D7). N=4 RATIFIED 2026-08-25,
@@ -39,14 +45,34 @@ return [
     |--------------------------------------------------------------------------
     |
     | Template version string stamped by SystemPromptComposer onto every
-    | composed system prompt. Bump this string on ANY edit to the conversation
-    | prompt template — enables per-interview traceability.
+    | composed system prompt. Bump it when the PHP structure of the prompt or
+    | OpeningTextComposer changes. A change to the fragment TEXT does not need a
+    | bump: that text lives in a sealed prompt set, and every session records the
+    | set it ran under (`{version}+s{id}.{sha12}`) in its durable stamp.
     |
     | Distinct from scoring.prompt_version — conversation versioning must be
     | wired independently of scoring (KD-3 mirrors C9 discipline).
     |
     */
-    'prompt_version' => env('CONVERSATION_PROMPT_VERSION', 'conv-2026-09-04'),
+    'prompt_version' => env('CONVERSATION_PROMPT_VERSION', 'conv-2026-10-10'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Conversation Prompt Source
+    |--------------------------------------------------------------------------
+    |
+    | `db`       the ACTIVE stored prompt set (conversation_prompt_sets). A missing,
+    |            ambiguous, tampered or incomplete set is a hard failure: 422
+    |            `composition_error` on /start, with no baseline fallback.
+    | `baseline` the code baseline (BaselinePromptFragments), no database read.
+    |            Break-glass: set CONVERSATION_PROMPT_SOURCE=baseline, no redeploy
+    |            of code, to keep interviews running while the stored set is repaired.
+    |
+    | Validated on first use (App\Enums\PromptSource): an unknown value is never
+    | mapped to either source. `beai:deploy` refuses to deploy with one.
+    |
+    */
+    'prompt_source' => env('CONVERSATION_PROMPT_SOURCE', 'db'),
 
     /*
     |--------------------------------------------------------------------------
@@ -84,5 +110,22 @@ return [
     |
     */
     'min_questions' => (int) env('CONVERSATION_MIN_QUESTIONS', 4),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Single-Session Interview (tavus-single-session-interview)
+    |--------------------------------------------------------------------------
+    |
+    | max_context_chars       ceiling on the serialised multi-competency context;
+    |                         a longer remaining list is truncated to a prefix.
+    | ceiling_headroom_seconds a conversation within this many seconds of its
+    |                         provider ceiling is not continued (retuned after G-B).
+    | boundary_grace_turns    extra substantive turns beyond 1 + follow_up_budget
+    |                         before a competency boundary is due.
+    |
+    */
+    'max_context_chars' => (int) env('CONVERSATION_MAX_CONTEXT_CHARS', 40000),
+    'ceiling_headroom_seconds' => (int) env('CONVERSATION_CEILING_HEADROOM_SECONDS', 480),
+    'boundary_grace_turns' => (int) env('CONVERSATION_BOUNDARY_GRACE_TURNS', 1),
 
 ];

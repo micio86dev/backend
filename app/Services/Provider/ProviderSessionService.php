@@ -53,10 +53,18 @@ interface ProviderSessionService
      *   - COMPENSATION (step 4d): DB failed before ref was persisted.
      *     Pass the IN-MEMORY ProviderToken returned by issue().
      *   - RESUME in_corso (step 3b): old ref IS persisted.
-     *     Pass ProviderToken::fromRef($session->provider, $session->provider_session_ref).
+     *     Pass ProviderToken::fromRef($session->provider, $session->provider_session_ref,
+     *     $session->provider_context_ref) so a provider with per-session context entries
+     *     (HeyGen) can delete them too.
      *
      * Best-effort: teardown failures are LOGGED but NON-FATAL (the candidate
      * needs the fresh session; orphaned old sessions are cleaned by a reaper).
+     * An implementation therefore NEVER throws; it reports the outcome instead.
+     *
+     * @return bool true when the provider session is released (or was already gone);
+     *              false when the provider did not confirm the release. Production
+     *              callers may ignore it; `interview:smoke-check` must not, or a
+     *              rejected release prints a false OK.
      */
-    public function teardown(ProviderToken $token): void;
+    public function teardown(ProviderToken $token): bool;
 }

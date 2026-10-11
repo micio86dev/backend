@@ -254,6 +254,9 @@ class AppServiceProvider extends ServiceProvider
         // controller repeats the check inline, this is only the rendering hint.
         Gate::define('manageGlobalAvatarTemplates', static fn (User $user): bool => $user->is_superadmin === true);
 
+        // organization-currencies D10 — same shape: the catalogue is platform data. Published as `currencies.manage`.
+        Gate::define('manageCurrencies', static fn (User $user): bool => $user->is_superadmin === true);
+
         // C13 — Gate the Laravel Pulse dashboard (task 5.2).
         //
         // Two conditions, deliberately, and this is a considered DEVIATION from

@@ -88,3 +88,14 @@ test('(f) QuestionContext four-arg C8 construction remains backward-compatible a
 
     expect($ctx->openingText)->toBeNull();
 });
+
+test('(d) the stamped version appends the prompt set reference to the version, and is null without a version', function (): void {
+    $stored = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, promptVersion: 'conv-1', promptSetRef: 's7.0123456789ab');
+    $baseline = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, promptVersion: 'conv-1');
+    $none = new QuestionContext(competencyCode: 'PRS', questionIndex: 0, promptSetRef: 's7.0123456789ab');
+
+    expect($stored->stampedPromptVersion())->toBe('conv-1+s7.0123456789ab')
+        ->and($stored->promptVersion)->toBe('conv-1')
+        ->and($baseline->stampedPromptVersion())->toBe('conv-1')
+        ->and($none->stampedPromptVersion())->toBeNull();
+});

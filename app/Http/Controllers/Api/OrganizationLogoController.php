@@ -135,6 +135,7 @@ final class OrganizationLogoController extends Controller
         ]);
     }
 
+    #[Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function store(Request $request): JsonResponse
     {
         // The ACTING org, never `$request->user()->organization_id`
@@ -241,6 +242,7 @@ final class OrganizationLogoController extends Controller
      *
      * Having no logo is a supported state: the product logo is shown when none is configured.
      */
+    #[Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function destroy(Request $request): JsonResponse
     {
         // The ACTING org, never `$request->user()->organization_id`

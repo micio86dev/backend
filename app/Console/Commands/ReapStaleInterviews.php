@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\ConversationLlm\RecordConversationLlmUsage;
+use App\Actions\Interview\ReleaseProviderSession;
 use App\Actions\Interview\SettleParticipantCompletion;
 use App\Models\InterviewSession;
 use App\Support\Interview\SessionLiveClock;
+use App\Support\Interview\SharedProviderRefGuard;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
@@ -45,6 +47,8 @@ final class ReapStaleInterviews extends Command
         private readonly SessionLiveClock $liveClock,
         private readonly RecordConversationLlmUsage $recordLlmUsage,
         private readonly SettleParticipantCompletion $settle,
+        private readonly ReleaseProviderSession $releaseProvider,
+        private readonly SharedProviderRefGuard $siblings,
     ) {
         parent::__construct();
     }
@@ -196,7 +200,7 @@ final class ReapStaleInterviews extends Command
      */
     private function endSession(InterviewSession $session): void
     {
-        DB::transaction(function () use ($session): void {
+        $ended = DB::transaction(function () use ($session): bool {
             $locked = InterviewSession::withoutGlobalScopes()
                 ->whereKey($session->id)
                 ->lockForUpdate()
@@ -207,7 +211,7 @@ final class ReapStaleInterviews extends Command
             // stamping `timeout` over a genuine `completed` would rewrite the
             // truth about how their interview finished.
             if ($locked === null || $locked->status !== 'in_corso') {
-                return;
+                return false;
             }
 
             $locked->status = 'timeout';
@@ -217,7 +221,15 @@ final class ReapStaleInterviews extends Command
 
             $this->liveClock->close($locked, 'end');
             ($this->recordLlmUsage)($locked);
+
+            return true;
         });
+
+        // After the commit, best-effort: never aborts the sweep. A conversation another
+        // live row still shares is left to that row's own end (design N12).
+        if ($ended && ! $this->siblings->hasLiveSibling((int) $session->organization_id, $session->provider, $session->provider_session_ref, $session->id)) {
+            ($this->releaseProvider)($session);
+        }
 
         Log::info('reaped an abandoned interview session', [
             'session_id' => $session->id,

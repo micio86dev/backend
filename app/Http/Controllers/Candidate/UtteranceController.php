@@ -7,16 +7,19 @@ namespace App\Http\Controllers\Candidate;
 use App\Http\Controllers\Candidate\Concerns\ResolvesOwnedSession;
 use App\Http\Controllers\Controller;
 use App\Models\InterviewSession;
+use App\Models\Project;
+use App\Models\Utterance;
 use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
 use App\Support\PublicApi\InterviewEventRecorder;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 /**
  * UtteranceController (C7a — Interview Session Mechanics).
@@ -45,7 +48,7 @@ use Symfony\Component\HttpFoundation\Response;
  * `store()`.
  *
  * Response contract:
- * - 202 Accepted  → utterance persisted (session was in_corso at INSERT time)
+ * - 202 Accepted  → utterance persisted (session was in_corso at INSERT time); body `{boundary_due}`
  * - 404 Not Found → session not owned by authenticated candidate (resolveOwnedSession)
  * - 409 Conflict  → session no longer in_corso at the atomic INSERT moment
  * - 422 Unprocessable → validation failed (missing required fields)
@@ -87,6 +90,9 @@ class UtteranceController extends Controller
      * into the generated TS clients of both Nuxt apps. Notes about our own 500s
      * are not part of a contract a candidate app consumes.
      */
+    // `#[Response(202, ...)]`, not `@scramble-return`: the PHPDoc form replaces the whole inferred
+    // response set and would drop the documented 409 and 503.
+    #[Response(202, description: 'Utterance persisted. `boundary_due` is true once the competency has met its turn budget.', type: 'array{boundary_due: bool}')]
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -190,7 +196,7 @@ class UtteranceController extends Controller
             if ($e->getCode() === '55P03') {
                 Log::warning('C7a: live utterance insert timed out waiting for the session lock', SafeDbContext::for($e));
 
-                return response()->json(['error' => 'utterance_lock_timeout'], Response::HTTP_SERVICE_UNAVAILABLE);
+                return response()->json(['error' => 'utterance_lock_timeout'], HttpResponse::HTTP_SERVICE_UNAVAILABLE);
             }
 
             Log::error('C7a: live utterance insert failed', SafeDbContext::for($e));
@@ -204,13 +210,36 @@ class UtteranceController extends Controller
             // The client MUST treat 409 as a no-op (the interview has ended).
             return response()->json(
                 ['message' => 'Session is no longer in_corso.'],
-                Response::HTTP_CONFLICT
+                HttpResponse::HTTP_CONFLICT
             );
         }
 
         $this->recordUtteranceEvent($session, $validated, $turnKind);
 
-        return response()->json(null, Response::HTTP_ACCEPTED);
+        return response()->json(['boundary_due' => $this->boundaryDue($session)], HttpResponse::HTTP_ACCEPTED);
+    }
+
+    /**
+     * Mechanical competency-boundary signal (tavus-single-session-interview, N9): true once the
+     * row's SUBSTANTIVE candidate turns reach `1 + follow_up_budget + boundary_grace_turns`.
+     * Substantive = `length(text) >= projects.nudge_min_chars` (every candidate turn when null);
+     * avatar turns never count. `follow_up_budget` is the ROW's own snapshot (the number its
+     * prompt was composed from); a row without one falls back to the configured default.
+     * Counted after the insert's transaction commits so the locked section stays three statements.
+     */
+    private function boundaryDue(InterviewSession $session): bool
+    {
+        $nudge = Project::query()->whereKey($session->project_id)->value('nudge_min_chars');
+
+        $count = Utterance::query()
+            ->where('interview_session_id', $session->id)
+            ->where('speaker', 'candidate')
+            ->when($nudge !== null, fn ($q) => $q->whereRaw('char_length(text) >= ?', [(int) $nudge]))
+            ->count();
+
+        $budget = $session->follow_up_budget ?? (int) config('conversation.followup_budget');
+
+        return $count >= 1 + $budget + (int) config('conversation.boundary_grace_turns');
     }
 
     /**

@@ -890,3 +890,8 @@ function makeProjectInterviewable(Project $project, ?string $competencyCode = nu
 // TestCase is only needed so Mockery is closed and app() helpers resolve.
 pest()->extend(TestCase::class)
     ->in('Unit/Support/Health');
+
+// Feature/Currencies (organization-currencies) — schema, model and endpoint
+// tests assert real Postgres CHECKs and the organizations.currency_code FK.
+pest()->use(RefreshDatabase::class)
+    ->in('Feature/Currencies');

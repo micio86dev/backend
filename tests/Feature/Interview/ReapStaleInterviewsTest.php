@@ -27,6 +27,7 @@ use App\Models\Project;
 use App\Models\Utterance;
 use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
 /**
@@ -121,6 +122,17 @@ describe('what it ends', function (): void {
         expect($session->ended_reason)->toBe('timeout');
         expect($session->ended_at)->not->toBeNull();
     });
+
+    test('a reaped HeyGen session is stopped and its context deleted; a provider failure never aborts the sweep', function (int $stop): void {
+        $scenario = reaperScenario(lastActivityMinutesAgo: 120);
+        $scenario['session']->forceFill(['provider' => 'heygen', 'provider_session_ref' => 'hg-ref', 'provider_context_ref' => 'hg-ctx'])->save();
+        Http::fake(['*liveavatar*/sessions/stop' => Http::response([], $stop), '*liveavatar*' => Http::response([], 200)]);
+
+        expect(runReaper())->toBe(0)
+            ->and($scenario['session']->fresh()->status)->toBe('timeout');
+        expect(Http::recorded()->map(fn (array $p): string => $p[0]->method().' '.parse_url($p[0]->url(), PHP_URL_PATH))->all())
+            ->toBe($stop === 200 ? ['POST /v1/sessions/stop', 'DELETE /v1/contexts/hg-ctx'] : ['POST /v1/sessions/stop']);
+    })->with([200, 500]);
 
     test('an ACTIVE session is left alone', function (): void {
         // A candidate thinking before they answer is not an abandoned session,

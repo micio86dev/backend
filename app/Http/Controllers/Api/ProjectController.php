@@ -73,6 +73,7 @@ class ProjectController extends Controller
      * Creates a Project and pins the FrameworkVersion (conditional is_locked flip).
      * All within a DB transaction — no partial state on failure.
      */
+    #[\Dedoc\Scramble\Attributes\Response(409, description: 'A superadmin must first select the organization to act for (`organization_context_required`).', type: 'array{message: string}')]
     public function store(StoreProjectRequest $request): JsonResponse
     {
         // Plain Model — resolved explicitly, not via the TenantScoped global scope

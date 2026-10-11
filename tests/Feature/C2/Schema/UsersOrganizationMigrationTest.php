@@ -75,9 +75,9 @@ it('migrate rollback and re-migrate leaves schema identical', function (): void 
     // because the step-based rollback is fragile when additional migrations (C3+) are added.
     // Instead, we roll back until organization_id is gone, then re-apply.
     //
-    // NOTE: We roll back all batches (step=100 is effectively "all") to ensure
-    // the C2 migration is reached regardless of how many later migration batches exist.
-    Artisan::call('migrate:rollback', ['--step' => 100, '--force' => true]);
+    // NOTE: `migrate:reset` rolls back EVERY migration. A fixed `--step` counts migrations,
+    // not batches, and silently stops short of the C2 migration once the schema grows past it.
+    Artisan::call('migrate:reset', ['--force' => true]);
 
     expect(Schema::hasColumn('users', 'organization_id'))->toBeFalse();
     expect(Schema::hasColumn('users', 'is_superadmin'))->toBeFalse();

@@ -20,6 +20,7 @@ declare(strict_types=1);
  */
 
 use App\DTOs\Conversation\ComposedPrompt;
+use App\DTOs\Conversation\SpokenOpening;
 use App\Exceptions\Conversation\CompositionException;
 use App\Exceptions\Scoring\AnchorTranslationMissingException;
 use App\Models\BarsIndicator;
@@ -721,4 +722,57 @@ test('(e2) a null role with no role-less rows fails naming the competency and "r
             CompositionException::class,
             "role [none] and competency [{$competency->code}]",
         );
+});
+
+// ─── No second greeting (candidate-interview-call-ui, finding b) ──────────────
+
+const CONTINUATION_CLAUSE = 'This is not the start of the interview. The candidate has already been welcomed and has answered '
+    .'earlier questions. Do NOT greet, welcome or introduce yourself again.';
+
+/**
+ * @param  list<string>  $primaries
+ */
+function composeOpeningParagraph(array $primaries, ?SpokenOpening $opening): string
+{
+    $role = Role::factory()->create(['code' => 'CNT_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'CNT_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $text = makeComposer()->compose(
+        $competency->code, $role->id, $competency->id, 'en', 4, null,
+        primaryQuestions: $primaries, spokenOpening: $opening,
+    )->text;
+
+    preg_match('/^OPENING:.*$/m', $text, $match);
+
+    return $match[0];
+}
+
+test('a continuation opening closes the OPENING paragraph with the no-greeting clause, after the quoted question', function (): void {
+    $paragraph = composeOpeningParagraph(['What is your name?', 'Two?'], SpokenOpening::primary(1, continuation: true));
+
+    expect($paragraph)->toEndWith('Do NOT ask it again. The candidate\'s next reply is their answer to it. '.CONTINUATION_CLAUSE)
+        ->and($paragraph)->toContain('primary question 1, word for word: "What is your name?"');
+});
+
+test('the first competency and the default opening carry no continuation clause', function (): void {
+    expect(composeOpeningParagraph(['One?', 'Two?'], SpokenOpening::primary(1)))->not->toContain('Do NOT greet')
+        ->and(composeOpeningParagraph(['One?', 'Two?'], null))->not->toContain('Do NOT greet');
+});
+
+test('a resumed opening carries no continuation clause', function (): void {
+    expect(composeOpeningParagraph(['One?', 'Two?', 'Three?'], SpokenOpening::resumed(1, 3)))->not->toContain('Do NOT greet');
+});
+
+test('the clause never reaches any other section', function (): void {
+    $role = Role::factory()->create(['code' => 'CNT_'.uniqid()]);
+    $competency = Competency::factory()->create(['code' => 'CNT_'.uniqid()]);
+    composerMakeIndicator($role->id, $competency->id, 0);
+
+    $text = makeComposer()->compose(
+        $competency->code, $role->id, $competency->id, 'en', 4, null,
+        primaryQuestions: ['One?'], spokenOpening: SpokenOpening::primary(1, continuation: true),
+    )->text;
+
+    expect(substr_count($text, CONTINUATION_CLAUSE))->toBe(1);
 });

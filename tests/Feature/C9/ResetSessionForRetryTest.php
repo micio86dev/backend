@@ -65,6 +65,7 @@ function resetFixture(int $errorCount = 1): array
         'framework_version_id' => $project->framework_version_id,
         'provider' => 'heygen',
         'provider_session_ref' => 'provider-ref-to-clear',
+        'provider_context_ref' => 'provider-context-to-clear',
         'status' => 'error',
         'ended_reason' => 'error',
         'error_count' => $errorCount,
@@ -85,7 +86,7 @@ function resetFixture(int $errorCount = 1): array
     return [$session->fresh(), $org, $participant];
 }
 
-test('the reset clears the four session fields that make it resumable', function (): void {
+test('the reset clears the session fields that make it resumable', function (): void {
     [$session] = resetFixture();
 
     (new ResetSessionForRetry)($session);
@@ -93,8 +94,23 @@ test('the reset clears the four session fields that make it resumable', function
     $fresh = $session->fresh();
     expect($fresh->status)->toBe('pending');
     expect($fresh->provider_session_ref)->toBeNull();
+    // Cleared together with the session ref: a context ref left behind would point at
+    // an entry the NEXT session never created, and its teardown would delete it.
+    expect($fresh->provider_context_ref)->toBeNull();
     expect($fresh->ended_reason)->toBeNull();
     expect($fresh->ended_at)->toBeNull();
+});
+
+test('the reset keeps the conversation prompt version stamped on the first attempt', function (): void {
+    // Same judgement as started_at and system_prompt_chars: the stamp records what the
+    // session FIRST ran under, and a re-offer is the same session, not a new one. A
+    // re-offered competency composed under a later prompt is the documented mixed record.
+    [$session] = resetFixture();
+    $session->forceFill(['conversation_prompt_version' => 'v-first'])->save();
+
+    (new ResetSessionForRetry)($session);
+
+    expect($session->fresh()->conversation_prompt_version)->toBe('v-first');
 });
 
 test('the reset does NOT touch error_count — this is the bound', function (): void {
