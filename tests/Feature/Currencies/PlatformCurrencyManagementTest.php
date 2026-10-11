@@ -185,3 +185,39 @@ test('every tenant role is refused on all four verbs and nothing is written', fu
         ->and(Currency::find('GBP')->symbol)->toBe('¤')
         ->and(DB::table('audit_logs')->where('action', 'like', 'currency.%')->count())->toBe(0);
 })->with(['admin', 'operator', 'viewer']);
+
+test('a concurrent duplicate code is a 422 currency_code_taken, not a 500', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    // Seam: the request-level `unique` rule has already passed when the model
+    // insert runs, so a row committed by a racing request is simulated from the
+    // `creating` event. The REAL database unique constraint then rejects the insert.
+    Currency::creating(static function (): void {
+        DB::table('currencies')->insert(['code' => 'GBP', 'symbol' => '£', 'decimals' => 2, 'is_active' => false]);
+    });
+
+    try {
+        $this->withToken($token)->postJson('/api/admin/currencies', gbpPayload())
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.code.0', 'currency_code_taken');
+    } finally {
+        Currency::getEventDispatcher()->forget('eloquent.creating: '.Currency::class);
+    }
+
+    expect(currencyAudit('currency.created'))->toBe([]);
+});
+
+test('a currency created without is_active is inactive, and with a rate it may be created active', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->postJson('/api/admin/currencies', gbpPayload(['code' => 'NOK', 'is_active' => false]))
+        ->assertCreated()->assertJsonPath('data.is_active', false);
+
+    $payload = gbpPayload(['code' => 'CHF']);
+    $this->withToken($token)->postJson('/api/admin/currencies', $payload)
+        ->assertCreated()->assertJsonPath('data.is_active', true);
+
+    $bare = ['code' => 'SEK', 'symbol' => 'kr', 'decimals' => 2];
+    $this->withToken($token)->postJson('/api/admin/currencies', $bare)
+        ->assertCreated()->assertJsonPath('data.is_active', false);
+});

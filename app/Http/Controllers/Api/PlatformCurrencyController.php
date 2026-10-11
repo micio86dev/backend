@@ -13,12 +13,13 @@ use App\Models\Organization;
 use App\Models\User;
 use App\Support\Superadmin\PlatformAuditWriter;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -32,7 +33,9 @@ use Symfony\Component\HttpFoundation\Response;
  * body names no organization (D11): the catalogue never answers who uses what.
  *
  * `abort_unless` is written out per action, like `PlatformAvatarTemplateController`,
- * because Scramble documents only the refusals a controller visibly makes.
+ * because Scramble documents only the refusals a controller visibly makes. `@throws
+ * AuthorizationException` is deliberate although `abort_unless` raises an HttpException: it is
+ * the annotation Scramble maps to the documented 403 response.
  */
 final class PlatformCurrencyController extends Controller
 {
@@ -45,9 +48,9 @@ final class PlatformCurrencyController extends Controller
         return $user instanceof User && $user->is_superadmin === true;
     }
 
-    private function conflict(string $code): JsonResponse
+    private function conflict(string $error): JsonResponse
     {
-        return response()->json(['message' => $code], Response::HTTP_CONFLICT);
+        return response()->json(['message' => $error], Response::HTTP_CONFLICT);
     }
 
     /**
@@ -71,14 +74,21 @@ final class PlatformCurrencyController extends Controller
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        $data = $request->validated() + ['is_active' => false];
+        // Inactive unless the request says otherwise: a rate-bearing currency may be created
+        // active (StoreCurrencyRequest already refuses activation without a rate).
+        $data = [...$request->validated(), 'is_active' => $request->validated('is_active') ?? false];
 
-        $currency = DB::transaction(function () use ($request, $data): Currency {
-            $currency = Currency::create($data);
-            $this->audit->record($request->user()?->id, 'currency.created', 'Currency', null, null, $data);
+        try {
+            $currency = DB::transaction(function () use ($request, $data): Currency {
+                $currency = Currency::create($data);
+                $this->audit->record($request->user()?->id, 'currency.created', 'Currency', null, null, $data);
 
-            return $currency;
-        });
+                return $currency;
+            });
+        } catch (UniqueConstraintViolationException) {
+            // A racing request committed this code after the `unique` rule passed: same answer as the rule.
+            throw ValidationException::withMessages(['code' => StoreCurrencyRequest::MESSAGES['code.unique']]);
+        }
 
         return (new CurrencyResource($currency->refresh()))->response()->setStatusCode(Response::HTTP_CREATED);
     }
@@ -97,8 +107,8 @@ final class PlatformCurrencyController extends Controller
             $data = $request->validated();
 
             $deactivates = ($data['is_active'] ?? true) === false && $currency->is_active;
-            if ($code === 'USD' && (($data['is_active'] ?? true) === false
-                || (isset($data['rate_per_usd']) && (float) $data['rate_per_usd'] !== 1.0))) {
+            $changesUsdRate = isset($data['rate_per_usd']) && (float) $data['rate_per_usd'] !== 1.0;
+            if ($code === 'USD' && ($deactivates || $changesUsdRate)) {
                 return $this->conflict('currency_usd_immutable');
             }
             if ($deactivates && $this->isAssigned($code)) {
@@ -127,11 +137,11 @@ final class PlatformCurrencyController extends Controller
      *
      * @throws AuthorizationException
      */
-    public function destroy(Request $request, string $code): HttpResponse|JsonResponse
+    public function destroy(Request $request, string $code): Response|JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);
 
-        return DB::transaction(function () use ($request, $code): HttpResponse|JsonResponse {
+        return DB::transaction(function () use ($request, $code): Response|JsonResponse {
             $currency = Currency::query()->lockForUpdate()->findOrFail($code);
 
             if ($code === 'USD') {
