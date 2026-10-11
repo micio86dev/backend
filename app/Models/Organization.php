@@ -9,6 +9,7 @@ use App\Support\PublicApi\PubliclyIdentifiable;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -23,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $default_webhook_secret
  * @property string|null $logo_path
  * @property string|null $primary_color
+ * @property string $currency_code Display currency, a real FK to `currencies.code`; defaults to `USD`.
  * @property int|null $public_api_rate_limit_live
  * @property int|null $public_api_rate_limit_test
  * @property list<string>|null $allowed_domains Domains allowed to embed
@@ -59,6 +61,7 @@ class Organization extends Model implements PubliclyIdentifiable
         // so a stored URL would bake one environment's host into the row.
         'logo_path',
         'primary_color',
+        'currency_code',
         // Public API (`/v1`) rate-limit overrides (public-api step 3, SPEC.md
         // §3.2) — both null-by-default; see the migration's own docblock for
         // why they stay null rather than carrying a literal default.
@@ -167,6 +170,14 @@ class Organization extends Model implements PubliclyIdentifiable
         $version = basename($key);
 
         return rtrim((string) config('app.url'), '/').'/'.ltrim($path, '/').'?v='.rawurlencode($version);
+    }
+
+    /**
+     * @return BelongsTo<Currency, $this>
+     */
+    public function currency(): BelongsTo
+    {
+        return $this->belongsTo(Currency::class, 'currency_code', 'code');
     }
 
     /**
