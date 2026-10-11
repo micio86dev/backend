@@ -26,9 +26,14 @@ class UpdateCurrencyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['prohibited'],
             'symbol' => ['sometimes', 'string', 'max:8'],
             'decimals' => ['sometimes', 'integer', 'between:0,4'],
+            /**
+             * Canonical form is a decimal string (up to six decimals, as `CurrencyResource` returns it);
+             * a JSON number is also accepted.
+             *
+             * @var string|float
+             */
             'rate_per_usd' => ['sometimes', 'required_with:rate_as_of', 'numeric', 'decimal:0,6', 'gt:0', 'lt:1000000'],
             'rate_as_of' => ['sometimes', 'required_with:rate_per_usd', 'date_format:Y-m-d', 'before_or_equal:today'],
             'is_active' => ['sometimes', 'boolean'],
@@ -44,13 +49,19 @@ class UpdateCurrencyRequest extends FormRequest
     }
 
     /**
+     * `code` is refused here, not by a `prohibited` rule: that rule would list `code` as a
+     * writable property in the generated schema (the path parameter carries the code). One rule,
+     * two encodings for activation: the rate may already be stored, whereas
+     * {@see StoreCurrencyRequest::after()} requires it in the body.
+     *
      * @return array<int, callable>
      */
     public function after(): array
     {
-        // One rule, two encodings: activation needs a rate. Here the rate may already be stored;
-        // {@see StoreCurrencyRequest::after()} requires it in the body.
         return [function ($validator): void {
+            if ($this->has('code')) {
+                $validator->errors()->add('code', StoreCurrencyRequest::MESSAGES['code.prohibited']);
+            }
             if (! $this->boolean('is_active') || $this->has('rate_per_usd')) {
                 return;
             }

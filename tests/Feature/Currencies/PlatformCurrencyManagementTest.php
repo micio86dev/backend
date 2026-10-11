@@ -221,3 +221,16 @@ test('a currency created without is_active is inactive, and with a rate it may b
     $this->withToken($token)->postJson('/api/admin/currencies', $bare)
         ->assertCreated()->assertJsonPath('data.is_active', false);
 });
+
+test('a fetched decimal-string rate round-trips through PATCH with six-decimal precision', function (): void {
+    ['token' => $token] = saSuperadmin();
+    Currency::factory()->active()->create(['code' => 'GBP', 'rate_per_usd' => '0.892379', 'rate_as_of' => '2026-10-10']);
+
+    $fetched = $this->withToken($token)->getJson('/api/admin/currencies')->json('data');
+    $gbp = collect($fetched)->firstWhere('code', 'GBP');
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/GBP', ['rate_per_usd' => $gbp['rate_per_usd'], 'rate_as_of' => '2026-10-11'])
+        ->assertOk()
+        ->assertJsonPath('data.rate_per_usd', '0.892379');
+    expect(DB::table('currencies')->where('code', 'GBP')->value('rate_per_usd'))->toBe('0.892379');
+});

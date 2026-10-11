@@ -32,7 +32,7 @@ class UpdateManagedOrganizationRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'primary_color' => ['sometimes', 'nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
-            'currency_code' => ['sometimes', 'required', 'string', Rule::exists('currencies', 'code')->where('is_active', true)],
+            'currency_code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/', Rule::exists('currencies', 'code')->where('is_active', true)],
         ];
     }
 
@@ -49,6 +49,7 @@ class UpdateManagedOrganizationRequest extends FormRequest
             'primary_color.regex' => 'primary_color_invalid',
             'currency_code.required' => 'currency_unavailable',
             'currency_code.string' => 'currency_unavailable',
+            'currency_code.regex' => 'currency_unavailable',
             'currency_code.exists' => 'currency_unavailable',
         ];
     }
