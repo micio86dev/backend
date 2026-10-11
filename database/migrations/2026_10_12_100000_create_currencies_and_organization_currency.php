@@ -20,9 +20,12 @@ use Illuminate\Support\Facades\DB;
  * column default references it, so every environment (RefreshDatabase tests,
  * a fresh Railway database) must have it without a seeding step. `EUR` is
  * seeded INACTIVE with NO rate. An exchange rate is an operator's decision and
- * a moving number: this file, the seed and every other file carry none, and
+ * a moving number: THIS MIGRATION and its seed carry none, and
  * `currencies_active_rated` guarantees an unrated currency can never be
- * activated, so EUR cannot be selected until a superadmin sets a rate.
+ * activated, so EUR cannot be selected until a rate is set. The rate comes
+ * later: the owner-authorized `CurrencyRatesSeeder` (2026-10-11, ECB reference
+ * rate of 2026-10-09) sets the confirmed EUR rate where the table is populated,
+ * and a superadmin may edit it afterwards.
  *
  * Amounts stay stored in USD (`*_usd`); a currency only changes how they are
  * displayed, by `rate_per_usd` (units of the currency per 1 USD).
