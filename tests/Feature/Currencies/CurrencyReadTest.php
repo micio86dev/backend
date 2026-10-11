@@ -6,7 +6,7 @@ use App\Models\Currency;
 use App\Models\Organization;
 
 test('every role reads the active catalogue only, with the rate as a decimal string', function (string $role): void {
-    Currency::factory()->active()->create(['code' => 'GBP', 'symbol' => '£', 'rate_per_usd' => '0.790000']);
+    Currency::factory()->active()->create(['code' => 'GBP', 'symbol' => '£', 'decimals' => 2, 'rate_per_usd' => '0.790000', 'rate_as_of' => '2026-10-10']);
     Currency::factory()->rated()->create(['code' => 'JPY']);
     $org = Organization::factory()->create();
 
@@ -22,7 +22,7 @@ test('every role reads the active catalogue only, with the rate as a decimal str
         'symbol' => '£',
         'decimals' => 2,
         'rate_per_usd' => '0.790000',
-        'rate_as_of' => '2026-10-12',
+        'rate_as_of' => '2026-10-10',
         'is_active' => true,
     ]);
 })->with(['admin', 'operator', 'viewer']);

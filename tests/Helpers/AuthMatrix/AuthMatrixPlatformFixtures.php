@@ -231,7 +231,8 @@ final class AuthMatrixPlatformFixtures
             'GET api/admin/currencies' => [],
             'POST api/admin/currencies' => [
                 'payload' => fn (): array => [
-                    'code' => implode('', array_map(static fn (): string => chr(random_int(65, 90)), [1, 2, 3])),
+                    // Fixed and never seeded (USD/EUR are): only the allowed cell creates it, once per run.
+                    'code' => 'MXQ',
                     'symbol' => '¤',
                     'decimals' => 2,
                 ],

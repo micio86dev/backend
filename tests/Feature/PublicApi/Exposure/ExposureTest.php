@@ -158,7 +158,7 @@ test('T-EXPOSE-001: PlatformAvatarTemplate — the platform resource adds exactl
     expect(array_intersect($added, $public))->toBe([]);
 });
 
-test('T-EXPOSE-001: Currency — the resource keys equal the frozen admin-only list, and none is public', function (): void {
+test('T-EXPOSE-001: Currency — the resource keys equal the frozen list, and none appears in the project serializer', function (): void {
     $keys = ExposureCatalogue::flattenKeys((new CurrencyResource(Currency::query()->findOrFail('USD')))->toArray(request()));
     $expected = ExposureCatalogue::exclusions()['Currency'];
     sort($keys);
@@ -171,6 +171,10 @@ test('T-EXPOSE-001: Currency — the resource keys equal the frozen admin-only l
     $public = ExposureCatalogue::flattenKeys(ProjectSerializer::toArray($project->fresh(['frameworkVersion', 'avatarTemplate', 'competencies'])));
 
     expect(array_intersect($keys, $public))->toBe([]);
+
+    // The published public contract carries no catalogue endpoint or rate key.
+    $v1 = (string) file_get_contents(base_path('openapi.v1.json'));
+    expect($v1)->not->toContain('/currencies')->not->toContain('rate_per_usd');
 });
 
 test('T-EXPOSE-001: Interview — admin (list ∪ detail) minus public equals exactly the frozen exclusion list, public minus admin equals exactly the frozen addition list', function (): void {
