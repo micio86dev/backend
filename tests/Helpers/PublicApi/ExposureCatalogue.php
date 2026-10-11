@@ -36,6 +36,7 @@ final class ExposureCatalogue
             'Organization' => [
                 'slug',
                 'primary_color',
+                'currency_code',
                 'logo_url',
                 'default_webhook_url',
                 'default_webhook_events',

@@ -10,6 +10,7 @@ declare(strict_types=1);
  * and are superadmin-only (403 for everyone else, like the rest of that group).
  */
 
+use App\Models\Currency;
 use App\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -109,4 +110,44 @@ test('an ordinary admin cannot create, read or update organizations through the 
     $this->withToken($token)->patchJson("/api/admin/organizations/{$org->id}", ['name' => 'Nope'])->assertForbidden();
     expect(Organization::where('name', 'Nope')->exists())->toBeFalse();
     expect(DB::table('audit_logs')->where('action', 'like', 'organization.%')->count())->toBe(0);
+});
+
+test('create stores USD when no currency is given, and an active code when it is', function (): void {
+    Currency::query()->whereKey('EUR')->update(['rate_per_usd' => '0.892379', 'rate_as_of' => '2026-10-11', 'is_active' => true]);
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->postJson('/api/admin/organizations', ['name' => 'Default Co'])
+        ->assertCreated()->assertJsonPath('data.currency_code', 'USD');
+    $this->withToken($token)->postJson('/api/admin/organizations', ['name' => 'Euro Co', 'currency_code' => 'EUR'])
+        ->assertCreated()->assertJsonPath('data.currency_code', 'EUR');
+
+    expect(Organization::where('slug', 'euro-co')->firstOrFail()->currency_code)->toBe('EUR');
+});
+
+test('create and edit refuse an inactive or unknown currency with a machine code', function (string $code): void {
+    $acme = Organization::factory()->create();
+    ['token' => $token] = saSuperadmin();
+
+    $create = $this->withToken($token)->postJson('/api/admin/organizations', ['name' => 'Nope Co', 'currency_code' => $code]);
+    $create->assertUnprocessable();
+    expect($create->json('errors.currency_code.0'))->toBe('currency_unavailable')
+        ->and(Organization::where('slug', 'nope-co')->exists())->toBeFalse();
+
+    $edit = $this->withToken($token)->patchJson("/api/admin/organizations/{$acme->id}", ['currency_code' => $code]);
+    $edit->assertUnprocessable();
+    expect($edit->json('errors.currency_code.0'))->toBe('currency_unavailable')
+        ->and($acme->fresh()->currency_code)->toBe('USD');
+})->with(['inactive EUR' => 'EUR', 'unknown' => 'XYZ']);
+
+test('a superadmin edit of the currency is covered by organization.updated with before and after', function (): void {
+    Currency::query()->whereKey('EUR')->update(['rate_per_usd' => '0.892379', 'rate_as_of' => '2026-10-11', 'is_active' => true]);
+    $acme = Organization::factory()->create();
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->patchJson("/api/admin/organizations/{$acme->id}", ['currency_code' => 'EUR'])
+        ->assertOk()->assertJsonPath('data.currency_code', 'EUR');
+
+    $row = DB::table('audit_logs')->where('action', 'organization.updated')->where('subject_id', $acme->id)->first();
+    expect(json_decode($row->before, true))->toBe(['currency_code' => 'USD'])
+        ->and(json_decode($row->after, true))->toBe(['currency_code' => 'EUR']);
 });

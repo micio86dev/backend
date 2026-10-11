@@ -37,10 +37,11 @@ final class CreateOrganization
     /**
      * Runs its own transaction; safe to call from inside another one.
      */
-    public function create(string $name, string $slug, ?User $actor = null): Organization
+    public function create(string $name, string $slug, ?User $actor = null, ?string $currencyCode = null): Organization
     {
-        return DB::transaction(function () use ($name, $slug, $actor): Organization {
-            $organization = Organization::create(['name' => $name, 'slug' => $slug]);
+        return DB::transaction(function () use ($name, $slug, $actor, $currencyCode): Organization {
+            // Null keeps the column default (USD); refresh() loads it into the model.
+            $organization = Organization::create(['name' => $name, 'slug' => $slug, ...($currencyCode === null ? [] : ['currency_code' => $currencyCode])])->refresh();
 
             app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -70,7 +71,7 @@ final class CreateOrganization
                     subjectType: 'Organization',
                     subjectId: $organization->id,
                     before: null,
-                    after: ['name' => $name, 'slug' => $slug],
+                    after: ['name' => $name, 'slug' => $slug, 'currency_code' => $organization->currency_code],
                 );
             }
 

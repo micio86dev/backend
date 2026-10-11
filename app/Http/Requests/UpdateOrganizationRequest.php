@@ -24,8 +24,8 @@ use Illuminate\Validation\Rule;
 // exposed on `GET /v1/organization` but writable through no endpoint at
 // all.
 /**
- * The body of `PATCH /api/organization`: the organization name, the default webhook settings and
- * the primary colour. Any other field is ignored.
+ * The body of `PATCH /api/organization`: the organization name, the default webhook settings,
+ * the primary colour and the display currency. Any other field is ignored.
  */
 class UpdateOrganizationRequest extends FormRequest
 {
@@ -81,6 +81,7 @@ class UpdateOrganizationRequest extends FormRequest
              * choosing a colour would be a one-way door.
              */
             'primary_color' => ['sometimes', 'nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
+            'currency_code' => ['sometimes', 'required', 'string', Rule::exists('currencies', 'code')->where('is_active', true)],
         ];
     }
 
@@ -116,6 +117,11 @@ class UpdateOrganizationRequest extends FormRequest
             'default_webhook_events.*.in' => 'webhook_event_unknown',
             'primary_color.string' => 'primary_color_invalid',
             'primary_color.regex' => 'primary_color_invalid',
+            // One slug for every currency refusal (inactive, unknown, malformed): the
+            // response never says which codes exist but are switched off.
+            'currency_code.required' => 'currency_unavailable',
+            'currency_code.string' => 'currency_unavailable',
+            'currency_code.exists' => 'currency_unavailable',
         ];
     }
 }
