@@ -43,7 +43,7 @@ class StoreOrganizationRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/', Rule::unique('organizations', 'slug')],
             // Omitted means USD (the column default).
-            'currency_code' => ['sometimes', 'required', 'string', Rule::exists('currencies', 'code')->where('is_active', true)],
+            'currency_code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/', Rule::exists('currencies', 'code')->where('is_active', true)],
         ];
     }
 
@@ -63,6 +63,7 @@ class StoreOrganizationRequest extends FormRequest
             'slug.unique' => 'slug_taken',
             'currency_code.required' => 'currency_unavailable',
             'currency_code.string' => 'currency_unavailable',
+            'currency_code.regex' => 'currency_unavailable',
             'currency_code.exists' => 'currency_unavailable',
         ];
     }

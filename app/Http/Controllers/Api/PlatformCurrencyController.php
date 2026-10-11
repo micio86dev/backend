@@ -12,6 +12,7 @@ use App\Models\Currency;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Superadmin\PlatformAuditWriter;
+use Dedoc\Scramble\Attributes\Response as ResponseDoc;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -98,6 +99,8 @@ final class PlatformCurrencyController extends Controller
      *
      * @throws AuthorizationException
      */
+    #[ResponseDoc(200, type: 'array{data: \App\Http\Resources\CurrencyResource}')]
+    #[ResponseDoc(409, description: 'The currency is in use, or it is USD (immutable).', type: "array{message: 'currency_in_use'|'currency_usd_immutable'}")]
     public function update(UpdateCurrencyRequest $request, string $code): CurrencyResource|JsonResponse
     {
         abort_unless($this->isSuperadmin($request), Response::HTTP_FORBIDDEN);

@@ -9414,21 +9414,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "anyOf": [
-                                        {
-                                            "type": "object",
-                                            "properties": {
-                                                "data": {
-                                                    "$ref": "#/components/schemas/CurrencyResource"
-                                                }
-                                            },
-                                            "required": [
-                                                "data"
-                                            ]
-                                        },
-                                        {
-                                            "type": "object"
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/CurrencyResource"
                                         }
+                                    },
+                                    "required": [
+                                        "data"
                                     ]
                                 }
                             }
@@ -9442,6 +9435,28 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationException"
+                    },
+                    "409": {
+                        "description": "The currency is in use, or it is USD (immutable).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "enum": [
+                                                "currency_in_use",
+                                                "currency_usd_immutable"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -17866,9 +17881,17 @@
                         "maximum": 4
                     },
                     "rate_per_usd": {
-                        "type": [
-                            "number",
-                            "null"
+                        "description": "Canonical form is a decimal string (up to six decimals, as `CurrencyResource` returns it);\na JSON number is also accepted. Required together with `rate_as_of`; activating\n(`is_active: true`) requires a rate.",
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
                         ]
                     },
                     "rate_as_of": {
@@ -17938,7 +17961,8 @@
                     },
                     "currency_code": {
                         "type": "string",
-                        "description": "Omitted means USD (the column default)."
+                        "description": "Omitted means USD (the column default).",
+                        "pattern": "^[A-Z]{3}$"
                     }
                 },
                 "required": [
@@ -18376,9 +18400,6 @@
                 "type": "object",
                 "description": "The body of `PATCH /api/admin/currencies/{code}` (superadmin only).\n\nThe code is the primary key and never changes: sending it is refused. A\nrate is never cleared once set, and a rate and its date travel together.",
                 "properties": {
-                    "code": {
-                        "type": "string"
-                    },
                     "symbol": {
                         "type": "string",
                         "maxLength": 8
@@ -18389,7 +18410,15 @@
                         "maximum": 4
                     },
                     "rate_per_usd": {
-                        "type": "number"
+                        "description": "Canonical form is a decimal string (up to six decimals, as `CurrencyResource` returns it);\na JSON number is also accepted.",
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "number"
+                            }
+                        ]
                     },
                     "rate_as_of": {
                         "type": "string",
@@ -18439,7 +18468,8 @@
                         "pattern": "^#[0-9a-fA-F]{6}$"
                     },
                     "currency_code": {
-                        "type": "string"
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
                     }
                 },
                 "title": "UpdateManagedOrganizationRequest"
@@ -18490,7 +18520,8 @@
                         "pattern": "^#[0-9a-fA-F]{6}$"
                     },
                     "currency_code": {
-                        "type": "string"
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
                     }
                 },
                 "title": "UpdateOrganizationRequest"

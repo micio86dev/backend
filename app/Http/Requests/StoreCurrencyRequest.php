@@ -52,6 +52,13 @@ class StoreCurrencyRequest extends FormRequest
             'code' => ['required', 'string', 'regex:/\A[A-Z]{3}\z/', 'unique:currencies,code'],
             'symbol' => ['required', 'string', 'max:8'],
             'decimals' => ['required', 'integer', 'between:0,4'],
+            /**
+             * Canonical form is a decimal string (up to six decimals, as `CurrencyResource` returns it);
+             * a JSON number is also accepted. Required together with `rate_as_of`; activating
+             * (`is_active: true`) requires a rate.
+             *
+             * @var string|float|null
+             */
             'rate_per_usd' => ['nullable', 'required_with:rate_as_of', 'numeric', 'decimal:0,6', 'gt:0', 'lt:1000000'],
             'rate_as_of' => ['nullable', 'required_with:rate_per_usd', 'date_format:Y-m-d', 'before_or_equal:today'],
             'is_active' => ['sometimes', 'boolean'],
@@ -67,12 +74,13 @@ class StoreCurrencyRequest extends FormRequest
     }
 
     /**
+     * One rule, two encodings: activation needs a rate. Here the rate must be in the body;
+     * {@see UpdateCurrencyRequest::after()} may also accept the rate already stored.
+     *
      * @return array<int, callable>
      */
     public function after(): array
     {
-        // One rule, two encodings: activation needs a rate. Here the rate must be in the body;
-        // {@see UpdateCurrencyRequest::after()} may also accept the rate already stored.
         return [function ($validator): void {
             if ($this->boolean('is_active') && $this->input('rate_per_usd') === null) {
                 $validator->errors()->add('is_active', 'currency_activation_requires_rate');
