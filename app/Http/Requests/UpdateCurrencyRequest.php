@@ -6,6 +6,7 @@ namespace App\Http\Requests;
 
 use App\Models\Currency;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 /**
  * The body of `PATCH /api/admin/currencies/{code}` (superadmin only).
@@ -34,8 +35,8 @@ class UpdateCurrencyRequest extends FormRequest
              *
              * @var string|float
              */
-            'rate_per_usd' => ['sometimes', 'required_with:rate_as_of', 'numeric', 'decimal:0,6', 'gt:0', 'lt:1000000'],
-            'rate_as_of' => ['sometimes', 'required_with:rate_per_usd', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'rate_per_usd' => ['required_with:rate_as_of', 'numeric', 'decimal:0,6', 'gt:0', 'lt:1000000'],
+            'rate_as_of' => ['required_with:rate_per_usd', 'date_format:Y-m-d', 'before_or_equal:today'],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }
@@ -49,6 +50,17 @@ class UpdateCurrencyRequest extends FormRequest
     }
 
     /**
+     * `is_active` arrives in every form the `boolean` rule accepts (`0`, `"0"`, `false`, ...); the
+     * controller decides on the value, so it is cast once here, before validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('is_active') && in_array($this->input('is_active'), [0, 1, '0', '1'], true)) {
+            $this->merge(['is_active' => (bool) $this->input('is_active')]);
+        }
+    }
+
+    /**
      * `code` is refused here, not by a `prohibited` rule: that rule would list `code` as a
      * writable property in the generated schema (the path parameter carries the code). One rule,
      * two encodings for activation: the rate may already be stored, whereas
@@ -58,7 +70,7 @@ class UpdateCurrencyRequest extends FormRequest
      */
     public function after(): array
     {
-        return [function ($validator): void {
+        return [function (Validator $validator): void {
             if ($this->has('code')) {
                 $validator->errors()->add('code', StoreCurrencyRequest::MESSAGES['code.prohibited']);
             }
@@ -66,8 +78,9 @@ class UpdateCurrencyRequest extends FormRequest
                 return;
             }
 
-            $current = Currency::query()->whereKey($this->route('code'))->value('rate_per_usd');
-            if ($current === null) {
+            // An unknown code is the controller's 404, not a 422 about a rate it never had.
+            $row = Currency::query()->whereKey($this->route('code'))->first(['rate_per_usd']);
+            if ($row !== null && $row->rate_per_usd === null) {
                 $validator->errors()->add('is_active', 'currency_activation_requires_rate');
             }
         }];

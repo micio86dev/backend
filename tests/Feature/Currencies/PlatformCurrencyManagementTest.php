@@ -234,3 +234,72 @@ test('a fetched decimal-string rate round-trips through PATCH with six-decimal p
         ->assertJsonPath('data.rate_per_usd', '0.892379');
     expect(DB::table('currencies')->where('code', 'GBP')->value('rate_per_usd'))->toBe('0.892379');
 });
+
+test('a rate and its date travel together on update, in either direction', function (array $payload, string $field): void {
+    ['token' => $token] = saSuperadmin();
+    Currency::factory()->active()->create(['code' => 'GBP', 'rate_per_usd' => '0.920000', 'rate_as_of' => '2026-10-10']);
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/GBP', $payload)
+        ->assertUnprocessable()
+        ->assertJsonPath("errors.{$field}.0", $field === 'rate_as_of' ? 'currency_rate_as_of_invalid' : 'currency_rate_invalid');
+
+    $gbp = Currency::find('GBP');
+    expect((string) $gbp->rate_per_usd)->toBe('0.920000')
+        ->and(currencyAudit('currency.updated'))->toBe([]);
+})->with([
+    'rate without a date' => [['rate_per_usd' => '0.930000'], 'rate_as_of'],
+    'date without a rate' => [['rate_as_of' => '2026-10-11'], 'rate_per_usd'],
+]);
+
+test('a date without a rate is refused when no rate is stored', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/EUR', ['rate_as_of' => '2026-10-11'])
+        ->assertUnprocessable()
+        ->assertJsonPath('errors.rate_per_usd.0', 'currency_rate_invalid');
+});
+
+test('every accepted false deactivation hits the in-use and USD guards', function (mixed $false): void {
+    ['token' => $token] = saSuperadmin();
+    Currency::factory()->active()->create(['code' => 'GBP']);
+    $org = Organization::factory()->create();
+    DB::table('organizations')->where('id', $org->id)->update(['currency_code' => 'GBP']);
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/GBP', ['is_active' => $false])
+        ->assertConflict()->assertExactJson(['message' => 'currency_in_use']);
+    $this->withToken($token)->patchJson('/api/admin/currencies/USD', ['is_active' => $false])
+        ->assertConflict()->assertExactJson(['message' => 'currency_usd_immutable']);
+
+    expect(Currency::find('GBP')->is_active)->toBeTrue()
+        ->and(Currency::find('USD')->is_active)->toBeTrue();
+})->with([false, 0, '0']);
+
+test('a non-boolean is_active string is refused, not guessed', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/USD', ['is_active' => 'false'])
+        ->assertUnprocessable()
+        ->assertJsonPath('errors.is_active.0', 'currency_active_invalid');
+});
+
+test('an unknown code is a 404 even when the activation rule would fire', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/ZZZ', ['is_active' => true])->assertNotFound();
+});
+
+test('an explicit null never clears the rate or its date, nor skips the activation guard', function (array $payload, string $field): void {
+    ['token' => $token] = saSuperadmin();
+    Currency::factory()->create(['code' => 'GBP', 'rate_per_usd' => '0.920000', 'rate_as_of' => '2026-10-10']);
+
+    $this->withToken($token)->patchJson('/api/admin/currencies/GBP', $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors($field);
+
+    $gbp = Currency::find('GBP');
+    expect((string) $gbp->rate_per_usd)->toBe('0.920000')->and($gbp->rate_as_of)->not->toBeNull();
+})->with([
+    'null rate' => [['rate_per_usd' => null], 'rate_per_usd'],
+    'null date' => [['rate_as_of' => null], 'rate_as_of'],
+    'null rate with activation' => [['is_active' => true, 'rate_per_usd' => null], 'rate_per_usd'],
+]);
