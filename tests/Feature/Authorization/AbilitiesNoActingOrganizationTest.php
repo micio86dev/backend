@@ -40,7 +40,7 @@ test('with no acting organization the org-scoped groups are all false and the pl
         expect($abilities[$group])->toBe(allAbilities($abilities[$group], false), "{$group} must be fully suppressed");
     }
 
-    foreach (['users', 'llmCredentials', 'avatarTemplates', 'clients', 'platformSettings', 'catalogue'] as $group) {
+    foreach (['users', 'llmCredentials', 'avatarTemplates', 'clients', 'platformSettings', 'catalogue', 'currencies'] as $group) {
         expect($abilities[$group])->toBe(allAbilities($abilities[$group], true), "{$group} is platform-scope and must stay true");
     }
 });

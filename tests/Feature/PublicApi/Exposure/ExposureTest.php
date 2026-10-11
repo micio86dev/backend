@@ -16,11 +16,13 @@ use App\Http\Resources\Admin\ParticipantDetailResource as AdminParticipantDetail
 use App\Http\Resources\Admin\ParticipantResource as AdminParticipantResource;
 use App\Http\Resources\Admin\TranscriptResource as AdminTranscriptResource;
 use App\Http\Resources\AvatarTemplateResource;
+use App\Http\Resources\CurrencyResource;
 use App\Http\Resources\PlatformAvatarTemplateResource;
 use App\Http\Resources\ProjectResource as AdminProjectResource;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
+use App\Models\Currency;
 use App\Models\FrameworkVersion;
 use App\Models\InterviewEvent;
 use App\Models\InterviewRecording;
@@ -154,6 +156,21 @@ test('T-EXPOSE-001: PlatformAvatarTemplate — the platform resource adds exactl
     $public = ExposureCatalogue::flattenKeys(ProjectSerializer::toArray($project->fresh(['frameworkVersion', 'avatarTemplate', 'competencies'])));
 
     expect(array_intersect($added, $public))->toBe([]);
+});
+
+test('T-EXPOSE-001: Currency — the resource keys equal the frozen admin-only list, and none is public', function (): void {
+    $keys = ExposureCatalogue::flattenKeys((new CurrencyResource(Currency::query()->findOrFail('USD')))->toArray(request()));
+    $expected = ExposureCatalogue::exclusions()['Currency'];
+    sort($keys);
+    sort($expected);
+
+    expect($keys)->toBe($expected);
+
+    $org = Organization::factory()->create();
+    $project = TenantContextScope::runFor($org->id, fn (): Project => Project::factory()->create(['organization_id' => $org->id]));
+    $public = ExposureCatalogue::flattenKeys(ProjectSerializer::toArray($project->fresh(['frameworkVersion', 'avatarTemplate', 'competencies'])));
+
+    expect(array_intersect($keys, $public))->toBe([]);
 });
 
 test('T-EXPOSE-001: Interview — admin (list ∪ detail) minus public equals exactly the frozen exclusion list, public minus admin equals exactly the frozen addition list', function (): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Helpers\AuthMatrix;
 
+use App\Models\Currency;
 use App\Models\Organization;
 use Closure;
 use Database\Seeders\FrameworkCatalogSeeder;
@@ -31,6 +32,7 @@ final class AuthMatrixPlatformFixtures
             ...self::catalogue(),
             ...self::llm(),
             ...self::framework(),
+            ...self::currencies(),
             ...self::avatarTemplates(),
             ...self::m2mClients(),
         ];
@@ -214,6 +216,29 @@ final class AuthMatrixPlatformFixtures
             'GET api/framework/roles/{roleCode}/competencies/{competencyCode}/indicators' => ['before' => $seeded, 'params' => fn (): array => ['roleCode' => 'ICO', 'competencyCode' => 'PRS']],
             'GET api/framework/potential-competencies' => ['before' => $seeded],
             'GET api/framework/versions' => [],
+        ];
+    }
+
+    /**
+     * @return array<string, array<string, Closure>>
+     */
+    private static function currencies(): array
+    {
+        $row = fn (): array => ['code' => Currency::factory()->create()->code];
+
+        return [
+            'GET api/currencies' => [],
+            'GET api/admin/currencies' => [],
+            'POST api/admin/currencies' => [
+                'payload' => fn (): array => [
+                    'code' => implode('', array_map(static fn (): string => chr(random_int(65, 90)), [1, 2, 3])),
+                    'symbol' => '¤',
+                    'decimals' => 2,
+                ],
+            ],
+            'PATCH api/admin/currencies/{code}' => ['params' => $row, 'payload' => fn (): array => ['symbol' => 'x']],
+            // Unassigned and inactive, so an allowed cell really deletes it.
+            'DELETE api/admin/currencies/{code}' => ['params' => $row],
         ];
     }
 

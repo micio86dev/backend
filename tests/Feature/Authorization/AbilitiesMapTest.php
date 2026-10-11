@@ -57,6 +57,7 @@ function expectedAbilities(): array
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
+            'currencies' => ['manage' => false],
         ],
         'operator' => [
             'organization' => ['view' => true, 'update' => false],
@@ -71,6 +72,7 @@ function expectedAbilities(): array
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
+            'currencies' => ['manage' => false],
         ],
         'viewer' => [
             'organization' => ['view' => true, 'update' => false],
@@ -83,6 +85,7 @@ function expectedAbilities(): array
             'clients' => ['viewAny' => false],
             'platformSettings' => ['viewAny' => false],
             'catalogue' => ['manage' => false],
+            'currencies' => ['manage' => false],
         ],
     ];
 }
@@ -168,4 +171,13 @@ test('a superadmin receives platformSettings.viewAny', function (): void {
 
     $response->assertOk();
     expect($response->json('abilities.platformSettings'))->toEqual(['viewAny' => true]);
+});
+
+test('a superadmin receives currencies.manage', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+
+    $response = $this->withToken($token)->getJson('/api/auth/me');
+
+    $response->assertOk();
+    expect($response->json('abilities.currencies'))->toEqual(['manage' => true]);
 });

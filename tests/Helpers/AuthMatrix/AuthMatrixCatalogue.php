@@ -159,6 +159,14 @@ final class AuthMatrixCatalogue
             'GET api/framework/roles/{roleCode}/competencies/{competencyCode}/indicators' => self::user('framework', self::authenticatedRead()),
             'GET api/framework/versions' => self::user('framework', self::authenticatedRead()),
 
+            // ─── currencies (organization-currencies) ────────────────────────
+            // The active catalogue is readable by any authenticated user; the platform surface is superadmin only.
+            'GET api/currencies' => self::user('currencies', self::authenticatedRead()),
+            'GET api/admin/currencies' => self::superadminOnly('currencies'),
+            'POST api/admin/currencies' => self::superadminOnly('currencies'),
+            'PATCH api/admin/currencies/{code}' => self::superadminOnly('currencies'),
+            'DELETE api/admin/currencies/{code}' => self::superadminOnly('currencies'),
+
             // ─── avatar templates ────────────────────────────────────────────
             // Platform (global) templates: NULL organization, superadmin only, no `org.context`
             // (a bare superadmin is exactly who manages them). Bare AND acting are served.
