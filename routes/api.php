@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Catalogue\CompetencyController as CatalogueCompeten
 use App\Http\Controllers\Api\Catalogue\DefaultQuestionController;
 use App\Http\Controllers\Api\Catalogue\RevisionController;
 use App\Http\Controllers\Api\Catalogue\RoleController as CatalogueRoleController;
+use App\Http\Controllers\Api\CurrencyController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EntryLinkController;
 use App\Http\Controllers\Api\EvaluationAuditController;
@@ -27,6 +28,7 @@ use App\Http\Controllers\Api\ParticipantDownloadController;
 use App\Http\Controllers\Api\ParticipantRecoveryController;
 use App\Http\Controllers\Api\ParticipantScheduleController;
 use App\Http\Controllers\Api\PlatformAvatarTemplateController;
+use App\Http\Controllers\Api\PlatformCurrencyController;
 use App\Http\Controllers\Api\PlatformUserController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProfilePhotoController;
@@ -335,6 +337,9 @@ Route::middleware(['auth:api', TenantContext::class])->prefix('framework')->grou
 // no policy check, no ownership to authorize.
 Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::get('/llm-models', [LlmModelController::class, 'index']);
+
+    // organization-currencies — the active catalogue, readable by every authenticated role.
+    Route::get('/currencies', [CurrencyController::class, 'index']);
 });
 
 // ─── Conversation LLM Credentials (pluggable-conversation-llm PR P2) ─────────
@@ -444,6 +449,12 @@ Route::middleware(['auth:api', TenantContext::class])->group(function (): void {
     Route::post('admin/avatar-templates/{id}/deactivate', [PlatformAvatarTemplateController::class, 'deactivate'])->whereNumber('id');
     Route::delete('admin/avatar-templates/{id}', [PlatformAvatarTemplateController::class, 'destroy'])->whereNumber('id');
     Route::post('admin/avatar-templates/{id}/duplicate', [PlatformAvatarTemplateController::class, 'duplicate'])->whereNumber('id');
+
+    // The currency catalogue (organization-currencies D10): platform data, superadmin only, no `org.context`.
+    Route::get('admin/currencies', [PlatformCurrencyController::class, 'index']);
+    Route::post('admin/currencies', [PlatformCurrencyController::class, 'store']);
+    Route::patch('admin/currencies/{code}', [PlatformCurrencyController::class, 'update'])->where('code', '[A-Z]{3}');
+    Route::delete('admin/currencies/{code}', [PlatformCurrencyController::class, 'destroy'])->where('code', '[A-Z]{3}');
 });
 
 // ─── Framework Catalogue Authoring (framework-catalogue-authoring PR3, D12) ──

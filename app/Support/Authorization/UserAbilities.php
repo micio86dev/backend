@@ -126,6 +126,7 @@ final class UserAbilities
      *     clients: array{viewAny: bool},
      *     platformSettings: array{viewAny: bool},
      *     catalogue: array{manage: bool},
+     *     currencies: array{manage: bool},
      * }
      */
     public function for(User $user): array
@@ -269,6 +270,10 @@ final class UserAbilities
             // content rather than a tenant's.
             'catalogue' => [
                 'manage' => $gate->allows('manageCatalogue'),
+            ],
+            // organization-currencies D10 — platform data, no subject.
+            'currencies' => [
+                'manage' => $gate->allows('manageCurrencies'),
             ],
         ];
     }

@@ -188,6 +188,7 @@ final class AuthController extends Controller
      *         participants: array{viewAny: bool, create: bool, recover: bool, retry: bool},
      *         clients: array{viewAny: bool}, platformSettings: array{viewAny: bool},
      *         catalogue: array{manage: bool},
+     *         currencies: array{manage: bool},
      *     },
      * }
      */

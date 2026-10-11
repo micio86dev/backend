@@ -62,7 +62,7 @@ final class PlatformAuditWriter
         ?int $actorId,
         string $action,
         string $subjectType,
-        int $subjectId,
+        ?int $subjectId,
         ?array $before,
         ?array $after,
     ): void {
