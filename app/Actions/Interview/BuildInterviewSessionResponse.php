@@ -8,6 +8,7 @@ use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Models\Project;
 use App\Services\Provider\ProviderToken;
+use App\Support\Interview\SessionLiveClock;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Lang;
 use Symfony\Component\HttpFoundation\Response;
@@ -17,10 +18,12 @@ use Symfony\Component\HttpFoundation\Response;
  * `/candidate/interview/start` (split-interview-controller design.md D1).
  *
  * A MOVE of `InterviewController::buildSuccessResponse()` +
- * `resolveCompletionPhrases()` + `resolveAudioOnly()`, verbatim. No constructor
- * dependencies: every call inside is a static facade (`Lang::get`, `response()`) or
- * an Eloquent static (`Project::whereKey`, `AvatarTemplate::whereKey`) — pure
- * computation from already-resolved inputs, no DB writes, no transaction coupling.
+ * `resolveCompletionPhrases()` + `resolveAudioOnly()`, verbatim. Its only injected
+ * dependency is `SessionLiveClock`, read for the template's call-duration limit so the
+ * client counts down against the number the server enforces. Everything else is a static
+ * facade (`Lang::get`, `response()`) or an Eloquent static (`Project::whereKey`,
+ * `AvatarTemplate::whereKey`): pure computation from already-resolved inputs, no DB
+ * writes, no transaction coupling.
  *
  * `InterviewController::start()`'s own `@scramble-return` annotation spells out the
  * exact OpenAPI response shape by hand (Scramble cannot follow a private helper
@@ -33,6 +36,10 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class BuildInterviewSessionResponse
 {
+    public function __construct(
+        private readonly SessionLiveClock $clock,
+    ) {}
+
     /**
      * @param  string|null  $language  The PROJECT's language (BCP-ish locale, may be null).
      * @param  string|null  $conversationId  The provider conversation id of a fresh multi-competency create; null otherwise.
@@ -98,6 +105,10 @@ final class BuildInterviewSessionResponse
                 'total_competencies' => $totalCompetencies,
             ],
         ];
+
+        // The interview's total time limit, from the active template (or the platform ceiling).
+        // The candidate app counts down against it; the server remains the enforcer.
+        $body['interview_max_seconds'] = $this->clock->resolveMaxSeconds($session);
 
         // Only a fresh single-session create names its conversation (design A6/N11); with the gate
         // closed the key is absent, not null, so the body is byte-identical to the old one.
