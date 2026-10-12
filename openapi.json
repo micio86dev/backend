@@ -6840,6 +6840,10 @@
                                             "timeout",
                                             "skipped"
                                         ]
+                                    },
+                                    "budget_spent": {
+                                        "type": "boolean",
+                                        "description": "The whole interview's time is spent: this question ends on its closing phrase, and\nno further competency starts. Absent means false, so existing clients are unchanged."
                                     }
                                 },
                                 "required": [
