@@ -639,7 +639,9 @@ test('an interview without metadata is returned as an empty JSON object, not an 
         ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
 
     $response->assertOk();
-    expect($response->getContent())->toContain('"metadata":{}');
+    $body = json_decode($response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+    expect($body->metadata)->toBeObject();
+    expect(get_object_vars($body->metadata))->toBe([]);
 });
 
 test('an interview with metadata is returned as a JSON object of string values', function (): void {
@@ -654,5 +656,7 @@ test('an interview with metadata is returned as a JSON object of string values',
         ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
 
     $response->assertOk();
-    expect($response->getContent())->toContain('"metadata":{"ats_application_id":"A-4471"}');
+    $body = json_decode($response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+    expect($body->metadata)->toBeObject();
+    expect(get_object_vars($body->metadata))->toBe(['ats_application_id' => 'A-4471']);
 });
