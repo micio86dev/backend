@@ -730,3 +730,25 @@ test('an export stays inside its organization: another organization\'s reference
     expect($content)->not->toContain('other-org-ats');
     expect($content)->not->toContain($participantB->candidate_ref);
 });
+
+test('an interview without metadata renders as {} in the metadata CSV cell, never as an empty cell', function (): void {
+    Storage::fake();
+
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:write']);
+    $project = Step6Fixtures::project($org);
+    Step6Fixtures::participantWithTranscript($org, $project, 'in_corso');
+
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->create([
+        'format' => ExportFormat::Csv,
+    ]));
+
+    GenerateExportJob::dispatch($export->id);
+
+    $fresh = TenantContextScope::runFor($org->id, fn () => Export::find($export->id));
+    expect($fresh->status)->toBe(ExportStatus::Ready);
+
+    $lines = array_values(array_filter(explode("\n", trim(Storage::get($fresh->object_key)))));
+    $row = array_combine(str_getcsv($lines[0]), str_getcsv($lines[1]));
+
+    expect($row['metadata'])->toBe('{}');
+});
