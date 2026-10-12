@@ -17,6 +17,7 @@ use App\Actions\Interview\BuildInterviewSessionResponse;
 use App\Models\AvatarTemplate;
 use App\Models\InterviewSession;
 use App\Services\Provider\ProviderToken;
+use App\Support\Interview\SessionLiveClock;
 use App\Support\Tenancy\TenantResolver;
 
 function bisrFixture(bool $audioOnly = false): array
@@ -53,7 +54,7 @@ test('builds the 201 response shape with every question_context field', function
     [$session] = bisrFixture();
     $token = new ProviderToken('heygen', token: 'tok-123', conversation_url: null);
 
-    $response = (new BuildInterviewSessionResponse)->handle(
+    $response = (new BuildInterviewSessionResponse(new SessionLiveClock))->handle(
         $session,
         $token,
         language: 'en',
@@ -84,7 +85,7 @@ test('audio_only is true when the pinned avatar template config sets it', functi
     [$session] = bisrFixture(audioOnly: true);
     $token = new ProviderToken('tavus', conversation_url: 'https://tavus.example/room');
 
-    $response = (new BuildInterviewSessionResponse)->handle($session, $token, language: null);
+    $response = (new BuildInterviewSessionResponse(new SessionLiveClock))->handle($session, $token, language: null);
 
     expect($response->getData(true)['audio_only'])->toBeTrue();
 });
@@ -93,7 +94,7 @@ test('audio_only is false when the pinned avatar template config does not set it
     [$session] = bisrFixture(audioOnly: false);
     $token = new ProviderToken('tavus', conversation_url: 'https://tavus.example/room');
 
-    $response = (new BuildInterviewSessionResponse)->handle($session, $token, language: null);
+    $response = (new BuildInterviewSessionResponse(new SessionLiveClock))->handle($session, $token, language: null);
 
     expect($response->getData(true)['audio_only'])->toBeFalse();
 });
@@ -102,7 +103,7 @@ test('a null/unknown language falls back to the platform default phrases', funct
     [$session] = bisrFixture();
     $token = new ProviderToken('heygen', token: 'tok');
 
-    $response = (new BuildInterviewSessionResponse)->handle($session, $token, language: 'zz-not-a-real-locale');
+    $response = (new BuildInterviewSessionResponse(new SessionLiveClock))->handle($session, $token, language: 'zz-not-a-real-locale');
 
     $ctx = $response->getData(true)['question_context'];
     expect($ctx['end_phrase'])->toBe("Let's move on to the next question.")
