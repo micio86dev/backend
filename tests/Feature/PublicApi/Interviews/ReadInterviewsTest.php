@@ -624,3 +624,39 @@ test('POST /v1/interviews for a soft-deleted project_id → 404 (create stays ga
 
     $response->assertNotFound();
 });
+
+// Metadata is a string map on the wire: a participant without metadata must be `{}`, never `[]`,
+// because the generated SDKs type it as an object (a JSON array fails their validation).
+test('an interview without metadata is returned as an empty JSON object, not an array', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'metadata' => null,
+    ]));
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
+
+    $response->assertOk();
+    $body = json_decode($response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+    expect($body->metadata)->toBeObject();
+    expect(get_object_vars($body->metadata))->toBe([]);
+});
+
+test('an interview with metadata is returned as a JSON object of string values', function (): void {
+    ['org' => $org, 'key' => $rawKey] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+    $participant = TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'metadata' => ['ats_application_id' => 'A-4471'],
+    ]));
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->getJson('/api/v1/interviews/'.PublicId::encode($participant));
+
+    $response->assertOk();
+    $body = json_decode($response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+    expect($body->metadata)->toBeObject();
+    expect(get_object_vars($body->metadata))->toBe(['ats_application_id' => 'A-4471']);
+});

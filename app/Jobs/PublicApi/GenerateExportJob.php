@@ -458,7 +458,9 @@ class GenerateExportJob implements ShouldQueue
      */
     private static function csvCell(mixed $value): string
     {
-        if (is_array($value)) {
+        // A JSON object (an interview's `metadata`) is an `stdClass`, not an array. Only that
+        // class is encoded: any other object keeps the empty-cell branch and cannot throw here.
+        if (is_array($value) || $value instanceof \stdClass) {
             $rendered = json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
         } elseif (is_bool($value)) {
             $rendered = $value ? 'true' : 'false';
