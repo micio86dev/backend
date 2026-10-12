@@ -819,12 +819,16 @@ class InterviewController extends Controller
         $validated = $request->validate([
             'session_id' => ['required', 'integer'],
             'ended_reason' => ['required', 'string', 'in:completed,timeout,skipped'],
+            // The whole interview's time is spent: this question ends on its closing phrase, and
+            // no further competency starts. Absent means false, so existing clients are unchanged.
+            'budget_spent' => ['sometimes', 'boolean'],
         ]);
 
         // (1) resolveOwnedSession → 404 if not owned.
         $session = $this->resolveOwnedSession((int) $validated['session_id']);
 
         $endedReason = $validated['ended_reason'];
+        $budgetSpent = (bool) ($validated['budget_spent'] ?? false);
         $pid = $session->participant_id;
         $projectId = $session->project_id;
 
@@ -840,7 +844,7 @@ class InterviewController extends Controller
 
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
         try {
-            DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress, &$directive): void {
+            DB::transaction(function () use ($session, $endedReason, $budgetSpent, $pid, $projectId, $providerService, &$progress, &$directive): void {
                 // Lock the session row (scope MUST cover the status UPDATE in step 6)
                 $locked = InterviewSession::lockForUpdate()->find($session->id);
 
@@ -897,6 +901,13 @@ class InterviewController extends Controller
                 // paths that can finish an interview reach the same code.
                 $this->settleCompletionIfFinished($pid, $projectId);
 
+                // Time budget spent: no competency is left to ask. Settle the interview on what was
+                // said, the same way an abandoned interview is settled, so the participant leaves
+                // in_corso instead of waiting for competencies that will never start.
+                if ($budgetSpent) {
+                    $this->settleCompletion->settleAbandoned($pid, $projectId);
+                }
+
                 // (D7) The directive, computed HERE — inside the transaction, so
                 // the numbers it reports and the completion just settled cannot
                 // disagree. It is NOT free: buildDirective() runs its own tally
@@ -904,6 +915,10 @@ class InterviewController extends Controller
                 // one extra query an earlier version of this comment claimed.
                 // Worth it for the consistency, not for a saving it never made.
                 $directive = $this->resolveDirective->handle($pid, $projectId);
+
+                if ($budgetSpent && $directive !== null) {
+                    $directive['next_action'] = 'done';
+                }
 
                 // C10 D5: set ONLY on the success path — every abort() above (:225,
                 // :231) throws past this point, so reaching it means the write
