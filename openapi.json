@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.72.0"
+        "version": "0.72.1"
     },
     "servers": [
         {
@@ -16853,8 +16853,10 @@
                         "type": "boolean"
                     },
                     "metadata": {
-                        "type": "array",
-                        "items": {}
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
                     },
                     "exit_redirect_url": {
                         "type": [
@@ -16870,44 +16872,37 @@
                         "description": "Always `null` on a read: the hosted interview URL is returned only together with a freshly issued session token."
                     },
                     "progress": {
-                        "anyOf": [
-                            {
-                                "type": "string"
-                            },
-                            {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "competency_code": {
-                                            "type": "string"
-                                        },
-                                        "answers": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "question_index": {
-                                                        "type": "integer"
-                                                    },
-                                                    "answered_at": {
-                                                        "type": "string"
-                                                    }
-                                                },
-                                                "required": [
-                                                    "question_index",
-                                                    "answered_at"
-                                                ]
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "competency_code": {
+                                    "type": "string"
+                                },
+                                "answers": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "question_index": {
+                                                "type": "integer"
+                                            },
+                                            "answered_at": {
+                                                "type": "string"
                                             }
-                                        }
-                                    },
-                                    "required": [
-                                        "competency_code",
-                                        "answers"
-                                    ]
+                                        },
+                                        "required": [
+                                            "question_index",
+                                            "answered_at"
+                                        ]
+                                    }
                                 }
-                            }
-                        ]
+                            },
+                            "required": [
+                                "competency_code",
+                                "answers"
+                            ]
+                        }
                     },
                     "started_at": {
                         "type": [
