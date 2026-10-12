@@ -48,3 +48,24 @@ test('Part A item 5: GET /embed/exchange 200 body documents access_token as stri
     expect($accessToken)->not->toBeNull();
     expect($accessToken['type'])->toBe('string');
 });
+
+test('Interview.metadata is exported as a string map (object with string values), never an untyped array', function (): void {
+    $config = Scramble::getGeneratorConfig('v1');
+    $document = app(Generator::class)($config);
+
+    $metadata = $document['components']['schemas']['PublicInterview']['properties']['metadata'] ?? null;
+    expect($metadata)->not->toBeNull();
+    expect($metadata['type'])->toBe('object');
+    expect($metadata['additionalProperties'])->toBe(['type' => 'string']);
+});
+
+test('Interview.progress is exported as a typed list of competencies with their answers', function (): void {
+    $config = Scramble::getGeneratorConfig('v1');
+    $document = app(Generator::class)($config);
+
+    $progress = $document['components']['schemas']['PublicInterview']['properties']['progress'] ?? null;
+    expect($progress)->not->toBeNull();
+    expect($progress['type'])->toBe('array');
+    expect($progress['items']['properties']['competency_code'])->toBe(['type' => 'string']);
+    expect($progress['items']['properties']['answers']['items']['properties']['question_index'])->toBe(['type' => 'integer']);
+});
