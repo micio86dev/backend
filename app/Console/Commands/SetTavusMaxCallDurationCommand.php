@@ -35,10 +35,11 @@ class SetTavusMaxCallDurationCommand extends Command
 
     public function handle(): int
     {
-        $seconds = (int) $this->argument('seconds');
+        $rawSeconds = (string) $this->argument('seconds');
+        $seconds = (int) $rawSeconds;
         $ceiling = ProviderFieldSpecs::TAVUS_MAX_SECONDS;
-        if ($seconds < 30 || $seconds > $ceiling) {
-            $this->error("seconds must be between 30 and {$ceiling} (the Tavus ceiling), got {$seconds}.");
+        if (! ctype_digit($rawSeconds) || $seconds < 30 || $seconds > $ceiling) {
+            $this->error("seconds must be a whole number between 30 and {$ceiling} (the Tavus ceiling), got '{$rawSeconds}'.");
 
             return self::FAILURE;
         }
