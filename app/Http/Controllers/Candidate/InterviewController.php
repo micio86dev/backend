@@ -121,20 +121,8 @@ class InterviewController extends Controller
     // (4b) Provider 5xx → session error + participant errore + 502.
     // (4c) Provider 429 → session stays pending + 429 provider_busy (NOT errore).
     // (4d) DB failure after provider success → teardown(in-memory token) + 500.
-    //
-    // RESUME in_corso:
-    //   - Harvest the outgoing transcript, then compose: the opening re-asks the
-    //     pending primary verbatim. A composition failure answers 422, as on a
-    //     fresh start, and ends the outgoing provider session on its way out —
-    //     nothing else would, and it bills until the provider's own ceiling.
-    //   - issue() FRESH token.
-    //   - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).
-    //   - Persist new ref.
-    //
-    // RESUME pending:
-    //   - Retry issue(). On success, persist ref and flip to in_corso.
-    //
-    // FIX-8: both session UPDATE and participant UPDATE are inside ONE short transaction.
+    // RESUME in_corso and RESUME pending are documented on handleResumeInCorso()
+    // and handleIssuePending().
     //
     // The 201 shape is spelled out for Scramble because it cannot follow
     // `buildSuccessResponse()` — a private helper two call sites deep, whose
@@ -172,28 +160,16 @@ class InterviewController extends Controller
         $nextCompetency = $this->resolveNextCompetency($pid, $project->id);
 
         if ($nextCompetency === null) {
-            // (D5, call site 3) Idempotent self-heal. Every competency is terminal,
-            // so this participant is finished whether or not anything settled them
-            // at the time. It rescues candidates stranded before this change who
-            // come back, and does nothing for anyone already settled — the CAS
-            // predicate makes a second call a no-op, not a second dispatch.
+            // (D5, call site 3) Idempotent self-heal: see settleCompletionIfFinished().
             $this->settleCompletionIfFinished($pid, $project->id);
 
             return response()->json(['error' => 'no_competency_remaining'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Default-deny on the assessment type: only a value the AssessmentType enum
-        // knows ('standard' | 'potential') reaches composition. The column is an
-        // unconstrained string, so a corrupt or legacy value answers
-        // `assessment_type_not_supported` here, before the template preflight, the
-        // interviewability gate, the transcript harvest, any session write and any
-        // provider call. This applies on BOTH the fresh-start AND the resume
-        // in_corso path. The resolved enum is handed to composition; it is never
-        // re-parsed. ($project is guaranteed non-null here: the project_not_found
-        // early return above narrows it, and project_id is a non-nullable FK.)
-        // Read from the raw attribute: the model documents the column as the literal
-        // union 'standard'|'potential', which static analysis would narrow to a value
-        // that can never be unknown — but the column is an unconstrained string.
+        // Default-deny on the assessment type: only an AssessmentType value ('standard' | 'potential')
+        // reaches composition, on both the fresh and resume paths, before any write or provider call.
+        // Read from the raw attribute: the column is an unconstrained string, which the model's literal
+        // union would hide from static analysis.
         $storedType = $project->getAttributes()['assessment_type'] ?? null;
         $assessmentType = is_string($storedType) ? AssessmentType::tryFrom($storedType) : null;
 
@@ -201,12 +177,8 @@ class InterviewController extends Controller
             return response()->json(['error' => 'assessment_type_not_supported'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Pre-flight, BEFORE any state changes or provider call: a template the
-        // provider would refuse (unknown avatar/voice/persona, missing key, an
-        // engine with no voice) is answered here as a 422 with machine codes
-        // instead of reaching the candidate as a 500 `provider_error` after a
-        // rejected provider call. Nothing has been written yet, so the
-        // candidate can simply retry once the operator has fixed the template.
+        // Pre-flight before any write or provider call: a template the provider would refuse is a 422
+        // with machine codes, not a 500 `provider_error`, and the candidate can retry after the fix.
         $preflightErrors = $this->preflight->check($this->providerNameFor($participant, $project), $project->id);
 
         if ($preflightErrors !== []) {
@@ -216,37 +188,20 @@ class InterviewController extends Controller
             );
         }
 
-        // D5/D6 (framework-catalogue-authoring PR6) — the predicate gates
-        // only a FRESH start. A session row already existing for THIS exact
-        // (participant, competency) pair is a continuation — a pending
-        // retry, an in-progress conversation, or a re-offer — and is never
-        // re-evaluated. Placed AFTER the assessment_type guard: a project whose
-        // stored type is outside the enum must still answer
-        // `assessment_type_not_supported` first.
+        // D5/D6 (framework-catalogue-authoring PR6): the interviewability gate only guards a FRESH
+        // start. An existing session for this exact (participant, competency) is a continuation and
+        // is never re-evaluated. Placed after the assessment_type guard, which still answers first.
         $hasExistingSession = InterviewSession::where('participant_id', $pid)
             ->where('competency_code', $nextCompetency['competency_code'])
             ->exists();
 
         if (! $hasExistingSession) {
-            // TWO different gates, deliberately — a single whole-project
-            // check here re-evaluated on EVERY competency transition would
-            // strand a candidate mid-interview: finishing competency 1 and
-            // moving to competency 2 would be blocked solely because
-            // competency 5 — not yet reached — lost its only question
-            // later (gga review finding on the first cut of this gate).
-            //
-            // TRUE fresh start (no session exists ANYWHERE on this project
-            // for this participant yet) → the FULL project gate applies,
-            // exactly as the spec's "a competency emptied of its questions
-            // blocks the whole project, not just itself" scenario states.
-            //
-            // Already mid-interview (at least one session exists elsewhere
-            // on this project) → only THIS competency's OWN live-question
-            // state gates ITS OWN fresh start. An unrelated, not-yet-reached
-            // competency's later misconfiguration does not retroactively
-            // block progress that has nothing to do with it — it will
-            // correctly refuse in its own turn, when the candidate actually
-            // reaches it.
+            // Two gates, deliberately: a whole-project check on every competency transition
+            // would strand a mid-interview candidate (gga review finding). A TRUE fresh start
+            // (no session anywhere on this project yet) applies the FULL project gate, as the
+            // spec's "a competency emptied of its questions blocks the whole project" scenario
+            // states. Mid-interview, only THIS competency's own live-question state gates its
+            // own fresh start: an unrelated, not-yet-reached competency refuses in its own turn.
             $hasAnySessionOnProject = InterviewSession::where('participant_id', $pid)
                 ->where('project_id', $project->id)
                 ->exists();
@@ -267,19 +222,15 @@ class InterviewController extends Controller
             }
         }
 
-        // Resolved ahead of the composition: the single-session gate decides both whether a
-        // continuation can be granted and which composer runs. Pure: it reads the pinned template
-        // and the override, nothing else.
+        // The single-session gate decides whether a continuation can be granted and which composer
+        // runs. It reads only the pinned template and the override.
         $providerName = $this->providerNameFor($participant, $project);
         $singleSession = $this->singleSessionGate->applies($project, $providerName);
 
-        // (tavus-single-session-interview, N6) The client may assert the conversation it is still
-        // joined to. A granted continuation composes nothing and calls no provider, so it runs
-        // after the next competency is resolved and BEFORE any composition: a competency that
-        // could not be composed (a missing translation) must not turn it into a 422. Every
-        // refusal falls through to the ordinary path below, a malformed id (not a string, empty, over 128
-        // chars) included: it is read leniently as absent, never validated into a 422. With the gate closed
-        // the input is ignored.
+        // (tavus-single-session-interview, N6) A granted continuation composes nothing and calls no
+        // provider, so it runs before composition: a competency that cannot be composed must not turn
+        // it into a 422. Every refusal, including a malformed id (read leniently as absent, never a
+        // 422), falls through to the ordinary path. With the gate closed the input is ignored.
         if ($singleSession) {
             $rawLiveId = $request->input('live_conversation_id');
             $liveConversationId = is_string($rawLiveId) && $rawLiveId !== '' && mb_strlen($rawLiveId) <= 128 ? $rawLiveId : null;
@@ -318,30 +269,13 @@ class InterviewController extends Controller
             }
         }
 
-        // The ONE catalogue revision this whole request resolves role/competency
-        // codes against (framework-catalogue-authoring PR3b, H1) — the project's
-        // own pin, never "whichever row Postgres returns first" among a
-        // baseline/draft pair sharing the same code. Resolved ONCE, here (below
-        // both early-return guards above, gga review finding — resolving it
-        // before them pre-empted both documented exits with an unrelated
-        // failure): both the opening-greeting lookup below and
-        // composePromptForCompetency() must agree on the same revision for the
-        // same request. `tryForProject()`, never `forProject()`: an unresolved
-        // pin must fail the SAME way as "role/competency not found" already
-        // does — a `composition_error` 422 — never an uncaught 500 on a live
-        // candidate request.
+        // The ONE catalogue revision this request resolves against: the project's own pin
+        // (H1), resolved after both early-return guards (gga review). tryForProject(), never
+        // forProject(): an unresolved pin fails as `composition_error` 422, not a 500.
         $revisionId = $this->revisionResolver->tryForProject($project);
 
-        // Resolved ONCE, here, and reused below (framework-catalogue-
-        // authoring PR3b, H11 dead-code finding, two rounds): the opening
-        // greeting, the authored-questions lookup, AND
-        // `composePromptForCompetency()` (which no longer resolves its own
-        // competency at all — the H11 hoist below passes this SAME row in
-        // as its `$competency` parameter) all need this SAME
-        // `(code, revisionId)` row — three independent lookups with
-        // identical inputs collapsed into one. `$nextCompetencyRow` is
-        // reused for the opening's competency name and passed directly into
-        // `composePromptForCompetency()` rather than re-queried by either.
+        // Resolved once and reused (H11): the opening greeting, the authored-questions lookup
+        // and composition all need this SAME `(code, revisionId)` row.
         $nextCompetencyRow = Competency::where('code', $nextCompetency['competency_code'])
             ->where('revision_id', $revisionId)
             ->first();
@@ -349,46 +283,20 @@ class InterviewController extends Controller
             ? []
             : $this->primaryQuestionsFor($project, $nextCompetencyRow->id);
 
-        // Read ONCE here (framework-catalogue-authoring PR7, D7) and reused
-        // both by the composer call below and by session creation further
-        // down — the same number must feed the prompt's budget instruction
-        // and the `interview_sessions.follow_up_budget` snapshot D8 audits
-        // against, rather than two independent config reads that could
-        // theoretically diverge mid-request. The fallback (4) matches
-        // `config('conversation.followup_budget')`'s own ratified default —
-        // this literal is reached only if the config key itself is absent,
-        // never as a silently smaller budget than what the key declares.
+        // Read once (D7) for both the composer and the follow_up_budget snapshot (D8), so
+        // they cannot diverge mid-request. The literal 4 is reached only if the config key is absent.
         $followUpBudget = (int) config('conversation.followup_budget', 4);
 
-        // (C8 M-3 / PR2) Compose system prompt BEFORE session creation and provider call.
-        //
-        // A composition failure answers 422 on EVERY path, the resume included:
-        // no session is created, no provider session is issued. A resumed
-        // provider session without a system prompt would run the vendor's
-        // default persona, asking questions nobody authored.
+        // (C8 M-3 / PR2) Compose the system prompt BEFORE session creation and any provider
+        // call, so a composition failure (422, resume included) leaves nothing behind: a resumed
+        // session without a system prompt would run the vendor's default persona.
         $liveSession = $this->activeInCorsoSession($pid, $nextCompetency['competency_code']);
         $isResumeInCorso = $liveSession !== null;
         $outgoingRef = null;
 
         if ($liveSession !== null) {
-            // HARVEST the outgoing provider session's transcript BEFORE
-            // composing: the resumed opening re-asks the pending primary,
-            // and which primary is pending is counted from the persisted
-            // transcript. This is also the last moment that transcript is
-            // readable — the provider session is torn down in
-            // handleResumeInCorso(). Best-effort and scoped to the ref, so a
-            // retried /start re-harvests the same stretch idempotently. A
-            // suspended session has no ref: /suspend already harvested it.
-            // `handleResumeInCorso()` reads its OWN `$oldRef` off a
-            // separately re-fetched InterviewSession (createOrResumeSession()'s
-            // UniqueConstraintViolationException path), not off `$outgoingRef`
-            // here — two reads of "the old ref" that must always agree.
-            // Nothing between this line and that read ever writes
-            // `provider_session_ref` on this row (issue() returns a fresh
-            // ProviderToken without touching the session it was handed; the
-            // one intervening save() below only ever touches
-            // primary_questions/follow_up_budget), so they do — pinned by
-            // ResumeHarvestTeardownRefTest.
+            // Harvest before composing: see harvestOutgoingTranscript() for why, and
+            // for the ref-consistency rule pinned by ResumeHarvestTeardownRefTest.
             $outgoingRef = $liveSession->provider_session_ref;
 
             if ($outgoingRef !== null) {
@@ -404,19 +312,9 @@ class InterviewController extends Controller
             }
         }
 
-        // (PR3) Hoisted here (was previously computed only on the non-resume path, just
-        // before handleIssuePending()): both flags are needed to select the opening-greeting
-        // VARIANT below, before QuestionContext is built — participant->status cannot change
-        // between here and its prior use site, so hoisting is safe (design D9).
-        // Only the FIRST competency of any participant's interview triggers the started_at
-        // stamp AND the 'first' greeting variant.
-        //
-        // (participant-error-recovery D2b) First competency ≡ participant.started_at
-        // === null — NOT participant.status === 'in_attesa'. A participant recovered
-        // from `errore` is flipped back to `in_attesa` by the recovery action but
-        // KEEPS its original started_at (it is resuming, not starting fresh). Keying
-        // this off status alone would re-greet a recovered candidate as brand new AND
-        // silently overwrite started_at to now() below, destroying the true start time.
+        // Only the FIRST competency triggers the started_at stamp and the 'first' greeting
+        // variant (PR3, D9). First competency ≡ started_at === null, NOT status === 'in_attesa':
+        // a recovered candidate keeps its original started_at (participant-error-recovery D2b).
         $isFirst = $participant->started_at === null;
 
         // Resolved before composePromptForCompetency() runs, together with
@@ -424,10 +322,7 @@ class InterviewController extends Controller
         // opening describe the same turn.
         $isReoffer = ($nextCompetency['reoffer'] ?? false) === true;
 
-        // Precedence (scoring-retry-rt-b PR2c): a live session re-issued at the
-        // provider ('resume') and a provider-error re-offer ('retry') both outrank
-        // 'reinterview', the neutral greeting of a competency an evaluation retry
-        // reset. The retry read runs only when neither applies.
+        // Variant precedence (scoring-retry-rt-b PR2c): resume and retry outrank 'reinterview'.
         $openingVariant = match (true) {
             $isResumeInCorso => 'resume',
             $isReoffer => 'retry',
@@ -436,31 +331,23 @@ class InterviewController extends Controller
             default => 'next',
         };
 
-        // What the opening is about to speak, stated to the model so the two
-        // agree (D7): primary 1 on a fresh start; on a resume, the pending
-        // primary — the one after the last distinct primary already asked —
-        // or the last one when every primary was asked; the gate-off
-        // fallback question when the competency has no primaries.
+        // What the opening speaks, stated to the model so the two agree (D7): primary 1 on a
+        // fresh start; on a resume, the pending primary (the one after the last distinct primary
+        // asked, or the last one when all were asked); the gate-off fallback when there are none.
         $spokenOpening = match (true) {
             $primaryQuestions === [] => SpokenOpening::fallback($isResumeInCorso),
             $liveSession !== null => SpokenOpening::resumed(
                 $this->turnClassifier->matchedCount($liveSession),
                 count($primaryQuestions),
             ),
-            // A fresh start of any competency after the first: the candidate was
-            // welcomed on the first one, and this provider session's model has no
-            // memory of it, so the prompt must say not to welcome them again.
-            // Keyed on the competency's place in the project's order, not on
-            // `$isFirst` (started_at): that one also reads false for a candidate
-            // recovered from an error who is redoing competency 1.
+            // Any competency after the first: this provider model has no memory of the welcome,
+            // so say not to welcome again. Keyed on the project order, not `$isFirst` (a
+            // recovered candidate redoing competency 1 reads false there).
             default => SpokenOpening::primary(1, continuation: $nextCompetency['competency_ordinal'] > 1),
         };
 
-        // Which sentence ends THIS turn: the last competency gets the final
-        // phrase, every other one the intermediate. Resolved from the same
-        // source the /start response advertises to the client, so the sentence
-        // the avatar is told to say and the one the client watches for can
-        // never drift apart.
+        // Last competency gets the final phrase, others the intermediate; resolved from the same
+        // source the /start response advertises, so the two can never drift apart.
         [$endPhrase, $finalPhrase] = $this->buildSessionResponse->resolveCompletionPhrases($project->language);
         $isLastCompetency = $nextCompetency['competency_ordinal']
             >= $nextCompetency['total_competencies'];
@@ -480,10 +367,8 @@ class InterviewController extends Controller
             ),
         );
 
-        // (tavus-single-session-interview) A plan covers the competencies still to come on ONE
-        // conversation. Only a fresh start can build one: a resume, a re-offer or a row that already
-        // exists issues a fresh single-competency conversation, exactly as before. A prefix that
-        // covers a single competency is not a plan either.
+        // A plan covers the competencies still to come on ONE conversation (tavus-single-session
+        // N3). Only a fresh start builds one; a resume, a re-offer or an existing row does not.
         $plan = null;
         $compositionResult = null;
 
@@ -512,13 +397,8 @@ class InterviewController extends Controller
 
         $compositionResult ??= $composeSingle();
         if ($compositionResult instanceof JsonResponse) {
-            // No fresh provider session will be issued, so the outgoing one —
-            // still live, still billing — has nothing left to hand over to.
-            // `handleResumeInCorso()` is the only other place that ends it, and
-            // this path never reaches it; left alone the conversation runs to
-            // the provider's own ceiling for an interview the candidate was
-            // just refused. Its transcript was harvested above, so ending it
-            // here loses nothing.
+            // No fresh session will be issued, so end the outgoing one here: it is still live and
+            // billing, and handleResumeInCorso() never runs on this path. Its transcript was harvested.
             if ($liveSession !== null && $outgoingRef !== null) {
                 $this->releaseProviderSession($liveSession, $this->resolveProvider($liveSession->provider), $outgoingRef);
             }
@@ -526,39 +406,12 @@ class InterviewController extends Controller
             return $compositionResult;
         }
 
-        // (2) Create-or-RESUME session row.
-        // Precedence, most specific first: a template the PROJECT pinned wins,
-        // because pinning a template is already a statement about which
-        // provider this project runs on and it would be incoherent for the two
-        // to disagree. Then the explicit `provider_override`, then the env
-        // default — both unchanged for every project that pins nothing.
-        //
-        // Before pinning existed, `INTERVIEW_PROVIDER` silently decided for an
-        // operator who had one active HeyGen template and one active Tavus
-        // template: a legal state, since activation is scoped per provider, in
-        // which the project itself had no say.
-        // Read the one column this needs, rather than hydrating the whole
-        // related model to reach a single string.
-        //
-        // No null branch on the FK any more: `avatar_template_id` has been NOT
-        // NULL since the 2026-09-01 migration and is required by both
-        // FormRequests. It was still annotated nullable, which is what made a
-        // dead `=== null` arm read as prudence. The `?? null` below is the
-        // real fallback — `value()` returns null for a row that has since been
-        // deleted, and the two configured defaults take over there.
+        // (2) Create-or-RESUME session row. Provider precedence: see providerNameFor().
+        // The FK is NOT NULL since the 2026-09-01 migration; the `?? null` in providerNameFor()
+        // is the real fallback for a template row deleted since.
 
-        // SPEC.md §3.7 "Test mode" — a beai_test_… enrolment ALWAYS runs the
-        // mock avatar provider, taking priority over the pinned-template /
-        // provider_override / config chain below it, never the reverse
-        // (T-TEST-006): this branch only ever fires for
-        // `$participant->mode === ApiKeyMode::Test`, so a live-mode
-        // interview can never reach `resolveProvider('mock')` through this
-        // assignment, whatever the project's avatar template or override
-        // holds.
-        // (D2/D3) A re-offered competency is reset to `pending` and its previous
-        // attempt's transcript discarded BEFORE the session is resumed, so the
-        // competency is never scored on a conversation that mixes two attempts.
-        // `error_count` survives the reset — it is the bound.
+        // Re-offered competency: reset before resume, so it is never scored on a mixed attempt (D2/D3).
+        // `error_count` survives the reset; it is the bound.
         if ($isReoffer) {
             $errored = InterviewSession::where('participant_id', $pid)
                 ->where('project_id', $project->id)
@@ -590,25 +443,7 @@ class InterviewController extends Controller
             }
         }
 
-        // The snapshot TurnClassifier audits against is refreshed for a
-        // fresh prompt composition, but ONLY while the session has NO
-        // recorded transcript yet (framework-catalogue-authoring PR7,
-        // D7/D8). `createOrResumeSession()` seeds it on a genuine first
-        // INSERT; a retry re-offer reaches here with the transcript already
-        // discarded by `ResetSessionForRetry` (below), so its freshly
-        // composed prompt (re-running `primaryQuestionsFor()` against the
-        // CURRENT `project_questions` state) is what the snapshot must
-        // agree with.
-        //
-        // NEVER once a real turn exists. `TurnClassifier` indexes into
-        // `primary_questions` by COUNTING already-persisted `primary`-marked
-        // avatar turns from EARLIER stretches of this same competency — a
-        // RESUME keeps that transcript. Overwriting the list here on a
-        // resume would leave that count pointing at a DIFFERENT entry of a
-        // list the operator edited in between (deleted, reordered, or added
-        // a primary) than the one the earlier turns were actually matched
-        // against, corrupting the audit rather than keeping it honest — which
-        // is why a resume with turns composes from that stored list too.
+        // Refresh the TurnClassifier snapshot only while no transcript exists (D7/D8): see docblock.
         if (($session->primary_questions !== $primaryQuestions || $session->follow_up_budget !== $followUpBudget)
             && ! $session->utterances()->exists()
         ) {
@@ -623,11 +458,8 @@ class InterviewController extends Controller
         $systemPrompt = $compositionResult->text;
         $promptVersion = $compositionResult->version;
 
-        // (PR3, design D9) Compose the opening greeting. `$openingVariant`
-        // only decides the retry apology; WHICH question is spoken is
-        // `$spokenOpening`, the same value the system prompt was composed
-        // with, so the prompt quotes exactly what the candidate hears.
-        // Locale = $project->language (matches the system prompt, per D9).
+        // Opening greeting (D9): `$openingVariant` decides only the retry apology; WHICH question
+        // is spoken is `$spokenOpening`, the same value the system prompt was composed with.
         $competencyName = $nextCompetencyRow?->getTranslation('name', $project->language)
             ?? $nextCompetency['competency_code'];
 
@@ -646,9 +478,7 @@ class InterviewController extends Controller
             systemPrompt: $systemPrompt,
             promptVersion: $promptVersion,
             openingText: $openingText,
-            // Hotfix 0.22.1: HeyGen's avatar_persona.language must match the
-            // project's configured language (i18n mandate), same source PR3/D9
-            // already uses for the opening greeting — never a static env default.
+            // Hotfix 0.22.1: HeyGen's persona language follows the project language, never an env default.
             language: $project->language,
             // D6 — progress, computed by the resolver from the ordered list.
             competencyOrdinal: $nextCompetency['competency_ordinal'],
@@ -723,21 +553,13 @@ class InterviewController extends Controller
             'session_id' => ['required', 'integer'],
         ]);
 
-        // 404 when the session is not this participant's — the same ownership
-        // and org isolation every other session-scoped path uses. An
-        // unauthorized caller must not be able to hang up someone else's
-        // interview.
+        // 404 when the session is not this participant's (same ownership and org isolation as every
+        // session-scoped path): nobody may hang up someone else's interview.
         $session = $this->resolveOwnedSession((int) $validated['session_id']);
 
-        // Only a LIVE competency can be paused, matching /end's FIX-3 guard and
-        // for the same reason: ParticipantStatusGuard gates the PARTICIPANT,
-        // not the session, so a candidate mid-interview can send the id of a
-        // competency that already ended. Without this, that request re-harvests
-        // a transcript /end already wrote and tears down a provider session that
-        // is already gone — an unguarded write path reached with a stale id.
-        //
-        // 409, not 422: the request is well-formed and the session is real; it
-        // is the STATE that refuses. Same code /end answers for the same case.
+        // Only a LIVE competency can be paused, matching /end's FIX-3 guard: ParticipantStatusGuard
+        // gates the participant, not the session, so a stale id would re-harvest and tear down a session
+        // /end already settled. 409, not 422: the request is well-formed; the state refuses.
         if ($session->status !== 'in_corso') {
             return response()->json(['error' => 'session_not_live'], Response::HTTP_CONFLICT);
         }
@@ -750,14 +572,8 @@ class InterviewController extends Controller
 
         $provider = $this->resolveProvider($session->provider);
 
-        // Ordered exactly as the resume path orders it, for the same reasons.
-        //
-        // Harvest FIRST: this is the last moment the outgoing transcript is
-        // readable, and a suspend that skipped it would discard everything said
-        // before the pause. The harvest is scoped to THIS ref, so the stretch it
-        // stores is the one it fetched and nothing else is touched — which is
-        // what makes pausing twice safe, and is why this endpoint waited for
-        // that scoping to land before shipping.
+        // Same order as the resume path: harvest FIRST, while the transcript is still readable.
+        // The harvest is scoped to THIS ref, which is what makes pausing twice safe.
         $this->harvestOutgoingTranscript($session, $provider, $ref);
 
         $this->releaseProviderSession($session, $provider, $ref);
@@ -819,12 +635,16 @@ class InterviewController extends Controller
         $validated = $request->validate([
             'session_id' => ['required', 'integer'],
             'ended_reason' => ['required', 'string', 'in:completed,timeout,skipped'],
+            // The whole interview's time is spent: this question ends on its closing phrase, and
+            // no further competency starts. Absent means false, so existing clients are unchanged.
+            'budget_spent' => ['sometimes', 'boolean'],
         ]);
 
         // (1) resolveOwnedSession → 404 if not owned.
         $session = $this->resolveOwnedSession((int) $validated['session_id']);
 
         $endedReason = $validated['ended_reason'];
+        $budgetSpent = (bool) ($validated['budget_spent'] ?? false);
         $pid = $session->participant_id;
         $projectId = $session->project_id;
 
@@ -840,7 +660,7 @@ class InterviewController extends Controller
 
         // (3) BEGIN EXPLICIT DB TRANSACTION + (4) SELECT FOR UPDATE
         try {
-            DB::transaction(function () use ($session, $endedReason, $pid, $projectId, $providerService, &$progress, &$directive): void {
+            DB::transaction(function () use ($session, $endedReason, $budgetSpent, $pid, $projectId, $providerService, &$progress, &$directive): void {
                 // Lock the session row (scope MUST cover the status UPDATE in step 6)
                 $locked = InterviewSession::lockForUpdate()->find($session->id);
 
@@ -868,49 +688,34 @@ class InterviewController extends Controller
                 $locked->ended_reason = $endedReason;
                 $locked->save();
 
-                // public-api step 6, G-38: `session_ended` — one per
-                // competency-session `/end` (this method's own scope, every
-                // successful call reaching past the FIX-3 idempotency guard
-                // above). `$locked->organization_id` — InterviewSession IS a
-                // TenantModel, already the row this transaction holds
-                // locked, so no extra query.
+                // public-api step 6, G-38: one `session_ended` per successful /end (past the FIX-3 guard).
                 InterviewEventRecorder::sessionEnded($locked->organization_id, $pid);
 
-                // (interview-session-started-at, D4) Close the open period
-                // alongside the status write, inside the same lock — a
-                // no-op on the FIX-3 idempotency guard's second /end call,
-                // since that path already aborted above before reaching
-                // here.
+                // Close the open period inside the same lock (a no-op on a repeated /end, which aborts above).
                 $this->liveClock->close($locked, 'end');
 
-                // (pluggable-conversation-llm PR P6b, design D10) Write the
-                // conversation-LLM cost row, inside the same lock, AFTER the
-                // period close so `liveSeconds()` sees the just-closed
-                // stretch. `firstOrCreate()` inside the action makes this a
-                // no-op against the reconcile sweep racing a late /end (or
-                // vice versa). No row at all when llm_binding_status !==
-                // 'applied' — a session that ran on the vendor default gets
-                // no Gemini cost row.
+                // Conversation-LLM cost row (P6b, D10), after the period close so liveSeconds() sees it.
+                // firstOrCreate() makes it a no-op against a racing reconcile sweep; no row unless applied.
                 ($this->recordLlmUsage)($locked);
 
-                // (7)+(8) Tally + last-question CAS, extracted (D5) so the two other
-                // paths that can finish an interview reach the same code.
+                // (7)+(8) Tally and last-question CAS, shared with the other completion paths (D5).
                 $this->settleCompletionIfFinished($pid, $projectId);
 
-                // (D7) The directive, computed HERE — inside the transaction, so
-                // the numbers it reports and the completion just settled cannot
-                // disagree. It is NOT free: buildDirective() runs its own tally
-                // and its own project lookup, so this is a second tally, not the
-                // one extra query an earlier version of this comment claimed.
-                // Worth it for the consistency, not for a saving it never made.
+                // Time budget spent: settle the interview on what was said, as an abandoned one is settled.
+                if ($budgetSpent) {
+                    $this->settleCompletion->settleAbandoned($pid, $projectId);
+                }
+
+                // (D7) Directive computed inside the transaction, so it cannot disagree with the completion
+                // just settled. It runs a second tally, by design (consistency, not a saving).
                 $directive = $this->resolveDirective->handle($pid, $projectId);
 
-                // C10 D5: set ONLY on the success path — every abort() above (:225,
-                // :231) throws past this point, so reaching it means the write
-                // committed. Captured here (not re-derived after the closure returns)
-                // so the emitted competency_code is exactly the one this /end call
-                // just ended, even if a later request changes state before the event
-                // fires.
+                if ($budgetSpent) {
+                    $directive['next_action'] = 'done';
+                }
+
+                // C10 D5: set only on the success path, so reaching it means the write committed.
+                // Captured here so the event carries the competency this /end just ended.
                 $progress = [
                     'participant_id' => $pid,
                     'project_id' => $projectId,
@@ -919,12 +724,8 @@ class InterviewController extends Controller
                 // (9) COMMIT happens at end of DB::transaction closure
             });
         } catch (ProviderException $e) {
-            // PR4 (F1 fix): a shape-mismatched transcript (ProviderTranscriptShapeException,
-            // class Upstream) rolled the WHOLE transaction back — the DELETE never
-            // committed, existing utterances are untouched, ended_at was never stamped.
-            // Classified Upstream → 502 (same status a genuine 5xx transcript-fetch
-            // failure would carry via handleProviderFailure(), kept consistent here
-            // even though /end has no participant-touching branch to route through).
+            // PR4 (F1): a shape-mismatched transcript rolled the WHOLE transaction back (DELETE never
+            // committed, ended_at never stamped). Classified Upstream, so 502 as a transcript 5xx would be.
             Log::warning('C7a: /end aborted — provider transcript reconciliation failed', [
                 'session_id' => $session->id,
                 'class' => $e->failureClass()->value,
@@ -937,10 +738,8 @@ class InterviewController extends Controller
         // Observation only, after the commit: the stretch /end just stored.
         $this->inspectAvatarSilence($session, $session->provider_session_ref);
 
-        // Best-effort, after the commit: never fails /end. A HeyGen competency that
-        // handed over to the next one is NOT released here: the client keeps that
-        // session live until the incoming one has painted, and a stop now would cut
-        // the stream the candidate is still watching. A delayed job backs it up.
+        // Best-effort after the commit. A HeyGen handover is NOT released here: the client keeps
+        // that stream until the next competency has painted; a delayed job backs it up.
         if ($this->handsOverToNextCompetency($session, $endedReason, $directive)) {
             $this->deferProviderRelease($session);
         } else {
@@ -1061,10 +860,7 @@ class InterviewController extends Controller
         } catch (AnchorTranslationMissingException) {
             return response()->json(['error' => 'anchor_translation_missing'], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (PromptTemplateUnresolvableException $e) {
-            // Same 422 as any composition failure, but a broken active set (or
-            // source flag) is an operator problem that every candidate hits, so
-            // it must also reach error tracking. The message names sets, keys and
-            // locales, never a prompt body.
+            // Same 422, but an operator problem every candidate hits: also reported to error tracking.
             report($e);
 
             return response()->json(['error' => 'composition_error'], Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -1140,18 +936,23 @@ class InterviewController extends Controller
      * terminal-completed = status ∈ {completed, timeout, skipped}
      * pending | in_corso → RESUME that session (no new creation needed).
      *
+     * The ARRAY INDEX of this ordered list, not `position`, is what `competency_ordinal` is
+     * derived from (D6). `question_index` is persisted and equals `position` verbatim;
+     * `competency_ordinal` is derived per request and always dense (1..N), never stored. The
+     * two coincide for a dense, unreordered project, a consequence of well-formed data, not
+     * the reason `competency_ordinal` exists.
+     *
+     * The re-offer branch (D2) is ordered AFTER the pending|in_corso branch: a session already
+     * reset to `pending` is caught above and never reaches it, so the ratified participant-sso
+     * "Resume, not restart" scenario holds verbatim (the operator recovery path leaves sessions
+     * at `pending`, never at `error`). The reset happens at the call site, not here: this
+     * method resolves, it does not mutate.
+     *
      * @return array{competency_code: string, question_index: int, competency_ordinal: int, total_competencies: int, reoffer?: bool}|null
      */
     private function resolveNextCompetency(int $participantId, int $projectId): ?array
     {
-        // All competencies for the project, ordered by position.
-        // The ARRAY INDEX of this ordered list — not `position` — is what
-        // `competency_ordinal` is derived from (D6). `question_index` below is
-        // PERSISTED and equals `position` verbatim; `competency_ordinal` is
-        // DERIVED per request and always dense (1..N), never stored. The two
-        // coincide for a dense, unreordered project — that convergence is a
-        // consequence of well-formed data, not the reason `competency_ordinal`
-        // exists.
+        // All competencies ordered by position. competency_ordinal is the array index (D6), not position.
         $all = DB::table('project_competencies as pc')
             ->join('framework_competencies as fc', 'fc.id', '=', 'pc.competency_id')
             ->where('pc.project_id', $projectId)
@@ -1159,11 +960,7 @@ class InterviewController extends Controller
             ->select('fc.code as competency_code', 'pc.position')
             ->get();
 
-        // Existing sessions for this participant: status AND attempts spent, in
-        // ONE query. These were two identical selects differing only in the
-        // column plucked — the design promised one and the implementation drifted
-        // to two, which `sdd-verify` caught. Same rows, same WHERE, so there was
-        // never a reason to ask twice.
+        // Status and attempts spent in ONE query (the design promised one; sdd-verify caught the drift to two).
         $existing = InterviewSession::where('participant_id', $participantId)
             ->where('project_id', $projectId)
             ->get(['competency_code', 'status', 'error_count'])
@@ -1185,17 +982,7 @@ class InterviewController extends Controller
                 return $this->competencyPayload((array) $row, $index, $total);
             }
 
-            // (D2) error with attempts left → RE-OFFER this competency.
-            //
-            // Ordered deliberately AFTER the pending|in_corso branch: a session
-            // already reset to `pending` is caught above and never reaches here, so
-            // the ratified participant-sso "Resume, not restart" scenario keeps
-            // holding verbatim — the operator recovery path leaves sessions at
-            // `pending`, never at `error`.
-            //
-            // The reset happens at the call site, not here: this method resolves,
-            // it does not mutate. Left to a later step it would be one early return
-            // away from being skipped.
+            // (D2) error with attempts left → RE-OFFER (ordered after pending|in_corso; see docblock).
             if ($status === 'error'
                 && $session->error_count < InterviewSession::MAX_ERROR_ATTEMPTS
             ) {
@@ -1247,6 +1034,21 @@ class InterviewController extends Controller
      * in a DB::transaction() (which uses a SAVEPOINT internally when nested) so that
      * the savepoint is rolled back on violation while the outer connection remains clean.
      *
+     * The TurnClassifier snapshot (D7/D8) is refreshed by start() for a fresh prompt
+     * composition, but ONLY while the session has NO recorded transcript yet. This method
+     * seeds it on a genuine first INSERT; a retry re-offer reaches start() with the
+     * transcript already discarded by `ResetSessionForRetry`, so its freshly composed prompt
+     * (re-running `primaryQuestionsFor()` against the CURRENT `project_questions` state) is
+     * what the snapshot must agree with.
+     *
+     * NEVER once a real turn exists. `TurnClassifier` indexes into `primary_questions` by
+     * COUNTING already-persisted `primary`-marked avatar turns from EARLIER stretches of this
+     * same competency — a RESUME keeps that transcript. Overwriting the list on a resume would
+     * leave that count pointing at a DIFFERENT entry of a list the operator edited in between
+     * (deleted, reordered, or added a primary) than the one the earlier turns were actually
+     * matched against, corrupting the audit rather than keeping it honest — which is why a
+     * resume with turns composes from that stored list too.
+     *
      * `$primaryQuestions`/`$followUpBudget` seed HERE, on the INSERT branch
      * only (framework-catalogue-authoring PR7, D7/D8) — the snapshot
      * `TurnClassifier` audits against. The UNIQUE constraint routes a
@@ -1260,7 +1062,6 @@ class InterviewController extends Controller
      * returns) — this method only ever seeds the value a brand-new row is
      * born with.
      *
-
      * @param  array{competency_code: string, question_index: int}  $competency
      * @param  list<string>  $primaryQuestions
      */
@@ -1287,9 +1088,7 @@ class InterviewController extends Controller
                 ]);
             });
         } catch (UniqueConstraintViolationException) {
-            // Concurrent double /start: UNIQUE(participant_id, competency_code) violated.
-            // PostgreSQL aborted the inner transaction/savepoint; the outer connection is clean.
-            // Re-query the existing session → RESUME path.
+            // Concurrent double /start (UNIQUE violated): re-query the existing session, the RESUME path.
             return InterviewSession::where('participant_id', $participant->id)
                 ->where('competency_code', $competency['competency_code'])
                 ->firstOrFail();
@@ -1305,6 +1104,44 @@ class InterviewController extends Controller
      * Per WARNING-6: the RESUME teardown wraps the OLD persisted ref via
      * ProviderToken::fromRef($session->provider, $session->provider_session_ref).
      * The compensation teardown (step 4d) uses the IN-MEMORY token from issue().
+     *
+     * The OUTGOING live period (D1/D4) closes deliberately OUTSIDE the `$oldRef !== null`
+     * guard: a period is BEAI's own observation of live time, not a mirror of the
+     * provider's ref, and must close even when no provider ref survives. Nested inside the
+     * guard, a null-ref row would leak an open period forever and lose its first stretch
+     * from every sum. It closes BEFORE the step (c) transaction on purpose: if (c) fails,
+     * the stretch that genuinely ended stays correctly closed rather than being discarded
+     * by a later, unrelated write failure.
+     *
+     * The new stretch opens in the same transaction as the ref write (D1/D4), and the
+     * outgoing one was already closed before it, so the D5 invariant (at most one open
+     * period) holds even if this transaction fails and is retried.
+     *
+     * On a DB failure after provider success, the NEW in-memory token is torn down
+     * (WARNING-6). The cause is logged first, because without that the candidate gets a
+     * 500 and the API records nothing about why the transaction failed; the teardown
+     * warning fires only when the compensation also fails, and describes that, not this.
+     *
+     * The outgoing transcript was already harvested by start(), before composition. Without
+     * that harvest a resume would destroy everything said before it: each resume issues a
+     * NEW provider_session_ref, and /end reconciles only the surviving one. The context ref
+     * travels with the session ref: the provider deletes the old session's context entry
+     * too, once the stop has succeeded.
+     *
+     * The outgoing refs are queued for release only once the fresh ref is saved, from a
+     * snapshot taken before any change: a failed resume must never schedule the end of the
+     * conversation the row still holds. A sibling row still on this conversation keeps it
+     * alive (design N12), and a Tavus conversation at its ceiling (N6/N12) is released
+     * deferred, like a refused continuation's, because the crossfade may still show it.
+     *
+     * RESUME in_corso, as start() drives it:
+     *   - Harvest the outgoing transcript, then compose: the opening re-asks the
+     *     pending primary verbatim. A composition failure answers 422, as on a
+     *     fresh start, and ends the outgoing provider session on its way out —
+     *     nothing else would, and it bills until the provider's own ceiling.
+     *   - issue() FRESH token.
+     *   - Teardown OLD session via ProviderToken::fromRef($session->provider, $session->provider_session_ref).
+     *   - Persist new ref.
      */
     private function handleResumeInCorso(
         InterviewSession $session,
@@ -1324,37 +1161,19 @@ class InterviewController extends Controller
         // A null provider_session_ref means there is no old provider session to tear down.
         $oldRef = $session->provider_session_ref;
 
-        // (interview-session-started-at, D1/D4) Close the OUTGOING period —
-        // deliberately OUTSIDE the `$oldRef !== null` guard below: a period
-        // is BEAI's own observation of live time, not a mirror of the
-        // provider's ref, and must close even when no provider ref
-        // survives. Nested inside the guard, a null-ref row would leak an
-        // open period forever and lose its first stretch from every sum.
-        // Placed BEFORE the (c) transaction below is deliberate: if (c)
-        // fails, the stretch that genuinely ended stays correctly closed
-        // rather than being discarded by a later, unrelated write failure.
+        // Close the OUTGOING live period outside the `$oldRef` guard: see the docblock.
         $this->liveClock->close($session, 'resume');
 
-        // A sibling row still on this conversation keeps it alive (design N12): the row
-        // moves to its fresh ref below, and the old conversation is that sibling's to end.
+        // Sibling and ceiling rules for the old conversation: see the docblock.
         $hasLiveSibling = $oldRef !== null && $this->siblings->hasLiveSibling((int) $session->organization_id, $session->provider, $oldRef, $session->id);
 
-        // A Tavus conversation at its ceiling is the mid-competency expiry (design N6/N12): the
-        // crossfade may still be showing it, so its release is deferred like a refused
-        // continuation's, with the refs captured now. The fresh ref below is a different conversation.
         $deferred = $oldRef !== null && ! $hasLiveSibling && $session->provider === 'tavus'
             && $this->refLifetime->isNearCeiling($session, $oldRef);
-        // The release is queued only once the fresh ref is saved (below), from this snapshot of the
-        // outgoing refs: a failed resume must never schedule the end of the conversation the row still holds.
         $outgoing = clone $session;
 
         if ($oldRef !== null && ! $hasLiveSibling && ! $deferred) {
-            // The outgoing transcript was already harvested by start(),
-            // before composition. Without that harvest a resume would
-            // destroy everything said before it: each resume issues a NEW
-            // provider_session_ref, and /end reconciles only the surviving one.
-            // The context ref travels with the session ref: the provider deletes
-            // the old session's context entry too, once the stop has succeeded.
+            // The outgoing transcript was harvested by start() first; the context ref
+            // travels with the session ref (see the docblock).
             $oldToken = ProviderToken::fromRef($session->provider, $oldRef, $session->provider_context_ref);
             try {
                 if (! $provider->teardown($oldToken)) {
@@ -1390,26 +1209,15 @@ class InterviewController extends Controller
                 // (D2) `??=` — a no-op here for any row that truly resumed
                 // (started_at is already set from the first stretch).
                 $session->started_at ??= now()->toImmutable();
-                // (pluggable-conversation-llm PR P6a, design D5) issue() IS
-                // re-invoked on resume — stamp() carries its own write-once /
-                // downgrade-only / null-guard rules, mirroring started_at's
-                // idiom right above it.
+                // stamp() is write-once / downgrade-only / null-guarded (design D5).
                 $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
                 $session->save();
 
-                // (D1/D4) Open the NEW stretch in the same transaction — the
-                // outgoing one was already closed above, before this txn, so
-                // the D5 invariant (at most one open period) holds even if
-                // this transaction fails and is retried.
+                // Opens the NEW stretch; the outgoing one was closed before this txn (D5).
                 $this->liveClock->open($session, $freshToken->provider_session_ref);
             });
         } catch (\Throwable $e) {
-            // DB failure after provider success → teardown the NEW in-memory token (WARNING-6)
-            // Log the CAUSE, not only the compensation. Without this the
-            // candidate gets a 500 and the API records nothing about why the
-            // transaction failed — the teardown line below fires only when the
-            // compensation ALSO fails, and describes that, not this.
-            //
+            // Teardown of the new token on DB failure (WARNING-6); logs the cause first.
             Log::error('C7a: db failure after provider success', [
                 'stage' => 'resume',
                 'session_id' => $session->id,
@@ -1438,8 +1246,45 @@ class InterviewController extends Controller
      * Handle issue() for a pending session (new or existing pending with no ref).
      *
      * Provider call is OUTSIDE any DB transaction.
-     * On success: short DB txn updating both session + participant (FIX-8).
+     * On success: short DB txn updating both session + participant (FIX-8: both session
+     * UPDATE and participant UPDATE are inside ONE short transaction).
      * Failure matrix: 429 → provider_busy; 5xx → errore + 502; DB failure → teardown + 500.
+     *
+     * RESUME pending, as start() drives it: retry issue(). On success, persist the ref
+     * and flip the session to in_corso.
+     *
+     * The write-once started_at stamp (D2, D6) is `??=`, not `=`, because this site is NOT
+     * only the first-stretch path: `ResetSessionForRetry` returns an already-lived session
+     * to `pending`, so a re-offered competency reaches here with a start already recorded,
+     * and that value must survive. The same stamp also guards the LLM snapshot (design D5),
+     * for the same reason: a re-offered competency is reached here too, not only a true
+     * first issue.
+     *
+     * The status transition to in_corso is a SEPARATE concern from the started_at stamp
+     * (participant-error-recovery D2b): a recovered participant (status=in_attesa,
+     * started_at already set, isFirstCompetency=false) must STILL move to in_corso here,
+     * or it is stranded at in_attesa forever — /end's later completion CAS requires
+     * status='in_corso' to reach in_valutazione. The transition is guarded so an already
+     * in_corso participant (the normal 2nd+ competency path) triggers no redundant write.
+     * `session_started` (public-api step 6, G-38) fires exactly once per participant, the
+     * TRUE entrance into `in_corso`. It is captured as a boolean BEFORE the reassignment
+     * (never re-read `$participant->status` after save(), which would always read back
+     * 'in_corso' and fire on every competency).
+     *
+     * A mock-provider session (SPEC.md §3.7 "Test mode", public-api step 9) triggers the
+     * WHOLE scripted interview lifecycle from this one /start() call: unlike a real
+     * HeyGen/Tavus interview, the candidate app never drives a test-mode interview
+     * competency-by-competency. It is dispatched from INSIDE this transaction with
+     * ->afterCommit() (same idiom as `FinalizeInterview::dispatch(...)->afterCommit()` in
+     * SettleParticipantCompletion), so the job never observes this session's row before the
+     * write that created it is visible. RunMockInterviewJob's own idempotency guards make a
+     * redundant dispatch — a retried /start(), or one called again after the mock interview
+     * already finished — a safe no-op.
+     *
+     * On a DB failure after provider success, the in-memory token is torn down (4d) and the
+     * cause is logged first: without that the candidate gets a 500 and the API records
+     * nothing about why the transaction failed. The teardown warning fires only when the
+     * compensation also fails, and describes that, not this.
      *
      * @param  array{competencies: list<array{code: string, primary_questions: list<string>, follow_up_budget: int}>, chars: int}|null  $conversationPlan  The frozen plan of a fresh single-session create; null writes nothing.
      */
@@ -1466,18 +1311,9 @@ class InterviewController extends Controller
                 $session->provider_context_ref = $token->provider_context_ref;
                 $session->status = 'in_corso';
 
-                // (interview-session-started-at, D2) The FIRST live moment,
-                // write-once. `??=` — not `=` — because this site is NOT only
-                // the first-stretch path: `ResetSessionForRetry` returns an
-                // already-lived session to `pending`, so a re-offered
-                // competency reaches here with a start already recorded, and
-                // that value must survive (D6).
+                // Write-once `??=` for the first live moment (D2, D6): see the docblock.
                 $session->started_at ??= now()->toImmutable();
-                // (pluggable-conversation-llm PR P6a, design D5) Same
-                // write-once / downgrade-only / null-guard stamp as the
-                // RESUME path above — this site is also reached by a
-                // re-offered competency (ResetSessionForRetry), not only a
-                // true first issue.
+                // Same write-once stamp as the RESUME path (design D5).
                 $this->llmSnapshot->stamp($session, $ctx->systemPrompt, $ctx->stampedPromptVersion());
                 // Frozen once, on the row that created the conversation (N2). No anchor in it.
                 if ($conversationPlan !== null) {
@@ -1499,20 +1335,7 @@ class InterviewController extends Controller
                     $participant->started_at = now();
                 }
 
-                // (participant-error-recovery D2b) The status transition to
-                // in_corso is a SEPARATE concern from the started_at stamp: a
-                // recovered participant (status=in_attesa, started_at already
-                // set, isFirstCompetency=false) must STILL move to in_corso
-                // here, or it is stranded at in_attesa forever — /end's later
-                // completion CAS requires status='in_corso' to reach
-                // in_valutazione. Guarded so an already in_corso participant
-                // (the normal 2nd+ competency path) triggers no redundant write.
-                // public-api step 6, G-38: `session_started` fires exactly
-                // once per participant — the TRUE entrance into `in_corso`,
-                // never a redundant 2nd+ competency write. Captured as a
-                // boolean BEFORE the reassignment below (never re-read
-                // `$participant->status` after save(), which would always
-                // read back 'in_corso' and fire on every competency).
+                // Status move to in_corso is separate from the started_at stamp (D2b): see docblock.
                 $enteringInCorso = $participant->status !== 'in_corso';
 
                 if ($enteringInCorso) {
@@ -1527,30 +1350,13 @@ class InterviewController extends Controller
                     InterviewEventRecorder::sessionStarted($participant->organization_id, $participant->id);
                 }
 
-                // SPEC.md §3.7 "Test mode" (public-api step 9) — a
-                // mock-provider session triggers the WHOLE scripted
-                // interview lifecycle from this one /start() call: unlike a
-                // real HeyGen/Tavus interview, the candidate app never
-                // drives a test-mode interview competency-by-competency.
-                // Dispatched from INSIDE this transaction, ->afterCommit()
-                // (same idiom as `FinalizeInterview::dispatch(...)
-                // ->afterCommit()` in SettleParticipantCompletion), so the
-                // job never observes this session's row before the write
-                // that created it is visible. RunMockInterviewJob's own
-                // idempotency guards make a redundant dispatch — a retried
-                // /start(), or one called again after the mock interview
-                // already finished — a safe no-op.
+                // Test-mode mock interview dispatch: see the docblock.
                 if ($participant->mode === ApiKeyMode::Test) {
                     RunMockInterviewJob::dispatch($participant->organization_id, $participant->id)->afterCommit();
                 }
             });
         } catch (\Throwable $e) {
-            // (4d) DB failure after provider success → teardown in-memory token (WARNING-6)
-            // Log the CAUSE, not only the compensation. Without this the
-            // candidate gets a 500 and the API records nothing about why the
-            // transaction failed — the teardown line below fires only when the
-            // compensation ALSO fails, and describes that, not this.
-            //
+            // (4d) DB failure after provider success: teardown and log the cause (see docblock).
             Log::error('C7a: db failure after provider success', [
                 'stage' => 'start',
                 'session_id' => $session->id,
@@ -1609,20 +1415,7 @@ class InterviewController extends Controller
             ProviderFailureClass::Upstream => $this->markSessionError($session, Response::HTTP_BAD_GATEWAY, $participant),
         };
 
-        // (D5, call site 2) The competency that just died may have been the last one.
-        //
-        // Placed AFTER the switch, never inside markSessionError(). For `Upstream`,
-        // markParticipantFailed() has already moved the participant to `errore`, and
-        // settleCompletionIfFinished()'s `where('status','in_corso')` predicate then
-        // matches zero rows and does nothing — which is exactly right. Settling
-        // FIRST would flip in_corso → in_valutazione, dispatch scoring, and then let
-        // markParticipantFailed() overwrite it to `errore`: a scored, webhooked
-        // candidate sitting at a failure status. One guard, no branch duplication,
-        // and it is the same guard /end already relies on.
-        //
-        // Not "settle on the next /start" instead: after a terminal error the client
-        // renders its error screen and may never call anything again. A settlement
-        // that depends on a client action which may never come is not a settlement.
+        // (D5, call site 2) The competency that just died may have been the last one; see settleCompletionIfFinished().
         $this->settleCompletionIfFinished($session->participant_id, $session->project_id);
 
         return $response;
@@ -1640,6 +1433,18 @@ class InterviewController extends Controller
      * This wrapper stays so the three existing call sites read unchanged, and
      * so there is still exactly one name in this file for "settle if the
      * interview is over".
+     *
+     * Call sites: /end (step 7+8), handleProviderFailure() (D5, call site 2, placed AFTER
+     * the failure switch: an Upstream failure has already moved the participant to `errore`,
+     * so the `in_corso` predicate matches nothing, which is correct; settling first would
+     * dispatch scoring and then be overwritten to `errore`, and the same guard /end already
+     * relies on). Not deferred to the next /start: after a terminal error the client renders
+     * its error screen and may never call anything again, so a settlement that depends on a
+     * later client action is not a settlement. start() (D5, call site 3).
+     * The start() self-heal is idempotent: every competency is terminal, so this participant
+     * is finished whether or not anything settled them at the time. It rescues candidates
+     * stranded before this change and does nothing for anyone already settled; the CAS
+     * predicate makes a second call a no-op, not a second dispatch.
      */
     private function settleCompletionIfFinished(int $participantId, int $projectId): void
     {
@@ -1718,6 +1523,55 @@ class InterviewController extends Controller
      * Appends rather than replaces: `replaceUtterances()` at /end is authoritative
      * for ONE provider session, and a resumed competency spans several. Anything
      * already stored belongs to an earlier session and must survive.
+     *
+     * DELETE ONLY WHAT THIS PROVIDER SESSION OWNS. The fetch is single-session: HeyGen
+     * answers for `$oldRef` only, and every resume mints a new ref. So the DELETE that
+     * makes fetch-then-store authoritative has to be bounded to the stretch being
+     * replaced, and BOTH unbounded answers are wrong:
+     *   - delete everything → the second resume erases the turns harvested from the
+     *     first provider session. BARS scores a fragment.
+     *   - delete nothing after the first harvest → `UtteranceController` is
+     *     provider-agnostic (its only predicate is `status = in_corso`), so the live rows
+     *     for this stretch are already stored, and the provider's copy of those same turns
+     *     lands on top. BARS scores the candidate saying everything twice.
+     * The bound is the ref itself, carried on every row. An auto-increment watermark was
+     * tried first and cannot express this: the provider's rows are always inserted after
+     * the live rows they replace, so any id high enough to protect the former also buries
+     * the latter.
+     *
+     * The store runs in its OWN transaction, so a failure cannot poison an enclosing one.
+     * Postgres aborts a transaction on the first error and refuses every later statement in
+     * it, so swallowing this exception is only safe if the failure is contained: nested,
+     * Laravel makes this a SAVEPOINT and rolls back to it; unnested — the production path —
+     * it is a plain transaction around one delete and one insert.
+     *
+     * BEST-EFFORT, like the fetch above it. A transcript we cannot store is turns we never
+     * had; losing the candidate's access to a live interview over it would be a different
+     * and worse outcome — and a concrete one: issue() has already minted a FRESH provider
+     * session by this point, so an exception escaping here returns 500 with the new ref
+     * unpersisted and never torn down, billing to its ceiling while the candidate is locked
+     * out. replaceUtterances() keeps the throw on purpose: it runs inside /end's explicit
+     * transaction, where a rollback is the right answer.
+     *
+     * KNOWN RESIDUAL: a live `/utterance` for this stretch that lands AFTER this DELETE
+     * commits keeps its `$oldRef` tag and is never replaced, so if the provider's copy also
+     * contained that turn it appears twice. The window is the gap between this commit and
+     * the client noticing the new session, and closing it fully would mean refusing live
+     * writes mid-resume — which loses the turn instead of repeating it. A repeated turn is
+     * the lesser harm to a BARS transcript, and it is disclosed rather than papered over.
+     *
+     * Called from start() on a resume, before composition, because the resumed opening
+     * re-asks the pending primary, and which primary is pending is counted from the
+     * persisted transcript. This is also the last moment that transcript is readable:
+     * the provider session is torn down in handleResumeInCorso(). Best-effort and scoped
+     * to the ref, so a retried /start re-harvests the same stretch idempotently. A
+     * suspended session has no ref: /suspend already harvested it.
+     * handleResumeInCorso() reads its OWN `$oldRef` off a separately re-fetched
+     * InterviewSession (createOrResumeSession()'s UniqueConstraintViolationException path),
+     * not off start()'s `$outgoingRef` — two reads of "the old ref" that must always agree.
+     * Nothing between the two reads writes `provider_session_ref` on this row (issue()
+     * returns a fresh ProviderToken without touching the session it was handed; the one
+     * intervening save() only ever touches primary_questions/follow_up_budget).
      */
     private function harvestOutgoingTranscript(
         InterviewSession $session,
@@ -1740,25 +1594,7 @@ class InterviewController extends Controller
             return;
         }
 
-        // DELETE ONLY WHAT THIS PROVIDER SESSION OWNS.
-        //
-        // The fetch is single-session: HeyGen answers for `$oldRef` only, and
-        // every resume mints a new ref. So the DELETE that makes fetch-then-store
-        // authoritative has to be bounded to the stretch being replaced, and
-        // BOTH unbounded answers are wrong:
-        //
-        //   - delete everything → the second resume erases the turns harvested
-        //     from the first provider session. BARS scores a fragment.
-        //   - delete nothing after the first harvest → `UtteranceController` is
-        //     provider-agnostic (its only predicate is `status = in_corso`), so
-        //     the live rows for this stretch are already stored, and the
-        //     provider's copy of those same turns lands on top. BARS scores the
-        //     candidate saying everything twice.
-        //
-        // The bound is the ref itself, carried on every row. An auto-increment
-        // watermark was tried first and cannot express this: the provider's rows
-        // are always inserted after the live rows they replace, so any id high
-        // enough to protect the former also buries the latter.
+        // Rows are scoped to `$oldRef` (the DELETE bound): see the docblock above.
         $rows = array_map(fn (array $row): array => [
             'interview_session_id' => $session->id,
             'organization_id' => $session->organization_id,
@@ -1768,30 +1604,7 @@ class InterviewController extends Controller
             'ts' => $row['ts'],
         ], $turns);
 
-        // Its OWN transaction, so a failure cannot poison an enclosing one.
-        // Postgres aborts a transaction on the first error and refuses every
-        // later statement in it, so swallowing this exception is only safe if
-        // the failure is contained: nested, Laravel makes this a SAVEPOINT and
-        // rolls back to it; unnested — the production path — it is a plain
-        // transaction around one delete and one insert.
-        //
-        // BEST-EFFORT, like the fetch above it. A transcript we cannot store is
-        // turns we never had; losing the candidate's access to a live interview
-        // over it would be a different and worse outcome — and a concrete one:
-        // issue() has already minted a FRESH provider session by this point, so
-        // an exception escaping here returns 500 with the new ref unpersisted and
-        // never torn down, billing to its ceiling while the candidate is locked
-        // out. replaceUtterances() keeps the throw on purpose: it runs inside
-        // /end's explicit transaction, where a rollback is the right answer.
-        //
-        // KNOWN RESIDUAL: a live `/utterance` for this stretch that lands AFTER
-        // this DELETE commits keeps its `$oldRef` tag and is never replaced, so
-        // if the provider's copy also contained that turn it appears twice. The
-        // window is the gap between this commit and the client noticing the new
-        // session, and closing it fully would mean refusing live writes mid-
-        // resume — which loses the turn instead of repeating it. A repeated turn
-        // is the lesser harm to a BARS transcript, and it is disclosed rather
-        // than papered over.
+        // Own transaction, best-effort: see the docblock on why a failure here is swallowed.
         try {
             DB::transaction(function () use ($session, $rows, $oldRef): void {
                 $this->replaceUtteranceStretch($session, $rows, $oldRef);
@@ -1900,10 +1713,14 @@ class InterviewController extends Controller
      * Precedence, most specific first: a template the PROJECT pinned wins,
      * because pinning a template is already a statement about which provider
      * the project runs on and it would be incoherent for the two to disagree.
-     * Then the explicit `provider_override`, then the env default. A test-mode
-     * enrolment always runs the mock provider. Read as a single column rather
-     * than hydrating the related model; `value()` is null for a template that
+     * Then the explicit `provider_override`, then the env default. Read as a single column
+     * rather than hydrating the related model; `value()` is null for a template that
      * has since been deleted, and the two configured defaults take over there.
+     *
+     * A test-mode enrolment (`beai_test_…`) ALWAYS runs the mock avatar provider, taking
+     * priority over the pinned-template / provider_override / config chain, never the reverse
+     * (T-TEST-006). A live-mode interview can never reach the mock provider through this
+     * path, whatever the project's avatar template or override holds.
      */
     private function providerNameFor(Participant $participant, Project $project): string
     {
@@ -1922,6 +1739,17 @@ class InterviewController extends Controller
      * When `$participant` is given, also runs `markParticipantFailed()` — the
      * Upstream-only path. ClientError calls this WITHOUT a participant, so the
      * candidate's status is never touched for a bug on our own side.
+     *
+     * `error_count` is the bound on re-offers. A counter that the reset clears would not be
+     * one, so the reset never touches it.
+     *
+     * The live period closes here (D4). It is a no-op for a session that never left `pending`
+     * (the Throttle branch short-circuits before this method). ClientError does NOT
+     * short-circuit: on a RESUME it arrives with the session `in_corso`, so the close is a real
+     * write. KNOWN RESIDUAL: a RESUME whose issue() throws never reaches teardown, so the old
+     * provider session may keep billing to its ceiling while this closes the period only up to
+     * the moment the failure was detected: a bounded, disclosed under-count, not papered over
+     * with an invented end time.
      */
     private function markSessionError(
         InterviewSession $session,
@@ -1931,23 +1759,11 @@ class InterviewController extends Controller
         try {
             $session->status = 'error';
             $session->ended_reason = 'error';
-            // D1: the attempt is recorded HERE, the sole writer of `status = 'error'`.
-            // `ResetSessionForRetry` deliberately never touches this column, so the
-            // count survives the reset that re-offers the competency — a counter its
-            // own reset clears is not a bound.
+            // D1: the sole writer of `status = 'error'`; ResetSessionForRetry never touches error_count.
             $session->error_count = $session->error_count + 1;
             $session->save();
 
-            // (interview-session-started-at, D4) Close the open period, if
-            // any. A no-op for a session that never left `pending`, which is the
-            // Throttle branch — it short-circuits before this method. ClientError
-            // does NOT: it routes straight here, and on a RESUME it arrives with
-            // the session `in_corso`, so this close() is a real write. KNOWN
-            // RESIDUAL: a RESUME whose issue() throws never reaches
-            // teardown, so the old provider session may keep billing to its
-            // ceiling while this closes the period only up to the moment
-            // the failure was detected — a bounded, disclosed under-count,
-            // not papered over with an invented end time.
+            // Close the open period (D4): see the docblock for the throttle and residual cases.
             $this->liveClock->close($session, 'error');
         } catch (\Throwable) {
             // Best-effort — if even the error update fails, still return the failure status
@@ -2073,6 +1889,18 @@ class InterviewController extends Controller
      * `harvestOutgoingTranscript()`'s caller does not, which is the gap this
      * closes.
      *
+     * The stamp on `transcript_harvested_at` is still written, because /end's own
+     * reconciliation reads it to decide whether anything has been harvested at all. It no
+     * longer bounds the DELETE — the ref does that — so a stale value can no longer decide
+     * which turns survive.
+     *
+     * ONLY that column is written, through a targeted update. A plain save() flushes every
+     * dirty attribute, and on the harvest path this transaction commits BEFORE
+     * handleResumeInCorso() step (c) — the one that owns the session write and sits inside
+     * the teardown compensation boundary. Anything liveClock->close() or provider->issue()
+     * left dirty would be committed early and outside it, a coupling invisible from either
+     * call site.
+     *
      * @param  array<array-key, array<string, mixed>>  $rows
      */
     private function replaceUtteranceStretch(InterviewSession $session, array $rows, ?string $ref): void
@@ -2092,17 +1920,7 @@ class InterviewController extends Controller
 
         $this->insertUtterances($session, $rows);
 
-        // Still stamped, because /end's own reconciliation reads it to decide
-        // whether anything has been harvested at all. It no longer bounds the
-        // DELETE — the ref does that — so a stale value can no longer decide
-        // which turns survive.
-        //
-        // ONLY this column. A plain save() flushes every dirty attribute, and on
-        // the harvest path this transaction commits BEFORE handleResumeInCorso()
-        // step (c) — the one that owns the session write and sits inside the
-        // teardown compensation boundary. Anything liveClock->close() or
-        // provider->issue() left dirty would be committed early and outside it,
-        // a coupling invisible from either call site.
+        // Stamps only `transcript_harvested_at`, never a plain save(): see the docblock.
         $session->transcript_harvested_at = now()->toImmutable();
         $session->newQuery()
             ->whereKey($session->getKey())
@@ -2115,17 +1933,17 @@ class InterviewController extends Controller
      *
      * This overrides the IoC-bound instance when a project-level override is in effect,
      * ensuring the correct provider class is always used for the current session.
+     *
+     * The `mock` arm is the ACTUAL routing point for test mode (public-api step 9): start()'s
+     * `$providerName` assignment is what forces it for a test-mode participant. The
+     * InterviewServiceProvider contextual binding is the secondary, defense-in-depth one (see
+     * MockProvider's own docblock).
      */
     private function resolveProvider(string $providerName): ProviderSessionService
     {
         return match ($providerName) {
             'tavus' => app(TavusProvider::class),
-            // SPEC.md §3.7 "Test mode" (public-api step 9) — see
-            // MockProvider's own docblock for why this is the ACTUAL
-            // routing point (start()'s $providerName assignment above is
-            // what forces this arm for a test-mode participant), and
-            // InterviewServiceProvider's contextual binding is the
-            // secondary, defense-in-depth one.
+            // SPEC.md §3.7 "Test mode": the actual routing point (see the docblock).
             'mock' => app(MockProvider::class),
             default => app(HeygenProvider::class),
         };
