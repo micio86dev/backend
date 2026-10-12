@@ -60,8 +60,9 @@ final class InterviewSerializerTypesExtension implements StaticMethodReturnTypeE
             return null;
         }
 
-        // A deep copy: the resolver may hand out a shared instance, and patching it
-        // in place would leak these entries into other resolutions of the same call.
+        // A deep copy first: the resolver may hand out a shared instance, and patching it in
+        // place would leak these types into other resolutions of the same call. The copy keeps
+        // every item's attributes (descriptions included), which rebuilding the shape would drop.
         $resolved = $resolved->clone();
 
         foreach ($resolved->items as $item) {
