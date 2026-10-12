@@ -91,7 +91,7 @@ final class InterviewSerializer
      * `scramble:export` diff, not a test.
      *
      * @param  list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>|null  $progress
-     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: array<string, string>, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string, external_id: int|null, source: string|null}
+     * @return array{id: string, project_id: string, project?: array<string, mixed>, candidate_ref: string, email: string, display_name: string, role_code: string|null, language: string, status: string, livemode: bool, metadata: \stdClass, exit_redirect_url: string|null, hosted_url: string|null, progress: list<array{competency_code: string, answers: list<array{question_index: int, answered_at: string}>}>, started_at: string|null, completed_at: string|null, transcript_ready: bool, scoring_ready: bool, recording_ready: bool, created_at: string, updated_at: string, external_id: int|null, source: string|null}
      */
     public static function toArray(Participant $participant, bool $expandProject = false, ?array $progress = null, ?bool $recordingReady = null): array
     {
@@ -108,7 +108,7 @@ final class InterviewSerializer
             'language' => (string) $participant->language,
             'status' => $status->value,
             'livemode' => $participant->mode === ApiKeyMode::Live,
-            'metadata' => $participant->metadata ?? [],
+            'metadata' => (object) ($participant->metadata ?? []),
             'exit_redirect_url' => $participant->exit_redirect_url,
             // Always `null` on a read: the hosted interview URL is returned only together with a freshly issued session token.
             'hosted_url' => null,
