@@ -130,14 +130,14 @@ test('a canary project opens the gate with the global flag off', function (): vo
     expect(cpcRow($org, $participant)->conversation_plan)->not->toBeNull();
 });
 
-test('gate closed: the response keys are the old ones, no column is written and no participant_left_timeout is sent', function (): void {
+test('gate closed: no conversation key is added, no column is written and no participant_left_timeout is sent', function (): void {
     cpcFake();
     [$org, , $participant] = cpcFixture(3);
 
     $response = cpcStart($participant)->assertStatus(201);
 
     $body = cpcCreateBody();
-    expect(array_keys($response->json()))->toBe(['session_id', 'provider', 'audio_only', 'provider_token', 'conversation_url', 'question_context'])
+    expect(array_keys($response->json()))->toBe(['session_id', 'provider', 'audio_only', 'provider_token', 'conversation_url', 'question_context', 'interview_max_seconds'])
         ->and(cpcRow($org, $participant)->conversation_plan)->toBeNull()
         ->and($body['properties'] ?? [])->not->toHaveKey('participant_left_timeout')
         ->and($body['conversational_context'])->not->toContain('=== TOPIC CODE:');

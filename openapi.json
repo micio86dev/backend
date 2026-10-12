@@ -6714,6 +6714,9 @@
                                                 "total_competencies"
                                             ]
                                         },
+                                        "interview_max_seconds": {
+                                            "type": "integer"
+                                        },
                                         "conversation_id": {
                                             "type": "string"
                                         },
@@ -6742,7 +6745,8 @@
                                         "provider_token",
                                         "conversation_url",
                                         "audio_only",
-                                        "question_context"
+                                        "question_context",
+                                        "interview_max_seconds"
                                     ]
                                 }
                             }
