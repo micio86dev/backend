@@ -58,6 +58,8 @@ const OPENAPI_INTERNAL_WORDS = [
     'SDD artifacts' => '(\bopenspec\b|\bsdd\b|design\.md)',
     'internal documents' => '(CLAUDE\.md|SPEC\.md)',
     'ruling' => '\bruling [0-9]+',
+    'internal notes' => '\binternal notes\b',
+    'internal tag' => '@internal',
     'ratified' => '\bratified\b',
     'owner' => '\bowner\b',
     // A file name, with or without a `:line`, is a pointer for a maintainer and
