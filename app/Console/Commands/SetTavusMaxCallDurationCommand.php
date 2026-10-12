@@ -56,12 +56,8 @@ class SetTavusMaxCallDurationCommand extends Command
 
             return self::FAILURE;
         }
-        if ($template->provider !== 'tavus') {
-            $this->error("Template {$template->id} is provider '{$template->provider}', not 'tavus'. Nothing changed.");
 
-            return self::FAILURE;
-        }
-
+        // organization_id never changes after creation, so this check needs no lock.
         if ($template->organization_id === null) {
             $this->error('This is a platform template: write it through the superadmin, not this command. Nothing changed.');
 
@@ -71,11 +67,17 @@ class SetTavusMaxCallDurationCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
         $result = TenantContextScope::runFor(
             $template->organization_id,
-            fn (): ?array => $this->writeMaxCallDuration($template->id, $seconds, $dryRun),
+            fn (): array => $this->writeMaxCallDuration($template->id, $seconds, $dryRun),
         );
 
-        if ($result === null) {
+        if ($result['outcome'] === 'missing') {
             $this->error('The template disappeared before the change. Nothing changed.');
+
+            return self::FAILURE;
+        }
+
+        if ($result['outcome'] === 'not_tavus') {
+            $this->error("Template {$template->id} is provider '{$result['provider']}', not 'tavus'. Nothing changed.");
 
             return self::FAILURE;
         }
@@ -88,7 +90,7 @@ class SetTavusMaxCallDurationCommand extends Command
             return self::SUCCESS;
         }
 
-        if (! $result['saved']) {
+        if ($result['outcome'] !== 'saved') {
             $this->error('The template could not be saved. Nothing changed.');
 
             return self::FAILURE;
@@ -100,29 +102,37 @@ class SetTavusMaxCallDurationCommand extends Command
     }
 
     /**
-     * Reads the template under a row lock and writes only its maxCallDurationSec key, so a
-     * concurrent edit to the other config keys cannot be overwritten by a stale copy.
+     * Re-checks the provider and reads the value under a row lock, then writes only the
+     * maxCallDurationSec key. A provider or config change made between the lookup and the
+     * write is therefore seen, and cannot be overwritten by a stale copy.
      *
-     * @return array{before: mixed, saved: bool}|null
+     * @return array{outcome: 'missing'|'not_tavus'|'dry_run'|'saved'|'failed', before: mixed, provider: string}
      */
-    private function writeMaxCallDuration(int $templateId, int $seconds, bool $dryRun): ?array
+    private function writeMaxCallDuration(int $templateId, int $seconds, bool $dryRun): array
     {
-        return DB::transaction(function () use ($templateId, $seconds, $dryRun): ?array {
+        return DB::transaction(function () use ($templateId, $seconds, $dryRun): array {
             $fresh = AvatarTemplate::query()->lockForUpdate()->find($templateId);
             if ($fresh === null) {
-                return null;
+                return ['outcome' => 'missing', 'before' => null, 'provider' => ''];
             }
 
             $config = $fresh->config;
             $before = $config['maxCallDurationSec'] ?? null;
+            if ($fresh->provider !== 'tavus') {
+                return ['outcome' => 'not_tavus', 'before' => $before, 'provider' => $fresh->provider];
+            }
             if ($dryRun) {
-                return ['before' => $before, 'saved' => false];
+                return ['outcome' => 'dry_run', 'before' => $before, 'provider' => 'tavus'];
             }
 
             $config['maxCallDurationSec'] = $seconds;
             $fresh->config = $config;
 
-            return ['before' => $before, 'saved' => (bool) $fresh->save()];
+            return [
+                'outcome' => $fresh->save() ? 'saved' : 'failed',
+                'before' => $before,
+                'provider' => 'tavus',
+            ];
         });
     }
 
