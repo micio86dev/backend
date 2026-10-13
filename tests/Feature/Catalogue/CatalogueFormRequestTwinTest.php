@@ -130,14 +130,14 @@ test('a whitespace-only non-required locale value is refused with HTTP 422 on ev
 
     $this->withToken($token)->postJson('/api/catalogue/roles', [
         'code' => 'WSROLE', 'name' => ['en' => 'Role', 'it' => $blank],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors(['name.it']);
     $this->withToken($token)->postJson('/api/catalogue/roles', [
         'code' => 'WSROLE', 'name' => ['en' => 'Role'], 'responsibilities' => ['en' => $blank],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors(['responsibilities.en']);
 
     $this->withToken($token)->postJson('/api/catalogue/competencies', [
         'code' => 'WSCOMP', 'type' => 'standard', 'name' => ['en' => 'x', 'it' => $blank], 'definition' => ['en' => 'x'],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors(['name.it']);
 
     $this->withToken($token)->postJson('/api/catalogue/roles', ['code' => 'WSBARS', 'name' => ['en' => 'Role']])->assertCreated();
     $this->withToken($token)->postJson('/api/catalogue/competencies', [
@@ -150,11 +150,11 @@ test('a whitespace-only non-required locale value is refused with HTTP 422 on ev
     $this->withToken($token)->postJson('/api/catalogue/bars-indicators', [
         'role_id' => $roleId, 'competency_id' => $competencyId, 'position' => 0,
         'text' => ['en' => 't'], 'anchor_5' => ['en' => 'a', 'it' => $blank], 'anchor_3' => ['en' => 'a'], 'anchor_1' => ['en' => 'a'],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors(['anchor_5.it']);
 
     $this->withToken($token)->postJson('/api/catalogue/default-questions', [
         'competency_id' => $competencyId, 'position' => 0, 'text' => ['en' => 'Question', 'it' => $blank],
-    ])->assertStatus(422);
+    ])->assertStatus(422)->assertJsonValidationErrors(['text.it']);
 
     expect(DB::table('framework_default_questions')->count())->toBe(0)
         ->and(DB::table('framework_bars_indicators')->count())->toBe(0);
