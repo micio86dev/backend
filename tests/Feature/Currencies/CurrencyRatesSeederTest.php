@@ -6,6 +6,7 @@ use App\Models\Currency;
 use Database\Seeders\CurrencyRatesSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 final class DeployStepRecorder
@@ -116,11 +117,13 @@ it('reports what happened from the artisan command', function (): void {
 it('reports a skipped rate truthfully from beai:deploy without aborting it', function (): void {
     DB::table('currencies')->where('code', 'EUR')->delete();
 
-    $this->artisan('beai:deploy')
-        ->expectsOutputToContain('[deploy] WARNING: currency rates skipped')
-        ->doesntExpectOutputToContain('[deploy] currency rates OK')
-        ->expectsOutputToContain('[deploy] done')
-        ->assertSuccessful();
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through warn()/error().
+    $exit = Artisan::call('beai:deploy');
+
+    expect($exit)->toBe(0)
+        ->and(Artisan::output())->toContain('[deploy] WARNING: currency rates skipped')
+        ->toContain('[deploy] done')
+        ->not->toContain('[deploy] currency rates OK');
 });
 
 it('runs from beai:deploy after the registry sync', function (): void {

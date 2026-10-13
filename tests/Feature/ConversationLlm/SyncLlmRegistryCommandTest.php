@@ -15,6 +15,7 @@ declare(strict_types=1);
  */
 
 use App\Models\LlmModel;
+use Illuminate\Support\Facades\Artisan;
 
 test('running the sync command twice yields an identical row set', function (): void {
     $this->artisan('beai:sync-llm-registry')->assertSuccessful();
@@ -40,10 +41,12 @@ test('the first run reports every seeded key as added', function (): void {
 test('a second run with no seed-array change reports every key as updated, none added', function (): void {
     $this->artisan('beai:sync-llm-registry')->assertSuccessful();
 
-    $this->artisan('beai:sync-llm-registry')
-        ->doesntExpectOutputToContain('added:')
-        ->expectsOutputToContain('updated: gemini-3-flash-preview')
-        ->assertSuccessful();
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:sync-llm-registry');
+
+    expect($exit)->toBe(0)
+        ->and(Artisan::output())->toContain('updated: gemini-3-flash-preview')
+        ->not->toContain('added:');
 });
 
 test('the command runs successfully with no TTY (every input is a flag, none is a prompt)', function (): void {

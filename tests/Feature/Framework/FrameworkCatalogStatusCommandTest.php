@@ -37,6 +37,9 @@ declare(strict_types=1);
  * actual block into the scoring path is a separate, deliberately scoped
  * change — not a drive-by addition alongside a read-only status command.
  */
+
+use Illuminate\Support\Facades\Artisan;
+
 afterEach(function (): void {
     // Every test sets these explicitly, but leaving a non-default value in
     // the config repository would leak into whichever test runs next in the
@@ -61,9 +64,12 @@ test('never defaults to a reassuring RATIFIED answer when unset', function (): v
 
     // The exact RATIFIED-branch line — not a loose "RATIFIED" substring,
     // which the honest "NOT RATIFIED — ..." line would also match.
-    $this->artisan('beai:framework-catalog-status')
-        ->doesntExpectOutputToContain('RATIFIED — the framework catalogue has a recorded specialist sign-off.')
-        ->assertExitCode(0);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through warn()/error().
+    $exit = Artisan::call('beai:framework-catalog-status');
+
+    expect($exit)->toBe(0)
+        ->and(Artisan::output())->toContain('NOT RATIFIED')
+        ->not->toContain('RATIFIED — the framework catalogue has a recorded specialist sign-off.');
 });
 
 test('reports RATIFIED, with who and when, once sign-off is recorded in config', function (): void {
