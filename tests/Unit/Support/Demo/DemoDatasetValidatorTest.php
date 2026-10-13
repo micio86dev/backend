@@ -126,6 +126,11 @@ test('expectedCensus derives every count from the fixture, matching 4 projects a
 });
 
 /**
+ * Reflection is deliberate: the public `validate()` takes no arguments and reads the static
+ * `DemoDataset` fixture, so a crafted dataset cannot be passed through it without changing
+ * app code. The private method's optional `$participants` / `$projects` parameters exist as
+ * the test seam, and the real fixture is covered through `validate()` above.
+ *
  * @param  list<array<string, mixed>>  $participants
  * @param  list<array<string, mixed>>  $projects
  * @return list<string>

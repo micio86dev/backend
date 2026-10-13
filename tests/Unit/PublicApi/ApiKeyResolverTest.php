@@ -154,13 +154,18 @@ test('a failure writing last_used_at never rejects an otherwise valid key', func
     $org = Organization::factory()->create();
     $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
     $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id, 'last_used_at' => null]);
-    DB::beforeExecuting(function (string $query): void {
-        if (str_starts_with($query, 'update "api_clients"')) {
+    $failedWrites = 0;
+    DB::beforeExecuting(function (string $query) use (&$failedWrites): void {
+        if (preg_match('/^\s*update\s+"?api_clients"?\s/i', $query) === 1) {
+            $failedWrites++;
             throw new RuntimeException('telemetry write failed');
         }
     });
 
     expect(ApiKeyResolver::resolve($rawKey, allowTestMode: false)?->id)->toBe($client->id);
+    // The write was really attempted and refused: the key still authenticated, nothing was stamped.
+    expect($failedWrites)->toBe(1)
+        ->and($client->fresh()->last_used_at)->toBeNull();
 });
 
 test('last_used_at is stamped when null or stale, and left alone when recent', function (): void {
