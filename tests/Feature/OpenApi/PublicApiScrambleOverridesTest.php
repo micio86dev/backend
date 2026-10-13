@@ -93,3 +93,11 @@ test('list fields carry their item type: organization allowed_domains, project c
         expect($competencies['items']['properties']['type'])->toBe(['type' => 'string']);
     }
 });
+
+test('the exported PublicInterview documents project as optional because it only appears with expand=project', function (): void {
+    $schema = json_decode((string) file_get_contents(base_path('openapi.v1.json')), true)['components']['schemas']['PublicInterview'];
+
+    expect($schema['properties'])->toHaveKey('project');
+    expect($schema['required'])->not->toContain('project');
+    expect($schema['required'])->toContain('project_id');
+});

@@ -130,3 +130,19 @@ test('patched ignores a project shape that has no competencies entry', function 
 
     expect(itemValue(itemValue($result, 'project'), 'name'))->toBeInstanceOf(StringType::class);
 });
+
+test('patched marks the expanded interview project as optional and nothing else', function (): void {
+    $extension = new PublicSerializerTypesExtension;
+
+    $interview = $extension->patched(new KeyedArrayType([
+        new ArrayItemType_('id', new StringType),
+        new ArrayItemType_('project', new KeyedArrayType([])),
+    ]), InterviewSerializer::class);
+
+    $optional = [];
+    foreach ($interview->items as $item) {
+        $optional[$item->key] = $item->isOptional;
+    }
+
+    expect($optional)->toBe(['id' => false, 'project' => true]);
+});

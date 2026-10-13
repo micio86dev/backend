@@ -3017,8 +3017,7 @@
                     "created_at",
                     "updated_at",
                     "external_id",
-                    "source",
-                    "project"
+                    "source"
                 ],
                 "title": "PublicInterview"
             },
