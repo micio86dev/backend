@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
  *
  * Writes the baseline prompt set to `database/prompt-sets/<label>.json` FROM
  * {@see BaselinePromptFragments}, in the format `beai:prompt-set:publish` reads.
- * Every `PromptFragmentKey` is written for `en` and `it`; the `it` rows are
+ * Every REQUIRED `PromptFragmentKey` is written for `en` and `it`; the `it` rows are
  * verbatim copies of `en` because the composer speaks English instructions for
  * every locale.
  *
@@ -83,7 +83,7 @@ final class DumpBaselinePromptSetCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Wrote prompt set [{$label}] to {$path} (".count(PromptFragmentKey::cases()).' fragments x 2 locales, '.strlen($json).' bytes).');
+        $this->info("Wrote prompt set [{$label}] to {$path} (".count(PromptFragmentKey::required()).' fragments x 2 locales, '.strlen($json).' bytes).');
 
         return self::SUCCESS;
     }

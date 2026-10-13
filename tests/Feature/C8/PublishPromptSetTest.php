@@ -218,3 +218,16 @@ test('a malformed fragment row and a payload with no fragments at all are refuse
     'empty locale' => [[['key' => 'header', 'locale' => '', 'body' => 'x']], 'a locale of 1 to 8 characters'],
     'no fragments' => [[], 'at least one locale of fragments is required'],
 ]);
+
+test('the optional intro fragment may be published, or left out, and is contract-checked when present', function (): void {
+    $withKey = Payload::fragments(replace: ['opening.intro_spoken' => 'The introduction was already said.']);
+    $set = app(PublishPromptSet::class)->handle('with-intro', null, $withKey, []);
+
+    expect(ConversationPromptFragment::query()->where('prompt_set_id', $set->id)->count())->toBe(66);
+
+    $bad = Payload::fragments(replace: ['opening.intro_spoken' => 'Said {{nothing}}.']);
+
+    expect(publishRefusal($bad, [], 'bad-intro')->violations)->toContain(
+        'locale [en]: fragment [opening.intro_spoken] contains the unknown token {{nothing}}',
+    );
+});

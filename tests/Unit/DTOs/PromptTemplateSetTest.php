@@ -184,3 +184,24 @@ test('the set is immutable', function (): void {
     expect($reflection->isReadOnly())->toBeTrue()
         ->and($reflection->isFinal())->toBeTrue();
 });
+
+test('a set may omit an optional key: it is served the baseline body, and the rest stays strict', function (): void {
+    $fragments = promptSetFragments();
+    unset($fragments['opening.intro_spoken']);
+
+    $set = new PromptTemplateSet($fragments);
+
+    expect($set->template(PromptFragmentKey::OpeningIntroSpoken))
+        ->toBe('Before your opening line you already said a short introduction to the candidate; do not repeat or paraphrase it.')
+        ->and($set->render(PromptFragmentKey::LabelStar))->toBe('label.star');
+
+    unset($fragments['budget']);
+    expect(fn () => new PromptTemplateSet($fragments))
+        ->toThrow(InvalidArgumentException::class, 'Missing: [budget]. Unknown: [].');
+});
+
+test('a stored optional key wins over the baseline body', function (): void {
+    $set = new PromptTemplateSet(promptSetFragments(['opening.intro_spoken' => 'Custom intro note.']));
+
+    expect($set->render(PromptFragmentKey::OpeningIntroSpoken))->toBe('Custom intro note.');
+});

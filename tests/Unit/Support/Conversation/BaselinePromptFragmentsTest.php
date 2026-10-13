@@ -21,12 +21,12 @@ test('every key of every baseline locale satisfies the placeholder contract', fu
     $fragments = BaselinePromptFragments::forLocale($locale);
     $contract = new PromptFragmentContract;
 
-    foreach (PromptFragmentKey::cases() as $key) {
+    foreach (PromptFragmentKey::required() as $key) {
         expect($fragments)->toHaveKey($key->value)
             ->and($contract->violations($key, $fragments[$key->value]))->toBe([], "{$locale} {$key->value}");
     }
 
-    expect($fragments)->toHaveCount(count(PromptFragmentKey::cases()));
+    expect($fragments)->toHaveCount(count(PromptFragmentKey::required()));
 })->with(['en', 'it']);
 
 test('the it baseline is a verbatim copy of the en baseline', function (): void {
@@ -100,4 +100,23 @@ test('every baseline body keeps its pinned bytes', function (): void {
     );
 
     expect($actual)->toBe($pinned);
+});
+
+/*
+ * The optional keys live outside the stored baseline: `baseline-1` is a frozen, sealed artefact of the 32 required
+ * keys, and a set published before a key existed must keep resolving. A set that omits one is served this body.
+ */
+test('the optional fragments are a baseline of their own, outside the stored one', function (): void {
+    $optional = BaselinePromptFragments::optional();
+    $contract = new PromptFragmentContract;
+
+    expect(array_keys($optional))->toBe(['opening.intro_spoken'])
+        ->and($optional['opening.intro_spoken'])->toBe('Before your opening line you already said a short introduction to the candidate; do not repeat or paraphrase it.')
+        ->and($contract->violations(PromptFragmentKey::OpeningIntroSpoken, $optional['opening.intro_spoken']))->toBe([])
+        ->and(BaselinePromptFragments::forLocale('en'))->not->toHaveKey('opening.intro_spoken');
+});
+
+test('templateSet serves the optional fragment too', function (): void {
+    expect(BaselinePromptFragments::templateSet('it')->render(PromptFragmentKey::OpeningIntroSpoken))
+        ->toBe(BaselinePromptFragments::optional()['opening.intro_spoken']);
 });

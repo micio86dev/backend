@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * PromptFragmentKey is the vocabulary of the 32 prompt fragments
+ * PromptFragmentKey is the vocabulary of the 33 prompt fragments
  * `SystemPromptComposer` renders (db-driven-conversation-prompts, design N-1).
  *
  * Nothing reads the enum yet; this pins the vocabulary and each key's token set.
@@ -11,7 +11,7 @@ declare(strict_types=1);
 
 use App\Enums\PromptFragmentKey;
 
-test('the vocabulary is exactly the 32 dotted keys of design N-1, in order', function (): void {
+test('the vocabulary is exactly the 33 dotted keys of design N-1, in order', function (): void {
     $values = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases());
 
     expect($values)->toBe([
@@ -21,12 +21,13 @@ test('the vocabulary is exactly the 32 dotted keys of design N-1, in order', fun
         'star', 'budget', 'nudge',
         'opening.resumed_notice', 'opening.fallback', 'opening.quoted', 'opening.spoken_reask_all',
         'opening.spoken_resumed', 'opening.spoken_fresh', 'opening.closing', 'opening.continuation',
+        'opening.intro_spoken',
         'primary.none', 'primary.intro', 'primary.asked_before_one', 'primary.asked_before_many',
         'primary.progress_all_asked', 'primary.progress_last', 'primary.progress_next',
         'advance.floor_one', 'advance.floor_many', 'advance.floor_with_primaries',
         'advance.with_phrase', 'advance.without_phrase',
-    ])->and($values)->toHaveCount(32)
-        ->and(array_unique($values))->toHaveCount(32);
+    ])->and($values)->toHaveCount(33)
+        ->and(array_unique($values))->toHaveCount(33);
 });
 
 test('every key value fits the fragment_key varchar(48) column', function (): void {
@@ -65,4 +66,14 @@ test('opening.continuation is a token-free fragment', function (): void {
 
 test('PromptFragmentKey::from refuses a key outside the vocabulary', function (): void {
     expect(fn () => PromptFragmentKey::from('advance.nope'))->toThrow(ValueError::class);
+});
+
+test('opening.intro_spoken is token-free and the only optional key', function (): void {
+    $optional = array_values(array_filter(PromptFragmentKey::cases(), static fn (PromptFragmentKey $key): bool => $key->isOptional()));
+
+    expect($optional)->toBe([PromptFragmentKey::OpeningIntroSpoken])
+        ->and(PromptFragmentKey::from('opening.intro_spoken'))->toBe(PromptFragmentKey::OpeningIntroSpoken)
+        ->and(PromptFragmentKey::OpeningIntroSpoken->requiredTokens())->toBe([])
+        ->and(PromptFragmentKey::required())->toHaveCount(32)
+        ->and(PromptFragmentKey::required())->not->toContain(PromptFragmentKey::OpeningIntroSpoken);
 });

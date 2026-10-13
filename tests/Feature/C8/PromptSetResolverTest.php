@@ -329,3 +329,24 @@ test('a failed verification is never cached', function (): void {
     expect(unresolvableReason(fn () => resolveWith()))->toBe(Unresolvable::SEAL_MISMATCH)
         ->and(unresolvableReason(fn () => resolveWith()))->toBe(Unresolvable::SEAL_MISMATCH);
 });
+
+test('a set sealed before the optional key existed still resolves and serves the baseline body for it', function (): void {
+    makePromptSet(['drop' => ['opening.intro_spoken']]);
+
+    $templates = resolveWith()->templates;
+
+    expect($templates->render(PromptFragmentKey::OpeningIntroSpoken))
+        ->toBe(BaselinePromptFragments::optional()['opening.intro_spoken']);
+});
+
+test('a set that stores the optional key is served its own text, contract-checked', function (): void {
+    makePromptSet(['extra' => ['opening.intro_spoken' => 'The intro was already said.']]);
+
+    expect(resolveWith()->templates->render(PromptFragmentKey::OpeningIntroSpoken))->toBe('The intro was already said.');
+
+    PromptSetResolver::flushCache();
+    PromptTables::empty();
+    makePromptSet(['extra' => ['opening.intro_spoken' => 'Bad {{token}}.']]);
+
+    expect(unresolvableReason(fn () => resolveWith()))->toBe('contract_violated');
+});
