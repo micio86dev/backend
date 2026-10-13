@@ -9,6 +9,7 @@ use App\Models\ConversationPromptOverride;
 use App\Models\ConversationPromptSet;
 use App\Models\FrameworkCatalogRevision;
 use App\Models\FrameworkDefaultQuestion;
+use App\Models\NotificationLog;
 use App\Models\Organization;
 use App\Models\RefreshToken;
 use App\Models\Role;
@@ -104,4 +105,19 @@ test('a prompt override resolves the set it belongs to', function (): void {
     $override = $set->overrides()->create(['role_code' => 'ICO', 'competency_code' => 'COL', 'locale' => 'en', 'body' => 'Probe.']);
 
     expect(ConversationPromptOverride::query()->findOrFail($override->id)->promptSet->is($set))->toBeTrue();
+});
+
+// ─── Tenant-scoped records resolve their parents ─────────────────────────────
+
+test('a notification log resolves its organization', function (): void {
+    $org = Organization::factory()->create();
+    app(TenantResolver::class)->setOrgId($org->id);
+
+    expect(NotificationLog::factory()->create()->organization->is($org))->toBeTrue();
+});
+
+test('a role resolves its catalogue revision', function (): void {
+    $revision = FrameworkCatalogRevision::factory()->draft()->create();
+
+    expect(Role::factory()->create(['revision_id' => $revision->id])->revision->is($revision))->toBeTrue();
 });

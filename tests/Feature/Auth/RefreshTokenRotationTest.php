@@ -229,3 +229,39 @@ test('login response has NO refresh_token key anywhere in the JSON body', functi
 
     expect($response->json())->not->toHaveKey('refresh_token');
 });
+
+// ─── The account is switched off after the cookie was issued ─────────────────
+
+test('a user deactivated after login cannot refresh: the whole family is revoked and no new cookie is issued', function (): void {
+    [, $user] = rotationTestUser();
+    $cookie = loginAndGetRefreshCookie($user);
+
+    $user->forceFill(['deactivated_at' => now()])->save();
+
+    $response = $this->withHeaders(['X-BEAI-Refresh' => '1'])
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookie)
+        ->postJson('/api/auth/refresh');
+
+    $response->assertUnauthorized()->assertJsonPath('error', 'refresh_token_revoked');
+    expect(collect($response->headers->getCookies())->first(fn ($c) => $c->getName() === config('refresh_tokens.cookie.name'))?->getValue())
+        ->not->toBe($cookie);
+
+    // Reactivating the account does not resurrect the revoked family.
+    $user->forceFill(['deactivated_at' => null])->save();
+    $this->withHeaders(['X-BEAI-Refresh' => '1'])
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookie)
+        ->postJson('/api/auth/refresh')
+        ->assertUnauthorized();
+});
+
+test('a malformed refresh cookie is refused as invalid', function (string $cookie): void {
+    $this->withHeaders(['X-BEAI-Refresh' => '1'])
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookie)
+        ->postJson('/api/auth/refresh')
+        ->assertUnauthorized()
+        ->assertJsonPath('error', 'refresh_token_invalid');
+})->with([
+    'no separator' => 'nodotatall',
+    'leading dot' => '.secretonly',
+    'trailing dot' => 'familyonly.',
+]);

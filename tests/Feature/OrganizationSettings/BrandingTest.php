@@ -896,3 +896,40 @@ test('uploading a logo is rate limited, because each call costs an object PUT', 
         'logo' => brandingImage(brandingRealPng(), 'logo.png'),
     ])->assertStatus(429);
 });
+
+test('a logo with more pixels than the configured ceiling is refused and never stored', function (): void {
+    Storage::fake();
+    config(['branding.logo.max_dimension' => 0]);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', ['logo' => brandingImage(brandingRealPng(), 'logo.png')])
+        ->assertUnprocessable()
+        ->assertJsonPath('errors.logo.0', 'logo_dimensions_invalid');
+
+    expect(Storage::allFiles())->toBe([])
+        ->and($org->fresh()->logo_path)->toBeNull();
+});
+
+test('when saving the new logo path fails, the uploaded object is deleted and the old logo is kept', function (): void {
+    Storage::fake();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', ['logo' => brandingImage(brandingRealPng(), 'first.png')])->assertOk();
+    $kept = $org->fresh()->logo_path;
+
+    DB::beforeExecuting(function (string $query): void {
+        if (str_starts_with($query, 'update "organizations"')) {
+            throw new RuntimeException('database unavailable');
+        }
+    });
+
+    $this->withToken($token)->post('/api/organization/logo', ['logo' => brandingImage(brandingRealPng(), 'second.png')])
+        ->assertStatus(500);
+
+    expect($org->fresh()->logo_path)->toBe($kept)
+        ->and(Storage::allFiles())->toBe([$kept]);
+});
