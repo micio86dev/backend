@@ -22,7 +22,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 // every later test that seeds the baseline (framework_catalog_revisions_one_draft).
 uses(DatabaseTransactions::class);
 
-test('Part A item 4: Interview.hosted_url is exported as string|null, never the literal null, via InterviewHostedUrlNullableExtension', function (): void {
+test('Part A item 4: Interview.hosted_url is exported as string|null, never the literal null, via PublicSerializerTypesExtension', function (): void {
     $config = Scramble::getGeneratorConfig('default');
     $document = app(Generator::class)($config);
 
