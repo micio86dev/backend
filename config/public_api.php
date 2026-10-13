@@ -43,11 +43,12 @@ return [
 
     /*
      * Server URL the exported `/v1` OpenAPI document (and therefore every
-     * generated SDK) declares — mirrors `openapi.yaml` `servers[0].url`. The host
-     * is a placeholder until the public API host is decided (G-03, G-56);
-     * overridable so a deployment can export its real one.
+     * generated SDK) declares — mirrors `openapi.yaml` `servers[0].url`. Decided
+     * provisionally (owner, 2026-10-13) to the Railway domain, which serves the
+     * public API under `/api/v1`; change it when a custom domain exists (G-03,
+     * G-56). Overridable so a deployment can export its real one.
      */
-    'spec_server_url' => env('PUBLIC_API_SPEC_SERVER_URL') ?: 'https://api.beai.example/v1',
+    'spec_server_url' => env('PUBLIC_API_SPEC_SERVER_URL') ?: 'https://api-production-640e.up.railway.app/api/v1',
 
     /*
      * Base URL of the generated developer docs site (§6 "Developer area",

@@ -38,6 +38,22 @@ function srpPost(Participant $participant, string $action, array $body = []): Te
  *
  * @return array{refs: int, shape: list<array<string, mixed>>, corpora: list<array{prompt: string, validation: string}>, finalized: int, participant: string}
  */
+/**
+ * Replaces each random fixture competency code with its ordinal ("C0", "C1", ...), as whole
+ * words only: a plain substring replace corrupts the fixed text whenever a random code happens
+ * to be a fragment of it (code "PET" inside "COMPETENCY").
+ *
+ * @param  list<string>  $codes
+ */
+function srpNormaliseCodes(string $text, array $codes): string
+{
+    foreach ($codes as $ordinal => $code) {
+        $text = (string) preg_replace('/(?<![A-Za-z0-9_])'.preg_quote($code, '/').'(?![A-Za-z0-9_])/', 'C'.$ordinal, $text);
+    }
+
+    return $text;
+}
+
 function srpRun(bool $shared): array
 {
     Queue::fake();
@@ -91,7 +107,7 @@ function srpRun(bool $shared): array
             $corpora = $assembler->assembleForParticipant($participant->id, $code);
 
             return [
-                'prompt' => str_replace($codes, ['C0', 'C1', 'C2'], $corpora->prompt),
+                'prompt' => srpNormaliseCodes($corpora->prompt, $codes),
                 'validation' => $corpora->validation,
             ];
         }, $codes),
@@ -111,4 +127,11 @@ test('scoring receives the same input for one shared conversation as for three s
         ->and($shared['corpora'])->toBe($separate['corpora'])
         ->and($shared['finalized'])->toBe($separate['finalized'])->toBe(1)
         ->and($shared['participant'])->toBe($separate['participant'])->toBe('in_valutazione');
+});
+
+test('normalising fixture competency codes never corrupts the fixed text around them', function (): void {
+    $text = "=== TARGET COMPETENCY PET — PRIMARY EVIDENCE BEGINS ===\nCOMPETENCY ARTIFACT mentions PET twice: PET.";
+
+    expect(srpNormaliseCodes($text, ['PET', 'ART', 'XYZ']))
+        ->toBe("=== TARGET COMPETENCY C0 — PRIMARY EVIDENCE BEGINS ===\nCOMPETENCY ARTIFACT mentions C0 twice: C0.");
 });

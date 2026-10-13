@@ -2,11 +2,11 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.73.1"
+        "version": "0.73.2"
     },
     "servers": [
         {
-            "url": "https://api.beai.example/v1"
+            "url": "https://api-production-640e.up.railway.app/api/v1"
         }
     ],
     "security": [
