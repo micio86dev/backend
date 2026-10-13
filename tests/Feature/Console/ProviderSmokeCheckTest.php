@@ -11,6 +11,7 @@ declare(strict_types=1);
  * live API from a test.
  */
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function (): void {
@@ -121,11 +122,14 @@ test('smoke-check reports a failed issue() with the provider message and never t
         '*liveavatar*' => Http::response(['message' => 'bad request for SMOKE_SECRET_HEYGEN_KEY_777'], 400),
     ]);
 
-    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
-        ->expectsOutputToContain('issue(): FAILED')
-        ->doesntExpectOutputToContain('SMOKE_SECRET_HEYGEN_KEY_777')
-        ->doesntExpectOutputToContain('PASSED')
-        ->assertExitCode(1);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error().
+    $exit = Artisan::call('interview:smoke-check', ['--provider' => 'heygen']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('issue(): FAILED')
+        ->not->toContain('SMOKE_SECRET_HEYGEN_KEY_777')
+        ->not->toContain('PASSED');
 });
 
 test('smoke-check never prints the HeyGen key it actually sent', function (): void {
@@ -136,11 +140,14 @@ test('smoke-check never prints the HeyGen key it actually sent', function (): vo
         '*liveavatar*' => Http::response(['message' => 'quota exceeded for this plan'], 400),
     ]);
 
-    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
-        ->expectsOutputToContain('issue(): FAILED')
-        ->doesntExpectOutputToContain('SMOKE_SECRET_HEYGEN_KEY_777')
-        ->assertExitCode(1);
+    // Artisan::output() is the real captured buffer; doesntExpectOutputToContain on a
+    // PendingCommand can miss text written through the error() style helper.
+    $exit = Artisan::call('interview:smoke-check', ['--provider' => 'heygen']);
+    $output = Artisan::output();
 
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('issue(): FAILED')
+        ->not->toContain('SMOKE_SECRET_HEYGEN_KEY_777');
     Http::assertSent(fn ($request) => $request->hasHeader('X-API-KEY', 'SMOKE_SECRET_HEYGEN_KEY_777'));
 });
 

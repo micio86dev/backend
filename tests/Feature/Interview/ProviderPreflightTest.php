@@ -68,26 +68,48 @@ test('HeyGen reports key, avatar and voice independently', function (): void {
     ]);
 });
 
-test('a refusal is logged server-side with the reasons but no provider content', function (): void {
+test('a refusal is logged server-side with the reasons but no provider content or secret', function (): void {
     Log::spy();
-    config(['interview.heygen.api_key' => '']);
+    // The refused provider has its key configured (a sentinel); only the avatar is missing.
+    // No secret may reach the log context, neither that key nor any other provider's.
+    config([
+        'interview.heygen.api_key' => 'SENTINEL_HEYGEN_KEY_789',
+        'interview.heygen.avatar_id' => null,
+        'interview.tavus.api_key' => 'SENTINEL_TAVUS_KEY_123',
+        'interview.heygen.voice_id' => 'SENTINEL_VOICE_ID_456',
+    ]);
 
     preflight('heygen');
 
-    Log::shouldHaveReceived('warning')->once()->withArgs(
-        fn (string $message, array $context) => str_contains($message, 'pre-flight refused')
+    $captured = null;
+    Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context) use (&$captured): bool {
+        $captured = [$message, $context];
+
+        return str_contains($message, 'pre-flight refused')
             && $context['provider'] === 'heygen'
-            && $context['reasons'] === [['key' => 'credentials', 'code' => 'provider_key_missing']],
-    );
+            && $context['reasons'] === [['key' => 'avatarId', 'code' => 'avatar_missing']];
+    });
+
+    $logged = (string) json_encode($captured);
+    expect($logged)->not->toContain('SENTINEL_TAVUS_KEY_123')
+        ->not->toContain('SENTINEL_VOICE_ID_456')
+        ->not->toContain('SENTINEL_HEYGEN_KEY_789');
 });
 
 test('an unreadable template never blocks an interview the provider defaults could start', function (): void {
-    DB::beforeExecuting(function (string $query): void {
-        if (str_contains($query, 'avatar_templates')) {
+    $lookups = 0;
+    DB::beforeExecuting(function (string $query) use (&$lookups): void {
+        if (preg_match('/\bavatar_templates\b/', $query) === 1) {
+            $lookups++;
             throw new RuntimeException('template store unavailable');
         }
     });
 
-    expect(preflight('heygen'))->toBe([])
-        ->and(preflight('tavus'))->toBe([]);
+    expect(preflight('heygen'))->toBe([]);
+    // The template lookup really ran and really failed, once per provider check,
+    // otherwise this test would pass without exercising the tolerance.
+    expect($lookups)->toBe(1);
+
+    expect(preflight('tavus'))->toBe([])
+        ->and($lookups)->toBe(2);
 });

@@ -29,7 +29,10 @@ test('an explicit currency is stored on the new organization', function (): void
 
 test('with no published catalogue revision the organization is still created, and the missing version is logged', function (): void {
     Log::spy();
+    // The immutability triggers guard UPDATEs of a published revision, not row deletion, so
+    // a plain delete needs no replication-role bypass; the count proves it really emptied the table.
     DB::table('framework_catalog_revisions')->delete();
+    expect(DB::table('framework_catalog_revisions')->count())->toBe(0);
 
     $organization = app(CreateOrganization::class)->create('Acme', 'acme');
 
@@ -43,12 +46,15 @@ test('with no published catalogue revision the organization is still created, an
 });
 
 test('a failure part-way rolls the whole organization back', function (): void {
-    DB::beforeExecuting(function (string $query): void {
-        if (str_starts_with($query, 'insert into "roles"')) {
+    $failedInserts = 0;
+    DB::beforeExecuting(function (string $query) use (&$failedInserts): void {
+        if (preg_match('/^\s*insert\s+into\s+"?roles"?[\s(]/i', $query) === 1) {
+            $failedInserts++;
             throw new RuntimeException('roles table unavailable');
         }
     });
 
-    expect(fn () => app(CreateOrganization::class)->create('Acme', 'acme'))->toThrow(RuntimeException::class);
-    expect(Organization::where('slug', 'acme')->exists())->toBeFalse();
+    expect(fn () => app(CreateOrganization::class)->create('Acme', 'acme'))->toThrow(RuntimeException::class, 'roles table unavailable');
+    expect($failedInserts)->toBe(1)
+        ->and(Organization::where('slug', 'acme')->exists())->toBeFalse();
 });
