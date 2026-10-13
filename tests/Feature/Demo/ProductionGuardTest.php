@@ -118,3 +118,15 @@ test('--create-org is refused in production, regardless of whether the organizat
 
     expect(Organization::where('slug', 'brand-new-prod-org')->exists())->toBeFalse();
 });
+
+test('--org is required, and an unknown organization is reported with the --create-org hint', function (): void {
+    $this->artisan('beai:demo-seed', ['--org' => ''])
+        ->expectsOutputToContain('The --org option is required.')
+        ->assertExitCode(1);
+
+    $this->artisan('beai:demo-seed', ['--org' => 'ghost-org'])
+        ->expectsOutputToContain('Organization [ghost-org] not found.')
+        ->assertExitCode(1);
+
+    expect(Organization::where('slug', 'ghost-org')->exists())->toBeFalse();
+});

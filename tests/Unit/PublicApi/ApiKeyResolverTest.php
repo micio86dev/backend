@@ -103,3 +103,85 @@ test('creating an ApiClient invalidates a previously-cached negative legacyRowsE
     expect($resolved)->not->toBeNull();
     expect($resolved->id)->toBe($client->id);
 });
+
+test('an empty key never resolves, and a test key is refused on a surface that does not allow test mode', function (): void {
+    $org = Organization::factory()->create();
+    $testKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
+    ApiClient::factory()->withRawKey($testKey)->create(['organization_id' => $org->id]);
+
+    expect(ApiKeyResolver::resolve('', allowTestMode: true))->toBeNull()
+        ->and(ApiKeyResolver::resolve($testKey, allowTestMode: false))->toBeNull()
+        ->and(ApiKeyResolver::resolve($testKey, allowTestMode: true)?->organization_id)->toBe($org->id);
+});
+
+test('a key revoked through the denylist is refused even though its row is still active', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+    Cache::put('client_revoked:'.$client->id, true, 60);
+
+    expect(ApiKeyResolver::resolve($rawKey, allowTestMode: false))->toBeNull();
+});
+
+test('a denylist outage falls back to a fresh database check and never fails open for a client revoked meanwhile', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    Cache::shouldReceive('has')->with('client_revoked:'.$client->id)->andReturnUsing(function () use ($client): never {
+        // The durable flag flips while the denylist is unreachable.
+        DB::table('api_clients')->where('id', $client->id)->update(['is_active' => false]);
+
+        throw new RuntimeException('redis down');
+    });
+    Cache::shouldReceive('remember')->andReturnUsing(fn ($key, $ttl, Closure $callback) => $callback());
+
+    expect(ApiKeyResolver::resolve($rawKey, allowTestMode: false))->toBeNull();
+});
+
+test('a denylist outage still authenticates a client that is genuinely active', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+
+    Cache::shouldReceive('has')->andThrow(new RuntimeException('redis down'));
+    Cache::shouldReceive('remember')->andReturnUsing(fn ($key, $ttl, Closure $callback) => $callback());
+
+    expect(ApiKeyResolver::resolve($rawKey, allowTestMode: false)?->id)->toBe($client->id);
+});
+
+test('a failure writing last_used_at never rejects an otherwise valid key', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id, 'last_used_at' => null]);
+    $failedWrites = 0;
+    DB::beforeExecuting(function (string $query) use (&$failedWrites): void {
+        if (preg_match('/^\s*update\s+"?api_clients"?\s/i', $query) === 1) {
+            $failedWrites++;
+            throw new RuntimeException('telemetry write failed');
+        }
+    });
+
+    expect(ApiKeyResolver::resolve($rawKey, allowTestMode: false)?->id)->toBe($client->id);
+    // The write was really attempted and refused: the key still authenticated, nothing was stamped.
+    expect($failedWrites)->toBe(1)
+        ->and($client->fresh()->last_used_at)->toBeNull();
+});
+
+test('last_used_at is stamped when null or stale, and left alone when recent', function (): void {
+    $org = Organization::factory()->create();
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    $client = ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id, 'last_used_at' => null]);
+
+    ApiKeyResolver::resolve($rawKey, allowTestMode: false);
+    $first = $client->fresh()->last_used_at;
+    expect($first)->not->toBeNull();
+
+    $this->travel(2)->minutes();
+    ApiKeyResolver::resolve($rawKey, allowTestMode: false);
+    expect($client->fresh()->last_used_at->equalTo($first))->toBeTrue();
+
+    $this->travel(10)->minutes();
+    ApiKeyResolver::resolve($rawKey, allowTestMode: false);
+    expect($client->fresh()->last_used_at->greaterThan($first))->toBeTrue();
+});

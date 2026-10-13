@@ -303,3 +303,21 @@ test('an explicit null never clears the rate or its date, nor skips the activati
     'null date' => [['rate_as_of' => null], 'rate_as_of'],
     'null rate with activation' => [['is_active' => true, 'rate_per_usd' => null], 'rate_per_usd'],
 ]);
+
+test('creating an active currency without a rate is refused and nothing is stored', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->postJson('/api/admin/currencies', gbpPayload(['rate_per_usd' => null, 'rate_as_of' => null]))
+        ->assertUnprocessable()
+        ->assertJsonPath('errors.is_active.0', 'currency_activation_requires_rate');
+
+    expect(Currency::find('GBP'))->toBeNull();
+});
+
+test('creating an inactive currency without a rate is allowed', function (): void {
+    ['token' => $token] = saSuperadmin();
+
+    $this->withToken($token)->postJson('/api/admin/currencies', gbpPayload(['rate_per_usd' => null, 'rate_as_of' => null, 'is_active' => false]))
+        ->assertCreated()
+        ->assertJsonPath('data.is_active', false);
+});

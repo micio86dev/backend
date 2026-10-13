@@ -124,3 +124,45 @@ test('expectedCensus derives every count from the fixture, matching 4 projects a
         ->and($census['evaluations'])->toBe(5)
         ->and($census['snapshots'])->toBeGreaterThan(0);
 });
+
+/**
+ * Reflection is deliberate: the public `validate()` takes no arguments and reads the static
+ * `DemoDataset` fixture, so a crafted dataset cannot be passed through it without changing
+ * app code. The private method's optional `$participants` / `$projects` parameters exist as
+ * the test seam, and the real fixture is covered through `validate()` above.
+ *
+ * @param  list<array<string, mixed>>  $participants
+ * @param  list<array<string, mixed>>  $projects
+ * @return list<string>
+ */
+function demoArityErrors(array $participants, array $projects): array
+{
+    $method = new ReflectionMethod(DemoDatasetValidator::class, 'validateScoreArity');
+
+    return $method->invoke(null, $participants, $projects);
+}
+
+test('the arity guard names a participant whose project, role or catalogue pair cannot be resolved instead of skipping it silently', function (): void {
+    $projects = [
+        ['key' => 'P-NULL-ROLE', 'role_code' => null],
+        ['key' => 'P-NO-ROLE', 'role_code' => 'ZZZ'],
+        ['key' => 'P-OK', 'role_code' => 'ICO'],
+    ];
+
+    $errors = demoArityErrors([
+        ['key' => 'orphan', 'project_key' => 'P-MISSING', 'scores' => ['PRS' => [5, 3, 1]]],
+        ['key' => 'null-role', 'project_key' => 'P-NULL-ROLE', 'scores' => ['PRS' => [5, 3, 1]]],
+        ['key' => 'no-role', 'project_key' => 'P-NO-ROLE', 'scores' => ['PRS' => [5, 3, 1]]],
+        ['key' => 'no-pair', 'project_key' => 'P-OK', 'scores' => ['NOPE' => [5, 3, 1]]],
+    ], $projects);
+
+    expect($errors)->toHaveCount(4)
+        ->and($errors[0])->toContain('Participant [orphan] references unknown project [P-MISSING]')
+        ->and($errors[1])->toContain('Participant [null-role] scores a project with a null role_code')
+        ->and($errors[2])->toContain('Role [ZZZ] not found')
+        ->and($errors[3])->toContain('No BARS indicators for (role=ICO, competency=NOPE)');
+});
+
+test('a participant with no scores is not an arity problem', function (): void {
+    expect(demoArityErrors([['key' => 'unscored', 'project_key' => 'P-OK', 'scores' => []]], [['key' => 'P-OK', 'role_code' => 'ICO']]))->toBe([]);
+});

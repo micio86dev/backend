@@ -171,3 +171,29 @@ test('parse() throws when public_api.session_secret is unset', function (): void
 
     expect(fn () => (new SessionTokenMinter)->parse('any-non-empty-string'))->toThrow(RuntimeException::class);
 });
+
+test('mint() refuses a participant whose organization cannot be resolved instead of issuing a token with no org claim', function (): void {
+    $participant = stmParticipant();
+    $participant->setRelation('organization', null);
+
+    expect(fn () => (new SessionTokenMinter)->mint($participant))
+        ->toThrow(LogicException::class, "Participant {$participant->id}: organization_id {$participant->organization_id} does not resolve");
+});
+
+test('an unsigned (alg none) token is never accepted, whatever claims it carries', function (): void {
+    $participant = stmParticipant();
+    $b64 = fn (array $part): string => rtrim(strtr(base64_encode((string) json_encode($part)), '+/', '-_'), '=');
+
+    $unsigned = $b64(['alg' => 'none', 'typ' => 'JWT']).'.'.$b64([
+        'iss' => 'beai',
+        'aud' => ['embed'],
+        'sub' => PublicId::encode($participant),
+        'jti' => 'forged-jti',
+        'org' => PublicId::encode($participant->organization),
+        'mode' => 'live',
+        'iat' => time(),
+        'exp' => time() + 900,
+    ]).'.';
+
+    expect((new SessionTokenMinter)->parse($unsigned))->toBeNull();
+});

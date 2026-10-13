@@ -32,6 +32,7 @@ use App\Models\WebhookDelivery;
 use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function (): void {
@@ -206,3 +207,61 @@ test('a non-demo row still referencing beai-demo-1.0.0 after every other delete 
         expect(Project::where('slug', 'acme-pinned-to-demo-fv')->exists())->toBeTrue();
     });
 });
+
+test('teardown requires --org and refuses an unknown organization, touching nothing', function (): void {
+    $this->artisan('beai:demo-seed', ['--org' => 'acme'])->assertExitCode(0);
+    $before = Participant::where('organization_id', $this->org->id)->count();
+
+    $this->artisan('beai:demo-teardown', ['--org' => '  '])
+        ->expectsOutputToContain('The --org option is required.')
+        ->assertExitCode(1);
+
+    $this->artisan('beai:demo-teardown', ['--org' => 'no-such-org'])
+        ->expectsOutputToContain('Organization [no-such-org] not found.')
+        ->assertExitCode(1);
+
+    expect(Participant::where('organization_id', $this->org->id)->count())->toBe($before);
+});
+
+test('a real project still pinned to a demo avatar template blocks removal of the template and names the project to repoint', function (int $holders): void {
+    $this->artisan('beai:demo-seed', ['--org' => 'acme'])->assertExitCode(0);
+
+    $slugs = TenantContextScope::runFor($this->org->id, function () use ($holders): array {
+        $demoTemplate = AvatarTemplate::where('name', 'like', DemoMarker::PREFIX.'%')->firstOrFail();
+        $slugs = [];
+
+        for ($i = 1; $i <= $holders; $i++) {
+            $slug = "acme-real-holder-{$i}";
+            Project::factory()->create([
+                'organization_id' => $this->org->id,
+                'slug' => $slug,
+                'avatar_template_id' => $demoTemplate->id,
+            ]);
+            $slugs[] = $slug;
+        }
+
+        return $slugs;
+    });
+
+    $exitCode = Artisan::call('beai:demo-teardown', ['--org' => 'acme']);
+    // The console wraps long lines; compare on normalised whitespace.
+    $output = preg_replace('/\s+/', ' ', Artisan::output());
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('Cannot remove the demo avatar template')
+        ->toContain($holders === 1 ? 'Repoint that project to another template first.' : 'Repoint those projects to another template first.');
+
+    // The command lists holders in whatever order the database returns them, so each
+    // slug is asserted on its own rather than as one joined string.
+    foreach ($slugs as $slug) {
+        expect($output)->toContain($slug);
+    }
+
+    TenantContextScope::runFor($this->org->id, function () use ($slugs): void {
+        expect(Project::whereIn('slug', $slugs)->count())->toBe(count($slugs))
+            ->and(AvatarTemplate::where('name', 'like', DemoMarker::PREFIX.'%')->exists())->toBeTrue();
+    });
+})->with([
+    'one holder' => 1,
+    'several holders' => 2,
+]);

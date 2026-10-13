@@ -26,6 +26,7 @@ use App\Contracts\LLMProvider;
 use App\DTOs\LLMResponse;
 use App\Exceptions\LLM\AnthropicException;
 use App\Services\LLM\AnthropicLLMProvider;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -243,6 +244,66 @@ test('complete() throws AnthropicException when content array is empty', functio
 
     expect(fn () => (new AnthropicLLMProvider)->complete('Prompt.'))
         ->toThrow(AnthropicException::class);
+});
+
+/**
+ * The queue layer retries only what is transient: provider 5xx and transport
+ * failures. Anything else (every 4xx, 429 included) is terminal.
+ */
+function anthropicFailure(callable $call): AnthropicException
+{
+    try {
+        $call();
+    } catch (AnthropicException $e) {
+        return $e;
+    }
+
+    throw new LogicException('Expected AnthropicException was not thrown');
+}
+
+test('a 5xx response is retryable and a 4xx response is terminal', function (int $status, bool $retryable): void {
+    Http::fake([
+        'api.anthropic.com/v1/messages' => Http::response(['error' => ['message' => 'nope']], $status),
+    ]);
+
+    $e = anthropicFailure(fn () => (new AnthropicLLMProvider)->complete('Prompt.'));
+
+    expect($e->isRetryable())->toBe($retryable);
+})->with([
+    'overloaded' => [529, true],
+    'internal error' => [500, true],
+    'bad gateway' => [502, true],
+    'service unavailable' => [503, true],
+    'last 4xx status' => [499, false],
+    // 429 is a 4xx, so today it is terminal (no retry): pinned as current behaviour.
+    'rate limited' => [429, false],
+    'unauthorized' => [401, false],
+    'bad request' => [400, false],
+]);
+
+test('an empty content array is a terminal failure, not a retry', function (): void {
+    Http::fake([
+        'api.anthropic.com/v1/messages' => Http::response([
+            'content' => [],
+            'model' => 'claude-haiku-4-5-20251001',
+            'stop_reason' => 'end_turn',
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 0],
+        ], 200),
+    ]);
+
+    expect(anthropicFailure(fn () => (new AnthropicLLMProvider)->complete('Prompt.'))->isRetryable())->toBeFalse();
+});
+
+test('a transport failure is retryable and keeps the original exception as its cause', function (): void {
+    Http::fake([
+        'api.anthropic.com/v1/messages' => fn () => throw new ConnectionException('cURL error 28: timed out'),
+    ]);
+
+    $e = anthropicFailure(fn () => (new AnthropicLLMProvider)->complete('Prompt.'));
+
+    expect($e->isRetryable())->toBeTrue()
+        ->and($e->getMessage())->toContain('transport error')->toContain('timed out')
+        ->and($e->getPrevious())->toBeInstanceOf(ConnectionException::class);
 });
 
 test('AnthropicException message includes context (status or reason)', function (): void {
