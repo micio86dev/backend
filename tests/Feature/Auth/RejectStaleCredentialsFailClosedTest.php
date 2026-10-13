@@ -3,20 +3,15 @@
 declare(strict_types=1);
 
 /**
- * RejectStaleCredentials only ever REJECTS on positive proof that a token was
- * minted before the user's last password change. Where it cannot read the token
- * at all, authentication (`auth:api`) has already gated access, so it must let the
- * request through rather than lock a user out on a parsing quirk. The positive
- * rejection path is covered end to end by PasswordChangeTest.
- *
- * The two fail-open tests below pin the CURRENT behaviour (an unreadable token and a
- * token without a numeric iat are both let through). Whether those cases should
- * instead be rejected is a product/security decision for the owner, not something
- * these tests decide: changing the middleware to fail closed means updating them
- * deliberately, in the same change.
+ * RejectStaleCredentials fails CLOSED: a token it cannot read, or one without a numeric
+ * `iat`, offers no proof that it was minted after the user's last password change, so it
+ * is treated exactly like a stale credential (401 credentials_changed). Every token the
+ * JWT guard issues carries `iat` (config/jwt.php required_claims), so no legitimate flow
+ * is affected. The positive rejection path is also covered end to end by PasswordChangeTest.
  */
 
 use App\Http\Middleware\RejectStaleCredentials;
+use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -60,18 +55,40 @@ test('a user who never changed their password is never rejected', function (): v
     expect(runStaleCredentialsMiddleware(User::factory()->create(['password_changed_at' => null]))->getStatusCode())->toBe(200);
 });
 
-test('a request whose token payload cannot be read fails open', function (): void {
+test('a request whose token payload cannot be read is rejected as stale', function (): void {
     // actingAs() authenticates without a parseable bearer token, so the guard has no payload.
     $user = userWhoChangedPasswordAt(now()->subHour());
     $this->actingAs($user, 'api');
 
-    expect(runStaleCredentialsMiddleware($user)->getStatusCode())->toBe(200);
+    $response = runStaleCredentialsMiddleware($user);
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and(json_decode((string) $response->getContent(), true))->toBe(['error' => 'credentials_changed']);
 });
 
-test('a token without a numeric iat claim is not treated as stale', function (): void {
+test('a token without a numeric iat claim is rejected as stale', function (mixed $iat): void {
     $user = userWhoChangedPasswordAt(now()->subHour());
 
-    expect(runStaleCredentialsMiddlewareWithTokenIssuedAt($user, null)->getStatusCode())->toBe(200);
+    $response = runStaleCredentialsMiddlewareWithTokenIssuedAt($user, $iat);
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and(json_decode((string) $response->getContent(), true))->toBe(['error' => 'credentials_changed']);
+})->with(['missing' => [null], 'non-numeric string' => ['yesterday'], 'array' => [[]]]);
+
+test('a token with a valid fresh iat is let through', function (): void {
+    $user = userWhoChangedPasswordAt(now()->subHour());
+
+    expect(runStaleCredentialsMiddlewareWithTokenIssuedAt($user, now()->getTimestamp())->getStatusCode())->toBe(200);
+});
+
+test('a freshly issued login token still passes end to end after a password change', function (): void {
+    $user = User::factory()->create(['organization_id' => Organization::factory()->create()->id, 'password' => 'secret-pass-123', 'password_changed_at' => now()->subHour()->startOfSecond()]);
+
+    $token = $this->postJson('/api/auth/login', ['email' => $user->email, 'password' => 'secret-pass-123'])
+        ->assertOk()
+        ->json('access_token');
+
+    $this->withToken($token)->getJson('/api/profile')->assertOk();
 });
 
 test('a token minted before the password change is rejected with credentials_changed', function (): void {

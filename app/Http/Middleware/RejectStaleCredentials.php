@@ -30,6 +30,9 @@ use Tymon\JWTAuth\JWTGuard;
  * the change would be born dead. Accepted residual (design D3): a FOREIGN
  * token minted in that same second survives.
  *
+ * An unreadable payload or a missing/non-numeric `iat` is rejected the same way
+ * (fail closed).
+ *
  * `password_changed_at IS NULL` means "never changed" — passes unconditionally.
  *
  * REQ: Password Change Revokes Other Sessions, Not The Acting One
@@ -52,19 +55,17 @@ final class RejectStaleCredentials
         /** @var JWTGuard $guard */
         $guard = auth('api');
 
+        // Fail CLOSED: a token whose payload cannot be read, or that carries no
+        // numeric `iat`, offers no proof it was minted after the password change,
+        // so it is treated exactly like a stale one. Every token the JWT guard
+        // issues carries `iat` (config/jwt.php required_claims).
         try {
             $iat = $guard->payload()->get('iat');
         } catch (\Throwable) {
-            // No parseable token payload (e.g. a non-JWT guard reached this
-            // point somehow) — fail open here, auth:api already gated access.
-            return $next($request);
+            $iat = null;
         }
 
-        if (! is_numeric($iat)) {
-            return $next($request);
-        }
-
-        if ((int) $iat < $user->password_changed_at->getTimestamp()) {
+        if (! is_numeric($iat) || (int) $iat < $user->password_changed_at->getTimestamp()) {
             return response()->json(['error' => 'credentials_changed'], Response::HTTP_UNAUTHORIZED);
         }
 
