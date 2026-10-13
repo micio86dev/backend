@@ -85,11 +85,13 @@ test('refuses a value below the minimum and a non-numeric value, changing nothin
     expect(storedMaxCallDuration($template))->toBe(600);
 })->with(['29', 'abc']);
 
-test('refuses a platform template, even as a dry run, and changes nothing', function (bool $dryRun): void {
-    $template = PlatformTemplates::insertGlobal(['provider' => 'tavus', 'config' => ['maxCallDurationSec' => 600]]);
+test('an unknown id and a platform id are both refused with exit 1, dry run or not, and change nothing', function (string $target, bool $dryRun): void {
+    $platform = PlatformTemplates::insertGlobal(['provider' => 'tavus', 'config' => ['maxCallDurationSec' => 600]]);
+    $unknownId = $platform->id + 1000;
+    $id = $target === 'platform' ? $platform->id : $unknownId;
 
     $exit = Artisan::call('beai:set-tavus-max-call', [
-        'template' => $template->id,
+        'template' => $id,
         'seconds' => 1200,
         '--dry-run' => $dryRun,
     ]);
@@ -99,5 +101,5 @@ test('refuses a platform template, even as a dry run, and changes nothing', func
     // exactly like an unknown id. (The dedicated "platform template" refusal in the command is
     // therefore not reachable through this lookup; the arch test pins who may widen it.)
     expect(Artisan::output())->toContain('No avatar template with that id.');
-    expect(storedMaxCallDuration($template))->toBe(600);
-})->with([true, false]);
+    expect(storedMaxCallDuration($platform))->toBe(600);
+})->with(['platform', 'unknown'])->with([true, false]);

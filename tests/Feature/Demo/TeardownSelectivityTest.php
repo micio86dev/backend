@@ -249,8 +249,13 @@ test('a real project still pinned to a demo avatar template blocks removal of th
 
     expect($exitCode)->toBe(1)
         ->and($output)->toContain('Cannot remove the demo avatar template')
-        ->toContain(implode(', ', $slugs))
         ->toContain($holders === 1 ? 'Repoint that project to another template first.' : 'Repoint those projects to another template first.');
+
+    // The command lists holders in whatever order the database returns them, so each
+    // slug is asserted on its own rather than as one joined string.
+    foreach ($slugs as $slug) {
+        expect($output)->toContain($slug);
+    }
 
     TenantContextScope::runFor($this->org->id, function () use ($slugs): void {
         expect(Project::whereIn('slug', $slugs)->count())->toBe(count($slugs))
