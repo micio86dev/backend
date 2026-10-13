@@ -273,10 +273,13 @@ test('a missing --to is refused BEFORE the transport is judged', function (): vo
     // reordered every single-guard test above would still pass.
     config(['mail.default' => 'log', 'mail.from.address' => SELFTEST_FROM]);
 
-    $this->artisan('beai:mail-selftest')
-        ->expectsOutputToContain('--to is required. Nothing was sent.')
-        ->doesntExpectOutputToContain('this transport delivers NOTHING')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest');
+    $output = Artisan::output();
+
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain('--to is required. Nothing was sent.')
+        ->not->toContain('this transport delivers NOTHING');
 });
 
 test('a non-delivering transport is refused BEFORE the from address is judged', function (): void {
@@ -284,10 +287,13 @@ test('a non-delivering transport is refused BEFORE the from address is judged', 
     // must be named, because it is the failure that is silent in production.
     config(['mail.default' => 'array', 'mail.from.address' => 'hello@example.com']);
 
-    $this->artisan('beai:mail-selftest', ['--to' => 'operator@beai.test'])
-        ->expectsOutputToContain('this transport delivers NOTHING')
-        ->doesntExpectOutputToContain('MAIL_FROM_ADDRESS is unset or still the framework default')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest', ['--to' => 'operator@beai.test']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain('this transport delivers NOTHING')
+        ->not->toContain('MAIL_FROM_ADDRESS is unset or still the framework default');
 });
 
 // ─── The send itself ──────────────────────────────────────────────────────────
@@ -337,10 +343,13 @@ test('a transport that throws is reported as a failure, not as a send', function
         'mail.from.address' => SELFTEST_FROM,
     ]);
 
-    $this->artisan('beai:mail-selftest', ['--to' => 'operator@beai.test'])
-        ->expectsOutputToContain('Send FAILED: Resend API error: domain is not verified')
-        ->doesntExpectOutputToContain('Sent. token')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest', ['--to' => 'operator@beai.test']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain('Send FAILED: Resend API error: domain is not verified')
+        ->not->toContain('Sent. token');
 });
 
 // ─── The success message never overstates what was proved ─────────────────────
@@ -394,16 +403,15 @@ test('a failover chain that falls through to log is refused, and log is named', 
         'mail.from.address' => SELFTEST_FROM,
     ]);
 
-    $this->artisan('beai:mail-selftest', ['--to' => 'operator@beai.test'])
-        // ONE substring, not two. `expectsOutputToContain` registers a separate
-        // Mockery `doWrite` expectation per call and Mockery dispatches a call
-        // to the FIRST matching one only (PendingCommand.php:615-623), so two
-        // expectations satisfied by the SAME output line fail the second. A
-        // single substring also pins the association — that it is `log` which
-        // delivers nothing — rather than merely their co-occurrence.
-        ->expectsOutputToContain("reaches 'log', which delivers NOTHING")
-        ->doesntExpectOutputToContain('Sent. token')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest', ['--to' => 'operator@beai.test']);
+    $output = Artisan::output();
+
+    // ONE substring pins the association — that it is `log` which delivers
+    // nothing — rather than merely the co-occurrence of two words.
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain("reaches 'log', which delivers NOTHING")
+        ->not->toContain('Sent. token');
 });
 
 test('a roundrobin chain containing the array transport is refused too', function (): void {
@@ -464,10 +472,13 @@ test('a mailer under ANY name that resolves to a non-delivering transport is ref
         'mail.from.address' => SELFTEST_FROM,
     ]);
 
-    $this->artisan('beai:mail-selftest', ['--to' => 'operator@beai.test'])
-        ->expectsOutputToContain("reaches 'array', which delivers NOTHING")
-        ->doesntExpectOutputToContain('Sent. token')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest', ['--to' => 'operator@beai.test']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain("reaches 'array', which delivers NOTHING")
+        ->not->toContain('Sent. token');
 });
 
 test('a mailer that cannot be resolved at all is refused, never assumed to work', function (): void {
@@ -502,10 +513,13 @@ test('the resolved-transport refusal runs AFTER the name check and BEFORE the fr
         'mail.from.address' => 'hello@example.com',
     ]);
 
-    $this->artisan('beai:mail-selftest', ['--to' => 'operator@beai.test'])
-        ->expectsOutputToContain('delivers NOTHING')
-        ->doesntExpectOutputToContain('MAIL_FROM_ADDRESS is unset or still the framework default')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest', ['--to' => 'operator@beai.test']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain('delivers NOTHING')
+        ->not->toContain('MAIL_FROM_ADDRESS is unset or still the framework default');
 });
 
 test('a non-delivering transport is never even resolved when the mailer NAME already fails', function (): void {
@@ -514,8 +528,11 @@ test('a non-delivering transport is never even resolved when the mailer NAME alr
     // instantiation that could itself throw.
     config(['mail.default' => 'log', 'mail.from.address' => SELFTEST_FROM]);
 
-    $this->artisan('beai:mail-selftest', ['--to' => 'operator@beai.test'])
-        ->expectsOutputToContain("MAIL_MAILER is 'log' — this transport delivers NOTHING.")
-        ->doesntExpectOutputToContain('could not be resolved')
-        ->assertExitCode(Command::FAILURE);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:mail-selftest', ['--to' => 'operator@beai.test']);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(Command::FAILURE)
+        ->and($output)->toContain("MAIL_MAILER is 'log' — this transport delivers NOTHING.")
+        ->not->toContain('could not be resolved');
 });
