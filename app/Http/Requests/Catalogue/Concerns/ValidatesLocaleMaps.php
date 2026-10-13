@@ -75,10 +75,10 @@ trait ValidatesLocaleMaps
     }
 
     /**
-     * Refuses both an all-blank value AND a value carrying leading/trailing
-     * whitespace (gga review finding, non-blocking — the docblock above
-     * promised "no edge whitespace" and this method previously only
-     * checked for all-blank, so `" text "` passed). Deliberately STRICTER
+     * Refuses a value carrying leading/trailing whitespace (gga review
+     * finding, non-blocking — the docblock above promised "no edge
+     * whitespace", so `" text "` must not pass). An all-blank value never
+     * reaches this closure (see the note inside). Deliberately STRICTER
      * than the DB CHECK constraint (`length(btrim(value)) > 0`, which
      * accepts `" text "` — trimming only decides blank-or-not there, not
      * edge whitespace itself): a FormRequest may reject more than its DB
@@ -92,12 +92,10 @@ trait ValidatesLocaleMaps
                 return;
             }
 
-            if (trim($value) === '') {
-                $fail("{$attribute}_blank");
-
-                return;
-            }
-
+            // No all-blank branch: Laravel never runs a non-implicit closure rule
+            // on a blank string (`required`/`string` refuse it first, and the trim
+            // middleware turns blank input into null), and the DB CHECK
+            // (`length(btrim(value)) > 0`) is the backstop.
             if (trim($value) !== $value) {
                 $fail("{$attribute}_edge_whitespace");
             }

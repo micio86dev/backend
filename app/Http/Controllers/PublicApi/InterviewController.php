@@ -46,32 +46,25 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 /**
- * `POST /v1/interviews`, `GET /v1/interviews` and `GET /v1/interviews/{id}`
- * — BEAI Public API (public-api step 5), SPEC.md §3.3, `openapi.yaml`'s
- * `createInterview`/`listInterviews`/`getInterview` operations.
+ * `POST /v1/interviews`, `GET /v1/interviews` and `GET /v1/interviews/{id}` and its sub-resources.
  *
- * `Interview` is the `participants` enrolment (ruling 8, G-02) — a plain
- * `Model`, NOT a `TenantModel` (see `App\Models\Participant`'s own
- * docblock), so every query here filters `organization_id` EXPLICITLY from
- * `App\Support\Tenancy\TenantResolver`, the same discipline
- * `App\Support\Sso\EntryLinkMinter` and `App\Support\Project\
- * ProjectInterviewability` already apply for the identical reason.
+ * An interview is the `participants` enrolment, a plain model rather than a tenant
+ * model, so every query filters `organization_id` explicitly from `TenantResolver`.
  */
 final class InterviewController extends Controller
 {
     private const EXPANDABLE = ['project'];
 
     /**
-     * SPEC.md §3.3: transcript/answers readable from `under_evaluation`
-     * onward (G-15: an `error` interview stays `409 transcript_not_ready` —
-     * `Error` is deliberately absent here).
+     * Transcript and answers are readable from `under_evaluation` onward; an `error`
+     * interview stays `409 transcript_not_ready`, so `Error` is deliberately absent.
      *
      * @var list<InterviewStatus>
      */
     private const TRANSCRIPT_READY_STATUSES = [InterviewStatus::UnderEvaluation, InterviewStatus::Completed];
 
     /**
-     * SPEC.md §3.3: scoring readable only once `completed`.
+     * Scoring is readable only once `completed`.
      *
      * @var list<InterviewStatus>
      */
@@ -118,9 +111,7 @@ final class InterviewController extends Controller
 
         $language = $request->input('candidate.language');
 
-        // From the VALIDATED body, never the raw input: `external_id` has
-        // already passed `integer:strict`, so `fromValidated()` only has to
-        // trim `source` and turn a blank one into null.
+        // From the validated body, so `fromValidated()` only trims `source`.
         $validatedCandidate = $request->validated('candidate');
         $externalReference = ExternalReference::fromValidated(is_array($validatedCandidate) ? $validatedCandidate : []);
 
@@ -189,19 +180,10 @@ final class InterviewController extends Controller
         $organization = $this->resolveOrganization();
         $expand = Expand::parse($request, self::EXPANDABLE);
 
-        // Validated ONLY to fail fast with a QueryValidationException (400)
-        // on a malformed value — the actual filter VALUES below are read
-        // straight from $request->query() with explicit is_string()/
-        // is_array() narrowing, never from Validator::validated() (whose
-        // return type is a bare, unindexed `array` PHPStan cannot narrow
-        // per-key) — mirrors `ProjectController::index()`'s own convention.
+        // Validated only to fail fast with a 400; the filter values are read straight from the query below.
         $this->validateFilterFormats($request);
 
-        // mode-scoped (G-51): a beai_test_ key must never list a live
-        // interview, and vice versa — SPEC.md §3.7's "must never read or
-        // write live data" applied here the same way
-        // `ExportController`/`UsageController` already scope every other
-        // /v1 read by the requesting key's own mode.
+        // Mode-scoped: a test key never lists a live interview, nor the reverse.
         $mode = app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live;
 
         $query = Participant::query()
@@ -216,22 +198,7 @@ final class InterviewController extends Controller
         $projectIdFilter = $request->query('project_id');
         if (is_string($projectIdFilter) && $projectIdFilter !== '') {
             $bareId = PublicId::decode($projectIdFilter, Project::publicIdPrefix());
-            // A malformed/mismatched project_id filter matches NOTHING
-            // rather than 400 — SPEC.md §3.2 treats an id filter like a
-            // path parameter (mismatched prefix → no match), never a
-            // format error on a list operation.
-            //
-            // withTrashed(): every OTHER
-            // read on this controller already resolves a participant's
-            // project `withTrashed()` (see `projectIncludingTrashed()`'s own
-            // docblock) — a project an admin later soft-deletes must not
-            // make interviews under it unfindable by THIS filter either,
-            // consistent with the same "the enrolment is the calling
-            // system's data" reasoning. Without it, `Project::query()`'s
-            // default `SoftDeletingScope` made a trashed project's public id
-            // resolve to no internal id at all, so the filter silently
-            // matched NOTHING instead of the participants that are
-            // genuinely there.
+            // A malformed project_id matches nothing (not a 400); trashed projects stay findable.
             $internalId = $bareId === null ? null : Project::query()->withTrashed()->wherePublicId($bareId)->value('id');
             $query->where('project_id', is_int($internalId) ? $internalId : -1);
         }
@@ -246,28 +213,11 @@ final class InterviewController extends Controller
             $query->where('candidate_ref', $candidateRef);
         }
 
-        // Normalised to a CarbonImmutable before the comparison — never the
-        // raw query string. By the
-        // time this runs, `validateFilterFormats()` above has already
-        // confirmed the value matches `Iso8601DateTime`'s own strict
-        // format set, so `parse()` is not expected to fail here; it is
-        // still checked defensively rather than trusted blindly, matching
-        // this method's own "never Validator::validated()" discipline for
-        // filter VALUES.
         $createdAfter = $request->query('created_after');
         if (is_string($createdAfter) && $createdAfter !== '') {
             $parsedCreatedAfter = Iso8601DateTime::parse($createdAfter);
 
-            // ->utc(): a numeric-
-            // offset value (e.g. `+02:00`) parses into a CarbonImmutable
-            // whose OWN timezone carries that offset, not UTC. Binding it
-            // as-is lets the query builder format the WALL-CLOCK digits in
-            // that offset into the SQL parameter, which Postgres then reads
-            // back in the connection's session timezone — silently
-            // comparing against the wrong instant whenever that session
-            // timezone is not the same offset. Converting to UTC first
-            // makes the bound value the same absolute instant regardless of
-            // which of the four accepted shapes the caller used.
+            // Converted to UTC: a numeric-offset value would otherwise bind its wall-clock digits.
             if ($parsedCreatedAfter !== null) {
                 $query->where('created_at', '>=', $parsedCreatedAfter->utc());
             }
@@ -282,11 +232,7 @@ final class InterviewController extends Controller
             }
         }
 
-        // Exact matches on the calling system's own reference, AND-ed with
-        // everything above on top of the organization + mode base query. The
-        // `external_id` is validated as a bounded integer by
-        // `validateFilterFormats()`, so the cast below cannot truncate; an
-        // empty value is "no filter", like every other filter here.
+        // Exact matches on the calling system's own reference; the validated integer cannot truncate.
         $externalId = $request->query('external_id');
         if (is_string($externalId) && $externalId !== '') {
             $query->where('external_id', (int) $externalId);
@@ -304,21 +250,10 @@ final class InterviewController extends Controller
 
         $expandProject = in_array('project', $expand, true);
 
-        // ALWAYS eager-load project — never let
-        // InterviewSerializer's `project_id`/`PublicId::encode($project)`
-        // lazy-load one query per row. `?expand=project` needs the FULL
-        // Project (plus the SAME nested relations ProjectController::index()
-        // eager-loads for ProjectSerializer); the unexpanded case only ever
-        // reads `id`/`public_id`, so it stays column-restricted. One shared
-        // method with `resolveParticipant()` — see
-        // `self::projectEagerLoad()`'s own docblock.
+        // Always eager-load the project to avoid one lazy-load per row.
         $query->with(self::projectEagerLoad($expandProject));
 
-        // Fetch the page's raw Participant models first (identity map),
-        // batch-compute progress AND recording readiness for the WHOLE page
-        // in two calls (three queries total: two for progress, one for
-        // recording_ready) — THEN serialize each row with its own precomputed
-        // slice, never one query per row.
+        // Progress and recording readiness are batched for the whole page, never per row.
         $rawPage = CursorPage::paginate(
             $query,
             $request,
@@ -343,6 +278,11 @@ final class InterviewController extends Controller
         return response()->json($rawPage);
     }
 
+    /**
+     * Get an interview.
+     *
+     * Returns one interview with its status and progress. Use `expand=project` to inline the project. A malformed or unknown interview id answers `404 not_found`.
+     */
     #[QueryParameter('expand', description: 'Comma-separated related resources to inline. Supported: project.', type: 'string')]
     public function show(Request $request, string $interview): JsonResponse
     {
@@ -356,14 +296,7 @@ final class InterviewController extends Controller
             abort(404);
         }
 
-        // progressForMany() for this ONE participant — the SAME batched query `index()` runs for a
-        // whole page, called here with a single-element list, so there is
-        // exactly ONE code path computing progress, not a second
-        // `getInterview`-only implementation that could silently drift
-        // from it. See `InterviewSerializer::progress()`'s own docblock:
-        // it now delegates here too, so a caller that omits `$progress`
-        // (e.g. `store()`, a brand-new enrolment with nothing to report
-        // yet) still converges on this one implementation.
+        // The same batched progress query `index()` runs, applied to this one participant.
         $progress = InterviewSerializer::progressForMany([$participant])[$participant->id] ?? [];
         $recordingReady = InterviewSerializer::recordingReadyForMany([$participant])[$participant->id] ?? false;
 
@@ -378,9 +311,9 @@ final class InterviewController extends Controller
      *
      * @internal
      * Internal notes, not published (Scramble exports docblock prose as public text):
-     * `GET /v1/interviews/{id}/transcript` (SPEC.md §3.3). Gate: status
+     * `GET /v1/interviews/{id}/transcript`. Gate: status
      * `under_evaluation` or `completed`, else `409 transcript_not_ready` (`error`
-     * included, G-15).
+     * included).
      * The `200` is typed through `#[Response(200, ...)]`: the serializer output does
      * not survive inference and would export a bare `object`. The type string mirrors
      * `TranscriptSerializer::toArray()`'s `@return` shape. An attribute is used because
@@ -415,11 +348,11 @@ final class InterviewController extends Controller
      *
      * @internal
      * Internal notes, not published (Scramble exports docblock prose as public text):
-     * `GET /v1/interviews/{id}/answers` (SPEC.md §3.3), same read gate as the
+     * `GET /v1/interviews/{id}/answers`, same read gate as the
      * transcript.
      * The `200` is typed through `#[Response(200, ...)]` for the same reason as
      * `transcript()`; it wraps `AnswersSerializer::toArray()`'s list shape in the
-     * `{interview_id, answers}` envelope SPEC.md §3.3 describes.
+     * `{interview_id, answers}` envelope.
      */
     #[Response(200, description: 'The transcript grouped into one entry per question: question and answer text, and timing derived from turn timestamps.', type: 'array{interview_id: string, answers: list<array{competency_code: string, question_index: int, question_text: string, answer_text: string, started_at_seconds: float|null, answer_duration_seconds: float|null}>}')]
     #[Response(409, description: 'Answers not ready.', type: Problem::PROBLEM_SHAPE)]
@@ -451,7 +384,7 @@ final class InterviewController extends Controller
      *
      * @internal
      * Internal notes, not published (Scramble exports docblock prose as public text):
-     * `GET /v1/interviews/{id}/scoring` (SPEC.md §3.3). Gate: status `completed` only,
+     * `GET /v1/interviews/{id}/scoring`. Gate: status `completed` only,
      * else `409 scoring_not_ready`.
      * The `200` is typed through `#[Response(200, ...)]` for the same reason as
      * `transcript()`; the type string mirrors `ScoringSerializer::toArray()`'s
@@ -487,8 +420,8 @@ final class InterviewController extends Controller
      *
      * @internal
      * Internal notes, not published (Scramble exports docblock prose as public text):
-     * `GET /v1/interviews/{id}/events` (SPEC.md §3.3), using
-     * `App\Support\PublicApi\CursorPage` in its ascending form (G-12: the one
+     * `GET /v1/interviews/{id}/events`, using
+     * `App\Support\PublicApi\CursorPage` in its ascending form (the one
      * documented exception to `created_at desc`). Every `InterviewEvent` row carries
      * a `public_id` (`evt_`).
      * `cursor`/`limit` carry explicit `#[QueryParameter]` attributes:
@@ -510,10 +443,7 @@ final class InterviewController extends Controller
 
         $query = InterviewEvent::where('participant_id', $participant->id);
 
-        // occurred_at, not created_at (G-12) — the event's own LOGICAL
-        // timestamp, which the owning migration documents as possibly
-        // predating created_at for a queued writer; see CursorPage::
-        // paginateAscending()'s own docblock for the $column parameter.
+        // Ordered by `occurred_at`, the event's logical time, which may predate `created_at`.
         $rawPage = CursorPage::paginateAscending(
             $query,
             $request,
@@ -521,13 +451,7 @@ final class InterviewController extends Controller
                 'id' => PublicId::encode($event),
                 'type' => $event->type,
                 'occurred_at' => $event->occurred_at->toIso8601String(),
-                // `data` is declared `type: object` in the contract — never
-                // nullable — and is not in `InterviewEvent`'s own `required`
-                // list. `array_filter()` (strict `!== null`, never the
-                // default falsy-value filter) OMITS the key entirely for an
-                // event recorded with no payload, rather than sending a
-                // `data: null` no `object`-typed schema without an explicit
-                // `"null"` member accepts.
+                // `data` is an object in the contract, never null: omit the key for an event with no payload.
                 'data' => $event->data,
             ], fn (mixed $value): bool => $value !== null),
             column: 'occurred_at',
@@ -557,9 +481,7 @@ final class InterviewController extends Controller
 
         $organization = $orgId === null ? null : Organization::query()->find($orgId);
 
-        // Unreachable through the real /v1 stack (PublicApiTenantContext
-        // already 401s first) — resolved explicitly rather than trusted,
-        // same defensive discipline as OrganizationController::show().
+        // Resolved explicitly rather than trusted: the tenant middleware already answers 401 first.
         if ($organization === null) {
             abort(404);
         }
@@ -575,22 +497,8 @@ final class InterviewController extends Controller
             return null;
         }
 
-        // Project IS a TenantModel — already scoped to the ambient
-        // TenantContext this controller runs under; no explicit
-        // organization filter needed (and none was previously used despite
-        // the parameter).
-        //
-        // Deliberately NOT `withTrashed()` (decided, not an oversight): a soft-deleted project answers `404` here,
-        // same as an unknown one. `store()`/`EnrolCandidate` starts a NEW
-        // enrolment; unlike a READ of an interview that already exists (see
-        // `InterviewSerializer::project()`), there is no calling-system
-        // data to preserve for a project that no longer exists — and
-        // `EnrolCandidate::handle()`'s own active-project gate
-        // (`EntryLinkMinter::projectIsAccessible()`) would refuse a trashed
-        // project anyway; failing here, at the same 404 an unknown
-        // `project_id` already gets, is simpler than reaching that gate
-        // only to answer a DIFFERENT status for the identical "no usable
-        // project" fact.
+        // Deliberately not `withTrashed()`: a soft-deleted project answers 404 like an unknown one, since a new
+        // enrolment has no existing data to preserve and the active-project gate would refuse it anyway.
         return Project::query()->wherePublicId($bareId)->first();
     }
 
@@ -602,19 +510,10 @@ final class InterviewController extends Controller
             return null;
         }
 
-        // mode-scoped (G-51): the single choke point `show()`, `transcript()`,
-        // `answers()`, `scoring()` and `events()` all resolve their
-        // participant through — a beai_test_ key requesting a LIVE
-        // interview id (or vice versa) must answer 404, never leak that
-        // the row exists under the other mode. Same reasoning as
-        // `index()`'s own mode filter above.
+        // Mode-scoped: a test key requesting a live interview (or the reverse) answers 404, never revealing the row.
         $mode = app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live;
 
-        // Same "always eager-load project, withTrashed()" discipline as
-        // index() — a single row here, so the cost
-        // is trivial either way, but `InterviewSerializer::project()`'s
-        // eager-loaded branch stays the one path every `/v1` read actually
-        // exercises.
+        // Always eager-load the project, trashed included, as `index()` does.
         return Participant::where('organization_id', $organization->id)
             ->where('mode', $mode)
             ->wherePublicId($bareId)
@@ -663,18 +562,11 @@ final class InterviewController extends Controller
             'project_id' => ['sometimes', 'string'],
             'email' => ['sometimes', 'string', 'email'],
             'candidate_ref' => ['sometimes', 'string', 'max:255'],
-            // The external reference filters (candidate-external-reference):
-            // the SAME bounds as the create body, but `integer` is NOT
-            // strict here — every query-string value arrives as a string, so
-            // `integer:strict` would refuse them all. A malformed value is a
-            // 400 (a query parameter), not the 422 a body gets.
+            // External reference filters share the create body's bounds, but `integer` is not strict because
+            // query values arrive as strings. A malformed value is a 400, not a 422.
             'external_id' => ['sometimes', 'integer', 'min:1', 'max:'.ExternalReference::MAX_EXTERNAL_ID],
             'source' => ['sometimes', 'string', 'max:'.ExternalReference::SOURCE_MAX_LENGTH],
-            // Strict ISO 8601 — see
-            // `Iso8601DateTime`'s own docblock for why the plain `'date'`
-            // rule this replaces was too permissive (relative phrases, a
-            // bare date with no time, a date-time with no timezone all
-            // passed it).
+            // Strict ISO 8601 via `Iso8601DateTime`; plain `date` accepted relative phrases and offset-less values.
             'created_after' => ['sometimes', new Iso8601DateTime],
             'created_before' => ['sometimes', new Iso8601DateTime],
             'metadata' => ['sometimes', 'array', 'max:3'],

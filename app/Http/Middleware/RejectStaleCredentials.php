@@ -7,6 +7,7 @@ namespace App\Http\Middleware;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 use Tymon\JWTAuth\JWTGuard;
 
@@ -30,6 +31,9 @@ use Tymon\JWTAuth\JWTGuard;
  * the change would be born dead. Accepted residual (design D3): a FOREIGN
  * token minted in that same second survives.
  *
+ * An unreadable payload or a missing/non-numeric `iat` is rejected the same way
+ * (fail closed).
+ *
  * `password_changed_at IS NULL` means "never changed" — passes unconditionally.
  *
  * REQ: Password Change Revokes Other Sessions, Not The Acting One
@@ -52,16 +56,37 @@ final class RejectStaleCredentials
         /** @var JWTGuard $guard */
         $guard = auth('api');
 
+        // Fail CLOSED: a token whose payload cannot be read, or that carries no
+        // numeric `iat`, offers no proof it was minted after the password change,
+        // so it is treated exactly like a stale one. Every token the JWT guard
+        // issues carries `iat` (config/jwt.php required_claims).
+        $reason = null;
         try {
             $iat = $guard->payload()->get('iat');
         } catch (\Throwable) {
-            // No parseable token payload (e.g. a non-JWT guard reached this
-            // point somehow) — fail open here, auth:api already gated access.
-            return $next($request);
+            $iat = null;
+            $reason = 'unreadable_payload';
         }
 
-        if (! is_numeric($iat)) {
-            return $next($request);
+        $reason ??= match (true) {
+            $iat === null => 'missing_iat',
+            ! is_numeric($iat) => 'non_numeric_iat',
+            default => null,
+        };
+
+        if ($reason !== null) {
+            // Never log the token, its payload or any claim value. A failing log backend must
+            // not turn this rejection into a server error: the 401 is the security outcome.
+            try {
+                Log::warning('RejectStaleCredentials: unreadable or iat-less token rejected', [
+                    'reason' => $reason,
+                    'user_id' => $user->id,
+                ]);
+            } catch (\Throwable) {
+                // Deliberately ignored.
+            }
+
+            return response()->json(['error' => 'credentials_changed'], Response::HTTP_UNAUTHORIZED);
         }
 
         if ((int) $iat < $user->password_changed_at->getTimestamp()) {

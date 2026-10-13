@@ -20,30 +20,17 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * `POST /v1/interviews/{id}/session-tokens` — BEAI Public API (public-api
- * step 5), SPEC.md §3.5, `openapi.yaml`'s `createSessionToken` operation.
+ * `POST /v1/interviews/{id}/session-tokens`.
  *
- * Mints a NEW session token and revokes any unconsumed previous one — the
- * simple overwrite of `participants.session_token_jti` below IS the
- * revocation (SPEC.md §3.5 "Minting a new token revokes previous unconsumed
- * ones."): the embed exchange only ever accepts a token whose `jti` matches
- * this column's CURRENT value, so the previous `jti` stops matching the
- * instant this write lands.
+ * Mints a new session token and revokes any unconsumed previous one: overwriting
+ * `participants.session_token_jti` is the revocation, because the embed exchange only
+ * accepts a token whose `jti` matches that column's current value.
  *
- * Allowed only while `pending` — every other status answers
- * `409 invalid_state` (SPEC.md §3.3 table). NOT idempotent — no
- * `Idempotency-Key` support (G-16): a duplicate mint is never a safe
- * replay, it always revokes whatever token came before it.
+ * Allowed only while `pending`; every other status answers `409 invalid_state`. Not
+ * idempotent (no `Idempotency-Key`): a duplicate mint always revokes the previous token.
  *
- * Decided, not an oversight: mint stays ALLOWED for
- * a `pending` participant whose project was later soft-deleted — this
- * controller never reads `project` at all, only `status`, so a trashed
- * project simply never enters the decision. The candidate may still
- * complete the interview they were already enrolled in; whether the
- * PROJECT still exists is a fact about `POST /v1/interviews` (create,
- * which stays gated on a live project — see
- * `InterviewController::resolveProject()`'s own docblock), not about
- * minting a token for an enrolment that already exists.
+ * Minting stays allowed for a pending participant whose project was later soft-deleted:
+ * only `status` is read, and creating an enrolment (not minting) is what requires a live project.
  */
 final class SessionTokenController extends Controller
 {
@@ -52,6 +39,11 @@ final class SessionTokenController extends Controller
         private readonly HostedInterviewUrlComposer $hostedInterviewUrlComposer,
     ) {}
 
+    /**
+     * Create a session token.
+     *
+     * Mints a session token and the hosted interview URL for a pending interview. Minting a new token revokes any previous token that has not been used yet. Any other interview status answers `409 invalid_state`; a malformed or unknown interview id answers `404 not_found`.
+     */
     #[Response(409, description: 'The interview is not in a state that allows a new session token (code=invalid_state).', type: Problem::PROBLEM_SHAPE)]
     public function store(Request $request, string $interview): JsonResponse
     {

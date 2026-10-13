@@ -97,9 +97,8 @@ test('an unknown id and a platform id are both refused with exit 1, dry run or n
     ]);
 
     expect($exit)->toBe(1);
-    // The default scopes hide platform rows from this command, so a platform id is answered
-    // exactly like an unknown id. (The dedicated "platform template" refusal in the command is
-    // therefore not reachable through this lookup; the arch test pins who may widen it.)
+    // The lookup excludes platform rows (organization_id IS NULL), so a platform id is
+    // answered exactly like an unknown id: there is no separate "platform template" refusal.
     expect(Artisan::output())->toContain('No avatar template with that id.');
     expect(storedMaxCallDuration($platform))->toBe(600);
 })->with(['platform', 'unknown'])->with([true, false]);
