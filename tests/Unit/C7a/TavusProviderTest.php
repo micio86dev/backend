@@ -22,6 +22,8 @@ use App\Services\Provider\ProviderToken;
 use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\AvatarTemplates\ActiveTemplateResolver;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -341,4 +343,45 @@ test('TavusProvider has no context concept: issue() returns a null provider_cont
     expect((new TavusProvider)->teardown(ProviderToken::fromRef('tavus', 'conv-abc', 'ctx-should-be-ignored')))->toBeTrue();
     Http::assertSentCount(1);
     Http::assertNotSent(fn ($request): bool => $request->method() === 'DELETE');
+});
+
+test('TavusProvider::issue() refuses a 200 that lacks the conversation id or url instead of handing out a half token', function (array $body): void {
+    Http::fake(['*tavusapi*/v2/conversations*' => Http::response($body, 200)]);
+
+    $issue = fn () => (new TavusProvider)->issue(tavusMockSession(), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
+
+    expect($issue)->toThrow(ProviderException::class, 'malformed response');
+})->with([
+    'no url' => [['conversation_id' => 'conv-1']],
+    'no id' => [['conversation_url' => 'https://tavus.io/c']],
+    'empty body' => [[]],
+]);
+
+test('TavusProvider::teardown() reports a transport failure as not released, logs it, and does not throw', function (): void {
+    Http::fake(['*tavusapi*' => fn () => throw new ConnectionException('cURL error 28: timed out')]);
+
+    $logs = [];
+    Log::listen(function ($message) use (&$logs): void {
+        $logs[] = ['level' => $message->level, 'text' => (string) json_encode([$message->message, $message->context])];
+    });
+
+    $released = (new TavusProvider)->teardown(ProviderToken::fromRef('tavus', 'conv-unreachable'));
+
+    expect($released)->toBeFalse();
+    $warnings = array_values(array_filter($logs, fn (array $l): bool => $l['level'] === 'warning' && str_contains($l['text'], 'Tavus: teardown failed')));
+    expect($warnings)->toHaveCount(1)
+        ->and($warnings[0]['text'])->toContain('conv-unreachable')->toContain('timed out');
+});
+
+test('TavusProvider::issue() still succeeds on the platform defaults when the active avatar template cannot be resolved', function (): void {
+    Http::fake(['*tavusapi*/v2/conversations*' => Http::response(['conversation_id' => 'conv-9', 'conversation_url' => 'https://tavus.io/conv-9'], 200)]);
+    DB::beforeExecuting(function (string $query): void {
+        if (str_contains($query, 'avatar_templates')) {
+            throw new RuntimeException('template store unavailable');
+        }
+    });
+
+    $token = (new TavusProvider)->issue(tavusMockSession(), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
+
+    expect($token->provider_session_ref)->toBe('conv-9');
 });

@@ -81,3 +81,77 @@ test('smoke-check treats an already-gone context (404) as deleted', function ():
         ->expectsOutputToContain('PASSED')
         ->assertExitCode(0);
 });
+
+// ─── Gating: the check costs real credits, so it refuses unless deliberately armed ─
+
+test('smoke-check refuses to run unless explicitly enabled, and never calls the provider', function (): void {
+    config(['interview.smoke_enabled' => false]);
+    Http::fake();
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
+        ->expectsOutputToContain('INTERVIEW_SMOKE_ENABLED is not true')
+        ->assertExitCode(1);
+
+    Http::assertNothingSent();
+});
+
+test('smoke-check refuses an unknown provider name', function (): void {
+    Http::fake();
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'zoom'])
+        ->expectsOutputToContain('Unknown --provider=[zoom]. Expected heygen|tavus.')
+        ->assertExitCode(1);
+
+    Http::assertNothingSent();
+});
+
+test('smoke-check refuses to run without an API key for the chosen provider', function (): void {
+    config(['interview.tavus.api_key' => '']);
+    Http::fake();
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'tavus'])
+        ->expectsOutputToContain('no API key configured for provider [tavus]')
+        ->assertExitCode(1);
+
+    Http::assertNothingSent();
+});
+
+test('smoke-check reports a failed issue() with the provider message and never the key', function (): void {
+    Http::fake([
+        '*liveavatar*' => Http::response(['message' => 'bad request for SMOKE_SECRET_HEYGEN_KEY_777'], 400),
+    ]);
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
+        ->expectsOutputToContain('issue(): FAILED')
+        ->doesntExpectOutputToContain('SMOKE_SECRET_HEYGEN_KEY_777')
+        ->doesntExpectOutputToContain('PASSED')
+        ->assertExitCode(1);
+});
+
+test('smoke-check against Tavus issues then ends a conversation and passes', function (): void {
+    config(['interview.tavus.api_key' => 'SMOKE_SECRET_TAVUS_KEY_888']);
+    Http::fake([
+        '*tavusapi*/v2/conversations/*/end' => Http::response([], 200),
+        '*tavusapi*/v2/conversations' => Http::response(['conversation_id' => 'conv-smoke', 'conversation_url' => 'https://tavus.io/conv-smoke'], 200),
+    ]);
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'tavus'])
+        ->expectsOutputToContain('provider_session_ref=[conv-smoke]')
+        ->expectsOutputToContain('PASSED')
+        ->assertExitCode(0);
+
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/conversations/conv-smoke/end'));
+});
+
+test('smoke-check against Tavus fails when the provider does not confirm the end', function (): void {
+    config(['interview.tavus.api_key' => 'SMOKE_SECRET_TAVUS_KEY_888']);
+    Http::fake([
+        '*tavusapi*/v2/conversations/*/end' => Http::response(['message' => 'nope'], 500),
+        '*tavusapi*/v2/conversations' => Http::response(['conversation_id' => 'conv-smoke', 'conversation_url' => 'https://tavus.io/conv-smoke'], 200),
+    ]);
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'tavus'])
+        ->expectsOutputToContain('did not confirm the release of session [conv-smoke]')
+        ->doesntExpectOutputToContain('PASSED')
+        ->assertExitCode(1);
+});

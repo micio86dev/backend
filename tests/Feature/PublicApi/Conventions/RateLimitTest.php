@@ -21,8 +21,10 @@ use App\Http\Middleware\PublicApi\RejectApiKeyInQuery;
 use App\Models\ApiClient;
 use App\Models\Organization;
 use App\Services\ApiKeyGenerator;
+use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Cache\Repository;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Tests\Helpers\PublicApi\StaleReadArrayStore;
@@ -230,4 +232,58 @@ test('review follow-up 4: the organization rate-limit override is cached — the
         ->assertHeader('RateLimit-Limit', '7');
 
     expect($organizationQueries)->toBe(0);
+});
+
+// ─── Remaining fail-open paths ──────────────────────────────────────────────
+
+/**
+ * A limiter whose counters work but whose "when does the window reset" read is down.
+ */
+function limiterWithoutResetClock(): RateLimiter
+{
+    return new class(new Repository(new ArrayStore)) extends RateLimiter
+    {
+        public function availableIn($key)
+        {
+            throw new RuntimeException('simulated outage on availableIn');
+        }
+    };
+}
+
+test('an outage reading the per-organization override falls back to the platform default limit instead of failing the request', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 5]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+    Cache::swap(new Repository(new ThrowingArrayStore(['get'], 'public-api:org-rate-limit-overrides:')));
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl')
+        ->assertOk()
+        ->assertHeader('RateLimit-Limit', (string) config('public_api.rate_limit.live'));
+});
+
+test('a 429 is still returned, with a full-window Retry-After, when the reset clock cannot be read', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 1]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+    app()->instance(RateLimiter::class, limiterWithoutResetClock());
+
+    // The first request is allowed but cannot report RateLimit-* headers either.
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl')->assertOk();
+
+    $blocked = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+
+    $blocked->assertStatus(429)->assertJsonPath('code', 'rate_limited');
+    expect($blocked->headers->get('Retry-After'))->toBe('60');
+});
+
+test('an allowed request is never failed because the reset clock cannot be read; it just carries no RateLimit headers', function (): void {
+    $org = Organization::factory()->create(['public_api_rate_limit_live' => 5]);
+    $rawKey = ApiKeyGenerator::generate(ApiKeyMode::Live);
+    ApiClient::factory()->withRawKey($rawKey)->create(['organization_id' => $org->id]);
+    app()->instance(RateLimiter::class, limiterWithoutResetClock());
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])->getJson('/api/v1/_probe/rl');
+
+    $response->assertOk()->assertJsonPath('ok', true);
+    expect($response->headers->has('RateLimit-Limit'))->toBeFalse();
 });

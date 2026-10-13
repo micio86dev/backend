@@ -59,6 +59,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -630,4 +631,63 @@ test('a mid-transaction failure in fabricateScoring() rolls back completely, lea
     // exception-unwind path — the success and early-no-op paths each have
     // their own dedicated release assertion, but neither exercises this one.
     expect(Cache::has('mock-interview:'.$participant->id))->toBeFalse();
+});
+
+// ─── Guard rails: the job must never act outside its own test-mode participant ─
+
+function runMockInterview(int $organizationId, int $participantId): void
+{
+    (new RunMockInterviewJob($organizationId, $participantId))
+        ->handle(app(SettleParticipantCompletion::class), app(SessionLiveClock::class));
+}
+
+test('an unknown participant is logged and ignored, and the lock is released', function (): void {
+    Log::spy();
+    $org = mockModeOrg();
+
+    runMockInterview($org->id, 987654321);
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message) => str_contains($message, 'participant not found'));
+    expect(Cache::has('mock-interview:987654321'))->toBeFalse();
+});
+
+test('a participant belonging to another organization is treated as not found, never scored', function (): void {
+    Log::spy();
+    $owner = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($owner, 1);
+    $participant = mockModeParticipant($owner, $project, ApiKeyMode::Test);
+    $intruder = mockModeOrg();
+
+    runMockInterview($intruder->id, $participant->id);
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message) => str_contains($message, 'participant not found'));
+    expect($participant->fresh()->status)->toBe('in_attesa')
+        ->and(Evaluation::where('participant_id', $participant->id)->exists())->toBeFalse();
+});
+
+test('a live-mode participant is refused: no fabricated scoring can ever touch a billed interview', function (): void {
+    Log::spy();
+    $org = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($org, 1);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Live);
+
+    runMockInterview($org->id, $participant->id);
+
+    Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message) => str_contains($message, 'refusing to run against a live-mode participant'));
+    expect($participant->fresh()->status)->toBe('in_attesa')
+        ->and(Evaluation::where('participant_id', $participant->id)->exists())->toBeFalse()
+        ->and(Cache::has('mock-interview:'.$participant->id))->toBeFalse();
+});
+
+test('a participant whose project has been deleted is left untouched and the problem is logged', function (): void {
+    Log::spy();
+    $org = mockModeOrg();
+    [$project] = mockModeProjectWithCompetencies($org, 1);
+    $participant = mockModeParticipant($org, $project, ApiKeyMode::Test);
+    $project->delete();
+
+    runMockInterview($org->id, $participant->id);
+
+    Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message) => str_contains($message, 'project not found'));
+    expect($participant->fresh()->status)->toBe('in_attesa');
 });
