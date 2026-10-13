@@ -99,6 +99,8 @@ class EvaluationIndexController extends Controller
      *
      * Returns the mean score per competency and the number of evaluations per status, over the same
      * filtered set of evaluations as the list, so the summary never describes a different population.
+     *
+     * @scramble-return array{data: array{by_status: array<string, int>, competencies: list<array{competency_code: string, mean_score: float|null, scored_count: int, result_count: int}>}}
      */
     public function summary(EvaluationIndexRequest $request): JsonResponse
     {
@@ -137,7 +139,7 @@ class EvaluationIndexController extends Controller
 
         return response()->json([
             'data' => [
-                'by_status' => $byStatus,
+                'by_status' => (object) $byStatus->all(),
                 'competencies' => $competencies,
             ],
         ], 200, [], JSON_PRESERVE_ZERO_FRACTION);

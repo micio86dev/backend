@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.73.0"
+        "version": "0.73.1"
     },
     "servers": [
         {
@@ -3928,8 +3928,10 @@
                                             "type": "object",
                                             "properties": {
                                                 "by_status": {
-                                                    "type": "array",
-                                                    "items": {}
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "integer"
+                                                    }
                                                 },
                                                 "competencies": {
                                                     "type": "array",
