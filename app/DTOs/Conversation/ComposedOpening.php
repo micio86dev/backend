@@ -21,17 +21,17 @@ final readonly class ComposedOpening
      * @param  string  $text  The composed opening-greeting string (non-empty).
      * @param  string  $version  Template version that produced this greeting (non-empty).
      *
-     * @throws \InvalidArgumentException When text or version is empty.
+     * @throws \InvalidArgumentException When text or version is empty or whitespace-only.
      */
     public function __construct(
         public string $text,
         public string $version,
     ) {
-        if ($text === '') {
+        if (trim($text) === '') {
             throw new \InvalidArgumentException('ComposedOpening: text must be non-empty.');
         }
 
-        if ($version === '') {
+        if (trim($version) === '') {
             throw new \InvalidArgumentException('ComposedOpening: version must be non-empty.');
         }
     }
