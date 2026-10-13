@@ -30,6 +30,7 @@ use Database\Seeders\FrameworkCatalogSeeder;
 use Database\Seeders\PlatformSuperadminSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\Helpers\Conversation\PromptSetPayload;
 use Tests\Helpers\Conversation\PromptTables;
@@ -246,9 +247,12 @@ test('a registry sync that throws is caught and still exits 0', function (): voi
 test('a registry sync failure never leaks the exception message into the deploy log verbatim as success', function (): void {
     registerDeployStub(new ThrowingSyncStub);
 
-    $this->artisan('beai:deploy')
-        ->doesntExpectOutputToContain('[deploy] registry sync OK')
-        ->assertExitCode(Command::SUCCESS);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:deploy');
+
+    expect($exit)->toBe(Command::SUCCESS)
+        ->and(Artisan::output())->toContain('[deploy] WARNING: registry sync failed')
+        ->not->toContain('[deploy] registry sync OK');
 });
 
 final class ThrowingMigrateStub extends Command
@@ -520,20 +524,24 @@ test('a deploy whose active prompt set holds a broken override body is refused, 
 
     PromptTables::breakOverrideBody($set, 'Broken {{budget}} override.');
 
-    $this->artisan('beai:deploy')
-        ->expectsOutputToContain('override for competency [DEPLOY_COMP] is invalid')
-        ->doesntExpectOutputToContain('does not match its content seal')
-        ->assertFailed();
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:deploy');
+
+    expect($exit)->not->toBe(Command::SUCCESS)
+        ->and(Artisan::output())->toContain('override for competency [DEPLOY_COMP] is invalid')
+        ->not->toContain('does not match its content seal');
 });
 
 test('the baseline source skips the active prompt set check, even with no set at all', function (): void {
     config(['conversation.prompt_source' => 'baseline']);
     PromptTables::empty();
 
-    $this->artisan('beai:deploy')
-        ->expectsOutputToContain('[deploy] prompt source is baseline')
-        ->doesntExpectOutputToContain('[deploy] FAILED')
-        ->assertExitCode(Command::SUCCESS);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:deploy');
+
+    expect($exit)->toBe(Command::SUCCESS)
+        ->and(Artisan::output())->toContain('[deploy] prompt source is baseline')
+        ->not->toContain('[deploy] FAILED');
 });
 
 test('an unknown prompt source refuses the deploy instead of choosing a source', function (): void {
@@ -548,7 +556,10 @@ test('an unknown prompt source refuses the deploy instead of choosing a source',
 test('a failed migration never reaches the prompt set check', function (): void {
     registerDeployStub(new FailingMigrateStub);
 
-    $this->artisan('beai:deploy')
-        ->doesntExpectOutputToContain('verifying the active conversation prompt set')
-        ->assertFailed();
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:deploy');
+
+    expect($exit)->not->toBe(Command::SUCCESS)
+        ->and(Artisan::output())->toContain('[deploy] FAILED: migrations did not complete')
+        ->not->toContain('verifying the active conversation prompt set');
 });
