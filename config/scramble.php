@@ -1,7 +1,7 @@
 <?php
 
 use App\Support\Scramble\InterviewHostedUrlNullableExtension;
-use App\Support\Scramble\InterviewSerializerTypesExtension;
+use App\Support\Scramble\PublicSerializerTypesExtension;
 use App\Support\Scramble\StringMapToSchemaExtension;
 use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
 
@@ -167,7 +167,7 @@ return [
         // runtime) without a runtime hack. See that class's own docblock.
         InterviewHostedUrlNullableExtension::class,
         // Documents `metadata` as a string map and `progress` as a typed list.
-        InterviewSerializerTypesExtension::class,
+        PublicSerializerTypesExtension::class,
         StringMapToSchemaExtension::class,
     ],
 

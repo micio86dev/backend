@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\PublicApi;
 
+use App\Enums\ApiKeyMode;
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Support\PublicApi\ApiMode;
 use App\Support\PublicApi\HostedInterviewUrlComposer;
+use App\Support\PublicApi\InterviewStatus;
 use App\Support\PublicApi\Problem;
 use App\Support\PublicApi\PublicId;
 use App\Support\PublicApi\SessionTokenMinter;
 use App\Support\Tenancy\TenantResolver;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,7 +35,7 @@ use Illuminate\Http\Request;
  * `Idempotency-Key` support (G-16): a duplicate mint is never a safe
  * replay, it always revokes whatever token came before it.
  *
- * gga round 3 finding 1 (decided, not an oversight): mint stays ALLOWED for
+ * Decided, not an oversight: mint stays ALLOWED for
  * a `pending` participant whose project was later soft-deleted — this
  * controller never reads `project` at all, only `status`, so a trashed
  * project simply never enters the decision. The candidate may still
@@ -48,6 +52,7 @@ final class SessionTokenController extends Controller
         private readonly HostedInterviewUrlComposer $hostedInterviewUrlComposer,
     ) {}
 
+    #[Response(409, description: 'The interview is not in a state that allows a new session token (code=invalid_state).', type: Problem::PROBLEM_SHAPE)]
     public function store(Request $request, string $interview): JsonResponse
     {
         $orgId = app(TenantResolver::class)->getOrgId();
@@ -60,13 +65,16 @@ final class SessionTokenController extends Controller
         $bareId = PublicId::decode($interview, Participant::publicIdPrefix());
         $participant = $bareId === null
             ? null
-            : Participant::where('organization_id', $organization->id)->wherePublicId($bareId)->first();
+            : Participant::where('organization_id', $organization->id)
+                ->where('mode', app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live)
+                ->wherePublicId($bareId)
+                ->first();
 
         if ($participant === null) {
             abort(404);
         }
 
-        if ($participant->status !== 'in_attesa') {
+        if (InterviewStatus::fromStored($participant->status) !== InterviewStatus::Pending) {
             return Problem::make(
                 $request, 409, 'invalid_state', 'Invalid state',
                 'Session tokens can only be minted while the interview is pending.',

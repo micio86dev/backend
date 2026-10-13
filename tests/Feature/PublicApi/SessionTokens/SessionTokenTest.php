@@ -35,7 +35,7 @@ function stkOrgWithScopedKey(): array
 function stkCreateInterview(Organization $org, string $key, array $overrides = []): array
 {
     $project = TenantContextScope::runFor($org->id, function () use ($org): Project {
-        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada', 'provider' => 'heygen', 'config' => []]);
+        $avatarTemplate = AvatarTemplate::create(['name' => 'Ada '.uniqid(), 'provider' => 'heygen', 'config' => []]);
 
         return Project::factory()->create([
             'organization_id' => $org->id,
@@ -143,4 +143,28 @@ test('session-token mint stays allowed (201) for a pending participant whose pro
 
     $response->assertCreated();
     $response->assertJsonStructure(['session_token', 'expires_at', 'hosted_url']);
+});
+
+test('G-51: a test key cannot mint a session token for a live interview, and a live key cannot for a test one', function (): void {
+    ['org' => $org, 'key' => $liveKey] = stkOrgWithScopedKey();
+    $liveInterview = stkCreateInterview($org, $liveKey);
+
+    $testKey = ApiKeyGenerator::generate(ApiKeyMode::Test);
+    ApiClient::factory()->withRawKey($testKey)->testMode()->create([
+        'organization_id' => $org->id,
+        'abilities' => ['interviews:write', 'interviews:read'],
+    ]);
+    $testInterview = stkCreateInterview($org, $testKey);
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$testKey])
+        ->postJson('/api/v1/interviews/'.$liveInterview['id'].'/session-tokens')
+        ->assertNotFound();
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$liveKey])
+        ->postJson('/api/v1/interviews/'.$testInterview['id'].'/session-tokens')
+        ->assertNotFound();
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$testKey])
+        ->postJson('/api/v1/interviews/'.$testInterview['id'].'/session-tokens')
+        ->assertCreated();
 });
