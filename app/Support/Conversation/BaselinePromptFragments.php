@@ -84,7 +84,22 @@ STAR;
      */
     public static function templateSet(string $locale): PromptTemplateSet
     {
-        return new PromptTemplateSet(self::forLocale($locale));
+        return new PromptTemplateSet(self::forLocale($locale) + self::optional());
+    }
+
+    /**
+     * The optional fragments, outside the stored baseline on purpose: `baseline-1` is a frozen, sealed set of the
+     * required keys, and a set published before an optional key existed must keep resolving. A set that omits one
+     * is served this body.
+     *
+     * @return array<string, string>
+     */
+    public static function optional(): array
+    {
+        return [
+            PromptFragmentKey::OpeningIntroSpoken->value => 'Before your opening line you already said a short introduction to the candidate; '
+                .'do not repeat or paraphrase it.',
+        ];
     }
 
     /**

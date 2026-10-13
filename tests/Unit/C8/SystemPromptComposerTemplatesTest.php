@@ -101,6 +101,7 @@ function templateCases(): array
         'resumed with two primaries asked' => ['primaries' => ['A?', 'B?', 'C?', 'D?'], 'opening' => SpokenOpening::resumed(2, 4)],
         'a single primary, fresh' => ['primaries' => ['Only?']],
         'no primaries, resumed' => ['opening' => SpokenOpening::fallback(true)],
+        'the first start, intro spoken' => ['primaries' => ['One?', 'Two?'], 'opening' => SpokenOpening::primary(1, introSpoken: true)],
         'a later competency, fresh' => ['primaries' => ['One?', 'Two?'], 'opening' => SpokenOpening::primary(1, continuation: true)],
     ];
 }
@@ -121,7 +122,7 @@ test('every consumable key is rendered somewhere across the case matrix', functi
         templateCases(),
     ));
 
-    expect(consumablePromptKeys())->toHaveCount(31);
+    expect(consumablePromptKeys())->toHaveCount(32);
 
     foreach (consumablePromptKeys() as $key) {
         expect($combined)->toContain('⟦'.$key.'⟧');

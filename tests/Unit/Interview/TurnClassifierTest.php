@@ -306,3 +306,43 @@ test('no primary_questions snapshot at all → follow_up', function (): void {
 
     expect($result)->toBe('follow_up');
 });
+
+/**
+ * The platform's intro phrase is spoken in the SAME utterance as primary 1 (`intro . ' ' . primary`,
+ * `OpeningTextComposer`). The match is a trailing one, so the primary must stay the exact tail: the turn
+ * is still `primary`, the primary-asked count does not move, and the intro is just leading text.
+ */
+test('an intro in front of the primary still classifies as primary', function (): void {
+    $session = turnClassifierSession(['Tell me about a time you led a difficult project.']);
+
+    $result = (new TurnClassifier)->classify(
+        $session,
+        'Welcome to BEAI, an AI-led interview. Speak freely, give concrete examples. Tell me about a time you led a difficult project.',
+    );
+
+    expect($result)->toBe('primary');
+});
+
+test('the primary-asked count is the same with or without the intro', function (string $spoken): void {
+    $session = turnClassifierSession(['One?', 'Two?']);
+    turnClassifierMarkMatched($session, $spoken);
+
+    $classifier = new TurnClassifier;
+
+    expect($classifier->matchedCount($session))->toBe(1)
+        ->and($classifier->classify($session, 'Two?'))->toBe('primary')
+        ->and($classifier->advances($session, 'Two?', 1))->toBeTrue();
+})->with(['without the intro' => ['One?'], 'with the intro' => ['Welcome to BEAI. Take your time. One?']]);
+
+test('an intro that quotes a later primary does not advance the count', function (): void {
+    $session = turnClassifierSession(['One?', 'Two?']);
+    turnClassifierMarkMatched($session, 'Welcome. Later I will ask: Two? For now, One?');
+
+    expect((new TurnClassifier)->matchedCount($session))->toBe(1);
+});
+
+test('an intro with no primary behind it is a follow-up', function (): void {
+    $session = turnClassifierSession(['One?']);
+
+    expect((new TurnClassifier)->classify($session, 'Welcome to BEAI. Take your time.'))->toBe('follow_up');
+});

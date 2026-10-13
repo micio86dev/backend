@@ -76,6 +76,9 @@ final class OpeningTextComposer
      * @param  string|null  $authoredQuestion  The operator's primary question this opening
      *                                         asks. Blank after `trim()` is treated as absent
      *                                         and the gate-off fallback is spoken instead.
+     * @param  string|null  $intro  The platform's intro phrase, spoken in front of the opening. Used
+     *                              for the `first` variant ONLY, so a next, resumed, retried or
+     *                              re-interviewed competency never repeats it; blank means none.
      *
      * @throws \InvalidArgumentException When $variant is not a known variant.
      * @throws CompositionException When `conversation.prompt_version` is unset or blank —
@@ -87,6 +90,7 @@ final class OpeningTextComposer
         string $competencyName,
         string $locale,
         ?string $authoredQuestion = null,
+        ?string $intro = null,
     ): ComposedOpening {
         if (! in_array($variant, self::VARIANTS, true)) {
             throw new \InvalidArgumentException("OpeningTextComposer: unknown variant [{$variant}].");
@@ -108,6 +112,7 @@ final class OpeningTextComposer
         $text = match ($variant) {
             'retry' => (string) Lang::get('interview.opening.retry_authored', ['question' => $question], $locale),
             'reinterview' => (string) Lang::get('interview.opening.reinterview_authored', ['question' => $question], $locale),
+            'first' => trim((string) $intro) === '' ? $question : trim((string) $intro).' '.$question,
             default => $question,
         };
 

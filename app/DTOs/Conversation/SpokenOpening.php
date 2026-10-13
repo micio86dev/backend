@@ -31,20 +31,22 @@ final readonly class SpokenOpening
         public bool $resumed,
         public int $primariesAskedBefore,
         public bool $continuation = false,
+        public bool $introSpoken = false,
     ) {}
 
     /**
      * @param  bool  $continuation  True when an earlier competency of this interview already welcomed the candidate.
+     * @param  bool  $introSpoken  True when the platform's intro phrase was spoken in front of this opening (the interview's true first start).
      *
      * @throws \InvalidArgumentException When `$number` is below 1.
      */
-    public static function primary(int $number, bool $continuation = false): self
+    public static function primary(int $number, bool $continuation = false, bool $introSpoken = false): self
     {
         if ($number < 1) {
             throw new \InvalidArgumentException('SpokenOpening: a primary number starts at 1.');
         }
 
-        return new self($number, false, $number - 1, $continuation);
+        return new self($number, false, $number - 1, $continuation, $introSpoken);
     }
 
     /**

@@ -40,6 +40,7 @@ final class ComposeConversationPlan
      * @param  list<array{competency_code: string, competency_ordinal: int, total_competencies: int}>  $remaining  Ordered, the next competency first.
      * @param  string  $endPhrase  Ends the turn of every competency but the project's last.
      * @param  string  $finalPhrase  Ends the turn of the project's last competency.
+     * @param  bool  $introSpoken  The platform intro was spoken in front of the first topic's opening.
      *
      * @throws CompositionException
      * @throws AnchorTranslationMissingException
@@ -53,10 +54,11 @@ final class ComposeConversationPlan
         int $followUpBudget,
         string $endPhrase,
         string $finalPhrase,
+        bool $introSpoken = false,
     ): ConversationPlan {
         $inputs = [];
 
-        foreach ($remaining as $entry) {
+        foreach ($remaining as $index => $entry) {
             $code = $entry['competency_code'];
             $competency = Competency::where('code', $code)->where('revision_id', $revisionId)->first();
             $primaries = $competency === null ? [] : $this->primaryQuestions->handle($project, $competency->id);
@@ -72,7 +74,7 @@ final class ComposeConversationPlan
                 // The plan is only ever built for a fresh start, where the opening spoke primary 1.
                 $primaries === []
                     ? SpokenOpening::fallback()
-                    : SpokenOpening::primary(1, continuation: $entry['competency_ordinal'] > 1),
+                    : SpokenOpening::primary(1, continuation: $entry['competency_ordinal'] > 1, introSpoken: $introSpoken && $index === 0),
                 $entry['competency_ordinal'] >= $entry['total_competencies'] ? $finalPhrase : $endPhrase,
             );
         }
