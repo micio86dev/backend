@@ -14,7 +14,7 @@ info:
   x-api-version-date: "2026-09-01"
   contact: { name: BEAI Developer Support, url: https://developers.beai.example }
 servers:
-  - url: https://api.beai.example/v1
+  - url: https://api-production-640e.up.railway.app/api/v1
 security:
   - apiKey: []
 tags:
