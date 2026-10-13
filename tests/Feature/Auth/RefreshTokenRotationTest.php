@@ -8,6 +8,8 @@
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Testing\TestResponse;
+use Symfony\Component\HttpFoundation\Cookie;
 
 function rotationTestUser(): array
 {
@@ -36,15 +38,32 @@ function loginAndGetRefreshCookie(User $user): string
     throw new RuntimeException('No refresh cookie on login response.');
 }
 
+/**
+ * POST /api/auth/refresh the way the SPA does: CSRF header plus the refresh cookie.
+ */
+function refreshWithCookie(string $cookie): TestResponse
+{
+    return test()->withHeaders(['X-BEAI-Refresh' => '1'])
+        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookie)
+        ->postJson('/api/auth/refresh');
+}
+
+/**
+ * The Set-Cookie the response carries for the refresh cookie, or null when it carries none.
+ */
+function refreshCookieOf(TestResponse $response): ?Cookie
+{
+    return collect($response->headers->getCookies())
+        ->first(fn ($c) => $c->getName() === config('refresh_tokens.cookie.name'));
+}
+
 // ─── Full rotation chain ────────────────────────────────────────────────────
 
 test('rotation chain: three successive legitimate rotations each mint a distinct cookie', function (): void {
     [, $user] = rotationTestUser();
     $cookieA = loginAndGetRefreshCookie($user);
 
-    $responseB = $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-        ->postJson('/api/auth/refresh')
+    $responseB = refreshWithCookie($cookieA)
         ->assertOk();
 
     $cookieB = collect($responseB->headers->getCookies())
@@ -53,9 +72,7 @@ test('rotation chain: three successive legitimate rotations each mint a distinct
 
     expect($cookieB)->not->toBe($cookieA);
 
-    $responseC = $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieB)
-        ->postJson('/api/auth/refresh')
+    $responseC = refreshWithCookie($cookieB)
         ->assertOk();
 
     $cookieC = collect($responseC->headers->getCookies())
@@ -69,17 +86,13 @@ test('a cookie replayed once (generation exactly one behind, within grace) is a 
     [, $user] = rotationTestUser();
     $cookieA = loginAndGetRefreshCookie($user);
 
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookieA)
         ->assertOk();
 
     // Presenting the SAME already-consumed cookieA a second time, immediately,
     // is indistinguishable from a genuine two-tab race (D6) — mints a token,
     // does NOT revoke the family.
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookieA)
         ->assertOk()
         ->assertJsonMissingPath('refresh_token');
 });
@@ -89,25 +102,19 @@ test('a cookie replayed after TWO further rotations (generation gap > 1) is reus
     $cookieA = loginAndGetRefreshCookie($user);
 
     $cookieB = collect(
-        $this->withHeaders(['X-BEAI-Refresh' => '1'])
-            ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-            ->postJson('/api/auth/refresh')
+        refreshWithCookie($cookieA)
             ->assertOk()
             ->headers->getCookies()
     )->first(fn ($c) => $c->getName() === config('refresh_tokens.cookie.name'))->getValue();
 
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieB)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookieB)
         ->assertOk();
 
     // cookieA's generation (0) is now TWO behind the family's current
     // generation (2) — the "exactly one behind" gate fails regardless of
     // elapsed time, proving the generation check (not just the clock) guards
     // the concurrency exception.
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookieA)
         ->assertUnauthorized()
         ->assertJsonPath('error', 'refresh_token_reused');
 });
@@ -116,9 +123,7 @@ test('replay of a superseded cookie revokes the ENTIRE family — the rotated co
     [, $user] = rotationTestUser();
     $cookieA = loginAndGetRefreshCookie($user);
 
-    $responseB = $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-        ->postJson('/api/auth/refresh')
+    $responseB = refreshWithCookie($cookieA)
         ->assertOk();
 
     $cookieB = collect($responseB->headers->getCookies())
@@ -127,15 +132,11 @@ test('replay of a superseded cookie revokes the ENTIRE family — the rotated co
 
     $this->travel(11)->seconds();
 
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieA)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookieA)
         ->assertUnauthorized()
         ->assertJsonPath('error', 'refresh_token_reused');
 
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookieB)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookieB)
         ->assertUnauthorized()
         ->assertJsonPath('error', 'refresh_token_revoked');
 });
@@ -151,9 +152,7 @@ test('missing the X-BEAI-Refresh header → 403, family untouched', function ():
         ->assertForbidden();
 
     // The family survived the rejected attempt — a real refresh still works.
-    $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookie)
-        ->postJson('/api/auth/refresh')
+    refreshWithCookie($cookie)
         ->assertOk();
 });
 
@@ -199,9 +198,7 @@ test('raw Set-Cookie on refresh carries every required flag AND the narrow Path'
     [, $user] = rotationTestUser();
     $cookie = loginAndGetRefreshCookie($user);
 
-    $response = $this->withHeaders(['X-BEAI-Refresh' => '1'])
-        ->withCredentials()->withUnencryptedCookie(config('refresh_tokens.cookie.name'), $cookie)
-        ->postJson('/api/auth/refresh')
+    $response = refreshWithCookie($cookie)
         ->assertOk();
 
     $setCookieHeader = collect($response->headers->all('Set-Cookie'))
@@ -229,3 +226,36 @@ test('login response has NO refresh_token key anywhere in the JSON body', functi
 
     expect($response->json())->not->toHaveKey('refresh_token');
 });
+
+// ─── The account is switched off after the cookie was issued ─────────────────
+
+test('a user deactivated after login cannot refresh: the whole family is revoked and no new cookie is issued', function (): void {
+    [, $user] = rotationTestUser();
+    $cookie = loginAndGetRefreshCookie($user);
+
+    $user->forceFill(['deactivated_at' => now()])->save();
+
+    $response = refreshWithCookie($cookie);
+
+    $response->assertUnauthorized()->assertJsonPath('error', 'refresh_token_revoked');
+    // No new refresh cookie: the only Set-Cookie allowed is the one that clears it (empty value, Max-Age=0).
+    $setCookie = refreshCookieOf($response);
+    expect($setCookie)->not->toBeNull()
+        ->and($setCookie->getValue())->toBe('')
+        ->and(strtolower((string) $setCookie))->toContain('max-age=0');
+
+    // Reactivating the account does not resurrect the revoked family.
+    $user->forceFill(['deactivated_at' => null])->save();
+    refreshWithCookie($cookie)
+        ->assertUnauthorized();
+});
+
+test('a malformed refresh cookie is refused as invalid', function (string $cookie): void {
+    refreshWithCookie($cookie)
+        ->assertUnauthorized()
+        ->assertJsonPath('error', 'refresh_token_invalid');
+})->with([
+    'no separator' => 'nodotatall',
+    'leading dot' => '.secretonly',
+    'trailing dot' => 'familyonly.',
+]);

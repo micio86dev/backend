@@ -118,3 +118,18 @@ test('a key straddling the truncation boundary never leaks a partial prefix', fu
     // Any non-empty run of the key's own characters surviving in the output is a leak.
     expect($result)->not->toContain(mb_substr($apiKey, 0, 4));
 });
+
+test('fails closed when redaction itself would re-create the key (a key that is a substring of the placeholder)', function (): void {
+    // "RED" appears inside "[REDACTED]", so replacing it cannot remove it: the message must be
+    // dropped entirely rather than logged with the key apparently still present.
+    expect(ProviderErrorMessage::extract(['message' => 'bad credentials RED'], 'RED'))->toBeNull();
+});
+
+test('control: a long key that cannot re-create itself is redacted, not dropped', function (): void {
+    // The counterpart of the case above: with a key that is NOT a substring of the placeholder,
+    // the message survives with the key replaced, so null there is down to the fail-closed rule.
+    $apiKey = 'sk-live-'.str_repeat('Z9', 24);
+
+    expect(ProviderErrorMessage::extract(['message' => "bad credentials {$apiKey}"], $apiKey))
+        ->toBe('bad credentials [REDACTED]');
+});

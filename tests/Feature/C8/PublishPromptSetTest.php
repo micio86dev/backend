@@ -181,3 +181,40 @@ test('a stored set that fails the read-back verification rolls everything back',
         ->and($refusal->reason)->toBe(PromptTemplateUnresolvableException::SEAL_MISMATCH)
         ->and(rowCounts())->toBe($this->counts);
 });
+
+test('an override given twice for the same role, competency and locale is refused', function (): void {
+    $override = Payload::override('FLL', 'COL', 'en', 'Probe once.');
+
+    $refusal = publishRefusal(Payload::fragments(['en']), [$override, $override]);
+
+    expect(implode(';', $refusal->violations))->toContain('override [COL/en] is given twice for the same role')
+        ->and(rowCounts())->toBe($this->counts);
+});
+
+test('the same override text for different roles is not a duplicate', function (): void {
+    $set = app(PublishPromptSet::class)->handle('two-roles', null, Payload::fragments(['en']), [
+        Payload::override('FLL', 'COL', 'en', 'Probe.'),
+        Payload::override('MLL', 'COL', 'en', 'Probe.'),
+    ]);
+
+    expect($set->overrides()->count())->toBe(2);
+});
+
+test('an override body that is not valid UTF-8 is refused', function (): void {
+    $refusal = publishRefusal(Payload::fragments(['en']), [Payload::override(null, 'COL', 'en', "broken \xB1\x31 bytes")]);
+
+    expect(implode(';', $refusal->violations))->toContain('body is not valid UTF-8 text')
+        ->and(rowCounts())->toBe($this->counts);
+});
+
+test('a malformed fragment row and a payload with no fragments at all are refused', function (array $fragments, string $expected): void {
+    $refusal = publishRefusal($fragments);
+
+    expect(implode(';', $refusal->violations))->toContain($expected)
+        ->and(rowCounts())->toBe($this->counts);
+})->with([
+    'non-string body' => [[['key' => 'header', 'locale' => 'en', 'body' => 42]], 'a fragment needs a string key, a locale of 1 to 8 characters and a string body'],
+    'locale too long' => [[['key' => 'header', 'locale' => 'toolonglocale', 'body' => 'x']], 'a locale of 1 to 8 characters'],
+    'empty locale' => [[['key' => 'header', 'locale' => '', 'body' => 'x']], 'a locale of 1 to 8 characters'],
+    'no fragments' => [[], 'at least one locale of fragments is required'],
+]);

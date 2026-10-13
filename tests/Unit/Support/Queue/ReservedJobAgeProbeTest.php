@@ -20,7 +20,9 @@ declare(strict_types=1);
  */
 
 use App\Support\Queue\ReservedJobAgeProbe;
+use Illuminate\Queue\RedisQueue;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 
 test('returns null when the queue table has no reserved jobs', function (): void {
     config()->set('queue.default', 'database');
@@ -80,4 +82,46 @@ test('returns null for a driver with no reservation concept', function (): void 
     $probe = new ReservedJobAgeProbe;
 
     expect($probe->oldestReservedAgeSeconds())->toBeNull();
+});
+
+/**
+ * Make the queue facade resolve a Redis queue whose reserved sorted set answers
+ * `$zrangeReply` (member => score), with `queue.default` pointed at the redis
+ * connection so the probe takes its Redis branch for real. Both the lookup and
+ * the sorted-set read must happen exactly once, otherwise the branch did not run.
+ *
+ * @param  array<string, string>  $zrangeReply
+ */
+function useRedisQueueReservedSet(array $zrangeReply): void
+{
+    config()->set('queue.default', 'redis');
+    config()->set('queue.connections.redis.retry_after', 1500);
+
+    $redis = Mockery::mock();
+    $redis->shouldReceive('zrange')->once()->with('queues:default:reserved', 0, 0, true)->andReturn($zrangeReply);
+    $queue = Mockery::mock(RedisQueue::class);
+    $queue->shouldReceive('getQueue')->with('default')->andReturn('queues:default');
+    $queue->shouldReceive('getConnection')->andReturn($redis);
+    Queue::shouldReceive('connection')->once()->andReturn($queue);
+}
+
+test('redis driver: the oldest reservation age is derived from its score minus retry_after', function (): void {
+    $this->freezeTime();
+    // Score = reservedAt + retry_after, so this job was reserved 600s ago.
+    useRedisQueueReservedSet(['job-payload' => (string) (now()->getTimestamp() - 600 + 1500)]);
+
+    expect((new ReservedJobAgeProbe)->oldestReservedAgeSeconds())->toBe(600);
+});
+
+test('redis driver: an empty reserved set means no reserved jobs', function (): void {
+    useRedisQueueReservedSet([]);
+
+    expect((new ReservedJobAgeProbe)->oldestReservedAgeSeconds())->toBeNull();
+});
+
+test('redis driver: a reservation whose score is in the future never reports a negative age', function (): void {
+    $this->freezeTime();
+    useRedisQueueReservedSet(['job-payload' => (string) (now()->getTimestamp() + 1500 + 30)]);
+
+    expect((new ReservedJobAgeProbe)->oldestReservedAgeSeconds())->toBe(0);
 });

@@ -20,6 +20,7 @@ use App\Services\ConversationLlm\LlmBinding;
 use App\Services\ConversationLlm\LlmBindingResolver;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -212,4 +213,35 @@ test('a bound template whose llm_sync_status is failed resolves status Degraded'
     $template->forceFill(['llm_sync_status' => 'failed'])->saveQuietly();
 
     expect(app(LlmBindingResolver::class)->resolveStatus($template->fresh()))->toBe(LlmBindingStatus::Degraded);
+});
+
+test('a stored key that can no longer be decrypted yields null, never an exception that would fail the interview', function (): void {
+    $org = Organization::factory()->create();
+    $model = resolverManagedModel();
+
+    $credential = TenantContextScope::runFor($org->id, function (): LlmCredential {
+        $c = new LlmCredential;
+        $c->forceFill([
+            'name' => 'Rotated APP_KEY',
+            'vendor' => 'google',
+            'api_key' => 'sk-real-key',
+            'key_last_four' => 'real',
+            'key_fingerprint' => hash('sha256', uniqid('', true)),
+        ]);
+        $c->save();
+
+        return $c;
+    });
+    // The ciphertext was written under a different APP_KEY.
+    DB::table('llm_credentials')->where('id', $credential->id)->update(['api_key' => 'not-a-valid-ciphertext']);
+
+    $template = TenantContextScope::runFor($org->id, fn (): AvatarTemplate => AvatarTemplate::create([
+        'name' => 'Bound to an unreadable key',
+        'provider' => 'tavus',
+        'config' => ['faceId' => 'f', 'palId' => 'p'],
+        'llm_model_id' => $model->id,
+        'llm_credential_id' => $credential->id,
+    ]));
+
+    expect(app(LlmBindingResolver::class)->resolve($template))->toBeNull();
 });

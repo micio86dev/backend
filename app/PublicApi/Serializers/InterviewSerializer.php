@@ -77,7 +77,7 @@ final class InterviewSerializer
      * `hosted_url` is ALWAYS null here — a plain read never has a fresh session
      * token to embed one for — and is exported as `string|null` (not the
      * literal `null` its line alone would infer) by
-     * `App\Support\Scramble\InterviewHostedUrlNullableExtension`; see that
+     * `App\Support\Scramble\PublicSerializerTypesExtension`; see that
      * class's own docblock. `recording_ready` (G-01) is true iff an
      * `interview_recordings` row exists for the participant (audio only, see
      * `App\Http\Controllers\PublicApi\RecordingController`'s own docblock;

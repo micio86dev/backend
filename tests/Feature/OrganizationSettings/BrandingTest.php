@@ -896,3 +896,80 @@ test('uploading a logo is rate limited, because each call costs an object PUT', 
         'logo' => brandingImage(brandingRealPng(), 'logo.png'),
     ])->assertStatus(429);
 });
+
+/**
+ * The 1x1 PNG with its IHDR rewritten to claim the given size (CRC kept valid).
+ * `getimagesize()` reads only the header, so no pixel data of that size is needed.
+ */
+function brandingPngClaiming(int $width, int $height): string
+{
+    $png = brandingRealPng();
+    // IHDR layout: type (12-15), width (16-19), height (20-23), then bit depth, colour type,
+    // compression, filter and interlace (24-28); the CRC (29-32) covers bytes 12-28.
+    $ihdr = substr($png, 12, 4).pack('NN', $width, $height).substr($png, 24, 5);
+
+    return substr($png, 0, 12).$ihdr.pack('N', crc32($ihdr)).substr($png, 33);
+}
+
+test('the PNG helper rewrites only the size: the rest of the header and a valid CRC are kept', function (): void {
+    $original = brandingRealPng();
+    $claimed = brandingPngClaiming(100, 101);
+
+    expect(strlen($claimed))->toBe(strlen($original));
+    expect(substr($claimed, 24, 5))->toBe(substr($original, 24, 5));
+    expect(substr($claimed, 29, 4))->toBe(pack('N', crc32(substr($claimed, 12, 17))));
+    expect(array_slice(getimagesizefromstring($claimed), 0, 2))->toBe([100, 101]);
+});
+
+test('a logo is accepted at the configured pixel ceiling and refused one pixel above it, per side', function (int $width, int $height, bool $accepted): void {
+    Storage::fake();
+    config(['branding.logo.max_dimension' => 100]);
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $response = $this->withToken($token)->post('/api/organization/logo', [
+        'logo' => brandingImage(brandingPngClaiming($width, $height), 'logo.png'),
+    ]);
+
+    if ($accepted) {
+        $response->assertOk();
+        expect($org->fresh()->logo_path)->not->toBeNull();
+
+        return;
+    }
+
+    $response->assertUnprocessable()->assertJsonPath('errors.logo.0', 'logo_dimensions_invalid');
+    expect(Storage::allFiles())->toBe([])
+        ->and($org->fresh()->logo_path)->toBeNull();
+})->with([
+    'both sides at the ceiling' => [100, 100, true],
+    'width one above' => [101, 1, false],
+    'height one above' => [1, 101, false],
+]);
+
+test('when saving the new logo path fails, the uploaded object is deleted and the old logo is kept', function (): void {
+    Storage::fake();
+
+    $org = Organization::factory()->create();
+    ['token' => $token] = brandingUser($org, 'admin');
+
+    $this->withToken($token)->post('/api/organization/logo', ['logo' => brandingImage(brandingRealPng(), 'first.png')])->assertOk();
+    $kept = $org->fresh()->logo_path;
+
+    $failedSaves = 0;
+    DB::beforeExecuting(function (string $query) use (&$failedSaves): void {
+        if (preg_match('/^\s*update\s+"?organizations"?\s/i', $query) === 1) {
+            $failedSaves++;
+            throw new RuntimeException('database unavailable');
+        }
+    });
+
+    $this->withToken($token)->post('/api/organization/logo', ['logo' => brandingImage(brandingRealPng(), 'second.png')])
+        ->assertStatus(500);
+
+    // The 500 is the failed logo_path save (exactly one blocked update), not some other failure.
+    expect($failedSaves)->toBe(1)
+        ->and($org->fresh()->logo_path)->toBe($kept)
+        ->and(Storage::allFiles())->toBe([$kept]);
+});

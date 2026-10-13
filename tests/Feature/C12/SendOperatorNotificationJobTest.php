@@ -401,3 +401,75 @@ test('a client slug that merely CONTAINS the prefix mid-string still alerts', fu
 
     Notification::assertSentTo($operator, WebhookDeliveryDeadNotification::class);
 });
+
+// ---------------------------------------------------------------------------
+// Retries exhausted — the terminal signal on the dashboard
+// ---------------------------------------------------------------------------
+
+function c12PendingLog(Organization $org, WebhookDelivery $delivery): NotificationLog
+{
+    return TenantContextScope::runFor($org->id, fn () => NotificationLog::create([
+        'organization_id' => $org->id,
+        'notification_type' => NotificationType::WebhookDeliveryDead,
+        'subject_type' => NotificationSubjectType::WebhookDelivery,
+        'subject_id' => $delivery->getKey(),
+        'status' => NotificationStatus::Pending,
+    ]));
+}
+
+function c12ExhaustedJob(WebhookDelivery $delivery): SendOperatorNotificationJob
+{
+    return new SendOperatorNotificationJob(
+        NotificationType::WebhookDeliveryDead,
+        NotificationSubjectType::WebhookDelivery,
+        $delivery->getKey(),
+    );
+}
+
+test('exhausted retries force the log row to failed with a truncated error and send nothing', function (): void {
+    Notification::fake();
+    config(['notifications.dispatch.last_error_max_chars' => 20]);
+    $org = Organization::factory()->create();
+    $delivery = c12Delivery($org);
+    $log = c12PendingLog($org, $delivery);
+
+    c12ExhaustedJob($delivery)->failed(new RuntimeException(str_repeat('x', 100)));
+
+    $row = TenantContextScope::runFor($org->id, fn () => NotificationLog::findOrFail($log->id));
+    expect($row->status)->toBe(NotificationStatus::Failed)
+        ->and($row->last_error)->toBe(str_repeat('x', 20));
+    Notification::assertNothingSent();
+});
+
+test('exhausted retries leave another organization\'s identical-looking row alone', function (): void {
+    $org = Organization::factory()->create();
+    $other = Organization::factory()->create();
+    $delivery = c12Delivery($org);
+    $otherDelivery = c12Delivery($other);
+    $otherLog = c12PendingLog($other, $otherDelivery);
+
+    c12ExhaustedJob($delivery)->failed(new RuntimeException('boom'));
+
+    $row = TenantContextScope::runFor($other->id, fn () => NotificationLog::findOrFail($otherLog->id));
+    expect($row->status)->toBe(NotificationStatus::Pending);
+});
+
+test('exhausted retries for a subject that no longer exists do nothing and do not throw', function (): void {
+    Notification::fake();
+    $org = Organization::factory()->create();
+    $delivery = c12Delivery($org);
+    $log = c12PendingLog($org, $delivery);
+    $job = c12ExhaustedJob($delivery);
+    $delivery->delete();
+
+    $job->failed(new RuntimeException('boom'));
+
+    // The seeded row would be flipped to failed (or a second one written) by a job that
+    // ignored the missing subject, so an untouched pending row is observable proof.
+    $rows = TenantContextScope::runFor($org->id, fn () => NotificationLog::all());
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()->is($log))->toBeTrue()
+        ->and($rows->first()->status)->toBe(NotificationStatus::Pending)
+        ->and($rows->first()->last_error)->toBeNull();
+    Notification::assertNothingSent();
+});

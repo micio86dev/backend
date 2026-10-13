@@ -14,6 +14,7 @@ declare(strict_types=1);
  * specific stayed.
  */
 
+use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Evaluation;
 use App\Models\FrameworkVersion;
@@ -213,4 +214,41 @@ test('resetting EVERY organization needs the word ALL, not a slug', function ():
 
     expect(Participant::withoutGlobalScopes()->where('organization_id', $mine->id)->count())->toBe(0)
         ->and(Participant::withoutGlobalScopes()->where('organization_id', $theirs->id)->count())->toBe(0);
+});
+
+test('API clients are kept unless --include-api-clients is passed, and a dry run reports them without deleting', function (): void {
+    ['org' => $org] = resettableOrg('acme');
+    ['org' => $other] = resettableOrg('globex');
+    ApiClient::factory()->create(['organization_id' => $org->id]);
+    ApiClient::factory()->create(['organization_id' => $other->id]);
+
+    $this->artisan('beai:reset-assessment-data', ['--org' => 'acme', '--confirm' => 'acme'])->assertSuccessful();
+    expect(DB::table('api_clients')->where('organization_id', $org->id)->count())->toBe(1);
+
+    $this->artisan('beai:reset-assessment-data', ['--org' => 'acme', '--include-api-clients' => true, '--dry-run' => true])
+        ->expectsOutputToContain('api clients')
+        ->assertSuccessful();
+    expect(DB::table('api_clients')->where('organization_id', $org->id)->count())->toBe(1);
+
+    $this->artisan('beai:reset-assessment-data', ['--org' => 'acme', '--confirm' => 'acme', '--include-api-clients' => true])->assertSuccessful();
+
+    expect(DB::table('api_clients')->where('organization_id', $org->id)->count())->toBe(0)
+        ->and(DB::table('api_clients')->where('organization_id', $other->id)->count())->toBe(1);
+});
+
+test('with no organization at all it says so and fails', function (): void {
+    DB::table('organizations')->delete();
+
+    $this->artisan('beai:reset-assessment-data', ['--confirm' => 'ALL'])
+        ->expectsOutputToContain('No organizations exist. Nothing to reset.')
+        ->assertFailed();
+});
+
+test('in the local environment no typed confirmation is required', function (): void {
+    ['org' => $org] = resettableOrg('acme');
+    app()['env'] = 'local';
+
+    $this->artisan('beai:reset-assessment-data', ['--org' => 'acme'])->assertSuccessful();
+
+    expect(Participant::withoutGlobalScopes()->where('organization_id', $org->id)->count())->toBe(0);
 });
