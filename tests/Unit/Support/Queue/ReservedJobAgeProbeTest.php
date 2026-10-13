@@ -20,7 +20,9 @@ declare(strict_types=1);
  */
 
 use App\Support\Queue\ReservedJobAgeProbe;
+use Illuminate\Queue\RedisQueue;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 
 test('returns null when the queue table has no reserved jobs', function (): void {
     config()->set('queue.default', 'database');
@@ -80,4 +82,43 @@ test('returns null for a driver with no reservation concept', function (): void 
     $probe = new ReservedJobAgeProbe;
 
     expect($probe->oldestReservedAgeSeconds())->toBeNull();
+});
+
+/**
+ * @param  array<string, mixed>  $zrangeReply
+ */
+function redisQueueReporting(array $zrangeReply): RedisQueue
+{
+    $redis = Mockery::mock();
+    $redis->shouldReceive('zrange')->with('queues:default:reserved', 0, 0, true)->andReturn($zrangeReply);
+    $queue = Mockery::mock(RedisQueue::class);
+    $queue->shouldReceive('getQueue')->with('default')->andReturn('queues:default');
+    $queue->shouldReceive('getConnection')->andReturn($redis);
+    Queue::shouldReceive('connection')->andReturn($queue);
+
+    return $queue;
+}
+
+test('redis driver: the oldest reservation age is derived from its score minus retry_after', function (): void {
+    config()->set('queue.connections.redis.retry_after', 1500);
+    $this->freezeTime();
+    // Score = reservedAt + retry_after, so this job was reserved 600s ago.
+    redisQueueReporting(['job-payload' => (string) (now()->getTimestamp() - 600 + 1500)]);
+
+    expect((new ReservedJobAgeProbe)->oldestReservedAgeSeconds())->toBe(600);
+});
+
+test('redis driver: an empty reserved set means no reserved jobs', function (): void {
+    config()->set('queue.connections.redis.retry_after', 1500);
+    redisQueueReporting([]);
+
+    expect((new ReservedJobAgeProbe)->oldestReservedAgeSeconds())->toBeNull();
+});
+
+test('redis driver: a reservation whose score is in the future never reports a negative age', function (): void {
+    config()->set('queue.connections.redis.retry_after', 1500);
+    $this->freezeTime();
+    redisQueueReporting(['job-payload' => (string) (now()->getTimestamp() + 1500 + 30)]);
+
+    expect((new ReservedJobAgeProbe)->oldestReservedAgeSeconds())->toBe(0);
 });

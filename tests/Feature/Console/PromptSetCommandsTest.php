@@ -16,6 +16,7 @@ use App\Services\Conversation\PromptSetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\Helpers\Conversation\PromptSetPayload as Payload;
 
 uses(RefreshDatabase::class);
@@ -139,4 +140,28 @@ test('activate refuses an unknown label and an unverifiable set, leaving the inc
     expect($code)->toBe(1)
         ->and(Artisan::output())->not->toContain('tampered')
         ->and(ConversationPromptSet::query()->where('is_active', true)->pluck('label')->all())->toBe(['good']);
+});
+
+test('an unexpected failure while activating exits non-zero, names only the class and leaks no message', function (): void {
+    $set = app(PublishPromptSet::class)->handle('s1', null, Payload::fragments());
+    $armed = true;
+    Event::listen(
+        'eloquent.updating: '.ConversationPromptSet::class,
+        function () use (&$armed): void {
+            if ($armed) {
+                throw new RuntimeException('secret connection string');
+            }
+        },
+    );
+
+    try {
+        $code = Artisan::call('beai:prompt-set:activate', ['label' => 's1']);
+        $output = Artisan::output();
+    } finally {
+        $armed = false;
+    }
+
+    expect($code)->toBe(1)
+        ->and($output)->toContain('Activation failed (RuntimeException)')->not->toContain('secret connection string')
+        ->and($set->fresh()->is_active)->toBeFalse();
 });

@@ -84,3 +84,38 @@ test('exhausting a list<CassetteResponse> entry throws LogicException naming the
     expect(fn () => $cassette->complete('prompt', ['competency_code' => 'PRS']))
         ->toThrow(LogicException::class);
 });
+
+test('requesting a competency with no cassette entry throws and names the available keys', function (): void {
+    $cassette = new CassetteLLMProvider(['COL' => '{}', 'PRS' => '{}']);
+
+    expect(fn () => $cassette->complete('prompt', ['competency_code' => 'NET']))
+        ->toThrow(LogicException::class, 'no cassette entry for competency_code [NET]. Available keys: [COL, PRS]');
+});
+
+test('every call is recorded, including the one that failed, and no HTTP request is ever made', function (): void {
+    $cassette = new CassetteLLMProvider(['COL' => '{}', 'PRS' => '{}']);
+
+    $cassette->complete('first', ['competency_code' => 'COL']);
+    $cassette->complete('second', ['competency_code' => 'PRS']);
+    try {
+        $cassette->complete('third', ['competency_code' => 'MISSING']);
+    } catch (LogicException) {
+    }
+
+    expect($cassette->callCount())->toBe(3)
+        ->and($cassette->httpRequestCount())->toBe(0)
+        ->and($cassette->getRequestedCompetencyCodes())->toBe(['COL', 'PRS', 'MISSING'])
+        ->and($cassette->getCalls()[1])->toBe(['prompt' => 'second', 'options' => ['competency_code' => 'PRS']]);
+});
+
+test('only a max_tokens finish reason marks the response as truncated', function (): void {
+    $cassette = new CassetteLLMProvider([
+        'COL' => [
+            new CassetteResponse(content: '{"cut"', finishReason: 'max_tokens'),
+            new CassetteResponse(content: '{}', finishReason: 'stop'),
+        ],
+    ]);
+
+    expect($cassette->complete('p', ['competency_code' => 'COL'])->truncated)->toBeTrue()
+        ->and($cassette->complete('p', ['competency_code' => 'COL'])->truncated)->toBeFalse();
+});
