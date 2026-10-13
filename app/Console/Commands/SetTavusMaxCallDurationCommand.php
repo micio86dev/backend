@@ -47,7 +47,7 @@ class SetTavusMaxCallDurationCommand extends Command
         $wasBypass = $this->tenant->isBypass();
         $this->tenant->setBypass(true);
         try {
-            $template = AvatarTemplate::query()->find((int) $this->argument('template'));
+            $template = AvatarTemplate::query()->whereNotNull('organization_id')->find((int) $this->argument('template'));
         } finally {
             $this->tenant->setBypass($wasBypass);
         }
@@ -58,16 +58,12 @@ class SetTavusMaxCallDurationCommand extends Command
             return self::FAILURE;
         }
 
-        // organization_id never changes after creation, so this check needs no lock.
-        if ($template->organization_id === null) {
-            $this->error('This is a platform template: write it through the superadmin, not this command. Nothing changed.');
-
-            return self::FAILURE;
-        }
-
+        // Platform templates (organization_id IS NULL) are excluded by the lookup above, so
+        // a platform id is answered exactly like an unknown id and every template reaching
+        // this point belongs to an organization.
         $dryRun = (bool) $this->option('dry-run');
         $result = TenantContextScope::runFor(
-            $template->organization_id,
+            (int) $template->organization_id,
             fn (): array => $this->writeMaxCallDuration($template->id, $seconds, $dryRun),
         );
 
