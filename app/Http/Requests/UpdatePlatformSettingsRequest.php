@@ -48,11 +48,18 @@ class UpdatePlatformSettingsRequest extends FormRequest
         $intro['interview_intro_phrase.it'][] = new NoCompletionPhrase;
 
         return [
-            // `Rule::array([...])` is load-bearing: see rules().
             'max_questions_per_competency' => ['sometimes', 'required', 'array', Rule::array(['standard', 'potential'])],
             'max_questions_per_competency.standard' => ['sometimes', 'integer', 'min:1', 'max:10'],
             'max_questions_per_competency.potential' => ['sometimes', 'integer', 'min:1', 'max:10'],
-            ...$intro,
+            /**
+             * The spoken introduction per locale. A map REPLACES the stored one and `null` clears it;
+             * `en` is required, `it` optional, each at most 600 characters.
+             *
+             * @var array{en: string, it?: string}|null
+             */
+            'interview_intro_phrase' => $intro['interview_intro_phrase'],
+            'interview_intro_phrase.en' => $intro['interview_intro_phrase.en'],
+            'interview_intro_phrase.it' => $intro['interview_intro_phrase.it'],
         ];
     }
 
