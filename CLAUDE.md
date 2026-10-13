@@ -63,7 +63,7 @@ DB_USERNAME=postgres DB_PASSWORD=postgres DB_URL= php artisan scramble:export
 ## Match CI locally before pushing
 
 The API CI runs, in order: `pint --test`, `phpstan analyse --memory-limit=1G`,
-migrations, `test --parallel`, coverage `--min=85`, a fresh OpenAPI export
+migrations, `test --parallel`, coverage `--min=98`, a fresh OpenAPI export
 diffed against the committed one, and VERSION/composer/openapi agreement. Run
 that same sequence locally — PHPStan especially, since it catches Larastan
 inference issues (a nullable-FK relation accessor is inferred NON-null, so `?->`

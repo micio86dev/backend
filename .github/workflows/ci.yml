@@ -162,7 +162,7 @@ jobs:
       # second time serially with `--coverage` (about 19 minutes), so 27 of the
       # job's 32 minutes were the same ~8,300 tests executed back to back.
       # `--parallel --coverage` runs it once, fails on any red test exactly as
-      # before, and enforces the same `--min=85` floor on the merged report.
+      # before, and enforces the same `--min=98` floor on the merged report.
       # Measured on 2026-10-07 at the same commit: 8,358 tests, 18 skipped, 0
       # failures, total coverage 95.8% (identical to the serial figure), in 283
       # seconds on an 8-core machine.
@@ -186,7 +186,7 @@ jobs:
       # that PHPUnit applies on top of the `-d` flag, so BOTH must be raised
       # together (raising only the flag left the 2G ceiling in force).
       - name: Run tests with coverage (parallel, ≥85%)
-        run: php -d memory_limit=4G artisan test --parallel --coverage --min=85
+        run: php -d memory_limit=4G artisan test --parallel --coverage --min=98
 
       # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
       - name: Generate OpenAPI spec
