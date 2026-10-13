@@ -101,3 +101,15 @@ test('the exported PublicInterview documents project as optional because it only
     expect($schema['required'])->not->toContain('project');
     expect($schema['required'])->toContain('project_id');
 });
+
+test('GET /evaluations/summary exports by_status as an object of integers, never an untyped array', function (): void {
+    $document = app(Generator::class)(Scramble::getGeneratorConfig('default'));
+
+    $schema = $document['paths']['/evaluations/summary']['get']['responses']['200']['content']['application/json']['schema'] ?? null;
+    expect($schema)->not->toBeNull();
+
+    $byStatus = $schema['properties']['data']['properties']['by_status'] ?? null;
+    expect($byStatus)->not->toBeNull();
+    expect($byStatus['type'])->toBe('object');
+    expect($byStatus['additionalProperties'])->toBe(['type' => 'integer']);
+});
