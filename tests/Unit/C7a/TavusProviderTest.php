@@ -375,13 +375,17 @@ test('TavusProvider::teardown() reports a transport failure as not released, log
 
 test('TavusProvider::issue() still succeeds on the platform defaults when the active avatar template cannot be resolved', function (): void {
     Http::fake(['*tavusapi*/v2/conversations*' => Http::response(['conversation_id' => 'conv-9', 'conversation_url' => 'https://tavus.io/conv-9'], 200)]);
-    DB::beforeExecuting(function (string $query): void {
-        if (str_contains($query, 'avatar_templates')) {
+    $lookups = 0;
+    DB::beforeExecuting(function (string $query) use (&$lookups): void {
+        if (preg_match('/\bavatar_templates\b/', $query) === 1) {
+            $lookups++;
             throw new RuntimeException('template store unavailable');
         }
     });
 
     $token = (new TavusProvider)->issue(tavusMockSession(), new QuestionContext(competencyCode: 'PRS', questionIndex: 0));
 
-    expect($token->provider_session_ref)->toBe('conv-9');
+    // The template lookup must have been attempted (and failed), or the fallback never ran.
+    expect($lookups)->toBeGreaterThanOrEqual(1)
+        ->and($token->provider_session_ref)->toBe('conv-9');
 });

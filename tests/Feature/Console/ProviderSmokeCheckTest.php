@@ -128,6 +128,22 @@ test('smoke-check reports a failed issue() with the provider message and never t
         ->assertExitCode(1);
 });
 
+test('smoke-check never prints the HeyGen key it actually sent', function (): void {
+    // The sentinel is the key the command actually sends (set in beforeEach); the provider
+    // body does NOT contain it, so only a command that printed its own key could fail the assertion.
+    expect(config('interview.heygen.api_key'))->toBe('SMOKE_SECRET_HEYGEN_KEY_777');
+    Http::fake([
+        '*liveavatar*' => Http::response(['message' => 'quota exceeded for this plan'], 400),
+    ]);
+
+    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
+        ->expectsOutputToContain('issue(): FAILED')
+        ->doesntExpectOutputToContain('SMOKE_SECRET_HEYGEN_KEY_777')
+        ->assertExitCode(1);
+
+    Http::assertSent(fn ($request) => $request->hasHeader('X-API-KEY', 'SMOKE_SECRET_HEYGEN_KEY_777'));
+});
+
 test('smoke-check against Tavus issues then ends a conversation and passes', function (): void {
     config(['interview.tavus.api_key' => 'SMOKE_SECRET_TAVUS_KEY_888']);
     Http::fake([

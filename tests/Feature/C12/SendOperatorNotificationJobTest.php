@@ -455,12 +455,21 @@ test('exhausted retries leave another organization\'s identical-looking row alon
 });
 
 test('exhausted retries for a subject that no longer exists do nothing and do not throw', function (): void {
+    Notification::fake();
     $org = Organization::factory()->create();
     $delivery = c12Delivery($org);
+    $log = c12PendingLog($org, $delivery);
     $job = c12ExhaustedJob($delivery);
     $delivery->delete();
 
     $job->failed(new RuntimeException('boom'));
 
-    expect(TenantContextScope::runFor($org->id, fn () => NotificationLog::count()))->toBe(0);
+    // The seeded row would be flipped to failed (or a second one written) by a job that
+    // ignored the missing subject, so an untouched pending row is observable proof.
+    $rows = TenantContextScope::runFor($org->id, fn () => NotificationLog::all());
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()->is($log))->toBeTrue()
+        ->and($rows->first()->status)->toBe(NotificationStatus::Pending)
+        ->and($rows->first()->last_error)->toBeNull();
+    Notification::assertNothingSent();
 });
