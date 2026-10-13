@@ -1,6 +1,5 @@
 <?php
 
-use App\Support\Scramble\InterviewHostedUrlNullableExtension;
 use App\Support\Scramble\PublicSerializerTypesExtension;
 use App\Support\Scramble\StringMapToSchemaExtension;
 use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
@@ -162,11 +161,8 @@ return [
     ],
 
     'extensions' => [
-        // Step 6 review follow-up, Part A item 4 — documents `Interview.
-        // hosted_url` as `string|null` (it is genuinely always `null` at
-        // runtime) without a runtime hack. See that class's own docblock.
-        InterviewHostedUrlNullableExtension::class,
-        // Documents `metadata` as a string map and `progress` as a typed list.
+        // Documents `hosted_url` as `string|null`, `metadata` as a string map, `progress` and
+        // the list fields as typed lists. See the class's own docblock.
         PublicSerializerTypesExtension::class,
         StringMapToSchemaExtension::class,
     ],

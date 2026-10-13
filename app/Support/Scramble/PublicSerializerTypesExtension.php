@@ -14,6 +14,7 @@ use Dedoc\Scramble\Support\Type\ArrayItemType_;
 use Dedoc\Scramble\Support\Type\ArrayType;
 use Dedoc\Scramble\Support\Type\IntegerType;
 use Dedoc\Scramble\Support\Type\KeyedArrayType;
+use Dedoc\Scramble\Support\Type\NullType;
 use Dedoc\Scramble\Support\Type\Reference\StaticMethodCallReferenceType;
 use Dedoc\Scramble\Support\Type\StringType;
 use Dedoc\Scramble\Support\Type\Type;
@@ -25,15 +26,17 @@ use Dedoc\Scramble\Support\Type\Union;
  * from Eloquent casts and collection pipelines, and exports an untyped array that the
  * SDKs type as `Array<any>`:
  *
- * - `InterviewSerializer`: `metadata` as a string map (`additionalProperties: string`)
+ * - `InterviewSerializer`: `hosted_url` as `string|null`. It is genuinely, unconditionally
+ *   `null` on every plain read (a read never has a fresh session token to embed one for), so
+ *   Scramble infers the literal `null`; neither a docblock nor a typed local changes that,
+ *   because it traces the method body whenever the body is traceable code. `metadata` as a string map (`additionalProperties: string`)
  *   and `progress` as a list of competencies, each with its answers (inferred as a
  *   union with `string`, which the SDKs cannot type).
  * - `OrganizationSerializer`: `allowed_domains` as a list of strings.
  * - `ProjectSerializer`: `competencies` as a list of `{code, name, type}`. The nested
  *   `Interview.project` is built by the same call, so it follows.
  *
- * Same shape as {@see InterviewHostedUrlNullableExtension}: resolve the call as Scramble
- * normally would, then patch only the named entries. The re-entrancy guard lets the inner
+ * Resolves the call as Scramble normally would, then patches only the named entries. The re-entrancy guard lets the inner
  * resolution fall through to Scramble's default exactly once.
  */
 final class PublicSerializerTypesExtension implements StaticMethodReturnTypeExtension
@@ -62,6 +65,15 @@ final class PublicSerializerTypesExtension implements StaticMethodReturnTypeExte
             $this->resolving = false;
         }
 
+        return $this->patched($resolved, $event->callee);
+    }
+
+    /**
+     * Returns a copy of a resolved `toArray()` shape with this serializer's entries typed,
+     * or null when the resolution is not an array shape and Scramble's default stands.
+     */
+    public function patched(Type $resolved, string $serializer): ?Type
+    {
         if (! $resolved instanceof KeyedArrayType) {
             return null;
         }
@@ -72,7 +84,7 @@ final class PublicSerializerTypesExtension implements StaticMethodReturnTypeExte
         $resolved = $resolved->clone();
 
         foreach ($resolved->items as $item) {
-            $override = $this->override($event->callee, (string) $item->key);
+            $override = $this->override($serializer, (string) $item->key);
 
             if ($override !== null) {
                 $item->value = $override;
@@ -80,7 +92,7 @@ final class PublicSerializerTypesExtension implements StaticMethodReturnTypeExte
 
             // The expanded `project` is built by `ProjectSerializer::toArray()` inside a
             // conditional, so it arrives here already resolved and needs the same patch.
-            if ($event->callee === InterviewSerializer::class && $item->key === 'project') {
+            if ($serializer === InterviewSerializer::class && $item->key === 'project') {
                 $this->typeProjectCompetencies($item->value);
             }
         }
@@ -112,6 +124,7 @@ final class PublicSerializerTypesExtension implements StaticMethodReturnTypeExte
     private function override(string $serializer, string $key): ?Type
     {
         return match ([$serializer, $key]) {
+            [InterviewSerializer::class, 'hosted_url'] => new Union([new StringType, new NullType]),
             [InterviewSerializer::class, 'metadata'] => new StringMapType(value: new StringType, key: new StringType),
             [InterviewSerializer::class, 'progress'] => $this->progressType(),
             [OrganizationSerializer::class, 'allowed_domains'] => new ArrayType(value: new StringType),

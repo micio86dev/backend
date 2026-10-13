@@ -9,14 +9,19 @@ declare(strict_types=1);
  */
 
 use App\Enums\ApiKeyMode;
+use App\Http\Controllers\PublicApi\SessionTokenController;
 use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Organization;
+use App\Models\Participant;
 use App\Models\Project;
 use App\Services\ApiKeyGenerator;
 use App\Support\PublicApi\PublicId;
 use App\Support\Tenancy\TenantContextScope;
+use App\Support\Tenancy\TenantResolver;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 function stkOrgWithScopedKey(): array
 {
@@ -167,4 +172,28 @@ test('G-51: a test key cannot mint a session token for a live interview, and a l
     $this->withHeaders(['Authorization' => 'Bearer '.$testKey])
         ->postJson('/api/v1/interviews/'.$testInterview['id'].'/session-tokens')
         ->assertCreated();
+});
+
+test('a malformed interview id answers 404 and mints nothing', function (string $id): void {
+    ['key' => $rawKey] = stkOrgWithScopedKey();
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/interviews/'.$id.'/session-tokens')
+        ->assertNotFound();
+})->with(['not a public id' => 'garbage', 'wrong prefix' => 'prj_AAAAAAAAAAAAAAAAAAAAAA']);
+
+test('a well-formed id that matches no interview answers 404', function (): void {
+    ['key' => $rawKey] = stkOrgWithScopedKey();
+    $unknown = Participant::publicIdPrefix().'01ARZ3NDEKTSV4RRFFQ69G5FAV';
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$rawKey])
+        ->postJson('/api/v1/interviews/'.$unknown.'/session-tokens')
+        ->assertNotFound();
+});
+
+test('without a resolved tenant the controller refuses with 404', function (): void {
+    app(TenantResolver::class)->setOrgId(null);
+
+    expect(fn () => app(SessionTokenController::class)->store(Request::create('/'), 'int_x'))
+        ->toThrow(NotFoundHttpException::class);
 });
