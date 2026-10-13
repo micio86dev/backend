@@ -6,7 +6,7 @@
     },
     "servers": [
         {
-            "url": "https://api.beai.example/v1"
+            "url": "https://api-production-640e.up.railway.app/api/v1"
         }
     ],
     "security": [
