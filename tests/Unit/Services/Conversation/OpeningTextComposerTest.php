@@ -330,3 +330,33 @@ test('the unknown-variant message still names the offending variant', function (
     expect(fn () => $composer->compose('reinterviews', 'X', 'en'))
         ->toThrow(InvalidArgumentException::class, 'OpeningTextComposer: unknown variant [reinterviews].');
 });
+
+test('the first opening is the intro, a space, then the authored question verbatim', function (): void {
+    $text = (new OpeningTextComposer)->compose('first', 'Drive', 'en', 'Tell me about yourself.', 'Welcome to BEAI. Speak freely.')->text;
+
+    expect($text)->toBe('Welcome to BEAI. Speak freely. Tell me about yourself.');
+});
+
+test('the intro is used for the first variant only', function (string $variant): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose($variant, 'Drive', 'en', 'Tell me about yourself.', 'Welcome to BEAI.')->text)
+        ->toBe($composer->compose($variant, 'Drive', 'en', 'Tell me about yourself.')->text);
+})->with(['next', 'resume', 'retry', 'reinterview']);
+
+test('a null or blank intro changes nothing', function (?string $intro): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose('first', 'Drive', 'en', 'Tell me about yourself.', $intro)->text)->toBe('Tell me about yourself.');
+})->with([null, '', "  \n "]);
+
+test('the intro is trimmed before it is joined to the question', function (): void {
+    expect((new OpeningTextComposer)->compose('first', 'Drive', 'en', 'Q?', "  Hello.\n")->text)->toBe('Hello. Q?');
+});
+
+test('the intro also precedes the gate-off fallback question', function (): void {
+    $composer = new OpeningTextComposer;
+
+    expect($composer->compose('first', 'Drive', 'en', null, 'Hello.')->text)
+        ->toBe('Hello. '.$composer->compose('first', 'Drive', 'en')->text);
+});
