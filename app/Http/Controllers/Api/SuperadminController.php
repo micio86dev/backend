@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\UpdatePlatformSettingsRequest;
 use App\Models\User;
 use App\Support\Settings\PlatformSettings;
 use App\Support\Superadmin\ClientDirectory;
 use App\Support\Superadmin\ClientOverviewReader;
+use App\Support\Superadmin\PlatformAuditWriter;
 use App\Support\Tenancy\ActingOrganization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -28,6 +31,8 @@ use Illuminate\Validation\Rule;
  */
 class SuperadminController extends Controller
 {
+    public function __construct(private readonly PlatformAuditWriter $audit) {}
+
     /**
      * Refuse anyone who is not a superadmin.
      *
@@ -156,18 +161,13 @@ class SuperadminController extends Controller
      * `max_questions_per_competency.standard` read into a compile error in the
      * repository that consumes it.
      *
-     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}}}
+     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}, interview_intro_phrase: array{it?: string, en?: string}|null}}
      */
     public function settings(Request $request): JsonResponse
     {
         $this->assertSuperadmin($request);
 
-        return response()->json([
-            'data' => [
-                'max_questions_per_competency' => app(PlatformSettings::class)
-                    ->maxQuestionsPerCompetencyMap(),
-            ],
-        ]);
+        return response()->json(['data' => $this->settingsPayload(app(PlatformSettings::class))]);
     }
 
     /**
@@ -184,40 +184,67 @@ class SuperadminController extends Controller
      * interview: past a handful of predefined questions the adaptivity that is
      * the product has nothing left to do.
      *
-     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}}}
+     * The `interview_intro_phrase` map replaces the stored one and `null` clears it; each change writes
+     * an audit row. The whole PATCH runs in one transaction, so a failed audit row applies nothing. The
+     * caps stay unaudited, as before.
+     *
+     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}, interview_intro_phrase: array{it?: string, en?: string}|null}}
      */
-    public function updateSettings(Request $request): JsonResponse
+    public function updateSettings(UpdatePlatformSettingsRequest $request): JsonResponse
     {
-        $this->assertSuperadmin($request);
+        $user = $this->assertSuperadmin($request);
 
-        // `Rule::array([...])` is load-bearing, not tidiness.
-        //
-        // Laravel excludes unvalidated array keys by default, and a key with an
-        // `array` rule plus dotted sub-rules has its PARENT dropped from
-        // `validated()` entirely, re-set only from the sub-keys that were
-        // actually present. So a body naming no recognised sub-key —
-        // `{"max_questions_per_competency": {"foo": 3}}` — passed
-        // `required|array`, skipped both `sometimes` rules, and left
-        // `validated()` empty: the read below was null, and under
-        // `strict_types` that reached `setMaxQuestionsPerCompetency(array)` as
-        // a TypeError. A 500, from a malformed request that should have been a
-        // 422.
-        //
-        // Naming the permitted keys makes junk fail validation instead, and
-        // closes the unknown-key surface as a side effect.
-        $validated = $request->validate([
-            'max_questions_per_competency' => ['required', 'array', Rule::array(['standard', 'potential'])],
-            'max_questions_per_competency.standard' => ['sometimes', 'integer', 'min:1', 'max:10'],
-            'max_questions_per_competency.potential' => ['sometimes', 'integer', 'min:1', 'max:10'],
-        ]);
+        $validated = $request->validated();
+        $settings = app(PlatformSettings::class);
 
-        /** @var array<string, int> $caps */
-        $caps = $validated['max_questions_per_competency'] ?? [];
+        DB::transaction(function () use ($validated, $settings, $user): void {
+            if (isset($validated['max_questions_per_competency'])) {
+                /** @var array<string, int> $caps */
+                $caps = $validated['max_questions_per_competency'];
+                $settings->setMaxQuestionsPerCompetency($caps);
+            }
 
-        $updated = app(PlatformSettings::class)->setMaxQuestionsPerCompetency($caps);
+            if (array_key_exists('interview_intro_phrase', $validated)) {
+                $this->changeIntro($settings, $user, $validated['interview_intro_phrase']);
+            }
+        });
 
-        return response()->json([
-            'data' => ['max_questions_per_competency' => $updated],
-        ]);
+        return response()->json(['data' => $this->settingsPayload($settings)]);
+    }
+
+    /**
+     * Replace the intro map and audit the change; no row when nothing changed.
+     * Runs inside the caller's transaction, so a failed audit row rolls the write back.
+     *
+     * @param  array<string, string>|null  $map
+     */
+    private function changeIntro(PlatformSettings $settings, User $actor, ?array $map): void
+    {
+        $before = $settings->interviewIntroPhraseMap();
+        $after = $settings->setInterviewIntroPhrase($map);
+
+        if ($before === $after) {
+            return;
+        }
+
+        $this->audit->record(
+            $actor->id,
+            'platform_settings.interview_intro_phrase.updated',
+            'PlatformSetting',
+            null,
+            ['interview_intro_phrase' => $before],
+            ['interview_intro_phrase' => $after],
+        );
+    }
+
+    /**
+     * @return array{max_questions_per_competency: array<string, int>, interview_intro_phrase: array<string, string>|null}
+     */
+    private function settingsPayload(PlatformSettings $settings): array
+    {
+        return [
+            'max_questions_per_competency' => $settings->maxQuestionsPerCompetencyMap(),
+            'interview_intro_phrase' => $settings->interviewIntroPhraseMap() ?: null,
+        ];
     }
 }

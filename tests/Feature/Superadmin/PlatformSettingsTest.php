@@ -23,10 +23,12 @@ declare(strict_types=1);
  * unchanged (1 / 4); what changes is who can move it and how fast.
  */
 
+use App\Http\Requests\UpdatePlatformSettingsRequest;
 use App\Models\Organization;
 use App\Models\PlatformSetting;
 use App\Support\Settings\PlatformSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Validator;
 
 // `Feature/Superadmin` is not registered for RefreshDatabase in tests/Pest.php,
 // so this file declares it — otherwise its factory rows outlive the run against
@@ -201,4 +203,201 @@ test('a malformed stored row degrades to the defaults instead of crashing', func
 
     expect($settings->maxQuestionsPerCompetency('standard'))->toBe(1);
     expect($settings->maxQuestionsPerCompetency('potential'))->toBe(4);
+});
+
+// ─── interview intro phrase ──────────────────────────────────────────────────
+//
+// A locale map {it, en} the avatar speaks before the first question. The whole
+// setting is optional: unset means no intro, never an error.
+
+test('the intro phrase reads as null on the wire and empty in the service until it is set', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)->getJson('/api/admin/settings')
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase', null);
+
+    $settings = app(PlatformSettings::class);
+
+    expect($settings->interviewIntroPhraseMap())->toBe([])
+        ->and($settings->interviewIntroPhrase('it'))->toBeNull();
+});
+
+test('a superadmin sets the intro phrase and the GET reflects it', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => 'Welcome.', 'it' => 'Benvenuto.']])
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase', ['en' => 'Welcome.', 'it' => 'Benvenuto.'])
+        ->assertJsonPath('data.max_questions_per_competency.standard', 1);
+
+    $this->withToken($token)->getJson('/api/admin/settings')
+        ->assertJsonPath('data.interview_intro_phrase', ['en' => 'Welcome.', 'it' => 'Benvenuto.']);
+});
+
+test('the intro phrase is optional per locale and falls back to en', function (): void {
+    $settings = app(PlatformSettings::class);
+    $settings->setInterviewIntroPhrase(['en' => 'Welcome.']);
+
+    expect($settings->interviewIntroPhrase('it'))->toBe('Welcome.')
+        ->and($settings->interviewIntroPhrase('en'))->toBe('Welcome.')
+        ->and($settings->interviewIntroPhrase('fr'))->toBe('Welcome.');
+
+    $settings->setInterviewIntroPhrase(['en' => 'Welcome.', 'it' => 'Benvenuto.']);
+
+    expect($settings->interviewIntroPhrase('it'))->toBe('Benvenuto.');
+});
+
+test('a PATCH map REPLACES the stored intro, it does not merge', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+    $this->withToken($token)->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => 'One.', 'it' => 'Uno.']])->assertOk();
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => 'Two.']])
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase', ['en' => 'Two.']);
+
+    expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe(['en' => 'Two.']);
+});
+
+test('null clears the intro phrase and an absent key leaves it alone', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+    $this->withToken($token)->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => 'One.']])->assertOk();
+
+    // An intro-less PATCH must not wipe it, and must not need the intro key.
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['max_questions_per_competency' => ['standard' => 2]])
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase', ['en' => 'One.']);
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => null])
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase', null);
+
+    expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe([])
+        ->and(app(PlatformSettings::class)->maxQuestionsPerCompetency('standard'))->toBe(2);
+});
+
+test('a PATCH carrying only the intro leaves the caps untouched', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => 'Welcome.']])
+        ->assertOk()
+        ->assertJsonPath('data.max_questions_per_competency.potential', 4);
+});
+
+test('a body naming nothing it understands is a 422, never a 500', function (array $body): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)->patchJson('/api/admin/settings', $body)->assertStatus(422);
+})->with([
+    'empty' => [[]],
+    'unknown key only' => [['nonsense' => 1]],
+    'empty caps map' => [['max_questions_per_competency' => []]],
+]);
+
+test('the intro phrase is validated', function (array $intro, string $errorKey): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => $intro])
+        ->assertStatus(422)
+        ->assertJsonValidationErrorFor($errorKey);
+
+    expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe([]);
+})->with([
+    'en missing' => [['it' => 'Benvenuto.'], 'interview_intro_phrase.en'],
+    'unknown locale' => [['en' => 'Hi.', 'fr' => 'Salut.'], 'interview_intro_phrase'],
+    'blank en' => [['en' => '   '], 'interview_intro_phrase.en'],
+    'blank it' => [['en' => 'Hi.', 'it' => ''], 'interview_intro_phrase.it'],
+    'not a string' => [['en' => ['x']], 'interview_intro_phrase.en'],
+    'over 600 characters' => [['en' => str_repeat('a', 601)], 'interview_intro_phrase.en'],
+    'over 600 multibyte characters' => [['en' => str_repeat('è', 601)], 'interview_intro_phrase.en'],
+    'english final phrase' => [['en' => 'Hello. Thank you for your time.'], 'interview_intro_phrase.en'],
+    'italian end phrase inside the english text' => [['en' => 'Hello. Passiamo alla prossima domanda.'], 'interview_intro_phrase.en'],
+    'english end phrase inside the italian text' => [['en' => 'Hello.', 'it' => "Ciao. Let's move on to the next question."], 'interview_intro_phrase.it'],
+]);
+
+test('exactly 600 characters is accepted', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => str_repeat('è', 600)]])
+        ->assertOk();
+});
+
+test('the intro phrase is not an array at all is refused', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => 'Welcome.'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrorFor('interview_intro_phrase');
+});
+
+test('every tenant role is refused the intro phrase, read and write alike', function (string $role): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, $role);
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => 'Hi.']])
+        ->assertForbidden();
+
+    expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe([]);
+})->with(['admin', 'operator', 'viewer']);
+
+test('junk stored under the intro key degrades to no intro', function (mixed $stored): void {
+    PlatformSetting::query()->create(['key' => PlatformSettings::INTERVIEW_INTRO_KEY, 'value' => $stored]);
+
+    expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe([]);
+})->with([
+    'scalar' => ['nope'],
+    'list' => [['x']],
+    'only junk entries' => [['en' => '  ', 'it' => 3, 'fr' => 'Salut']],
+]);
+
+test('only non blank it and en entries survive a read', function (): void {
+    PlatformSetting::query()->create(['key' => PlatformSettings::INTERVIEW_INTRO_KEY, 'value' => ['en' => 'Hi.', 'it' => ' ', 'fr' => 'Salut.']]);
+
+    expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe(['en' => 'Hi.']);
+});
+
+test('clearing the intro when none is stored is a no-op', function (): void {
+    expect(app(PlatformSettings::class)->setInterviewIntroPhrase(null))->toBe([])
+        ->and(PlatformSetting::query()->count())->toBe(0);
+});
+
+test('padding is trimmed by the request middleware, and the rule still refuses it where nothing trims', function (): void {
+    $org = Organization::factory()->create();
+    $token = authTokenForRole($org, 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => '  Hi.  ']])
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase.en', 'Hi.');
+
+    // The defence in depth: a caller that bypasses TrimStrings (a job, a console command).
+    $rules = (new UpdatePlatformSettingsRequest)->rules();
+    $padded = Validator::make(['interview_intro_phrase' => ['en' => ' Hi.', 'it' => 'Ciao. ']], $rules);
+
+    expect($padded->errors()->get('interview_intro_phrase.en'))->toBe(['interview_intro_phrase.en_edge_whitespace'])
+        ->and($padded->errors()->get('interview_intro_phrase.it'))->toBe(['interview_intro_phrase.it_edge_whitespace']);
+});
+
+test('an unknown locale carries the shared machine code', function (): void {
+    $v = Validator::make(['interview_intro_phrase' => ['en' => 'Hi.', 'fr' => 'Salut.']], (new UpdatePlatformSettingsRequest)->rules());
+
+    expect($v->errors()->get('interview_intro_phrase'))->toBe(['interview_intro_phrase_unknown_locale']);
 });
