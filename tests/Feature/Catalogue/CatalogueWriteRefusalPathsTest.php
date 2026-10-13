@@ -54,33 +54,63 @@ function catalogueDraftWithOneOfEach(): array
 }
 
 /**
- * Runs `$mutate` once, at the moment the next write asks to lock the revision.
+ * Runs `$mutate` once, at the moment the next write asks to lock the revision
+ * (a `select ... from "framework_catalog_revisions" ... for update` bound to its id).
+ *
+ * Matching is by statement shape and table name, not by the exact SQL text, so a
+ * harmless change of quoting or column list does not silently disarm the hook.
+ *
+ * @return stdClass `->hits` counts how often the hook fired; assert it, otherwise a
+ *                  disarmed hook turns the test into one that proves nothing.
  */
-function whenRevisionIsLocked(int $revisionId, Closure $mutate): void
+function whenRevisionIsLocked(int $revisionId, Closure $mutate): stdClass
 {
-    $armed = true;
+    $probe = (object) ['hits' => 0];
 
-    DB::beforeExecuting(function (string $query, array $bindings) use (&$armed, $revisionId, $mutate): void {
-        if ($armed && str_contains($query, '"framework_catalog_revisions"') && str_contains($query, 'for update') && $bindings === [$revisionId]) {
-            $armed = false;
+    DB::beforeExecuting(function (string $query, array $bindings) use ($probe, $revisionId, $mutate): void {
+        if ($probe->hits === 0 && preg_match('/\bfrom\s+"?framework_catalog_revisions"?\s/i', $query) === 1 && preg_match('/\bfor\s+update\b/i', $query) === 1 && $bindings === [$revisionId]) {
+            $probe->hits++;
             $mutate();
         }
     });
+
+    return $probe;
 }
 
 /**
- * Runs `$mutate` once, right before a statement starting with `$statementPrefix`.
+ * Runs `$mutate` once, right before the next `$verb` statement ("insert into" or
+ * "update") on `$table`. Matched by verb and table name, tolerant of identifier quoting.
+ *
+ * @return stdClass `->hits` counts how often the hook fired.
  */
-function beforeStatement(string $statementPrefix, Closure $mutate): void
+function beforeStatement(string $verb, string $table, Closure $mutate): stdClass
 {
-    $armed = true;
+    $probe = (object) ['hits' => 0];
+    $pattern = '/^\s*'.preg_quote($verb, '/').'\s+"?'.preg_quote($table, '/').'"?[\s(]/i';
 
-    DB::beforeExecuting(function (string $query) use (&$armed, $statementPrefix, $mutate): void {
-        if ($armed && str_starts_with($query, $statementPrefix)) {
-            $armed = false;
+    DB::beforeExecuting(function (string $query) use ($probe, $pattern, $mutate): void {
+        if ($probe->hits === 0 && preg_match($pattern, $query) === 1) {
+            $probe->hits++;
             $mutate($query);
         }
     });
+
+    return $probe;
+}
+
+/**
+ * Every catalogue row as it currently is, so "nothing persisted" means rows identical, not just counts.
+ *
+ * @return array<string, string>
+ */
+function catalogueRowsSnapshot(): array
+{
+    $snapshot = [];
+    foreach (['framework_roles', 'framework_competencies', 'framework_bars_indicators', 'framework_default_questions'] as $table) {
+        $snapshot[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+    }
+
+    return $snapshot;
 }
 
 function publishRevisionBehindTheBack(int $revisionId): void
@@ -144,11 +174,13 @@ test('a write that finds its revision published at lock time is a 409 and change
         'indicators' => DB::table('framework_bars_indicators')->count(),
         'questions' => DB::table('framework_default_questions')->count(),
     ];
-    whenRevisionIsLocked($fixture['draft']->id, fn () => publishRevisionBehindTheBack($fixture['draft']->id));
+    $lock = whenRevisionIsLocked($fixture['draft']->id, fn () => publishRevisionBehindTheBack($fixture['draft']->id));
 
     $this->withToken($token)->json($method, catalogueUrl($url, $fixture), $payload($fixture))
         ->assertStatus(409)
         ->assertJsonPath('error', 'revision_published_during_write');
+
+    expect($lock->hits)->toBe(1);
 
     expect([
         'roles' => DB::table('framework_roles')->count(),
@@ -161,11 +193,13 @@ test('a write that finds its revision published at lock time is a 409 and change
 test('a write that finds its draft discarded at lock time says discarded, not published', function (string $url, array $payload): void {
     $token = catalogueSuperadminToken();
     $draft = FrameworkCatalogRevision::factory()->draft()->create();
-    whenRevisionIsLocked($draft->id, fn () => DB::table('framework_catalog_revisions')->where('id', $draft->id)->delete());
+    $lock = whenRevisionIsLocked($draft->id, fn () => DB::table('framework_catalog_revisions')->where('id', $draft->id)->delete());
 
     $this->withToken($token)->postJson($url, $payload)
         ->assertStatus(409)
         ->assertJsonPath('error', 'revision_discarded_during_write');
+
+    expect($lock->hits)->toBe(1);
 })->with([
     'role' => ['/api/catalogue/roles', ['code' => 'GONE', 'name' => ['en' => 'R', 'it' => 'R']]],
     'competency' => ['/api/catalogue/competencies', ['code' => 'GONE', 'type' => 'standard', 'name' => ['en' => 'C', 'it' => 'C'], 'definition' => ['en' => 'D', 'it' => 'D']]],
@@ -202,11 +236,13 @@ test('listing before any revision exists is an empty list, not an error', functi
 test('a create that loses a uniqueness race maps to the same stable 422 code as the sequential path', function (string $table, string $url, Closure $payload, Closure $competing, string $code): void {
     $token = catalogueSuperadminToken();
     $fixture = catalogueDraftWithOneOfEach();
-    beforeStatement('insert into "'.$table.'"', fn () => $competing($fixture));
+    $race = beforeStatement('insert into', $table, fn () => $competing($fixture));
 
     $this->withToken($token)->postJson($url, $payload($fixture))
         ->assertStatus(422)
         ->assertExactJson(['error' => $code]);
+
+    expect($race->hits)->toBe(1);
 })->with([
     'role code' => [
         'framework_roles', '/api/catalogue/roles',
@@ -240,11 +276,13 @@ test('a create that loses a uniqueness race maps to the same stable 422 code as 
 test('an update that loses a uniqueness race maps to the same stable 422 code', function (string $table, string $url, Closure $payload, Closure $competing, string $code): void {
     $token = catalogueSuperadminToken();
     $fixture = catalogueDraftWithOneOfEach();
-    beforeStatement('update "'.$table.'"', fn () => $competing($fixture));
+    $race = beforeStatement('update', $table, fn () => $competing($fixture));
 
     $this->withToken($token)->patchJson(catalogueUrl($url, $fixture), $payload($fixture))
         ->assertStatus(422)
         ->assertExactJson(['error' => $code]);
+
+    expect($race->hits)->toBe(1);
 })->with([
     'role code' => [
         'framework_roles', '/api/catalogue/roles/{role}',
@@ -272,27 +310,32 @@ test('an update that loses a uniqueness race maps to the same stable 422 code', 
     ],
 ]);
 
-test('a database error that is not a known catalogue constraint is not disguised as a validation failure', function (string $method, string $statementPrefix, string $url, Closure $payload): void {
+test('a database error that is not a known catalogue constraint is not disguised as a validation failure', function (string $method, string $verb, string $table, string $url, Closure $payload): void {
     $token = catalogueSuperadminToken();
     $fixture = catalogueDraftWithOneOfEach();
-    beforeStatement($statementPrefix, function (string $query): void {
+    $before = catalogueRowsSnapshot();
+    $injected = beforeStatement($verb, $table, function (string $query): void {
         throw new QueryException('pgsql', $query, [], new RuntimeException('some unrelated failure'));
     });
 
     $this->withToken($token)->json($method, catalogueUrl($url, $fixture), $payload($fixture))->assertStatus(500);
+
+    // The 500 must come from the injected failure, and the failed write must have left no trace.
+    expect($injected->hits)->toBe(1)
+        ->and(catalogueRowsSnapshot())->toBe($before);
 })->with(function (): array {
     $m = catalogueMutations();
-    $case = fn (string $method, string $prefix, string $label): array => [$method, $prefix, $m[$label][1], $m[$label][2]];
+    $case = fn (string $method, string $verb, string $table, string $label): array => [$method, $verb, $table, $m[$label][1], $m[$label][2]];
 
     return [
-        'create role' => $case('post', 'insert into "framework_roles"', 'create role'),
-        'update role' => $case('patch', 'update "framework_roles"', 'update role'),
-        'create competency' => $case('post', 'insert into "framework_competencies"', 'create competency'),
-        'update competency' => $case('patch', 'update "framework_competencies"', 'update competency'),
-        'create indicator' => $case('post', 'insert into "framework_bars_indicators"', 'create indicator'),
-        'update indicator' => $case('patch', 'update "framework_bars_indicators"', 'update indicator'),
-        'create default question' => $case('post', 'insert into "framework_default_questions"', 'create default question'),
-        'update default question' => $case('patch', 'update "framework_default_questions"', 'update default question'),
+        'create role' => $case('post', 'insert into', 'framework_roles', 'create role'),
+        'update role' => $case('patch', 'update', 'framework_roles', 'update role'),
+        'create competency' => $case('post', 'insert into', 'framework_competencies', 'create competency'),
+        'update competency' => $case('patch', 'update', 'framework_competencies', 'update competency'),
+        'create indicator' => $case('post', 'insert into', 'framework_bars_indicators', 'create indicator'),
+        'update indicator' => $case('patch', 'update', 'framework_bars_indicators', 'update indicator'),
+        'create default question' => $case('post', 'insert into', 'framework_default_questions', 'create default question'),
+        'update default question' => $case('patch', 'update', 'framework_default_questions', 'update default question'),
     ];
 });
 
@@ -300,11 +343,11 @@ test('a create that loses a race after it had to open a fresh draft discards tha
     $token = catalogueSuperadminToken();
     expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
 
-    $armed = true;
-    DB::beforeExecuting(function (string $query, array $bindings) use (&$armed): void {
+    $hits = 0;
+    DB::beforeExecuting(function (string $query, array $bindings) use (&$hits): void {
         // Only the controller's own insert carries the new code; the clone's inserts do not.
-        if ($armed && str_starts_with($query, 'insert into "framework_competencies"') && in_array('LOSER2', $bindings, true)) {
-            $armed = false;
+        if ($hits === 0 && preg_match('/^\s*insert\s+into\s+"?framework_competencies"?[\s(]/i', $query) === 1 && in_array('LOSER2', $bindings, true)) {
+            $hits++;
             Competency::factory()->create(['revision_id' => FrameworkCatalogRevision::openDraft()->id, 'code' => 'LOSER2']);
         }
     });
@@ -313,7 +356,8 @@ test('a create that loses a race after it had to open a fresh draft discards tha
         'code' => 'LOSER2', 'type' => 'standard', 'name' => ['en' => 'C', 'it' => 'C'], 'definition' => ['en' => 'D', 'it' => 'D'],
     ])->assertStatus(422)->assertExactJson(['error' => 'code_taken']);
 
-    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
+    expect($hits)->toBe(1)
+        ->and(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
 });
 
 // ─── Revision lifecycle endpoints ───────────────────────────────────────────
@@ -321,11 +365,13 @@ test('a create that loses a race after it had to open a fresh draft discards tha
 test('discarding a draft that was published while the request waited is a 409 and the revision stays published', function (): void {
     $token = catalogueSuperadminToken();
     $fixture = catalogueDraftWithOneOfEach();
-    whenRevisionIsLocked($fixture['draft']->id, fn () => publishRevisionBehindTheBack($fixture['draft']->id));
+    $lock = whenRevisionIsLocked($fixture['draft']->id, fn () => publishRevisionBehindTheBack($fixture['draft']->id));
 
     $this->withToken($token)->deleteJson('/api/catalogue/revisions/draft')
         ->assertStatus(409)
         ->assertJsonPath('error', 'revision_published_during_write');
+
+    expect($lock->hits)->toBe(1);
 });
 
 test('discarding or publishing with no open draft is a 404', function (string $method, string $url): void {

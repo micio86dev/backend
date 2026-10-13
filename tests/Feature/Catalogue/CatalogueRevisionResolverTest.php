@@ -49,8 +49,9 @@ test('no context resolves to the latest published revision, ignoring a newer dra
 });
 
 test('a pinned entity resolves to its own revision even when a newer one is published', function (): void {
-    $pinned = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
-    FrameworkCatalogRevision::factory()->create(['published_at' => now()->addMinute()]);
+    $pinned = FrameworkCatalogRevision::factory()->create(['published_at' => now()]);
+    $newer = FrameworkCatalogRevision::factory()->create(['published_at' => now()->addMinute()]);
+    expect($this->resolver->latestPublished())->toBe($newer->id);
     $version = new FrameworkVersion;
     $version->revision_id = $pinned->id;
 
