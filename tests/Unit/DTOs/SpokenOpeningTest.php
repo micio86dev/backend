@@ -51,3 +51,19 @@ test('only primary() can carry the continuation flag', function (): void {
     expect((new ReflectionMethod(SpokenOpening::class, 'resumed'))->getNumberOfParameters())->toBe(2)
         ->and((new ReflectionMethod(SpokenOpening::class, 'fallback'))->getNumberOfParameters())->toBe(1);
 });
+
+test('the introSpoken flag defaults to false on every shape', function (): void {
+    expect(SpokenOpening::primary(1)->introSpoken)->toBeFalse()
+        ->and(SpokenOpening::resumed(1, 3)->introSpoken)->toBeFalse()
+        ->and(SpokenOpening::fallback()->introSpoken)->toBeFalse();
+});
+
+test('primary() carries the introSpoken flag it is given and keeps every other field', function (): void {
+    $opening = SpokenOpening::primary(1, introSpoken: true);
+
+    expect($opening->introSpoken)->toBeTrue()
+        ->and($opening->continuation)->toBeFalse()
+        ->and($opening->primaryNumber)->toBe(1)
+        ->and($opening->resumed)->toBeFalse()
+        ->and($opening->primariesAskedBefore)->toBe(0);
+});

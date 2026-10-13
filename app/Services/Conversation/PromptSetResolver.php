@@ -206,10 +206,11 @@ final class PromptSetResolver
             throw PromptTemplateUnresolvableException::localeMissing($set->label, $locale);
         }
 
-        $expected = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases());
+        $expected = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::required());
+        $known = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases());
         $given = array_map('strval', array_keys($bodies));
         $missing = array_values(array_diff($expected, $given));
-        $unknown = array_values(array_diff($given, $expected));
+        $unknown = array_values(array_diff($given, $known));
 
         if ($missing !== [] || $unknown !== []) {
             throw PromptTemplateUnresolvableException::keysIncomplete($set->label, $locale, $missing, $unknown);
@@ -219,7 +220,9 @@ final class PromptSetResolver
         $violations = [];
 
         foreach (PromptFragmentKey::cases() as $key) {
-            array_push($violations, ...$contract->violations($key, $bodies[$key->value]));
+            if (isset($bodies[$key->value])) {
+                array_push($violations, ...$contract->violations($key, $bodies[$key->value]));
+            }
         }
 
         if ($violations !== []) {

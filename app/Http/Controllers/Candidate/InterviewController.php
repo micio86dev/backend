@@ -54,6 +54,7 @@ use App\Support\Interview\TurnClassifier;
 use App\Support\Logging\SafeDbContext;
 use App\Support\Project\ProjectInterviewability;
 use App\Support\PublicApi\InterviewEventRecorder;
+use App\Support\Settings\PlatformSettings;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -362,13 +363,21 @@ class InterviewController extends Controller
             default => 'next',
         };
 
+        // A live session is a resume: SpokenOpening::resumed() never records an intro, so none may be spoken.
+        $introPhrase = $liveSession !== null ? null : $this->introPhraseFor(
+            $openingVariant,
+            $nextCompetency['competency_ordinal'],
+            $primaryQuestions !== [],
+            $project->language,
+        );
+
         $spokenOpening = match (true) {
             $primaryQuestions === [] => SpokenOpening::fallback($isResumeInCorso),
             $liveSession !== null => SpokenOpening::resumed(
                 $this->turnClassifier->matchedCount($liveSession),
                 count($primaryQuestions),
             ),
-            default => SpokenOpening::primary(1, continuation: $nextCompetency['competency_ordinal'] > 1),
+            default => SpokenOpening::primary(1, continuation: $nextCompetency['competency_ordinal'] > 1, introSpoken: $introPhrase !== null),
         };
 
         [$endPhrase, $finalPhrase] = $this->buildSessionResponse->resolveCompletionPhrases($project->language);
@@ -405,6 +414,7 @@ class InterviewController extends Controller
                     $followUpBudget,
                     $endPhrase,
                     $finalPhrase,
+                    $introPhrase !== null,
                 ));
 
                 if ($planned instanceof JsonResponse) {
@@ -475,7 +485,7 @@ class InterviewController extends Controller
             : ($primaryQuestions[$spokenOpening->primaryNumber - 1] ?? null);
 
         $openingText = $this->openingComposer
-            ->compose($openingVariant, $competencyName, $project->language, $spokenPrimary)
+            ->compose($openingVariant, $competencyName, $project->language, $spokenPrimary, $introPhrase)
             ->text;
 
         $ctx = new QuestionContext(
@@ -919,6 +929,29 @@ class InterviewController extends Controller
      * as a second, independent pin. No evaluation row (the first interview)
      * means false.
      */
+    /**
+     * The platform's intro phrase, or null when none is to be spoken: only on the true first start of a
+     * participant (the `first` variant, first competency, an authored primary to follow it). The setting
+     * is optional and never worth an interview: a failed read is logged and the interview starts without it.
+     */
+    private function introPhraseFor(string $openingVariant, int $competencyOrdinal, bool $hasPrimaries, string $language): ?string
+    {
+        if ($openingVariant !== 'first' || $competencyOrdinal !== 1 || ! $hasPrimaries) {
+            return null;
+        }
+
+        try {
+            $intro = app(PlatformSettings::class)->interviewIntroPhrase($language);
+
+            // The composer drops a blank intro; introSpoken must never claim one was said.
+            return $intro === null || trim($intro) === '' ? null : $intro;
+        } catch (\Throwable $e) {
+            Log::warning('interview intro phrase could not be read; starting without it', ['exception' => $e::class]);
+
+            return null;
+        }
+    }
+
     private function isInEvaluationRetryRun(Participant $participant): bool
     {
         return (bool) Evaluation::where('organization_id', $participant->organization_id)

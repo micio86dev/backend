@@ -652,6 +652,12 @@ final class SystemPromptComposer
             $parts[] = $this->render($templates, PromptFragmentKey::OpeningContinuation);
         }
 
+        // The platform's intro was spoken in front of the opening line. Only when flagged, so every
+        // other opening stays byte-identical.
+        if ($opening->introSpoken) {
+            $parts[] = $this->render($templates, PromptFragmentKey::OpeningIntroSpoken);
+        }
+
         return implode(' ', $parts);
     }
 

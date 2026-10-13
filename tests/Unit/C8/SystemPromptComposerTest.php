@@ -776,3 +776,19 @@ test('the clause never reaches any other section', function (): void {
 
     expect(substr_count($text, CONTINUATION_CLAUSE))->toBe(1);
 });
+
+const INTRO_SPOKEN_CLAUSE = 'Before your opening line you already said a short introduction to the candidate; do not repeat or paraphrase it.';
+
+test('an intro-spoken opening closes the OPENING paragraph with the do-not-repeat clause, after the quoted question', function (): void {
+    $paragraph = composeOpeningParagraph(['What is your name?', 'Two?'], SpokenOpening::primary(1, introSpoken: true));
+
+    expect($paragraph)->toEndWith('Do NOT ask it again. The candidate\'s next reply is their answer to it. '.INTRO_SPOKEN_CLAUSE)
+        ->and($paragraph)->toContain('primary question 1, word for word: "What is your name?"');
+});
+
+test('the prompt is byte-identical when no intro was spoken', function (): void {
+    expect(composeOpeningParagraph(['One?', 'Two?'], SpokenOpening::primary(1, introSpoken: false)))
+        ->toBe(composeOpeningParagraph(['One?', 'Two?'], SpokenOpening::primary(1)))
+        ->and(composeOpeningParagraph(['One?', 'Two?'], SpokenOpening::primary(1)))->not->toContain('introduction to the candidate')
+        ->and(composeOpeningParagraph(['One?'], SpokenOpening::resumed(0, 1)))->not->toContain('introduction to the candidate');
+});

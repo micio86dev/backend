@@ -78,7 +78,7 @@ test('a migrated database has exactly one active baseline set, complete and seal
         ->and($set->label)->toBe('baseline-1')
         ->and($set->is_active)->toBeTrue()
         ->and($set->activated_at)->not->toBeNull()
-        ->and(DB::table('conversation_prompt_fragments')->where('prompt_set_id', $set->id)->count())->toBe(count(PromptFragmentKey::cases()) * 2)
+        ->and(DB::table('conversation_prompt_fragments')->where('prompt_set_id', $set->id)->count())->toBe(count(PromptFragmentKey::required()) * 2)
         ->and(DB::table('conversation_prompt_overrides')->count())->toBe(0)
         ->and($set->content_sha256)->toBe(PromptSetSeal::seal(storedFragmentRows($set->id)));
 });
@@ -90,11 +90,18 @@ test('the active set resolves to the baseline text for every key in en and it', 
     expect($resolved->setLabel)->toBe('baseline-1')
         ->and($resolved->override)->toBeNull();
 
-    foreach (PromptFragmentKey::cases() as $key) {
+    foreach (PromptFragmentKey::required() as $key) {
         $template = $resolved->templates->template($key);
 
         expect($template)->toBe(BaselinePromptFragments::forLocale($locale)[$key->value])
             ->and($contract->violations($key, $template))->toBe([]);
+    }
+
+    // The frozen baseline predates the optional keys: they are served from the code baseline.
+    foreach (PromptFragmentKey::cases() as $key) {
+        if ($key->isOptional()) {
+            expect($resolved->templates->template($key))->toBe(BaselinePromptFragments::optional()[$key->value]);
+        }
     }
 })->with(['en', 'it']);
 
@@ -113,7 +120,7 @@ test('the frozen hash algorithm equals PromptSetSeal for the same rows', functio
 test('the frozen hash algorithm equals PromptSetSeal for the stored baseline rows', function (): void {
     $rows = storedFragmentRows((int) DB::table('conversation_prompt_sets')->value('id'));
 
-    expect($rows)->toHaveCount(count(PromptFragmentKey::cases()) * 2)
+    expect($rows)->toHaveCount(count(PromptFragmentKey::required()) * 2)
         ->and(baselineBootstrap()->seal($rows))->toBe(PromptSetSeal::seal($rows))
         ->and(baselineBootstrap()->seal($rows))->toBe(DB::table('conversation_prompt_sets')->value('content_sha256'));
 });
@@ -174,7 +181,7 @@ test('when another set is already active the baseline is inserted inactive and t
         ->and($baseline->is_active)->toBeFalse()
         ->and($baseline->activated_at)->toBeNull()
         ->and(DB::table('conversation_prompt_sets')->where('is_active', true)->pluck('id')->all())->toBe([$otherId])
-        ->and(DB::table('conversation_prompt_fragments')->where('prompt_set_id', $baseline->id)->count())->toBe(count(PromptFragmentKey::cases()) * 2);
+        ->and(DB::table('conversation_prompt_fragments')->where('prompt_set_id', $baseline->id)->count())->toBe(count(PromptFragmentKey::required()) * 2);
 });
 
 test('down() removes nothing', function (): void {

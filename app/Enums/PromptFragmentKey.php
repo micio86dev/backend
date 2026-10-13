@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * The 32 prose fragments `SystemPromptComposer` renders into the conversation
+ * The 33 prose fragments `SystemPromptComposer` renders into the conversation
  * system prompt (db-driven-conversation-prompts, design N-1).
  *
  * A fragment is a leaf of prose. Branch selection, the minimum clamp, line
@@ -15,6 +15,10 @@ namespace App\Enums;
  * Placeholders use the `{{token}}` delimiter. {@see requiredTokens()} lists the
  * bare token names a key's template must contain; that set is also the whole of
  * what the key may contain — the contract allows no other token.
+ *
+ * 32 of them are REQUIRED in every stored prompt set. {@see isOptional()} keys may be absent from a set sealed before
+ * they existed: such a set is served the code baseline body for them, so adding one never makes the active set
+ * unresolvable.
  *
  * The composer reads these keys through a PromptTemplateSet; `label.override` is read only when a
  * per-competency override applies, so a prompt without one never prints it.
@@ -48,6 +52,7 @@ enum PromptFragmentKey: string
     case OpeningSpokenFresh = 'opening.spoken_fresh';
     case OpeningClosing = 'opening.closing';
     case OpeningContinuation = 'opening.continuation';
+    case OpeningIntroSpoken = 'opening.intro_spoken';
 
     // Primary questions
     case PrimaryNone = 'primary.none';
@@ -108,11 +113,30 @@ enum PromptFragmentKey: string
             self::OpeningFallback,
             self::OpeningClosing,
             self::OpeningContinuation,
+            self::OpeningIntroSpoken,
             self::PrimaryNone,
             self::PrimaryIntro,
             self::PrimaryAskedBeforeOne,
             self::PrimaryProgressAllAsked,
             self::AdvanceFloorOne => [],
         };
+    }
+
+    /**
+     * Whether a stored prompt set may omit this key, being served the baseline body instead.
+     */
+    public function isOptional(): bool
+    {
+        return $this === self::OpeningIntroSpoken;
+    }
+
+    /**
+     * The keys every stored prompt set must hold.
+     *
+     * @return list<self>
+     */
+    public static function required(): array
+    {
+        return array_values(array_filter(self::cases(), static fn (self $key): bool => ! $key->isOptional()));
     }
 }

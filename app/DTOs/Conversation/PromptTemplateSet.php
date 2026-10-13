@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\DTOs\Conversation;
 
 use App\Enums\PromptFragmentKey;
+use App\Support\Conversation\BaselinePromptFragments;
 use InvalidArgumentException;
 
 /**
- * The 32 prompt fragment templates of ONE locale, immutable
+ * The prompt fragment templates of ONE locale, immutable
  * (db-driven-conversation-prompts, design N-1/N-7).
  *
- * Built only from a COMPLETE key set: a missing key or a key outside
+ * Built only from a COMPLETE key set (every required key; optional ones fall back to the baseline): a missing key or a key outside
  * {@see PromptFragmentKey} is refused, so a composer holding a set can never
  * meet a fragment that is absent.
  *
@@ -33,11 +34,12 @@ final readonly class PromptTemplateSet
      */
     public function __construct(array $fragments)
     {
-        $expected = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases());
+        $expected = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::required());
+        $known = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases());
         $given = array_map('strval', array_keys($fragments));
 
         $missing = array_diff($expected, $given);
-        $unknown = array_diff($given, $expected);
+        $unknown = array_diff($given, $known);
 
         if ($missing !== [] || $unknown !== []) {
             throw new InvalidArgumentException(sprintf(
@@ -48,7 +50,7 @@ final readonly class PromptTemplateSet
             ));
         }
 
-        $bodies = [];
+        $bodies = BaselinePromptFragments::optional();
 
         foreach ($fragments as $key => $body) {
             if (! is_string($body)) {

@@ -33,6 +33,13 @@ final class PlatformSettings
 {
     public const MAX_QUESTIONS_KEY = 'max_questions_per_competency';
 
+    public const INTERVIEW_INTRO_KEY = 'interview_intro_phrase';
+
+    /**
+     * The locales an intro can be authored in. `en` is the fallback.
+     */
+    private const INTRO_LOCALES = ['en', 'it'];
+
     /**
      * @var array<string, int>
      */
@@ -133,5 +140,71 @@ final class PlatformSettings
         );
 
         return $merged;
+    }
+
+    /**
+     * The intro the avatar speaks before the first question, per locale.
+     *
+     * Only non-blank strings for a supported locale survive the read, so a
+     * hand-edited or malformed row degrades to "no intro" instead of reaching
+     * the avatar as junk. Unset is `[]`: the whole setting is optional.
+     *
+     * @return array<string, string>
+     */
+    public function interviewIntroPhraseMap(): array
+    {
+        $stored = PlatformSetting::query()->find(self::INTERVIEW_INTRO_KEY)?->value;
+
+        if (! is_array($stored)) {
+            return [];
+        }
+
+        $map = [];
+
+        foreach (self::INTRO_LOCALES as $locale) {
+            $text = $stored[$locale] ?? null;
+
+            if (is_string($text) && trim($text) !== '') {
+                $map[$locale] = $text;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * The intro for a project language: that language, else `en`, else none.
+     */
+    public function interviewIntroPhrase(string $locale): ?string
+    {
+        $map = $this->interviewIntroPhraseMap();
+
+        return $map[$locale] ?? $map['en'] ?? null;
+    }
+
+    /**
+     * REPLACE the stored intro map; null or `[]` clears it.
+     *
+     * Unlike the caps, a partial write must not merge: the superadmin sends the
+     * whole text they want spoken, and a stale `it` left behind by an
+     * en-only save would be spoken to Italian candidates unseen.
+     *
+     * @param  array<string, string>|null  $map
+     * @return array<string, string> The map as it now stands.
+     */
+    public function setInterviewIntroPhrase(?array $map): array
+    {
+        if ($map === null || $map === []) {
+            PlatformSetting::query()->whereKey(self::INTERVIEW_INTRO_KEY)->delete();
+
+            return [];
+        }
+
+        PlatformSetting::updateOrCreate(
+            ['key' => self::INTERVIEW_INTRO_KEY],
+            ['value' => $map],
+        );
+
+        return $this->interviewIntroPhraseMap();
     }
 }

@@ -110,7 +110,7 @@ final class PublishPromptSet
                 array_push($violations, ...array_map(static fn (string $v): string => "{$name}: {$v}", $contract->overrideViolations($body)));
             }
 
-            $identity = json_encode([$role, $competency, $locale]);
+            $identity = json_encode([$role, $competency, $locale], JSON_INVALID_UTF8_SUBSTITUTE);
 
             if (isset($seen[$identity])) {
                 $violations[] = "{$name} is given twice for the same role";
@@ -167,7 +167,7 @@ final class PublishPromptSet
             $violations[] = 'at least one locale of fragments is required';
         }
 
-        $expected = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::cases());
+        $expected = array_map(static fn (PromptFragmentKey $key): string => $key->value, PromptFragmentKey::required());
 
         foreach ($keysByLocale as $locale => $keys) {
             foreach (array_diff($expected, array_keys($keys)) as $missing) {

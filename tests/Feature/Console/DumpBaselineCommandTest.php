@@ -49,7 +49,7 @@ test('it writes the file in the publish format, equal to the baseline for en and
         ->and($data['fragments']['en'])->toEqual(BaselinePromptFragments::forLocale('en'))
         ->and($data['fragments']['it'])->toEqual(BaselinePromptFragments::forLocale('it'))
         ->and($data['fragments']['it'])->toBe($data['fragments']['en'])
-        ->and(array_keys($data['fragments']['en']))->toHaveCount(count(PromptFragmentKey::cases()));
+        ->and(array_keys($data['fragments']['en']))->toHaveCount(count(PromptFragmentKey::required()));
 });
 
 test('every fragment key is written in a fixed sorted order', function (): void {
