@@ -27,12 +27,22 @@ final readonly class ComposedOpening
         public string $text,
         public string $version,
     ) {
-        if (trim($text) === '') {
+        if (self::isBlank($text)) {
             throw new \InvalidArgumentException('ComposedOpening: text must be non-empty.');
         }
 
-        if (trim($version) === '') {
+        if (self::isBlank($version)) {
             throw new \InvalidArgumentException('ComposedOpening: version must be non-empty.');
         }
+    }
+
+    /**
+     * Unicode-aware blank check: trim() strips only ASCII whitespace, so NBSP,
+     * ideographic space, zero-width space and narrow NBSP would pass as text.
+     * Invalid UTF-8 makes preg_match return false, which counts as non-blank.
+     */
+    private static function isBlank(string $value): bool
+    {
+        return preg_match('/^[\s\p{Z}\p{Cf}]*$/u', $value) === 1;
     }
 }

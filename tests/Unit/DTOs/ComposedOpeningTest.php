@@ -34,3 +34,26 @@ test('a whitespace-only version is refused so the opening is always traceable', 
 test('a normal text with surrounding whitespace is kept verbatim', function (): void {
     expect((new ComposedOpening(" Hello\n", 'v3'))->text)->toBe(" Hello\n");
 });
+
+test('a text or version made only of Unicode whitespace is refused', function (string $blank): void {
+    expect(fn () => new ComposedOpening($blank, 'v3'))
+        ->toThrow(InvalidArgumentException::class, 'text must be non-empty');
+    expect(fn () => new ComposedOpening('Hello', $blank))
+        ->toThrow(InvalidArgumentException::class, 'version must be non-empty');
+})->with([
+    'nbsp' => ["\u{00A0}"],
+    'ideographic space' => ["\u{3000}"],
+    'zero-width space' => ["\u{200B}"],
+    'narrow nbsp' => ["\u{202F}"],
+    'mixed' => [" \u{00A0}\t\u{3000}\u{200B}\u{202F}\n"],
+]);
+
+test('a text with inner or edge Unicode whitespace is kept verbatim', function (): void {
+    $text = "\u{00A0}Hello\u{00A0}world\u{3000}";
+
+    expect((new ComposedOpening($text, 'v3'))->text)->toBe($text);
+});
+
+test('an invalid UTF-8 text does not crash and is treated as non-blank', function (): void {
+    expect((new ComposedOpening("\xC3\x28", 'v3'))->text)->toBe("\xC3\x28");
+});
