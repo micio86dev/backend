@@ -320,3 +320,25 @@ test('POST /snapshot with session_id from different org → 404; no S3 write; no
     $countAfter = InterviewSnapshot::where('interview_session_id', $sessionB->id)->count();
     expect($countAfter)->toBe($countBefore, 'No InterviewSnapshot must be persisted for cross-tenant attempt');
 });
+
+test('POST /snapshot with a payload that is not enough base64 to hold even a JPEG header → 422; nothing stored', function (): void {
+    Storage::fake();
+
+    $org = snapshotOrg();
+    $project = snapshotProject($org);
+    $participant = snapshotParticipant($org, $project, 'in_corso');
+    $session = snapshotSession($org, $participant, $project, 'in_corso');
+    $token = snapshotBearer($participant);
+
+    $this
+        ->withHeaders(['Authorization' => 'Bearer '.$token])
+        ->postJson('/api/candidate/interview/snapshot', [
+            'session_id' => $session->id,
+            'image_base64' => '@@',
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'Invalid base64 encoding.');
+
+    Storage::disk()->assertDirectoryEmpty('');
+    expect(InterviewSnapshot::where('interview_session_id', $session->id)->count())->toBe(0);
+});
