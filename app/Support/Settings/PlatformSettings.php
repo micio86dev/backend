@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Settings;
 
 use App\Models\PlatformSetting;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Typed reads and writes for the platform's own settings.
@@ -66,6 +67,8 @@ final class PlatformSettings
      * leaves `potential` at its default instead of erasing it — a partial
      * write must not be a silent reset of everything it did not mention.
      *
+     * Stored values are floored at 1: a cap of 0 would make every save fail.
+     *
      * @return array<string, int>
      */
     public function maxQuestionsPerCompetencyMap(): array
@@ -80,16 +83,6 @@ final class PlatformSettings
 
         foreach ($stored as $type => $max) {
             if (is_string($type) && is_numeric($max)) {
-                // CLAMPED on the way out, where every read passes.
-                //
-                // The floor of 1 is the one invariant this class documents as
-                // load-bearing — `updateSettings()` argues at length that a cap
-                // of 0 makes every save fail with a message about a maximum —
-                // and it was enforced only at the HTTP boundary. The setter is
-                // reachable from tests, from the factory, and from a
-                // hand-edited row, all of which could store 0 or -5 and pass
-                // `is_numeric`. Guarding the read means no writer can produce
-                // the state the controller warns about.
                 $normalised[$type] = max(1, (int) $max);
             }
         }
@@ -100,44 +93,38 @@ final class PlatformSettings
     /**
      * Write the caps named in `$caps`, leaving the rest alone.
      *
+     * Values are cast to int (`integer` validation accepts "3" from form-encoded
+     * input) and floored at 1, like the read, so PATCH and GET never disagree.
+     * The read-merge-write runs under a row lock, the row inserted first so
+     * FOR UPDATE always has something to lock: concurrent PATCHes serialise and
+     * the second merges onto the first's result. The write goes through the
+     * model so the `array` cast encodes the JSON column.
+     *
      * @param  array<string, int>  $caps
      * @return array<string, int> The full map as it now stands.
      */
     public function setMaxQuestionsPerCompetency(array $caps): array
     {
-        // Cast on the way IN, at the single choke point both the write and the
-        // returned payload pass through.
-        //
-        // `$request->validate()` validates without casting, and Laravel's
-        // `integer` rule accepts the numeric string "3". On a form-encoded
-        // PATCH that string was written into the JSON column and echoed on the
-        // wire, while `@scramble-return` on both endpoints declares `int` and
-        // the GET path normalises. Two endpoints, one declared shape, two wire
-        // types — and the stored type decided by the caller's content-type.
-        // This repo already calls a spec where integers come back as strings
-        // WRONG rather than merely different, because both Nuxt apps generate
-        // their client from it.
         $normalised = [];
 
         foreach ($caps as $type => $max) {
-            // CLAMPED here too, not only on the read.
-            //
-            // The read path clamped and this one did not, so a PATCH of 0
-            // echoed `{"standard": 0}` on the wire while the very next GET
-            // answered 1. One setting, two endpoints, two different answers —
-            // and the client believes whichever it asked last.
             $normalised[$type] = max(1, (int) $max);
         }
 
-        $merged = array_merge($this->maxQuestionsPerCompetencyMap(), $normalised);
+        $merged = DB::transaction(function () use ($normalised): array {
+            DB::table('platform_settings')->insertOrIgnore([
+                'key' => self::MAX_QUESTIONS_KEY,
+                'value' => json_encode(self::MAX_QUESTIONS_DEFAULT, JSON_THROW_ON_ERROR),
+            ]);
 
-        // updateOrCreate on the key, so there is exactly one row per setting
-        // however many times it is written. The key IS the primary key, so
-        // this cannot produce a second row to disagree with the first.
-        PlatformSetting::updateOrCreate(
-            ['key' => self::MAX_QUESTIONS_KEY],
-            ['value' => $merged],
-        );
+            $row = PlatformSetting::query()->lockForUpdate()->findOrFail(self::MAX_QUESTIONS_KEY);
+
+            $merged = array_merge($this->maxQuestionsPerCompetencyMap(), $normalised);
+
+            $row->update(['value' => $merged]);
+
+            return $merged;
+        });
 
         return $merged;
     }

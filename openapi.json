@@ -3928,8 +3928,10 @@
                                             "type": "object",
                                             "properties": {
                                                 "by_status": {
-                                                    "type": "array",
-                                                    "items": {}
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "integer"
+                                                    }
                                                 },
                                                 "competencies": {
                                                     "type": "array",

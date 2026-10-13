@@ -119,3 +119,14 @@ test('index and summary provably describe the same population for identical filt
     expect($indexCount)->toBe(2);
     expect($summaryCount)->toBe(2);
 });
+
+test('by_status is a JSON object on the wire even when no evaluation matches', function (): void {
+    $org = Organization::factory()->create();
+    ['token' => $token] = authUserAndTokenForRole($org, 'admin');
+    app(TenantResolver::class)->setOrgId($org->id);
+
+    $response = $this->withToken($token)->getJson('/api/evaluations/summary');
+
+    $response->assertOk();
+    expect((string) $response->getContent())->toContain('"by_status":{}');
+});
