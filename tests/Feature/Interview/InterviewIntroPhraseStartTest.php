@@ -258,3 +258,18 @@ test('a transcript that holds the intro in front of primary 1 still counts as pr
         ->and($resumed['prompt'])->toContain('Every primary question was already asked before the interruption')
         ->and($resumed['prompt'])->not->toContain('introduction to the candidate');
 });
+
+test('a live session with a participant that never started still gets no intro, in the opening or the prompt', function (): void {
+    iipHeygenFake();
+    iipSetIntro(['en' => 'Welcome to BEAI.']);
+    $participant = iipFixture('en');
+
+    iipStart($participant);
+    $participant->forceFill(['started_at' => null])->save();
+    iipStart($participant);
+
+    $resumed = iipBodies()[1];
+
+    expect($resumed['opening_text'])->toBe('CAS fixture question 0')
+        ->and($resumed['prompt'])->not->toContain('introduction to the candidate');
+});

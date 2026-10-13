@@ -363,7 +363,8 @@ class InterviewController extends Controller
             default => 'next',
         };
 
-        $introPhrase = $this->introPhraseFor(
+        // A live session is a resume: SpokenOpening::resumed() never records an intro, so none may be spoken.
+        $introPhrase = $liveSession !== null ? null : $this->introPhraseFor(
             $openingVariant,
             $nextCompetency['competency_ordinal'],
             $primaryQuestions !== [],
