@@ -69,3 +69,27 @@ test('Interview.progress is exported as a typed list of competencies with their 
     expect($progress['items']['properties']['competency_code'])->toBe(['type' => 'string']);
     expect($progress['items']['properties']['answers']['items']['properties']['question_index'])->toBe(['type' => 'integer']);
 });
+
+test('conflict responses share one Problem shape: no union of literal variants, no constant detail', function (string $path): void {
+    $document = app(Generator::class)(Scramble::getGeneratorConfig('v1'));
+
+    $schema = $document['paths'][$path]['post']['responses']['409']['content']['application/json']['schema'] ?? null;
+    expect($schema)->not->toBeNull();
+    expect($schema)->not->toHaveKey('anyOf');
+    expect($schema['properties']['detail'])->not->toHaveKey('const');
+    expect($schema['properties']['code'])->not->toHaveKey('const');
+})->with(['/interviews', '/interviews/{interview}/session-tokens']);
+
+test('list fields carry their item type: organization allowed_domains, project competencies', function (): void {
+    $document = json_decode(json_encode(app(Generator::class)(Scramble::getGeneratorConfig('v1'))), true);
+    $schemas = $document['components']['schemas'];
+
+    expect($schemas['PublicOrganization']['properties']['allowed_domains']['items'])->toBe(['type' => 'string']);
+
+    foreach ([$schemas['PublicProject']['properties']['competencies'], $schemas['PublicInterview']['properties']['project']['properties']['competencies']] as $competencies) {
+        expect($competencies['type'])->toBe('array');
+        expect($competencies['items']['properties']['code'])->toBe(['type' => 'string']);
+        expect($competencies['items']['properties']['name'])->toBe(['type' => 'string']);
+        expect($competencies['items']['properties']['type'])->toBe(['type' => 'string']);
+    }
+});
