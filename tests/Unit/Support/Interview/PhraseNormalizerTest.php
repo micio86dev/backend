@@ -58,3 +58,11 @@ test('a blank completion phrase in a lang file never refuses every intro', funct
     expect(PhraseNormalizer::completionPhrases())->not->toContain('')
         ->and(Validator::make(['v' => 'Welcome.'], ['v' => [new NoCompletionPhrase]])->passes())->toBeTrue();
 });
+
+test('a missing completion phrase key never becomes a forbidden phrase', function (): void {
+    app('translator')->addLines(['interview.end_phrase' => 'interview.end_phrase'], 'it');
+
+    // Laravel returns the key itself for an untranslated line.
+    expect(PhraseNormalizer::completionPhrases())->not->toContain('interview end phrase')
+        ->and(Validator::make(['v' => 'Interview end phrase'], ['v' => [new NoCompletionPhrase]])->passes())->toBeTrue();
+});

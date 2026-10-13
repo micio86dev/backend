@@ -33,7 +33,7 @@ final class PhraseNormalizer
     }
 
     /**
-     * The normalised end and final phrase of every supported locale. An empty one is dropped: it is
+     * The normalised end and final phrase of every supported locale. An empty one, or a missing key echoed back by the translator, is dropped: it is
      * contained in every text, so a blank lang entry would refuse every intro.
      *
      * @return list<string>
@@ -44,7 +44,10 @@ final class PhraseNormalizer
 
         foreach (self::LOCALES as $locale) {
             foreach (['interview.end_phrase', 'interview.final_phrase'] as $key) {
-                $phrases[] = self::normalize((string) Lang::get($key, [], $locale));
+                $line = (string) Lang::get($key, [], $locale);
+
+                // An untranslated line comes back as its own key: not a phrase anyone speaks.
+                $phrases[] = $line === $key ? '' : self::normalize($line);
             }
         }
 
