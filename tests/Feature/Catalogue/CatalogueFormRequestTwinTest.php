@@ -119,3 +119,43 @@ test('Z3: a locale map key outside the known-locale set is refused with HTTP 422
     $response->assertStatus(422);
     $response->assertJsonValidationErrors(['name']);
 });
+
+/**
+ * PINS the ValidatesLocaleMaps behaviour once its "all-blank" branch was removed as
+ * unreachable: a whitespace-only value for a non-required locale entry must come back as a
+ * 422 through the real request path, never a 500 or a DB CHECK violation.
+ */
+test('a whitespace-only non-required locale value is refused with HTTP 422 on every trait user', function (string $blank): void {
+    $token = catalogueTwinSuperadminToken();
+
+    $this->withToken($token)->postJson('/api/catalogue/roles', [
+        'code' => 'WSROLE', 'name' => ['en' => 'Role', 'it' => $blank],
+    ])->assertStatus(422)->assertJsonValidationErrors(['name.it']);
+    $this->withToken($token)->postJson('/api/catalogue/roles', [
+        'code' => 'WSROLE', 'name' => ['en' => 'Role'], 'responsibilities' => ['en' => $blank],
+    ])->assertStatus(422)->assertJsonValidationErrors(['responsibilities.en']);
+
+    $this->withToken($token)->postJson('/api/catalogue/competencies', [
+        'code' => 'WSCOMP', 'type' => 'standard', 'name' => ['en' => 'x', 'it' => $blank], 'definition' => ['en' => 'x'],
+    ])->assertStatus(422)->assertJsonValidationErrors(['name.it']);
+
+    $this->withToken($token)->postJson('/api/catalogue/roles', ['code' => 'WSBARS', 'name' => ['en' => 'Role']])->assertCreated();
+    $this->withToken($token)->postJson('/api/catalogue/competencies', [
+        'code' => 'WSBC', 'type' => 'standard', 'name' => ['en' => 'x'], 'definition' => ['en' => 'x'],
+    ])->assertCreated();
+    $draftId = FrameworkCatalogRevision::where('state', 'draft')->value('id');
+    $roleId = DB::table('framework_roles')->where('revision_id', $draftId)->where('code', 'WSBARS')->value('id');
+    $competencyId = DB::table('framework_competencies')->where('revision_id', $draftId)->where('code', 'WSBC')->value('id');
+
+    $this->withToken($token)->postJson('/api/catalogue/bars-indicators', [
+        'role_id' => $roleId, 'competency_id' => $competencyId, 'position' => 0,
+        'text' => ['en' => 't'], 'anchor_5' => ['en' => 'a', 'it' => $blank], 'anchor_3' => ['en' => 'a'], 'anchor_1' => ['en' => 'a'],
+    ])->assertStatus(422)->assertJsonValidationErrors(['anchor_5.it']);
+
+    $this->withToken($token)->postJson('/api/catalogue/default-questions', [
+        'competency_id' => $competencyId, 'position' => 0, 'text' => ['en' => 'Question', 'it' => $blank],
+    ])->assertStatus(422)->assertJsonValidationErrors(['text.it']);
+
+    expect(DB::table('framework_default_questions')->count())->toBe(0)
+        ->and(DB::table('framework_bars_indicators')->count())->toBe(0);
+})->with(['spaces' => ['   '], 'tab' => ["\t"], 'newline' => ["\n"], 'mixed' => [" \t\n "]]);

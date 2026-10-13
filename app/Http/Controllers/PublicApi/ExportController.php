@@ -34,40 +34,27 @@ use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * `POST /v1/exports`, `GET /v1/exports` and `GET /v1/exports/{id}` — BEAI
- * Public API (public-api step 8), SPEC.md §3.3 "Exports", `openapi.yaml`'s
- * `createExport`/`listExports`/`getExport` operations.
+ * `POST /v1/exports`, `GET /v1/exports` and `GET /v1/exports/{id}`.
  *
- * `Export` IS a `TenantModel`, like `WebhookDelivery` (unlike `Participant`,
- * a plain model — see each model's own docblock) — every query here filters
- * `organization_id` EXPLICITLY anyway (D22: stated, never relied on
- * transitively), mirroring `WebhookDeliveryController`'s identical
- * discipline for the same reason.
+ * `Export` is a tenant-scoped model; every query still filters `organization_id`
+ * explicitly rather than relying on the ambient scope.
  */
 final class ExportController extends Controller
 {
-    /**
-     * Download URL TTL — `openapi.yaml`'s own `Export.download_url`
-     * description: "Signed, valid 1 hour from `ready`."
-     */
+    /** Signed download URL lifetime: valid 1 hour from ready. */
     private const DOWNLOAD_TTL_MINUTES = 60;
 
     /**
-     * Explicit `type:` on every 2xx `#[Response]` below (never left to
-     * Scramble's own static inference) — `download_url`/`download_expires_at`
-     * are always literally `null` at the call site inside `store()` (no
-     * download exists yet for a just-`queued` row) and are threaded through
-     * an array-destructured `downloadUrlFor()` call in `show()`/`index()`;
-     * both shapes defeat Scramble's static analyzer (it narrowed the first
-     * to a bare `"null"` literal type and the second to non-nullable
-     * `"string"`), producing a schema that disagreed with
-     * `ExportSerializer::toArray()`'s own accurate `string|null` PHPDoc and
-     * with the actual runtime response. Same fix, same reasoning
-     * `WebhookDeliveryController`'s own `#[Response]` attributes already
-     * apply for an identical nullable-field drift.
+     * Explicit response shape: Scramble's static inference narrows the always-null
+     * `download_url` in `store()` and the destructured pair in `show()`/`index()` wrongly.
      */
     private const EXPORT_SHAPE = 'array{id: string, status: string, scope: string, format: string, livemode: bool, from: string|null, to: string|null, record_count: int|null, download_url: string|null, download_expires_at: string|null, size_bytes: int|null, checksum_sha256: string|null, failure_reason: string|null, created_at: string, completed_at: string|null}';
 
+    /**
+     * Create an export.
+     *
+     * Starts an asynchronous export of the organization's data for the key's mode, optionally limited to a time window. Responds `202` with the export job; poll `GET /exports/{id}` until it is ready. Only one export can be in progress per organization and mode at a time.
+     */
     #[Response(202, description: 'Export job accepted.', type: self::EXPORT_SHAPE)]
     #[Response(429, description: 'An export is already in progress for this organization and mode (code=export_in_progress).', type: Problem::PROBLEM_SHAPE)]
     public function store(CreateExportRequest $request): JsonResponse
@@ -82,18 +69,7 @@ final class ExportController extends Controller
             'mode' => $mode,
             'scope' => ExportScope::from($request->string('scope')->toString()),
             'format' => ExportFormat::from($request->string('format')->toString()),
-            // ->utc() (pre-commit gate, round 4, finding 2): a numeric-
-            // offset value (e.g. `+02:00`) parses into a CarbonImmutable
-            // whose OWN timezone carries that offset, not UTC.
-            // Eloquent's `datetime` cast formats the Carbon instance in ITS
-            // OWN timezone when writing to the DB (`HasAttributes::
-            // fromDateTime()` never normalizes to UTC), so an unconverted
-            // value would persist its LOCAL wall-clock digits as if they
-            // were already UTC — silently shifting the stored instant by
-            // the offset, and `GenerateExportJob::buildContent()`'s own
-            // `from_at`/`to_at` window filter would then compare against
-            // the wrong instant too. Same fix, same reasoning as
-            // `InterviewController::index()`'s own identical `->utc()` call.
+            // Converted to UTC: a numeric-offset value would otherwise be stored as local wall-clock digits.
             'from_at' => is_string($fromRaw) ? Iso8601DateTime::parse($fromRaw)?->utc() : null,
             'to_at' => is_string($toRaw) ? Iso8601DateTime::parse($toRaw)?->utc() : null,
             'include_transcripts' => $request->boolean('include_transcripts', true),
@@ -103,34 +79,10 @@ final class ExportController extends Controller
         ];
 
         try {
-            // DB::transaction() (mirrors App\Services\Webhooks\
-            // WebhookDeliveryRecorder::record()'s own identical discipline,
-            // same docblock reasoning): a caught
-            // UniqueConstraintViolationException must roll back to a
-            // SAVEPOINT, not abort the whole request-level transaction —
-            // without this, every statement after the catch (including this
-            // very 429 response's own request-id stamping, which reads
-            // through the same connection) would fail with "current
-            // transaction is aborted" under RefreshDatabase-wrapped tests
-            // and under any real caller nested inside an outer transaction.
+            // A savepoint, so the caught unique violation does not abort an outer transaction.
             $export = DB::transaction(fn (): Export => Export::create($attributes));
         } catch (UniqueConstraintViolationException $e) {
-            // Constraint-checked (pre-commit gate, round 5, finding 6): the ONLY
-            // unique index this INSERT can legitimately race on for the
-            // `export_in_progress` story is the partial index below
-            // (database/migrations/2026_09_24_160000_create_exports_table.php).
-            // `exports` also carries `exports_public_id_unique` — collapsing THAT
-            // (an unrelated, astronomically unlikely public_id collision) into the
-            // same 429 would misreport a genuinely different failure as "an export
-            // is already in progress". `$e->index` is populated by
-            // `Illuminate\Database\Connection::runQueryCallback()` for every
-            // Postgres unique-violation, so this is a real check, not a comment
-            // promising one. Anything else rethrows and is picked up by
-            // `PublicApiExceptionRenderer`'s own generic `default => 500
-            // internal_error` arm — the same "let it propagate" outcome
-            // `WebhookDeliveryRecorder::record()`'s sibling catch has no analogous
-            // narrowing for, because IT only ever races on ITS OWN single unique
-            // index.
+            // Only the one-active-export index means "in progress"; any other violation is a different failure.
             if ($e->index !== 'exports_one_active_per_organization') {
                 throw $e;
             }
@@ -146,6 +98,11 @@ final class ExportController extends Controller
         return PublicApiJson::response(ExportSerializer::toArray($export), 202);
     }
 
+    /**
+     * List exports.
+     *
+     * Returns the organization's export jobs for the key's mode in cursor-paginated pages, newest first.
+     */
     #[IgnoreResponse(422)]
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
     #[Response(200, description: 'A page of this organization\'s export jobs, newest first.', type: 'array{data: list<'.self::EXPORT_SHAPE.'>, next_cursor: string|null, has_more: bool}')]
@@ -167,6 +124,11 @@ final class ExportController extends Controller
         return response()->json($page);
     }
 
+    /**
+     * Get an export.
+     *
+     * Returns one export job. When it is ready, the response carries a freshly signed download URL, valid for one hour. A malformed or unknown id answers `404 not_found`.
+     */
     #[Response(200, description: 'The export job, with a fresh signed download URL when ready.', type: self::EXPORT_SHAPE)]
     public function show(Request $request, string $id): JsonResponse
     {
@@ -184,13 +146,8 @@ final class ExportController extends Controller
     }
 
     /**
-     * Signs a fresh download URL at READ time — never stored — for a
-     * `ready` export whose object key is genuinely bound to this
-     * organization's own prefix. Mirrors `RecordingController::show()`'s
-     * identical "structural org-binding guard, independent of the row
-     * already being tenant-scoped" discipline: a key that does not start
-     * with `exports/{org_id}/` is refused, never presigned, even though the
-     * row itself is already `organization_id`-scoped.
+     * Signs a fresh download URL at read time (never stored) for a ready export whose
+     * object key lives under this organization's own `exports/{org_id}/` prefix.
      *
      * @return array{0: string|null, 1: CarbonImmutable|null}
      */
@@ -224,12 +181,7 @@ final class ExportController extends Controller
         return [$url, $expiresAt];
     }
 
-    /**
-     * Unreachable through the real `/v1` stack (`PublicApiTenantContext`
-     * already 401s first) — resolved explicitly rather than trusted, same
-     * defensive discipline as every other `/v1` controller's own
-     * `resolveOrganization()`.
-     */
+    /** Resolved explicitly rather than trusted: the tenant middleware already answers 401 first. */
     private function resolveOrganization(): Organization
     {
         $orgId = app(TenantResolver::class)->getOrgId();
@@ -243,13 +195,7 @@ final class ExportController extends Controller
         return $organization;
     }
 
-    /**
-     * `mode`-scoped (public-api pre-commit gate, round 3, HIGH finding 1): a
-     * `beai_test_` key must never read a `live` export row (or vice versa) —
-     * SPEC.md §3.7's "must never read or write live data" applied here the
-     * same way `UsageAggregator`/`GenerateExportJob::buildContent()` already
-     * scope every other export/usage read by the requesting key's own mode.
-     */
+    /** Mode-scoped: a test key never reads a live export, nor the reverse. */
     private function resolveExport(string $rawId, Organization $organization, ApiKeyMode $mode): ?Export
     {
         $bareId = PublicId::decode($rawId, Export::publicIdPrefix());

@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.72.5"
+        "version": "0.72.6"
     },
     "servers": [
         {
@@ -4612,6 +4612,8 @@
         "/v1/exports": {
             "post": {
                 "operationId": "public-api.exports.store",
+                "description": "Starts an asynchronous export of the organization's data for the key's mode, optionally limited to a time window. Responds `202` with the export job; poll `GET /exports/{id}` until it is ready. Only one export can be in progress per organization and mode at a time.",
+                "summary": "Create an export",
                 "tags": [
                     "Export"
                 ],
@@ -4792,6 +4794,8 @@
             },
             "get": {
                 "operationId": "public-api.exports.index",
+                "description": "Returns the organization's export jobs for the key's mode in cursor-paginated pages, newest first.",
+                "summary": "List exports",
                 "tags": [
                     "Export"
                 ],
@@ -5001,6 +5005,8 @@
         "/v1/exports/{id}": {
             "get": {
                 "operationId": "public-api.exports.show",
+                "description": "Returns one export job. When it is ready, the response carries a freshly signed download URL, valid for one hour. A malformed or unknown id answers `404 not_found`.",
+                "summary": "Get an export",
                 "tags": [
                     "Export"
                 ],
@@ -5926,6 +5932,8 @@
         "/v1/interviews/{interview}": {
             "get": {
                 "operationId": "public-api.interviews.show",
+                "description": "Returns one interview with its status and progress. Use `expand=project` to inline the project. A malformed or unknown interview id answers `404 not_found`.",
+                "summary": "Get an interview",
                 "tags": [
                     "Interview"
                 ],
@@ -7200,6 +7208,8 @@
         "/v1/organization": {
             "get": {
                 "operationId": "public-api.organization.show",
+                "description": "Returns the organization the API key belongs to, together with the mode of the key.",
+                "summary": "Get the organization",
                 "tags": [
                     "Organization"
                 ],
@@ -10976,6 +10986,8 @@
         "/v1/interviews/{interview}/recording": {
             "get": {
                 "operationId": "public-api.interviews.recording",
+                "description": "Returns a signed audio URL for the interview's recording, with its format, duration and size. The URL is valid for 10 minutes. When no recording is available yet the request answers `404 recording_not_ready`; a malformed or unknown interview id answers `404 not_found`.",
+                "summary": "Get the recording",
                 "tags": [
                     "Recording"
                 ],
@@ -12486,6 +12498,8 @@
         "/v1/interviews/{interview}/session-tokens": {
             "post": {
                 "operationId": "public-api.interviews.session-tokens.store",
+                "description": "Mints a session token and the hosted interview URL for a pending interview. Minting a new token revokes any previous token that has not been used yet. Any other interview status answers `409 invalid_state`; a malformed or unknown interview id answers `404 not_found`.",
+                "summary": "Create a session token",
                 "tags": [
                     "SessionToken"
                 ],
@@ -13192,6 +13206,8 @@
         "/v1/usage": {
             "get": {
                 "operationId": "public-api.usage.show",
+                "description": "Returns the organization's usage figures for the key's mode over the reporting window set by `from` and `to`.",
+                "summary": "Get usage",
                 "tags": [
                     "Usage"
                 ],
@@ -15013,6 +15029,7 @@
                                     "integer",
                                     "null"
                                 ],
+                                "description": "The calling system's own integer id for the candidate: an integer from 1 to 9007199254740991.",
                                 "minimum": 1,
                                 "maximum": 9007199254740991
                             },

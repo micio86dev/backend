@@ -13,6 +13,7 @@ use App\Models\FrameworkVersion;
 use App\Models\Organization;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
@@ -41,11 +42,14 @@ test('a real run fixes only organizations lacking a version and leaves the other
         'version' => '7.0.0',
     ]));
 
-    $this->artisan('beai:ensure-framework-versions')
-        ->expectsOutputToContain('created a default framework version for lacking')
-        ->doesntExpectOutputToContain('for has-one')
-        ->expectsOutputToContain('Created 1 default framework version(s)')
-        ->assertExitCode(0);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error()/warn().
+    $exit = Artisan::call('beai:ensure-framework-versions');
+    $output = Artisan::output();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('created a default framework version for lacking')
+        ->toContain('Created 1 default framework version(s)')
+        ->not->toContain('for has-one');
 
     expect(ensureCmdVersionCount($lacking))->toBe(1);
     expect(FrameworkVersion::withoutGlobalScopes()->where('organization_id', $lacking->id)->first()->revision_id)

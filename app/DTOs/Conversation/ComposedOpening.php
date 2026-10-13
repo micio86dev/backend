@@ -21,18 +21,29 @@ final readonly class ComposedOpening
      * @param  string  $text  The composed opening-greeting string (non-empty).
      * @param  string  $version  Template version that produced this greeting (non-empty).
      *
-     * @throws \InvalidArgumentException When text or version is empty.
+     * @throws \InvalidArgumentException When text or version is empty or whitespace-only.
      */
     public function __construct(
         public string $text,
         public string $version,
     ) {
-        if ($text === '') {
+        if (self::isBlank($text)) {
             throw new \InvalidArgumentException('ComposedOpening: text must be non-empty.');
         }
 
-        if ($version === '') {
+        if (self::isBlank($version)) {
             throw new \InvalidArgumentException('ComposedOpening: version must be non-empty.');
         }
+    }
+
+    /**
+     * Unicode-aware blank check: trim() strips only ASCII whitespace, so NBSP,
+     * ideographic space, zero-width space and narrow NBSP would pass as text.
+     * NUL is listed explicitly because the old trim() stripped it and the class would not.
+     * Invalid UTF-8 makes preg_match return false, which counts as non-blank.
+     */
+    private static function isBlank(string $value): bool
+    {
+        return preg_match('/^[\s\p{Z}\p{Cf}\x{0}]*$/u', $value) === 1;
     }
 }

@@ -24,21 +24,19 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Validator as ValidatorInstance;
 
 /**
- * `GET /v1/usage` — BEAI Public API (public-api step 8), SPEC.md §3.3
- * "The dashboard figures" / §3.4 "Usage specifically", `openapi.yaml`'s
- * `getUsage` operation.
+ * `GET /v1/usage`.
  *
- * `Organization` is resolved explicitly from `App\Support\Tenancy\
- * TenantResolver`, mirroring every other `/v1` controller's own docblock
- * (`Participant` is a plain model, not `TenantModel`) — `Evaluation`/
- * `AiRequest`/`InterviewSessionLlmUsage`/`WebhookDelivery` on the other hand
- * ARE `TenantModel`s and are therefore already org-scoped by the ambient
- * `TenantContext` global scope `App\Http\Middleware\PublicApi\
- * PublicApiTenantContext` stamps (`DashboardController`'s own docblock notes
- * the identical reasoning for the admin surface).
+ * The organization is resolved explicitly from `TenantResolver` (`Participant` is a
+ * plain model); the tenant-scoped models read here are already filtered by the
+ * ambient tenant scope that `PublicApiTenantContext` stamps.
  */
 final class UsageController extends Controller
 {
+    /**
+     * Get usage.
+     *
+     * Returns the organization's usage figures for the key's mode over the reporting window set by `from` and `to`.
+     */
     #[Response(200, description: 'Usage summary for the requested window.')]
     #[Response(400, description: 'Malformed query parameter, or from is after to (code=validation_failed).', type: Problem::PROBLEM_SHAPE)]
     #[QueryParameter('from', description: 'Start of the reporting window. Strict ISO 8601 date-time. Defaults to the start of the current month (UTC). from > to answers 400 validation_failed.', type: 'string')]
@@ -79,7 +77,7 @@ final class UsageController extends Controller
 
     /**
      * `from` defaults to the start of the current UTC calendar month
-     * (`openapi.yaml`'s own parameter description) — never "all time":
+     * — never "all time":
      * unlike `App\Support\Admin\DashboardDateRange` (whose absent bound
      * means "no filter"), this endpoint's contract states an explicit
      * default window.
@@ -91,20 +89,7 @@ final class UsageController extends Controller
         if (is_string($raw) && $raw !== '') {
             $parsed = Iso8601DateTime::parse($raw);
 
-            // ->utc() (pre-commit gate, round 4, finding 2): a numeric-
-            // offset value (e.g. `+02:00`) parses into a CarbonImmutable
-            // whose OWN timezone carries that offset, not UTC. Binding it
-            // as-is lets the query builder (`UsageAggregator`'s own
-            // `whereBetween()`) format the WALL-CLOCK digits in that
-            // offset into the SQL parameter, which Postgres then reads back
-            // in the connection's session timezone — silently comparing
-            // against the wrong instant. Same fix, same reasoning as
-            // `InterviewController::index()`'s own identical `->utc()` call
-            // on `created_after`/`created_before`. Converting HERE (not
-            // just at the query-binding site) also makes the echoed
-            // `from`/`to` response fields reflect the UTC-converted
-            // instant, since `show()` reuses this same return value for
-            // both.
+            // Converted to UTC so the SQL bound and the echoed `from` carry the same instant.
             if ($parsed !== null) {
                 return $parsed->utc();
             }
@@ -114,7 +99,7 @@ final class UsageController extends Controller
     }
 
     /**
-     * `to` defaults to now (UTC) — `openapi.yaml`'s own parameter description.
+     * `to` defaults to now (UTC).
      */
     private function resolveTo(Request $request): CarbonImmutable
     {
@@ -123,7 +108,7 @@ final class UsageController extends Controller
         if (is_string($raw) && $raw !== '') {
             $parsed = Iso8601DateTime::parse($raw);
 
-            // ->utc() — see resolveFrom()'s own identical comment.
+            // Converted to UTC, as in resolveFrom().
             if ($parsed !== null) {
                 return $parsed->utc();
             }
@@ -133,21 +118,10 @@ final class UsageController extends Controller
     }
 
     /**
-     * `from > to` answers `400 validation_failed` (task-level rule, not an
-     * explicit `openapi.yaml` constraint — the schema declares both as plain
-     * `date-time` strings with no cross-field relation). Mirrors
-     * `InterviewController::validateFilterFormats()`'s own
-     * `QueryValidationException` discipline (G-28: a malformed/inconsistent
-     * QUERY PARAMETER is `400`, never `422`).
+     * `from > to` answers `400 validation_failed` (a bad query parameter is `400`, never `422`).
      *
-     * Validated on the EFFECTIVE (post-default) pair, never on the raw
-     * request input alone: `resolveFrom()`/`resolveTo()` are the exact
-     * methods `show()` itself uses to compute the window it actually
-     * queries, so this ordering check and the real read always agree. A
-     * one-sided request (only `from`, or only `to`) still has an effective
-     * `to`/`from` — `now()` or "start of the current UTC month",
-     * respectively — and an inverted EFFECTIVE window must still answer
-     * `400`, not silently query backwards and return an all-zero `200`.
+     * Validated on the effective pair after defaults, via the same resolvers `show()`
+     * queries with, so a one-sided request with an inverted effective window is still refused.
      */
     private function validateFilters(Request $request): void
     {

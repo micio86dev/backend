@@ -29,6 +29,7 @@ use App\Models\WebhookDelivery;
 use App\Support\Demo\DemoMarker;
 use App\Support\Tenancy\TenantContextScope;
 use Database\Seeders\FrameworkCatalogSeeder;
+use Illuminate\Support\Facades\Artisan;
 
 beforeEach(function (): void {
     (new FrameworkCatalogSeeder)->run();
@@ -59,17 +60,14 @@ test('deleting all four operational tables and re-seeding tops them up with exit
     });
     expect(ApiClient::where('organization_id', $this->org->id)->where('name', 'like', DemoMarker::PREFIX.'%')->count())->toBe(0);
 
-    // NOTE: `PendingCommand::assertExitCode()`/`doesntExpectOutputToContain()`
-    // are lazy builders — they only set expectations and return $this; the
-    // command actually EXECUTES on `__destruct()`. Storing the PendingCommand
-    // in a variable keeps it alive (and un-executed) until that variable goes
-    // out of scope, so any DB assertion made right after would race an
-    // artisan run that has not happened yet. Chaining directly, with no
-    // intermediate variable, forces the temporary's destructor — and the
-    // real execution — to run before the next line.
-    $this->artisan('beai:demo-seed', ['--org' => 'acme'])
-        ->assertExitCode(0)
-        ->doesntExpectOutputToContain('PARTIAL');
+    // Artisan::call() runs synchronously, so the DB assertions below see the
+    // finished run. It also returns the real captured buffer: PendingCommand's
+    // doesntExpectOutputToContain() cannot see text written through error(), and
+    // the refusal this test guards against ("PARTIAL demo dataset") is an error().
+    $exit = Artisan::call('beai:demo-seed', ['--org' => 'acme']);
+
+    expect($exit)->toBe(0)
+        ->and(Artisan::output())->not->toContain('PARTIAL');
 
     // The four marked roots are byte-for-byte unchanged — nothing was
     // re-created, nothing was duplicated.

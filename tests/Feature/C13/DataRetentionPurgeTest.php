@@ -780,14 +780,17 @@ test('a placeholder that collides with another address of the project is reporte
     // Another participant of the project holds EXACTLY the placeholder ref-a would get.
     purgeEnrol($project, ['candidate_ref' => 'holder', 'email' => PlaceholderEmail::forPurged('ref-a')], daysAgo: 5);
 
-    $this->artisan('beai:purge-expired-data')
-        // The placeholder is derived from the reference, so the same collision
-        // repeats on every pass: the warning must say an operator has to act,
-        // never promise a retry. One expectation: each one consumes one output line.
-        ->expectsOutputToContain("participant {$colliding->id} skipped, needs operator action")
-        ->doesntExpectOutputToContain('retried')
-        ->expectsOutputToContain('Purged [participant_pii]: 1')
-        ->assertSuccessful();
+    // The placeholder is derived from the reference, so the same collision
+    // repeats on every pass: the warning must say an operator has to act,
+    // never promise a retry. The real buffer is read because the warning goes
+    // through warn(), which doesntExpectOutputToContain cannot see.
+    $exit = Artisan::call('beai:purge-expired-data');
+    $output = Artisan::output();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain("participant {$colliding->id} skipped, needs operator action")
+        ->toContain('Purged [participant_pii]: 1')
+        ->not->toContain('retried');
 
     expect(purgeRow($other)->email)->toBe(PlaceholderEmail::forPurged('ref-b'))
         ->and(purgeRow($other)->display_name)->toBe('[purged]')
@@ -801,11 +804,13 @@ test('the warning for a skipped row names the participant id only, never an addr
     $colliding = purgeEnrol($project, ['candidate_ref' => 'ref-a', 'email' => 'a@example.com']);
     purgeEnrol($project, ['candidate_ref' => 'holder', 'email' => PlaceholderEmail::forPurged('ref-a')], daysAgo: 5);
 
-    $this->artisan('beai:purge-expired-data')
-        ->doesntExpectOutputToContain('a@example.com')
-        ->doesntExpectOutputToContain('purged.beai.invalid')
-        ->expectsOutputToContain("participant {$colliding->id} skipped")
-        ->assertSuccessful();
+    // The warning goes through warn(): read the real buffer, not the mock.
+    $exit = Artisan::call('beai:purge-expired-data');
+
+    expect($exit)->toBe(0)
+        ->and(Artisan::output())->toContain("participant {$colliding->id} skipped")
+        ->not->toContain('a@example.com')
+        ->not->toContain('purged.beai.invalid');
 });
 
 test('a disabled retention and an enabled one with no duration for participant_pii touch neither field', function (string $case): void {

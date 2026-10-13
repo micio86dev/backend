@@ -57,22 +57,26 @@ test('smoke-check passes when the session is stopped', function (): void {
 test('smoke-check fails, with a clear message, when the provider rejects the stop', function (): void {
     fakeHeygenSmokeRun(405, ['message' => 'Method Not Allowed '.'SMOKE_SECRET_HEYGEN_KEY_777']);
 
-    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
-        ->expectsOutputToContain('teardown(): FAILED')
-        ->doesntExpectOutputToContain('teardown(): OK')
-        ->doesntExpectOutputToContain('PASSED')
-        ->doesntExpectOutputToContain('SMOKE_SECRET_HEYGEN_KEY_777')
-        ->assertExitCode(1);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error().
+    $exit = Artisan::call('interview:smoke-check', ['--provider' => 'heygen']);
+
+    expect($exit)->toBe(1)
+        ->and(Artisan::output())->toContain('teardown(): FAILED')
+        ->not->toContain('teardown(): OK')
+        ->not->toContain('PASSED')
+        ->not->toContain('SMOKE_SECRET_HEYGEN_KEY_777');
 });
 
 test('smoke-check fails, with a clear message, when the context delete is not confirmed', function (int $status): void {
     fakeHeygenSmokeRun(200, [], $status);
 
-    $this->artisan('interview:smoke-check', ['--provider' => 'heygen'])
-        ->expectsOutputToContain('context delete: FAILED — the [heygen] API did not confirm the delete of context [ctx-smoke]')
-        ->doesntExpectOutputToContain('PASSED')
-        ->doesntExpectOutputToContain('SMOKE_SECRET_HEYGEN_KEY_777')
-        ->assertExitCode(1);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error().
+    $exit = Artisan::call('interview:smoke-check', ['--provider' => 'heygen']);
+
+    expect($exit)->toBe(1)
+        ->and(Artisan::output())->toContain('context delete: FAILED — the [heygen] API did not confirm the delete of context [ctx-smoke]')
+        ->not->toContain('PASSED')
+        ->not->toContain('SMOKE_SECRET_HEYGEN_KEY_777');
 })->with([405, 500]);
 
 test('smoke-check treats an already-gone context (404) as deleted', function (): void {
@@ -173,8 +177,10 @@ test('smoke-check against Tavus fails when the provider does not confirm the end
         '*tavusapi*/v2/conversations' => Http::response(['conversation_id' => 'conv-smoke', 'conversation_url' => 'https://tavus.io/conv-smoke'], 200),
     ]);
 
-    $this->artisan('interview:smoke-check', ['--provider' => 'tavus'])
-        ->expectsOutputToContain('did not confirm the release of session [conv-smoke]')
-        ->doesntExpectOutputToContain('PASSED')
-        ->assertExitCode(1);
+    // Read the real buffer: doesntExpectOutputToContain can miss text written through error().
+    $exit = Artisan::call('interview:smoke-check', ['--provider' => 'tavus']);
+
+    expect($exit)->toBe(1)
+        ->and(Artisan::output())->toContain('did not confirm the release of session [conv-smoke]')
+        ->not->toContain('PASSED');
 });
