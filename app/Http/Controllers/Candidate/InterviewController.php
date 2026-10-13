@@ -941,7 +941,10 @@ class InterviewController extends Controller
         }
 
         try {
-            return app(PlatformSettings::class)->interviewIntroPhrase($language);
+            $intro = app(PlatformSettings::class)->interviewIntroPhrase($language);
+
+            // The composer drops a blank intro; introSpoken must never claim one was said.
+            return $intro === null || trim($intro) === '' ? null : $intro;
         } catch (\Throwable $e) {
             Log::warning('interview intro phrase could not be read; starting without it', ['exception' => $e::class]);
 

@@ -273,3 +273,16 @@ test('a live session with a participant that never started still gets no intro, 
     expect($resumed['opening_text'])->toBe('CAS fixture question 0')
         ->and($resumed['prompt'])->not->toContain('introduction to the candidate');
 });
+
+test('a whitespace-only stored intro is no intro: no text, no clause', function (): void {
+    iipHeygenFake();
+    PlatformSetting::query()->create(['key' => 'interview_intro_phrase', 'value' => ['en' => "  \n\t "]]);
+
+    iipStart(iipFixture('en'));
+
+    [$body] = iipBodies();
+
+    expect(app(PlatformSettings::class)->interviewIntroPhrase('en'))->toBeNull()
+        ->and($body['opening_text'])->toBe('CAS fixture question 0')
+        ->and($body['prompt'])->not->toContain('introduction to the candidate');
+});
