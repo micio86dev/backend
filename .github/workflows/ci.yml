@@ -156,16 +156,23 @@ jobs:
       - name: Run migrations
         run: php artisan migrate --force --env=testing
 
-      # ── Pest test suite (all tiers, required) + coverage gate (85% minimum) ─
+      # ── Pest test suite (all tiers, required) + coverage gate (98% minimum) ─
       # ONE parallel run does both jobs. The suite used to run twice: once with
       # `--parallel` and no coverage (about 8 minutes on the runner), then a
       # second time serially with `--coverage` (about 19 minutes), so 27 of the
       # job's 32 minutes were the same ~8,300 tests executed back to back.
       # `--parallel --coverage` runs it once, fails on any red test exactly as
-      # before, and enforces the same `--min=85` floor on the merged report.
+      # before, and enforces the same `--min=98` floor on the merged report.
       # Measured on 2026-10-07 at the same commit: 8,358 tests, 18 skipped, 0
       # failures, total coverage 95.8% (identical to the serial figure), in 283
       # seconds on an 8-core machine.
+      #
+      # 2026-10-13: the floor moved from 85 to 98 after a coverage push (serial
+      # run: 9,381 tests, 12 skipped, 0 failures, total 98.2%). It sits just under
+      # the measured figure so a real regression fails CI while ordinary drift does
+      # not. If this step ever turns red without a failing test, compare the
+      # `Total:` line of the log with 98 first; lowering the floor is a one-line
+      # revert of this value and the matching one in CLAUDE.md/AGENTS.md.
       #
       # `-d memory_limit=2G` is required, not defensive. PCOV holds the whole
       # line map in memory and the report renderer builds every class summary
@@ -185,8 +192,8 @@ jobs:
       # an allocation. `phpunit.xml` carries its own `<ini name="memory_limit">`
       # that PHPUnit applies on top of the `-d` flag, so BOTH must be raised
       # together (raising only the flag left the 2G ceiling in force).
-      - name: Run tests with coverage (parallel, ≥85%)
-        run: php -d memory_limit=4G artisan test --parallel --coverage --min=85
+      - name: Run tests with coverage (parallel, ≥98%)
+        run: php -d memory_limit=4G artisan test --parallel --coverage --min=98
 
       # ── Generate OpenAPI spec (Scramble) ──────────────────────────────────
       - name: Generate OpenAPI spec
