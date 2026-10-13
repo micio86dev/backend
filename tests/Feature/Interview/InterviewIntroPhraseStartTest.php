@@ -229,3 +229,32 @@ test('a second competency is never introduced, even for a participant who has no
     expect($body['opening_text'])->toBe('CAS fixture question 1')
         ->and($body['prompt'])->not->toContain('introduction to the candidate');
 });
+
+test('a transcript that holds the intro in front of primary 1 still counts as primary 1 asked on resume', function (): void {
+    iipSetIntro(['en' => 'Welcome to BEAI.']);
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), '/contexts') && $request->method() === 'POST') {
+            return Http::response(['data' => ['id' => 'ctx-'.uniqid('', true)]], 200);
+        }
+        if (str_contains($request->url(), '/sessions/token')) {
+            return Http::response(['data' => ['session_id' => 'heygen-'.uniqid('', true), 'session_token' => 'tok-'.uniqid('', true)]], 200);
+        }
+        if (str_contains($request->url(), '/transcript')) {
+            return Http::response(['data' => ['transcript_data' => [
+                ['role' => 'assistant', 'transcript' => 'Welcome to BEAI. CAS fixture question 0', 'time_ms' => 2000],
+            ]]], 200);
+        }
+
+        return Http::response([], 200);
+    });
+    $participant = iipFixture('en');
+
+    iipStart($participant);
+    iipStart($participant);
+
+    $resumed = iipBodies()[1];
+
+    expect($resumed['opening_text'])->toBe('CAS fixture question 0')
+        ->and($resumed['prompt'])->toContain('Every primary question was already asked before the interruption')
+        ->and($resumed['prompt'])->not->toContain('introduction to the candidate');
+});
