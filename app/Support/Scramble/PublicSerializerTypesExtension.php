@@ -94,6 +94,10 @@ final class PublicSerializerTypesExtension implements StaticMethodReturnTypeExte
             // conditional, so it arrives here already resolved and needs the same patch.
             if ($serializer === InterviewSerializer::class && $item->key === 'project') {
                 $this->typeProjectCompetencies($item->value);
+
+                // Only present with `expand=project`; Scramble reads the key off the conditional
+                // assignment as always present, so the SDKs would type it required.
+                $item->isOptional = true;
             }
         }
 

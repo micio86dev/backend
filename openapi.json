@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.72.6"
+        "version": "0.72.7"
     },
     "servers": [
         {
@@ -17081,8 +17081,7 @@
                     "created_at",
                     "updated_at",
                     "external_id",
-                    "source",
-                    "project"
+                    "source"
                 ],
                 "title": "PublicInterview"
             },
