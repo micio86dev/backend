@@ -7,6 +7,7 @@ namespace App\Http\Middleware;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 use Tymon\JWTAuth\JWTGuard;
 
@@ -59,13 +60,31 @@ final class RejectStaleCredentials
         // numeric `iat`, offers no proof it was minted after the password change,
         // so it is treated exactly like a stale one. Every token the JWT guard
         // issues carries `iat` (config/jwt.php required_claims).
+        $reason = null;
         try {
             $iat = $guard->payload()->get('iat');
         } catch (\Throwable) {
             $iat = null;
+            $reason = 'unreadable_payload';
         }
 
-        if (! is_numeric($iat) || (int) $iat < $user->password_changed_at->getTimestamp()) {
+        $reason ??= match (true) {
+            $iat === null => 'missing_iat',
+            ! is_numeric($iat) => 'non_numeric_iat',
+            default => null,
+        };
+
+        if ($reason !== null) {
+            // Never log the token, its payload or any claim value.
+            Log::warning('RejectStaleCredentials: unreadable or iat-less token rejected', [
+                'reason' => $reason,
+                'user_id' => $user->id,
+            ]);
+
+            return response()->json(['error' => 'credentials_changed'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        if ((int) $iat < $user->password_changed_at->getTimestamp()) {
             return response()->json(['error' => 'credentials_changed'], Response::HTTP_UNAUTHORIZED);
         }
 

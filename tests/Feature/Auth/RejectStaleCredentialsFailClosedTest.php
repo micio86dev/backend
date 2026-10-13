@@ -15,6 +15,7 @@ use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 use Tymon\JWTAuth\JWTGuard;
 use Tymon\JWTAuth\Payload;
@@ -104,4 +105,43 @@ test('a token minted in the same second as the change survives (strict compariso
     $user = userWhoChangedPasswordAt(now());
 
     expect(runStaleCredentialsMiddlewareWithTokenIssuedAt($user, $user->password_changed_at->getTimestamp())->getStatusCode())->toBe(200);
+});
+
+test('an unreadable payload logs one warning with the reason and user id only', function (): void {
+    Log::spy();
+    $user = userWhoChangedPasswordAt(now()->subHour());
+    $this->actingAs($user, 'api');
+
+    runStaleCredentialsMiddleware($user);
+
+    Log::shouldHaveReceived('warning')->once()->with(
+        'RejectStaleCredentials: unreadable or iat-less token rejected',
+        ['reason' => 'unreadable_payload', 'user_id' => $user->id],
+    );
+});
+
+test('an iat-less token logs one warning with the reason and no claim value', function (mixed $iat, string $reason): void {
+    Log::spy();
+    $user = userWhoChangedPasswordAt(now()->subHour());
+
+    runStaleCredentialsMiddlewareWithTokenIssuedAt($user, $iat);
+
+    Log::shouldHaveReceived('warning')->once()->with(
+        'RejectStaleCredentials: unreadable or iat-less token rejected',
+        ['reason' => $reason, 'user_id' => $user->id],
+    );
+})->with([
+    'missing' => [null, 'missing_iat'],
+    'non-numeric' => ['yesterday', 'non_numeric_iat'],
+    'array' => [[], 'non_numeric_iat'],
+]);
+
+test('a stale but readable token and the happy path log nothing', function (): void {
+    Log::spy();
+    $user = userWhoChangedPasswordAt(now());
+
+    runStaleCredentialsMiddlewareWithTokenIssuedAt($user, $user->password_changed_at->getTimestamp() - 1);
+    runStaleCredentialsMiddlewareWithTokenIssuedAt($user, now()->getTimestamp() + 5);
+
+    Log::shouldNotHaveReceived('warning');
 });
