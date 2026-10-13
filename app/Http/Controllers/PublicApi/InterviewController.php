@@ -82,29 +82,26 @@ final class InterviewController extends Controller
         private readonly HostedInterviewUrlComposer $hostedInterviewUrlComposer,
     ) {}
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `interview` documented as the `PublicInterview` object it always is
-    // (step 5 review follow-up, Part B item 1) — `response()->json([...])`'s
-    // own inferred type only ever saw `InterviewResource::resolve()`'s
-    // loose `array<string, mixed>` return type, so the exported spec
-    // previously carried an untyped array here instead of a `$ref`.
-    // `#[Response(201, ...)]` (not a bare `@response` PHPDoc tag) — the
-    // PHPDoc form replaces Scramble's ENTIRE inferred response, collapsing
-    // the real `201` this method actually returns down to a default `200`;
-    // the attribute form names the status explicitly and overlays onto
-    // the response Scramble already inferred at it, leaving the other
-    // auto-inferred statuses (`404`, `409`, `422`) untouched. `metadata`'s
-    // accepted shape (Part B item 3) is corrected at its source —
-    // `App\Rules\PublicApi\Metadata::docs()` — rather than here, so
-    // `CreateInterviewRequest`'s own named schema carries the fix
-    // directly instead of an `allOf` overlay fighting the same property's
-    // wrong type inside it.
     /**
      * Create an interview.
      *
      * Enrols a candidate on an active project. The response carries the new interview, a
      * short-lived session token and the URL of the hosted interview.
+     *
+     * @internal
+     * Internal notes, not published (Scramble exports docblock prose as public text):
+     * `interview` is documented as the `PublicInterview` object it always is:
+     * `response()->json([...])` only exposes `InterviewResource::resolve()`'s loose
+     * `array<string, mixed>` type, which would export an untyped array.
+     * `#[Response(201, ...)]` is used rather than a bare `@response` tag: the PHPDoc
+     * form replaces Scramble's entire inferred response and collapses the real `201`
+     * to a default `200`, while the attribute names the status and keeps the other
+     * inferred statuses (`404`, `409`, `422`).
+     * `metadata`'s accepted shape is corrected at its source,
+     * `App\Rules\PublicApi\Metadata::docs()`, so `CreateInterviewRequest`'s own schema
+     * carries it directly.
      */
+    #[Response(409, description: 'The candidate is already enrolled in this project (code=duplicate_enrolment).', type: Problem::PROBLEM_SHAPE)]
     #[Response(201, type: 'array{interview: \App\Http\Resources\PublicApi\InterviewResource, session_token: string, expires_at: string, hosted_url: string}')]
     public function store(CreateInterviewRequest $request): JsonResponse
     {
@@ -156,30 +153,6 @@ final class InterviewController extends Controller
         ], 201);
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `data[]` documented as a list of `PublicInterview` objects, and
-    // `next_cursor` as the nullable string it genuinely is (step 5 review
-    // follow-up, Part B item 2) — `CursorPage::paginate()`'s own
-    // `next_cursor: string|null` PHPDoc did not survive being returned
-    // through `response()->json($rawPage)`, so the exported spec
-    // previously typed it as a non-nullable `string` and `data[]`'s items
-    // as untyped. `#[IgnoreResponse]`/`#[Response(400, ...)]` (Part B item
-    // 6) replace the incorrect auto-inferred `422 {message, errors}` this
-    // method's own `QueryValidationException` throw produced — see
-    // `Problem::PROBLEM_SHAPE`'s own docblock (step 6 review follow-up,
-    // Part A item 6: now shared from `App\Support\PublicApi\Problem`
-    // rather than a copy of the constant declared on this class).
-    //
-    // `created_after`/`created_before` documented explicitly (step 6 review
-    // follow-up, Part A item 8) — without a `#[QueryParameter]` override,
-    // Scramble's own inference picked up the nearest preceding CODE COMMENT
-    // above `$request->query('created_after')` below as this parameter's
-    // description (an internal implementation note about
-    // `validateFilterFormats()`/`Validator::validated()`, meaningless to an
-    // API consumer, and `created_before` got no description at all). These
-    // two attributes describe the accepted FORMAT and the `400` a caller
-    // actually gets on a malformed value, the same contract
-    // `App\Rules\PublicApi\Iso8601DateTime` enforces.
     /**
      * List interviews.
      *
@@ -188,6 +161,19 @@ final class InterviewController extends Controller
      * treated as not provided, and the unfiltered list is returned.
      *
      * @response array{data: list<\App\Http\Resources\PublicApi\InterviewResource>, next_cursor: string|null, has_more: bool}
+     *
+     * @internal
+     * Internal notes, not published (Scramble exports docblock prose as public text):
+     * `data[]` is a list of `PublicInterview` objects and `next_cursor` a nullable
+     * string: `CursorPage::paginate()`'s `next_cursor: string|null` type does not survive
+     * `response()->json($rawPage)`. `#[IgnoreResponse(422)]` and `#[Response(400, ...)]`
+     * replace the incorrect inferred `422 {message, errors}` produced by this method's
+     * `QueryValidationException`; see `Problem::PROBLEM_SHAPE`.
+     * `created_after`/`created_before` carry explicit `#[QueryParameter]` attributes:
+     * without them Scramble takes the nearest preceding code comment as the
+     * description, which would publish an implementation note. The attributes state
+     * the accepted format and the `400` returned on a malformed value, the contract
+     * `App\Rules\PublicApi\Iso8601DateTime` enforces.
      */
     #[IgnoreResponse(422)]
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
@@ -235,7 +221,7 @@ final class InterviewController extends Controller
             // path parameter (mismatched prefix → no match), never a
             // format error on a list operation.
             //
-            // withTrashed() (step 5 review follow-up, item 5): every OTHER
+            // withTrashed(): every OTHER
             // read on this controller already resolves a participant's
             // project `withTrashed()` (see `projectIncludingTrashed()`'s own
             // docblock) — a project an admin later soft-deletes must not
@@ -260,8 +246,8 @@ final class InterviewController extends Controller
             $query->where('candidate_ref', $candidateRef);
         }
 
-        // Normalised to a CarbonImmutable before the comparison (step 5
-        // review follow-up, item 6) — never the raw query string. By the
+        // Normalised to a CarbonImmutable before the comparison — never the
+        // raw query string. By the
         // time this runs, `validateFilterFormats()` above has already
         // confirmed the value matches `Iso8601DateTime`'s own strict
         // format set, so `parse()` is not expected to fail here; it is
@@ -272,7 +258,7 @@ final class InterviewController extends Controller
         if (is_string($createdAfter) && $createdAfter !== '') {
             $parsedCreatedAfter = Iso8601DateTime::parse($createdAfter);
 
-            // ->utc() (step 6 review follow-up, Part A item 3): a numeric-
+            // ->utc(): a numeric-
             // offset value (e.g. `+02:00`) parses into a CarbonImmutable
             // whose OWN timezone carries that offset, not UTC. Binding it
             // as-is lets the query builder format the WALL-CLOCK digits in
@@ -318,21 +304,20 @@ final class InterviewController extends Controller
 
         $expandProject = in_array('project', $expand, true);
 
-        // gga finding 4: ALWAYS eager-load project — never let
+        // ALWAYS eager-load project — never let
         // InterviewSerializer's `project_id`/`PublicId::encode($project)`
         // lazy-load one query per row. `?expand=project` needs the FULL
         // Project (plus the SAME nested relations ProjectController::index()
         // eager-loads for ProjectSerializer); the unexpanded case only ever
         // reads `id`/`public_id`, so it stays column-restricted. One shared
-        // method with `resolveParticipant()` (step 5 review follow-up,
-        // item 9) — see `self::projectEagerLoad()`'s own docblock.
+        // method with `resolveParticipant()` — see
+        // `self::projectEagerLoad()`'s own docblock.
         $query->with(self::projectEagerLoad($expandProject));
 
         // Fetch the page's raw Participant models first (identity map),
         // batch-compute progress AND recording readiness for the WHOLE page
         // in two calls (three queries total: two for progress, one for
-        // recording_ready — gga finding 4, gga review step 6 follow-up
-        // finding 5) — THEN serialize each row with its own precomputed
+        // recording_ready) — THEN serialize each row with its own precomputed
         // slice, never one query per row.
         $rawPage = CursorPage::paginate(
             $query,
@@ -371,8 +356,7 @@ final class InterviewController extends Controller
             abort(404);
         }
 
-        // progressForMany() for this ONE participant (step 5 review
-        // follow-up, item 9) — the SAME batched query `index()` runs for a
+        // progressForMany() for this ONE participant — the SAME batched query `index()` runs for a
         // whole page, called here with a single-element list, so there is
         // exactly ONE code path computing progress, not a second
         // `getInterview`-only implementation that could silently drift
@@ -386,30 +370,22 @@ final class InterviewController extends Controller
         return InterviewResource::make($participant, $expandProject, $progress, $recordingReady)->response();
     }
 
-    // `@response` documented explicitly via `#[Response(200, ...)]` below
-    // (step 6 review follow-up, finding 14; step 7 review follow-up,
-    // rewritten as an attribute rather than a bare `@response` PHPDoc tag)
-    // — `PublicApiJson::response(TranscriptSerializer::toArray(...))` did
-    // not survive Scramble's own inference as a typed schema, and the
-    // exported spec previously carried a bare, untyped `object` for this
-    // endpoint's `200`. The type string mirrors `TranscriptSerializer::
-    // toArray()`'s own `@return` array-shape docblock verbatim, the same
-    // "one shape, never a second, independently-typed copy" discipline
-    // `index()`'s own `@response` tag above already applies. Moved out of
-    // the docblock (step 7 review follow-up, Part A item 2): the PHPDoc
-    // form's prose was exported verbatim as this operation's public
-    // `description`, leaking internal review narration to API consumers —
-    // an attribute's `description:` argument is the caller-facing text
-    // Scramble actually publishes for a specific response.
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `GET /v1/interviews/{id}/transcript` — SPEC.md §3.3, gate: status
-    // `under_evaluation` or `completed`, else `409 transcript_not_ready`
-    // (`error` included — G-15).
     /**
      * Get the transcript.
      *
      * Readable once the interview is under evaluation or completed. Before that, and for an
      * interview that ended in error, the response is `409 transcript_not_ready`.
+     *
+     * @internal
+     * Internal notes, not published (Scramble exports docblock prose as public text):
+     * `GET /v1/interviews/{id}/transcript` (SPEC.md §3.3). Gate: status
+     * `under_evaluation` or `completed`, else `409 transcript_not_ready` (`error`
+     * included, G-15).
+     * The `200` is typed through `#[Response(200, ...)]`: the serializer output does
+     * not survive inference and would export a bare `object`. The type string mirrors
+     * `TranscriptSerializer::toArray()`'s `@return` shape. An attribute is used because
+     * PHPDoc prose is exported verbatim as the public operation description, while an
+     * attribute's `description:` is the caller-facing text for that response.
      */
     #[Response(200, description: 'The full transcript, turn by turn, in chronological order. Each turn carries its own derived question_index.', type: 'array{interview_id: string, language: string, turns: list<array{index: int, speaker: string, text: string, competency_code: string, question_index: int, ts: string}>}')]
     #[Response(409, description: 'Transcript not ready.', type: Problem::PROBLEM_SHAPE)]
@@ -431,22 +407,19 @@ final class InterviewController extends Controller
         return PublicApiJson::response(TranscriptSerializer::toArray($participant));
     }
 
-    // `@response` documented explicitly via `#[Response(200, ...)]` below,
-    // for the same reason `transcript()`'s own comment states (step 6
-    // review follow-up, finding 14; step 7 review follow-up, moved out of
-    // the docblock for the same reason) — this method wraps
-    // `AnswersSerializer::toArray()`'s own `@return` list shape in the
-    // `{interview_id, answers}` envelope SPEC.md §3.3 describes; the
-    // exported spec previously carried a bare, untyped `object` for this
-    // endpoint's `200`.
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `GET /v1/interviews/{id}/answers` — SPEC.md §3.3, same read gate as
-    // the transcript.
     /**
      * Get the answers.
      *
      * Readable under the same conditions as the transcript: once the interview is under
      * evaluation or completed, otherwise `409 transcript_not_ready`.
+     *
+     * @internal
+     * Internal notes, not published (Scramble exports docblock prose as public text):
+     * `GET /v1/interviews/{id}/answers` (SPEC.md §3.3), same read gate as the
+     * transcript.
+     * The `200` is typed through `#[Response(200, ...)]` for the same reason as
+     * `transcript()`; it wraps `AnswersSerializer::toArray()`'s list shape in the
+     * `{interview_id, answers}` envelope SPEC.md §3.3 describes.
      */
     #[Response(200, description: 'The transcript grouped into one entry per question: question and answer text, and timing derived from turn timestamps.', type: 'array{interview_id: string, answers: list<array{competency_code: string, question_index: int, question_text: string, answer_text: string, started_at_seconds: float|null, answer_duration_seconds: float|null}>}')]
     #[Response(409, description: 'Answers not ready.', type: Problem::PROBLEM_SHAPE)]
@@ -471,21 +444,18 @@ final class InterviewController extends Controller
         ]);
     }
 
-    // `@response` documented explicitly via `#[Response(200, ...)]` below
-    // — found alongside `transcript()`/`answers()` carrying the identical
-    // bare-`object` `200` export defect (step 6 review follow-up, finding
-    // 14 named the first two; this one exhibits the same root cause and is
-    // fixed for the same reason, not left half-done; step 7 review
-    // follow-up moved all three out of the docblock for the same reason).
-    // The type string mirrors `ScoringSerializer::toArray()`'s own
-    // `@return` array-shape docblock verbatim.
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `GET /v1/interviews/{id}/scoring` — SPEC.md §3.3, gate: status
-    // `completed` only, else `409 scoring_not_ready`.
     /**
      * Get the scoring.
      *
      * Readable only once the interview is completed, otherwise `409 scoring_not_ready`.
+     *
+     * @internal
+     * Internal notes, not published (Scramble exports docblock prose as public text):
+     * `GET /v1/interviews/{id}/scoring` (SPEC.md §3.3). Gate: status `completed` only,
+     * else `409 scoring_not_ready`.
+     * The `200` is typed through `#[Response(200, ...)]` for the same reason as
+     * `transcript()`; the type string mirrors `ScoringSerializer::toArray()`'s
+     * `@return` shape.
      */
     #[Response(200, description: 'The BARS competency scoring: per-competency score and reliability, the three anchor-scored behaviors, and the scoring run\'s framework/model/prompt version triplet.', type: 'array{interview_id: string, status: string, competencies: array<string, array{score: float|null, reliability: float, behaviors: list<array{indicator: string, score: int, explanation: string, excerpts: list<string>, unassessable_reason: string|null}>, unscorable_reason: string|null}>, framework_version: string, model_version: string, prompt_version: string, evaluated_at: string}')]
     #[Response(409, description: 'Scoring not ready.', type: Problem::PROBLEM_SHAPE)]
@@ -507,22 +477,6 @@ final class InterviewController extends Controller
         return PublicApiJson::response((new ScoringSerializer)->toArray($participant));
     }
 
-    // Internal notes, not published (Scramble exports docblock prose as public text):
-    // `GET /v1/interviews/{id}/events` — SPEC.md §3.3, `App\Support\
-    // PublicApi\CursorPage` in its ASCENDING form (G-12: the one documented
-    // exception to `created_at desc`). `InterviewEvent.public_id` (`evt_`)
-    // is what every real row already carries — see that model's own
-    // docblock; no participant special-cases its absence.
-    //
-    // `cursor`/`limit` documented explicitly (step 6 review follow-up,
-    // finding 14) — `CursorPage::paginateAscending()` reads both directly
-    // off `$request` from INSIDE `App\Support\PublicApi\CursorPage`, one
-    // call frame away from this method's own body, which is why
-    // Scramble's own static-analysis auto-detection (which scans a
-    // controller method's own body for `$request->query()`/`$request->
-    // integer()` calls) never picked them up — the exported spec
-    // previously documented only the `interview` path parameter for this
-    // operation.
     /**
      * List interview events.
      *
@@ -530,6 +484,16 @@ final class InterviewController extends Controller
      * one list ordered ascending, by the time each event occurred, rather than newest first.
      *
      * @response array{data: list<array{id: string, type: string, occurred_at: string, data: array<string, mixed>|null}>, next_cursor: string|null, has_more: bool}
+     *
+     * @internal
+     * Internal notes, not published (Scramble exports docblock prose as public text):
+     * `GET /v1/interviews/{id}/events` (SPEC.md §3.3), using
+     * `App\Support\PublicApi\CursorPage` in its ascending form (G-12: the one
+     * documented exception to `created_at desc`). Every `InterviewEvent` row carries
+     * a `public_id` (`evt_`).
+     * `cursor`/`limit` carry explicit `#[QueryParameter]` attributes:
+     * `CursorPage::paginateAscending()` reads them from `$request` outside this
+     * method's body, so Scramble's static analysis does not detect them.
      */
     #[IgnoreResponse(422)]
     #[Response(400, description: 'Malformed query parameter.', type: Problem::PROBLEM_SHAPE)]
@@ -614,10 +578,9 @@ final class InterviewController extends Controller
         // Project IS a TenantModel — already scoped to the ambient
         // TenantContext this controller runs under; no explicit
         // organization filter needed (and none was previously used despite
-        // the parameter — gga finding 7).
+        // the parameter).
         //
-        // Deliberately NOT `withTrashed()` (gga round 3 finding 1 — decided,
-        // not an oversight): a soft-deleted project answers `404` here,
+        // Deliberately NOT `withTrashed()` (decided, not an oversight): a soft-deleted project answers `404` here,
         // same as an unknown one. `store()`/`EnrolCandidate` starts a NEW
         // enrolment; unlike a READ of an interview that already exists (see
         // `InterviewSerializer::project()`), there is no calling-system
@@ -648,7 +611,7 @@ final class InterviewController extends Controller
         $mode = app(ApiMode::class)->isTest() ? ApiKeyMode::Test : ApiKeyMode::Live;
 
         // Same "always eager-load project, withTrashed()" discipline as
-        // index() (gga findings 1 and 4) — a single row here, so the cost
+        // index() — a single row here, so the cost
         // is trivial either way, but `InterviewSerializer::project()`'s
         // eager-loaded branch stays the one path every `/v1` read actually
         // exercises.
@@ -661,9 +624,9 @@ final class InterviewController extends Controller
 
     /**
      * The `project` eager-load constraint `index()` and
-     * `resolveParticipant()` each built independently before (step 5
-     * review follow-up, item 9) — always `withTrashed()`-equivalent (gga
-     * round 3 finding 1, see `projectIncludingTrashed()`'s own docblock),
+     * `resolveParticipant()` each built independently before — always
+     * `withTrashed()`-equivalent (see `projectIncludingTrashed()`'s own
+     * docblock),
      * with either the FULL nested relations `?expand=project` needs or the
      * column-restricted `id`/`public_id`-only shape the unexpanded case
      * reads.
@@ -679,11 +642,10 @@ final class InterviewController extends Controller
 
     /**
      * Delegates to `App\Support\PublicApi\IncludeTrashed::forRelation()`
-     * (gga pre-commit follow-up, step 7 finding 2) — extracted there once
-     * `WebhookDeliveryController` needed the identical mechanics for its
+     * — extracted there once `WebhookDeliveryController` needed the identical mechanics for its
      * own `project` eager-load, rather than a second ad hoc copy of this
      * method's own reasoning. See that class's own docblock for the full
-     * "why `Relation`, not `BelongsTo`" rationale (gga round 3 finding 1).
+     * "why `Relation`, not `BelongsTo`" rationale.
      *
      * @param  Relation<*, *, *>  $relation
      * @return Builder<*>
@@ -708,7 +670,7 @@ final class InterviewController extends Controller
             // 400 (a query parameter), not the 422 a body gets.
             'external_id' => ['sometimes', 'integer', 'min:1', 'max:'.ExternalReference::MAX_EXTERNAL_ID],
             'source' => ['sometimes', 'string', 'max:'.ExternalReference::SOURCE_MAX_LENGTH],
-            // Strict ISO 8601 (step 5 review follow-up, item 6) — see
+            // Strict ISO 8601 — see
             // `Iso8601DateTime`'s own docblock for why the plain `'date'`
             // rule this replaces was too permissive (relative phrases, a
             // bare date with no time, a date-time with no timezone all
