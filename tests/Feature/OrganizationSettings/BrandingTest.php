@@ -904,10 +904,22 @@ test('uploading a logo is rate limited, because each call costs an object PUT', 
 function brandingPngClaiming(int $width, int $height): string
 {
     $png = brandingRealPng();
-    $ihdr = substr($png, 12, 4).pack('NN', $width, $height).substr($png, 20, 5);
+    // IHDR layout: type (12-15), width (16-19), height (20-23), then bit depth, colour type,
+    // compression, filter and interlace (24-28); the CRC (29-32) covers bytes 12-28.
+    $ihdr = substr($png, 12, 4).pack('NN', $width, $height).substr($png, 24, 5);
 
     return substr($png, 0, 12).$ihdr.pack('N', crc32($ihdr)).substr($png, 33);
 }
+
+test('the PNG helper rewrites only the size: the rest of the header and a valid CRC are kept', function (): void {
+    $original = brandingRealPng();
+    $claimed = brandingPngClaiming(100, 101);
+
+    expect(strlen($claimed))->toBe(strlen($original));
+    expect(substr($claimed, 24, 5))->toBe(substr($original, 24, 5));
+    expect(substr($claimed, 29, 4))->toBe(pack('N', crc32(substr($claimed, 12, 17))));
+    expect(array_slice(getimagesizefromstring($claimed), 0, 2))->toBe([100, 101]);
+});
 
 test('a logo is accepted at the configured pixel ceiling and refused one pixel above it, per side', function (int $width, int $height, bool $accepted): void {
     Storage::fake();
