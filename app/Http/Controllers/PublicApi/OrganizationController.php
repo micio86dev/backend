@@ -13,23 +13,21 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * `GET /v1/organization` — BEAI Public API (public-api step 4), SPEC.md
- * §3.3 "any scope | `id, name, mode` (of the key), `default_language?`,
- * `allowed_domains`, `created_at`" and `openapi.yaml`'s `getOrganization`
- * operation. No `scope:` middleware — every authenticated key may read its
- * own organization.
+ * `GET /v1/organization`. No scope is required: every authenticated key may read
+ * its own organization.
  */
 final class OrganizationController extends Controller
 {
+    /**
+     * Get the organization.
+     *
+     * Returns the organization the API key belongs to, together with the mode of the key.
+     */
     public function show(): JsonResponse
     {
         $orgId = app(TenantResolver::class)->getOrgId();
 
-        // Unreachable through the real /v1 stack — PublicApiTenantContext
-        // already 401s a null/invalid org id before this controller ever
-        // runs — but resolved explicitly rather than trusted, same
-        // discipline as RateLimitPublicApi/IdempotencyKey's own defensive
-        // client checks.
+        // Resolved explicitly rather than trusted: the tenant middleware already answers 401 first.
         $organization = $orgId === null ? null : Organization::query()->find($orgId);
 
         if ($organization === null) {

@@ -192,3 +192,9 @@ test('the three optional URLs: explicit values are used verbatim', function (): 
 test('the vendored contract file exists at the configured contract_path', function (): void {
     expect(file_exists(config('public_api.contract_path')))->toBeTrue();
 });
+
+test('spec_server_url: defaults to the placeholder host, empty falls back to it, and an explicit value is used verbatim', function (): void {
+    expect(loadPublicApiConfig(['PUBLIC_API_SPEC_SERVER_URL' => null])['spec_server_url'])->toBe('https://api.beai.example/v1')
+        ->and(loadPublicApiConfig(['PUBLIC_API_SPEC_SERVER_URL' => ''])['spec_server_url'])->toBe('https://api.beai.example/v1')
+        ->and(loadPublicApiConfig(['PUBLIC_API_SPEC_SERVER_URL' => 'https://api.example.com/v1'])['spec_server_url'])->toBe('https://api.example.com/v1');
+});
