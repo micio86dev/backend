@@ -145,3 +145,14 @@ test('a stale but readable token and the happy path log nothing', function (): v
 
     Log::shouldNotHaveReceived('warning');
 });
+
+test('a failing log backend never turns the rejection into a server error', function (): void {
+    Log::shouldReceive('warning')->once()->andThrow(new RuntimeException('log backend down'));
+    $user = userWhoChangedPasswordAt(now()->subHour());
+    $this->actingAs($user, 'api');
+
+    $response = runStaleCredentialsMiddleware($user);
+
+    expect($response->getStatusCode())->toBe(401);
+    expect(json_decode((string) $response->getContent(), true))->toBe(['error' => 'credentials_changed']);
+});

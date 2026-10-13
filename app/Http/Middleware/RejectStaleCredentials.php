@@ -75,11 +75,16 @@ final class RejectStaleCredentials
         };
 
         if ($reason !== null) {
-            // Never log the token, its payload or any claim value.
-            Log::warning('RejectStaleCredentials: unreadable or iat-less token rejected', [
-                'reason' => $reason,
-                'user_id' => $user->id,
-            ]);
+            // Never log the token, its payload or any claim value. A failing log backend must
+            // not turn this rejection into a server error: the 401 is the security outcome.
+            try {
+                Log::warning('RejectStaleCredentials: unreadable or iat-less token rejected', [
+                    'reason' => $reason,
+                    'user_id' => $user->id,
+                ]);
+            } catch (\Throwable) {
+                // Deliberately ignored.
+            }
 
             return response()->json(['error' => 'credentials_changed'], Response::HTTP_UNAUTHORIZED);
         }

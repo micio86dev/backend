@@ -39,10 +39,11 @@ final readonly class ComposedOpening
     /**
      * Unicode-aware blank check: trim() strips only ASCII whitespace, so NBSP,
      * ideographic space, zero-width space and narrow NBSP would pass as text.
+     * NUL is listed explicitly because the old trim() stripped it and the class would not.
      * Invalid UTF-8 makes preg_match return false, which counts as non-blank.
      */
     private static function isBlank(string $value): bool
     {
-        return preg_match('/^[\s\p{Z}\p{Cf}]*$/u', $value) === 1;
+        return preg_match('/^[\s\p{Z}\p{Cf}\x{0}]*$/u', $value) === 1;
     }
 }

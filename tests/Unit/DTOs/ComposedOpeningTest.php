@@ -57,3 +57,12 @@ test('a text with inner or edge Unicode whitespace is kept verbatim', function (
 test('an invalid UTF-8 text does not crash and is treated as non-blank', function (): void {
     expect((new ComposedOpening("\xC3\x28", 'v3'))->text)->toBe("\xC3\x28");
 });
+
+test('a text or version made only of NUL characters and whitespace is refused', function (string $blank): void {
+    expect(fn () => new ComposedOpening($blank, 'v1'))->toThrow(InvalidArgumentException::class);
+    expect(fn () => new ComposedOpening('Hello', $blank))->toThrow(InvalidArgumentException::class);
+})->with([
+    'single NUL' => ["\0"],
+    'NULs and spaces' => [" \0 \0\t"],
+    'NUL then NBSP' => ["\0\u{00A0}"],
+]);
