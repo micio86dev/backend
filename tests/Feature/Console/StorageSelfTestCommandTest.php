@@ -28,9 +28,17 @@ function storedKeys(): array
     return Storage::allFiles();
 }
 
+/**
+ * The object key the presigned URL points at (path without the leading slash).
+ */
+function presignedObjectKey(Request $request): string
+{
+    return ltrim((string) parse_url($request->url(), PHP_URL_PATH), '/');
+}
+
 test('a healthy disk passes every step and leaves nothing behind', function (): void {
     fakeDiskWithPresigner();
-    Http::fake(fn (Request $request) => Http::response(Storage::get(ltrim((string) parse_url($request->url(), PHP_URL_PATH), '/'))));
+    Http::fake(fn (Request $request) => Http::response(Storage::get(presignedObjectKey($request))));
 
     $this->artisan('beai:storage-selftest')
         ->expectsOutputToContain('write: OK')
@@ -48,7 +56,7 @@ test('the probe writes under _selftest/ and never under a real snapshot key', fu
     fakeDiskWithPresigner();
     $seen = null;
     Http::fake(function (Request $request) use (&$seen) {
-        $seen = ltrim((string) parse_url($request->url(), PHP_URL_PATH), '/');
+        $seen = presignedObjectKey($request);
 
         return Http::response(Storage::get($seen));
     });

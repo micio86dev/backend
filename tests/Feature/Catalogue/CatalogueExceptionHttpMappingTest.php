@@ -39,15 +39,16 @@ test('pinning a framework version to a draft revision is a 422 with the guard me
 });
 
 test('mutating a published revision is a 422 and leaves the row untouched', function (): void {
-    $baseline = FrameworkCatalogRevision::where('is_baseline', true)->firstOrFail();
+    $published = FrameworkCatalogRevision::factory()->create(['label' => 'settled content']);
+    expect($published->state)->toBe('published');
 
-    Route::post('/_test/rename-published', fn () => $baseline->update(['label' => 'renamed']));
+    Route::post('/_test/rename-published', fn () => $published->update(['label' => 'renamed']));
 
     $this->postJson('/_test/rename-published')
         ->assertStatus(422)
         ->assertJsonStructure(['message']);
 
-    expect($baseline->fresh()->label)->not->toBe('renamed');
+    expect($published->fresh()->label)->toBe('settled content');
 });
 
 test('the default guard messages are used when none is supplied', function (): void {

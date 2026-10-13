@@ -248,7 +248,7 @@ test('complete() throws AnthropicException when content array is empty', functio
 
 /**
  * The queue layer retries only what is transient: provider 5xx and transport
- * failures. Anything else would burn retries on a request that cannot succeed.
+ * failures. Anything else (every 4xx, 429 included) is terminal.
  */
 function anthropicFailure(callable $call): AnthropicException
 {
@@ -272,6 +272,11 @@ test('a 5xx response is retryable and a 4xx response is terminal', function (int
 })->with([
     'overloaded' => [529, true],
     'internal error' => [500, true],
+    'bad gateway' => [502, true],
+    'service unavailable' => [503, true],
+    'last 4xx status' => [499, false],
+    // 429 is a 4xx, so today it is terminal (no retry): pinned as current behaviour.
+    'rate limited' => [429, false],
     'unauthorized' => [401, false],
     'bad request' => [400, false],
 ]);

@@ -30,6 +30,12 @@ function syncRegistryWith(array $rows): string
     return Artisan::output();
 }
 
+beforeEach(function (): void {
+    // The migration may seed the registry; every test here starts from an explicitly empty one.
+    LlmModel::query()->delete();
+    expect(LlmModel::query()->count())->toBe(0);
+});
+
 test('the first sync reports each model as added', function (): void {
     $output = syncRegistryWith([registryRow('m-a', 'A'), registryRow('m-b', 'B')]);
 
@@ -48,5 +54,8 @@ test('a re-sync reports existing rows as updated and rows dropped from the catal
 });
 
 test('syncing an empty catalog against an empty registry reports no changes', function (): void {
+    expect(LlmModel::query()->count())->toBe(0);
+
     expect(syncRegistryWith([]))->toContain('No changes');
+    expect(LlmModel::query()->count())->toBe(0);
 });

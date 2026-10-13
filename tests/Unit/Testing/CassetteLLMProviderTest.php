@@ -97,10 +97,8 @@ test('every call is recorded, including the one that failed, and no HTTP request
 
     $cassette->complete('first', ['competency_code' => 'COL']);
     $cassette->complete('second', ['competency_code' => 'PRS']);
-    try {
-        $cassette->complete('third', ['competency_code' => 'MISSING']);
-    } catch (LogicException) {
-    }
+    expect(fn () => $cassette->complete('third', ['competency_code' => 'MISSING']))
+        ->toThrow(LogicException::class, 'no cassette entry for competency_code [MISSING]');
 
     expect($cassette->callCount())->toBe(3)
         ->and($cassette->httpRequestCount())->toBe(0)

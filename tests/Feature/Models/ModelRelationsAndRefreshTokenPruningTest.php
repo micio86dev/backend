@@ -18,6 +18,11 @@ use App\Support\Tenancy\TenantResolver;
 use Illuminate\Support\Str;
 use Tests\Helpers\Conversation\PromptTables;
 
+/*
+ * Two groups live here: model:prune for refresh tokens, and the relationship
+ * accessors of the catalogue, audit, prompt-override and notification models.
+ */
+
 // ─── RefreshToken ────────────────────────────────────────────────────────────
 
 function refreshTokenRow(User $user, array $overrides = []): RefreshToken
@@ -113,7 +118,10 @@ test('a notification log resolves its organization', function (): void {
     $org = Organization::factory()->create();
     app(TenantResolver::class)->setOrgId($org->id);
 
-    expect(NotificationLog::factory()->create()->organization->is($org))->toBeTrue();
+    $log = NotificationLog::factory()->create(['organization_id' => $org->id]);
+
+    expect($log->organization_id)->toBe($org->id)
+        ->and($log->organization->is($org))->toBeTrue();
 });
 
 test('a role resolves its catalogue revision', function (): void {

@@ -14,11 +14,11 @@ use Illuminate\Http\Request;
 
 function orgWithWebhookDefaults(array $attributes = []): Organization
 {
-    return Organization::factory()->create($attributes + [
+    return Organization::factory()->create(array_merge([
         'default_webhook_url' => 'https://org.example.test/hook',
         'default_webhook_secret' => 'org-secret-value',
         'default_webhook_events' => ['progress'],
-    ]);
+    ], $attributes));
 }
 
 test('every key the request omits is filled from the org defaults, the secret included', function (): void {
