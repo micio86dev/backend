@@ -165,3 +165,31 @@ test('an unexpected failure while activating exits non-zero, names only the clas
         ->and($output)->toContain('Activation failed (RuntimeException)')->not->toContain('secret connection string')
         ->and($set->fresh()->is_active)->toBeFalse();
 });
+
+test('an unexpected failure while publishing exits non-zero, names only the class, leaks no body and persists nothing', function (): void {
+    $armed = true;
+    Event::listen(
+        'eloquent.creating: '.ConversationPromptSet::class,
+        function () use (&$armed): void {
+            if ($armed) {
+                throw new RuntimeException('SECRET-BOUND-BODY');
+            }
+        },
+    );
+
+    try {
+        [$code, $output] = runPublish(validFile());
+    } finally {
+        $armed = false;
+    }
+
+    expect($code)->toBe(1)
+        ->and($output)->toContain('Publishing failed (RuntimeException); nothing was persisted.')->not->toContain('SECRET-BOUND-BODY')
+        ->and([ConversationPromptSet::query()->count(), ConversationPromptFragment::query()->count(), ConversationPromptOverride::query()->count()])->toBe($this->counts);
+});
+
+test('a notes value that is not a string is refused as a malformed file', function (): void {
+    [$code, $output] = runPublish(validFile(['notes' => ['not', 'a', 'string']]));
+
+    expect($code)->toBe(1)->and($output)->toContain('optional string "notes"');
+});

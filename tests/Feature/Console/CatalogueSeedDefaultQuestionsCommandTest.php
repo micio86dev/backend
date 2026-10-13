@@ -300,3 +300,66 @@ test('refuses cleanly when no --actor-email is given and there is no unambiguous
     expect($exitCode)->not->toBe(0);
     expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
 });
+
+test('with no --actor-email and no platform superadmin it says so and opens no draft', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+
+    expect(Artisan::call('catalogue:seed-default-questions'))->toBe(1);
+    expect(Artisan::output())->toContain('catalogue_seed_default_questions_no_actor');
+});
+
+test('with several platform superadmins and no --actor-email it refuses to guess whom to attribute the seed to', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    seedDefaultQuestionsActor();
+    seedDefaultQuestionsActor();
+
+    expect(Artisan::call('catalogue:seed-default-questions'))->toBe(1);
+    expect(Artisan::output())->toContain('catalogue_seed_default_questions_ambiguous_actor');
+    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
+});
+
+test('with exactly one platform superadmin the actor is resolved without --actor-email and recorded', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    $actor = seedDefaultQuestionsActor();
+
+    expect(Artisan::call('catalogue:seed-default-questions'))->toBe(0);
+    expect(DB::table('audit_logs')->where('action', 'catalogue.default_question.created')->where('actor_id', $actor->id)->exists())->toBeTrue();
+});
+
+test('an --actor-email that is not a platform superadmin is refused, even if the user exists', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    $tenantAdmin = User::factory()->create(['is_superadmin' => false]);
+
+    expect(Artisan::call('catalogue:seed-default-questions', ['--actor-email' => $tenantAdmin->email]))->toBe(1);
+    expect(Artisan::output())->toContain('catalogue_seed_default_questions_actor_not_found');
+    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
+});
+
+test('an unreadable --path is reported before anything is written', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    $actor = seedDefaultQuestionsActor();
+
+    $exitCode = Artisan::call('catalogue:seed-default-questions', [
+        '--actor-email' => $actor->email,
+        '--path' => '/nonexistent/default-questions.json',
+    ]);
+
+    expect($exitCode)->toBe(1);
+    expect(Artisan::output())->toContain('catalogue_seed_default_questions_source_unreadable');
+    expect(FrameworkCatalogRevision::where('state', 'draft')->exists())->toBeFalse();
+});
+
+test('--publish together with --dry-run warns that nothing is published', function (): void {
+    (new FrameworkCatalogSeeder)->run();
+    $actor = seedDefaultQuestionsActor();
+
+    $exitCode = Artisan::call('catalogue:seed-default-questions', [
+        '--actor-email' => $actor->email,
+        '--dry-run' => true,
+        '--publish' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+    expect(Artisan::output())->toContain('catalogue_seed_default_questions_publish_skipped_dry_run');
+    expect(FrameworkCatalogRevision::where('state', 'published')->count())->toBe(1);
+});

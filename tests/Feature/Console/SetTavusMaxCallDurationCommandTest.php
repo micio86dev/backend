@@ -95,5 +95,9 @@ test('refuses a platform template, even as a dry run, and changes nothing', func
     ]);
 
     expect($exit)->toBe(1);
+    // The default scopes hide platform rows from this command, so a platform id is answered
+    // exactly like an unknown id. (The dedicated "platform template" refusal in the command is
+    // therefore not reachable through this lookup; the arch test pins who may widen it.)
+    expect(Artisan::output())->toContain('No avatar template with that id.');
     expect(storedMaxCallDuration($template))->toBe(600);
 })->with([true, false]);

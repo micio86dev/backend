@@ -292,3 +292,15 @@ test('pinned-revision defaults still win over the latest-published fallback when
     expect($questions)->toHaveCount(1);
     expect($questions->first()->text['en'])->toBe('Pinned default EN');
 });
+
+test('reports and fails when there is no organization to backfill, naming the slug when one was asked for', function (): void {
+    $this->artisan('beai:backfill-project-questions')
+        ->expectsOutputToContain('No organizations exist. Nothing to backfill.')
+        ->assertExitCode(1);
+
+    Organization::factory()->create(['slug' => 'present']);
+
+    $this->artisan('beai:backfill-project-questions', ['--org' => 'absent'])
+        ->expectsOutputToContain("No organization with slug 'absent'.")
+        ->assertExitCode(1);
+});

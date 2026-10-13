@@ -227,3 +227,37 @@ test('forget-locale bumps the catalog revision when it actually removes somethin
 
     cleanupForgetLocaleFixtureTree($tmpDir);
 });
+
+test('forget-locale touches only rows that actually carry the locale and reports exact counts', function (): void {
+    $draft = FrameworkCatalogRevision::factory()->draft()->create();
+    $role = Role::factory()->create(['revision_id' => $draft->id]);
+    $roleEnOnly = Role::factory()->create(['revision_id' => $draft->id]);
+    $competency = Competency::factory()->create(['revision_id' => $draft->id]);
+    $competencyEnOnly = Competency::factory()->create(['revision_id' => $draft->id]);
+    $indicator = BarsIndicator::factory()->create(['revision_id' => $draft->id, 'role_id' => $role->id, 'competency_id' => $competency->id, 'position' => 0]);
+    $indicatorEnOnly = BarsIndicator::factory()->create(['revision_id' => $draft->id, 'role_id' => $role->id, 'competency_id' => $competency->id, 'position' => 1]);
+
+    $role->setTranslation('name', 'it', 'Ruolo')->save();
+    $competency->setTranslation('name', 'it', 'Competenza')->save();
+    $indicator->setTranslation('text', 'it', 'Indicatore')->save();
+    $untouchedUpdatedAt = $roleEnOnly->fresh()->updated_at;
+
+    $this->artisan('framework:forget-locale', ['locale' => 'it', '--force' => true])
+        ->expectsOutputToContain('roles: 1')
+        ->expectsOutputToContain('competencies: 1')
+        ->expectsOutputToContain('bars_indicators: 1')
+        ->assertExitCode(0);
+
+    expect($role->fresh()->hasTranslation('name', 'it'))->toBeFalse()
+        ->and($competency->fresh()->hasTranslation('name', 'it'))->toBeFalse()
+        ->and($indicator->fresh()->hasTranslation('text', 'it'))->toBeFalse()
+        ->and($roleEnOnly->fresh()->updated_at->equalTo($untouchedUpdatedAt))->toBeTrue()
+        ->and($competencyEnOnly->fresh()->getTranslation('name', 'en'))->toBe($competencyEnOnly->getTranslation('name', 'en'))
+        ->and($indicatorEnOnly->fresh()->getTranslation('text', 'en'))->toBe($indicatorEnOnly->getTranslation('text', 'en'));
+});
+
+test('forget-locale with an empty locale argument is refused', function (): void {
+    $this->artisan('framework:forget-locale', ['locale' => '', '--force' => true])
+        ->expectsOutputToContain('A locale argument is required.')
+        ->assertExitCode(1);
+});
