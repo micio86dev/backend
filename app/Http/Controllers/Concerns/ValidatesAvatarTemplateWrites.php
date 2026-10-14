@@ -83,7 +83,7 @@ trait ValidatesAvatarTemplateWrites
     private function personaRules(): array
     {
         return [
-            'persona' => ['sometimes', 'nullable', 'array', static function (string $attribute, mixed $value, Closure $fail): void {
+            'persona' => ['sometimes', 'array', static function (string $attribute, mixed $value, Closure $fail): void {
                 if (is_array($value) && array_diff(array_keys($value), ['display_name']) !== []) {
                     $fail('The persona carries a key that is not accepted.');
                 }

@@ -33,8 +33,13 @@ final class PersonaDisplayName implements ValidationRule
     /** Longest name that fits the chip and the caption prefix. */
     public const MAX = 60;
 
-    /** Case-insensitive, bounded by any non letter or digit (so `_` too): HeyGen, LiveAvatar, Tavus, Daily (and daily.co), LiveKit. */
-    private const PROVIDERS = '/(?<![\p{L}\p{N}])(?:hey\s*gen|live\s*avatar|tavus|daily|live\s*kit)(?![\p{L}\p{N}])/iu';
+    /**
+     * Case-insensitive, bounded by any non letter or digit (so `_` too): HeyGen, LiveAvatar, Tavus, Daily
+     * (and daily.co), LiveKit. The two parts of a multi-part name may be split by spaces, `-`, `_` or `.`
+     * (`Hey-Gen`, `Live_Kit`). The word boundary is deliberate: a camel-case suffix such as `LiveKitBot`
+     * is accepted, as are look-alikes such as `Dailyn`, `Heygenie`, `Taverna` and `Live Aviator`.
+     */
+    private const PROVIDERS = '/(?<![\p{L}\p{N}])(?:hey[\s\-_.]*gen|live[\s\-_.]*avatar|tavus|daily|live[\s\-_.]*kit)(?![\p{L}\p{N}])/iu';
 
     /**
      * Why `$value` is not an acceptable display name, or null when it is.
@@ -46,7 +51,8 @@ final class PersonaDisplayName implements ValidationRule
             return 'The display name must be text.';
         }
 
-        $name = trim($value);
+        // Unicode spaces (NO-BREAK SPACE, U+3000) survive `trim()` yet render blank.
+        $name = (string) preg_replace('/^[\s\p{Z}]+|[\s\p{Z}]+$/u', '', $value);
         $length = mb_strlen($name);
 
         if ($length < 1 || $length > self::MAX) {
