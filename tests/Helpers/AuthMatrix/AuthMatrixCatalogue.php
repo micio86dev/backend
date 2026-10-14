@@ -300,6 +300,7 @@ final class AuthMatrixCatalogue
 
             // ─── candidate (candidate JWT) ───────────────────────────────────
             'POST api/candidate/interview/end' => self::candidate(true),
+            'GET api/candidate/interview/outline' => self::candidate(true),
             'POST api/candidate/interview/integrity' => self::candidate(true),
             'POST api/candidate/interview/snapshot' => self::candidate(true),
             'POST api/candidate/interview/start' => self::candidate(true),

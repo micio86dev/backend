@@ -135,6 +135,7 @@ final class AuthMatrixMachineDatasets
         }
 
         return match ($key) {
+            'GET api/candidate/interview/outline' => 200,
             'POST api/candidate/interview/start' => $status === 'in_valutazione' ? 422 : 201,
             'POST api/candidate/interview/suspend' => $status === 'in_corso' ? 200 : 409,
             'POST api/candidate/interview/end' => $status === 'in_corso' ? 200 : 409,
