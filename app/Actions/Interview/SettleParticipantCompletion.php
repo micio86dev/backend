@@ -41,13 +41,13 @@ final class SettleParticipantCompletion
      *      participant stranded before this change who comes back.
      *
      * THE DEFECT THIS REPAIRS: the tally counted only `completed|timeout|skipped`
-     * while `resolveNextCompetency()` treats `error` as terminal and skips it. A
+     * while `CompetencyProgress::resolveNext()` treats `error` as terminal and skips it. A
      * participant with one errored competency exhausted every competency while the
      * count stayed at `total - 1`, so the CAS never fired — no scoring, no webhook,
      * no notification, and nothing anywhere reported it.
      *
      * An `error` counts only once it has spent its re-offer. This predicate and the
-     * re-offer branch in `resolveNextCompetency()` are two halves of ONE behaviour
+     * re-offer branch in `CompetencyProgress::resolveNext()` are two halves of ONE behaviour
      * and cannot ship apart: count errors too early and a single transient provider
      * 4xx — our own bug — ends the interview with no second chance; count them too
      * late and a competency the resolver skips is never tallied, which is the
