@@ -7510,6 +7510,104 @@
                 }
             }
         },
+        "/candidate/interview/outline": {
+            "get": {
+                "operationId": "outline.show",
+                "description": "Returns the interview as the candidate sees it while it runs: the assessment type, the role, the\ninterviewer's and the candidate's own display names, and the competencies in order, each with its\nname, its 1-based position, how many scripted questions it holds and whether it is done, current,\nupcoming or queued to be repeated. Names are in the project language. No competency code or\nidentifier is returned. `422 assessment_type_not_supported` means the project's assessment type is\nnot supported, and `422 project_not_found` means the project no longer exists.",
+                "summary": "The candidate's interview path",
+                "tags": [
+                    "Outline"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "assessment_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "standard",
+                                                "potential"
+                                            ]
+                                        },
+                                        "role_name": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "avatar_name": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "candidate_name": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "primary_total_all": {
+                                            "type": "integer"
+                                        },
+                                        "competencies": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "ordinal": {
+                                                        "type": "integer"
+                                                    },
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "done",
+                                                            "current",
+                                                            "upcoming",
+                                                            "retry"
+                                                        ]
+                                                    },
+                                                    "primary_total": {
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "name",
+                                                    "ordinal",
+                                                    "status",
+                                                    "primary_total"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "assessment_type",
+                                        "role_name",
+                                        "avatar_name",
+                                        "candidate_name",
+                                        "primary_total_all",
+                                        "competencies"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
         "/participants": {
             "get": {
                 "operationId": "participant.index",
