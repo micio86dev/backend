@@ -304,7 +304,7 @@ test('T-EXPOSE-001: Scoring — admin (evaluation ∪ meta) minus public equals 
 // complete public shape and the serializer must emit exactly that.
 test('T-EXPOSE-001: Export — the serializer emits exactly the frozen public-by-design fields', function (): void {
     ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:read']);
-    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->create());
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->ready()->create());
 
     $keys = sortedExposureKeys(ExposureCatalogue::flattenKeys(
         ExportSerializer::toArray($export, 'https://example.test/x', CarbonImmutable::now()),
