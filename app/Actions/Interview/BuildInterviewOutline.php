@@ -27,9 +27,6 @@ use App\Support\Interview\CompetencyProgress;
  */
 final class BuildInterviewOutline
 {
-    /** Longest persona display name that fits the chip and the caption prefix (D7). */
-    private const PERSONA_NAME_MAX = 60;
-
     public function __construct(
         private readonly CompetencyProgress $progress,
         private readonly CatalogueRevisionResolver $revisions,
@@ -80,7 +77,7 @@ final class BuildInterviewOutline
         return [
             'assessment_type' => $type->value,
             'role_name' => $type === AssessmentType::Standard ? $this->roleName($project, $locale) : null,
-            'avatar_name' => $this->avatarName($project),
+            'avatar_name' => $project->avatarTemplate?->personaDisplayName(),
             'candidate_name' => $this->nonBlank($participant->display_name),
             'competencies' => $entries,
             'primary_total_all' => array_sum(array_column($entries, 'primary_total')),
@@ -133,24 +130,6 @@ final class BuildInterviewOutline
         }
 
         return null;
-    }
-
-    /**
-     * The pinned template's persona name, re-checked on read so a value stored before the write
-     * rules existed (an import) degrades to the generic label instead of reaching the screen.
-     *
-     * Interim rule, replaced by `AvatarTemplate::personaDisplayName()` with the write-side rule
-     * (T-A3.2/T-A3.5): length and angle brackets only here, no provider denylist yet.
-     */
-    private function avatarName(Project $project): ?string
-    {
-        $name = $this->nonBlank($project->avatarTemplate?->persona['display_name'] ?? null);
-
-        if ($name === null || mb_strlen($name) > self::PERSONA_NAME_MAX || preg_match('/[<>]|\p{C}/u', $name) === 1) {
-            return null;
-        }
-
-        return $name;
     }
 
     private function nonBlank(mixed $value): ?string

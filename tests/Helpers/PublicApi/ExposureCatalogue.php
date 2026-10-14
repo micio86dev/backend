@@ -81,6 +81,7 @@ final class ExposureCatalogue
                 'avatar_template.pal_sync.status',
                 'avatar_template.pal_sync.code',
                 'avatar_template.pal_sync.synced_at',
+                'avatar_template.persona.display_name',
                 'can.update',
                 'can.delete',
                 'competencies[].id',

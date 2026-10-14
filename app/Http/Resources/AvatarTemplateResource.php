@@ -60,9 +60,12 @@ class AvatarTemplateResource extends JsonResource
      * warning|null, `code` the stable machine code behind a warning, `synced_at`
      * the last SUCCESS). Admin-only: classified in `ExposureCatalogue`.
      *
-     * @return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
+     * `persona.display_name` is the interviewer's name the candidate reads on the live screen (null when
+     * unset or when a stored value fails the write rules). Admin-only: classified in `ExposureCatalogue`.
      *
-     * @scramble-return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}}
+     * @return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}, persona: array{display_name: string|null}}
+     *
+     * @scramble-return array{id: int, name: string, description: string|null, provider: string, scope: 'organization'|'platform', config: array<string, mixed>, is_active: bool, created_at: string|null, updated_at: string|null, llm_model_id: int|null, llm_credential_id: int|null, llm_sync_status: string|null, llm_synced_at: string|null, llm: array{estimated_cost_usd_per_interview: array{minutes: int, turns: int, usd: float}|null}, pal_sync: array{status: string|null, code: string|null, synced_at: string|null}, persona: array{display_name: string|null}}
      */
     public function toArray(Request $request): array
     {
@@ -91,6 +94,8 @@ class AvatarTemplateResource extends JsonResource
                 'code' => $template->pal_sync_code,
                 'synced_at' => $template->pal_synced_at?->toIso8601String(),
             ],
+            // Only `display_name`, never the raw JSON: keys an import brought in stay off this surface.
+            'persona' => ['display_name' => $template->personaDisplayName()],
         ];
     }
 
