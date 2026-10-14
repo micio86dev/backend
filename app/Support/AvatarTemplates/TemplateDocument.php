@@ -71,7 +71,7 @@ final class TemplateDocument
     {
         $name = is_string($entry['name'] ?? null) ? $entry['name'] : '';
         $description = is_string($entry['description'] ?? null) ? $entry['description'] : null;
-        $persona = is_array($entry['persona'] ?? null) ? $entry['persona'] : null;
+        $persona = self::normalizePersona(is_array($entry['persona'] ?? null) ? $entry['persona'] : null);
 
         // Single-provider shape: BEAI's own export.
         if (isset($entry['provider'])) {
@@ -108,6 +108,32 @@ final class TemplateDocument
         }
 
         return $records;
+    }
+
+    /**
+     * Normalises the persona the way the form does: a string `display_name` is trimmed, and a blank
+     * or null one is UNSET (never stored as an empty string), leaving null when nothing remains.
+     * Anything else is left for `PersonaDisplayName` to refuse. The rule itself runs in the import
+     * controller, so a file can never install a name the form would reject.
+     *
+     * @param  array<string, mixed>|null  $persona
+     * @return array<string, mixed>|null
+     */
+    private static function normalizePersona(?array $persona): ?array
+    {
+        if ($persona === null || ! array_key_exists('display_name', $persona)) {
+            return $persona;
+        }
+
+        $name = is_string($persona['display_name']) ? trim($persona['display_name']) : $persona['display_name'];
+
+        if ($name === null || $name === '') {
+            unset($persona['display_name']);
+        } else {
+            $persona['display_name'] = $name;
+        }
+
+        return $persona === [] ? null : $persona;
     }
 
     /**
