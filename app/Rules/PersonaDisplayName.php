@@ -33,15 +33,16 @@ final class PersonaDisplayName implements ValidationRule
     /** Longest name that fits the chip and the caption prefix. */
     public const MAX = 60;
 
-    /** Case-insensitive, word-bounded: HeyGen, LiveAvatar, Tavus, Daily (and daily.co), LiveKit. */
-    private const PROVIDERS = '/\b(?:hey\s*gen|live\s*avatar|tavus|daily|live\s*kit)\b/iu';
+    /** Case-insensitive, bounded by any non letter or digit (so `_` too): HeyGen, LiveAvatar, Tavus, Daily (and daily.co), LiveKit. */
+    private const PROVIDERS = '/(?<![\p{L}\p{N}])(?:hey\s*gen|live\s*avatar|tavus|daily|live\s*kit)(?![\p{L}\p{N}])/iu';
 
     /**
      * Why `$value` is not an acceptable display name, or null when it is.
      */
     public static function problem(mixed $value): ?string
     {
-        if (! is_string($value)) {
+        // Malformed UTF-8 makes every `/u` match below return false, which must never read as a pass.
+        if (! is_string($value) || ! mb_check_encoding($value, 'UTF-8')) {
             return 'The display name must be text.';
         }
 
@@ -52,11 +53,13 @@ final class PersonaDisplayName implements ValidationRule
             return 'The display name must be between 1 and '.self::MAX.' characters.';
         }
 
-        if (preg_match('/[<>]|\p{C}/u', $name) === 1) {
+        // The raw value, not the trimmed one: an edge control character would otherwise be stored.
+        // `!== 0` so a regex error refuses instead of passing.
+        if (preg_match('/[<>]|[\p{C}\p{Zl}\p{Zp}]/u', $value) !== 0) {
             return 'The display name must be plain text.';
         }
 
-        if (preg_match(self::PROVIDERS, $name) === 1) {
+        if (preg_match(self::PROVIDERS, $name) !== 0) {
             return 'The display name must not name a technology provider.';
         }
 

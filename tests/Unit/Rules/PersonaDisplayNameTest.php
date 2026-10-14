@@ -46,6 +46,11 @@ test('markup, line breaks and format characters are refused', function (string $
     'tab' => "Giu\tlia",
     'null byte' => "Giu\0lia",
     'zero width space' => "Giu\u{200B}lia",
+    'malformed UTF-8 hiding markup' => "\xFF<b>",
+    'trailing null byte' => "Giulia\0",
+    'trailing line feed' => "Giulia\n",
+    'leading vertical tab' => "\x0BGiulia",
+    'unicode line separator' => "Giu\u{2028}lia",
 ]);
 
 test('a provider or infrastructure name is refused in any case and spacing', function (string $value): void {
@@ -62,6 +67,8 @@ test('a provider or infrastructure name is refused in any case and spacing', fun
     'LiveKit in a phrase' => 'My LiveKit agent',
     'spaced LiveKit' => 'live kit',
     'upper case' => 'TAVUS',
+    'malformed UTF-8 after the name' => "Tavus\xC3",
+    'underscore suffix' => 'Tavus_bot',
 ]);
 
 test('a name that merely resembles a vendor word is accepted', function (string $value): void {
