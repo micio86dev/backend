@@ -133,6 +133,59 @@ test('T-INT-014: the email filter never returns another organization\'s rows', f
     expect($response->json('data.0.email'))->toBe('shared@example.com');
 });
 
+// ─── ?email is an exact, case-insensitive, organization-scoped match ─────────
+
+function rdEmailParticipant(string $email, $org, $project): Participant
+{
+    return TenantContextScope::runFor($org->id, fn () => Participant::factory()->forProject($project)->create([
+        'organization_id' => $org->id,
+        'email' => $email,
+    ]));
+}
+
+test('?email returns only this organization\'s exact match, case-insensitively', function (): void {
+    ['org' => $orgA, 'key' => $keyA] = rdOrgWithScopedKey();
+    ['org' => $orgB] = rdOrgWithScopedKey();
+    $projectA = rdCreateProject($orgA);
+    $projectB = rdCreateProject($orgB);
+
+    $match = rdEmailParticipant('Ada.Lovelace@Example.com', $orgA, $projectA);
+    rdEmailParticipant('other@example.com', $orgA, $projectA);
+    rdEmailParticipant('ada.lovelace@example.com', $orgB, $projectB);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$keyA])
+        ->getJson('/api/v1/interviews?email=ada.LOVELACE@example.com');
+
+    $response->assertOk();
+    expect(array_column($response->json('data'), 'id'))->toBe([PublicId::encode($match)]);
+});
+
+test('?email never matches a partial address or a LIKE wildcard', function (string $query): void {
+    ['org' => $org, 'key' => $key] = rdOrgWithScopedKey();
+    $project = rdCreateProject($org);
+    rdEmailParticipant('ada.lovelace@example.com', $org, $project);
+
+    $response = $this->withHeaders(['Authorization' => 'Bearer '.$key])
+        ->getJson('/api/v1/interviews?email='.urlencode($query));
+
+    $response->assertOk();
+    expect($response->json('data'))->toBe([]);
+})->with([
+    'shorter local part' => 'ada@example.com',
+    'truncated local part' => 'da.lovelace@example.com',
+    'truncated domain' => 'ada.lovelace@example',
+    'underscore wildcard' => 'ada_lovelace@example.com',
+]);
+
+test('?email that is not an email address is refused with 400 validation_failed, never treated as a partial match', function (): void {
+    ['key' => $key] = rdOrgWithScopedKey();
+
+    $this->withHeaders(['Authorization' => 'Bearer '.$key])
+        ->getJson('/api/v1/interviews?email=ada%25')
+        ->assertStatus(400)
+        ->assertJsonPath('code', 'validation_failed');
+});
+
 // ─── T-INT-015: filters + metadata filter + expand=project + pagination ─────
 
 test('T-INT-015: status/project_id filters, metadata filter, expand=project and pagination all compose', function (): void {
