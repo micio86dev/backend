@@ -1748,6 +1748,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 },
                                 "required": [
@@ -1883,6 +1894,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -8953,6 +8975,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 },
                                 "required": [
@@ -9091,6 +9124,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 }
                             }

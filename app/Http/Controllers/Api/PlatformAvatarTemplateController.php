@@ -151,6 +151,8 @@ final class PlatformAvatarTemplateController extends Controller
 
         $validated = $request->validate($this->templateStoreRules());
 
+        $validated = array_merge($validated, $this->personaWrite($request, null));
+
         $this->assertConfigValid($validated['provider'], $validated['config']);
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
         $this->assertNameFreeAmong(AvatarTemplate::platformOnly(), $validated['name'], null);
@@ -194,6 +196,8 @@ final class PlatformAvatarTemplateController extends Controller
 
         $template = AvatarTemplate::platformOnly()->findOrFail($id);
         $validated = $request->validate($this->templateUpdateRules());
+
+        $validated = array_merge($validated, $this->personaWrite($request, $template->persona));
 
         // The provider is immutable: the config's knobs belong to it, so a
         // template that changed provider would validate as empty and quietly

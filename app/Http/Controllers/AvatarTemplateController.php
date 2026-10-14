@@ -227,6 +227,8 @@ final class AvatarTemplateController extends Controller
 
         $validated = $request->validate($this->templateStoreRules());
 
+        $validated = array_merge($validated, $this->personaWrite($request, null));
+
         $this->assertConfigValid($validated['provider'], $validated['config']);
         // A superadmin's external voice is bound here, before the row is written,
         // exactly as on the platform route: the ledger and secrets are platform
@@ -259,6 +261,8 @@ final class AvatarTemplateController extends Controller
         $this->authorize('update', $template);
 
         $validated = $request->validate($this->templateUpdateRules());
+
+        $validated = array_merge($validated, $this->personaWrite($request, $template->persona));
 
         // The provider is immutable. Changing it would leave every knob in the
         // config belonging to the other one — avatarId where faceId is
