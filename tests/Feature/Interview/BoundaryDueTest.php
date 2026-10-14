@@ -84,36 +84,36 @@ test('below the threshold boundary_due is false', function (): void {
     [$session, $token] = boundaryDueSession();
     boundaryDueSeed($session, 4);
 
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false, 'primary_index' => 0]);
 });
 
 test('at and above 1 + budget + grace substantive turns boundary_due is true', function (): void {
     [$session, $token] = boundaryDueSession();
     boundaryDueSeed($session, 5);
 
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true]);
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true, 'primary_index' => 0]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true, 'primary_index' => 0]);
 });
 
 test('turns shorter than nudge_min_chars do not count', function (): void {
     [$session, $token] = boundaryDueSession();
     boundaryDueSeed($session, 5, 'candidate', 'ok');
 
-    boundaryDuePost($this, $session, $token, 'candidate', 'yes')->assertStatus(202)->assertExactJson(['boundary_due' => false]);
+    boundaryDuePost($this, $session, $token, 'candidate', 'yes')->assertStatus(202)->assertExactJson(['boundary_due' => false, 'primary_index' => 0]);
 });
 
 test('every candidate turn counts when nudge_min_chars is null', function (): void {
     [$session, $token] = boundaryDueSession(nudge: null);
     boundaryDueSeed($session, 5, 'candidate', 'ok');
 
-    boundaryDuePost($this, $session, $token, 'candidate', 'yes')->assertStatus(202)->assertExactJson(['boundary_due' => true]);
+    boundaryDuePost($this, $session, $token, 'candidate', 'yes')->assertStatus(202)->assertExactJson(['boundary_due' => true, 'primary_index' => 0]);
 });
 
 test('avatar turns never count', function (): void {
     [$session, $token] = boundaryDueSession();
     boundaryDueSeed($session, 5, 'avatar');
 
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false, 'primary_index' => 0]);
 });
 
 test('the threshold uses the row follow_up_budget snapshot, not the global config', function (): void {
@@ -122,7 +122,7 @@ test('the threshold uses the row follow_up_budget snapshot, not the global confi
     boundaryDueSeed($session, 2);
 
     // 1 + 1 + 1 = 3: the third substantive turn is due although the global budget would need 6.
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true, 'primary_index' => 0]);
 });
 
 test('a row without a snapshot falls back to the configured budget', function (): void {
@@ -131,9 +131,9 @@ test('a row without a snapshot falls back to the configured budget', function ()
     boundaryDueSeed($session, 4);
 
     // Threshold: 1 + 3 (config) + 2 (config) = 6. At 5 turns (4 seeded + 1 posted), should be false.
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => false, 'primary_index' => 0]);
     // At 6 turns, should be true.
-    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true]);
+    boundaryDuePost($this, $session, $token)->assertStatus(202)->assertExactJson(['boundary_due' => true, 'primary_index' => 0]);
 });
 
 test('409 and 422 are unchanged', function (): void {
