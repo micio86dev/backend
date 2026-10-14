@@ -130,6 +130,10 @@ test('a null persona is refused on create and update, while an empty object stay
         ->assertUnprocessable()->assertJsonValidationErrors(['persona']);
 
     expect(pdnStoredPersona($template->id))->toBe(['display_name' => 'Giulia']);
+
+    $this->withToken($token)->patchJson("{$url}/{$template->id}", ['persona' => []])->assertOk();
+
+    expect(pdnStoredPersona($template->id))->toBeNull();
 })->with('pdnSurfaces');
 
 test('the refusal never repeats the vendor name', function (string $surface): void {
