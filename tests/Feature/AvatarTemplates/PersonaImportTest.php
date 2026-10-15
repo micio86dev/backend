@@ -53,6 +53,17 @@ test('an invalid persona name fails the import with a persona.display_name error
     'markup' => ['<b>'],
 ]);
 
+test('a display name that is not text fails the import cleanly and creates nothing', function (mixed $name): void {
+    $token = TemplateActors::token('acting', Organization::factory()->create());
+    $before = AvatarTemplate::withoutGlobalScopes()->count();
+
+    $response = $this->withToken($token)->postJson('/api/avatar-templates/import', pimDocument(['display_name' => $name]))
+        ->assertUnprocessable();
+
+    expect($response->json('errors')['templates.0'][0])->toStartWith('persona.display_name: ')
+        ->and(AvatarTemplate::withoutGlobalScopes()->count())->toBe($before);
+})->with([[123], [['Giulia']], [true]]);
+
 test('the refusal does not repeat the vendor name', function (): void {
     $token = TemplateActors::token('acting', Organization::factory()->create());
 

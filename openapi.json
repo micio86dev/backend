@@ -7542,7 +7542,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "",
+                        "description": "The interview outline.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -7624,8 +7624,48 @@
                             }
                         }
                     },
+                    "422": {
+                        "description": "The project no longer exists (`project_not_found`) or its assessment type is not supported (`assessment_type_not_supported`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "enum": [
+                                                "project_not_found",
+                                                "assessment_type_not_supported"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "description": "The participant is no longer in an active interview (completed or errored).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
                     }
                 }
             }

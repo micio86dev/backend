@@ -47,3 +47,13 @@ test('a competency entry carries a status enumeration and no code or identifier'
         ->and($entry['properties']['status']['enum'])->toBe(['done', 'current', 'upcoming', 'retry'])
         ->and($entry['properties']['name']['type'])->toBe(['string', 'null']);
 });
+
+test('the outline documents its refusals: 401, 403 from the status guard and both 422 codes', function (): void {
+    $spec = json_decode((string) file_get_contents(base_path('openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $responses = $spec['paths']['/candidate/interview/outline']['get']['responses'];
+
+    expect(array_keys($responses))->toEqualCanonicalizing(['200', '401', '403', '422']);
+
+    $codes = $responses['422']['content']['application/json']['schema']['properties']['error']['enum'] ?? [];
+    expect($codes)->toEqualCanonicalizing(['assessment_type_not_supported', 'project_not_found']);
+});

@@ -120,6 +120,22 @@ test('an invalid persona is refused on update and the stored persona is unchange
     'an unknown persona key' => [['display_name' => 'Giulia', 'voice' => 'x'], 'persona'],
 ]);
 
+test('a null persona is refused on create and update, while an empty object stays the clear', function (string $surface): void {
+    [$url, $token, $org] = pdnSurface($surface);
+    $template = pdnSeed($surface, $org, ['display_name' => 'Giulia']);
+
+    $this->withToken($token)->postJson($url, pdnCreatePayload(['persona' => null]))
+        ->assertUnprocessable()->assertJsonValidationErrors(['persona']);
+    $this->withToken($token)->patchJson("{$url}/{$template->id}", ['persona' => null])
+        ->assertUnprocessable()->assertJsonValidationErrors(['persona']);
+
+    expect(pdnStoredPersona($template->id))->toBe(['display_name' => 'Giulia']);
+
+    $this->withToken($token)->patchJson("{$url}/{$template->id}", ['persona' => []])->assertOk();
+
+    expect(pdnStoredPersona($template->id))->toBeNull();
+})->with('pdnSurfaces');
+
 test('the refusal never repeats the vendor name', function (string $surface): void {
     [$url, $token] = pdnSurface($surface);
 

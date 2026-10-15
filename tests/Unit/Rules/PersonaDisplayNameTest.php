@@ -69,11 +69,23 @@ test('a provider or infrastructure name is refused in any case and spacing', fun
     'upper case' => 'TAVUS',
     'malformed UTF-8 after the name' => "Tavus\xC3",
     'underscore suffix' => 'Tavus_bot',
+    'hyphen inside HeyGen' => 'Hey-Gen',
+    'underscore inside LiveKit' => 'Live_Kit',
+    'dot inside LiveAvatar' => 'live.avatar',
+    'mixed separators' => 'Live - Avatar',
+]);
+
+test('a name of only Unicode spaces is refused', function (string $value): void {
+    expect(PersonaDisplayName::problem($value))->not->toBeNull();
+})->with([
+    'no-break space' => "\u{00A0}",
+    'ideographic space' => "\u{3000}\u{3000}",
+    'mixed spaces' => " \u{00A0}\u{2003}",
 ]);
 
 test('a name that merely resembles a vendor word is accepted', function (string $value): void {
     expect(PersonaDisplayName::problem($value))->toBeNull();
-})->with(['Giulia', 'Dailyn', 'Taverna', 'Heygenie', 'Live Aviator', 'Marco Rossi']);
+})->with(['Giulia', 'Dailyn', 'Taverna', 'Heygenie', 'Live Aviator', 'LiveKitBot', 'Marco Rossi']);
 
 test('a value that is not text is refused', function (mixed $value): void {
     expect(PersonaDisplayName::problem($value))->not->toBeNull()
