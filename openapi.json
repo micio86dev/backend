@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.74.0"
+        "version": "0.74.1"
     },
     "servers": [
         {
@@ -18841,15 +18841,15 @@
                             "object",
                             "null"
                         ],
-                        "description": "The spoken introduction per locale. A map REPLACES the stored one and `null` clears it;\n`en` is required, `it` optional, each at most 600 characters.",
+                        "description": "The spoken introduction per locale. A map REPLACES the stored one and `null` clears it;\n`en` is required, `it` optional, each at most 3600 characters.",
                         "properties": {
                             "en": {
                                 "type": "string",
-                                "maxLength": 600
+                                "maxLength": 3600
                             },
                             "it": {
                                 "type": "string",
-                                "maxLength": 600
+                                "maxLength": 3600
                             }
                         },
                         "required": [

@@ -20,8 +20,8 @@ class UpdatePlatformSettingsRequest extends FormRequest
 {
     use ValidatesLocaleMaps;
 
-    /** Roughly 40 seconds of speech: the intro counts against the interview clock. */
-    public const INTRO_MAX_CHARACTERS = 600;
+    /** Roughly 4 minutes of speech: the intro counts against the interview clock. */
+    public const INTRO_MAX_CHARACTERS = 3600;
 
     public function authorize(): bool
     {
@@ -53,7 +53,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'max_questions_per_competency.potential' => ['sometimes', 'integer', 'min:1', 'max:10'],
             /**
              * The spoken introduction per locale. A map REPLACES the stored one and `null` clears it;
-             * `en` is required, `it` optional, each at most 600 characters.
+             * `en` is required, `it` optional, each at most 3600 characters.
              *
              * @var array{en: string, it?: string}|null
              */
