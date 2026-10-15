@@ -46,6 +46,7 @@ use App\Services\Provider\QuestionContext;
 use App\Services\Provider\TavusProvider;
 use App\Support\Catalogue\CatalogueRevisionResolver;
 use App\Support\Interview\AvatarSilenceDetector;
+use App\Support\Interview\CompetencyProgress;
 use App\Support\Interview\ProviderRefLifetime;
 use App\Support\Interview\SessionLiveClock;
 use App\Support\Interview\SharedProviderRefGuard;
@@ -101,6 +102,7 @@ class InterviewController extends Controller
         private readonly SharedProviderRefGuard $siblings,
         private readonly AdvanceOnLiveConversation $advanceOnLiveConversation,
         private readonly ProviderRefLifetime $refLifetime,
+        private readonly CompetencyProgress $competencyProgress,
     ) {}
 
     // =========================================================================
@@ -238,7 +240,7 @@ class InterviewController extends Controller
             return response()->json(['error' => 'project_not_found'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $nextCompetency = $this->resolveNextCompetency($pid, $project->id);
+        $nextCompetency = $this->competencyProgress->resolveNext($pid, $project->id);
 
         if ($nextCompetency === null) {
             $this->settleCompletionIfFinished($pid, $project->id);
@@ -623,7 +625,7 @@ class InterviewController extends Controller
      *     status ∈ {completed, timeout, skipped}, OR status = 'error' with
      *     error_count >= MAX_ERROR_ATTEMPTS. That last disjunct is not optional —
      *     settleCompletionIfFinished()'s docblock below explains at length that a
-     *     tally disagreeing with resolveNextCompetency() is what stranded participants.
+     *     tally disagreeing with CompetencyProgress::resolveNext() is what stranded participants.
      * (8) Last-question CAS: Participant::where(id, status=in_corso)->update(in_valutazione).
      *     Only if $won === 1: dispatch FinalizeInterview::dispatch($pid)->afterCommit().
      * (9) COMMIT. Return 200.
@@ -901,12 +903,7 @@ class InterviewController extends Controller
             ->pluck('competency_code')
             ->all();
 
-        $all = DB::table('project_competencies as pc')
-            ->join('framework_competencies as fc', 'fc.id', '=', 'pc.competency_id')
-            ->where('pc.project_id', $projectId)
-            ->orderBy('pc.position')
-            ->pluck('fc.code')
-            ->values();
+        $all = $this->competencyProgress->ordered($projectId)->pluck('competency_code')->values();
 
         $remaining = [];
 
@@ -970,101 +967,6 @@ class InterviewController extends Controller
             ->where('competency_code', $competencyCode)
             ->where('status', 'in_corso')
             ->first();
-    }
-
-    /**
-     * Resolve the next competency for this participant (lowest position not yet terminal-completed).
-     *
-     * terminal-completed = status ∈ {completed, timeout, skipped}
-     * pending | in_corso → RESUME that session (no new creation needed).
-     *
-     * The ARRAY INDEX of this ordered list, not `position`, is what `competency_ordinal` is
-     * derived from (D6). `question_index` is persisted and equals `position` verbatim;
-     * `competency_ordinal` is derived per request and always dense (1..N), never stored. The
-     * two coincide for a dense, unreordered project, a consequence of well-formed data, not
-     * the reason `competency_ordinal` exists.
-     *
-     * The re-offer branch (D2) is ordered AFTER the pending|in_corso branch: a session already
-     * reset to `pending` is caught above and never reaches it, so the ratified participant-sso
-     * "Resume, not restart" scenario holds verbatim (the operator recovery path leaves sessions
-     * at `pending`, never at `error`). The reset happens at the call site, not here: this
-     * method resolves, it does not mutate.
-     *
-     * @return array{competency_code: string, question_index: int, competency_ordinal: int, total_competencies: int, reoffer?: bool}|null
-     *
-     * @internal
-     * All competencies ordered by position. competency_ordinal is the array index (D6), not position.
-     * Status and attempts spent in ONE query (the design promised one; sdd-verify caught the drift to two).
-     * No session yet → this is the next one to create
-     * pending | in_corso → RESUME this competency
-     * (D2) error with attempts left → RE-OFFER (ordered after pending|in_corso; see docblock).
-     * completed | timeout | skipped | exhausted error → skip to next
-     */
-    private function resolveNextCompetency(int $participantId, int $projectId): ?array
-    {
-        $all = DB::table('project_competencies as pc')
-            ->join('framework_competencies as fc', 'fc.id', '=', 'pc.competency_id')
-            ->where('pc.project_id', $projectId)
-            ->orderBy('pc.position')
-            ->select('fc.code as competency_code', 'pc.position')
-            ->get();
-
-        $existing = InterviewSession::where('participant_id', $participantId)
-            ->where('project_id', $projectId)
-            ->get(['competency_code', 'status', 'error_count'])
-            ->keyBy('competency_code');
-
-        $total = $all->count();
-
-        foreach ($all->values() as $index => $row) {
-            $session = $existing->get($row->competency_code);
-            $status = $session?->status;
-
-            if ($session === null) {
-                return $this->competencyPayload((array) $row, $index, $total);
-            }
-
-            if (in_array($status, ['pending', 'in_corso'], true)) {
-                return $this->competencyPayload((array) $row, $index, $total);
-            }
-
-            if ($status === 'error'
-                && $session->error_count < InterviewSession::MAX_ERROR_ATTEMPTS
-            ) {
-                return $this->competencyPayload((array) $row, $index, $total, reoffer: true);
-            }
-
-        }
-
-        return null; // all competencies terminal-completed
-    }
-
-    /**
-     * Build the array `resolveNextCompetency()` returns for one row (D5).
-     *
-     * Collapses the three near-identical literals that used to live at the three
-     * return sites above into one construction. `question_index` MUST equal
-     * `$row->position` verbatim (D1) — `position` is 0-based at every writer, so
-     * the value needs no arithmetic here; the historic `- 1` produced `-1` for a
-     * project's first competency.
-     *
-     * @param  array<string, mixed>  $row  cast from the `project_competencies` ⋈ `framework_competencies` row
-     * @return array{competency_code: string, question_index: int, competency_ordinal: int, total_competencies: int, reoffer?: bool}
-     */
-    private function competencyPayload(array $row, int $index, int $total, bool $reoffer = false): array
-    {
-        $payload = [
-            'competency_code' => (string) $row['competency_code'],
-            'question_index' => (int) $row['position'],
-            'competency_ordinal' => $index + 1,
-            'total_competencies' => $total,
-        ];
-
-        if ($reoffer) {
-            $payload['reoffer'] = true;
-        }
-
-        return $payload;
     }
 
     /**

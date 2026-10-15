@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Log;
  * `InterviewSession` at status=error for that participant (-> pending,
  * cleared, utterances deleted) inside one `DB::transaction()` + row lock.
  * Sessions at completed/timeout/skipped are NEVER touched — the existing
- * `InterviewController::resolveNextCompetency()` skip logic still treats
+ * `CompetencyProgress::resolveNext()` skip logic still treats
  * them as terminal-completed, so the candidate resumes at the failed
  * competency, never re-asked anything already answered.
  *
