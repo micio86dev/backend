@@ -321,19 +321,19 @@ test('the intro phrase is validated', function (array $intro, string $errorKey):
     'blank en' => [['en' => '   '], 'interview_intro_phrase.en'],
     'blank it' => [['en' => 'Hi.', 'it' => ''], 'interview_intro_phrase.it'],
     'not a string' => [['en' => ['x']], 'interview_intro_phrase.en'],
-    'over 600 characters' => [['en' => str_repeat('a', 601)], 'interview_intro_phrase.en'],
-    'over 600 multibyte characters' => [['en' => str_repeat('è', 601)], 'interview_intro_phrase.en'],
+    'over 3600 characters' => [['en' => str_repeat('a', 3601)], 'interview_intro_phrase.en'],
+    'over 3600 multibyte characters' => [['en' => str_repeat('è', 3601)], 'interview_intro_phrase.en'],
     'english final phrase' => [['en' => 'Hello. Thank you for your time.'], 'interview_intro_phrase.en'],
     'italian end phrase inside the english text' => [['en' => 'Hello. Passiamo alla prossima domanda.'], 'interview_intro_phrase.en'],
     'english end phrase inside the italian text' => [['en' => 'Hello.', 'it' => "Ciao. Let's move on to the next question."], 'interview_intro_phrase.it'],
 ]);
 
-test('exactly 600 characters is accepted', function (): void {
+test('exactly 3600 characters is accepted', function (): void {
     $org = Organization::factory()->create();
     $token = authTokenForRole($org, 'platform');
 
     $this->withToken($token)
-        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => str_repeat('è', 600)]])
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => ['en' => str_repeat('è', 3600)]])
         ->assertOk();
 });
 
