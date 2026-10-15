@@ -205,7 +205,7 @@ test('an unreadable setting never blocks the interview: it starts without the in
 
     expect($body['opening_text'])->toBe('CAS fixture question 0')
         ->and($body['prompt'])->not->toContain('introduction to the candidate');
-    Log::shouldHaveReceived('warning')->once();
+    Log::shouldHaveReceived('warning')->with('interview intro phrase could not be read; starting without it', Mockery::any())->once();
 });
 
 test('a second competency is never introduced, even for a participant who has not started', function (): void {
