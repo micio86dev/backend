@@ -7,11 +7,14 @@ namespace App\Http\Controllers\Concerns;
 use App\Actions\ConversationLlm\ResyncTemplateBinding;
 use App\Models\AvatarTemplate;
 use App\Models\User;
+use App\Rules\PersonaDisplayName;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\TemplateReferenceValidator;
 use Closure;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -27,7 +30,7 @@ use Illuminate\Validation\ValidationException;
 trait ValidatesAvatarTemplateWrites
 {
     /**
-     * @return array<string, list<string>>
+     * @return array<string, list<string|ValidationRule|Closure>>
      */
     private function templateStoreRules(): array
     {
@@ -43,11 +46,12 @@ trait ValidatesAvatarTemplateWrites
             // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null.
             'llm_model_id' => ['sometimes', 'nullable', 'integer'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
+            ...$this->personaRules(),
         ];
     }
 
     /**
-     * @return array<string, list<string>>
+     * @return array<string, list<string|ValidationRule|Closure>>
      */
     private function templateUpdateRules(): array
     {
@@ -63,7 +67,62 @@ trait ValidatesAvatarTemplateWrites
             // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null; sending both as null clears the binding.
             'llm_model_id' => ['sometimes', 'nullable', 'integer'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
+            ...$this->personaRules(),
         ];
+    }
+
+    /**
+     * The interviewer's display name (live-interview-call-chrome D7). The closure admits no other
+     * persona key, so the write cannot smuggle one in; keys an import brought in are kept by
+     * `personaWrite()`, not by the payload. It is a closure and not `array:display_name` because
+     * Scramble publishes every key of that rule as REQUIRED, which would make the generated client
+     * refuse `persona: {}`, the payload that clears the name.
+     *
+     * @return array<string, list<string|ValidationRule|Closure>>
+     */
+    private function personaRules(): array
+    {
+        return [
+            'persona' => ['sometimes', 'array', static function (string $attribute, mixed $value, Closure $fail): void {
+                if (is_array($value) && array_diff(array_keys($value), ['display_name']) !== []) {
+                    $fail('The persona carries a key that is not accepted.');
+                }
+            }],
+            'persona.display_name' => ['nullable', new PersonaDisplayName],
+        ];
+    }
+
+    /**
+     * The `persona` a write leaves behind, as the attribute to merge into the validated payload (empty
+     * when the request carries no `persona`, which leaves the column untouched).
+     *
+     * A write that carries a `persona` changes ONLY `display_name`: every other key already stored (an
+     * import's) is kept. A blank or absent `display_name` UNSETS the key (never a stored null or empty
+     * string), and the column becomes null when nothing is left.
+     *
+     * Read from the request, not from `validate()`'s result: Laravel drops an EMPTY array from the
+     * validated data, and `persona: {}` is the payload that clears the name. The name itself was
+     * validated by `PersonaDisplayName` before this runs.
+     *
+     * @param  array<string, mixed>|null  $current  the persona already stored
+     * @return array{persona?: array<string, mixed>|null}
+     */
+    private function personaWrite(Request $request, ?array $current): array
+    {
+        if (! $request->has('persona')) {
+            return [];
+        }
+
+        $persona = $current ?? [];
+        $name = $request->input('persona.display_name');
+
+        if (is_string($name) && trim($name) !== '') {
+            $persona['display_name'] = trim($name);
+        } else {
+            unset($persona['display_name']);
+        }
+
+        return ['persona' => $persona === [] ? null : $persona];
     }
 
     /**

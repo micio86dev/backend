@@ -44,6 +44,7 @@ final class AuthMatrixCandidateFixtures
     {
         return [
             'POST api/candidate/interview/end',
+            'GET api/candidate/interview/outline',
             'POST api/candidate/interview/integrity',
             'POST api/candidate/interview/snapshot',
             'POST api/candidate/interview/start',
