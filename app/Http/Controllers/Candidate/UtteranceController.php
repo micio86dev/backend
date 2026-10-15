@@ -48,7 +48,7 @@ use Symfony\Component\HttpFoundation\Response as HttpResponse;
  * `store()`.
  *
  * Response contract:
- * - 202 Accepted  → utterance persisted (session was in_corso at INSERT time); body `{boundary_due}`
+ * - 202 Accepted  → utterance persisted (session was in_corso at INSERT time); body `{boundary_due, primary_index}`
  * - 404 Not Found → session not owned by authenticated candidate (resolveOwnedSession)
  * - 409 Conflict  → session no longer in_corso at the atomic INSERT moment
  * - 422 Unprocessable → validation failed (missing required fields)
@@ -92,7 +92,7 @@ class UtteranceController extends Controller
      */
     // `#[Response(202, ...)]`, not `@scramble-return`: the PHPDoc form replaces the whole inferred
     // response set and would drop the documented 409 and 503.
-    #[Response(202, description: 'Utterance persisted. `boundary_due` is true once the competency has met its turn budget.', type: 'array{boundary_due: bool}')]
+    #[Response(202, description: 'Utterance persisted. `boundary_due` is true once the competency has met its turn budget. `primary_index` is how many distinct scripted questions of this competency have been asked so far.', type: 'array{boundary_due: bool, primary_index: int}')]
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -214,9 +214,15 @@ class UtteranceController extends Controller
             );
         }
 
-        $this->recordUtteranceEvent($session, $validated, $turnKind);
+        // Counted once, after the commit (outside the Z16 lock), and shared with the event below.
+        $primaryIndex = $this->turnClassifier->matchedCount($session);
 
-        return response()->json(['boundary_due' => $this->boundaryDue($session)], HttpResponse::HTTP_ACCEPTED);
+        $this->recordUtteranceEvent($session, $validated, $turnKind, $primaryIndex);
+
+        return response()->json([
+            'boundary_due' => $this->boundaryDue($session),
+            'primary_index' => $primaryIndex,
+        ], HttpResponse::HTTP_ACCEPTED);
     }
 
     /**
@@ -260,14 +266,15 @@ class UtteranceController extends Controller
      * at `0` rather than going negative.
      *
      * @param  array{session_id: int, speaker: string, text: string, ts: string}  $validated
+     * @param  int  $primaryIndex  `matchedCount()` as of this request's commit
      */
-    private function recordUtteranceEvent(InterviewSession $session, array $validated, ?string $turnKind): void
+    private function recordUtteranceEvent(InterviewSession $session, array $validated, ?string $turnKind, int $primaryIndex): void
     {
         if ($validated['speaker'] === 'avatar' && $turnKind !== 'primary') {
             return;
         }
 
-        $questionIndex = max(0, $this->turnClassifier->matchedCount($session) - 1);
+        $questionIndex = max(0, $primaryIndex - 1);
 
         if ($validated['speaker'] === 'avatar') {
             InterviewEventRecorder::questionAsked($session->organization_id, $session->participant_id, $session->competency_code, $questionIndex);
