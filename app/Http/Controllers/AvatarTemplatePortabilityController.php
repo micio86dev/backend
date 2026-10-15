@@ -9,6 +9,7 @@ use App\Exceptions\Tenancy\MissingTenantContextException;
 use App\Models\AvatarTemplate;
 use App\Models\LlmCredential;
 use App\Models\LlmModel;
+use App\Rules\PersonaDisplayName;
 use App\Support\AvatarTemplates\ConfigValidator;
 use App\Support\AvatarTemplates\ProviderFieldSpecs;
 use App\Support\AvatarTemplates\TemplateDocument;
@@ -122,6 +123,16 @@ final class AvatarTemplatePortabilityController extends Controller
 
         if (ProviderFieldSpecs::for($record['provider']) === []) {
             return "Unknown provider '{$record['provider']}'.";
+        }
+
+        // The SAME rule the form applies to the interviewer's name: a file must never install a
+        // name the form would refuse. The message never repeats a matched vendor word.
+        if (isset($record['persona']['display_name'])) {
+            $nameProblem = PersonaDisplayName::problem($record['persona']['display_name']);
+
+            if ($nameProblem !== null) {
+                return "persona.display_name: {$nameProblem}";
+            }
         }
 
         // The SAME validator the create/edit form is built from (D7). It
