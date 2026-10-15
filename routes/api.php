@@ -48,6 +48,7 @@ use App\Http\Controllers\AvatarTemplatePortabilityController;
 use App\Http\Controllers\AvatarVoicePreviewController;
 use App\Http\Controllers\Candidate\IntegrityController;
 use App\Http\Controllers\Candidate\InterviewController;
+use App\Http\Controllers\Candidate\OutlineController;
 use App\Http\Controllers\Candidate\SessionController;
 use App\Http\Controllers\Candidate\SnapshotController;
 use App\Http\Controllers\Candidate\UtteranceController;
@@ -950,6 +951,10 @@ Route::prefix('candidate')
 
                 // POST /api/candidate/interview/snapshot — JPEG snapshot to S3
                 Route::post('/snapshot', [SnapshotController::class, 'store']);
+
+                // GET /api/candidate/interview/outline — read-only, named view of the interview path
+                // (live-interview-call-chrome). No identifier: the participant comes from the token.
+                Route::get('/outline', [OutlineController::class, 'show']);
             });
     });
 
