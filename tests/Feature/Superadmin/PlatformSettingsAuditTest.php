@@ -100,3 +100,22 @@ test('a failing audit write rolls the whole PATCH back and fails loudly', functi
     expect(app(PlatformSettings::class)->interviewIntroPhraseMap())->toBe([])
         ->and(app(PlatformSettings::class)->maxQuestionsPerCompetency('standard'))->toBe(1);
 });
+
+test('setting, replacing and clearing the closing phrase each write one platform audit row', function (): void {
+    DB::table('platform_settings')->where('key', PlatformSettings::INTERVIEW_CLOSING_KEY)->delete();
+    $token = psaToken();
+    $action = 'platform_settings.interview_closing_phrase.updated';
+
+    $this->withToken($token)->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'One.']])->assertOk();
+    $this->withToken($token)->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'One.']])->assertOk();
+    $this->withToken($token)->patchJson('/api/admin/settings', ['interview_closing_phrase' => null])->assertOk();
+
+    $rows = DB::table('audit_logs')->where('action', $action)->orderBy('id')->get()->all();
+
+    expect($rows)->toHaveCount(2)
+        ->and($rows[0]->subject_type)->toBe('PlatformSetting')
+        ->and(psaJson($rows[0]->before))->toBe(['interview_closing_phrase' => []])
+        ->and(psaJson($rows[0]->after))->toBe(['interview_closing_phrase' => ['en' => 'One.']])
+        ->and(psaJson($rows[1]->after))->toBe(['interview_closing_phrase' => []])
+        ->and(psaRows())->toHaveCount(0);
+});

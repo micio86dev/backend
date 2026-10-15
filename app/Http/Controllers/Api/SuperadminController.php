@@ -161,7 +161,7 @@ class SuperadminController extends Controller
      * `max_questions_per_competency.standard` read into a compile error in the
      * repository that consumes it.
      *
-     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}, interview_intro_phrase: array{it?: string, en?: string}|null}}
+     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}, interview_intro_phrase: array{it?: string, en?: string}|null, interview_closing_phrase: array{it?: string, en?: string}|null}}
      */
     public function settings(Request $request): JsonResponse
     {
@@ -184,11 +184,11 @@ class SuperadminController extends Controller
      * interview: past a handful of predefined questions the adaptivity that is
      * the product has nothing left to do.
      *
-     * The `interview_intro_phrase` map replaces the stored one and `null` clears it; each change writes
-     * an audit row. The whole PATCH runs in one transaction, so a failed audit row applies nothing. The
+     * The `interview_intro_phrase` and `interview_closing_phrase` maps replace the stored one and `null`
+     * clears it; each change writes an audit row. The whole PATCH runs in one transaction, so a failed audit row applies nothing. The
      * caps stay unaudited, as before.
      *
-     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}, interview_intro_phrase: array{it?: string, en?: string}|null}}
+     * @scramble-return array{data: array{max_questions_per_competency: array{standard: int, potential: int}, interview_intro_phrase: array{it?: string, en?: string}|null, interview_closing_phrase: array{it?: string, en?: string}|null}}
      */
     public function updateSettings(UpdatePlatformSettingsRequest $request): JsonResponse
     {
@@ -206,6 +206,10 @@ class SuperadminController extends Controller
 
             if (array_key_exists('interview_intro_phrase', $validated)) {
                 $this->changeIntro($settings, $user, $validated['interview_intro_phrase']);
+            }
+
+            if (array_key_exists('interview_closing_phrase', $validated)) {
+                $this->changeClosing($settings, $user, $validated['interview_closing_phrase']);
             }
         });
 
@@ -238,13 +242,38 @@ class SuperadminController extends Controller
     }
 
     /**
-     * @return array{max_questions_per_competency: array<string, int>, interview_intro_phrase: array<string, string>|null}
+     * Replace the closing map and audit the change; same semantics as the intro.
+     *
+     * @param  array<string, string>|null  $map
+     */
+    private function changeClosing(PlatformSettings $settings, User $actor, ?array $map): void
+    {
+        $before = $settings->interviewClosingPhraseMap();
+        $after = $settings->setInterviewClosingPhrase($map);
+
+        if ($before === $after) {
+            return;
+        }
+
+        $this->audit->record(
+            $actor->id,
+            'platform_settings.interview_closing_phrase.updated',
+            'PlatformSetting',
+            null,
+            ['interview_closing_phrase' => $before],
+            ['interview_closing_phrase' => $after],
+        );
+    }
+
+    /**
+     * @return array{max_questions_per_competency: array<string, int>, interview_intro_phrase: array<string, string>|null, interview_closing_phrase: array<string, string>|null}
      */
     private function settingsPayload(PlatformSettings $settings): array
     {
         return [
             'max_questions_per_competency' => $settings->maxQuestionsPerCompetencyMap(),
             'interview_intro_phrase' => $settings->interviewIntroPhraseMap() ?: null,
+            'interview_closing_phrase' => $settings->interviewClosingPhraseMap() ?: null,
         ];
     }
 }
