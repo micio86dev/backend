@@ -163,5 +163,5 @@ test('an unreadable setting never blocks the interview: it falls back to the fin
 
     expect($body['prompt'])->toContain('Thank you for your time.')
         ->and($body['prompt'])->not->toContain(ICP_CLOSING_EN);
-    Log::shouldHaveReceived('warning')->atLeast()->once();
+    Log::shouldHaveReceived('warning')->with('interview closing phrase could not be read; ending on the final phrase alone', Mockery::any())->once();
 });
