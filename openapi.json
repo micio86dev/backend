@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.73.2"
+        "version": "0.74.0"
     },
     "servers": [
         {
@@ -1748,6 +1748,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 },
                                 "required": [
@@ -1883,6 +1894,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -7510,6 +7532,144 @@
                 }
             }
         },
+        "/candidate/interview/outline": {
+            "get": {
+                "operationId": "outline.show",
+                "description": "Returns the interview as the candidate sees it while it runs: the assessment type, the role, the\ninterviewer's and the candidate's own display names, and the competencies in order, each with its\nname, its 1-based position, how many scripted questions it holds and whether it is done, current,\nupcoming or queued to be repeated. Names are in the project language. No competency code or\nidentifier is returned. `422 assessment_type_not_supported` means the project's assessment type is\nnot supported, and `422 project_not_found` means the project no longer exists.",
+                "summary": "The candidate's interview path",
+                "tags": [
+                    "Outline"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The interview outline.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "assessment_type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "standard",
+                                                "potential"
+                                            ]
+                                        },
+                                        "role_name": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "avatar_name": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "candidate_name": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "primary_total_all": {
+                                            "type": "integer"
+                                        },
+                                        "competencies": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "ordinal": {
+                                                        "type": "integer"
+                                                    },
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "done",
+                                                            "current",
+                                                            "upcoming",
+                                                            "retry"
+                                                        ]
+                                                    },
+                                                    "primary_total": {
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "name",
+                                                    "ordinal",
+                                                    "status",
+                                                    "primary_total"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "assessment_type",
+                                        "role_name",
+                                        "avatar_name",
+                                        "candidate_name",
+                                        "primary_total_all",
+                                        "competencies"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The project no longer exists (`project_not_found`) or its assessment type is not supported (`assessment_type_not_supported`).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "enum": [
+                                                "project_not_found",
+                                                "assessment_type_not_supported"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    },
+                    "403": {
+                        "description": "The participant is no longer in an active interview (completed or errored).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "message"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/participants": {
             "get": {
                 "operationId": "participant.index",
@@ -8855,6 +9015,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 },
                                 "required": [
@@ -8993,6 +9164,17 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "persona": {
+                                        "type": "object",
+                                        "properties": {
+                                            "display_name": {
+                                                "type": [
+                                                    "string",
+                                                    "null"
+                                                ]
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -13709,7 +13891,7 @@
                 },
                 "responses": {
                     "202": {
-                        "description": "Utterance persisted. `boundary_due` is true once the competency has met its turn budget.",
+                        "description": "Utterance persisted. `boundary_due` is true once the competency has met its turn budget. `primary_index` is how many distinct scripted questions of this competency have been asked so far.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -13717,10 +13899,14 @@
                                     "properties": {
                                         "boundary_due": {
                                             "type": "boolean"
+                                        },
+                                        "primary_index": {
+                                            "type": "integer"
                                         }
                                     },
                                     "required": [
-                                        "boundary_due"
+                                        "boundary_due",
+                                        "primary_index"
                                     ]
                                 }
                             }
@@ -14595,6 +14781,20 @@
                             "code",
                             "synced_at"
                         ]
+                    },
+                    "persona": {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "display_name"
+                        ]
                     }
                 },
                 "required": [
@@ -14612,7 +14812,8 @@
                     "llm_sync_status",
                     "llm_synced_at",
                     "llm",
-                    "pal_sync"
+                    "pal_sync",
+                    "persona"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -16398,6 +16599,20 @@
                             "synced_at"
                         ]
                     },
+                    "persona": {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "display_name"
+                        ]
+                    },
                     "usage": {
                         "type": "object",
                         "properties": {
@@ -16430,6 +16645,7 @@
                     "llm_synced_at",
                     "llm",
                     "pal_sync",
+                    "persona",
                     "usage"
                 ],
                 "title": "PlatformAvatarTemplateResource"

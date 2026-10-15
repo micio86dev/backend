@@ -22,8 +22,11 @@ namespace Tests\Helpers\PublicApi;
  * addition (a genuinely public-only field, which is rare — most new admin
  * fields should stay admin-only, i.e. become a new EXCLUSION entry).
  *
- * Later SDD steps extend these arrays as new public resources
- * (`Interview`, `Scoring`, `WebhookDelivery`, `Export`, usage) land.
+ * `Export`, `WebhookDelivery` and the `Usage` summary have NO admin resource to
+ * diff against, so they live in `publicOnly()`: the complete field list of a
+ * resource that is public by design. `ExposureTest` proves each serializer emits
+ * exactly that list, so a new field there breaks the test until it is
+ * classified here with a reviewed rationale.
  */
 final class ExposureCatalogue
 {
@@ -78,6 +81,7 @@ final class ExposureCatalogue
                 'avatar_template.pal_sync.status',
                 'avatar_template.pal_sync.code',
                 'avatar_template.pal_sync.synced_at',
+                'avatar_template.persona.display_name',
                 'can.update',
                 'can.delete',
                 'competencies[].id',
@@ -320,6 +324,84 @@ final class ExposureCatalogue
                 'competencies.COL.behaviors[].explanation',
                 'competencies.COL.behaviors[].excerpts',
                 'competencies.COL.behaviors[].unassessable_reason',
+            ],
+        ];
+    }
+
+    /**
+     * Resources with no admin counterpart: every field is public by design and
+     * the list is the COMPLETE shape the serializer must emit.
+     *
+     * Reviewed classification (2026-10-14), all PUBLIC:
+     *  - `Export` (SPEC.md §3.3): the caller's own export job. `download_url`
+     *    is a per-request signed URL (never a stored path or object key);
+     *    `checksum_sha256`/`size_bytes` let the caller verify the file;
+     *    `failure_reason` is a fixed, redacted code, not an exception message.
+     *    Internal columns (`object_key`, `include_*`, organization id) are
+     *    not emitted.
+     *  - `WebhookDelivery` (SPEC.md §3.6): the caller's own delivery log. The
+     *    spec names this set and binds the exclusion of `payload`,
+     *    `dedupe_key`, `skip_reason` and `last_error`.
+     *  - `Usage` (SPEC.md §3.3): the caller's own organization aggregates for
+     *    its key's mode. It carries no cross-organization figure; the
+     *    `usage.organization_count`/`usage.project_count` keys are the
+     *    superadmin-only `PlatformAvatarTemplate` exclusions above.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function publicOnly(): array
+    {
+        return [
+            'Export' => [
+                'id',
+                'status',
+                'scope',
+                'format',
+                'livemode',
+                'from',
+                'to',
+                'record_count',
+                'download_url',
+                'download_expires_at',
+                'size_bytes',
+                'checksum_sha256',
+                'failure_reason',
+                'created_at',
+                'completed_at',
+            ],
+            'WebhookDelivery' => [
+                'id',
+                'event_type',
+                'status',
+                'interview_id',
+                'project_id',
+                'candidate_ref',
+                'target_url',
+                'attempt_count',
+                'max_attempts',
+                'payload_version',
+                'last_response_status',
+                'last_attempt_at',
+                'next_attempt_at',
+                'delivered_at',
+                'created_at',
+            ],
+            'Usage' => [
+                'from',
+                'to',
+                'livemode',
+                'interviews.pending',
+                'interviews.in_progress',
+                'interviews.under_evaluation',
+                'interviews.completed',
+                'interviews.error',
+                'evaluations.completed',
+                'evaluations.pending',
+                'completion_rate',
+                'llm_tokens.input',
+                'llm_tokens.output',
+                'cost_usd',
+                'currency',
             ],
         ];
     }

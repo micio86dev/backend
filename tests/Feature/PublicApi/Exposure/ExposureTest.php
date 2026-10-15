@@ -23,6 +23,7 @@ use App\Models\ApiClient;
 use App\Models\AvatarTemplate;
 use App\Models\Competency;
 use App\Models\Currency;
+use App\Models\Export;
 use App\Models\FrameworkVersion;
 use App\Models\InterviewEvent;
 use App\Models\InterviewRecording;
@@ -31,17 +32,21 @@ use App\Models\Participant;
 use App\Models\Project;
 use App\Models\ReusableInterviewLink;
 use App\Models\WebhookDelivery;
+use App\PublicApi\Serializers\ExportSerializer;
 use App\PublicApi\Serializers\InterviewSerializer;
 use App\PublicApi\Serializers\OrganizationSerializer;
 use App\PublicApi\Serializers\ProjectSerializer;
 use App\PublicApi\Serializers\ScoringSerializer;
 use App\PublicApi\Serializers\TranscriptSerializer;
+use App\PublicApi\Serializers\WebhookDeliverySerializer;
 use App\Services\Admin\AdminEvaluationSerializer;
 use App\Services\Admin\AdminTranscript;
 use App\Services\ApiKeyGenerator;
 use App\Support\PublicApi\PublicId;
+use App\Support\PublicApi\UsageAggregator;
 use App\Support\PublicApi\WebhookDeliveryId;
 use App\Support\Tenancy\TenantContextScope;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 use Tests\Helpers\PublicApi\ExposureCatalogue;
@@ -294,6 +299,43 @@ test('T-EXPOSE-001: Scoring — admin (evaluation ∪ meta) minus public equals 
 
 // ─── T-EXPOSE-002: no secret-shaped value ever leaks ────────────────────────
 
+// Export, WebhookDelivery and Usage have no admin resource to diff against: every
+// field is public by design (SPEC.md §3.3/§3.6), so the frozen catalogue lists the
+// complete public shape and the serializer must emit exactly that.
+test('T-EXPOSE-001: Export — the serializer emits exactly the frozen public-by-design fields', function (): void {
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['exports:read']);
+    $export = TenantContextScope::runFor($org->id, fn () => Export::factory()->ready()->create());
+
+    $keys = sortedExposureKeys(ExposureCatalogue::flattenKeys(
+        ExportSerializer::toArray($export, 'https://example.test/x', CarbonImmutable::now()),
+    ));
+
+    expect($keys)->toBe(sortedExposureKeys(ExposureCatalogue::publicOnly()['Export']));
+});
+
+test('T-EXPOSE-001: WebhookDelivery — the serializer emits exactly the frozen public-by-design fields', function (): void {
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['webhooks:read']);
+    $project = Step6Fixtures::project($org);
+    $participant = Step6Fixtures::participantWithTranscript($org, $project, 'completato');
+    $delivery = TenantContextScope::runFor($org->id, fn () => WebhookDelivery::factory()->forParticipant($participant)->create());
+    TenantContextScope::runFor($org->id, fn () => $delivery->load(['project', 'participant']));
+
+    $keys = sortedExposureKeys(ExposureCatalogue::flattenKeys(WebhookDeliverySerializer::toArray($delivery)));
+
+    expect($keys)->toBe(sortedExposureKeys(ExposureCatalogue::publicOnly()['WebhookDelivery']));
+});
+
+test('T-EXPOSE-001: Usage — the aggregator emits exactly the frozen public-by-design fields, and no cross-organization count', function (): void {
+    ['org' => $org] = Step6Fixtures::orgWithScopedKey(['usage:read']);
+
+    $keys = sortedExposureKeys(ExposureCatalogue::flattenKeys(
+        UsageAggregator::build($org, ApiKeyMode::Live, CarbonImmutable::now()->startOfMonth(), CarbonImmutable::now()),
+    ));
+
+    expect($keys)->toBe(sortedExposureKeys(ExposureCatalogue::publicOnly()['Usage']));
+    expect($keys)->not->toContain('usage.organization_count')->not->toContain('usage.project_count');
+});
+
 test('T-EXPOSE-002: GET /v1/organization never contains a beai_live_/beai_test_/tavus/heygen value, even with a webhook secret configured', function (): void {
     $org = Organization::factory()->create([
         'default_webhook_secret' => 'a-very-secret-value',
@@ -542,4 +584,15 @@ function scanForForbiddenPattern(mixed $value, string $pattern, array &$offender
     if (is_string($value) && preg_match($pattern, $value) === 1) {
         $offenders[] = $value;
     }
+}
+
+/**
+ * @param  list<string>  $keys
+ * @return list<string>
+ */
+function sortedExposureKeys(array $keys): array
+{
+    sort($keys);
+
+    return $keys;
 }

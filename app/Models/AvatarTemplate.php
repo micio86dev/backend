@@ -11,6 +11,7 @@ use App\Exceptions\ConversationLlm\InvalidLlmBindingException;
 use App\Exceptions\ConversationLlm\UnsupportedLlmModeException;
 use App\Exceptions\PlatformTemplateWriteRefusedException;
 use App\Models\Contracts\AdmitsPlatformRows;
+use App\Rules\PersonaDisplayName;
 use App\Support\AvatarTemplates\GlobalAvatarTemplateUsage;
 use App\Support\AvatarTemplates\PlatformTemplateContext;
 use App\Support\Tenancy\TenantResolver;
@@ -341,6 +342,18 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
     public function scopeLabel(): AvatarTemplateScope
     {
         return $this->isPlatform() ? AvatarTemplateScope::Platform : AvatarTemplateScope::Organization;
+    }
+
+    /**
+     * The interviewer's display name the candidate sees, or null when none is set. Re-checked on read
+     * with the write-side rule, so a value stored before that rule existed (an import) degrades to the
+     * generic label instead of reaching a screen.
+     */
+    public function personaDisplayName(): ?string
+    {
+        $name = $this->persona['display_name'] ?? null;
+
+        return is_string($name) && PersonaDisplayName::problem($name) === null ? trim($name) : null;
     }
 
     public function writesAsPlatformRow(): bool
