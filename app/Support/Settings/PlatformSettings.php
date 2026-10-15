@@ -36,6 +36,8 @@ final class PlatformSettings
 
     public const INTERVIEW_INTRO_KEY = 'interview_intro_phrase';
 
+    public const INTERVIEW_CLOSING_KEY = 'interview_closing_phrase';
+
     /**
      * The locales an intro can be authored in. `en` is the fallback.
      */
@@ -140,7 +142,15 @@ final class PlatformSettings
      */
     public function interviewIntroPhraseMap(): array
     {
-        $stored = PlatformSetting::query()->find(self::INTERVIEW_INTRO_KEY)?->value;
+        return $this->localeMap(self::INTERVIEW_INTRO_KEY);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function localeMap(string $key): array
+    {
+        $stored = PlatformSetting::query()->find($key)?->value;
 
         if (! is_array($stored)) {
             return [];
@@ -181,17 +191,55 @@ final class PlatformSettings
      */
     public function setInterviewIntroPhrase(?array $map): array
     {
+        return $this->replaceLocaleMap(self::INTERVIEW_INTRO_KEY, $map);
+    }
+
+    /**
+     * The closing greeting the avatar speaks on the last competency, per locale. Same shape and
+     * degradation as the intro: unset is `[]`.
+     *
+     * @return array<string, string>
+     */
+    public function interviewClosingPhraseMap(): array
+    {
+        return $this->localeMap(self::INTERVIEW_CLOSING_KEY);
+    }
+
+    /**
+     * The closing greeting for a project language: that language, else `en`, else none.
+     */
+    public function interviewClosingPhrase(string $locale): ?string
+    {
+        $map = $this->interviewClosingPhraseMap();
+
+        return $map[$locale] ?? $map['en'] ?? null;
+    }
+
+    /**
+     * REPLACE the stored closing map; null or `[]` clears it.
+     *
+     * @param  array<string, string>|null  $map
+     * @return array<string, string> The map as it now stands.
+     */
+    public function setInterviewClosingPhrase(?array $map): array
+    {
+        return $this->replaceLocaleMap(self::INTERVIEW_CLOSING_KEY, $map);
+    }
+
+    /**
+     * @param  array<string, string>|null  $map
+     * @return array<string, string>
+     */
+    private function replaceLocaleMap(string $key, ?array $map): array
+    {
         if ($map === null || $map === []) {
-            PlatformSetting::query()->whereKey(self::INTERVIEW_INTRO_KEY)->delete();
+            PlatformSetting::query()->whereKey($key)->delete();
 
             return [];
         }
 
-        PlatformSetting::updateOrCreate(
-            ['key' => self::INTERVIEW_INTRO_KEY],
-            ['value' => $map],
-        );
+        PlatformSetting::updateOrCreate(['key' => $key], ['value' => $map]);
 
-        return $this->interviewIntroPhraseMap();
+        return $this->localeMap($key);
     }
 }

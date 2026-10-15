@@ -401,3 +401,129 @@ test('an unknown locale carries the shared machine code', function (): void {
 
     expect($v->errors()->get('interview_intro_phrase'))->toBe(['interview_intro_phrase_unknown_locale']);
 });
+
+// ─── interview closing phrase ────────────────────────────────────────────────
+//
+// A locale map {it, en} the avatar speaks on the LAST competency, right before the final phrase.
+// The migration seeds a default; these tests clear it first so they start from "unset".
+
+beforeEach(function (): void {
+    PlatformSetting::query()->whereKey(PlatformSettings::INTERVIEW_CLOSING_KEY)->delete();
+});
+
+test('the closing phrase reads as null on the wire and empty in the service until it is set', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+
+    $this->withToken($token)->getJson('/api/admin/settings')
+        ->assertOk()
+        ->assertJsonPath('data.interview_closing_phrase', null);
+
+    expect(app(PlatformSettings::class)->interviewClosingPhraseMap())->toBe([])
+        ->and(app(PlatformSettings::class)->interviewClosingPhrase('it'))->toBeNull();
+});
+
+test('a superadmin sets the closing phrase alone and the GET reflects it', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'Goodbye.', 'it' => 'Arrivederci.']])
+        ->assertOk()
+        ->assertJsonPath('data.interview_closing_phrase', ['en' => 'Goodbye.', 'it' => 'Arrivederci.'])
+        ->assertJsonPath('data.max_questions_per_competency.standard', 1);
+
+    $this->withToken($token)->getJson('/api/admin/settings')
+        ->assertJsonPath('data.interview_closing_phrase', ['en' => 'Goodbye.', 'it' => 'Arrivederci.']);
+});
+
+test('the closing phrase can travel with the other keys and is independent of the intro', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', [
+            'max_questions_per_competency' => ['standard' => 2],
+            'interview_intro_phrase' => ['en' => 'Welcome.'],
+            'interview_closing_phrase' => ['en' => 'Goodbye.'],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.interview_intro_phrase', ['en' => 'Welcome.'])
+        ->assertJsonPath('data.interview_closing_phrase', ['en' => 'Goodbye.']);
+
+    // An intro-only PATCH must not wipe the closing phrase.
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_intro_phrase' => null])
+        ->assertOk()
+        ->assertJsonPath('data.interview_closing_phrase', ['en' => 'Goodbye.']);
+});
+
+test('the closing phrase falls back to en and a PATCH map replaces it', function (): void {
+    $settings = app(PlatformSettings::class);
+    $settings->setInterviewClosingPhrase(['en' => 'Goodbye.']);
+
+    expect($settings->interviewClosingPhrase('it'))->toBe('Goodbye.');
+
+    $settings->setInterviewClosingPhrase(['en' => 'Bye.', 'it' => 'Ciao.']);
+    expect($settings->interviewClosingPhrase('it'))->toBe('Ciao.');
+
+    $settings->setInterviewClosingPhrase(['en' => 'Only.']);
+    expect($settings->interviewClosingPhraseMap())->toBe(['en' => 'Only.']);
+});
+
+test('null clears the closing phrase', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+    $this->withToken($token)->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'One.']])->assertOk();
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => null])
+        ->assertOk()
+        ->assertJsonPath('data.interview_closing_phrase', null);
+
+    expect(app(PlatformSettings::class)->interviewClosingPhraseMap())->toBe([]);
+});
+
+test('the closing phrase is validated', function (array $closing, string $errorKey): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => $closing])
+        ->assertStatus(422)
+        ->assertJsonValidationErrorFor($errorKey);
+
+    expect(app(PlatformSettings::class)->interviewClosingPhraseMap())->toBe([]);
+})->with([
+    'en missing' => [['it' => 'Arrivederci.'], 'interview_closing_phrase.en'],
+    'unknown locale' => [['en' => 'Bye.', 'fr' => 'Salut.'], 'interview_closing_phrase'],
+    'blank en' => [['en' => '   '], 'interview_closing_phrase.en'],
+    'over 3600 characters' => [['en' => str_repeat('a', 3601)], 'interview_closing_phrase.en'],
+    'over 3600 multibyte characters' => [['en' => str_repeat('è', 3601)], 'interview_closing_phrase.en'],
+    'english end phrase' => [['en' => "Bye. Let's move on to the next question."], 'interview_closing_phrase.en'],
+    'italian end phrase inside the english text' => [['en' => 'Bye. Passiamo alla prossima domanda.'], 'interview_closing_phrase.en'],
+    'english end phrase inside the italian text' => [['en' => 'Bye.', 'it' => "Ciao. Let's move on to the next question."], 'interview_closing_phrase.it'],
+]);
+
+test('a closing phrase may contain the final phrase, and exactly 3600 characters is accepted', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'Bye. Thank you for your time.']])
+        ->assertOk();
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => str_repeat('è', 3600)]])
+        ->assertOk();
+});
+
+test('every tenant role is refused the closing phrase', function (string $role): void {
+    $token = authTokenForRole(Organization::factory()->create(), $role);
+
+    $this->withToken($token)
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'Hi.']])
+        ->assertForbidden();
+
+    expect(app(PlatformSettings::class)->interviewClosingPhraseMap())->toBe([]);
+})->with(['admin', 'operator', 'viewer']);
+
+test('junk stored under the closing key degrades to no closing phrase', function (): void {
+    PlatformSetting::query()->create(['key' => PlatformSettings::INTERVIEW_CLOSING_KEY, 'value' => ['en' => '  ', 'it' => 3, 'fr' => 'Salut']]);
+
+    expect(app(PlatformSettings::class)->interviewClosingPhraseMap())->toBe([]);
+});

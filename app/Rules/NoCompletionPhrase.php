@@ -15,6 +15,11 @@ use Illuminate\Contracts\Validation\ValidationRule;
  */
 final class NoCompletionPhrase implements ValidationRule
 {
+    /**
+     * @param  bool  $includeFinal  false forbids only the end phrases (the closing greeting precedes the final phrase).
+     */
+    public function __construct(private readonly bool $includeFinal = true) {}
+
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         if (! is_string($value)) {
@@ -23,7 +28,7 @@ final class NoCompletionPhrase implements ValidationRule
 
         $normalised = PhraseNormalizer::normalize($value);
 
-        foreach (PhraseNormalizer::completionPhrases() as $phrase) {
+        foreach (PhraseNormalizer::completionPhrases($this->includeFinal) as $phrase) {
             if (str_contains($normalised, $phrase)) {
                 $fail("{$attribute}_completion_phrase");
 

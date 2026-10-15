@@ -36,14 +36,15 @@ final class PhraseNormalizer
      * The normalised end and final phrase of every supported locale. An empty one, or a missing key echoed back by the translator, is dropped: it is
      * contained in every text, so a blank lang entry would refuse every intro.
      *
+     * @param  bool  $includeFinal  false keeps only the end phrases: a closing greeting may contain the final phrase.
      * @return list<string>
      */
-    public static function completionPhrases(): array
+    public static function completionPhrases(bool $includeFinal = true): array
     {
         $phrases = [];
 
         foreach (self::LOCALES as $locale) {
-            foreach (['interview.end_phrase', 'interview.final_phrase'] as $key) {
+            foreach ($includeFinal ? ['interview.end_phrase', 'interview.final_phrase'] : ['interview.end_phrase'] as $key) {
                 $line = (string) Lang::get($key, [], $locale);
 
                 // An untranslated line comes back as its own key: not a phrase anyone speaks.

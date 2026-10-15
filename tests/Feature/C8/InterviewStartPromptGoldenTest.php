@@ -55,6 +55,8 @@ use Tests\Support\PromptGolden;
 function goldenStartPrompt(string $type, string $locale, array $codes, int $primaries, bool $resume, int $completed = 0): string
 {
     config(['conversation.min_questions' => 4, 'conversation.followup_budget' => 4]);
+    // The goldens pin the prompt with no closing phrase set; the closing migration seeds a default.
+    DB::table('platform_settings')->where('key', 'interview_closing_phrase')->delete();
     Http::fake(heygenOkFake());
     Queue::fake();
 

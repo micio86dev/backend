@@ -23,6 +23,9 @@ class UpdatePlatformSettingsRequest extends FormRequest
     /** Roughly 4 minutes of speech: the intro counts against the interview clock. */
     public const INTRO_MAX_CHARACTERS = 3600;
 
+    /** Same budget as the intro: the closing counts against the interview clock too. */
+    public const CLOSING_MAX_CHARACTERS = 3600;
+
     public function authorize(): bool
     {
         return $this->user()?->is_superadmin === true;
@@ -47,6 +50,15 @@ class UpdatePlatformSettingsRequest extends FormRequest
         $intro['interview_intro_phrase.it'][] = 'max:'.self::INTRO_MAX_CHARACTERS;
         $intro['interview_intro_phrase.it'][] = new NoCompletionPhrase;
 
+        $closing = $this->localeMapRules('interview_closing_phrase', ['en', 'it'], required: false);
+        array_unshift($closing['interview_closing_phrase'], 'nullable');
+
+        foreach (['en', 'it'] as $locale) {
+            $closing["interview_closing_phrase.{$locale}"][] = 'max:'.self::CLOSING_MAX_CHARACTERS;
+            // Spoken before the final phrase, so only an END phrase (which would close a competency early) is refused.
+            $closing["interview_closing_phrase.{$locale}"][] = new NoCompletionPhrase(includeFinal: false);
+        }
+
         return [
             'max_questions_per_competency' => ['sometimes', 'required', 'array', Rule::array(['standard', 'potential'])],
             'max_questions_per_competency.standard' => ['sometimes', 'integer', 'min:1', 'max:10'],
@@ -60,6 +72,16 @@ class UpdatePlatformSettingsRequest extends FormRequest
             'interview_intro_phrase' => $intro['interview_intro_phrase'],
             'interview_intro_phrase.en' => $intro['interview_intro_phrase.en'],
             'interview_intro_phrase.it' => $intro['interview_intro_phrase.it'],
+            /**
+             * The closing greeting per locale, spoken on the LAST competency right before the final phrase.
+             * A map REPLACES the stored one and `null` clears it; `en` is required, `it` optional, each at
+             * most 3600 characters and free of the end phrase.
+             *
+             * @var array{en: string, it?: string}|null
+             */
+            'interview_closing_phrase' => $closing['interview_closing_phrase'],
+            'interview_closing_phrase.en' => $closing['interview_closing_phrase.en'],
+            'interview_closing_phrase.it' => $closing['interview_closing_phrase.it'],
         ];
     }
 
@@ -70,7 +92,7 @@ class UpdatePlatformSettingsRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
-                if (! $this->has(['max_questions_per_competency']) && ! $this->has(['interview_intro_phrase'])) {
+                if (! $this->hasAny(['max_questions_per_competency', 'interview_intro_phrase', 'interview_closing_phrase'])) {
                     $validator->errors()->add('max_questions_per_competency', 'max_questions_per_competency_required');
                 }
             },
