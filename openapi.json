@@ -14741,6 +14741,20 @@
                             "code",
                             "synced_at"
                         ]
+                    },
+                    "persona": {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "display_name"
+                        ]
                     }
                 },
                 "required": [
@@ -14758,7 +14772,8 @@
                     "llm_sync_status",
                     "llm_synced_at",
                     "llm",
-                    "pal_sync"
+                    "pal_sync",
+                    "persona"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -16544,6 +16559,20 @@
                             "synced_at"
                         ]
                     },
+                    "persona": {
+                        "type": "object",
+                        "properties": {
+                            "display_name": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "display_name"
+                        ]
+                    },
                     "usage": {
                         "type": "object",
                         "properties": {
@@ -16576,6 +16605,7 @@
                     "llm_synced_at",
                     "llm",
                     "pal_sync",
+                    "persona",
                     "usage"
                 ],
                 "title": "PlatformAvatarTemplateResource"

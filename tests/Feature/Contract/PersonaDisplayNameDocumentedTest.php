@@ -37,3 +37,15 @@ test('every avatar template write documents an optional nullable persona.display
     'platform create' => ['/admin/avatar-templates', 'post'],
     'platform update' => ['/admin/avatar-templates/{id}', 'patch'],
 ]);
+
+test('both admin avatar template resources document a required persona with a nullable display_name only', function (string $schemaName): void {
+    $schema = personaDocumentedSpec()['components']['schemas'][$schemaName] ?? null;
+    expect($schema)->not->toBeNull("openapi.json declares no schema named {$schemaName}");
+
+    $persona = $schema['properties']['persona'];
+
+    expect(array_keys($persona['properties']))->toBe(['display_name'])
+        ->and($persona['properties']['display_name']['type'])->toBe(['string', 'null'])
+        ->and($persona['required'])->toBe(['display_name'])
+        ->and($schema['required'])->toContain('persona');
+})->with(['AvatarTemplateResource', 'PlatformAvatarTemplateResource']);
