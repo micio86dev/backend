@@ -500,12 +500,17 @@ test('the closing phrase is validated', function (array $closing, string $errorK
     'english end phrase inside the italian text' => [['en' => 'Bye.', 'it' => "Ciao. Let's move on to the next question."], 'interview_closing_phrase.it'],
 ]);
 
-test('a closing phrase may contain the final phrase, and exactly 3600 characters is accepted', function (): void {
+test('a closing phrase may not contain the final phrase: completion would fire before the greeting ends', function (): void {
     $token = authTokenForRole(Organization::factory()->create(), 'platform');
 
     $this->withToken($token)
-        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'Bye. Thank you for your time.']])
-        ->assertOk();
+        ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => 'Thank you for your time. We will be in touch.']])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('interview_closing_phrase.en');
+});
+
+test('a closing phrase of exactly 3600 characters is accepted', function (): void {
+    $token = authTokenForRole(Organization::factory()->create(), 'platform');
 
     $this->withToken($token)
         ->patchJson('/api/admin/settings', ['interview_closing_phrase' => ['en' => str_repeat('è', 3600)]])

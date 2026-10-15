@@ -55,8 +55,9 @@ class UpdatePlatformSettingsRequest extends FormRequest
 
         foreach (['en', 'it'] as $locale) {
             $closing["interview_closing_phrase.{$locale}"][] = 'max:'.self::CLOSING_MAX_CHARACTERS;
-            // Spoken before the final phrase, so only an END phrase (which would close a competency early) is refused.
-            $closing["interview_closing_phrase.{$locale}"][] = new NoCompletionPhrase(includeFinal: false);
+            // Neither completion phrase: an end phrase would close a competency early, and the final phrase inside the
+            // greeting would end the interview before the greeting is over (the client contains-matches it).
+            $closing["interview_closing_phrase.{$locale}"][] = new NoCompletionPhrase;
         }
 
         return [
