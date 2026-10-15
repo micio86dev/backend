@@ -385,7 +385,10 @@ class InterviewController extends Controller
         [$endPhrase, $finalPhrase] = $this->buildSessionResponse->resolveCompletionPhrases($project->language);
         $isLastCompetency = $nextCompetency['competency_ordinal']
             >= $nextCompetency['total_competencies'];
-        $advancePhrase = $isLastCompetency ? $finalPhrase : $endPhrase;
+        // The closing greeting is spoken in front of the final phrase; the bare final phrase stays in the
+        // /start payload (the client contains-matches it) and in the completion detector.
+        $spokenFinalPhrase = trim(($this->closingPhraseFor($project->language) ?? '').' '.$finalPhrase);
+        $advancePhrase = $isLastCompetency ? $spokenFinalPhrase : $endPhrase;
 
         $composeSingle = fn (): ComposedPrompt|JsonResponse => $this->composeOrRefuse(
             fn (): ComposedPrompt => $this->composeCompetencyPrompt->handle(
@@ -415,7 +418,7 @@ class InterviewController extends Controller
                     $remaining,
                     $followUpBudget,
                     $endPhrase,
-                    $finalPhrase,
+                    $spokenFinalPhrase,
                     $introPhrase !== null,
                 ));
 
@@ -944,6 +947,23 @@ class InterviewController extends Controller
             return $intro === null || trim($intro) === '' ? null : $intro;
         } catch (\Throwable $e) {
             Log::warning('interview intro phrase could not be read; starting without it', ['exception' => $e::class]);
+
+            return null;
+        }
+    }
+
+    /**
+     * The platform's closing greeting for the project language, or null when none is to be spoken. Optional and
+     * never worth an interview: a failed read is logged and the interview ends on the bare final phrase.
+     */
+    private function closingPhraseFor(string $language): ?string
+    {
+        try {
+            $closing = app(PlatformSettings::class)->interviewClosingPhrase($language);
+
+            return $closing === null || trim($closing) === '' ? null : trim($closing);
+        } catch (\Throwable $e) {
+            Log::warning('interview closing phrase could not be read; ending on the final phrase alone', ['exception' => $e::class]);
 
             return null;
         }
