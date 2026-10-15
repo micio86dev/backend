@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "BEAI",
-        "version": "0.74.1"
+        "version": "0.75.0"
     },
     "servers": [
         {
@@ -13293,11 +13293,26 @@
                                                             "type": "string"
                                                         }
                                                     }
+                                                },
+                                                "interview_closing_phrase": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
+                                                    "properties": {
+                                                        "it": {
+                                                            "type": "string"
+                                                        },
+                                                        "en": {
+                                                            "type": "string"
+                                                        }
+                                                    }
                                                 }
                                             },
                                             "required": [
                                                 "max_questions_per_competency",
-                                                "interview_intro_phrase"
+                                                "interview_intro_phrase",
+                                                "interview_closing_phrase"
                                             ]
                                         }
                                     },
@@ -13315,7 +13330,7 @@
             },
             "patch": {
                 "operationId": "superadmin.updateSettings",
-                "description": "PARTIAL by design: naming only `standard` must leave `potential` where\nit was. A settings endpoint that treats an unmentioned key as \"set it to\n     * nothing\" turns every narrow edit into a wide one.\n\nThe floor of 1 is not decoration. A cap of 0 does not read as \"unlimited\"\nand does not read as \"authoring is off\" \u2014 it reads as every save failing\nwith a message about a maximum, which is the least explicable state this\nknob could be left in. The ceiling keeps a `standard` interview an\ninterview: past a handful of predefined questions the adaptivity that is\nthe product has nothing left to do.\n\nThe `interview_intro_phrase` map replaces the stored one and `null` clears it; each change writes\nan audit row. The whole PATCH runs in one transaction, so a failed audit row applies nothing. The\ncaps stay unaudited, as before.",
+                "description": "PARTIAL by design: naming only `standard` must leave `potential` where\nit was. A settings endpoint that treats an unmentioned key as \"set it to\n     * nothing\" turns every narrow edit into a wide one.\n\nThe floor of 1 is not decoration. A cap of 0 does not read as \"unlimited\"\nand does not read as \"authoring is off\" \u2014 it reads as every save failing\nwith a message about a maximum, which is the least explicable state this\nknob could be left in. The ceiling keeps a `standard` interview an\ninterview: past a handful of predefined questions the adaptivity that is\nthe product has nothing left to do.\n\nThe `interview_intro_phrase` and `interview_closing_phrase` maps replace the stored one and `null`\nclears it; each change writes an audit row. The whole PATCH runs in one transaction, so a failed audit row applies nothing. The\ncaps stay unaudited, as before.",
                 "summary": "PATCH /api/admin/settings \u2014 change a platform knob",
                 "tags": [
                     "Superadmin"
@@ -13368,11 +13383,26 @@
                                                             "type": "string"
                                                         }
                                                     }
+                                                },
+                                                "interview_closing_phrase": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
+                                                    "properties": {
+                                                        "it": {
+                                                            "type": "string"
+                                                        },
+                                                        "en": {
+                                                            "type": "string"
+                                                        }
+                                                    }
                                                 }
                                             },
                                             "required": [
                                                 "max_questions_per_competency",
-                                                "interview_intro_phrase"
+                                                "interview_intro_phrase",
+                                                "interview_closing_phrase"
                                             ]
                                         }
                                     },
@@ -18842,6 +18872,26 @@
                             "null"
                         ],
                         "description": "The spoken introduction per locale. A map REPLACES the stored one and `null` clears it;\n`en` is required, `it` optional, each at most 3600 characters.",
+                        "properties": {
+                            "en": {
+                                "type": "string",
+                                "maxLength": 3600
+                            },
+                            "it": {
+                                "type": "string",
+                                "maxLength": 3600
+                            }
+                        },
+                        "required": [
+                            "en"
+                        ]
+                    },
+                    "interview_closing_phrase": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "description": "The closing greeting per locale, spoken on the LAST competency right before the final phrase.\nA map REPLACES the stored one and `null` clears it; `en` is required, `it` optional, each at\nmost 3600 characters and free of the end phrase.",
                         "properties": {
                             "en": {
                                 "type": "string",
