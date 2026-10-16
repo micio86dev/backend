@@ -50,6 +50,8 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $config
  * @property array<string, mixed>|null $persona
  * @property bool $is_active
+ * @property int $answer_min_seconds
+ * @property int $answer_max_seconds
  * @property int|null $llm_model_id
  * @property int|null $llm_credential_id
  * @property string|null $heygen_llm_configuration_id
@@ -79,6 +81,8 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
     protected $attributes = [
         'is_active' => false,
         'config' => '{}',
+        'answer_min_seconds' => 90,
+        'answer_max_seconds' => 150,
     ];
 
     /** @var list<string> */
@@ -88,6 +92,8 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
         'provider',
         'config',
         'persona',
+        'answer_min_seconds',
+        'answer_max_seconds',
         'is_active',
         // Both-or-neither, enforced by a DB CHECK (I1) and by booted()'s I2/
         // I3/I4 guards below (pluggable-conversation-llm PR P3a, design D4).
@@ -105,6 +111,8 @@ class AvatarTemplate extends TenantModel implements AdmitsPlatformRows
             'config' => 'array',
             'persona' => 'array',
             'is_active' => 'boolean',
+            'answer_min_seconds' => 'integer',
+            'answer_max_seconds' => 'integer',
             'llm_model_id' => 'integer',
             'llm_credential_id' => 'integer',
             'llm_synced_at' => 'datetime',

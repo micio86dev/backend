@@ -120,6 +120,22 @@ final class SessionLiveClock
     }
 
     /**
+     * The answer-length range the active template sets, in seconds; the platform default when no
+     * template resolves. Guidance for the candidate's bar: nothing here ends or shortens an answer.
+     *
+     * @return array{min: int, max: int}
+     */
+    public function resolveAnswerRange(InterviewSession $session): array
+    {
+        $template = $this->templates->resolve($session->provider, $session->project_id);
+
+        return [
+            'min' => $template->answer_min_seconds ?? 90,
+            'max' => $template->answer_max_seconds ?? 150,
+        ];
+    }
+
+    /**
      * The provider's real ceiling for this session, in seconds (D4a).
      *
      * An org's active avatar template can configure a LOWER value

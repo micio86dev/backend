@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
  * to write. The same `saving` guards a normal create runs (the LLM binding
  * invariants) therefore run on every copy.
  *
- * What is copied: name, description, provider, config, persona and the
+ * What is copied: name, description, provider, config, persona, the answer time range and the
  * model/credential binding (credentials are platform rows). What is NOT:
  * `is_active` (a copy is inactive), and everything that belongs to the SOURCE's
  * provider-side resources (`heygen_llm_configuration_id`, `llm_sync_status`,
@@ -59,6 +59,8 @@ final class DuplicateAvatarTemplate
                         'provider' => $source->provider,
                         'config' => $source->config,
                         'persona' => $source->persona,
+                        'answer_min_seconds' => $source->answer_min_seconds,
+                        'answer_max_seconds' => $source->answer_max_seconds,
                         'is_active' => false,
                         'llm_model_id' => $source->llm_model_id,
                         'llm_credential_id' => $source->llm_credential_id,
