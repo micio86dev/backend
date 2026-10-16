@@ -9,6 +9,7 @@ declare(strict_types=1);
  */
 
 use App\Actions\Interview\BuildInterviewSessionResponse;
+use App\Http\Controllers\AvatarTemplatePortabilityController;
 use App\Models\AvatarTemplate;
 use App\Models\FrameworkVersion;
 use App\Models\InterviewSession;
@@ -281,3 +282,14 @@ test('the session response carries the template range, or 90 and 150 without a t
     'default template' => [[], 90, 150],
     'no template' => [null, 90, 150],
 ]);
+
+test('an import record lacking a range key is a validation message, not an undefined-key 500', function (string $missing): void {
+    $record = ['name' => 'T', 'provider' => 'heygen', 'config' => [], 'persona' => null, 'description' => null,
+        'answer_min_seconds' => 90, 'answer_max_seconds' => 150];
+    unset($record[$missing]);
+
+    $reject = new ReflectionMethod(AvatarTemplatePortabilityController::class, 'reject');
+
+    expect($reject->invoke(app(AvatarTemplatePortabilityController::class), $record))
+        ->toContain('answer_min_seconds / answer_max_seconds');
+})->with(['answer_min_seconds', 'answer_max_seconds']);

@@ -127,8 +127,9 @@ final class AvatarTemplatePortabilityController extends Controller
 
         // The SAME bounds the form applies. A file without the range (an older export) was given the
         // defaults by TemplateDocument::flatten(); an explicit null reaches here and is refused.
-        $min = $record['answer_min_seconds'];
-        $max = $record['answer_max_seconds'];
+        // A record from another producer may lack a key altogether: that is the same refusal.
+        $min = $record['answer_min_seconds'] ?? null;
+        $max = $record['answer_max_seconds'] ?? null;
 
         if (! is_int($min) || ! is_int($max) || $min < 10 || $max > 600 || $min >= $max) {
             return 'answer_min_seconds / answer_max_seconds: integers from 10 to 600 seconds, the minimum below the maximum.';
