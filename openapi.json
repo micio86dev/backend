@@ -1749,6 +1749,16 @@
                                             "null"
                                         ]
                                     },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
                                     "persona": {
                                         "type": "object",
                                         "properties": {
@@ -1894,6 +1904,16 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
                                     },
                                     "persona": {
                                         "type": "object",
@@ -2167,6 +2187,12 @@
                                                         "description": "Persona is optional: a template may be pure provider config.",
                                                         "items": {}
                                                     },
+                                                    "answer_min_seconds": {
+                                                        "type": "integer"
+                                                    },
+                                                    "answer_max_seconds": {
+                                                        "type": "integer"
+                                                    },
                                                     "llm": {
                                                         "type": [
                                                             "object",
@@ -2193,6 +2219,8 @@
                                                     "provider",
                                                     "config",
                                                     "persona",
+                                                    "answer_min_seconds",
+                                                    "answer_max_seconds",
                                                     "llm"
                                                 ]
                                             }
@@ -6718,6 +6746,12 @@
                                         "interview_max_seconds": {
                                             "type": "integer"
                                         },
+                                        "answer_min_seconds": {
+                                            "type": "integer"
+                                        },
+                                        "answer_max_seconds": {
+                                            "type": "integer"
+                                        },
                                         "conversation_id": {
                                             "type": "string"
                                         },
@@ -6747,7 +6781,9 @@
                                         "conversation_url",
                                         "audio_only",
                                         "question_context",
-                                        "interview_max_seconds"
+                                        "interview_max_seconds",
+                                        "answer_min_seconds",
+                                        "answer_max_seconds"
                                     ]
                                 }
                             }
@@ -9016,6 +9052,16 @@
                                             "null"
                                         ]
                                     },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
                                     "persona": {
                                         "type": "object",
                                         "properties": {
@@ -9164,6 +9210,16 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
                                     },
                                     "persona": {
                                         "type": "object",
@@ -14825,6 +14881,12 @@
                         "required": [
                             "display_name"
                         ]
+                    },
+                    "answer_min_seconds": {
+                        "type": "integer"
+                    },
+                    "answer_max_seconds": {
+                        "type": "integer"
                     }
                 },
                 "required": [
@@ -14843,7 +14905,9 @@
                     "llm_synced_at",
                     "llm",
                     "pal_sync",
-                    "persona"
+                    "persona",
+                    "answer_min_seconds",
+                    "answer_max_seconds"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -16643,6 +16707,12 @@
                             "display_name"
                         ]
                     },
+                    "answer_min_seconds": {
+                        "type": "integer"
+                    },
+                    "answer_max_seconds": {
+                        "type": "integer"
+                    },
                     "usage": {
                         "type": "object",
                         "properties": {
@@ -16676,6 +16746,8 @@
                     "llm",
                     "pal_sync",
                     "persona",
+                    "answer_min_seconds",
+                    "answer_max_seconds",
                     "usage"
                 ],
                 "title": "PlatformAvatarTemplateResource"

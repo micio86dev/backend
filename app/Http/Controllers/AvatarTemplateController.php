@@ -228,6 +228,7 @@ final class AvatarTemplateController extends Controller
         $validated = $request->validate($this->templateStoreRules());
 
         $validated = array_merge($validated, $this->personaWrite($request, null));
+        $this->assertAnswerRangeOrdered($validated);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
         // A superadmin's external voice is bound here, before the row is written,
@@ -263,6 +264,7 @@ final class AvatarTemplateController extends Controller
         $validated = $request->validate($this->templateUpdateRules());
 
         $validated = array_merge($validated, $this->personaWrite($request, $template->persona));
+        $this->assertAnswerRangeOrdered($validated, $template->answer_min_seconds, $template->answer_max_seconds);
 
         // The provider is immutable. Changing it would leave every knob in the
         // config belonging to the other one — avatarId where faceId is

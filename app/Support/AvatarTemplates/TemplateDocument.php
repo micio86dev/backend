@@ -46,6 +46,8 @@ final class TemplateDocument
                 'config' => $t->config,
                 // Persona is optional: a template may be pure provider config.
                 'persona' => $t->persona ?? null,
+                'answer_min_seconds' => $t->answer_min_seconds,
+                'answer_max_seconds' => $t->answer_max_seconds,
                 // The language model binding, by model key and credential name; `null` when the template has none.
                 'llm' => $t->llm_model_id === null ? null : [
                     'model_key' => $t->llmModel?->key,
@@ -65,7 +67,7 @@ final class TemplateDocument
      * lose a block.
      *
      * @param  array<string, mixed>  $entry
-     * @return list<array{name: string, description: string|null, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, llm: array{model_key: string, credential_name: string}|null}>
+     * @return list<array{name: string, description: string|null, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, llm: array{model_key: string, credential_name: string}|null}>
      */
     public static function flatten(array $entry): array
     {
@@ -81,6 +83,8 @@ final class TemplateDocument
                 'provider' => is_string($entry['provider']) ? $entry['provider'] : '',
                 'config' => is_array($entry['config'] ?? null) ? $entry['config'] : [],
                 'persona' => $persona,
+                'answer_min_seconds' => $entry['answer_min_seconds'] ?? null,
+                'answer_max_seconds' => $entry['answer_max_seconds'] ?? null,
                 'llm' => self::flattenLlm($entry['llm'] ?? null),
             ]];
         }
@@ -103,6 +107,8 @@ final class TemplateDocument
                 'provider' => $provider,
                 'config' => $config,
                 'persona' => $persona,
+                'answer_min_seconds' => null,
+                'answer_max_seconds' => null,
                 'llm' => null,
             ];
         }

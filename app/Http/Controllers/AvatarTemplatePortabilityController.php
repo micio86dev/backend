@@ -113,7 +113,7 @@ final class AvatarTemplatePortabilityController extends Controller
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, description: string|null}  $record
+     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null}  $record
      */
     private function reject(array $record): ?string
     {
@@ -123,6 +123,14 @@ final class AvatarTemplatePortabilityController extends Controller
 
         if (ProviderFieldSpecs::for($record['provider']) === []) {
             return "Unknown provider '{$record['provider']}'.";
+        }
+
+        // The SAME bounds the form applies; a file without the range (an older export) keeps the defaults.
+        $min = $record['answer_min_seconds'] ?? 90;
+        $max = $record['answer_max_seconds'] ?? 150;
+
+        if (! is_int($min) || ! is_int($max) || $min < 10 || $max > 600 || $min >= $max) {
+            return 'answer_min_seconds / answer_max_seconds: integers from 10 to 600 seconds, the minimum below the maximum.';
         }
 
         // The SAME rule the form applies to the interviewer's name: a file must never install a
@@ -170,7 +178,7 @@ final class AvatarTemplatePortabilityController extends Controller
     }
 
     /**
-     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, description: string|null, llm: array{model_key: string, credential_name: string}|null}  $record
+     * @param  array{name: string, provider: string, config: array<string, mixed>, persona: array<string, mixed>|null, answer_min_seconds: mixed, answer_max_seconds: mixed, description: string|null, llm: array{model_key: string, credential_name: string}|null}  $record
      * @return array<string, mixed>
      */
     private function create(array $record): array
@@ -195,6 +203,8 @@ final class AvatarTemplatePortabilityController extends Controller
             'provider' => $record['provider'],
             'config' => $record['config'],
             'persona' => $record['persona'],
+            'answer_min_seconds' => $record['answer_min_seconds'] ?? 90,
+            'answer_max_seconds' => $record['answer_max_seconds'] ?? 150,
             // Imports arrive inactive (D8). Activation stays a deliberate act:
             // a file must never change which avatar an organization's live
             // interviews are running on.

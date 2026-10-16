@@ -110,6 +110,9 @@ final class BuildInterviewSessionResponse
         // The candidate app counts down against it; the server remains the enforcer.
         $body['interview_max_seconds'] = $this->clock->resolveMaxSeconds($session);
 
+        // The range the answer bar calls a good answer (guidance only), from the same template.
+        ['min' => $body['answer_min_seconds'], 'max' => $body['answer_max_seconds']] = $this->clock->resolveAnswerRange($session);
+
         // Only a fresh single-session create names its conversation (design A6/N11); with the gate
         // closed the key is absent, not null, so the body is byte-identical to the old one.
         if ($conversationId !== null) {
