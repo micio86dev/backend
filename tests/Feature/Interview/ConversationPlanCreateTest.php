@@ -138,9 +138,21 @@ test('gate closed: no conversation key is added, no column is written and no par
 
     $body = cpcCreateBody();
     expect(array_keys($response->json()))->toBe(['session_id', 'provider', 'audio_only', 'provider_token', 'conversation_url', 'question_context', 'interview_max_seconds', 'answer_min_seconds', 'answer_max_seconds'])
+        ->and($response->json('answer_min_seconds'))->toBe(90)
+        ->and($response->json('answer_max_seconds'))->toBe(150)
         ->and(cpcRow($org, $participant)->conversation_plan)->toBeNull()
         ->and($body['properties'] ?? [])->not->toHaveKey('participant_left_timeout')
         ->and($body['conversational_context'])->not->toContain('=== TOPIC CODE:');
+});
+
+test('a template with a custom answer range puts those values on the start response', function (): void {
+    cpcFake();
+    [$org, $project, $participant] = cpcFixture(3);
+    AvatarTemplate::query()->whereKey($project->avatar_template_id)->update(['answer_min_seconds' => 60, 'answer_max_seconds' => 120]);
+
+    cpcStart($participant)->assertStatus(201)
+        ->assertJsonPath('answer_min_seconds', 60)
+        ->assertJsonPath('answer_max_seconds', 120);
 });
 
 test('a single remaining competency writes no plan and returns no conversation_id', function (): void {

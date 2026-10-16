@@ -83,8 +83,10 @@ final class TemplateDocument
                 'provider' => is_string($entry['provider']) ? $entry['provider'] : '',
                 'config' => is_array($entry['config'] ?? null) ? $entry['config'] : [],
                 'persona' => $persona,
-                'answer_min_seconds' => $entry['answer_min_seconds'] ?? null,
-                'answer_max_seconds' => $entry['answer_max_seconds'] ?? null,
+                // An OMITTED key (an older export) takes the default; an explicit null is kept so the
+                // controller refuses it, as the form's non-nullable integer rule does.
+                'answer_min_seconds' => array_key_exists('answer_min_seconds', $entry) ? $entry['answer_min_seconds'] : 90,
+                'answer_max_seconds' => array_key_exists('answer_max_seconds', $entry) ? $entry['answer_max_seconds'] : 150,
                 'llm' => self::flattenLlm($entry['llm'] ?? null),
             ]];
         }
@@ -107,8 +109,8 @@ final class TemplateDocument
                 'provider' => $provider,
                 'config' => $config,
                 'persona' => $persona,
-                'answer_min_seconds' => null,
-                'answer_max_seconds' => null,
+                'answer_min_seconds' => 90,
+                'answer_max_seconds' => 150,
                 'llm' => null,
             ];
         }

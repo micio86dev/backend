@@ -125,9 +125,10 @@ final class AvatarTemplatePortabilityController extends Controller
             return "Unknown provider '{$record['provider']}'.";
         }
 
-        // The SAME bounds the form applies; a file without the range (an older export) keeps the defaults.
-        $min = $record['answer_min_seconds'] ?? 90;
-        $max = $record['answer_max_seconds'] ?? 150;
+        // The SAME bounds the form applies. A file without the range (an older export) was given the
+        // defaults by TemplateDocument::flatten(); an explicit null reaches here and is refused.
+        $min = $record['answer_min_seconds'];
+        $max = $record['answer_max_seconds'];
 
         if (! is_int($min) || ! is_int($max) || $min < 10 || $max > 600 || $min >= $max) {
             return 'answer_min_seconds / answer_max_seconds: integers from 10 to 600 seconds, the minimum below the maximum.';
@@ -203,8 +204,8 @@ final class AvatarTemplatePortabilityController extends Controller
             'provider' => $record['provider'],
             'config' => $record['config'],
             'persona' => $record['persona'],
-            'answer_min_seconds' => $record['answer_min_seconds'] ?? 90,
-            'answer_max_seconds' => $record['answer_max_seconds'] ?? 150,
+            'answer_min_seconds' => $record['answer_min_seconds'],
+            'answer_max_seconds' => $record['answer_max_seconds'],
             // Imports arrive inactive (D8). Activation stays a deliberate act:
             // a file must never change which avatar an organization's live
             // interviews are running on.

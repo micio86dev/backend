@@ -213,6 +213,8 @@ test('an import refuses a range of the wrong type or bounds and defaults the fie
     'max over 600' => [['answer_max_seconds' => 601], false, 0, 0],
     'min above the default max' => [['answer_min_seconds' => 200], false, 0, 0],
     'max under the default min' => [['answer_max_seconds' => 60], false, 0, 0],
+    'explicit null min' => [['answer_min_seconds' => null], false, 0, 0],
+    'explicit null max' => [['answer_max_seconds' => null], false, 0, 0],
     'only min, max defaults' => [['answer_min_seconds' => 30], true, 30, 150],
     'only max, min defaults' => [['answer_max_seconds' => 300], true, 90, 300],
     'bounds are inclusive' => [['answer_min_seconds' => 10, 'answer_max_seconds' => 600], true, 10, 600],
