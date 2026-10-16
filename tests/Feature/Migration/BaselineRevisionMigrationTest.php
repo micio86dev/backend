@@ -91,9 +91,22 @@ test('an evaluation scored before the revision migration resolves byte-identical
         'label' => 'PR1 pre-revision snapshot',
     ]);
 
+    // The schema is older than the code here, so the template is inserted with the columns that
+    // exist at this point: an `AvatarTemplate::create()` would also name every column added later.
+    $templateId = DB::table('avatar_templates')->insertGetId([
+        'organization_id' => $org->id,
+        'name' => 'PR1 pre-revision template',
+        'provider' => 'heygen',
+        'config' => '{}',
+        'is_active' => false,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     $project = Project::factory()->create([
         'framework_version_id' => $fv->id,
         'role_code' => 'PR1TEST',
+        'avatar_template_id' => $templateId,
     ]);
     $participant = Participant::factory()->create([
         'project_id' => $project->id,
