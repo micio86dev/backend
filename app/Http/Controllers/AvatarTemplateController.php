@@ -294,7 +294,7 @@ final class AvatarTemplateController extends Controller
         $beforeBindingNames = $bindingRequested ? $this->bindingAuditNames($template) : null;
 
         $before = ['name' => $template->name];
-        $template->update($validated);
+        $this->answeringAnswerRangeRace(fn (): bool => DB::transaction(fn (): bool => $template->update($validated)));
 
         app(AuditRecorder::class)->record(
             'avatar_template.updated',

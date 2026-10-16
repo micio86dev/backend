@@ -13,6 +13,7 @@ use App\Support\AvatarTemplates\TemplateReferenceValidator;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -250,6 +251,33 @@ trait ValidatesAvatarTemplateWrites
             }
 
             throw $this->nameTaken();
+        }
+    }
+
+    /**
+     * `assertAnswerRangeOrdered()` reads the stored range before the write, so two concurrent
+     * one-field PATCHes can each pass it and the second then meets the other's value. The CHECK
+     * `avatar_templates_answer_range` is the real guard and refuses the loser; that is the same
+     * problem the helper reports, so it is answered the same way (a 422, not a 500). Only THAT
+     * constraint is translated.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $write
+     * @return T
+     */
+    private function answeringAnswerRangeRace(Closure $write): mixed
+    {
+        try {
+            return $write();
+        } catch (QueryException $e) {
+            if ($e->getCode() !== '23514' || ! str_contains($e->getMessage(), 'avatar_templates_answer_range')) {
+                throw $e;
+            }
+
+            throw ValidationException::withMessages([
+                'answer_max_seconds' => 'The maximum answer time must be greater than the minimum.',
+            ]);
         }
     }
 

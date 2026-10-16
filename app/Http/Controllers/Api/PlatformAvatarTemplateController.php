@@ -228,7 +228,7 @@ final class PlatformAvatarTemplateController extends Controller
         // records field NAMES, never config values.
         $usage = $this->usage->for([$template->id])[$template->id];
 
-        $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
+        $this->answeringAnswerRangeRace(fn () => $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
             $template->update($validated);
 
             $changed = array_values(array_filter(
@@ -260,7 +260,7 @@ final class PlatformAvatarTemplateController extends Controller
                     $unbound ? null : $this->bindingNames($template->refresh()),
                 );
             }
-        })));
+        }))));
 
         return $this->present($template)->additional($this->recordSync($template));
     }

@@ -19,6 +19,8 @@ use App\Services\Provider\ProviderToken;
 use App\Support\Tenancy\TenantContextScope;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\Helpers\AvatarTemplates\PlatformTemplates;
 use Tests\Helpers\AvatarTemplates\TemplateActors;
 
@@ -130,6 +132,20 @@ test('the database refuses a range the application let through', function (): vo
         ->toThrow(QueryException::class);
 });
 
+test('a concurrent write that slips past the ordering check is a 422, not a 500', function (string $surface): void {
+    [$url, $token, $org] = atrSurface($surface);
+    $template = atrSeed($surface, $org);
+
+    // The other writer lands between our validation (stored max 150) and our write: the
+    // validated `min 140` now meets a stored max of 100, which only the DB CHECK can refuse.
+    Event::listen('eloquent.updating: '.AvatarTemplate::class, function () use ($template): void {
+        DB::table('avatar_templates')->where('id', $template->id)->update(['answer_max_seconds' => 100]);
+    });
+
+    $this->withToken($token)->patchJson("{$url}/{$template->id}", ['answer_min_seconds' => 140])
+        ->assertUnprocessable()->assertJsonValidationErrors(['answer_max_seconds']);
+})->with('atrSurfaces');
+
 test('duplicating a template copies the range', function (): void {
     $source = Organization::factory()->create();
     $target = Organization::factory()->create();
@@ -170,6 +186,50 @@ test('an older file without the range imports with the defaults and a bad range 
     $bad = array_merge($entry, ['name' => 'Bad', 'answer_min_seconds' => 500, 'answer_max_seconds' => 20]);
     $this->withToken($token)->postJson('/api/avatar-templates/import', ['schema' => 'beai.avatar-template/1', 'templates' => [$bad]])->assertUnprocessable();
     expect(AvatarTemplate::withoutGlobalScopes()->where('name', 'Bad')->exists())->toBeFalse();
+});
+
+test('an import refuses a range of the wrong type or bounds and defaults the field it omits', function (array $range, bool $accepted, int $min, int $max): void {
+    $org = Organization::factory()->create();
+    $token = TemplateActors::token('acting', $org);
+    $entry = array_merge(['name' => 'Imp', 'provider' => 'heygen', 'config' => ['avatarId' => 'av_1', 'voiceId' => 'vo_1']], $range);
+
+    $response = $this->withToken($token)->postJson('/api/avatar-templates/import', ['schema' => 'beai.avatar-template/1', 'templates' => [$entry]]);
+
+    if (! $accepted) {
+        $response->assertUnprocessable();
+        expect(AvatarTemplate::withoutGlobalScopes()->where('name', 'Imp')->exists())->toBeFalse();
+
+        return;
+    }
+
+    $response->assertCreated();
+    $row = AvatarTemplate::withoutGlobalScopes()->where('name', 'Imp')->firstOrFail();
+    expect($row->answer_min_seconds)->toBe($min)->and($row->answer_max_seconds)->toBe($max);
+})->with([
+    'string min' => [['answer_min_seconds' => '90'], false, 0, 0],
+    'string max' => [['answer_max_seconds' => '150'], false, 0, 0],
+    'fractional max' => [['answer_max_seconds' => 150.5], false, 0, 0],
+    'min under 10' => [['answer_min_seconds' => 5], false, 0, 0],
+    'max over 600' => [['answer_max_seconds' => 601], false, 0, 0],
+    'min above the default max' => [['answer_min_seconds' => 200], false, 0, 0],
+    'max under the default min' => [['answer_max_seconds' => 60], false, 0, 0],
+    'only min, max defaults' => [['answer_min_seconds' => 30], true, 30, 150],
+    'only max, min defaults' => [['answer_max_seconds' => 300], true, 90, 300],
+    'bounds are inclusive' => [['answer_min_seconds' => 10, 'answer_max_seconds' => 600], true, 10, 600],
+]);
+
+test('an import refuses a whole-number float, which PHP would otherwise encode as an int', function (): void {
+    $org = Organization::factory()->create();
+    $token = TemplateActors::token('acting', $org);
+
+    // json_encode() writes 90.0 as `90`, so the body is written by hand to reach the decoder as a float.
+    $body = '{"schema":"beai.avatar-template/1","templates":[{"name":"Imp","provider":"heygen",'
+        .'"config":{"avatarId":"av_1","voiceId":"vo_1"},"answer_min_seconds":90.0}]}';
+
+    $this->withServerVariables($this->transformHeadersToServerVars(['Authorization' => "Bearer {$token}", 'Accept' => 'application/json']))
+        ->call('POST', '/api/avatar-templates/import', [], [], [], ['CONTENT_TYPE' => 'application/json'], $body)
+        ->assertUnprocessable();
+    expect(AvatarTemplate::withoutGlobalScopes()->where('name', 'Imp')->exists())->toBeFalse();
 });
 
 /**
