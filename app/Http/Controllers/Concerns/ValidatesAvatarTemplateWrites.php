@@ -13,6 +13,7 @@ use App\Support\AvatarTemplates\TemplateReferenceValidator;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +31,36 @@ use Illuminate\Validation\ValidationException;
 trait ValidatesAvatarTemplateWrites
 {
     /**
+     * The seconds a good answer lasts (answer-time-range). The bounds live here and in the DB CHECK;
+     * `min < max` needs both values, so it is `assertAnswerRangeOrdered()`'s job, not a rule's.
+     *
+     * @var array<string, list<string>>
+     */
+    private const ANSWER_RANGE_RULES = [
+        'answer_min_seconds' => ['sometimes', 'integer', 'min:10', 'max:600'],
+        'answer_max_seconds' => ['sometimes', 'integer', 'min:10', 'max:600'],
+    ];
+
+    /**
+     * Refuses a range whose minimum is not below its maximum, comparing a field the request omits
+     * against the stored value (the defaults on create). A one-field PATCH could otherwise
+     * invert a range the other field's stored value defines.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function assertAnswerRangeOrdered(array $validated, int $storedMin = 90, int $storedMax = 150): void
+    {
+        $min = $validated['answer_min_seconds'] ?? $storedMin;
+        $max = $validated['answer_max_seconds'] ?? $storedMax;
+
+        if ($min >= $max) {
+            throw ValidationException::withMessages([
+                'answer_max_seconds' => 'The maximum answer time must be greater than the minimum.',
+            ]);
+        }
+    }
+
+    /**
      * @return array<string, list<string|ValidationRule|Closure>>
      */
     private function templateStoreRules(): array
@@ -46,6 +77,7 @@ trait ValidatesAvatarTemplateWrites
             // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null.
             'llm_model_id' => ['sometimes', 'nullable', 'integer'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
+            ...self::ANSWER_RANGE_RULES,
             ...$this->personaRules(),
         ];
     }
@@ -67,6 +99,7 @@ trait ValidatesAvatarTemplateWrites
             // Bind a language model to the template. `llm_model_id` and `llm_credential_id` are both set or both null; sending both as null clears the binding.
             'llm_model_id' => ['sometimes', 'nullable', 'integer'],
             'llm_credential_id' => ['sometimes', 'nullable', 'integer'],
+            ...self::ANSWER_RANGE_RULES,
             ...$this->personaRules(),
         ];
     }
@@ -218,6 +251,33 @@ trait ValidatesAvatarTemplateWrites
             }
 
             throw $this->nameTaken();
+        }
+    }
+
+    /**
+     * `assertAnswerRangeOrdered()` reads the stored range before the write, so two concurrent
+     * one-field PATCHes can each pass it and the second then meets the other's value. The CHECK
+     * `avatar_templates_answer_range` is the real guard and refuses the loser; that is the same
+     * problem the helper reports, so it is answered the same way (a 422, not a 500). Only THAT
+     * constraint is translated.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $write
+     * @return T
+     */
+    private function answeringAnswerRangeRace(Closure $write): mixed
+    {
+        try {
+            return $write();
+        } catch (QueryException $e) {
+            if ($e->getCode() !== '23514' || ! str_contains($e->getMessage(), 'avatar_templates_answer_range')) {
+                throw $e;
+            }
+
+            throw ValidationException::withMessages([
+                'answer_max_seconds' => 'The maximum answer time must be greater than the minimum.',
+            ]);
         }
     }
 

@@ -61,7 +61,7 @@ class OrganizationController extends Controller
     /**
      * Update the organization.
      *
-     * Accepts `name`, the default webhook settings, `primary_color` and
+     * Accepts `name`, the default webhook settings, `primary_color`, `background_color` and
      * `currency_code` (active catalogue codes only). Any other field in the body
      * is ignored.
      */
@@ -85,6 +85,7 @@ class OrganizationController extends Controller
             // stored. Accepting it here would let a client point the logo at an
             // arbitrary path on the disk.
             'primary_color',
+            'background_color',
             'currency_code',
         ]));
 

@@ -39,6 +39,7 @@ final class ExposureCatalogue
             'Organization' => [
                 'slug',
                 'primary_color',
+                'background_color',
                 'currency_code',
                 'logo_url',
                 'default_webhook_url',
@@ -82,6 +83,8 @@ final class ExposureCatalogue
                 'avatar_template.pal_sync.code',
                 'avatar_template.pal_sync.synced_at',
                 'avatar_template.persona.display_name',
+                'avatar_template.answer_min_seconds',
+                'avatar_template.answer_max_seconds',
                 'can.update',
                 'can.delete',
                 'competencies[].id',

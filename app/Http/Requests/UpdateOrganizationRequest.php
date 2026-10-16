@@ -81,6 +81,7 @@ class UpdateOrganizationRequest extends FormRequest
              * choosing a colour would be a one-way door.
              */
             'primary_color' => ['sometimes', 'nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
+            'background_color' => ['sometimes', 'nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
             'currency_code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/', Rule::exists('currencies', 'code')->where('is_active', true)],
         ];
     }
@@ -117,6 +118,8 @@ class UpdateOrganizationRequest extends FormRequest
             'default_webhook_events.*.in' => 'webhook_event_unknown',
             'primary_color.string' => 'primary_color_invalid',
             'primary_color.regex' => 'primary_color_invalid',
+            'background_color.string' => 'background_color_invalid',
+            'background_color.regex' => 'background_color_invalid',
             // One slug for every currency refusal (inactive, unknown, malformed): the
             // response never says which codes exist but are switched off.
             'currency_code.required' => 'currency_unavailable',

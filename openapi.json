@@ -1749,6 +1749,16 @@
                                             "null"
                                         ]
                                     },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
                                     "persona": {
                                         "type": "object",
                                         "properties": {
@@ -1894,6 +1904,16 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
                                     },
                                     "persona": {
                                         "type": "object",
@@ -2167,6 +2187,12 @@
                                                         "description": "Persona is optional: a template may be pure provider config.",
                                                         "items": {}
                                                     },
+                                                    "answer_min_seconds": {
+                                                        "type": "integer"
+                                                    },
+                                                    "answer_max_seconds": {
+                                                        "type": "integer"
+                                                    },
                                                     "llm": {
                                                         "type": [
                                                             "object",
@@ -2193,6 +2219,8 @@
                                                     "provider",
                                                     "config",
                                                     "persona",
+                                                    "answer_min_seconds",
+                                                    "answer_max_seconds",
                                                     "llm"
                                                 ]
                                             }
@@ -6718,6 +6746,12 @@
                                         "interview_max_seconds": {
                                             "type": "integer"
                                         },
+                                        "answer_min_seconds": {
+                                            "type": "integer"
+                                        },
+                                        "answer_max_seconds": {
+                                            "type": "integer"
+                                        },
                                         "conversation_id": {
                                             "type": "string"
                                         },
@@ -6747,7 +6781,9 @@
                                         "conversation_url",
                                         "audio_only",
                                         "question_context",
-                                        "interview_max_seconds"
+                                        "interview_max_seconds",
+                                        "answer_min_seconds",
+                                        "answer_max_seconds"
                                     ]
                                 }
                             }
@@ -7306,7 +7342,7 @@
             },
             "patch": {
                 "operationId": "organization.update",
-                "description": "Accepts `name`, the default webhook settings, `primary_color` and\n`currency_code` (active catalogue codes only). Any other field in the body\nis ignored.",
+                "description": "Accepts `name`, the default webhook settings, `primary_color`, `background_color` and\n`currency_code` (active catalogue codes only). Any other field in the body\nis ignored.",
                 "summary": "Update the organization",
                 "tags": [
                     "Organization"
@@ -9016,6 +9052,16 @@
                                             "null"
                                         ]
                                     },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
                                     "persona": {
                                         "type": "object",
                                         "properties": {
@@ -9164,6 +9210,16 @@
                                             "integer",
                                             "null"
                                         ]
+                                    },
+                                    "answer_min_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
+                                    },
+                                    "answer_max_seconds": {
+                                        "type": "integer",
+                                        "minimum": 10,
+                                        "maximum": 600
                                     },
                                     "persona": {
                                         "type": "object",
@@ -14608,6 +14664,12 @@
                                     "null"
                                 ]
                             },
+                            "background_color": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
                             "logo_url": {
                                 "type": [
                                     "string",
@@ -14618,6 +14680,7 @@
                         "required": [
                             "name",
                             "primary_color",
+                            "background_color",
                             "logo_url"
                         ]
                     },
@@ -14825,6 +14888,12 @@
                         "required": [
                             "display_name"
                         ]
+                    },
+                    "answer_min_seconds": {
+                        "type": "integer"
+                    },
+                    "answer_max_seconds": {
+                        "type": "integer"
                     }
                 },
                 "required": [
@@ -14843,7 +14912,9 @@
                     "llm_synced_at",
                     "llm",
                     "pal_sync",
-                    "persona"
+                    "persona",
+                    "answer_min_seconds",
+                    "answer_max_seconds"
                 ],
                 "title": "AvatarTemplateResource"
             },
@@ -15859,6 +15930,12 @@
                             "null"
                         ]
                     },
+                    "background_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "currency_code": {
                         "type": "string"
                     },
@@ -15904,6 +15981,7 @@
                     "name",
                     "slug",
                     "primary_color",
+                    "background_color",
                     "currency_code",
                     "logo_url",
                     "default_webhook_url",
@@ -16294,6 +16372,12 @@
                                     "null"
                                 ]
                             },
+                            "background_color": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
                             "logo_url": {
                                 "type": [
                                     "string",
@@ -16304,6 +16388,7 @@
                         "required": [
                             "name",
                             "primary_color",
+                            "background_color",
                             "logo_url"
                         ]
                     },
@@ -16643,6 +16728,12 @@
                             "display_name"
                         ]
                     },
+                    "answer_min_seconds": {
+                        "type": "integer"
+                    },
+                    "answer_max_seconds": {
+                        "type": "integer"
+                    },
                     "usage": {
                         "type": "object",
                         "properties": {
@@ -16676,6 +16767,8 @@
                     "llm",
                     "pal_sync",
                     "persona",
+                    "answer_min_seconds",
+                    "answer_max_seconds",
                     "usage"
                 ],
                 "title": "PlatformAvatarTemplateResource"
@@ -18748,13 +18841,20 @@
             },
             "UpdateManagedOrganizationRequest": {
                 "type": "object",
-                "description": "Validates PATCH /api/admin/organizations/{id} (superadmin only).\n\nOnly `name`, `primary_color` and `currency_code` are writable here. `slug` is a tenancy\nidentifier and is never editable; the webhook defaults and the logo keep\ntheir own tenant-facing endpoints.",
+                "description": "Validates PATCH /api/admin/organizations/{id} (superadmin only).\n\nOnly `name`, `primary_color`, `background_color` and `currency_code` are writable here. `slug` is a tenancy\nidentifier and is never editable; the webhook defaults and the logo keep\ntheir own tenant-facing endpoints.",
                 "properties": {
                     "name": {
                         "type": "string",
                         "maxLength": 255
                     },
                     "primary_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "background_color": {
                         "type": [
                             "string",
                             "null"
@@ -18811,6 +18911,13 @@
                             "null"
                         ],
                         "description": "The primary colour is CSS, and is validated as CSS rather than as\na string that happens to look like one. It is interpolated into a custom property in both Nuxt apps, so a\nvalue that is not a colour becomes a stylesheet that silently\ndoes not apply, and one carrying `;` or `}` appends rules of its\nown to every page an operator's candidates load.\n\n`\\z`, NOT `$`, and that difference is the whole security of this\nrule. In PCRE `$` also matches immediately BEFORE a final\nnewline, so `/^#[0-9a-f]{6}$/` accepts `\"#123456\\n\"` \u2014 and the\nnewline is exactly what lets a payload open a second declaration\nonce it is interpolated into a stylesheet. `\\z` matches only at\nthe true end of the subject. Caught by the injection test, which\nfailed against the `$` version of this rule.\n\nThree-digit shorthand is deliberately refused so the apps never\nhave to expand it \u2014 one canonical form, and an operator pasting\n`#abc` is told so rather than getting a colour that quietly\ndiffers from the one they copied.\n\n`nullable` is the route back to the product palette; without it,\nchoosing a colour would be a one-way door.",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "background_color": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "pattern": "^#[0-9a-fA-F]{6}$"
                     },
                     "currency_code": {

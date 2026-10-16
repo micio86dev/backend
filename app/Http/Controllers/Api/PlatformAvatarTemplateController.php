@@ -152,6 +152,7 @@ final class PlatformAvatarTemplateController extends Controller
         $validated = $request->validate($this->templateStoreRules());
 
         $validated = array_merge($validated, $this->personaWrite($request, null));
+        $this->assertAnswerRangeOrdered($validated);
 
         $this->assertConfigValid($validated['provider'], $validated['config']);
         app(BindHeygenTemplateVoice::class)->run($validated['provider'], $validated['config']);
@@ -198,6 +199,7 @@ final class PlatformAvatarTemplateController extends Controller
         $validated = $request->validate($this->templateUpdateRules());
 
         $validated = array_merge($validated, $this->personaWrite($request, $template->persona));
+        $this->assertAnswerRangeOrdered($validated, $template->answer_min_seconds, $template->answer_max_seconds);
 
         // The provider is immutable: the config's knobs belong to it, so a
         // template that changed provider would validate as empty and quietly
@@ -226,7 +228,7 @@ final class PlatformAvatarTemplateController extends Controller
         // records field NAMES, never config values.
         $usage = $this->usage->for([$template->id])[$template->id];
 
-        $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
+        $this->answeringAnswerRangeRace(fn () => $this->answeringPlatformNameRace(fn () => $this->context->run($actor, fn () => DB::transaction(function () use ($template, $validated, $actor, $before, $originals, $beforeBinding, $usage): void {
             $template->update($validated);
 
             $changed = array_values(array_filter(
@@ -258,7 +260,7 @@ final class PlatformAvatarTemplateController extends Controller
                     $unbound ? null : $this->bindingNames($template->refresh()),
                 );
             }
-        })));
+        }))));
 
         return $this->present($template)->additional($this->recordSync($template));
     }
